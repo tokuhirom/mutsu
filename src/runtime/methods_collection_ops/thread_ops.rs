@@ -34,13 +34,14 @@ impl Interpreter {
 
         let thread_id = super::next_thread_id();
         super::claim_thread_start(thread_id);
-        self.spawn_thread_body(block, thread_id, app_lifetime)?;
 
         let mut attrs = HashMap::new();
         attrs.insert("id".to_string(), Value::int(thread_id as i64));
         attrs.insert("name".to_string(), Value::str(thread_name));
         attrs.insert("app_lifetime".to_string(), Value::truth(app_lifetime));
-        Ok(Value::make_instance(Symbol::intern("Thread"), attrs))
+        let thread = Value::make_instance(Symbol::intern("Thread"), attrs);
+        self.spawn_thread_body(block, thread.clone(), thread_id, app_lifetime)?;
+        Ok(thread)
     }
 
     /// `Thread.run` — start a `Thread.new`-constructed (not yet started)
@@ -73,11 +74,12 @@ impl Interpreter {
                 "Thread.run: cannot run a thread that has already been started",
             ));
         }
-        self.spawn_thread_body(block, thread_id, app_lifetime)?;
+        self.spawn_thread_body(block, target.clone(), thread_id, app_lifetime)?;
         Ok(target.clone())
     }
 
-    /// Spawn the OS thread that runs `block`, registering its join handle under
+    /// Spawn the OS thread that runs `block` with `thread` as its `$*THREAD`,
+    /// registering its join handle under
     /// `thread_id` unless the thread is `app_lifetime` (those are killed when
     /// the process's main thread terminates, so nothing ever joins them).
     ///
@@ -86,6 +88,7 @@ impl Interpreter {
     fn spawn_thread_body(
         &mut self,
         block: Value,
+        thread: Value,
         thread_id: u64,
         app_lifetime: bool,
     ) -> Result<(), RuntimeError> {
@@ -105,6 +108,9 @@ impl Interpreter {
         let handle = try_spawn_user_thread("raku-thread", StackPolicy::Required, move || {
             // Set the mutsu thread ID for $*THREAD.id consistency
             super::set_current_mutsu_thread_id(mutsu_tid);
+            // `$*THREAD` inside the thread is the very object `Thread.start`
+            // / `Thread.new` handed out, so a mixin on either side is shared.
+            super::set_current_thread_object(thread);
             match thread_interp.call_sub_value(block, vec![], false) {
                 Ok(_) => {}
                 Err(e) => {

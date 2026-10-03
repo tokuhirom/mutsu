@@ -221,6 +221,10 @@ pub(crate) struct Registry {
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
+    /// Classes declared `is repr('CArray')` (#11209), by full name. An instance
+    /// `nqp::create` makes of one carries native element storage typed by the
+    /// type's `.^array_type` (see `runtime::carray_repr`).
+    pub(crate) carray_classes: HashSet<String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
     pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,

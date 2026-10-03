@@ -168,7 +168,7 @@ impl Interpreter {
             // variable's cell.  User infix dispatch can take this fused path
             // instead of the ordinary typed assignment path, so enforce the
             // cell-carried constraint before publishing the new value.
-            self.check_container_cell_constraint(&arc, &new_val)?;
+            let new_val = self.coerce_container_cell_store(&arc, new_val)?;
             *guard = new_val.clone();
             drop(guard);
             self.stack.push(new_val);

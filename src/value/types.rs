@@ -83,7 +83,26 @@ pub(crate) fn parametric_role_arg_name(val: &Value) -> String {
         // stay distinguishable by name here — the composition machinery keys on
         // it — so collapsing `A[:a(1)]` and `A[:a(2)]` onto one string is not
         // safe yet. Left as a separate, narrower divergence.
-        ValueView::Pair(..) | ValueView::ValuePair(..) => val.to_string_value(),
+        //
+        // Spelled as the named argument it is (`:g(B)`), so the name stays a
+        // parseable type expression: the Pair's `Str` (`"g\tB"`, and just
+        // `"g\t"` for a type object, whose `Str` is empty) made `::?CLASS` of
+        // such a role unresolvable, and every `::?CLASS:U` invocant failed.
+        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+            let (key, value) = match val.view() {
+                ValueView::Pair(k, v) => (k.clone(), v.clone()),
+                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
+                _ => return val.to_string_value(),
+            };
+            let value = value.deref_container();
+            let inner = match value.view() {
+                ValueView::Package(_) | ValueView::ParametricRole { .. } => {
+                    parametric_role_arg_name(&value)
+                }
+                _ => value.to_string_value(),
+            };
+            format!(":{key}({inner})")
+        }
         _ => what_type_name(val),
     }
 }

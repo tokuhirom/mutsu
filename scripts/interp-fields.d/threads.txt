@@ -1,0 +1,2 @@
+# ADR-10779 threads subsystem: ThreadSharing (src/runtime/thread_sharing.rs).
+threads

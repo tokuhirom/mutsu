@@ -34,7 +34,9 @@ impl Interpreter {
             _ => return true,
         };
         let class_name = class_sym.as_str();
-        if self.has_user_method_sym(class_name, spec.lookup_sym) {
+        if self.has_user_method_sym(class_name, spec.lookup_sym)
+            || self.has_user_method(class_name, "FALLBACK")
+        {
             return true;
         }
         let Some(sym) = sym else {

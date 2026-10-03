@@ -234,8 +234,9 @@ impl Interpreter {
     pub(crate) fn return_target_is_live(&self, target_id: u64) -> bool {
         self.routine_stack.iter().any(|f| {
             !f.is_block
-                && self.registration_clone_id(&f.package.resolve(), &f.name.resolve())
-                    == Some(target_id)
+                && ((f.callable_id != 0 && f.callable_id == target_id)
+                    || self.registration_clone_id(&f.package.resolve(), &f.name.resolve())
+                        == Some(target_id))
         })
     }
 
@@ -294,6 +295,7 @@ impl Interpreter {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
+            callable_id: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -306,6 +308,8 @@ impl Interpreter {
     /// this, `executing_source_file()`'s frame walk always fell through past a
     /// method frame to the dynamically-scoped `?FILE`, which had already
     /// reverted to the main script by the time the method ran.
+    /// `callable_id` is the per-invocation `__mutsu_callable_id` the method
+    /// body runs under (see `RoutineFrame::callable_id`).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_method_routine_with_location(
         &mut self,
@@ -317,6 +321,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
         is_submethod: bool,
         is_hidden_from_backtrace: bool,
+        callable_id: u64,
     ) {
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
@@ -332,6 +337,7 @@ impl Interpreter {
             is_hidden_from_backtrace,
             def_file,
             invocation_id,
+            callable_id,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -391,6 +397,7 @@ impl Interpreter {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
+            callable_id: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -462,9 +469,16 @@ impl Interpreter {
     /// `current_package` has already moved on to the callee by this point, so
     /// it is not recoverable from the stack.)
     pub(crate) fn caller_frame_package(&self) -> String {
+        self.caller_frame_package_at(1)
+    }
+
+    /// The package of the frame `depth` callers up (`CALLER::` is 1,
+    /// `CALLER::CALLER::` is 2); GLOBAL once the walk passes the mainline.
+    // Cost: O(1).
+    pub(crate) fn caller_frame_package_at(&self, depth: usize) -> String {
         let len = self.routine_stack.len();
-        if len >= 2 {
-            return self.routine_stack[len - 2].package.resolve();
+        if len > depth {
+            return self.routine_stack[len - 1 - depth].package.resolve();
         }
         "GLOBAL".to_string()
     }
@@ -718,7 +732,7 @@ impl Interpreter {
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         let call_depth = self.call_frames.len();
         let routine_depth = self.routine_stack_len();
-        if let Some(items) = self.gather_items.last_mut() {
+        if let Some(items) = self.async_state.gather_items.last_mut() {
             // `take` of a Slip flattens it into the gather (`take Empty` /
             // `take slip(1,2)` add zero / two elements — Rakudo semantics);
             // every other value, including a List/Seq, is added as one element
@@ -728,7 +742,7 @@ impl Interpreter {
             } else {
                 items.push(val);
             }
-            if let Some(Some(limit)) = self.gather_take_limits.last()
+            if let Some(Some(limit)) = self.async_state.gather_take_limits.last()
                 && items.len() >= *limit
             {
                 // A take inside a routine call NESTED under the lazy-pull
@@ -746,35 +760,37 @@ impl Interpreter {
                 // only takes came from a nested call under an infinite loop
                 // (`gather { loop { self!bitmap(...) } }`, EuclideanRhythm).
                 let nested_vm_call = self
+                    .async_state
                     .lazy_pull_entry_call_depth
                     .is_some_and(|entry| call_depth > entry);
                 let nested_interpreter_call = self
+                    .async_state
                     .lazy_pull_entry_routine_depth
                     .is_some_and(|entry| routine_depth > entry);
                 if nested_vm_call || nested_interpreter_call {
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     return Ok(());
                 }
-                if self.take_defer_to_op_end {
+                if self.async_state.take_defer_to_op_end {
                     // Inside an opcode that takes once per element (`@a».take`):
                     // it cannot be resumed mid-iteration, so let it finish (its
                     // iteration is finite) and suspend at its own end
                     // (`suspend_after_take_deferring_op`). No overshoot
                     // backstop: signalling here would drop the rest of its
                     // elements (#9785).
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     return Ok(());
                 }
-                if self.lazy_take_boundary_defer {
+                if self.async_state.lazy_take_boundary_defer {
                     // Inside a condition-driven loop: defer the suspension to
                     // the loop's iteration boundary (`gather_suspend_pending`)
                     // — suspending at the take itself replays the statements
                     // between the take and the iteration end on resume. The
                     // overshoot backstop still signals here if no boundary is
                     // ever reached.
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     if items.len() >= limit.saturating_add(64) {
-                        self.gather_suspend_pending = false;
+                        self.async_state.gather_suspend_pending = false;
                         return Err(RuntimeError::new(
                             "__mutsu_lazy_gather_take_limit_reached__",
                         ));
@@ -799,49 +815,66 @@ impl Interpreter {
     /// callee's return and the gather body's own loop consumes it one boundary
     /// later.
     pub(crate) fn gather_suspend_boundary_reached(&self) -> bool {
-        if !self.gather_suspend_pending {
+        if !self.async_state.gather_suspend_pending {
             return false;
         }
         let outside_vm_call = self
+            .async_state
             .lazy_pull_entry_call_depth
             .is_none_or(|entry| self.call_frames.len() <= entry);
         let outside_interpreter_call = self
+            .async_state
             .lazy_pull_entry_routine_depth
             .is_none_or(|entry| self.routine_stack_len() <= entry);
         outside_vm_call && outside_interpreter_call
     }
 
     pub(crate) fn gather_items_len(&self) -> usize {
-        self.gather_items.len()
+        self.async_state.gather_items.len()
     }
 
     pub(crate) fn push_gather_items(&mut self, items: Vec<Value>) {
-        self.gather_items.push(items);
+        self.async_state.gather_items.push(items);
     }
 
     pub(crate) fn pop_gather_items(&mut self) -> Option<Vec<Value>> {
-        self.gather_items.pop()
+        self.async_state.gather_items.pop()
+    }
+
+    /// The take collector at `depth` on the gather-items stack.
+    pub(crate) fn gather_items_at(&self, depth: usize) -> Option<&[Value]> {
+        self.async_state.gather_items.get(depth).map(Vec::as_slice)
     }
 
     pub(crate) fn current_gather_items(&self) -> Vec<Value> {
-        self.gather_items.last().cloned().unwrap_or_default()
+        self.async_state
+            .gather_items
+            .last()
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub(crate) fn push_gather_take_limit(&mut self, limit: Option<usize>) {
-        self.gather_take_limits.push(limit);
+        self.async_state.gather_take_limits.push(limit);
     }
 
     pub(crate) fn pop_gather_take_limit(&mut self) {
-        self.gather_take_limits.pop();
+        self.async_state.gather_take_limits.pop();
     }
 
-    /// The package currently in scope, read out of the shared `Arc<RwLock>`
-    /// handle as an owned `String`. Returns owned (not `&str`) because the value
-    /// lives behind a lock guard that must not escape the call — the guard is
-    /// dropped before returning, so no lock is held across the caller's work
-    /// (re-entry safe, mirroring the registry accessors).
+    /// The package currently in scope, as an owned `String`. Prefer
+    /// [`Self::current_package_str`] or [`Self::current_package_sym`] on a hot
+    /// path: this one allocates.
+    // Cost: O(n), n = package name length (one allocation).
     pub(crate) fn current_package(&self) -> String {
-        self.current_package.read().unwrap().clone()
+        self.current_package_str().to_owned()
+    }
+
+    /// The package currently in scope, borrowed from the symbol table.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn current_package_str(&self) -> &'static str {
+        self.current_package_sym().as_str()
     }
 
     /// Switch `current_package` to the package a gather body was WRITTEN in
@@ -868,13 +901,13 @@ impl Interpreter {
     /// block allocator only when the block runs out.
     #[inline]
     pub(crate) fn take_invocation_id(&mut self) -> u64 {
-        if self.next_invocation_id == self.invocation_id_block_end {
+        if self.async_state.next_invocation_id == self.async_state.invocation_id_block_end {
             let base = crate::runtime::claim_invocation_id_block();
-            self.next_invocation_id = base;
-            self.invocation_id_block_end = base + crate::runtime::INVOCATION_ID_BLOCK;
+            self.async_state.next_invocation_id = base;
+            self.async_state.invocation_id_block_end = base + crate::runtime::INVOCATION_ID_BLOCK;
         }
-        let id = self.next_invocation_id;
-        self.next_invocation_id += 1;
+        let id = self.async_state.next_invocation_id;
+        self.async_state.next_invocation_id += 1;
         id
     }
 
@@ -914,9 +947,16 @@ impl Interpreter {
     pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
         debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
+        let _ = pkg;
+        self.set_current_package_sym(sym);
+    }
+
+    /// Switch `current_package` to the package `sym` names.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn set_current_package_sym(&mut self, sym: Symbol) {
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
-        *self.current_package.write().unwrap() = pkg;
     }
 
     /// Switch `current_package` to `sym`'s package, returning an RAII guard
@@ -963,10 +1003,9 @@ impl Interpreter {
     pub(crate) fn enter_package_guarded_sym(&mut self, sym: Symbol) -> CurrentPackageGuard {
         let saved_sym_id = self.current_package_sym().id();
         if sym.id() != saved_sym_id {
-            self.set_current_package_with_sym(sym.as_str().to_owned(), sym);
+            self.set_current_package_sym(sym);
         }
         CurrentPackageGuard {
-            pkg_lock: std::sync::Arc::clone(&self.current_package),
             pkg_sym: std::sync::Arc::clone(&self.current_package_sym),
             saved_sym_id,
         }
@@ -1112,7 +1151,7 @@ impl Interpreter {
     }
 
     /// Interior-mutable variant for the `&self` regex matcher: the package is
-    /// stored behind a RwLock, so a temporary switch (e.g. into a cross-package
+    /// an atomic symbol id, so a temporary switch (e.g. into a cross-package
     /// grammar subrule's defining package while parsing its body) does not need
     /// `&mut self`.
     ///
@@ -1123,49 +1162,29 @@ impl Interpreter {
     pub(crate) fn set_current_package_shared_sym(&self, sym: Symbol) {
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
-        *self.current_package.write().unwrap() = sym.as_str().to_owned();
     }
 }
 
 /// RAII guard returned by [`Interpreter::enter_package_guarded_sym`]. Restores
 /// `current_package` on drop, including on a Rust panic unwind.
 ///
-/// `current_package`/`current_package_sym` are already interior-mutable
-/// (`Arc<RwLock<String>>` / `Arc<AtomicU32>`, the same handles
-/// [`Interpreter::set_current_package_shared_sym`] uses), so this guard just
-/// holds cloned `Arc` handles and writes through them directly on drop -- no
+/// `current_package_sym` is interior-mutable (an `Arc<AtomicU32>`, the same
+/// handle [`Interpreter::set_current_package_shared_sym`] uses), so this guard
+/// just holds a cloned `Arc` and writes through it on drop -- no
 /// `&mut Interpreter` borrow is needed, so it stays fully safe (no raw
 /// pointers) even though it is typically constructed deep inside a large
 /// `&mut self` dispatch function and lives across many further `self.*`
-/// calls before being dropped.
-/// Only the saved package's `Symbol` id is held, not its text: the two are kept
-/// in lockstep by every writer (`set_current_package_with_sym` asserts it,
-/// `set_current_package_shared_sym` derives the text *from* the symbol, and the
-/// `Interpreter` clones that build a fresh pair — a thread snapshot, a regex
-/// scratch — copy both together, which [#7576](https://github.com/tokuhirom/mutsu/issues/7576)
-/// is the record of), so the string is recoverable from the id and does not
-/// need saving. That is what lets the guard be free to *construct*: it used to
-/// clone the package out from behind its `RwLock` on every guarded call.
+/// calls before being dropped. The package is a `Symbol` id, so saving and
+/// restoring it allocates nothing.
 pub(crate) struct CurrentPackageGuard {
-    pkg_lock: std::sync::Arc<std::sync::RwLock<String>>,
     pkg_sym: std::sync::Arc<std::sync::atomic::AtomicU32>,
     saved_sym_id: u32,
 }
 
 impl Drop for CurrentPackageGuard {
     fn drop(&mut self) {
-        // Restore only if something actually moved. The `swap` both reads and
-        // writes the mirror in one operation, so the guarded region ends with
-        // the saved package current either way; the `RwLock` write and the
-        // `String` allocation behind it are what the check is for, and they are
-        // skipped for every guard whose region never left its own package.
-        let previous = self
-            .pkg_sym
-            .swap(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
-        if previous != self.saved_sym_id {
-            *self.pkg_lock.write().unwrap() =
-                Symbol::from_id(self.saved_sym_id).as_str().to_owned();
-        }
+        self.pkg_sym
+            .store(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -1188,6 +1207,7 @@ mod call_site_file_tests {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id: 1,
+            callable_id: 0,
         }
     }
 

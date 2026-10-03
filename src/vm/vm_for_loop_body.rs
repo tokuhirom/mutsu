@@ -112,7 +112,7 @@ impl Interpreter {
     /// exit path, including the error returns, so a mask can never outlive the
     /// binding it describes.
     fn unmask_for_params(&mut self, names: &[String]) {
-        let mut redeclared = self.thread_redeclared_vars.borrow_mut();
+        let mut redeclared = self.threads.thread_redeclared_vars.borrow_mut();
         for name in names {
             redeclared.remove(name);
         }
@@ -204,13 +204,15 @@ impl Interpreter {
         // iteration's first body run starts AT that loop op — re-running the
         // ops before it would replay completed sibling loops / side effects.
         let this_code_id = code.ops.as_ptr() as usize;
-        let mut nested_entry: Option<usize> = self.gather_resume_body_ip.take().or_else(|| {
-            self.gather_for_loop_resume
-                .as_ref()
-                .filter(|s| s.code_id() == Some(this_code_id))
-                .and_then(|s| s.loop_ip())
-                .filter(|lip| *lip > body_start && *lip < loop_end)
-        });
+        let mut nested_entry: Option<usize> =
+            self.async_state.gather_resume_body_ip.take().or_else(|| {
+                self.async_state
+                    .gather_for_loop_resume
+                    .as_ref()
+                    .filter(|s| s.code_id() == Some(this_code_id))
+                    .and_then(|s| s.loop_ip())
+                    .filter(|lip| *lip > body_start && *lip < loop_end)
+            });
         let param_name = spec
             .param_idx
             .map(|idx| match code.constants[idx as usize].view() {
@@ -521,7 +523,8 @@ impl Interpreter {
             .chain(param_name.iter())
             .filter(|name| !name.starts_with('&') && name.as_str() != "_")
             .filter(|name| {
-                self.thread_redeclared_vars
+                self.threads
+                    .thread_redeclared_vars
                     .borrow_mut()
                     .insert((*name).clone())
             })
@@ -1491,10 +1494,14 @@ impl Interpreter {
                         // after the take.
                         let mut e = e;
                         let code_id = code.ops.as_ptr() as usize;
-                        let nested = if self.gather_for_loop_resume.as_ref().is_some_and(|st| {
-                            st.is_lexically_nested_in(code_id, body_start, loop_end)
-                        }) {
-                            self.gather_for_loop_resume.take()
+                        let nested = if self
+                            .async_state
+                            .gather_for_loop_resume
+                            .as_ref()
+                            .is_some_and(|st| {
+                                st.is_lexically_nested_in(code_id, body_start, loop_end)
+                            }) {
+                            self.async_state.gather_for_loop_resume.take()
                         } else {
                             None
                         };
@@ -1531,7 +1538,7 @@ impl Interpreter {
                         if let Some(slot) = resume_items.get_mut(idx) {
                             *slot = item;
                         }
-                        self.gather_for_loop_resume =
+                        self.async_state.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::List {
                                 items: resume_items,
                                 next_index: if nested.is_some() || resume_body_ip.is_some() {

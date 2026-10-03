@@ -281,8 +281,9 @@ scripts/dev stop <id>
 - **No new fields on `Interpreter`.** New state goes into the subsystem type it belongs to
   ([ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md); the subsystems
   are the `SUBSYSTEMS` rules in `scripts/interp-field-matrix.py`), and a value passed from a
-  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` is a
-  shrinking ratchet over `scripts/interp-fields-baseline.txt`.
+  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` fails on a
+  field not allowed by the frozen `scripts/interp-fields-baseline.txt` or `scripts/interp-fields.d/`;
+  extracting a subsystem allows its holder field by adding a new file in that directory.
 - **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
   (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
   closure is called on the interpreter you already have (`call_compiled_closure`,
@@ -405,6 +406,13 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    replays the branch's own commits. Above all never `git reset --soft origin/main` (or onto any ref you
    just fetched): that commits the branch's *old* tree on top of the newer `main`, and the merge
    silently reverts every PR merged in between (#10983 reverted three; #11005 restored them).
+   **Name the branch after the change**: `<type>/<issue>-<slug>` or `<type>/<slug>`, using the
+   PR-title types (`fix/11190-rakuast-callassign-initializer`, `perf/csv-map-closure`,
+   `eco/asn-grammar`). A harness-assigned name (`claude/<adjective>-<name>-<hash>`, `ccr-<hash>`)
+   says nothing in `git branch -r`, the claim comments or the PR list: before the first push,
+   create a descriptive branch from it (`git switch -c <type>/<slug>`) and work there — the
+   maintainer allows this in every session. Pick the name before claiming an issue, since the
+   `Claiming:` line carries it.
 2. Open the PR (`gh pr create` / `create_pull_request`) with a `type:` or `type(scope):` title —
    it drives the category label and release-note section. No version-bump label.
 3. Enable auto-merge with **merge**, not squash (`gh pr merge --auto --merge <n>` /
@@ -429,6 +437,27 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    `origin/main` — not when checks pass or auto-merge was requested.
 7. **Before going idle, decide the next slice** from `PLAN.md` / `TODO_roast/BLOCKERS.md` / the
    issue queue, or put a strategic fork to the user.
+
+**A new gate is watched after it lands.** A gate is a `make checks` ratchet, a ban, an
+oracle/consistency test or a new CI step. Every PR's CI ran against an older `main`, so a PR that
+adds or tightens a gate can pass while open PRs that break it are already queued for auto-merge;
+`main` then turns red only after they land. (A merge queue would catch this, but at ~100 merges a
+day it is not practical.) So:
+
+- The gate's author keeps watching `main` after the merge, for about an hour or until every PR that
+  was open at merge time has landed or been rebased. Use one `run_in_background` loop over `main`'s
+  CI runs.
+- If `main` goes red because of the new gate, **revert the gate PR at once**, then re-land it with
+  what it was missing. Do not fix forward, and do not let the open PRs each fix it: a single break
+  fixed in N PRs oscillates. On 2026-10-03 the Duration/Instant `.rand` native rows went from 3
+  copies to 0 to 8 open PRs re-adding them.
+- This is the one exception to "Trust `main`" above. If your branch fails on a gate it did not
+  touch and `main` is red the same way, search the open PRs (`gh pr list` + `gh pr diff | grep`)
+  and the issues for the fix first, and rebase onto it once it lands. Do not add another copy of
+  the fix to your PR.
+- Design a ratchet so that open PRs do not conflict on it. A drop must not require a re-cut, and an
+  addition must arrive as a new file (the `scripts/interp-fields.d/` pattern), never as an edit to
+  one shared count line, which every parallel PR rewrites.
 
 Releases are a version-bump PR plus a `vX.Y.Z` tag pushed on its merge commit — see the
 `cut-release` skill; **push a `v*` tag only there, when the user asked for a release**. All four

@@ -4,6 +4,19 @@
 use super::{ArrayData, Value};
 
 impl ArrayData {
+    /// The value a missing slot is filled with when the array grows past its
+    /// end: the `is default(...)` value, else a native element type's zero,
+    /// else the declared element type object (`Any` when untyped).
+    // Cost: O(1).
+    pub(crate) fn hole_value(&self) -> Value {
+        if let Some(d) = self.default.as_ref() {
+            return (**d).clone();
+        }
+        let ty = self.value_type.as_deref().unwrap_or("Any");
+        crate::native_types::native_zero_value(ty)
+            .unwrap_or_else(|| Value::Package(crate::symbol::Symbol::intern(ty)))
+    }
+
     /// The live elements as a slice (what `Vec::as_slice` answered before
     /// `Deref` moved to `[Value]`).
     pub(crate) fn as_slice(&self) -> &[Value] {

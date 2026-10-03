@@ -298,6 +298,17 @@ impl Interpreter {
     /// This is the **only** entry to the mutable native handlers: having one place
     /// own the snapshot-dispatch-commit triple is what keeps the lost update from
     /// being reintroduced at a fifth call site.
+    /// Whether the native `class_name.method` can block until another Raku
+    /// thread runs (`Thread.finish` joins it). Such a call must not hold the
+    /// receiver's attribute read lock: the other thread may write that very
+    /// object (`$*THREAD does R` inside a thread whose `.finish` the caller is
+    /// waiting on), and its write lock would wait on our read lock forever.
+    /// Callers pass a snapshot of the attributes instead.
+    // Cost: O(1).
+    pub(crate) fn native_method_blocks_on_other_thread(class_name: &str, method: &str) -> bool {
+        class_name == "Thread" && method == "finish"
+    }
+
     pub(super) fn call_native_instance_method_mut_in_place(
         &mut self,
         attributes: &crate::value::InstanceAttrs,
@@ -438,6 +449,16 @@ impl Interpreter {
         // parameter is never at risk here.
         let stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let args = stripped.unwrap_or(args);
+        // The invocant is rebuilt from its attributes only for a wrapped
+        // method, and without a DESTROY of its own: dropping a second
+        // `IO::Handle` instance closed the shared handle.
+        if let Some(chain) = self.builtin_method_wrap_chain(class_name, method) {
+            let invocant = Value::make_instance_without_destroy(
+                Symbol::intern(class_name),
+                attributes.clone(),
+            );
+            return self.run_builtin_method_wrap(class_name, &invocant, method, &args, &chain);
+        }
         let dispatch_class = if matches!(
             class_name,
             "IO::Path"

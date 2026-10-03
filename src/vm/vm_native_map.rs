@@ -147,13 +147,13 @@ impl Interpreter {
                 } else {
                     None
                 };
-                self.rw_map_topic_capture = None;
+                self.async_state.rw_map_topic_capture = None;
                 let v = match self.vm_call_map_block(&block, chunk, explicit_topic, true) {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
                 // Capture the block's final `$_` back into the source element.
-                if let Some(mutated) = self.rw_map_topic_capture.take() {
+                if let Some(mutated) = self.async_state.rw_map_topic_capture.take() {
                     source_after[i] = mutated;
                 }
                 v

@@ -544,6 +544,12 @@ impl Interpreter {
             let args = Self::split_regex_arg_list(&trimmed[open + 1..trimmed.len() - 1]);
             return (name, args);
         }
+        // `<value:sym<number>>` names one candidate of a proto rule: the
+        // `:sym<…>` is part of the rule's long name, not a `<name: args>`
+        // argument colon.
+        if Self::is_sym_long_name(trimmed) {
+            return (trimmed.to_string(), Vec::new());
+        }
         if let Some(colon_idx) = Self::find_top_level_call_colon(trimmed) {
             // Don't split on colon that's part of a Unicode property prefix
             // (e.g., ":Letter", ":!Letter", "-:Letter"), not a method call colon.
@@ -600,6 +606,21 @@ impl Interpreter {
                     .is_some_and(|c| c.is_alphabetic() || c == '_')
                     && !rest.contains(['(', ':', ' '])
             })
+    }
+
+    /// Whether `text` is a proto candidate's long name, `ident:sym<…>` (or
+    /// `ident:sym«…»`), as written in a `<value:sym<number>>` subrule call.
+    // Cost: O(n), n = text length.
+    pub(super) fn is_sym_long_name(text: &str) -> bool {
+        let Some((head, adverb)) = text.split_once(':') else {
+            return false;
+        };
+        !head.is_empty()
+            && head
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            && ((adverb.starts_with("sym<") && adverb.ends_with('>'))
+                || (adverb.starts_with("sym«") && adverb.ends_with('»')))
     }
 
     fn parse_named_regex_lookup_spec_uncached(name: &str) -> NamedRegexLookupSpec {

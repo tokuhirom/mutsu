@@ -101,13 +101,13 @@ impl Interpreter {
         while out.len() < needed && *pos < items.len() {
             let end = (*pos + (needed - out.len())).min(items.len());
             let depth = crate::runtime::loop_handler_depth::loop_handler_depth();
-            self.map_grep_last_depth = None;
+            self.async_state.map_grep_last_depth = None;
             let chunk = self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, end)?;
             *pos = end;
             out.extend(chunk);
             // The loop the chunk ran in sat one handler level below us; a
             // `last` a loop nested inside the callback caught sits deeper.
-            if self.map_grep_last_depth.take() == Some(depth + 1) {
+            if self.async_state.map_grep_last_depth.take() == Some(depth + 1) {
                 return Ok((out, true));
             }
         }

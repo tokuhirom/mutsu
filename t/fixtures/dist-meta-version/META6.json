@@ -1,0 +1,8 @@
+{
+    "name": "DistMetaVersion",
+    "version": "0.2.6",
+    "author": "mutsu",
+    "provides": {
+        "DistMetaVersion": "lib/DistMetaVersion.rakumod"
+    }
+}

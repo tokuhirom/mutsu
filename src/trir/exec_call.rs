@@ -358,14 +358,32 @@ impl Interpreter {
     /// `is rw`, as a bitmask — the arguments a generic call must hand over as
     /// containers so the callee's write reaches this frame's slot.
     ///
-    /// `0` for everything this cannot resolve to a single routine: a builtin,
-    /// an interpreter hook, an unresolved multi. That is the right default —
-    /// those take values, and handing one a container is what broke
-    /// `nativecast` and every `proto` candidate's type check.
-    fn trir_callee_rw_mask(&self, name: &str) -> u64 {
-        let Some(def) = self.resolve_function(name) else {
-            return 0;
-        };
+    /// `0` for everything this cannot resolve to a routine: a builtin or an
+    /// interpreter hook. That is the right default — those take values, and
+    /// handing one a container is what broke `nativecast` and every `proto`
+    /// candidate's type check. A multi contributes the positions where any
+    /// of its candidates declares `is rw`: the dispatcher only admits an
+    /// `is rw` candidate for a writable argument, so a value there would rule
+    /// that candidate out (`multi k($a, $p is rw)` called as `k($x, $r)`).
+    // Cost: O(c·p) amortized, c = candidates (memoized per registry
+    // generation), p = their positional parameters.
+    fn trir_callee_rw_mask(&mut self, name: &str) -> u64 {
+        let mut mask = self
+            .resolve_function(name)
+            .map_or(0, |def| Self::rw_positional_mask(&def));
+        let sym = crate::symbol::Symbol::intern(name);
+        for cand in self
+            .resolve_all_multi_candidates_cached_sym(name, sym)
+            .iter()
+        {
+            mask |= Self::rw_positional_mask(cand);
+        }
+        mask
+    }
+
+    /// The `is rw` bits of `def`'s first 64 positional parameters.
+    // Cost: O(p), p = the routine's parameters.
+    fn rw_positional_mask(def: &crate::ast::FunctionDef) -> u64 {
         let mut mask = 0u64;
         let mut positional = 0usize;
         for pd in &def.param_defs {

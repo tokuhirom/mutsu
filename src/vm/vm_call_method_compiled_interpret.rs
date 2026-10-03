@@ -420,9 +420,13 @@ impl Interpreter {
             };
             if let Some(class_sym) = class_sym {
                 let cn = class_sym.as_str();
-                let resolved = loan_env!(self, resolve_private_method_for_vm(cn, method, &args));
+                let resolved = loan_env!(
+                    self,
+                    resolve_private_method_for_vm_sym(class_sym, method_sym, &args)
+                );
                 if let Some((owner_class, method_def)) = resolved {
-                    let caller_allowed = self.can_fast_dispatch_private_method_vm(&owner_class);
+                    let caller_allowed =
+                        self.can_fast_dispatch_private_method_vm(owner_class.as_str());
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                         let cc = cc.clone();
                         let target_id = match target.view() {
@@ -449,7 +453,7 @@ impl Interpreter {
                         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
                         let method_result = self.call_compiled_method(
                             cn,
-                            crate::symbol::Symbol::intern(&owner_class),
+                            owner_class,
                             method_sym,
                             &method_def,
                             &cc,
@@ -473,7 +477,7 @@ impl Interpreter {
                             if result.is_proxy_value()
                                 && !self.in_lvalue_assignment
                                 && !Self::method_is_rw_capable(&method_def)
-                                && let ValueView::Proxy { fetcher, .. } = result.view()
+                                && matches!(result.view(), ValueView::Proxy { .. })
                             {
                                 // Without a `:=` adjustment the returned map is
                                 // absent — re-snapshot the live cell for the
@@ -485,7 +489,7 @@ impl Interpreter {
                                 };
                                 return loan_env!(
                                     self,
-                                    proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
+                                    proxy_fetch(&result, None, cn, &proxy_attrs, id)
                                 );
                             }
                         }

@@ -1367,6 +1367,17 @@ impl Interpreter {
         None
     }
 
+    /// Whether `name` is a `PROCESS::`-qualified variable (`$PROCESS::OUT`,
+    /// `@PROCESS::x`, or the sigilless `PROCESS::x`).
+    // Cost: O(1).
+    fn is_process_qualified(name: &str) -> bool {
+        let rest = match name.as_bytes().first() {
+            Some(b'$' | b'@' | b'%' | b'&') => &name[1..],
+            _ => name,
+        };
+        rest.starts_with("PROCESS::")
+    }
+
     fn main_qualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             if let Some(rest) = name.strip_prefix(sigil)
@@ -1435,6 +1446,15 @@ impl Interpreter {
     /// Every branch below the direct env probe is a miss-path alias cascade
     /// building its own fresh name, so only that probe takes the symbol.
     pub(crate) fn get_env_with_main_alias_sym(&self, name: &str, sym: Symbol) -> Option<Value> {
+        // A process-level dynamic written at run time (`$PROCESS::OUT = ...`,
+        // possibly by another thread) lives only in the process stash, and a
+        // read reaching the process binding must see it (ADR-11318). Asked
+        // first: a dynamic is never a compunit lexical, but a mainline named
+        // sub that mentions `$*OUT` can leave a stale copy in the unit-lexical
+        // store below. One relaxed load when nothing was ever published.
+        if let Some(v) = self.process_dynamic_read(name) {
+            return Some(v);
+        }
         // A file-scope lexical of the running routine's own compunit is NOT in
         // `env` — that key belongs to whatever scope loaded the module. This is
         // the by-name chokepoint every remaining reader goes through (a mutating
@@ -1733,6 +1753,23 @@ impl Interpreter {
         if self.unit_scope_lexical_write(name, &value) {
             return;
         }
+        // `$PROCESS::OUT` maps to the sigilless `*OUT`: a write to the process
+        // stash, which every thread reads — including one already running
+        // (ADR-11318, #11318). It is mirrored into this env below (the pseudo-
+        // package branch) only when the binding here is the process one: a
+        // `my $*OUT` in scope keeps its own value.
+        if Self::is_process_qualified(name)
+            && let Some(key) = Self::pseudo_package_unqualified_name(name)
+            && !self.publish_process_dynamic(&key, value.clone())
+        {
+            return;
+        }
+        // Likewise a write to a dynamic whose binding is the process one (no
+        // `my $*X` in scope) is published. A declaration (`fresh_binding`) is
+        // a new lexical binding, never the process one.
+        if !fresh_binding {
+            self.publish_process_dynamic_write(name, &value);
+        }
         // Write through an existing ContainerRef in env, mirroring the generic
         // check in the `SetGlobal` opcode handler (`vm_exec_dispatch.rs`) —
         // this helper is ALSO reached by non-opcode-dispatch writers (an
@@ -1814,16 +1851,8 @@ impl Interpreter {
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
-            // `$PROCESS::OUT` maps to the sigilless `*OUT`, which is a twigil
-            // alias of `$*OUT` (both spellings are seeded together at init —
-            // see `BASE_TIER_DYNAMICS`). Mirror the write to the other
-            // spelling exactly as the direct-twigil-write branch above does,
-            // or the two fall out of sync: `$PROCESS::OUT = $capture` would
-            // update only `*OUT`, leaving `$*OUT` (what `print`/`say`'s
-            // `write_to_named_handle("$*OUT", ...)` reads to find the output
-            // destination) stale at the original handle, so a captured
-            // `print`/`say` would keep writing to the real stdout instead of
-            // the reassigned handle.
+            // (`$PROCESS::X` was published to the process stash at the top
+            // of this function; this is the env mirror.)
             if let Some(alias) = Self::twigil_dynamic_alias(&bare) {
                 self.env_mut().insert(alias, value.clone());
             }
@@ -2115,10 +2144,10 @@ impl Interpreter {
                 continue;
             }
             let publish = code.needs_env_sync.get(i).copied().unwrap_or(true);
-            let saved_suppress = self.suppress_shared_publish;
-            self.suppress_shared_publish = saved_suppress || !publish;
+            let saved_suppress = self.threads.suppress_shared_publish;
+            self.threads.suppress_shared_publish = saved_suppress || !publish;
             self.set_env_with_main_alias(name, self.locals[i].clone());
-            self.suppress_shared_publish = saved_suppress;
+            self.threads.suppress_shared_publish = saved_suppress;
         }
     }
 
@@ -2169,8 +2198,8 @@ impl Interpreter {
         code: &CompiledCode,
         names: &[String],
     ) {
-        let saved_suppress = self.suppress_shared_publish;
-        self.suppress_shared_publish = true;
+        let saved_suppress = self.threads.suppress_shared_publish;
+        self.threads.suppress_shared_publish = true;
         for name in names {
             let Some(sym) = crate::symbol::Symbol::lookup(name) else {
                 continue;
@@ -2179,7 +2208,7 @@ impl Interpreter {
                 self.sync_regex_interpolation_slot(code, slot as usize);
             }
         }
-        self.suppress_shared_publish = saved_suppress;
+        self.threads.suppress_shared_publish = saved_suppress;
     }
 
     /// Publish local slot `i` into env for a by-name reader in the regex
@@ -2685,7 +2714,7 @@ impl Interpreter {
             if spliced {
                 self.record_caller_var_writeback(&name);
             }
-            if self.shared_vars_active {
+            if self.threads.shared_vars_active {
                 loan_env!(self, set_shared_var(&name, container.clone()));
             }
         }

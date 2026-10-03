@@ -18,7 +18,7 @@
 //! routine for its cold path would leave the hot loop untyped too.
 
 use super::{Binding, TrirCompiler};
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::trir::{TrArg, TrCallee, TrInnerCall, TrKind, TrLink, TrOp};
 
@@ -172,6 +172,20 @@ impl TrirCompiler<'_> {
             {
                 self.compile_unary_sink(op, n)?;
                 return Some(arg);
+            }
+            // `f(my $pos = EXPR)` — the declaration's value is the new
+            // variable, so it binds like `f($pos)` once declared (BSON::Simple's
+            // `bson-decode($bson, my $pos = 0)` into an `is rw` parameter).
+            if let Expr::DoStmt(stmt) = a
+                && let Stmt::VarDecl { name, .. } = stmt.as_ref()
+                && !name.starts_with(['@', '%', '&'])
+            {
+                self.compile_var_decl(stmt, false)?;
+                if let Some(arg) = self.slot_arg(name) {
+                    return Some(arg);
+                }
+                self.note_decline(|| format!("the declared {name} passed by variable"));
+                return None;
             }
             // `f($pos = EXPR)` — same, after the assignment.
             if let Expr::AssignExpr {

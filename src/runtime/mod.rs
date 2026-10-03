@@ -647,14 +647,18 @@ mod class;
 mod class_attr_table;
 mod class_dispatch;
 mod class_introspection;
+#[cfg(unix)]
+pub(crate) mod cloexec_pipe;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 pub(crate) mod array_type_trait;
+mod carray_repr;
 mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
 pub(crate) mod native_decl;
+pub(crate) mod native_pos_ref;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
 mod nqp_create;
@@ -683,6 +687,9 @@ pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
 pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
+mod attribute_core_traits;
+mod builtin_method_wrap;
+mod container_store;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
@@ -762,6 +769,7 @@ mod methods_classhow;
 mod methods_classhow_attribute;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
+mod methods_classhow_grammar_tokens;
 mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
@@ -790,9 +798,10 @@ mod methods_grammar_deferred_repeats;
 mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
-mod methods_instance_ops;
+pub(crate) mod methods_instance_ops;
 pub(crate) mod module_merge;
 mod pragma_monkey_eval;
+pub(crate) mod process_stash;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
@@ -879,13 +888,16 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 // Native type-name predicates live below the parser (issue #10779).
 pub(crate) use crate::native_types;
+pub(crate) mod async_state;
 mod lazy_seq_raku;
 pub(crate) mod nativecall;
 #[cfg(feature = "libffi")]
 pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
+pub(crate) mod nativecall_info;
 pub(crate) mod nativecall_manage;
+pub(crate) mod nativecall_nqp;
 pub(crate) mod nqp_stat;
 mod numeric_bridge_probe;
 pub(crate) mod once_store;
@@ -971,6 +983,7 @@ mod routine_candidate_defs;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
+mod run_dist_meta6;
 mod run_main;
 mod run_modules;
 mod run_modules_bound_repo;
@@ -1010,10 +1023,12 @@ mod sprintf_hexfloat;
 mod sprintf_validate;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
+pub(crate) mod thread_sharing;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
 mod supply_emit_frame;
+pub(crate) mod supply_tap_stream;
 pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_transform;
@@ -1063,7 +1078,9 @@ pub(crate) use crate::value::regex_caps::{NamedCaptureMap, NamedSlot};
 pub(crate) use utils::*;
 
 // Re-export thread utility functions for VM access
-pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thread};
+pub(crate) use methods_collection_ops::{
+    current_mutsu_thread_id, current_thread_object, is_initial_thread,
+};
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
 use self::unicode::check_unicode_property;
@@ -1561,6 +1578,19 @@ pub(crate) struct NativeCtorPlan {
     /// call falls back to the default constructor, which the native builder
     /// then serves exactly as for an `eligible` class.
     pub(crate) eligible_when_user_new_declines: bool,
+    /// Memo of `user_new_declines` for a call with NO arguments, whose answer
+    /// is a function of the class shape alone -- exactly what this plan is
+    /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
+    /// mutation and generation bump), so the memo cannot outlive it.
+    pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Per attribute (same order as `class_attrs`): the value its seed
+    /// default (`default_is_seed`, the declared type's type object for a
+    /// `has Str $.x` with no initializer) evaluated to, once it has evaluated
+    /// to a type object that passed the attribute's type check. A type name
+    /// resolves the same way in the declaring scope every time and a type
+    /// object is immutable, so the memo is exact for as long as this plan
+    /// lives (it is dropped at every class-shape mutation).
+    pub(crate) seed_defaults: Box<[std::sync::OnceLock<Value>]>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
@@ -1667,6 +1697,27 @@ pub(crate) struct NativeCtorPlan {
     /// the MRO for them on every construction cost ~400 instructions of each
     /// `.new` (#9291), almost always to find none.
     pub(crate) alias_attributes: Arc<[String]>,
+}
+
+impl NativeCtorPlan {
+    /// Whether constructing the class evaluates no declaration expression
+    /// any more: every initializer is absent, a literal, or a seed default
+    /// already memoized in `seed_defaults`, and no attribute has a `where`.
+    /// Such a construction neither reads nor temporarily rebinds the caller's
+    /// env (see `try_ctor_lane`).
+    // Cost: O(a), a = attributes.
+    pub(crate) fn evaluates_no_decl_expr(&self) -> bool {
+        self.class_attrs.iter().enumerate().all(|(i, a)| {
+            a.where_constraint.is_none()
+                && match &a.default {
+                    None | Some(crate::opcode::DeclTraitArg::Literal(_)) => true,
+                    Some(_) => {
+                        a.default_is_seed
+                            && self.seed_defaults.get(i).is_some_and(|c| c.get().is_some())
+                    }
+                }
+        })
+    }
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class
@@ -1950,6 +2001,12 @@ pub(crate) struct RoutineFrame {
     /// from the next, which is what a per-call anonymous state (`$++` inside a
     /// block inside a routine) keys on — see `Interpreter::anon_state_key`.
     pub invocation_id: u64,
+    /// The `__mutsu_callable_id` a non-local `return` stamps when it targets
+    /// this frame, for a frame whose id is not its routine's registration id:
+    /// a method invocation binds a fresh id per call. `0` = none recorded (the
+    /// registration id identifies the frame). Read by
+    /// `Interpreter::return_target_is_live`.
+    pub callable_id: u64,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.
@@ -2431,18 +2488,11 @@ pub struct Interpreter {
     pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
-    /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
-    /// can read/write it through its own handle (mirroring `io_handles` /
-    /// `registry`) rather than bouncing through `self.interpreter`. Snapshot-cloned
-    /// per thread (see `clone_for_thread`). Accessed only via
-    /// `current_package()` / `set_current_package()`, which read-clone / write the
-    /// lock and never hold the guard across user-code re-entry.
-    current_package: Arc<RwLock<String>>,
-    /// Interned-symbol mirror of `current_package`, kept in lockstep by the two
-    /// setters. Reading the `RwLock<String>` clones a `String` (one malloc), which
-    /// is far too expensive for per-call use; the name-keyed call caches need the
-    /// package identity on every hit to stay package-scoped, so they read this
-    /// relaxed atomic instead.
+    /// declaration, held as its interned `Symbol` id. A relaxed atomic (not a
+    /// `Cell`) so the `&self` regex matcher can switch it
+    /// (`set_current_package_shared_sym`); snapshot-copied per thread (see
+    /// `clone_for_thread`). It used to be an `Arc<RwLock<String>>` with this
+    /// atomic as a mirror, which made every package switch and read allocate.
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
@@ -2676,8 +2726,6 @@ pub struct Interpreter {
     /// (see that module's doc comment for why a bare `Cell` field is not
     /// enough).
     pub(crate) when_matched: Box<Cell<bool>>,
-    gather_items: Vec<Vec<Value>>,
-    gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,
     /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
@@ -3004,17 +3052,6 @@ pub struct Interpreter {
     /// TODO: entries are never reclaimed; a custom read handle is rare and the
     /// buffer is bounded by one `READ` call's result.
     pub(crate) user_io_read_buffers: HashMap<u64, Vec<u8>>,
-    /// Lock ids this caller chain has entered through
-    /// `Lock::Async.protect-or-queue-on-recursion` (see
-    /// `runtime::lock_async_recursion`). A spawned thread starts with an empty
-    /// stack, which is precisely the "the lock is held by something outside the
-    /// caller chain" case that method distinguishes.
-    lock_async_recursion: Vec<u64>,
-    /// Blocks queued by a *recursive* `protect-or-queue-on-recursion` call,
-    /// drained by the outermost such frame once it has released the lock.
-    /// Held here (rather than in a thread-local) so the queued `Value`s are
-    /// enumerated by `visit_roots` while they wait.
-    lock_async_deferred: Vec<(u64, Value, crate::value::SharedPromise)>,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire
@@ -3319,26 +3356,30 @@ pub struct Interpreter {
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
-    /// Whether the EXPLICIT `use fatal` pragma is lexically active for the
-    /// call site currently executing (#9521) — separate from `fatal_mode`,
-    /// which ALSO carries `try`'s own implicit, genuinely dynamic-scope
-    /// "fatal" marking (`vm_try_catch_ops.rs`) used by a deferred `.map`/
-    /// `.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
-    /// (`resolution_map_grep.rs`, `vm_closure_build.rs`) to decide whether a
-    /// later force explodes hard. `use fatal` itself is lexical: a routine
-    /// declared outside a `use fatal` block must not have its own
-    /// `explode_if_fatal_failure_in_*` checks fire merely because its caller
-    /// is dynamically inside one, while `try`'s marking legitimately DOES
-    /// reach into a called routine's own deferred-Seq construction
-    /// (`t/collections/transform/map-callback-runs-at-consumption.t`,
-    /// verified against `raku`). Driven by exactly the same statements that
-    /// set `fatal_mode` for `use fatal`/`no fatal` and import-scope save/
-    /// restore (`save_pragma_state`/`restore_pragma_state`,
-    /// `push_import_scope`/`pop_import_scope`) — but, unlike `fatal_mode`,
-    /// ALSO reset at every routine-call entry to the callee's own
-    /// `CompiledFunction::captured_fatal_mode` (baked at compile time from
-    /// `Compiler::fatal_pragma_active`), and never touched by `try`'s own
-    /// implicit marking or by the deferred-`Seq`-consumption pull.
+    /// Whether `use fatal` — explicit, or implied by an enclosing `try` body —
+    /// is lexically active for the code currently executing (#9521, #11391).
+    /// Every Failure explosion check reads this channel: the store-time
+    /// checks (`SetLocal`/`SetGlobal`/`AssignExpr`/`SinkPopAssign`), the
+    /// sunk-list check, and the `explode_if_fatal_failure_in_*` composite/
+    /// call-argument checks. It is separate from `fatal_mode`, which also
+    /// carries `try`'s marking but with genuinely DYNAMIC scope: a deferred
+    /// `.map`/`.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
+    /// (`resolution_map_grep.rs`) reads `fatal_mode`, because `try`'s marking
+    /// legitimately reaches into a called routine's own deferred-Seq
+    /// construction (`t/collections/transform/map-callback-runs-at-consumption.t`,
+    /// verified against `raku`). An explosion, by contrast, is lexical: a
+    /// routine declared outside a `use fatal` block and called from inside
+    /// one — or from inside a `try` — keeps a Failure it stores or sinks soft
+    /// (`t/exceptions/try-fatal-is-lexical.t`). Driven by the same statements
+    /// that set `fatal_mode` for `use fatal`/`no fatal`, by import-scope
+    /// save/restore (`save_pragma_state`/`restore_pragma_state`,
+    /// `push_import_scope`/`pop_import_scope`) and by a genuine `try`
+    /// (`vm_try_catch_ops.rs`), and ALSO reset at every routine-call entry to
+    /// the callee's own `CompiledFunction::captured_fatal_mode` (baked at
+    /// compile time from `Compiler::fatal_pragma_active`) or, for a closure,
+    /// to the value captured from this field when the closure was built
+    /// (`vm_closure_build.rs`). The deferred-`Seq`-consumption pull never
+    /// touches it.
     pub(crate) lexical_fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
     /// `eval-dies-ok` construct to run their code string.
@@ -3383,23 +3424,17 @@ pub struct Interpreter {
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
     our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
-    /// Runtime-installed `PROCESS::` dynamics (`PROCESS::<$name> := value`,
-    /// the `Rakudo::Internals.REGISTER-DYNAMIC` idiom), keyed by the same
-    /// dynamic-var env key `store_process_dynamic` writes (`*name`/`@*name`/
-    /// `%*name`).
+    /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
+    /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
+    /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
     ///
-    /// `self.env_mut().insert(...)` alone is not durable: when the
-    /// `PROCESS::<...> := ...` write executes inside any nested block/
-    /// module/sub frame (a `Env::scoped_child`), that frame's overlay is
-    /// dropped the moment the frame exits, and a later `$*name` read from an
-    /// unrelated frame throws `X::Dynamic::NotFound` even though real `raku`
-    /// installs the default globally regardless of nesting depth (#8682).
-    /// This store — plain on `Interpreter`, not part of any `Env` chain, so
-    /// it outlives every frame — is what such a later read falls back to
-    /// (`GetGlobal`'s final fallback chain) and what a same-named later
-    /// `$*name = ...` write from any frame keeps in sync, mirroring
-    /// `our_vars`'s block-scope-survival role for `our` variables.
-    process_dynamics: rustc_hash::FxHashMap<String, Value>,
+    /// One store for the whole lineage: thread clones share it, so a write on
+    /// one thread is seen by a thread that was already running (ADR-11318,
+    /// #11318). It is also what makes such a write durable across frames: it
+    /// never lands in a frame's env overlay, which a nested block/sub frame
+    /// drops on exit (#8682). Reads reach it through
+    /// [`Interpreter::resolve_process_dynamic`].
+    process_dynamics: process_stash::ProcessStash,
     /// The NQP/MoarVM HLL symbol table (`nqp::bindhllsym`/`nqp::gethllsym`),
     /// keyed by `(hll, name)`. Real MoarVM keeps one such table per process,
     /// shared by every HLL; mutsu instead seeds it fresh on every
@@ -3541,89 +3576,11 @@ pub struct Interpreter {
     /// has to visit what was inserted since: O(new keys) per spawn instead of
     /// O(every state entry the program ever created) (#9504).
     state_vars_unmigrated: Vec<(Symbol, Option<u64>)>,
-    /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
-    /// cross-thread shared store is active. A re-declaration is a fresh
-    /// binding shadowing the captured outer lexical, so subsequent writes to
-    /// the name must stay thread-local: `set_shared_var_sym` skips the shared
-    /// write and `sync_shared_vars_to_env` skips the pull for these names.
-    /// Reset to empty in `clone_for_thread` (a child thread captures the
-    /// parent's *current* bindings). Only populated while
-    /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
-    /// Boxed and wrapped in `RefCell` (not a plain `HashSet<String>` field) so
-    /// `ThreadParamMaskGuard` (`vm::vm_call_state_guard`) can hold a raw
-    /// pointer into this field's OWN heap allocation -- disjoint from
-    /// `Interpreter`'s own allocation -- and mutate it on `Drop` (including
-    /// during a Rust panic unwind) without ever needing a reference to
-    /// `Interpreter` itself. See that module's doc comment ("v3") for why a
-    /// pointer taken directly into a field embedded in `Interpreter`'s own
-    /// struct is unsound. `RefCell` (not `Cell`, unlike `state_scope_id`/
-    /// `when_matched`) because `HashSet` isn't `Copy`, so `Cell`'s get/set API
-    /// is awkward for it; `RefCell` gives the same disjoint-allocation
-    /// property while keeping ordinary `insert`/`remove`/`contains` methods
-    /// available through `borrow`/`borrow_mut`.
-    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
-    /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
-    /// *in flight*: the `my` has run but its initializer has not stored a value
-    /// yet, so neither the slot nor `env` holds the new binding — both still
-    /// carry the shadowed OUTER value.
-    ///
-    /// `clone_for_thread` normally drops a re-declaration mask because it
-    /// force-seeds the name's *current* value into the child lineage first. That
-    /// premise fails for a name in this set: a spawn that happens **inside the
-    /// initializer** (`my $tap = Supply.tap(...)`, whose `.tap` starts a worker)
-    /// would seed the outer binding's value and then unmask the name, so the
-    /// next `sync_shared_vars_to_env` pulls that stale value back over the
-    /// binding the initializer is about to create. Keeping the mask for the
-    /// in-flight window closes that hole; the store is republished normally once
-    /// the initializer's value lands. Empty for single-threaded programs.
-    pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
     /// Cells a hoisted named-sub registration seeded for a free variable whose
     /// declaration has not run yet (#9911, ADR-0024's textual-order edge); the
     /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
     /// Empty unless a sub is called before a variable it reads is declared.
     pub(crate) hoist_pending_cells: Vec<crate::vm::HoistPendingCell>,
-    /// Plain-lexical `@`/`%` names this frame's spawns put on the bare-name
-    /// cross-thread lane **only because every spawn publishes every live
-    /// container**, not because any spawned block actually names them
-    /// (ADR-0039 §8.6).
-    ///
-    /// Such an entry is needed only for as long as a worker might reach the
-    /// container *indirectly* — through a routine the block calls rather than
-    /// names. Once the next cross-thread drain (`sync_shared_vars_to_env`) has
-    /// merged whatever the workers did back into `env`, it has served its whole
-    /// purpose, and keeping it is what let a callee's own `my @items` outlive
-    /// its frame in a process-visible, bare-name-keyed store and hijack an
-    /// unrelated caller's same-named binding. So the drain withdraws them.
-    ///
-    /// A name a later spawn's block DOES reference is removed from this set at
-    /// that spawn: it is then a genuinely shared container and keeps the lane.
-    /// Empty for single-threaded programs.
-    pub(crate) transient_lane_containers: std::collections::HashSet<String>,
-    /// Bare scalar names currently masked in [`Self::thread_redeclared_vars`]
-    /// because of a **parameter binding** (`mask_thread_redeclared_params`),
-    /// not a `my` declaration. `clone_for_thread_excluding` must treat the two
-    /// differently: a `my` re-declaration's mask means "this spawn should see
-    /// MY new value as authoritative for the rest of the block", so it force-
-    /// `declare`s the value into the shared lineage. A parameter's shadow is
-    /// scoped to exactly this call and must never overwrite an unrelated
-    /// caller's live entry for the same bare name — it should always take the
-    /// `seed_if_absent` (no-op-if-already-visible) branch instead, even for a
-    /// nested spawn *inside this call's own body*.
-    ///
-    /// `thread_decl_in_flight` looked like the same "always seed_if_absent"
-    /// signal, but it is unsuitable here: `exec_set_local_op` clears an entry
-    /// from it as soon as ANY `SetLocal` targets a same-named slot — which the
-    /// call body's own bytecode does routinely (e.g. a coercion or a
-    /// re-assignment of the parameter), silently un-suppressing the force-
-    /// `declare` behavior partway through the call before any nested spawn.
-    /// A dedicated set, touched only by
-    /// [`mask_thread_redeclared_params`](Self::mask_thread_redeclared_params) /
-    /// `unmask_thread_redeclared_params`,
-    /// has no such interference. Empty for single-threaded programs.
-    /// Same `Box<RefCell<...>>` wrapping and same reason as
-    /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
-    /// stable, `Interpreter`-disjoint pointer into this field too.
-    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
@@ -3647,25 +3604,6 @@ pub struct Interpreter {
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
     pub(crate) param_bound_aggregates: param_bound_aggregates::ParamBoundAggregates,
-    /// Set while an *incidental* locals -> env mirror is running: the regex
-    /// interpolation pre-sync before a `~~`. It exists purely so a name-based
-    /// reader in THIS interpreter can observe the frame's live slots through
-    /// `env`. (The I/O ops' own pre-sync was dropped by #9169: a `$*OUT`
-    /// override or a user `.gist` reads its free variables the way any method
-    /// body does, through the per-store mirror.)
-    ///
-    /// `set_env_with_main_alias` does double duty: it writes `env` AND publishes
-    /// to the cross-thread shared store. Publishing from such a mirror is wrong,
-    /// because the store is keyed by BARE NAME while the mirror walks *whichever
-    /// frame happens to be printing*: a callee's parameter `$url` overwrote the
-    /// lane belonging to the caller's own `my $url`, and the caller's next
-    /// `sync_shared_vars_to_env` pulled it back — `Cro::HTTP::Client.get("$url/")`
-    /// grew a `/` on the caller's URL on every request, so the third server on a
-    /// port answered 404.
-    ///
-    /// Frame *teardown* (`sync_env_from_locals`) is deliberately NOT suppressed;
-    /// see the comment there.
-    pub(crate) suppress_shared_publish: bool,
     /// Union of every executed `CompiledCode::type_body_written_lexicals`:
     /// lexicals written by a registered class/role method body. These keep the
     /// name-keyed `shared_vars` lane even when a spawned block also captures
@@ -3756,97 +3694,6 @@ pub struct Interpreter {
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
     /// `let`/`temp` save stack; see [`LetSaveEntry`].
     let_saves: Vec<LetSaveEntry>,
-    pub(super) supply_emit_buffer: Vec<EmitFrame>,
-    /// `whenever` subscription markers registered while a react drive loop is
-    /// already running (a `whenever` nested inside another `whenever`'s body).
-    /// The loop adopts them on its next round; see
-    /// `Interpreter::adopt_newly_registered_subscriptions`.
-    pub(crate) pending_react_subscriptions: Vec<Value>,
-    /// Sub ids of the callbacks of such nested `whenever`s. A sibling
-    /// `whenever` of the react body shares that body's lexicals, so its
-    /// callback must re-read them from the live caller env on every value --
-    /// hence `call_react_callback` drops the callback's per-instance closure
-    /// state. A NESTED `whenever` closes over the *enclosing whenever body's*
-    /// frame, which has already exited by the time values arrive, so for it
-    /// that per-instance state is the only copy of those lexicals (an
-    /// accumulator like `my Buf $in-buf` in HTTP::UserAgent's TestServer) and
-    /// dropping it resets them on every value.
-    pub(crate) nested_react_callbacks: std::collections::HashSet<u64>,
-    /// Emitter `Supplier`s of the `supply` blocks whose code is currently on the
-    /// stack, innermost last. `emit` is caught by the innermost *dynamically*
-    /// enclosing supply, so a `sub` that is not lexically inside the block still
-    /// emits into it when called from within — the parser's `supply` rewrite
-    /// (`emit x` -> `$__mutsu_supply_emitter_N.emit(x)`) only reaches `emit`
-    /// written directly in the body, and a nested sub's closure never captured
-    /// the emitter. Pushed around a `whenever` body invoked as a live-supplier
-    /// tap, where the emitter is recovered from the callback's captured env.
-    pub(super) active_supply_emitters: Vec<Value>,
-    /// `whenever <Promise>` sources inside a `supply` block, rewritten to a
-    /// stand-in supplier and waiting to be armed. A supplier keeps no backlog,
-    /// so the promise must not be armed until the consumer has registered the
-    /// taps for the rewritten subscription — see
-    /// `Interpreter::normalize_promise_whenever_markers`.
-    pub(crate) pending_promise_whenever_arms: Vec<(crate::value::SharedPromise, Value)>,
-    pub(super) supply_emit_timed_buffer: Vec<Vec<(Value, crate::thread_compat::Instant)>>,
-    /// Active streaming consumers for on-demand `supply { ... }` bodies driven by
-    /// `react`. When a stream consumer is registered for an emitter's
-    /// `supplier_id`, `emit` delivers the value to the consumer callback
-    /// synchronously (instead of buffering into `supply_emit_buffer`), so an
-    /// infinite synchronous body (`supply { loop { emit(...) } }`) can be
-    /// terminated by the consumer's `done` on emit-to-dead-consumer.
-    pub(super) supply_stream_consumers: Vec<crate::runtime::react_whenever::StreamConsumer>,
-    /// Nesting depth of the running `react` drive loop. `> 0` while the event
-    /// loop is polling subscriptions and dispatching `whenever`/`LAST`/`QUIT`
-    /// callbacks. Used so a `whenever` that taps an on-demand supply from inside
-    /// a running react (`whenever $outer { whenever $sod { } }`) routes the
-    /// supply's `closing => { ... }` callbacks to the main react thread instead
-    /// of firing them on an async body's worker thread (where a write to a
-    /// captured react-block lexical would be lost).
-    pub(super) react_active: usize,
-    /// Async on-demand supplies tapped by a nested `whenever` while a react drive
-    /// loop is running: `(done_signal_promise, closing_callbacks)`. The drive
-    /// loop fires each entry's `closing` callbacks on the main thread once the
-    /// promise resolves (the emitter signalled `done`), so per-tap
-    /// `closing => { ... }` runs on the react thread rather than a worker thread.
-    pub(super) pending_tap_closes: Vec<(crate::value::SharedPromise, Vec<Value>)>,
-    /// The waker of the innermost running react/await drive loop on this
-    /// thread, so sources wired up mid-loop (a nested `whenever` tapping an
-    /// async on-demand supply -> `pending_tap_closes`) can wake the loop when
-    /// they become ready instead of waiting out its idle cap.
-    pub(super) current_react_waker: Option<crate::value::waker::ReactWaker>,
-    /// Cross-thread lexical store for THIS spawn lineage (ADR-0010). `start`
-    /// and friends give the child a store chained to this one, so a child sees
-    /// and can write the parent's lexicals while its own declarations stay
-    /// private to it — sibling threads (e.g. hyper workers each declaring
-    /// `my $uri`) cannot clobber each other, which one process-global bare-name
-    /// map allowed.
-    shared_vars: Arc<crate::runtime::shared_store::SharedStore>,
-    /// True when this interpreter participates in cross-thread variable sharing.
-    /// Set by `clone_for_thread` on both parent and child.
-    pub(crate) shared_vars_active: bool,
-    /// True once any sigilless attribute alias (`has $x`) has been materialized.
-    /// Sigilless attributes are read/written through a bare `Var("x")` that is
-    /// disambiguated only by the runtime `__mutsu_sigilless_alias::` table, so
-    /// the cell-direct read/write routing must consult that table. This flag
-    /// gates that extra lookup so programs without sigilless attributes (the vast
-    /// majority) pay nothing on the hot variable-read path. Process-sticky: set
-    /// true on first use, never reset (Phase 3 Stage 2c (ii)).
-    pub(crate) sigilless_attrs_active: bool,
-    /// Keys in shared_vars that were explicitly updated (not just initialized by
-    /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
-    /// that function parameters aren't overwritten with stale values.
-    shared_vars_dirty: Arc<RwLock<HashSet<String>>>,
-    /// Keys in shared_vars that were written by some thread *while it held a
-    /// critical section* (Semaphore/Lock). Entering a critical section syncs
-    /// exactly these scalars back into the local env, so a bare
-    /// read-modify-write of a shared accumulator (`$s.acquire; $r += $i;
-    /// $s.release`) reads the value the previous holder committed — while a
-    /// per-iteration loop lexical (`my $i = $_`, written outside any critical
-    /// section) keeps this thread's own captured snapshot.
-    shared_critical_dirty: Arc<RwLock<HashSet<String>>>,
-    /// Depth of nested critical sections (Semaphore/Lock) this interpreter
-    /// currently holds. Writes performed while > 0 mark `shared_critical_dirty`.
-    critical_section_depth: usize,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
@@ -3987,7 +3834,7 @@ pub struct Interpreter {
     /// Maps bare name -> latest enum package name.
     poisoned_enum_aliases: std::sync::Arc<HashMap<String, String>>,
     /// Per-scope stack of bare enum names introduced, for cleanup on scope exit.
-    enum_scope_names: Vec<Vec<String>>,
+    enum_scope_names: Vec<Vec<(String, u64)>>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: std::sync::Arc<HashSet<String>>,
@@ -4635,75 +4482,6 @@ pub struct Interpreter {
     /// propagating (a tap/quit callback's `return` targeting the sub that
     /// called `.emit`, for example).
     pub(crate) nested_run_depth: u32,
-    pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
-    /// Transient hand-off from a consumed `ForLoopResumeState` to its loop
-    /// executor: the mid-body ip the resumed iteration's first body run
-    /// starts at (see `ForLoopResumeState::resume_body_ip`).
-    pub(crate) gather_resume_body_ip: Option<usize>,
-    /// Set by `take_value` when a lazy pull's take limit is reached inside a
-    /// condition-driven loop (`while`/`until`/C-style `loop`): the suspension
-    /// is DEFERRED to that loop's next iteration boundary, where re-entering
-    /// from the condition on resume is exact. Suspending at the `take` itself
-    /// replayed the statements between the take and the iteration end
-    /// (`while $n > 1 { take $n; $n div= 2 }` yielded 6,6,6... —
-    /// 99problems-31-to-40.t P37).
-    pub(crate) gather_suspend_pending: bool,
-    /// True while the innermost enclosing loop op is condition-driven
-    /// (`while`/`until`/C-style/`repeat`), i.e. a take-limit hit should defer
-    /// to its iteration boundary (`gather_suspend_pending`). `for` loops keep
-    /// the immediate at-take signal: their positional resume state
-    /// (`next_index`) makes the at-take suspension exact for element values,
-    /// and roast pins its side-effect timing (S04-statements/gather.t
-    /// "gather is lazy"). Saved/restored on loop-op entry/exit.
-    pub(crate) lazy_take_boundary_defer: bool,
-    /// True while an opcode that `take`s once per element of its own internal
-    /// loop (a hyper method call, `@a».take`) is executing in the current
-    /// frame. A take-limit hit then parks `gather_suspend_pending` instead of
-    /// signalling, and the op suspends after it completes — see
-    /// `vm/vm_take_deferring_op.rs` (#9785). Saved/cleared around each lazy
-    /// pull so a nested pull's own takes still suspend at the take.
-    pub(crate) take_defer_to_op_end: bool,
-    /// Call-frame depth (`call_frames.len()`) at entry to the innermost active
-    /// lazy-gather pull (`force_lazy_list_vm_n_inner`), `None` outside one.
-    /// The pull driver can only snapshot/resume ITS OWN frame (ip, stack,
-    /// locals of the gather body's compiled code), so a take-limit hit inside
-    /// a NESTED routine call cannot suspend soundly: the signal would unwind
-    /// the callee frames and leave the saved ip pointing at the caller's
-    /// call op with its arguments already drained (resume then skips the call
-    /// or underflows the stack — `gather trip(5)` with `take` inside `trip`'s
-    /// `for` loop). `take_value` compares the live depth against this and,
-    /// when the take is deeper, parks `gather_suspend_pending` instead of
-    /// raising: the pull keeps collecting until a condition-driven loop in
-    /// the driver's OWN frame reaches its next iteration boundary, which
-    /// happens only after the callee has returned and is a sound suspension
-    /// point. `gather_suspend_boundary_reached` compares against this field
-    /// again so a loop *inside* the callee leaves the flag alone. The pull may
-    /// over-produce but always stops; before the flag was parked, a gather
-    /// body whose only takes came from a nested call under an infinite loop
-    /// collected forever. Saved/restored around each pull, so nested pulls
-    /// compare against their own entry.
-    pub(crate) lazy_pull_entry_call_depth: Option<usize>,
-    /// Interpreter-path counterpart to `lazy_pull_entry_call_depth`. Some
-    /// callbacks are invoked through `call_sub_value`, which records a
-    /// `RoutineFrame` but not a VM `call_frames` entry. A take reached through
-    /// such a callback is nested just the same and cannot suspend at the take
-    /// instruction, because the bounded-pull driver can only resume its own
-    /// compiled frame.
-    pub(crate) lazy_pull_entry_routine_depth: Option<usize>,
-    pub(crate) rw_map_topic_capture: Option<Value>,
-    /// Set by the `.map`/`.grep` loops when a `last` in the callback stopped
-    /// them, to the loop-handler depth of the loop that caught it
-    /// (`loop_handler_depth::loop_handler_depth`). A deferred `.map`/`.grep`
-    /// Seq pulled a prefix at a time (`pull_map_grep_prefix`) reads it to tell
-    /// "the callback said `last`" from "this chunk of the source ran out",
-    /// since the loops swallow the signal; the depth keeps a `last` caught by
-    /// a loop nested inside the callback from counting.
-    pub(crate) map_grep_last_depth: Option<usize>,
-    /// Next routine-invocation id this interpreter will hand out, and one past
-    /// the end of the block it was claimed from (see `NEXT_INVOCATION_ID_BLOCK`).
-    /// Equal when the block is exhausted, which is the refill condition.
-    pub(crate) next_invocation_id: u64,
-    pub(crate) invocation_id_block_end: u64,
     /// Direct-mapped call-dispatch cache (ADR-0066): what each callee name last
     /// resolved to, so a repeat call skips both hash probes the name-keyed path
     /// pays (`pos_light_call_cache`, then `compiled_fns`) — together about 60%
@@ -4722,6 +4500,11 @@ pub struct Interpreter {
     pub(crate) caches: resolution_caches::ResolutionCaches,
     /// Regex, grammar and slang state (the `regex` subsystem, ADR-10779).
     pub(crate) regex_state: regex_grammar_state::RegexGrammarState,
+    /// Supply/react/gather/lazy-pull state (the `async` subsystem, ADR-10779).
+    pub(crate) async_state: async_state::AsyncState,
+    /// Cross-thread variable sharing and lock bookkeeping (the `threads`
+    /// subsystem, ADR-10779).
+    pub(crate) threads: thread_sharing::ThreadSharing,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.

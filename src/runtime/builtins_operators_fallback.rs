@@ -739,6 +739,7 @@ impl Interpreter {
                 is_hidden_from_backtrace: false,
                 def_file: None,
                 invocation_id,
+                callable_id: 0,
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
@@ -1353,14 +1354,21 @@ impl Interpreter {
                 ValueView::Package(pkg) => pkg,
                 _ => return None,
             },
-            None if constants_only => return None,
             // A module-scope short name a `use` installed for a package declared
             // under a longer name (`unit module A::B::Fac is export`), which the
             // module's own routines keep after the load restores the importer.
+            //
+            // On the bareword (constants-only) path only an *enum* alias is
+            // taken (`Level::error` in a module that did `use A::Level`): a
+            // package alias there would turn the GLOBAL `Template::Jinja2`
+            // into `LLM::Chat::Template::Jinja2` inside a class declared under
+            // that compound name, which the bareword resolver's own package
+            // rules decide instead.
             None => {
                 let target =
                     self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
-                if !self.is_declared_package(target) {
+                let is_enum = self.registry().enum_types.contains_key(target.as_str());
+                if !is_enum && (constants_only || !self.is_declared_package(target)) {
                     return None;
                 }
                 Symbol::intern(target)

@@ -16,7 +16,7 @@ impl Interpreter {
         name_idx: u32,
     ) -> Option<Result<(), RuntimeError>> {
         // Cheap early-out: only meaningful while a thread shares this env.
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return None;
         }
         if !self.local_bind_pairs.is_empty() {
@@ -130,7 +130,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Result<(), RuntimeError>> {
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return None;
         }
         if !self.local_bind_pairs.is_empty() {
@@ -489,9 +489,10 @@ impl Interpreter {
                 )));
             };
             let assigned = values.get(value_index).cloned().unwrap_or(Value::NIL);
-            if let Err(e) = self.check_container_cell_constraint(&cell, &assigned) {
-                return Some(Err(e));
-            }
+            let assigned = match self.coerce_container_cell_store(&cell, assigned) {
+                Ok(assigned) => assigned,
+                Err(e) => return Some(Err(e)),
+            };
             *cell.lock().unwrap() = assigned;
         }
         Some(Ok(()))
@@ -555,10 +556,11 @@ impl Interpreter {
         };
         match slot.view() {
             ValueView::ContainerRef(cell) => {
-                if let Err(e) = self.check_container_cell_constraint(&cell, val) {
-                    return Ok(Some(Err(e)));
-                }
-                *cell.lock().unwrap_or_else(|e| e.into_inner()) = val.clone();
+                let val = match self.coerce_container_cell_store(&cell, val.clone()) {
+                    Ok(val) => val,
+                    Err(e) => return Ok(Some(Err(e))),
+                };
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
                 Ok(Some(Ok(())))
             }
             // A `Scalar`-wrapped element is genuinely ambiguous here: raku

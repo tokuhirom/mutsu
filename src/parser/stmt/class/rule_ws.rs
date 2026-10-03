@@ -118,6 +118,7 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
+    let mut in_charclass = false;
     let mut brace_depth = 0usize;
     // Depth of currently-open `<...>` regex-syntax regions (subrule calls,
     // `<[...]>` bracketed char classes, named captures, lookarounds, ...)
@@ -174,6 +175,27 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             escaped = true;
             i += 1;
             continue;
+        }
+        // The body of a `<[...]>` / `<-[...]>` character class is a set of
+        // characters, not pattern layout: a `"` or `'` in it (`<-["]>*`) is
+        // a member, not a quote, and must not swallow the rest of the rule's
+        // significant whitespace as quoted text.
+        if in_charclass {
+            out.push(c);
+            if c == ']' {
+                in_charclass = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '[' && !in_single && !in_double && angle_depth > 0 && brace_depth == 0 {
+            let opens_class = out.trim_end().ends_with(['<', '-', '+', '?', '!']);
+            if opens_class {
+                in_charclass = true;
+                out.push(c);
+                i += 1;
+                continue;
+            }
         }
         if c == '\'' && !in_double {
             in_single = !in_single;
@@ -424,6 +446,12 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     && super::rule_ws_quantified::wrap_last_atom_with_ws(&mut out)
                 {
                     // `<item> +`: the whitespace repeats with the atom.
+                } else if out.trim_end().ends_with("**") && !last_char_is_escaped(&out) {
+                    // `a ** 1..3`: the whitespace between `**` and its count
+                    // is layout inside the quantifier, not sigspace.
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
                 } else if p == '^' {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
@@ -431,6 +459,8 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     out.push_str("<.ws>?");
                     out.push(' ');
                 } else if should_insert(p, n) {
+                    let escaped = last_char_is_escaped(&out);
+                    super::rule_ws_quantified::mark_backtracking_before_ws(&mut out, next, escaped);
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }

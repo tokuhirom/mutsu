@@ -129,13 +129,16 @@ impl Interpreter {
         value: &Value,
     ) -> Option<Result<(), RuntimeError>> {
         let idx = self
+            .async_state
             .supply_stream_consumers
             .iter()
             .position(|c| c.supplier_id == supplier_id)?;
-        if self.supply_stream_consumers[idx].done {
+        if self.async_state.supply_stream_consumers[idx].done {
             return Some(Err(RuntimeError::supply_terminate_signal()));
         }
-        let cb = self.supply_stream_consumers[idx].consumer_cb.clone();
+        let cb = self.async_state.supply_stream_consumers[idx]
+            .consumer_cb
+            .clone();
         // The `match` below handles `is_react_done()` raised anywhere in this
         // call's dynamic extent — see `runtime::react_done_handler_depth`.
         let _react_done_handler =
@@ -144,7 +147,7 @@ impl Interpreter {
         drop(_react_done_handler);
         match cb_result {
             Err(e) if e.is_react_done() => {
-                self.supply_stream_consumers[idx].done = true;
+                self.async_state.supply_stream_consumers[idx].done = true;
                 for close_cb in
                     crate::runtime::native_methods::take_supplier_close_callbacks(supplier_id)
                 {
@@ -202,7 +205,7 @@ impl Interpreter {
     /// Enter react mode: whenever blocks will register subscriptions
     /// instead of executing immediately.
     pub(crate) fn enter_react(&mut self) {
-        self.supply_emit_buffer.push(EmitFrame::react()); // Use supply_emit_buffer as react subscription storage marker
+        self.async_state.supply_emit_buffer.push(EmitFrame::react()); // Use supply_emit_buffer as react subscription storage marker
     }
 
     pub(crate) fn value_array_items(value: &Value) -> Option<Vec<Value>> {
@@ -288,7 +291,7 @@ impl Interpreter {
         // running right now, so this is unambiguous. Stamped onto every callback
         // below so dispatch can re-establish it as the innermost active emitter
         // (see `WHENEVER_EMITTER_ENV_KEY`).
-        let own_emitter = self.active_supply_emitters.last().cloned();
+        let own_emitter = self.async_state.active_supply_emitters.last().cloned();
         // The compunit these bodies are WRITTEN in. They are built here from
         // AST, so they carry no source file of their own, and they are
         // dispatched later from whatever scope emits -- see
@@ -352,7 +355,7 @@ impl Interpreter {
         // inside a running react drive loop -- a `whenever` nested in another
         // `whenever`'s body registers while the loop is already driving, after
         // the body's own registration frame was popped.
-        if !self.supply_emit_buffer.is_empty() || self.react_active > 0 {
+        if !self.async_state.supply_emit_buffer.is_empty() || self.async_state.react_active > 0 {
             if let ValueView::Instance { class_name, .. } = supply_val.view()
                 && class_name == "IO::Socket::Async::Listener"
             {
@@ -380,7 +383,7 @@ impl Interpreter {
                 Value::array(quit_callbacks),
                 Value::int(whenever_id as i64),
             ]);
-            if let Some(last) = self.supply_emit_buffer.last_mut() {
+            if let Some(last) = self.async_state.supply_emit_buffer.last_mut() {
                 // A react body tapping a live supplier: its producers now wait
                 // for this react to handle what they emit (#11268).
                 if last.is_react
@@ -396,7 +399,7 @@ impl Interpreter {
                 // No registration frame: this `whenever` ran inside a
                 // `whenever` body, so hand it to the drive loop, which adopts
                 // it on its next round.
-                self.pending_react_subscriptions.push(sub);
+                self.async_state.pending_react_subscriptions.push(sub);
             }
 
             // Also register taps on the supply for non-react backward compat

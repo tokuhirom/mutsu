@@ -282,7 +282,7 @@ impl Interpreter {
         // sees them and its writes resolve back here. A sibling thread seeds into
         // its OWN store, which is why two hyper workers that each declare
         // `my $uri` no longer collide on one bare-name entry.
-        let shared = Arc::clone(&self.shared_vars);
+        let shared = Arc::clone(&self.threads.shared_vars);
         // Merged with the lineage-seeding walk below (was a separate `for value
         // in self.env.values()` pass): both need one full traversal of the
         // parent env per spawn, so collecting handle ids here — BEFORE any of
@@ -438,9 +438,13 @@ impl Interpreter {
                 // the call that bound it, not "the rest of this block", so a
                 // nested spawn inside that call must not overwrite an unrelated
                 // caller's live entry for the same bare name.
-                let published = if self.thread_redeclared_vars.borrow().contains(&key)
-                    && !self.thread_decl_in_flight.contains(&key)
-                    && !self.thread_param_shadow_vars.borrow().contains(&key)
+                let published = if self.threads.thread_redeclared_vars.borrow().contains(&key)
+                    && !self.threads.thread_decl_in_flight.contains(&key)
+                    && !self
+                        .threads
+                        .thread_param_shadow_vars
+                        .borrow()
+                        .contains(&key)
                 {
                     shared.declare(&key, val.clone());
                     seed_inserts += 1;
@@ -478,16 +482,16 @@ impl Interpreter {
             }
             crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
             for key in transient_unmarks {
-                self.transient_lane_containers.remove(&key);
+                self.threads.transient_lane_containers.remove(&key);
             }
             for key in transient_marks {
-                self.transient_lane_containers.insert(key);
+                self.threads.transient_lane_containers.insert(key);
             }
             // Track C: migrate the parent's `state` variables into shared cells.
             // Incremental: only the keys created since the previous spawn.
             self.seed_unmigrated_state_vars(&shared);
         }
-        self.shared_vars_active = true;
+        self.threads.shared_vars_active = true;
         // The child captures the parent's CURRENT bindings — including any
         // name the parent re-declared since an earlier spawn (its current
         // value was force-seeded above). From this spawn on, writes to those
@@ -521,11 +525,14 @@ impl Interpreter {
         // the caller's unrelated value back over the parameter for the
         // remainder of the call. Explicit `unmask_thread_redeclared_params` at
         // the call's return is the only thing that ever clears it.
-        self.thread_redeclared_vars.borrow_mut().retain(|n| {
-            captured_scalars.contains(n.trim_start_matches('$'))
-                || self.thread_decl_in_flight.contains(n)
-                || self.thread_param_shadow_vars.borrow().contains(n)
-        });
+        self.threads
+            .thread_redeclared_vars
+            .borrow_mut()
+            .retain(|n| {
+                captured_scalars.contains(n.trim_start_matches('$'))
+                    || self.threads.thread_decl_in_flight.contains(n)
+                    || self.threads.thread_param_shadow_vars.borrow().contains(n)
+            });
         let mut cloned_handles = HashMap::new();
         let handles_guard = self.io_handles();
         for (id, handle) in &handles_guard.map {
@@ -642,7 +649,6 @@ impl Interpreter {
             program_path_sym: self.program_path_sym,
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
-            current_package: Arc::new(RwLock::new(self.current_package())),
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
                 self.current_package_sym().id(),
             )),
@@ -680,8 +686,7 @@ impl Interpreter {
             why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: Box::new(std::cell::Cell::new(false)),
-            gather_items: Vec::new(),
-            gather_take_limits: Vec::new(),
+            async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
             // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
             // child thread gets an independent snapshot (matches prior per-field
@@ -741,8 +746,7 @@ impl Interpreter {
             pending_runtime_name_writes: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
             user_io_read_buffers: self.user_io_read_buffers.clone(),
-            lock_async_recursion: Vec::new(),
-            lock_async_deferred: Vec::new(),
+            threads: self.threads.fork_for_thread(captured_scalars),
             subset_predicate_cache: HashMap::new(),
             inline_subset_constraints: HashMap::new(),
             container_element_proxy: None,
@@ -796,7 +800,8 @@ impl Interpreter {
             suppress_cross_eval_class_redeclaration_check: false,
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
-            process_dynamics: rustc_hash::FxHashMap::default(),
+            // ADR-11318: one `PROCESS::` stash for the whole lineage.
+            process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),
@@ -811,54 +816,10 @@ impl Interpreter {
             our_scalar_cell_names: self.our_scalar_cell_names.clone(),
             state_vars: HashMap::new(),
             state_vars_unmigrated: Vec::new(),
-            // The spawned block's own captured scalars were NOT seeded into the
-            // store (the closure machinery owns them per binding), so the child
-            // must treat them exactly like re-declared names: reads and writes
-            // stay env-local, and a stale same-named ancestor entry must not be
-            // pulled over the captured copy at a sync point.
-            //
-            // A name the PARENT currently has masked as a slurpy `@`/`%`
-            // parameter (`thread_param_shadow_vars`) must carry the same
-            // treatment into the child: the child's env was just cloned from
-            // the parent's, so it already holds THIS call's own value under
-            // that bare name. Without inheriting the mask here, the child's
-            // read gate (`container_name_is_redeclared`) sees the name as
-            // unmasked and falls through to the shared-store fallback, which
-            // may hold a DIFFERENT, now-stale value seeded by an earlier
-            // sequential call to the same routine (the mask itself is lifted
-            // on the parent as soon as that call's synchronous body returns,
-            // long before an async `start` block spawned from inside it gets
-            // around to reading the parameter — see
-            // `slurpy-hash-param-in-start-block-reads-stale-value-across-
-            // sequential-calls.md`). The mask must instead survive for as
-            // long as the CHILD's own body runs, independent of the parent's
-            // lifetime.
-            thread_redeclared_vars: Box::new(std::cell::RefCell::new(
-                captured_scalars
-                    .iter()
-                    .cloned()
-                    .chain(self.thread_param_shadow_vars.borrow().iter().cloned())
-                    .collect(),
-            )),
-            // The child starts no declaration of its own; its own `my`s populate
-            // this as they run.
-            thread_decl_in_flight: std::collections::HashSet::new(),
             // Pending hoist cells belong to the parent's frames.
             hoist_pending_cells: Vec::new(),
-            // ADR-0039 §8.6: withdrawal is the *parent's* bookkeeping — the
-            // child must not retire an entry it depends on. Its own spawns
-            // populate this as they run.
-            transient_lane_containers: std::collections::HashSet::new(),
-            // The child starts no call of its own, but it inherits the
-            // parent's currently-active parameter shadows (see the
-            // `thread_redeclared_vars` comment above) — its own subsequent
-            // parameter bindings union in as they run.
-            thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
-                self.thread_param_shadow_vars.borrow().clone(),
-            )),
             // The child re-binds its own env-bound parameters if it runs any.
             param_bound_aggregates: Default::default(),
-            suppress_shared_publish: false,
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
             type_body_written_lexicals: self.type_body_written_lexicals.clone(),
@@ -896,23 +857,6 @@ impl Interpreter {
                 &self.instance_type_metadata.read().unwrap(),
             ))),
             let_saves: Vec::new(),
-            supply_emit_buffer: Vec::new(),
-            pending_react_subscriptions: Vec::new(),
-            nested_react_callbacks: std::collections::HashSet::new(),
-            active_supply_emitters: Vec::new(),
-            pending_promise_whenever_arms: Vec::new(),
-            supply_emit_timed_buffer: Vec::new(),
-            supply_stream_consumers: Vec::new(),
-            react_active: 0,
-            pending_tap_closes: Vec::new(),
-            current_react_waker: None,
-            // ADR-0010: a child lineage, not a share of one process-wide map.
-            shared_vars: crate::runtime::shared_store::SharedStore::child_of(&self.shared_vars),
-            shared_vars_active: true,
-            sigilless_attrs_active: self.sigilless_attrs_active,
-            shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
-            shared_critical_dirty: Arc::clone(&self.shared_critical_dirty),
-            critical_section_depth: 0,
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
@@ -1020,9 +964,6 @@ impl Interpreter {
             fn_keys_by_base: Default::default(),
             fn_keys_index: Default::default(),
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
-            // Equal, so the first call claims a block (see `take_invocation_id`).
-            next_invocation_id: 0,
-            invocation_id_block_end: 0,
             pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             // Which env keys an EXPORT hook installed is load-time knowledge,
@@ -1062,15 +1003,6 @@ impl Interpreter {
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
             begin_time_hidden: Vec::new(),
             nested_run_depth: 0,
-            gather_for_loop_resume: None,
-            gather_resume_body_ip: None,
-            gather_suspend_pending: false,
-            lazy_take_boundary_defer: false,
-            take_defer_to_op_end: false,
-            lazy_pull_entry_call_depth: None,
-            lazy_pull_entry_routine_depth: None,
-            rw_map_topic_capture: None,
-            map_grep_last_depth: None,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
         cloned.env.insert("/".to_string(), Value::NIL);
@@ -1150,15 +1082,17 @@ impl Interpreter {
         if self.container_name_is_redeclared(key) {
             // fall through to the env path below
         } else if key.starts_with('@')
-            && self.shared_vars_active
+            && self.threads.shared_vars_active
             && Self::is_plain_lexical_array_name(key)
         {
             let in_shared = {
                 let atomic_key = atomic_lane_str_key(key, false);
-                self.shared_vars
+                self.threads
+                    .shared_vars
                     .get(atomic_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
                     || self
+                        .threads
                         .shared_vars
                         .get(key)
                         .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
@@ -1166,7 +1100,7 @@ impl Interpreter {
             if in_shared {
                 return self.shared_array_extend(key, values, false);
             }
-        } else if key.starts_with('@') && self.shared_vars_active && !package_array {
+        } else if key.starts_with('@') && self.threads.shared_vars_active && !package_array {
             // Attribute / twigil'd arrays keep the base-key in-place path
             // (per-instance identity — see `push_to_existing_shared_array`).
             // Drop env's copy of the Arc first so that shared_vars holds
@@ -1180,6 +1114,7 @@ impl Interpreter {
             // closure never ran (the branch below can still fall through).
             let mut pending = Some(std::mem::take(&mut values));
             let in_place = self
+                .threads
                 .shared_vars
                 .with_entry_mut(key, |v| {
                     v.with_array_mut(|arc_items, kind| {
@@ -1203,7 +1138,7 @@ impl Interpreter {
             // values were never consumed — take them back.
             values = pending.take().unwrap_or_default();
             // Fallback: the value might exist but not be an Array yet
-            if let Some(shared_value) = self.shared_vars.get(key)
+            if let Some(shared_value) = self.threads.shared_vars.get(key)
                 && matches!(shared_value.view(), ValueView::Array(..))
             {
                 {
@@ -1217,7 +1152,8 @@ impl Interpreter {
                     };
                     let result =
                         Value::array_with_kind(crate::gc::Gc::clone(&arc_items), normalized_kind);
-                    self.shared_vars
+                    self.threads
+                        .shared_vars
                         .set(key, Value::array_with_kind(arc_items, normalized_kind));
                     self.mark_shared_var_dirty(key);
                     if !is_thread_clone {
@@ -1286,7 +1222,7 @@ impl Interpreter {
         key: &str,
         values: Vec<Value>,
     ) -> Option<Value> {
-        if !key.starts_with('@') || !self.shared_vars_active {
+        if !key.starts_with('@') || !self.threads.shared_vars_active {
             return None;
         }
         // A plain lexical `@name` routes through the `__mutsu_atomic_arr::`
@@ -1298,10 +1234,12 @@ impl Interpreter {
         if Self::is_plain_lexical_array_name(key) {
             let in_shared = {
                 let atomic_key = atomic_lane_str_key(key, false);
-                self.shared_vars
+                self.threads
+                    .shared_vars
                     .get(atomic_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
                     || self
+                        .threads
                         .shared_vars
                         .get(key)
                         .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
@@ -1320,6 +1258,7 @@ impl Interpreter {
             self.env.remove(key);
         }
         let result = self
+            .threads
             .shared_vars
             .with_entry_mut(key, |v| {
                 v.with_array_mut(|arc_items, kind| {

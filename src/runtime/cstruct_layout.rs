@@ -739,119 +739,6 @@ impl crate::runtime::Interpreter {
         Some(())
     }
 
-    /// The primitive behind NativeCall's `nativesizeof($obj-or-type)`, reporting
-    /// how many bytes the argument's type takes in C. Both a type object
-    /// (`nativesizeof(uint32)`) and an instance are accepted, matching Rakudo.
-    ///
-    /// The user-visible `nativesizeof` is an `our sub` in the NativeCall prelude
-    /// (`NATIVECALL_SUB_PRELUDES`) that calls this. It is spelled `__mutsu_`
-    /// here precisely so that it is *not* an ambient builtin: Rakudo exports
-    /// `nativesizeof` from `NativeCall.rakumod`, so it must arrive with the
-    /// module and be `&`-callable, not be visible to every program.
-    pub(crate) fn try_nativesizeof(
-        &mut self,
-        name: &str,
-        args: &[crate::value::Value],
-    ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
-        use crate::value::{RuntimeError, ValueView};
-        if name != "__mutsu_nativesizeof" {
-            return None;
-        }
-        if args.len() != 1 {
-            return Some(Err(RuntimeError::new(format!(
-                "nativesizeof() expects 1 argument, got {}",
-                args.len()
-            ))));
-        }
-        let arg = crate::runtime::types::unwrap_varref_value(args[0].clone());
-        let type_name = match arg.view() {
-            ValueView::Package(n) => n.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => {
-                return Some(Err(RuntimeError::new(
-                    "nativesizeof() expects a native type or a native object",
-                )));
-            }
-        };
-        Some(match self.native_size_of_type(&type_name) {
-            Some(size) => Ok(crate::value::Value::int(size as i64)),
-            // Rakudo's wording, so a binding that greps the message still works.
-            None => Err(RuntimeError::new(format!(
-                "NativeCall op sizeof expected type with CPointer, CStruct, CArray, P6int or P6num representation, but got a P6opaque ({})",
-                type_name
-            ))),
-        })
-    }
-
-    /// The primitive behind NativeCall's `nativecast($target-type, $source)` —
-    /// reinterpret the C pointer carried by `$source` as `$target-type`. The
-    /// only way to reach the fields of a struct a C function handed back as an
-    /// opaque pointer (`nativecast(evp_cipher_st, $cipher).key_len`).
-    ///
-    /// As with `try_nativesizeof`, the user-visible `nativecast` is an `our sub`
-    /// in the NativeCall prelude; this half is `__mutsu_`-prefixed so it is not
-    /// an ambient builtin.
-    pub(crate) fn try_nativecast(
-        &mut self,
-        name: &str,
-        args: &[crate::value::Value],
-    ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
-        use crate::value::{RuntimeError, ValueView};
-        if name != "__mutsu_nativecast" {
-            return None;
-        }
-        let args: Vec<crate::value::Value> = args
-            .iter()
-            .cloned()
-            .map(crate::runtime::types::unwrap_varref_value)
-            .collect();
-        if args.len() != 2 {
-            return Some(Err(RuntimeError::new(format!(
-                "nativecast() expects 2 arguments, got {}",
-                args.len()
-            ))));
-        }
-        if let ValueView::Array(array, _) = args[1].view() {
-            let elem_type = array
-                .declared_type
-                .as_deref()
-                .and_then(|name| {
-                    name.strip_prefix("array[")
-                        .and_then(|s| s.strip_suffix(']'))
-                })
-                .or(array.value_type.as_deref());
-            if let Some(elem_type) = elem_type
-                && crate::runtime::native_types::is_native_array_element_type(elem_type)
-            {
-                unsafe { crate::value::gc_contents_mut(&array) }.promote_native_storage(elem_type);
-            }
-        }
-        // `nativecast(:(num64 --> num64), $ptr)` — cast a raw C function pointer
-        // to a *signature*, yielding something callable. This is how a symbol
-        // looked up at runtime becomes a usable routine (`NativeLibs`'
-        // `Loader.symbol($name, :(num64 --> num64))`), so there is no `is native`
-        // declaration and no symbol name to bind — only the address.
-        if let ValueView::Instance { class_name, id, .. } = args[0].view()
-            && class_name.resolve() == "Signature"
-        {
-            return Some(self.native_callable_from_signature(id, &args[1]));
-        }
-        let target = match args[0].view() {
-            ValueView::Package(n) => n.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => {
-                return Some(Err(RuntimeError::new(
-                    "nativecast() expects a type object as its first argument",
-                )));
-            }
-        };
-        let addr = crate::runtime::nativecall::value_c_address(&args[1]);
-        // The address-to-value half is shared with `Pointer[T].deref`, which
-        // Rakudo defines as `nativecast(self.of, self)` — see
-        // `runtime::nativecall_cast`.
-        Some(Ok(self.nativecast_address(&target, addr)))
-    }
-
     /// `.REPR` / `.WHERE` for a **native handle** — an instance whose whole
     /// identity is a C address (a `nativecast`ed CStruct, CUnion or CArray).
     /// `None` for anything else, which keeps its ordinary answers.
@@ -889,6 +776,13 @@ impl crate::runtime::Interpreter {
         use crate::value::{Value, ValueView};
         if !matches!(method, "REPR" | "WHERE") {
             return None;
+        }
+        // A role mixed into a handle (the typed `CArray` upstream's
+        // `^parameterize` builds with `.^mixin`, #11209) leaves its storage
+        // and so its REPR alone.
+        if let ValueView::Mixin(inner, _) = target.view() {
+            let inner = Value::clone(inner);
+            return self.try_native_handle_repr_where(&inner, method);
         }
         if let ValueView::Array(data, _) = target.view()
             && let Some(body) = data.native_repr_body_address()
@@ -945,7 +839,8 @@ impl crate::runtime::Interpreter {
         // `$bb.realstart` off an `MVMArrayB`. An array whose element type is a
         // reference (`CArray[Str]`) has no storage node and so keeps
         // `P6opaque`, which is the safe direction (§2.1).
-        if crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+        if (crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+            || self.is_carray_repr_class(class_name.as_str()))
             && let Some(body) = crate::value::value_carray::carray_repr_body_address(&attributes)
         {
             return Some(match method {
@@ -1007,7 +902,8 @@ impl crate::runtime::Interpreter {
         } else if holds(&reg.cpointer_classes) {
             Some("CPointer")
         } else {
-            None
+            drop(reg);
+            self.is_carray_repr_class(name).then_some("CArray")
         }
     }
 }

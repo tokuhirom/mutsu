@@ -395,6 +395,29 @@ impl Interpreter {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();
         }
+        // The literal-parameter count leads the nominal tier, ahead of type
+        // distance, exactly as in multi-SUB dispatch (`candidate_rank_key`): a
+        // literal is nominally as narrow as the argument it equals, so
+        // `multi method m($f, 'khz')` beats `multi method m(Numeric $n, Str:D
+        // $u)` for `m(0.1, 'khz')` although its first parameter is untyped
+        // (CSS::Writer's unit conversion).
+        let literal_count = |def: &MethodDef| {
+            def.param_defs
+                .iter()
+                .filter(|p| !p.is_invocant && !p.named && p.literal_value.is_some())
+                .count()
+        };
+        let max_literals = all_matches
+            .iter()
+            .map(|(_, def)| literal_count(def))
+            .max()
+            .unwrap_or(0);
+        if max_literals > 0 {
+            all_matches.retain(|(_, def)| literal_count(def) == max_literals);
+            if all_matches.len() == 1 {
+                return all_matches.into_iter().next();
+            }
+        }
         // Pick the candidate with the smallest type hierarchy distance
         let mut best_idx = 0;
         let mut best_dist = self.method_candidate_type_distance(arg_values, &all_matches[0].1);

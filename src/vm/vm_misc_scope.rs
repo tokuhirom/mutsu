@@ -233,7 +233,7 @@ impl Interpreter {
         // A type-constrained state scalar lives in a cell too (like untyped
         // scalars since #5959), with the constraint registered ON the cell so
         // the `ContainerRef` write chokepoint re-checks it
-        // (`check_container_cell_constraint` — the same side table `my T $`
+        // (`coerce_container_cell_store` — the same side table `my T $`
         // anonymous typed scalars use). One carve-out remains: a NATIVE ARRAY
         // type (`state buf32 $w`) holds a Buf whose element-assignment path
         // (`$w[$j] = ...` — Digest's SHA2) must see the Buf, not a cell, so it
@@ -257,7 +257,7 @@ impl Interpreter {
         // the parent after `await`. `StateVarInit` is emitted only for genuine
         // `state` declarations, so `ff`/`fff`/smart-match internal state (which
         // uses `set_state_var` directly, never a cell) is unaffected.
-        let val = if self.shared_vars_active {
+        let val = if self.threads.shared_vars_active {
             let coerced_initial = if name.starts_with('@') {
                 // `=` init copies (container identity §3) — see the non-shared
                 // branch below.
@@ -940,6 +940,21 @@ impl Interpreter {
                     let name = &code.locals[idx];
                     if is_block_declared {
                         if owned_slots.contains(&idx) {
+                            // A cell the enclosing env already bound on entry
+                            // is the declaration's own binding, boxed before
+                            // the block opened (a sub hoisted above the
+                            // `BlockScope` captured it). The name-keyed env
+                            // keeps that cell, so a Nil slot would later be
+                            // synced back THROUGH it, wiping the value every
+                            // other capture (a `whenever` callback) still
+                            // reads. Leave the shared cell in place.
+                            if let (ValueView::ContainerRef(slot_cell), Some(entry)) =
+                                (self.locals[idx].view(), restored_env.get(name))
+                                && let ValueView::ContainerRef(entry_cell) = entry.view()
+                                && crate::gc::Gc::ptr_eq(&slot_cell, &entry_cell)
+                            {
+                                continue;
+                            }
                             self.locals[idx] = Value::NIL;
                         } else if protected_slots.contains(&(sym, idx as u32)) {
                             continue;

@@ -359,11 +359,8 @@ impl Interpreter {
                 );
                 compiler_attrs.insert(
                     "signature".to_string(),
-                    Value::make_instance(Symbol::intern("Blob"), {
-                        let mut a = HashMap::new();
-                        a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
-                        a
-                    }),
+                    // The `Blob` type object, as in Rakudo.
+                    Value::package(Symbol::intern("Blob")),
                 );
                 compiler_attrs.insert(
                     "desc".to_string(),

@@ -339,6 +339,27 @@ impl Interpreter {
         {
             return c;
         }
+        let (any_multi, value_dependent) = self.method_candidate_shape(class_name, method_name);
+        let cacheable = any_multi && !value_dependent;
+        self.caches
+            .multi_type_cacheable
+            .insert((class_sym, method_sym), cacheable);
+        cacheable
+    }
+
+    /// `(any candidate is a multi, any candidate is value-dependent)` over
+    /// every candidate named `method_name` in `class_name`'s MRO, public and
+    /// private alike. "Value-dependent" is everything that lets a candidate's
+    /// match depend on more than the argument type keys
+    /// [`Self::multi_arg_type_keys`] produces: a `where`/literal/subset
+    /// constraint, a code or capture sub-signature, a constrained `&` param,
+    /// an `is rw` param. Uncached; the callers memoize their own verdict.
+    // Cost: O(m * c * p), m = MRO length, c = candidates per class, p = params.
+    pub(crate) fn method_candidate_shape(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> (bool, bool) {
         let mro = self.class_mro(class_name);
         let mut any_multi = false;
         let mut value_dependent = false;
@@ -405,11 +426,7 @@ impl Interpreter {
                 }
             }
         }
-        let cacheable = any_multi && !value_dependent;
-        self.caches
-            .multi_type_cacheable
-            .insert((class_sym, method_sym), cacheable);
-        cacheable
+        (any_multi, value_dependent)
     }
 
     /// True when `target`'s intrinsic native type (or an ancestor in its MRO,
@@ -719,7 +736,7 @@ impl Interpreter {
             if result.is_proxy_value()
                 && !self.in_lvalue_assignment
                 && !Self::method_is_rw_capable(method_def)
-                && let ValueView::Proxy { fetcher, .. } = result.view()
+                && matches!(result.view(), ValueView::Proxy { .. })
             {
                 // Without a `:=` adjustment the returned map is absent —
                 // re-snapshot the live cell for the proxy fetcher.
@@ -728,7 +745,7 @@ impl Interpreter {
                     (None, Some(cell)) => cell.to_map(),
                     (None, None) => AttrMap::new(),
                 };
-                return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
+                return loan_env!(self, proxy_fetch(&result, None, cn, &proxy_attrs, id));
             }
         }
         Ok(result)

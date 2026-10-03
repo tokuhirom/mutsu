@@ -30,7 +30,7 @@ impl Interpreter {
     ) -> Option<usize> {
         let code_id = code.ops.as_ptr() as usize;
         if !matches!(
-            self.gather_for_loop_resume,
+            self.async_state.gather_for_loop_resume,
             Some(ForLoopResumeState::TryCatch { code_id: cid, loop_ip, .. })
                 if cid == code_id && loop_ip == try_ip
         ) {
@@ -38,11 +38,11 @@ impl Interpreter {
         }
         let Some(ForLoopResumeState::TryCatch {
             resume_ip, inner, ..
-        }) = self.gather_for_loop_resume.take()
+        }) = self.async_state.gather_for_loop_resume.take()
         else {
             unreachable!("checked above");
         };
-        self.gather_for_loop_resume = inner.map(|b| *b);
+        self.async_state.gather_for_loop_resume = inner.map(|b| *b);
         Some(resume_ip)
     }
 
@@ -64,12 +64,16 @@ impl Interpreter {
         let code_id = code.ops.as_ptr() as usize;
         let body = (try_ip + 1)..body_end;
         let nested_site = self
+            .async_state
             .gather_for_loop_resume
             .as_ref()
             .map(ForLoopResumeState::resume_op_site)
             .filter(|(cid, op)| *cid == code_id && body.contains(op));
         let (resume_ip, inner) = if let Some((_, op)) = nested_site {
-            (op, self.gather_for_loop_resume.take().map(Box::new))
+            (
+                op,
+                self.async_state.gather_for_loop_resume.take().map(Box::new),
+            )
         } else if let Some((_, take_ip)) = e
             .take_suspend_site()
             .filter(|(cid, t)| *cid == code_id && body.contains(t))
@@ -79,7 +83,7 @@ impl Interpreter {
         } else {
             return e;
         };
-        self.gather_for_loop_resume = Some(ForLoopResumeState::TryCatch {
+        self.async_state.gather_for_loop_resume = Some(ForLoopResumeState::TryCatch {
             code_id,
             loop_ip: try_ip,
             resume_ip,

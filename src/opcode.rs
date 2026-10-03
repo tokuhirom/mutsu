@@ -3502,6 +3502,14 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// `v = rhs` where `v` is a source-level sigilless name (`my \v`,
+    /// `-> \v`): when `v` is bound to a mutable `Array`/`Hash`, pop the RHS,
+    /// store it into that aggregate in place (`Array.STORE` / `Hash.STORE`)
+    /// and push the aggregate, so the store that follows re-seats the same
+    /// object. Anything else leaves the stack untouched. Stack: `[rhs] →
+    /// [rhs']`. `slot` is the name's local slot (`u32::MAX` when it is not a
+    /// local of this code and lives in `env`).
+    SigillessAggregateStore { name_idx: u32, slot: u32 },
     /// Settle a just-declared sigilless term's mutability from what it was
     /// actually bound to, marking it readonly when that is a plain VALUE.
     ///
@@ -6685,6 +6693,14 @@ pub(crate) struct CompiledCode {
     /// only at routine boundaries, allowing pointy-block returns to propagate
     /// up to the enclosing routine.
     pub(crate) is_routine: bool,
+    /// Whether `use fatal` was lexically active where this METHOD body was
+    /// declared (`Compiler::fatal_pragma_active`, set by
+    /// `compile_method_body`). A method's `CompiledFunction` is not kept past
+    /// registration, only its `code`, so this carries the
+    /// `CompiledFunction::captured_fatal_mode` value to method dispatch,
+    /// which resets `Interpreter::lexical_fatal_mode` from it at entry
+    /// (#11391). False for every other chunk.
+    pub(crate) method_fatal_pragma: bool,
     /// Whether a `CX::Succeed` raised inside this code (an explicit `succeed`,
     /// directly or from a routine it calls) unwinds PAST its call boundary.
     ///
@@ -7482,6 +7498,11 @@ pub(crate) struct CompiledCode {
     /// a `GetBareWord` of that constant resolved to, for one registry write
     /// generation (see `Interpreter::exec_get_bare_word_op`).
     pub(crate) bareword_sites: crate::value::BarewordSiteCaches,
+    /// ADR-11276 §2.5: one memo per string constant, remembering the
+    /// built-in method row a `CallMethodMut` naming that constant was answered
+    /// from, for one registry write generation (see
+    /// `Interpreter::try_method_site_lane`).
+    pub(crate) method_sites: crate::value::MethodSiteCaches,
     /// Lazily-built "this slot's read has no name-shaped guard work" bit per
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
@@ -7532,6 +7553,8 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Memo of [`Self::capture_hidden_set`].
+    pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
     /// instead of finding them by walking a tier -- see
     /// [`Self::capture_probe_keys`].
@@ -7983,6 +8006,7 @@ impl CompiledCode {
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            method_fatal_pragma: false,
             succeed_passes_through: false,
             reads_topic: false,
             mentions_native_scalar_type_name: false,
@@ -8064,6 +8088,7 @@ impl CompiledCode {
             local_attr_keys: std::sync::OnceLock::new(),
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
+            method_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),
@@ -8072,6 +8097,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
@@ -8319,6 +8345,34 @@ impl CompiledCode {
         })
     }
 
+    /// The system names this chunk's own parameters and locals shadow — the
+    /// ones a closure capture of it must not inherit from its creating scope
+    /// (`capture_keeps`'s own-locals rule), plus their `__mutsu_type::`
+    /// shadows, which that rule decides by their subject. `None` when there
+    /// are none. The layered capture hides these from its shared layers
+    /// ([`crate::env::Env::layered_capture`]); a plain user lexical is never in
+    /// a layer, so it is not listed.
+    pub(crate) fn capture_hidden_set(&self) -> Option<&Arc<rustc_hash::FxHashSet<Symbol>>> {
+        self.capture_hidden_set
+            .get_or_init(|| {
+                let free = self.capture_free_var_set();
+                let mut hidden = rustc_hash::FxHashSet::default();
+                for &sym in self.capture_local_set() {
+                    if sym.flags() & crate::symbol::flags::PLAIN_USER_LEXICAL != 0
+                        || free.contains(&sym)
+                    {
+                        continue;
+                    }
+                    hidden.insert(sym);
+                    hidden.insert(sym.with_str(|name| {
+                        Symbol::intern(&format!("{}{name}", crate::symbol::TYPE_META_PREFIX))
+                    }));
+                }
+                (!hidden.is_empty()).then(|| Arc::new(hidden))
+            })
+            .as_ref()
+    }
+
     /// The `Symbol` for the string constant at `idx`, read out of the
     /// `const_syms` table built at finalize time. Keeps `Symbol::intern` (a
     /// thread-local hash lookup) off the per-call dispatch path: method names
@@ -8395,6 +8449,18 @@ impl CompiledCode {
                 self.may_capture_outer_vars = true;
                 return;
             }
+        }
+    }
+
+    /// Every local's interned name, or an empty slice for a hand-built chunk
+    /// that never ran `compute_locals_sym`. Only for a caller that treats the
+    /// slice as a fast-path subset of a by-name test it still runs.
+    // Cost: O(1).
+    pub(crate) fn locals_syms(&self) -> &[Symbol] {
+        if self.locals_sym.len() == self.locals.len() {
+            &self.locals_sym
+        } else {
+            &[]
         }
     }
 

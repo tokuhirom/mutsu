@@ -845,9 +845,17 @@ impl Interpreter {
                 crate::symbol::Symbol::intern(module),
                 crate::symbol::Symbol::intern(spelled),
             );
-            return self
-                .env
-                .get_sym(qualified)
+            // The qualified env key also binds a same-named nested TYPE
+            // (`Syndicate::Atom`), whose entry is that type object itself. A
+            // constant exported under the short name (`my constant Atom is
+            // export` inside `unit class Syndicate`) is not that binding, so
+            // the type's self-binding is consulted only after every store a
+            // constant can live in.
+            let qualified_binding = self.env.get_sym(qualified);
+            let is_type_self_binding =
+                |v: &&Value| matches!(v.view(), ValueView::Package(p) if p == qualified);
+            return qualified_binding
+                .filter(|v| !is_type_self_binding(v))
                 .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
                 .or_else(|| self.our_vars.get(qualified.as_str()))
                 .or_else(|| {
@@ -856,6 +864,7 @@ impl Interpreter {
                         .and_then(|e| e.get(name))
                 })
                 .or_else(|| self.env.get(name))
+                .or(qualified_binding)
                 .cloned();
         }
         let (sigil, bare) = match name.chars().next() {
@@ -1542,6 +1551,25 @@ impl Interpreter {
                 .filter(|short| !short.is_empty());
                 self.record_import_env_key(&env_target);
                 self.env.insert(env_target, value.clone());
+                // The loading module's own routines run in their CALLER's env
+                // once the load restores it, so they find a short type name
+                // only through the package's alias table
+                // (`resolve_package_alias_prefix`): `Level::error` inside a
+                // `unit module LogP6` sub whose importer took only `:configure`.
+                if let Some(short) = short_pkg.as_ref()
+                    && !self.module_load_stack.is_empty()
+                {
+                    let importer_package = self
+                        .import_target_package
+                        .clone()
+                        .or_else(|| self.unit_module_loading_stack.last().cloned())
+                        .unwrap_or_else(|| self.current_package());
+                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                        .entry(importer_package)
+                        .or_default()
+                        .entry(short.clone())
+                        .or_insert_with(|| target.clone());
+                }
                 if let Some(short) = short_pkg
                     && self.env.get(&short).is_none()
                 {

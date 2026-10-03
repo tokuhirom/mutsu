@@ -498,6 +498,15 @@ impl Interpreter {
                     .chars()
                     .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':')
             {
+                // Measuring an LTM prefix (ADR-0125): Rakudo's NFA finds no
+                // method by that name and puts a fate there, so the branch
+                // ranks with what precedes it (ASN::Grammar's `<value:sym<
+                // number>> | <binary-value> | <id-string>` tries `<id-string>`
+                // first on "maxInt"). Only a real match reports the error.
+                if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+                    super::regex_ltm_fate::ltm_record_fate(pos);
+                    return None;
+                }
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
                     *e.borrow_mut() = Some(RuntimeError::new(format!(
                         "No such method '{}' for invocant of type 'Match'",

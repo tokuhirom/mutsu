@@ -189,8 +189,8 @@ impl Interpreter {
         }
     }
 
-    // Cost: O(s + f), the closure-capture cost (see `capture_closure_env`), s = visible env
-    // names that are not plain user lexicals, f = free vars. Rakudo: O(1) -- see #9170.
+    // Cost: O(f * d + n + l), the closure-capture cost (see `capture_closure_env`), f = free
+    // vars, d = creating chain depth, n = entries of its narrow top tiers, l = shared layers.
     pub(super) fn exec_make_gather_op(
         &mut self,
         code: &CompiledCode,
@@ -299,6 +299,7 @@ impl Interpreter {
                     started: false,
                     for_loop_resume: None,
                     state_scope_id: crate::value::next_instance_id(),
+                    running_collector: None,
                 })),
                 lazy_pipe: None,
                 closure_seq: None,
@@ -1063,10 +1064,10 @@ impl Interpreter {
     /// `env_dirty` path and, for captured-and-mutated locals, the shared
     /// `ContainerRef` cell that `box_captured_lexicals` installs in both the slot
     /// and `env`.
-    // Cost: O(s + f) per closure creation, s = visible env names that are not plain user
-    // lexicals (a wide tier's plain lexicals are probed by name, `capture_probe_keys`;
-    // a narrow tier under 32 entries, or one walked for the first time, is walked whole),
-    // f = free vars. Rakudo: O(f) -- see #9170.
+    // Cost: O(f * d + n + l) per closure creation, f = free vars (probed by name in each
+    // of the d tiers of the creating chain), n = entries of the chain's narrow (< 32) top
+    // tiers (copied), l = the shared system-name layers (`Env::layered_capture`); plus a
+    // memo build O(c) for a tier whose system names changed since its last capture.
     pub(super) fn capture_closure_env(
         &mut self,
         code: &CompiledCode,
@@ -1152,37 +1153,25 @@ impl Interpreter {
         // topic) into a `_`-param WhateverCode would leak that stale topic back to
         // the caller on return (`* ~~ /<$r>/` invoked inside a grep-in-`for`).
         let own_locals = cc.capture_local_set();
-        // Keep only the upvalue set, shadow-meta, and system names, walking the
-        // env tiers directly (`filtered_flat_capture`) — flattening first
-        // (`clone_env`) deep-cloned the entire parent-chain map per lambda
-        // creation. The filter is key-pure, so the tier walk's shadow/tombstone
-        // handling is exactly the flattened view, and the half of it that reads
-        // nothing but the key is memoized per tier
-        // (`env_tier::capture_never_keeps`) rather than re-asked per creation.
-        // The filter below reads only the KEY, so its result is a pure function
-        // of the visible env contents and of `cc` — which is what lets a
-        // repeated creation of the same closure literal from an unchanged scope
-        // reuse the previous map instead of rebuilding it (the built-in
-        // dynamics alone put ~23 entries in every capture). See
-        // `crate::vm::vm_capture_cache` for why an address comparison settles
-        // "unchanged".
-        let tier_addrs = self.env().tier_addrs();
-        if let Some(mut env) = self.caches.capture_cache.get(tier_addrs, cc).cloned() {
-            self.finish_closure_capture(code, cc, &mut env);
-            return env;
-        }
+        // Keep only the upvalue set, shadow-meta, and system names. The filter
+        // reads only the KEY, so the system names a tier contributes are a pure
+        // function of that tier: each wide tier memoizes them once
+        // (`Tier::capture_sys`) and the capture refers to that memo as a shared
+        // layer instead of copying it (`Env::layered_capture`, #9170). What is
+        // copied is only the closure's own: its free variables (probed by name,
+        // `capture_probe_keys`), the volatile system names, and the narrow
+        // frame tiers it was created in.
         let probe = cc.capture_probe_keys();
-        let mut env = self
-            .env()
-            .filtered_flat_capture(&|k, _v| capture_keeps(k, free, own_locals), probe);
-        let tiers = self
-            .caches
-            .capture_cache
-            .wants_arm(tier_addrs, cc)
-            .then(|| self.env().tier_maps());
-        self.caches
-            .capture_cache
-            .record(tier_addrs, cc, tiers, &env);
+        let keep = |k, _v: &Value| capture_keeps(k, free, own_locals);
+        let mut env =
+            match self
+                .env()
+                .layered_capture(&keep, probe, cc.capture_hidden_set().cloned())
+            {
+                Some(env) => env,
+                // A chain with tombstones: the flat copy, which can express them.
+                None => self.env().filtered_flat_capture(&keep, probe),
+            };
         self.finish_closure_capture(code, cc, &mut env);
         env
     }
@@ -1751,14 +1740,15 @@ impl Interpreter {
             // cross-thread liveness this lane provides for a *declared* lexical,
             // which a parameter never needed: it cannot have been snapshotted by
             // an earlier `start` before it existed.
-            if self.shared_vars_active && !code.param_locals.contains(sym) {
+            if self.threads.shared_vars_active && !code.param_locals.contains(sym) {
                 // The cell now OWNS this binding, which is exactly what the
                 // re-declaration mask was standing in for, so the mask must not
                 // block the replacement below: leaving the stale plain snapshot
                 // in place lets `sync_shared_vars_to_env` write it back over the
                 // cell after the next await and disconnect the parent.
-                self.thread_redeclared_vars.borrow_mut().remove(&s);
-                self.thread_redeclared_vars
+                self.threads.thread_redeclared_vars.borrow_mut().remove(&s);
+                self.threads
+                    .thread_redeclared_vars
                     .borrow_mut()
                     .remove(s.trim_start_matches('$'));
                 loan_env!(self, set_shared_var(&s, container.clone()));
@@ -1801,7 +1791,8 @@ impl Interpreter {
 /// The key filter of a filtered (non-reflective) capture: whether the entry
 /// under `k` belongs in the captured env of a chunk whose free variables are
 /// `free` and whose own parameters/locals are `own_locals`. It reads only the
-/// key, which is what makes the capture memo (`vm_capture_cache`) sound.
+/// key, which is what makes a tier's memoized system names
+/// (`Tier::capture_sys`) shareable by every capture of that tier.
 /// Shared by the closure capture and a named routine's code object
 /// (`Interpreter::routine_code_object_env`).
 #[inline]

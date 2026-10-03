@@ -492,7 +492,8 @@ impl Interpreter {
     /// variables that the dirty tracking didn't capture.
     fn full_sync_shared_vars_to_env(&mut self) {
         let updates: Vec<(String, Value)> = {
-            self.shared_vars
+            self.threads
+                .shared_vars
                 .visible_entries()
                 .into_iter()
                 .filter(|(k, _)| {

@@ -49,6 +49,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             items.to_vec()
         }
         ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+        // `Capture.list` is its positional part (`Any.list` on a Capture), so
+        // `\(1, 2).join(",")`, `.grep`, `.reverse`, `for \(1, 2)` see 1 and 2.
+        ValueView::Capture { positional, .. } => positional.to_vec(),
         // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
         // NOT flatten to its pairs (mirrors the itemized-Array arm above).
         ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
@@ -193,4 +196,30 @@ pub(crate) fn walk_list_candidates(attributes: &crate::value::InstanceAttrs) -> 
         cands.reverse();
     }
     Some(cands)
+}
+
+/// The `(key, value)` entries of a `Stash`/`PseudoStash`, each value left as
+/// the symbol's own container (a root `our $x` is published as its shared
+/// cell), so `.kv` / `.values` hand out writable containers as rakudo's do.
+/// Empty for anything that is not a stash.
+// Cost: O(n), n = symbols in the stash.
+pub(crate) fn stash_symbol_entries(value: &Value) -> Vec<(Value, Value)> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = value.view()
+    else {
+        return Vec::new();
+    };
+    if !crate::value::types::is_stash_class_name(&class_name.resolve()) {
+        return Vec::new();
+    }
+    match attributes.as_map().get("symbols").map(Value::view) {
+        Some(ValueView::Hash(symbols)) => symbols
+            .iter()
+            .map(|(key, value)| (symbols.typed_key(key), value.clone()))
+            .collect(),
+        _ => Vec::new(),
+    }
 }

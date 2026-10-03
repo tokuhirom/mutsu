@@ -79,7 +79,7 @@ impl Interpreter {
     /// site (see [`Self::try_native_method`]). Every native result passes
     /// through here, so the common case -- no warning -- is one inlined test.
     #[inline(always)]
-    fn settle_native_warning(
+    pub(super) fn settle_native_warning(
         &mut self,
         result: Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
@@ -789,6 +789,11 @@ impl Interpreter {
                 && let Some(result) = self.try_native_atomic_function(name, args)
             {
                 return Some(result);
+            }
+            // The FETCH/STORE of a native positional reference (`IntPosRef`,
+            // #11209): its first argument is the reference itself.
+            if crate::runtime::native_pos_ref::is_native_pos_ref_routine(name) {
+                return self.try_native_pos_ref_routine(name, args);
             }
         }
         // #9012: `floor`/`ceiling` as FREE FUNCTIONS return `Int` for a boxed

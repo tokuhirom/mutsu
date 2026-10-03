@@ -577,6 +577,7 @@ mod identity_hash;
 pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
+mod method_site;
 pub mod user_key_map;
 pub use hash_key::HashKey;
 pub use user_key_map::ValueMap;
@@ -682,6 +683,7 @@ pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
 pub(crate) use entry_path::is_container_hole;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
+pub(crate) use method_site::MethodSiteCaches;
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
@@ -1591,8 +1593,9 @@ pub struct SubData {
     /// Installed as `Interpreter::upvalues` on closure entry. Empty for closures
     /// with no upvalue-eligible free variables.
     pub(crate) upvalues: Vec<Option<Value>>,
-    /// `fatal_mode` value captured at closure-creation time. When a closure is
-    /// created inside a `use fatal` scope, this is `true`; the pragma propagates
+    /// `lexical_fatal_mode` value captured at closure-creation time. When a
+    /// closure is created inside a `use fatal` scope or a `try` body (not merely
+    /// in a routine called from one, #11391), this is `true`; the pragma propagates
     /// into the closure so that Failures produced inside it (even via sub-closures
     /// evaluated lazily after the creating scope has exited) still throw.
     pub(crate) captured_fatal_mode: bool,
@@ -3598,6 +3601,12 @@ pub(crate) struct GatherCoroutineState {
     pub(crate) state_scope_id: u64,
     /// Saved for-loop iteration state when suspended inside a for loop.
     pub(crate) for_loop_resume: Option<ForLoopResumeState>,
+    /// While the body is running, the index of its take collector on the
+    /// interpreter's gather-items stack. A pull that re-enters the SAME
+    /// gather from inside its own body (`my \S := gather { S.iterator ... }`)
+    /// reads the elements taken so far from that collector instead of
+    /// restarting the body. `None` while suspended or finished.
+    pub(crate) running_collector: Option<usize>,
 }
 
 /// Lazy `WALK(method)` invocation state. `$obj.WALK("foo")()` walks the MRO

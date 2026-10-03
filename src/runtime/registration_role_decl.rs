@@ -207,10 +207,14 @@ impl Interpreter {
     ) {
         // Capture the current environment for anonymous roles so that attribute
         // defaults referencing closure variables can be evaluated later.
+        // A parameter default (`role R[Renderer :$r = PrettyTree]`) is
+        // evaluated when a class composes the role, in the composer's scope;
+        // it names what the role's own scope can see, so it needs the env too.
         let has_expr_default = role_def
             .attributes
             .iter()
-            .any(|attr| attr.default.is_some());
+            .any(|attr| attr.default.is_some())
+            || type_param_defs.iter().any(|pd| pd.default.is_some());
         if has_expr_default {
             let captured_env = self.env.flatten();
             let captured_unit = self.current_unit;

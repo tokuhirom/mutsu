@@ -224,6 +224,45 @@ impl Interpreter {
         self.with_candidate_package(package, |this| this.eval_param_default(pd, default_expr))
     }
 
+    /// Bind every named parameter declared before `upto` into the (scoped,
+    /// rolled-back) match env: a supplied one to its argument, an absent one
+    /// to its own default. A later parameter's default or `where` reads them
+    /// by name, exactly as the binder that runs after dispatch would see them.
+    // Cost: O(p * a), p = named params before `upto`, a = named arguments
+    // (plus evaluating the absent ones' defaults).
+    fn bind_earlier_named_params(
+        &mut self,
+        param_defs: &[ParamDef],
+        upto: &ParamDef,
+        named_args: &[(String, Value)],
+        package: Option<Symbol>,
+    ) {
+        for sib in param_defs.iter().filter(|p| p.named) {
+            if std::ptr::eq(sib, upto) {
+                break;
+            }
+            if sib.name.is_empty() {
+                continue;
+            }
+            let keys = sib.named_external_keys();
+            let supplied = named_args
+                .iter()
+                .find(|(k, _)| keys.iter().any(|n| n == k))
+                .map(|(_, v)| v.clone());
+            let value = match (supplied, &sib.default) {
+                (Some(v), _) => v,
+                (None, Some(default_expr)) => {
+                    match self.eval_param_default_in_candidate_package(sib, default_expr, package) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    }
+                }
+                (None, None) => Self::missing_optional_param_value(sib),
+            };
+            self.env.insert(sib.name.clone(), value);
+        }
+    }
+
     fn args_match_param_types_inner(
         &mut self,
         args: &[Value],
@@ -948,6 +987,15 @@ impl Interpreter {
                         Some(v) => v.clone(),
                         None => {
                             if let Some(default_expr) = &pd.default {
+                                // The default may read an earlier named param
+                                // (`:$style = 'x', :$corners where C = W{$style}`):
+                                // bind those first, as the real binder does.
+                                self.bind_earlier_named_params(
+                                    param_defs,
+                                    pd,
+                                    &named_args,
+                                    candidate_package,
+                                );
                                 match self.eval_param_default_in_candidate_package(
                                     pd,
                                     default_expr,

@@ -24,51 +24,91 @@ impl Interpreter {
     /// pretty/unpretty-associative and -positional iterate exactly that), so
     /// deep-replace them with plain Hash/Array values the pure serializer
     /// understands. Named (Pair) args are left alone.
-    fn prepare_to_json_args(&mut self, args: Vec<Value>) -> Vec<Value> {
-        args.into_iter()
-            .map(|a| match a.view() {
-                ValueView::Pair(..) | ValueView::ValuePair(..) => a,
-                _ if self.json_subject_needs_prepare(&a) => self.prepare_to_json_subject(&a),
-                _ => a,
-            })
-            .collect()
+    // Cost: O(n), n = values visited in the subject's aggregate tree.
+    fn prepare_to_json_args(&mut self, args: Vec<Value>) -> Result<Vec<Value>, RuntimeError> {
+        let mut prepared = Vec::with_capacity(args.len());
+        for arg in args {
+            let value = match arg.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => arg,
+                _ if self.json_subject_needs_prepare(&arg, 0)? => {
+                    self.prepare_to_json_subject(&arg, 0)?
+                }
+                _ => arg,
+            };
+            prepared.push(value);
+        }
+        Ok(prepared)
     }
 
     /// Cheap read-only scan: does the subject contain an Associative/Positional
     /// user instance anywhere? Avoids deep-rebuilding plain data.
-    fn json_subject_needs_prepare(&mut self, val: &Value) -> bool {
+    // Cost: O(n), n = values visited in the subject's aggregate tree.
+    fn json_subject_needs_prepare(
+        &mut self,
+        val: &Value,
+        depth: usize,
+    ) -> Result<bool, RuntimeError> {
+        if depth >= json::MAX_JSON_DEPTH {
+            return Err(json_depth_error());
+        }
         match val.view() {
             ValueView::Instance { .. }
             | ValueView::Mixin(..)
-            | ValueView::CustomTypeInstance(..) => {
-                self.type_matches_value("Associative", val)
-                    || self.type_matches_value("Positional", val)
-            }
+            | ValueView::CustomTypeInstance(..) => Ok(self.type_matches_value("Associative", val)
+                || self.type_matches_value("Positional", val)),
             ValueView::Array(arr, _) => {
                 let items = arr.items().to_vec();
-                items.iter().any(|i| self.json_subject_needs_prepare(i))
+                for item in &items {
+                    if self.json_subject_needs_prepare(item, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
             ValueView::Seq(items) => {
                 let items = items.to_vec();
-                items.iter().any(|i| self.json_subject_needs_prepare(i))
+                for item in &items {
+                    if self.json_subject_needs_prepare(item, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
             ValueView::Slip(items) => {
                 let items = items.to_vec();
-                items.iter().any(|i| self.json_subject_needs_prepare(i))
+                for item in &items {
+                    if self.json_subject_needs_prepare(item, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
             ValueView::Hash(h) => {
                 let values: Vec<Value> = h.map.values().cloned().collect();
-                values.iter().any(|v| self.json_subject_needs_prepare(v))
+                for value in &values {
+                    if self.json_subject_needs_prepare(value, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
             ValueView::Scalar(inner) => {
                 let inner = inner.clone();
-                self.json_subject_needs_prepare(&inner)
+                self.json_subject_needs_prepare(&inner, depth + 1)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
-    fn prepare_to_json_subject(&mut self, val: &Value) -> Value {
+    // Cost: O(n), n = values visited in the subject's aggregate tree.
+    fn prepare_to_json_subject(
+        &mut self,
+        val: &Value,
+        depth: usize,
+    ) -> Result<Value, RuntimeError> {
+        if depth >= json::MAX_JSON_DEPTH {
+            return Err(json_depth_error());
+        }
         match val.view() {
             ValueView::Instance { .. }
             | ValueView::Mixin(..)
@@ -76,16 +116,16 @@ impl Interpreter {
                 let assoc = self.type_matches_value("Associative", val);
                 let positional = self.type_matches_value("Positional", val);
                 if !assoc && !positional {
-                    return val.clone();
+                    return Ok(val.clone());
                 }
                 let Ok(listed) = self.call_method_with_values(val.clone(), "list", vec![]) else {
-                    return val.clone();
+                    return Ok(val.clone());
                 };
                 let items: Vec<Value> = match listed.view() {
                     ValueView::Array(arr, _) => arr.items().to_vec(),
                     ValueView::Seq(items) => items.to_vec(),
                     ValueView::Slip(items) => items.to_vec(),
-                    _ => return val.clone(),
+                    _ => return Ok(val.clone()),
                 };
                 if assoc {
                     // Associative wins over Positional (JSON::Fast dispatch
@@ -94,47 +134,49 @@ impl Interpreter {
                     for item in &items {
                         match item.view() {
                             ValueView::Pair(k, v) => {
-                                map.insert(k.clone(), self.prepare_to_json_subject(v));
+                                map.insert(k.clone(), self.prepare_to_json_subject(v, depth + 1)?);
                             }
                             ValueView::ValuePair(k, v) => {
-                                map.insert(k.to_string_value(), self.prepare_to_json_subject(v));
+                                map.insert(
+                                    k.to_string_value(),
+                                    self.prepare_to_json_subject(v, depth + 1)?,
+                                );
                             }
                             _ => {}
                         }
                     }
-                    Value::hash_with_data(Value::hash_arc(map))
+                    Ok(Value::hash_with_data(Value::hash_arc(map)))
                 } else {
-                    let items = items
+                    let items: Result<Vec<_>, _> = items
                         .iter()
-                        .map(|i| self.prepare_to_json_subject(i))
+                        .map(|i| self.prepare_to_json_subject(i, depth + 1))
                         .collect();
-                    Value::real_array(items)
+                    Ok(Value::real_array(items?))
                 }
             }
             ValueView::Array(arr, kind) => {
-                let items: Vec<Value> = arr
+                let items: Result<Vec<Value>, _> = arr
                     .items()
                     .iter()
-                    .map(|i| self.prepare_to_json_subject(i))
+                    .map(|i| self.prepare_to_json_subject(i, depth + 1))
                     .collect();
-                Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items?)),
                     kind,
-                )
+                ))
             }
             ValueView::Hash(h) => {
-                let map: ValueMap = h
-                    .map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), self.prepare_to_json_subject(v)))
-                    .collect();
-                Value::hash_with_data(Value::hash_arc(map))
+                let mut map = ValueMap::default();
+                for (key, value) in &h.map {
+                    map.insert(key.clone(), self.prepare_to_json_subject(value, depth + 1)?);
+                }
+                Ok(Value::hash_with_data(Value::hash_arc(map)))
             }
             ValueView::Scalar(inner) => {
                 let inner = inner.clone();
-                self.prepare_to_json_subject(&inner)
+                self.prepare_to_json_subject(&inner, depth + 1)
             }
-            _ => val.clone(),
+            _ => Ok(val.clone()),
         }
     }
 
@@ -159,6 +201,7 @@ impl Interpreter {
     /// JSON::JWT), so it is not gated on a JSON module being loaded. Returns
     /// `Some` when the invocant is the `Rakudo::Internals::JSON` type object and
     /// the method is one of the two JSON routines.
+    // Cost: O(n log n + b), n = values encoded or input bytes parsed, b = output bytes.
     pub(crate) fn try_rakudo_internals_json_method(
         &mut self,
         target: &Value,
@@ -176,10 +219,9 @@ impl Interpreter {
         }
         let (clean_args, _) = self.sanitize_call_args(args);
         Some(match method {
-            "to-json" => {
-                let clean_args = self.prepare_to_json_args(clean_args);
-                native_to_json(&clean_args, self.base_to_json_opts())
-            }
+            "to-json" => self
+                .prepare_to_json_args(clean_args)
+                .and_then(|args| native_to_json(&args, self.base_to_json_opts())),
             // `Rakudo::Internals::JSON.from-json(Str)` takes no `:immutable`.
             "from-json" => native_from_json(&clean_args, false),
             _ => unreachable!(),
@@ -187,6 +229,7 @@ impl Interpreter {
     }
 }
 
+// Cost: O(n log n + b), n = values encoded, b = output bytes.
 fn native_to_json(args: &[Value], base_opts: ToJsonOpts) -> Result<Value, RuntimeError> {
     let mut opts = base_opts;
     let mut subject: Option<&Value> = None;
@@ -201,7 +244,16 @@ fn native_to_json(args: &[Value], base_opts: ToJsonOpts) -> Result<Value, Runtim
         }
     }
     let subject = subject.unwrap_or(&crate::value::NIL_VALUE);
-    Ok(Value::str(json::to_json(subject, &opts)))
+    json::to_json(subject, &opts)
+        .map(Value::str)
+        .map_err(RuntimeError::new)
+}
+
+fn json_depth_error() -> RuntimeError {
+    RuntimeError::new(format!(
+        "JSON nesting exceeds {} levels",
+        json::MAX_JSON_DEPTH
+    ))
 }
 
 fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {

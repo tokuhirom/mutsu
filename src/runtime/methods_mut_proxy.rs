@@ -30,16 +30,37 @@ impl Interpreter {
     }
 
     /// Call Proxy FETCH and return the fetched value, propagating attribute updates to the instance.
+    ///
+    /// FETCH is called with the Proxy itself, as in Rakudo, so a Proxy
+    /// subclass's FETCH sees its own attributes (a native positional
+    /// reference reads its element through them, #11209).
     pub(crate) fn proxy_fetch(
         &mut self,
-        fetcher: &Value,
+        proxy: &Value,
         target_var: Option<&str>,
         class_name: &str,
         attributes: &AttrMap,
         target_id: u64,
     ) -> Result<Value, RuntimeError> {
-        let proxy_val = Value::proxy_parts(fetcher.clone(), Value::NIL, None, false);
-        let (result, _updated) = self.call_proxy_callback(fetcher, vec![proxy_val], attributes)?;
+        let ValueView::Proxy {
+            fetcher,
+            storer,
+            subclass,
+            ..
+        } = proxy.view()
+        else {
+            return Ok(proxy.clone());
+        };
+        let fetcher = Value::clone(fetcher);
+        // Handed over as its `.VAR` (decontainerized), so binding it to the
+        // FETCH's invocant does not FETCH it again.
+        let invocant = Value::proxy_parts(
+            fetcher.clone(),
+            Value::clone(storer),
+            subclass.clone(),
+            true,
+        );
+        let (result, _updated) = self.call_proxy_callback(&fetcher, vec![invocant], attributes)?;
         // For FETCH we don't propagate attribute changes (reads shouldn't mutate)
         let _ = target_var;
         let _ = class_name;

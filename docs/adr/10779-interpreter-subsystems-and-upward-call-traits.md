@@ -96,6 +96,15 @@ or when a field matches no `SUBSYSTEMS` rule. New state goes into the subsystem 
 to. This is what keeps the extraction from being undone by later features, as the
 `check-layer-deps` ratchet does for module edges.
 
+*Amendment (2026-10-03).* The baseline is a list of allowed field **names**, not a count, and it
+is never rewritten. A count was one line that every extraction PR had to rewrite, so any two
+PRs in flight (and every rebase of a stacked one) conflicted on it. `scripts/interp-fields-baseline.txt`
+now holds the names the struct had when it was cut and is frozen; a PR that extracts a subsystem
+allows its new holder field by adding its own file `scripts/interp-fields.d/<subsystem>.txt`.
+A field allowed by neither fails the check, with its name; an allowed name that is no longer a
+field is ignored. No shared file is edited, so parallel PRs cannot conflict. The decision — no
+new direct fields — is unchanged.
+
 ### D5. Upward calls go through traits defined below and implemented above
 
 A lower layer that needs a service from the runtime declares a narrow trait for it. The runtime
@@ -185,4 +194,18 @@ these preconditions:
     invalidation entry point is a follow-up: this step only moved the fields.
   - `regex`: done. `RegexGrammarState` (`src/runtime/regex_grammar_state.rs`) holds the 10
     regex/grammar/slang fields, all started fresh in a spawned thread; 386 → 377 fields.
-  - Next: `eval`, `threads`, `async`.
+  - `module` visibility (out of order, from ADR-11136's needs): `ModuleVisibility`
+    (`src/runtime/module_merge.rs`) took the seven ADR-11136/#7797 tables instead of adding
+    them to `Interpreter`.
+  - `async`: done. `AsyncState` (`src/runtime/async_state.rs`) holds the 23
+    gather/lazy-pull/supply/react fields, all started fresh in a spawned thread; 375 → 353.
+  - `eval` is deferred: its rule mixes the MAIN fields (copied into a spawned thread) with
+    `pending_eval_*`/`pending_supply_*`, which are set-then-taken side channels and so fall
+    under D3 (explicit parameters), not into a struct. The rules need splitting first.
+  - `threads`: done. `ThreadSharing` (`src/runtime/thread_sharing.rs`) holds the 13
+    shared-store/masking/lock fields. Its policy is the first non-uniform one, and it is now
+    one method: `fork_for_thread(captured_scalars)` makes the store a child lineage, seeds the
+    redeclared set from the block's captured scalars and the parent's parameter shadows,
+    shares the two dirty sets and starts the rest fresh; `root()` is the main interpreter's.
+    353 → 341 fields.
+  - Next: `io`, `control`, `topic`, `dispatch`, `lexicals`.

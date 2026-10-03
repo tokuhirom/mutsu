@@ -590,11 +590,12 @@ impl Interpreter {
             false
         };
         let is_builtin_seq = matches!(value.view(), ValueView::Seq(body) if !body.is_lazy());
-        let is_positional_bind_failover =
-            is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
+        // Only an `@` parameter binds through `PositionalBindFailover`, so the
+        // role check (a full type walk for an object argument) is asked of
+        // those alone.
         if pd.name.starts_with('@')
             && !seq_list_array_context
-            && is_positional_bind_failover
+            && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {
             value = self.coerce_positional_bind_failover(value)?;
@@ -3366,7 +3367,18 @@ impl Interpreter {
                                 matches!(source_name.as_str(), "_" | "!" | "@_" | "%_");
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
-                            if is_compile_time_pseudo || is_routine_reset_magic {
+                            // The caller's topic (`.&g`, a code-object call
+                            // that passes `$_` by name only) is still a
+                            // writable source once the binding above queued
+                            // its exit writeback: the parameter keeps its own
+                            // cell and copies back to the caller's `$_`, with
+                            // no alias (the callee's `_` is its own topic).
+                            let topic_writeback = source_name == "_"
+                                && rw_bindings.iter().any(|(param, _)| *param == pd.name);
+                            if topic_writeback {
+                                self.env.remove_sym(alias_key);
+                                self.env.insert_sym_noting(readonly_key, Value::FALSE);
+                            } else if is_compile_time_pseudo || is_routine_reset_magic {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::TRUE);
                             } else if self.env.get(&resolved_source).is_some() {

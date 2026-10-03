@@ -171,6 +171,16 @@ pub(crate) fn parse_optional_role_type_params(
         if part.is_empty() {
             continue;
         }
+        // A nameless capture `role R[::]` still takes one argument: it binds
+        // as an anonymous positional so `R[Int]` resolves a candidate.
+        if part == "::"
+            && let Ok((rest, pd)) = parse_single_param("$")
+            && rest.trim().is_empty()
+        {
+            params.push(pd.name.trim_start_matches('$').to_string());
+            param_defs.push(pd);
+            continue;
+        }
         if let Some((constraint_part, capture_part)) = part.split_once("::") {
             let constraint = constraint_part.trim();
             let capture_part = capture_part.trim();

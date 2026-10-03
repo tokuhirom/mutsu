@@ -61,7 +61,7 @@ impl Interpreter {
         elem_key: String,
         value: Value,
     ) -> Option<Value> {
-        if !key.starts_with('%') || !self.shared_vars_active {
+        if !key.starts_with('%') || !self.threads.shared_vars_active {
             return None;
         }
         // A `my %h` re-declared under the shared lane is a fresh container that
@@ -107,8 +107,10 @@ impl Interpreter {
         // to the normal local assignment.
         if Self::is_plain_lexical_name(key) {
             let atomic_key = atomic_lane_str_key(key, true);
-            let is_shared =
-                { self.shared_vars.contains_key(atomic_key) || self.shared_vars.contains_key(key) };
+            let is_shared = {
+                self.threads.shared_vars.contains_key(atomic_key)
+                    || self.threads.shared_vars.contains_key(key)
+            };
             if is_shared {
                 return Some(self.shared_hash_elem_set(key, elem_key, value));
             }
@@ -120,6 +122,7 @@ impl Interpreter {
         // would discard accumulated element writes.
         {
             if !self
+                .threads
                 .shared_vars
                 .get(key)
                 .is_some_and(|v| matches!(v.view(), ValueView::Hash(_)))
@@ -134,6 +137,7 @@ impl Interpreter {
             self.env.remove(key);
         }
         let result = self
+            .threads
             .shared_vars
             .with_entry_mut(key, |val| {
                 val.with_hash_mut(|arc| {
@@ -177,7 +181,7 @@ impl Interpreter {
         idx: usize,
         value: Value,
     ) -> Option<Value> {
-        if !key.starts_with('@') || !self.shared_vars_active {
+        if !key.starts_with('@') || !self.threads.shared_vars_active {
             return None;
         }
         // See `assign_hash_elem_to_shared_var`.
@@ -203,8 +207,10 @@ impl Interpreter {
         // shared_vars) falls through to the normal local assignment.
         if Self::is_plain_lexical_name(key) {
             let atomic_key = atomic_lane_str_key(key, false);
-            let is_shared =
-                { self.shared_vars.contains_key(atomic_key) || self.shared_vars.contains_key(key) };
+            let is_shared = {
+                self.threads.shared_vars.contains_key(atomic_key)
+                    || self.threads.shared_vars.contains_key(key)
+            };
             if is_shared {
                 return Some(self.shared_array_elem_set(key, idx, value));
             }
@@ -214,6 +220,7 @@ impl Interpreter {
         // dropping the local env copy.
         {
             if !self
+                .threads
                 .shared_vars
                 .get(key)
                 .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
@@ -228,6 +235,7 @@ impl Interpreter {
             self.env.remove(key);
         }
         let result = self
+            .threads
             .shared_vars
             .with_entry_mut(key, |val| {
                 val.with_array_mut(|arc, kind| {
@@ -259,7 +267,7 @@ impl Interpreter {
     /// Read a shared variable. If the variable is in shared_vars, return
     /// the shared version (which may have been mutated by another thread).
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        self.shared_vars.get(key)
+        self.threads.shared_vars.get(key)
     }
 
     /// Whether a `@`/`%` name is currently masked by a re-declaration in this
@@ -282,9 +290,9 @@ impl Interpreter {
     /// `@g.push(...)` funnelled into the name-keyed atomic store and merged two
     /// closures whose `@g` were bound to different caller arrays (#10076).
     pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
-        self.shared_vars_active
+        self.threads.shared_vars_active
             && key.starts_with(['@', '%'])
-            && (self.thread_redeclared_vars.borrow().contains(key)
+            && (self.threads.thread_redeclared_vars.borrow().contains(key)
                 || self
                     .env
                     .get(key)
@@ -306,7 +314,7 @@ impl Interpreter {
     /// a `Promise.in(...)` spawned inside `!get-pipeline`'s body force-published
     /// its `Cro::Uri $url` over the awaiting `start { ... }` block's own
     /// `my $url`). Recording the name in
-    /// [`thread_param_shadow_vars`](Self::thread_param_shadow_vars) routes such
+    /// [`thread_param_shadow_vars`](crate::runtime::thread_sharing::ThreadSharing::thread_param_shadow_vars) routes such
     /// a nested spawn through `clone_for_thread_excluding`'s `seed_if_absent`
     /// branch instead — a no-op when the name is already visible, which is
     /// exactly the outer binding's case.
@@ -331,7 +339,7 @@ impl Interpreter {
         param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
     ) -> ThreadParamMask {
         let mut mask = ThreadParamMask::default();
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return mask;
         }
         for pd in param_defs {
@@ -349,6 +357,7 @@ impl Interpreter {
             }
             let bare = name.trim_start_matches('$').to_string();
             if self
+                .threads
                 .thread_redeclared_vars
                 .borrow_mut()
                 .insert(bare.clone())
@@ -356,6 +365,7 @@ impl Interpreter {
                 mask.redeclared.push(bare.clone());
             }
             if self
+                .threads
                 .thread_param_shadow_vars
                 .borrow_mut()
                 .insert(bare.clone())
@@ -371,7 +381,11 @@ impl Interpreter {
     /// its ephemeral env->shared migrations can be rolled back after all batch
     /// threads join (see `retain_shared_var_keys`).
     pub(crate) fn shared_var_keys_snapshot(&self) -> std::collections::HashSet<String> {
-        self.shared_vars.visible_keys().into_iter().collect()
+        self.threads
+            .shared_vars
+            .visible_keys()
+            .into_iter()
+            .collect()
     }
 
     /// Drop every `shared_vars` entry whose key is not in `keep`. Used by the
@@ -380,13 +394,14 @@ impl Interpreter {
     /// isn't shadowed by the stale value.
     pub(crate) fn retain_shared_var_keys(&mut self, keep: &std::collections::HashSet<String>) {
         // Only this lineage's own entries: an ancestor's are not ours to retract.
-        self.shared_vars.retain_own(|k| keep.contains(k));
+        self.threads.shared_vars.retain_own(|k| keep.contains(k));
     }
 
     /// Returns true if the given key is in the shared_vars_dirty set
     /// (i.e., was modified by an atomic/CAS operation).
     pub(crate) fn is_shared_var_dirty(&self, key: &str) -> bool {
-        self.shared_vars_dirty
+        self.threads
+            .shared_vars_dirty
             .read()
             .map(|d| d.contains(key))
             .unwrap_or(false)
@@ -397,18 +412,18 @@ impl Interpreter {
     /// this thread's env copy of every scalar a previous holder committed inside
     /// its own critical section.
     pub(crate) fn enter_critical_section(&mut self) {
-        self.critical_section_depth += 1;
+        self.threads.critical_section_depth += 1;
         self.sync_critical_shared_scalars_to_env();
     }
 
     /// Leave a critical section.
     pub(crate) fn leave_critical_section(&mut self) {
-        self.critical_section_depth = self.critical_section_depth.saturating_sub(1);
+        self.threads.critical_section_depth = self.threads.critical_section_depth.saturating_sub(1);
     }
 
     /// True while this interpreter holds at least one critical section.
     pub(crate) fn in_critical_section(&self) -> bool {
-        self.critical_section_depth > 0
+        self.threads.critical_section_depth > 0
     }
 
     /// Write the current local value of `name` back to the shared store when a
@@ -417,7 +432,7 @@ impl Interpreter {
     /// write lands only in the local env; the lock serializes the whole-
     /// container round-trip so the next holder re-reads it on entry.
     pub(crate) fn writeback_critical_var(&mut self, name: &str) {
-        if self.critical_section_depth == 0 || !self.shared_vars_active {
+        if self.threads.critical_section_depth == 0 || !self.threads.shared_vars_active {
             return;
         }
         if let Some(val) = self.env.get(name).cloned() {
@@ -434,6 +449,7 @@ impl Interpreter {
             return;
         }
         if self
+            .threads
             .shared_critical_dirty
             .read()
             .ok()
@@ -441,7 +457,7 @@ impl Interpreter {
         {
             return;
         }
-        if let Ok(mut d) = self.shared_critical_dirty.write() {
+        if let Ok(mut d) = self.threads.shared_critical_dirty.write() {
             d.insert(key.to_string());
         }
     }
@@ -456,18 +472,18 @@ impl Interpreter {
     /// loop lexical (`my $i = $_`, assigned outside any critical section) keeps
     /// this thread's own captured snapshot.
     fn sync_critical_shared_scalars_to_env(&mut self) {
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return;
         }
         let keys: Vec<String> = {
-            let d = self.shared_critical_dirty.read().unwrap();
+            let d = self.threads.shared_critical_dirty.read().unwrap();
             if d.is_empty() {
                 return;
             }
             d.iter().cloned().collect()
         };
         for key in keys {
-            if let Some(val) = self.shared_vars.get(&key) {
+            if let Some(val) = self.threads.shared_vars.get(&key) {
                 self.env.insert(key, val);
             }
         }
@@ -475,6 +491,7 @@ impl Interpreter {
 
     pub(crate) fn mark_shared_var_dirty(&self, key: &str) {
         if self
+            .threads
             .shared_vars_dirty
             .read()
             .ok()
@@ -482,7 +499,7 @@ impl Interpreter {
         {
             return;
         }
-        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.insert(key.to_string());
         }
     }
@@ -526,9 +543,9 @@ impl Interpreter {
         // A blanket locals -> env mirror is a coherence pass over THIS frame's
         // slots, not an assignment: the bare-name lane must not be republished
         // from it (see `suppress_shared_publish`).
-        if self.shared_vars_active
-            && !self.suppress_shared_publish
-            && !self.thread_redeclared_vars.borrow().contains(key)
+        if self.threads.shared_vars_active
+            && !self.threads.suppress_shared_publish
+            && !self.threads.thread_redeclared_vars.borrow().contains(key)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
@@ -553,7 +570,7 @@ impl Interpreter {
             // and must not be clobbered by stale local snapshots.
             if key.starts_with('@') {
                 let atomic_key = crate::runtime::shared_store::atomic_lane_key(key, false);
-                if self.shared_vars.contains_key(atomic_key.as_str()) {
+                if self.threads.shared_vars.contains_key(atomic_key.as_str()) {
                     return;
                 }
             } else if key.starts_with('%') {
@@ -561,14 +578,14 @@ impl Interpreter {
                 // entry (concurrent element assignment) must not be clobbered
                 // by a stale local snapshot during env sync.
                 let atomic_key = crate::runtime::shared_store::atomic_lane_key(key, true);
-                if self.shared_vars.contains_key(atomic_key.as_str()) {
+                if self.threads.shared_vars.contains_key(atomic_key.as_str()) {
                     return;
                 }
             }
-            if self.shared_vars.contains_key(key) {
+            if self.threads.shared_vars.contains_key(key) {
                 // ADR-0010: resolves to the lineage that owns the name, so a
                 // child's write to a lexical its parent shared reaches the parent.
-                self.shared_vars.set(key, value);
+                self.threads.shared_vars.set(key, value);
                 // Mark this key as explicitly updated so sync_shared_vars_to_env
                 // knows to propagate it (vs keys only initialized by clone_for_thread).
                 self.mark_shared_var_dirty(key);
@@ -589,9 +606,9 @@ impl Interpreter {
         }
         // ADR-0129: a live child that captured the binding this declaration
         // replaces keeps it — lane included — before the lane is cleared.
-        self.shared_vars.retire_binding(key);
+        self.threads.shared_vars.retire_binding(key);
         let atomic_key = atomic_lane_str_key(key, false);
-        self.shared_vars.remove(atomic_key);
+        self.threads.shared_vars.remove(atomic_key);
     }
 
     /// Hash analogue of `clear_atomic_array_state`: drop the
@@ -603,9 +620,9 @@ impl Interpreter {
             return;
         }
         // See `clear_atomic_array_state` (ADR-0129).
-        self.shared_vars.retire_binding(key);
+        self.threads.shared_vars.retire_binding(key);
         let atomic_key = atomic_lane_str_key(key, true);
-        self.shared_vars.remove(atomic_key);
+        self.threads.shared_vars.remove(atomic_key);
     }
 
     /// Sync shared variables back from shared_vars into the local env.
@@ -618,12 +635,12 @@ impl Interpreter {
         // set_shared_var acquires shared_vars then shared_vars_dirty,
         // so we must not hold shared_vars_dirty while acquiring shared_vars.
         let dirty_keys: Vec<String> = {
-            let dirty = self.shared_vars_dirty.read().unwrap();
+            let dirty = self.threads.shared_vars_dirty.read().unwrap();
             dirty
                 .iter()
                 // A name re-declared in this thread is a fresh local binding;
                 // pulling the shared (outer) value in would clobber it.
-                .filter(|k| !self.thread_redeclared_vars.borrow().contains(*k))
+                .filter(|k| !self.threads.thread_redeclared_vars.borrow().contains(*k))
                 // `self` and `?`-pseudo-lexicals are per-invocation/per-scope
                 // bindings, never shared variables — a store polluted by an
                 // older seed must not overwrite the live frame's invocant
@@ -649,7 +666,7 @@ impl Interpreter {
             return;
         }
         let updates: Vec<(String, Value)> = {
-            let sv = &self.shared_vars;
+            let sv = &self.threads.shared_vars;
             let mut updates = Vec::new();
             for key in &dirty_keys {
                 // Atomic ops store the value under an internal shared key, while
@@ -768,10 +785,10 @@ impl Interpreter {
     /// The `__mutsu_atomic_*` twin goes with it: reads prefer that entry, so
     /// leaving it behind would retire nothing.
     fn withdraw_transient_lane_containers(&mut self) {
-        if self.transient_lane_containers.is_empty() {
+        if self.threads.transient_lane_containers.is_empty() {
             return;
         }
-        for key in std::mem::take(&mut self.transient_lane_containers) {
+        for key in std::mem::take(&mut self.threads.transient_lane_containers) {
             let atomic_key = atomic_lane_str_key(&key, !key.starts_with('@'));
             // **Only a CLEAN entry is retired**, and that restriction is what
             // makes the whole mechanism safe rather than merely narrow. A clean
@@ -790,6 +807,7 @@ impl Interpreter {
             // are awaited). So a dirty entry simply graduates to durable: drop
             // the mark and leave it alone.
             if self
+                .threads
                 .shared_vars_dirty
                 .read()
                 .ok()
@@ -797,8 +815,8 @@ impl Interpreter {
             {
                 continue;
             }
-            self.shared_vars.remove(atomic_key);
-            self.shared_vars.remove(&key);
+            self.threads.shared_vars.remove(atomic_key);
+            self.threads.shared_vars.remove(&key);
         }
     }
 
@@ -809,7 +827,7 @@ impl Interpreter {
     where
         I: IntoIterator<Item = &'a str>,
     {
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return;
         }
         // A name this lineage re-declared is a fresh binding that merely shares
@@ -818,11 +836,11 @@ impl Interpreter {
         // pulling that entry in made a `$lock.protect: { @a ... }` block read
         // a previous invocation's `@a` (#8380: `Test::Scheduler.run-due`
         // re-queued a cancelled event forever).
-        let redeclared = self.thread_redeclared_vars.borrow();
+        let redeclared = self.threads.thread_redeclared_vars.borrow();
         let entries: Vec<(String, Value)> = names
             .into_iter()
             .filter(|n| !redeclared.contains(*n))
-            .filter_map(|n| self.shared_vars.get(n).map(|v| (n.to_string(), v)))
+            .filter_map(|n| self.threads.shared_vars.get(n).map(|v| (n.to_string(), v)))
             .collect();
         drop(redeclared);
         for (name, val) in entries {
@@ -836,6 +854,8 @@ impl Interpreter {
 
     pub(crate) fn clear_private_zeroarg_method_cache(&mut self) {
         self.caches.private_zeroarg_method_cache.clear();
+        self.caches.private_resolve_cache.clear();
+        self.caches.private_type_cacheable.clear();
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
@@ -865,6 +885,7 @@ impl Interpreter {
             Some(vk) => vk,
             None => {
                 match self
+                    .threads
                     .shared_vars
                     .get(&name_key)
                     .and_then(|v| v.as_str().map(str::to_string))
@@ -874,9 +895,9 @@ impl Interpreter {
                 }
             }
         };
-        self.shared_vars.remove(value_key.as_str());
-        self.shared_vars.remove(&name_key);
-        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        self.threads.shared_vars.remove(value_key.as_str());
+        self.threads.shared_vars.remove(&name_key);
+        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.remove(&value_key);
         }
     }
@@ -890,16 +911,17 @@ impl Interpreter {
         let name_key = MetaNs::AtomicName.owned_key_for_str(name);
         self.env.remove(&name_key);
         let value_key = self
+            .threads
             .shared_vars
             .get(&name_key)
             .and_then(|v| v.as_str().map(str::to_string));
         if let Some(value_key) = value_key {
-            self.shared_vars.remove(&value_key);
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            self.threads.shared_vars.remove(&value_key);
+            if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                 dirty.remove(&value_key);
             }
         }
-        self.shared_vars.remove(&name_key);
+        self.threads.shared_vars.remove(&name_key);
     }
 
     /// ONE pass over `current_env`, not two.

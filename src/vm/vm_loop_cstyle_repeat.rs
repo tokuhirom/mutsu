@@ -11,9 +11,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // Condition-driven loop: a lazy-pull take limit defers its suspension
         // to this loop's iteration boundary (see `lazy_take_boundary_defer`).
-        let saved_defer = std::mem::replace(&mut self.lazy_take_boundary_defer, true);
+        let saved_defer = std::mem::replace(&mut self.async_state.lazy_take_boundary_defer, true);
         let r = self.exec_cstyle_loop_op_inner(code, spec, ip, compiled_fns);
-        self.lazy_take_boundary_defer = saved_defer;
+        self.async_state.lazy_take_boundary_defer = saved_defer;
         r
     }
 
@@ -43,15 +43,15 @@ impl Interpreter {
         // marker is consumed here; the loop's actual state lives in locals/env
         // so re-entering from the top (cond re-check) continues correctly.
         if matches!(
-            self.gather_for_loop_resume,
+            self.async_state.gather_for_loop_resume,
             Some(crate::value::ForLoopResumeState::CStyleLoop { .. })
         ) {
             // Restore the chained inner state (a loop nested in this body)
             // into the slot so the next loop op encountered resumes too.
             if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner, .. }) =
-                self.gather_for_loop_resume.take()
+                self.async_state.gather_for_loop_resume.take()
             {
-                self.gather_for_loop_resume = inner.map(|b| *b);
+                self.async_state.gather_for_loop_resume = inner.map(|b| *b);
             }
         } else if !code.state_locals.is_empty() {
             // Fresh entry to the loop statement: state variables declared in
@@ -69,12 +69,13 @@ impl Interpreter {
             // the iteration boundary (post-step) is the exact point where
             // re-entering from the condition on resume continues correctly.
             if self.gather_suspend_boundary_reached() {
-                self.gather_suspend_pending = false;
-                let nested = self.gather_for_loop_resume.take();
-                self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop {
-                    inner: nested.map(Box::new),
-                    site: (code.ops.as_ptr() as usize, cond_start - 1),
-                });
+                self.async_state.gather_suspend_pending = false;
+                let nested = self.async_state.gather_for_loop_resume.take();
+                self.async_state.gather_for_loop_resume =
+                    Some(crate::value::ForLoopResumeState::CStyleLoop {
+                        inner: nested.map(Box::new),
+                        site: (code.ops.as_ptr() as usize, cond_start - 1),
+                    });
                 self.pop_loop_local_scope(code);
                 return Err(RuntimeError::new(
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
@@ -170,8 +171,8 @@ impl Interpreter {
                             self.pop_loop_local_scope(code);
                             return Err(step_err);
                         }
-                        let nested = self.gather_for_loop_resume.take();
-                        self.gather_for_loop_resume =
+                        let nested = self.async_state.gather_for_loop_resume.take();
+                        self.async_state.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::CStyleLoop {
                                 inner: nested.map(Box::new),
                                 site: (code.ops.as_ptr() as usize, cond_start - 1),
@@ -214,9 +215,9 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Condition-driven loop: see exec_cstyle_loop_op.
-        let saved_defer = std::mem::replace(&mut self.lazy_take_boundary_defer, true);
+        let saved_defer = std::mem::replace(&mut self.async_state.lazy_take_boundary_defer, true);
         let r = self.exec_repeat_loop_op_inner(code, cond_end, body_end, label, ip, compiled_fns);
-        self.lazy_take_boundary_defer = saved_defer;
+        self.async_state.lazy_take_boundary_defer = saved_defer;
         r
     }
 
@@ -249,7 +250,7 @@ impl Interpreter {
         // execution — see `reset_state_locals_in_range`). Skipped while a
         // gather-coroutine resume marker is pending (the re-entry continues
         // the same statement execution).
-        if self.gather_for_loop_resume.is_none() && !code.state_locals.is_empty() {
+        if self.async_state.gather_for_loop_resume.is_none() && !code.state_locals.is_empty() {
             self.reset_state_locals_in_range(code, body_start, loop_end);
         }
 

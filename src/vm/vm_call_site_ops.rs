@@ -22,7 +22,12 @@ impl Interpreter {
     /// itself a `.resume`/`.rethrow` re-raising a signal, the original point
     /// (e.g. after `warn`) must survive.
     #[inline]
-    fn record_call_resume_point(&mut self, code: &CompiledCode, ip: usize, e: &RuntimeError) {
+    pub(super) fn record_call_resume_point(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        e: &RuntimeError,
+    ) {
         if !e.is_resume() && self.resume_ip.is_none() {
             self.resume_ip = Some((Self::resume_code_fp(code), ip + 1));
         }
@@ -165,6 +170,18 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // A built-in method with a row in the method table, on a plain
+        // receiver: answered by the row, past the full path's probes
+        // (`vm_method_site_lane`).
+        if let Some(answer) = self.try_method_site_lane(code, ip) {
+            #[cfg(debug_assertions)]
+            {
+                let full = self.in_method_call(|vm| vm.exec_call_method_mut_site_inner(code, ip));
+                return self.check_method_site_lane(code, ip, answer, full);
+            }
+            #[cfg(not(debug_assertions))]
+            return self.finish_method_site_lane(code, ip, answer);
+        }
         // A method call, for `resolve_onlystar` (#10746).
         self.in_method_call(|vm| vm.exec_call_method_mut_site_inner(code, ip))
     }
@@ -319,6 +336,16 @@ impl Interpreter {
             let result = self.vm_call_on_value(rebound, vec![val], None)?;
             self.stack.push(result);
             return Ok(());
+        }
+        // Under `use fatal` -- which a `try` block turns on for its body -- a
+        // Failure is thrown where it is produced into the fatal scope, so
+        // `try { return $s.Num }` with a non-numeric `$s` lands in the try
+        // (Rakudo: the try yields Nil and the routine carries on) instead of
+        // returning the Failure (Template::Jinja2's `float` filter).
+        if self.fatal_mode
+            && let Some(failure) = self.failure_to_runtime_error_if_unhandled(&val)
+        {
+            return Err(failure);
         }
         let mut err = RuntimeError::return_signal(val);
         // ADR-0037 Slice 4: an EVAL unit whose `context => $ctx` named a live

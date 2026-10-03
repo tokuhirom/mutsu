@@ -626,7 +626,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
-            if let Some(buf) = self.supply_emit_buffer.last_mut() {
+            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 return Ok(Value::NIL);
             }
@@ -4161,6 +4161,12 @@ impl Interpreter {
             && let Some(stored) = crate::runtime::quanthash_store::quanthash_store(&target, &args)
         {
             return Ok(stored);
+        }
+        // STORE on a native Hash/Array: re-initialize its node in place.
+        if method == "STORE"
+            && let Some(stored) = self.native_container_store(&target, &args)
+        {
+            return stored;
         }
 
         // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on

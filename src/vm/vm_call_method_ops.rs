@@ -434,6 +434,7 @@ impl Interpreter {
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
+                    let tc = self.attribute_reported_constraint(&cn, method, &tc);
                     let (value_type, key_type) =
                         crate::runtime::types::split_object_hash_constraint(&tc);
                     let info = crate::runtime::ContainerTypeInfo {
@@ -1054,7 +1055,7 @@ impl Interpreter {
             )
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "emit");
-            if let Some(buf) = self.supply_emit_buffer.last_mut() {
+            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 self.stack.push(Value::NIL);
                 // Buffering into the supply emit buffer touches no env: no mark.
@@ -2426,6 +2427,13 @@ impl Interpreter {
                 let mark_dirty = !self.method_dispatch_pure;
                 match modifier {
                     Some("?") => match call_result {
+                        Ok(val)
+                            if crate::runtime::methods_instance_ops::is_composed_method_stub(
+                                &val,
+                            ) =>
+                        {
+                            self.stack.push(Value::NIL);
+                        }
                         Ok(val) => {
                             self.stack.push(val);
                             if mark_dirty {}

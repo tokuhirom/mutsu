@@ -372,6 +372,7 @@ impl Interpreter {
             is_hidden_from_backtrace: false,
             def_file: None,
             invocation_id,
+            callable_id: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);

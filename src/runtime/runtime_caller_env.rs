@@ -393,8 +393,8 @@ impl Interpreter {
                 entries.insert(key, v.clone().into_deref());
             }
         }
-        for (env_key, v) in &self.process_dynamics {
-            if let Some(key) = stash_key(env_key) {
+        for (env_key, v) in self.process_dynamics.entries() {
+            if let Some(key) = stash_key(&env_key) {
                 entries.insert(key, v.clone().into_deref());
             }
         }

@@ -427,7 +427,13 @@ impl Interpreter {
                         Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
                         _ => Vec::new(),
                     };
-                    return self.run_wrapped_start_rule_terminal(&pkg, &method, &parse_args);
+                    let parsed =
+                        self.run_wrapped_start_rule_terminal(&pkg, &method, &parse_args)?;
+                    return Ok(Self::token_wrap_result_or_failure(
+                        &pkg,
+                        args.first(),
+                        parsed,
+                    ));
                 }
                 let Some(cursor) = args.first() else {
                     return Ok(Value::NIL);
@@ -435,13 +441,18 @@ impl Interpreter {
                 let Some((orig, pos, _)) = Self::cursor_call_position(cursor) else {
                     return Ok(Value::NIL);
                 };
-                return self.run_token_method_at_unwrapped(
+                let matched = self.run_token_method_at_unwrapped(
                     crate::symbol::Symbol::intern(&pkg),
                     &name,
                     &args[1..],
                     &orig,
                     pos,
-                );
+                )?;
+                return Ok(Self::token_wrap_result_or_failure(
+                    &pkg,
+                    args.first(),
+                    matched,
+                ));
             }
             // Multi-method dispatcher Sub (`^find_method`/`.can` on a multi):
             // re-dispatch with args[0] as invocant instead of binding the
@@ -976,6 +987,7 @@ impl Interpreter {
                 // own private `helper`.
                 def_file: data.source_file.as_deref().map(Symbol::intern),
                 invocation_id,
+                callable_id: 0,
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);

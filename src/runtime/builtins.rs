@@ -870,6 +870,13 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!("Unknown newline mode: {}", name)));
                     }
                 };
+                let nl = match self.newline_mode {
+                    NewlineMode::Lf => "\n",
+                    NewlineMode::Cr => "\r",
+                    NewlineMode::Crlf => "\r\n",
+                };
+                self.env_mut()
+                    .insert("?NL".to_string(), Value::str_from(nl));
                 Ok(Value::NIL)
             }
             "require" => self.builtin_require(&args),
@@ -1014,12 +1021,12 @@ impl Interpreter {
                 // parser's `supply` rewrite only reaches `emit` written
                 // directly in the body, so route through the active emit
                 // buffer here — the same buffer the `.emit` method form uses.
-                if let Some(emitter) = self.active_supply_emitters.last().cloned() {
+                if let Some(emitter) = self.async_state.active_supply_emitters.last().cloned() {
                     return self
                         .call_method_with_values(emitter, "emit", vec![value])
                         .map(|_| Value::NIL);
                 }
-                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
                     buf.push(value);
                     return Ok(Value::NIL);
                 }
@@ -1331,6 +1338,11 @@ impl Interpreter {
             "await" => self.builtin_await(&args),
             "full-barrier" => Ok(Value::NIL),
             "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
+            // The FETCH/STORE of a native positional reference (#11209).
+            // Cost: O(1) amortized (one element decoded or encoded).
+            "__mutsu_native_posref_fetch" | "__mutsu_native_posref_store" => self
+                .try_native_pos_ref_routine(name, &args)
+                .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(&args),

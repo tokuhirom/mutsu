@@ -1551,40 +1551,19 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             },
         ));
     }
-    // Check for colon-arg syntax: .method: arg, arg2
+    // Colon-arg syntax: `.method: arg, arg2` -- the same list as
+    // `$obj.method: ...`, including its trailing-comma and statement-modifier
+    // rules (`.label: :for($id), $text, unless $hide;`, HTML::Component).
     let (r2, _) = ws(rest)?;
     if r2.starts_with(':') && !r2.starts_with("::") {
-        let r3 = &r2[1..];
-        let (r3, _) = ws(r3)?;
-        let (r3, first_arg) = parse_colon_method_arg(r3)?;
-        let mut args = vec![first_arg];
-        let mut r_inner = r3;
-        loop {
-            let (r4, _) = ws(r_inner)?;
-            // Adjacent colonpairs without comma
-            if r4.starts_with(':')
-                && !r4.starts_with("::")
-                && let Ok((r5, arg)) = crate::parser::primary::misc::colonpair_expr(r4)
-            {
-                args.push(arg);
-                r_inner = r5;
-                continue;
-            }
-            if !r4.starts_with(',') {
-                break;
-            }
-            let r4 = &r4[1..];
-            let (r4, _) = ws(r4)?;
-            let (r4, next) = parse_colon_method_arg(r4)?;
-            args.push(next);
-            r_inner = r4;
-        }
+        let (r_inner, args) =
+            crate::parser::stmt::assign::parse_colon_args_with(r2, parse_colon_method_arg)?;
         return Ok((
             r_inner,
             Expr::MethodCall {
                 target: Box::new(Expr::Var("_".to_string())),
                 name,
-                args: crate::parser::primary::lift_list_infix_in_arg_list(args),
+                args,
                 modifier,
                 quoted: false,
             },

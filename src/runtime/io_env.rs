@@ -268,6 +268,10 @@ impl Interpreter {
             "*RAKU" | "?RAKU" => Self::cached_raku_instance(),
             "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
             "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
+            // `$?NL`: the newline a `\n` stands for. `use newline :crlf` binds
+            // its own value in the scope that runs it; everywhere else it is
+            // the default line feed.
+            "?NL" => Value::str_from("\n"),
             "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
             // `$*TOLERANCE` is a plain `Num` constant, not an expensive instance,
             // but it belongs here rather than in the `Interpreter::new` env seed
@@ -439,6 +443,11 @@ impl Interpreter {
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
+        // A handle written to the process binding (`$PROCESS::OUT = $fh`, on
+        // any thread) lives only in the process stash (ADR-11318).
+        if let Some(v) = self.process_dynamic_read(name) {
+            return Some(v);
+        }
         self.env.get(name).cloned().or_else(|| {
             crate::runtime::utils::twigil_dynamic_alias(name)
                 .and_then(|alias| self.env.get(&alias).cloned())
@@ -457,6 +466,19 @@ impl Interpreter {
         newline: bool,
     ) -> Result<(), RuntimeError> {
         if let Some(handle) = self.get_dynamic_handle(name) {
+            // `print` is `$*OUT.print(...)`, so a wrapped `IO::Handle.print`
+            // sees it (the `say`/`put`/`note` routines have methods of their own).
+            if !newline
+                && matches!(handle.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+                && let Some(wrapped) = self.try_builtin_method_wrap(
+                    "IO::Handle",
+                    &handle,
+                    "print",
+                    &[Value::str(text.to_string())],
+                )
+            {
+                return wrapped.map(|_| ());
+            }
             if Self::handle_id_from_value(&handle).is_some() {
                 return self.write_to_handle_value(&handle, text, newline);
             }

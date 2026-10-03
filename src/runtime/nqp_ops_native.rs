@@ -6,7 +6,9 @@
 //! `NativeCall/Types.rakumod` use (ADR-11203, #11206): `unbox_n`/`unbox_u` and
 //! `atpos_u`/`bindpos_u` for typed `CArray` element traffic, `atposref_{i,n,u}` for an
 //! element's lvalue, and `setcodename`/`neverrepossess` for the routine body
-//! NativeCall's backend-neutral path installs.
+//! NativeCall's backend-neutral path installs. The FFI ops themselves
+//! (`nqp::buildnativecall` and kin, #11211) are the next link, in
+//! `nativecall_nqp.rs`.
 
 use super::*;
 use crate::value::ValueView;
@@ -90,16 +92,28 @@ impl Interpreter {
             }
             // nqp::atposref_i / _n / _u($list, $i): an lvalue for element `$i`
             // -- the same container a `:=` bind to `@list[$i]` produces, so a
-            // write through it lands in the list.
+            // write through it lands in the list. An element of native storage
+            // (a Buf, a CArray) has no slot to share, so it gets a native
+            // reference that reads and writes the bytes (`IntPosRef` & co.).
             // Cost: O(1) for an element in range (promoted to a shared cell once).
             "atposref_i" | "atposref_n" | "atposref_u" => {
                 let target = operand(args, 0);
+                if crate::value::value_buf::buf_target(&target).is_some() {
+                    let len = Interpreter::nqp_elems_len_of(&target).unwrap_or(0);
+                    let idx = args.get(1).map(crate::runtime::to_int).unwrap_or(0);
+                    return Some(
+                        crate::runtime::nqp_backing::resolve_index(idx, len).map(|i| {
+                            crate::runtime::native_pos_ref::native_pos_ref(
+                                target,
+                                i as i64,
+                                crate::runtime::native_pos_ref::NativeRefKind::of_op(op),
+                            )
+                        }),
+                    );
+                }
                 let ValueView::Array(arr, _) = target.view() else {
-                    // TODO: native-backed CArray storage needs a positional ref
-                    // that writes through to the element's bytes; that container
-                    // is part of #11209 (REPRs selected by `is repr<...>`).
                     return Some(Err(RuntimeError::new(format!(
-                        "nqp::{op}: positional references into {} storage are not supported yet (#11209)",
+                        "nqp::{op}: {} does not support positional references",
                         crate::value::type_name::value_type_name(&target)
                     ))));
                 };
@@ -129,7 +143,8 @@ impl Interpreter {
             // modules, so there is nothing to exempt it from.
             // Cost: O(1).
             "neverrepossess" => Ok(operand(args, 0)),
-            _ => return None,
+            // The FFI ops (`nativecall_nqp.rs`).
+            _ => return self.call_nqp_op_ffi(op, args),
         })
     }
 }

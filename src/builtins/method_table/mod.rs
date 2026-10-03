@@ -99,7 +99,9 @@ const SHAPES: [DispatchShape; 6] = [
 /// `(shape, method) -> row`, resolved along each shape's MRO, plus the set of
 /// method names any row has.
 struct Table {
-    rows: FxHashMap<(DispatchShape, Symbol), &'static MethodRow>,
+    rows: FxHashMap<(DispatchShape, Symbol), RowId>,
+    /// Every row once, indexed by [`RowId`].
+    all: Vec<&'static MethodRow>,
     /// One bit per `Symbol` id that names some row. Most calls are to methods
     /// with no row yet; testing a bit answers those without hashing.
     names: Vec<u64>,
@@ -114,11 +116,30 @@ impl Table {
     }
 }
 
+/// A row's index in the table: what a call site's inline cache remembers
+/// (`vm_method_site_lane`). Stable for the life of the process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RowId(u16);
+
+impl RowId {
+    /// The id as the `u16` a site cache word packs.
+    pub(crate) fn to_bits(self) -> u16 {
+        self.0
+    }
+
+    /// The id a site cache word packed with [`Self::to_bits`]. Only ever
+    /// given bits that came from `to_bits` in this process.
+    pub(crate) fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+}
+
 /// Built on the first lookup, not at `Interpreter` construction: the cost is
 /// one pass over the rows per shape (a few dozen inserts today).
 fn table() -> &'static Table {
     static TABLE: OnceLock<Table> = OnceLock::new();
     TABLE.get_or_init(|| {
+        let all: Vec<&'static MethodRow> = FAMILIES.iter().flat_map(|rows| rows.iter()).collect();
         let mut rows = FxHashMap::default();
         let mut names = Vec::new();
         for shape in SHAPES {
@@ -127,10 +148,15 @@ fn table() -> &'static Table {
                 continue;
             };
             for owner in mro.iter() {
-                for row in FAMILIES.iter().flat_map(|rows| rows.iter()) {
-                    if row.owner == owner.as_str() {
+                for (idx, row) in all.iter().enumerate() {
+                    // A row past `u16::MAX` stays unreachable through the
+                    // table; with a few dozen rows it does not exist.
+                    if row.owner == owner.as_str()
+                        && let Ok(id) = u16::try_from(idx)
+                    {
                         let name = Symbol::intern(row.name);
-                        rows.entry((shape, name)).or_insert(row);
+                        let id = RowId(id);
+                        rows.entry((shape, name)).or_insert(id);
                         let id = name.id() as usize;
                         if names.len() <= id / 64 {
                             names.resize(id / 64 + 1, 0u64);
@@ -140,8 +166,38 @@ fn table() -> &'static Table {
                 }
             }
         }
-        Table { rows, names }
+        Table { rows, all, names }
     })
+}
+
+/// The row a plain receiver of `shape` dispatches `method` to when called
+/// with `arity` positional arguments, if the table has one.
+// Cost: O(1), a bit test and one hash lookup.
+#[inline]
+pub(crate) fn resolve(shape: DispatchShape, method: Symbol, arity: usize) -> Option<RowId> {
+    let table = table();
+    if !table.has_name(method) {
+        return None;
+    }
+    let id = *table.rows.get(&(shape, method))?;
+    (usize::from(table.all[usize::from(id.0)].arity) == arity).then_some(id)
+}
+
+/// The row `id` names.
+// Cost: O(1).
+#[inline]
+pub(crate) fn row(id: RowId) -> &'static MethodRow {
+    table().all[usize::from(id.0)]
+}
+
+/// Run row `id`'s handler. `args` must have the row's arity, and `target`
+/// the shape the row was resolved for.
+// Cost: O(1) plus the handler's own cost.
+#[inline]
+pub(crate) fn invoke(id: RowId, target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    match row(id).handler {
+        Handler::Pure(f) => f(target, args),
+    }
 }
 
 /// The row a plain receiver of `shape` dispatches `method` to, if any (the
@@ -152,7 +208,7 @@ fn lookup(shape: DispatchShape, method: Symbol) -> Option<&'static MethodRow> {
     if !table.has_name(method) {
         return None;
     }
-    table.rows.get(&(shape, method)).copied()
+    table.rows.get(&(shape, method)).map(|id| row(*id))
 }
 
 /// Answer a built-in method call from its row, or `None` to take the cascades.
@@ -172,13 +228,8 @@ pub(crate) fn try_dispatch(
         return None;
     }
     let shape = target.dispatch_shape()?;
-    let row = *table.rows.get(&(shape, method))?;
-    if usize::from(row.arity) != args.len() {
-        return None;
-    }
-    let result = match row.handler {
-        Handler::Pure(f) => f(target, args),
-    };
+    let id = resolve(shape, method, args.len())?;
+    let result = invoke(id, target, args);
     debug_assert_matches_full_path(target, method, args, &result);
     Some(result)
 }

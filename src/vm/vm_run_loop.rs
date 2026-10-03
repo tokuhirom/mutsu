@@ -495,8 +495,8 @@ impl Interpreter {
         // across this register reset (see `pending_nested_state_scope`).
         self.state_scope_id
             .set(self.pending_nested_state_scope.take());
-        let saved_gather_for_loop_resume = self.gather_for_loop_resume.take();
-        let saved_rw_map_topic_capture = self.rw_map_topic_capture.take();
+        let saved_gather_for_loop_resume = self.async_state.gather_for_loop_resume.take();
+        let saved_rw_map_topic_capture = self.async_state.rw_map_topic_capture.take();
         // A nested-registers run (the map/grep/first eager fast paths above
         // all) executes its whole Rust-level loop over `list_items` in one
         // shot with no way to snapshot/resume mid-iteration — unlike a
@@ -516,9 +516,9 @@ impl Interpreter {
         // one pass — the same "whole batch in one pull" shape the coroutine
         // driver already accepts for e.g. `deepmap`.
         let saved_lazy_take_boundary_defer =
-            std::mem::replace(&mut self.lazy_take_boundary_defer, true);
+            std::mem::replace(&mut self.async_state.lazy_take_boundary_defer, true);
         let saved_gather_suspend_pending =
-            std::mem::replace(&mut self.gather_suspend_pending, false);
+            std::mem::replace(&mut self.async_state.gather_suspend_pending, false);
         // `current_code` is the raw address of the *caller's* live `CompiledCode`
         // (see `exec_one`'s `self.current_code = code as *const CompiledCode as
         // usize;` and the unsafe deref in `writeback_multidim_var_to_local`).
@@ -581,11 +581,11 @@ impl Interpreter {
             .restore_all(saved_mark_flags, saved_mark_share_source);
         self.loop_cond_active = saved_loop_cond_active;
         self.state_scope_id.set(saved_state_scope_id);
-        self.gather_for_loop_resume = saved_gather_for_loop_resume;
-        self.rw_map_topic_capture = saved_rw_map_topic_capture;
+        self.async_state.gather_for_loop_resume = saved_gather_for_loop_resume;
+        self.async_state.rw_map_topic_capture = saved_rw_map_topic_capture;
         self.current_code = saved_current_code;
-        self.lazy_take_boundary_defer = saved_lazy_take_boundary_defer;
-        self.gather_suspend_pending = saved_gather_suspend_pending;
+        self.async_state.lazy_take_boundary_defer = saved_lazy_take_boundary_defer;
+        self.async_state.gather_suspend_pending = saved_gather_suspend_pending;
 
         // The nested run shares `self.env` and may have mutated outer lexicals
         // (e.g. a deferred role-body statement writing an enclosing `my $x`).
@@ -1244,6 +1244,24 @@ impl Interpreter {
             return val;
         }
         Self::itemize_scalar_store_value(val)
+    }
+
+    /// True when the topic's current alias target is anything but a bare
+    /// (non-itemized) Array/Hash, i.e. it aliases a `Scalar` rather than a whole
+    /// `@`/`%` container. Elements and `$` variables hold scalars or itemized
+    /// aggregates; `given @a` aliases the bare container itself.
+    // Cost: O(1).
+    pub(crate) fn topic_holds_scalar(cur: &Value) -> bool {
+        let cur = if let ValueView::ContainerRef(cell) = cur.view() {
+            cell.lock().unwrap().clone()
+        } else {
+            cur.clone()
+        };
+        match cur.view() {
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Hash(_) => cur.hash_is_itemized(),
+            _ => true,
+        }
     }
 
     /// True when a name is exempt from scalar-store itemization: the topic, a

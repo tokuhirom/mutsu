@@ -75,6 +75,29 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
     {
         ANY_DYNAMIC_TOKEN_PARAM.store(true, Ordering::Relaxed);
     }
+    if param_defs.iter().any(is_defaulted_lexical_param) {
+        ANY_DEFAULTED_TOKEN_PARAM.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Set the first time a rule with a defaulted, lexically-scoped positional
+/// parameter (`token t(Int $n = 0)`) is registered; gates the probe in
+/// [`token_defs_need_binding`] the way [`ANY_DYNAMIC_TOKEN_PARAM`] gates the
+/// dynamic-parameter install.
+pub(crate) static ANY_DEFAULTED_TOKEN_PARAM: AtomicBool = AtomicBool::new(false);
+
+fn is_defaulted_lexical_param(pd: &ParamDef) -> bool {
+    !pd.named && !pd.slurpy && pd.default.is_some() && !is_dynamic_var_name(&pd.name)
+}
+
+/// Whether a rule called with no arguments still has parameters to bind: a
+/// defaulted positional (`<sub-test>` against `token sub-test(Int $indent =
+/// 0)`) must be bound to its default before the body is evaluated, so the
+/// argument-less static resolver, which never binds, cannot serve it.
+// Cost: O(c * p), c = candidates, p = parameters per candidate.
+pub(crate) fn token_defs_need_binding(defs: &[Arc<crate::ast::FunctionDef>]) -> bool {
+    defs.iter()
+        .any(|def| def.param_defs.iter().any(is_defaulted_lexical_param))
 }
 
 /// Whether a value bound to a `token`/`rule`/`regex` parameter is *opaque*:

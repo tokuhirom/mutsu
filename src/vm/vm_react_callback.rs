@@ -42,7 +42,7 @@ impl Interpreter {
         // Drop this callback's per-instance state so it reads the shared lexical
         // from the live caller env — which every sibling writes back to.
         if let ValueView::Sub(data) = cb.view()
-            && !self.nested_react_callbacks.contains(&data.id)
+            && !self.async_state.nested_react_callbacks.contains(&data.id)
         {
             self.clear_closure_captured_state_for(data.id);
         }

@@ -47,9 +47,8 @@ mod unix_impl {
 
     fn get_signal_pipe() -> (i32, i32) {
         *SIGNAL_PIPE.get_or_init(|| {
-            let mut fds = [0i32; 2];
+            let fds = crate::runtime::cloexec_pipe::cloexec_pipe().unwrap_or([-1; 2]);
             unsafe {
-                libc::pipe(fds.as_mut_ptr());
                 // Make write end non-blocking so signal handler never blocks
                 let flags = libc::fcntl(fds[1], libc::F_GETFL);
                 libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK);

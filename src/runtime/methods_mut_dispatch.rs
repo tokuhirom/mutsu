@@ -1547,6 +1547,17 @@ impl Interpreter {
                             items.splice_live(start, end, new_items)
                         }) {
                         r
+                    } else if matches!(target.view(), ValueView::Array(arc_items, _) if crate::gc::Gc::strong_count(&arc_items) > 1)
+                        && let Some(r) = target.with_array_data_in_place(|items| {
+                            // A shared Array the name does not resolve to (a
+                            // scalar holding an element's array): splice it in
+                            // place, as `push` does, not a detached copy.
+                            let (start, end, new_items) =
+                                splice_plan(items.items().len(), &resolved_args);
+                            items.splice_live(start, end, new_items)
+                        })
+                    {
+                        r
                     } else {
                         let mut items = match target.view() {
                             ValueView::Array(v, ..) => v.to_vec(),
@@ -1997,6 +2008,20 @@ impl Interpreter {
                             .unwrap();
                         return Ok(out);
                     }
+                    // A shared Array the name does not resolve to (a scalar
+                    // holding an element's array, `my $row = @grid[0]`): pop
+                    // in place, as `push` does above, not from a detached copy.
+                    if matches!(target.view(), ValueView::Array(arc_items, _) if crate::gc::Gc::strong_count(&arc_items) > 1)
+                        && let Some(out) = target.with_array_data_in_place(|items| {
+                            if items.is_empty() {
+                                make_empty_array_failure_what("pop", &empty_what)
+                            } else {
+                                items.pop().unwrap_or(Value::NIL)
+                            }
+                        })
+                    {
+                        return Ok(out);
+                    }
                     let mut items = match target.view() {
                         ValueView::Array(v, ..) => v.to_vec(),
                         _ => Vec::new(),
@@ -2132,6 +2157,16 @@ impl Interpreter {
                                 })
                             })
                             .unwrap();
+                        return Ok(out);
+                    }
+                    // See the twin comment on `pop` above.
+                    if matches!(target.view(), ValueView::Array(arc_items, _) if crate::gc::Gc::strong_count(&arc_items) > 1)
+                        && let Some(out) = target.with_array_data_in_place(|data| {
+                            data.shift_front().unwrap_or_else(|| {
+                                make_empty_array_failure_what("shift", &empty_what)
+                            })
+                        })
+                    {
                         return Ok(out);
                     }
                     let mut items = match target.view() {
@@ -2793,8 +2828,14 @@ impl Interpreter {
                     }
                     Err(err) => {
                         if err.message.starts_with("No native mutable method") {
+                            let cls = class_name.resolve();
+                            if Self::native_method_blocks_on_other_thread(&cls, method) {
+                                let snapshot = attributes.to_map();
+                                return self
+                                    .call_native_instance_method(&cls, &snapshot, method, args);
+                            }
                             return self.call_native_instance_method(
-                                &class_name.resolve(),
+                                &cls,
                                 &attributes.as_map(),
                                 method,
                                 args,
@@ -2861,10 +2902,10 @@ impl Interpreter {
                     );
                     if result.is_proxy_value()
                         && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                        && let ValueView::Proxy { fetcher, .. } = result.view()
+                        && matches!(result.view(), ValueView::Proxy { .. })
                     {
                         return self.proxy_fetch(
-                            fetcher,
+                            &result,
                             Some(target_var),
                             &class_name.resolve(),
                             &updated_clone,
@@ -2890,10 +2931,10 @@ impl Interpreter {
                 // Auto-FETCH if the method returned a Proxy
                 if result.is_proxy_value()
                     && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                    && let ValueView::Proxy { fetcher, .. } = result.view()
+                    && matches!(result.view(), ValueView::Proxy { .. })
                 {
                     return self.proxy_fetch(
-                        fetcher,
+                        &result,
                         Some(target_var),
                         &class_name.resolve(),
                         &updated_clone,

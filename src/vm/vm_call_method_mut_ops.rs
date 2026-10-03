@@ -277,6 +277,55 @@ impl Interpreter {
         result
     }
 
+    /// Method names a branch between the top of `exec_call_method_mut_op_impl`
+    /// and its env-pure gate inspects by name for receivers of every kind (or
+    /// whose receiver test is not obviously closed to a plain scalar), so the
+    /// early scalar lane leaves them to the full path. Over-listing only costs
+    /// a missed shortcut.
+    // Cost: O(1).
+    pub(super) fn scalar_early_lane_skips(method: &str) -> bool {
+        matches!(
+            method,
+            "raku"
+                | "perl"
+                | "gist"
+                | "say"
+                | "note"
+                | "put"
+                | "print"
+                | "VAR"
+                | "WHAT"
+                | "^name"
+                | "substr-rw"
+                | "subbuf-rw"
+                | "BIND-KEY"
+                | "value"
+                | "ACCEPTS"
+                | "combinations"
+                | "int-bounds"
+                | "message"
+                | "freeze"
+                | "so"
+                | "not"
+                | "Bool"
+                | "pairs"
+                | "antipairs"
+                | "kv"
+                | "cache"
+                | "List"
+                | "list"
+                | "values"
+                | "skip"
+                | "rotor"
+                | "batch"
+                | "unique"
+                | "repeated"
+                | "squish"
+                | "produce"
+                | "flat"
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn exec_call_method_mut_op_impl(
         &mut self,
@@ -302,6 +351,64 @@ impl Interpreter {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
             self.stack.pop();
             self.stack.push(val);
+            return Ok(());
+        }
+        // A no-argument pure native method on an immutable scalar receiver
+        // (`$chunk.chars`, `$s.defined`, `$n.Int`): the gate further down
+        // (`try_env_pure_mut_dispatch`) answers exactly this shape, and every
+        // branch between here and there is keyed on an argument, a modifier, a
+        // `^find_method` override, a method name the gate itself refuses or
+        // `scalar_early_lane_skips` lists, or a receiver kind (`Instance`,
+        // `Package`, a lazy list, a Seq, a container view, ...) that a plain
+        // `Str`/`Int`/`Num`/`Bool` is not. So the same verdict is reached here,
+        // without the ~700 lines of probes in between, which cost more than
+        // the native method itself (#9494: ~100 such calls per parsed CSV row).
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && !Self::scalar_early_lane_skips(name.raw)
+            && !crate::runtime::find_method_intercept::any_user_find_method()
+            && let Some(target) = self.stack.last()
+            && matches!(
+                target.view(),
+                ValueView::Str(_) | ValueView::Int(_) | ValueView::Num(_) | ValueView::Bool(_)
+            )
+        {
+            let target = target.clone();
+            if let Some(result) = self.try_env_pure_scalar_native_dispatch(
+                "callmethodmut",
+                &target,
+                name.raw,
+                name.sym,
+                &[],
+                None,
+                false,
+            ) {
+                // The bookkeeping the full path's argument decode performs for
+                // a call without argument sources.
+                self.pending_call_arg_source_slots.clear();
+                self.set_pending_call_arg_sources(None);
+                self.stack.pop();
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
+        // `.elems` / `.end` on an array (`$i < @ch.elems` in a C-style loop
+        // condition): the same native answer the general path's probe gives,
+        // without the receiver probes in between. See `try_array_count_lane`.
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && let Some(result) = self.try_array_count_lane(name.raw, name.sym)
+        {
+            self.pending_call_arg_source_slots.clear();
+            self.set_pending_call_arg_sources(None);
+            self.stack.pop();
+            self.stack.push(result?);
             return Ok(());
         }
         // Consume (and unconditionally clear) the accessor-ref marker: it is
@@ -618,7 +725,7 @@ impl Interpreter {
         // the Failure for an ordinary Cool value (for example, `Failure.lines`
         // reaches the native Str/Cool method table).
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
                 method,
@@ -1016,6 +1123,25 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // The plain-array mutators (`@a.push(...)`, `@!fields.push: $f`) mutate
+        // the array's shared backing node in place and reach the env only by
+        // name, through `env_root_descended_mut` -- whose `get_mut` promotes a
+        // parent-tier entry into the overlay, so a scoped env serves it as well
+        // as a flat one. Between the flatten below and this helper's usual call
+        // site the only branches a plain `Array` receiver with a `push`-family
+        // name can meet are the junction-argument autothreading (excluded here)
+        // and the shared-array lane, which bails on exactly the condition the
+        // helper itself bails on. So answer it before the flatten: one push per
+        // parsed CSV field paid a whole-scope env clone for nothing (#9494).
+        if modifier.is_none()
+            && !args.iter().any(Value::is_junction_value)
+            && let Some(result) = self.try_native_array_mut(target_name, &target, method, &args)
+        {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+            self.shadow_check_native_row_candidate(&target, method, method_sym, args.len(), true);
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Beyond the pure-read accessor fast path above, full method dispatch may
         // capture/iterate the env; collapse a transient scoped overlay env to a
         // flat env so the full lexical view is seen. Placed after the accessor
@@ -1174,7 +1300,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1216,7 +1342,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.resolve() == "Lock::Async"
+            && class_name.as_str() == "Lock::Async"
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
@@ -1253,7 +1379,7 @@ impl Interpreter {
         // `news/2026-08/threaded-array-mutation-escapes-to-the-caller.md`).
         if target_name.starts_with('@')
             && matches!(target.view(), ValueView::Array(..))
-            && self.shared_vars_active
+            && self.threads.shared_vars_active
             && !self.container_name_is_redeclared(target_name)
         {
             // Only a plain *lexical* `@name` is a single variable shared across
@@ -3052,6 +3178,13 @@ impl Interpreter {
                 };
                 match modifier {
                     Some("?") => match call_result {
+                        Ok(val)
+                            if crate::runtime::methods_instance_ops::is_composed_method_stub(
+                                &val,
+                            ) =>
+                        {
+                            self.stack.push(Value::NIL);
+                        }
                         Ok(val) => {
                             self.stack.push(val);
                         }
@@ -3220,12 +3353,40 @@ impl Interpreter {
         // 1,2,3; @a.append(Nil)` stored `Any`, where both push (which has its
         // own dedicated opcode/fast path, already routed through
         // `assign_store_nil_default`) and real raku store `42`.
-        if (self.shared_vars_active && !self.container_name_is_redeclared(target_name))
-            || loan_env!(self, var_type_constraint(target_name)).is_some()
-            || self.container_type_metadata(target).is_some()
+        if (self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
             || self.container_default(target).is_some()
         {
             return None;
+        }
+        // A typed container (`has Field @.fields`, `my Int @a`) takes this path
+        // for the growing mutators when no argument is `Nil` (a `Nil` element
+        // decays to the element default, which only the general path
+        // computes): the general path's element check runs here first, so an
+        // ill-typed element raises exactly what it raises there. The mutation
+        // is in place, so the container's pointer-keyed type metadata stays
+        // attached. `pop`/`shift` keep the general path, whose empty-container
+        // Failure names the element type (#9494).
+        let typed = loan_env!(self, var_type_constraint(target_name)).is_some()
+            || self.container_type_metadata(target).is_some();
+        if typed {
+            // Only an `@` variable's constraint is an ELEMENT type; a scalar
+            // bound to an array (`Positional $x`) constrains the variable.
+            if !target_name.starts_with('@')
+                || !matches!(method, "push" | "append" | "prepend" | "unshift")
+            {
+                return None;
+            }
+            let items = if matches!(method, "push" | "unshift") {
+                crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
+            } else {
+                crate::runtime::flatten_append_args(args.to_vec())
+            };
+            if items.iter().any(Value::is_nil) {
+                return None;
+            }
+            if let Err(e) = self.check_container_element_types(target_name, target, &items) {
+                return Some(Err(e));
+            }
         }
         // pop/shift take no positionals; let the interpreter raise the arity error.
         if matches!(method, "pop" | "shift") && !args.is_empty() {
@@ -3570,7 +3731,7 @@ impl Interpreter {
         // Shared / type-constrained / metadata-bearing containers need the
         // interpreter's element checks, native-array semantics, and identity
         // sharing; let it own those.
-        if self.shared_vars_active
+        if self.threads.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
         {

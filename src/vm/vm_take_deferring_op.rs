@@ -8,7 +8,7 @@
 //! its first `take` unwound the op and the remaining elements were lost
 //! (`(gather { @a».take }).map({ $_ })` yielded only the first value, #9785).
 //!
-//! Such an op therefore runs with [`Interpreter::take_defer_to_op_end`] set:
+//! Such an op therefore runs with [`AsyncState::take_defer_to_op_end`](crate::runtime::async_state::AsyncState::take_defer_to_op_end) set:
 //! a take-limit hit inside it only parks `gather_suspend_pending` (the op's
 //! iteration is finite, so letting it finish just over-produces into the
 //! gather's cache), and the op suspends right after it completes — at its own
@@ -24,9 +24,9 @@ impl Interpreter {
         &mut self,
         f: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
-        let saved = std::mem::replace(&mut self.take_defer_to_op_end, true);
+        let saved = std::mem::replace(&mut self.async_state.take_defer_to_op_end, true);
         let result = f(self);
-        self.take_defer_to_op_end = saved;
+        self.async_state.take_defer_to_op_end = saved;
         result
     }
 
@@ -46,13 +46,13 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
-        if self.take_defer_to_op_end
-            || self.lazy_take_boundary_defer
+        if self.async_state.take_defer_to_op_end
+            || self.async_state.lazy_take_boundary_defer
             || !self.gather_suspend_boundary_reached()
         {
             return Ok(());
         }
-        self.gather_suspend_pending = false;
+        self.async_state.gather_suspend_pending = false;
         let mut e = RuntimeError::new(Self::LAZY_GATHER_TAKE_LIMIT_SIGNAL);
         e.set_take_suspend_site(Some((code.ops.as_ptr() as usize, ip)));
         Err(e)

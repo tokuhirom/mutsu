@@ -45,6 +45,11 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
             .map(|cp| Value::int(cp as i64))
             .collect();
     }
+    // A plain `Capture` lists as its positional part for the same reason:
+    // `c.head` inside `sub (|c)` is the first argument, not the Capture.
+    if let ValueView::Capture { positional, .. } = bare.view() {
+        return positional.to_vec();
+    }
     // A `Match` (a `Capture`) is not `Iterable`, but `Any.iterator` is
     // `self.list.iterator` and `Capture.list` is the positional part, so its
     // OWN elements are its positional captures: raku's

@@ -216,13 +216,7 @@ impl Value {
             if idx < data.len() {
                 return;
             }
-            let hole = data
-                .default
-                .as_ref()
-                .map(|d| (**d).clone())
-                .unwrap_or_else(|| {
-                    Value::Package(Symbol::intern(data.value_type.as_deref().unwrap_or("Any")))
-                });
+            let hole = data.hole_value();
             while data.len() <= idx {
                 data.push(hole.clone());
             }

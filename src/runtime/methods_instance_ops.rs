@@ -1638,8 +1638,13 @@ impl Interpreter {
             if self.is_native_method(&class_name.resolve(), method)
                 && !self.grammar_has_user_method(&class_name.resolve(), method)
             {
+                let cls = class_name.resolve();
+                if Self::native_method_blocks_on_other_thread(&cls, method) {
+                    let snapshot = attributes.to_map();
+                    return self.call_native_instance_method(&cls, &snapshot, method, args);
+                }
                 return self.call_native_instance_method(
-                    &class_name.resolve(),
+                    &cls,
                     &(attributes).as_map(),
                     method,
                     args,
@@ -1935,10 +1940,10 @@ impl Interpreter {
                     let updated = attributes.to_map();
                     if result.is_proxy_value()
                         && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                        && let ValueView::Proxy { fetcher, .. } = result.view()
+                        && matches!(result.view(), ValueView::Proxy { .. })
                     {
                         return self.proxy_fetch(
-                            fetcher,
+                            &result,
                             None,
                             &class_name.resolve(),
                             &updated,
@@ -1959,10 +1964,10 @@ impl Interpreter {
                 // Auto-FETCH if the method returned a Proxy
                 if result.is_proxy_value()
                     && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                    && let ValueView::Proxy { fetcher, .. } = result.view()
+                    && matches!(result.view(), ValueView::Proxy { .. })
                 {
                     return self.proxy_fetch(
-                        fetcher,
+                        &result,
                         None,
                         &class_name.resolve(),
                         &updated,
@@ -2785,9 +2790,9 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    ValueView::Sub(data) => Ok(Value::str(format_operator_name(
-                        crate::qualified::unqualified_part(data.name).as_str(),
-                    ))),
+                    ValueView::Sub(data) => {
+                        Ok(Value::str(format_operator_name(data.name.as_str())))
+                    }
                     // `Nil` swallows every method call. `Array`/`Hash` answer
                     // with their container descriptor's name in rakudo
                     // (`[1].name` is "element", `(my %h).name` is "%h"),
@@ -3216,7 +3221,7 @@ impl Interpreter {
                     let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
                     return Ok(Value::make_sub_with_id(
                         Symbol::intern(""),
-                        Symbol::intern(&format!("<composed-method:{}>", method)),
+                        Symbol::intern(&format!("{COMPOSED_METHOD_PREFIX}{method}>")),
                         params,
                         Vec::new(),
                         body,
@@ -4003,5 +4008,22 @@ pub(super) fn format_operator_name(name: &str) -> String {
         format!("{}:\u{ab}{}\u{bb}", category, symbol)
     } else {
         name.to_string()
+    }
+}
+
+/// The name prefix of the Sub that a method call on a callable composes into
+/// when no method of that name exists (`(*-*).abs`, the fallback in
+/// `call_method_with_values`).
+const COMPOSED_METHOD_PREFIX: &str = "<composed-method:";
+
+/// Whether `v` is that composed Sub. A `.?method` call reads it as "no such
+/// method" and answers Nil: composing is the last resort for a method the
+/// callable does not have, and `.?` asks precisely whether it has one
+/// (`self.?native_call_convention` on a plain routine is Nil in rakudo).
+// Cost: O(1).
+pub(crate) fn is_composed_method_stub(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Sub(data) => data.name.resolve().starts_with(COMPOSED_METHOD_PREFIX),
+        _ => false,
     }
 }

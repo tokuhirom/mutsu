@@ -24,6 +24,8 @@ pub(crate) struct EmitFrame {
     pub(crate) is_react: bool,
     /// Its setup hold, once a `whenever` taps a live supplier (#11268).
     pub(crate) react_setup: Option<super::react_setup::ReactSetup>,
+    /// The tap a tapped on-demand body's plain emits stream to (#11434).
+    pub(crate) tap_stream: Option<Box<super::supply_tap_stream::TapStream>>,
 }
 
 impl EmitFrame {
@@ -66,7 +68,7 @@ impl Interpreter {
     /// whose emitter is a different supplier.
     // Cost: O(1).
     pub(super) fn supply_emit_frame_for(&mut self, sid: Option<u64>) -> Option<&mut Vec<Value>> {
-        let frame = self.supply_emit_buffer.last_mut()?;
+        let frame = self.async_state.supply_emit_buffer.last_mut()?;
         match frame.owner {
             Some(owner) if sid != Some(owner) => None,
             _ => Some(&mut frame.values),

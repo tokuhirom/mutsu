@@ -56,7 +56,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && let Some(exc) = attributes.as_map().get("exception").cloned()
         {
             exc
@@ -336,9 +336,11 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                // $*THREAD: dynamically create a Thread instance with current thread ID
+                // $*THREAD: the current thread's own Thread object.
                 if name == "*THREAD" || name == "$*THREAD" {
-                    self.stack.push(Self::make_thread_instance());
+                    self.stack.push(crate::runtime::current_thread_object(
+                        Self::make_thread_instance,
+                    ));
                     *ip += 1;
                     return Ok(());
                 }
@@ -416,6 +418,11 @@ impl Interpreter {
                 let fast_hit = {
                     let b0 = name.as_bytes().first().copied();
                     if !matches!(b0, Some(b'@' | b'%'))
+                        // A dynamic or a `PROCESS::` name may resolve to the
+                        // process stash instead (ADR-11318); the slow chain
+                        // asks it first.
+                        && !(self.process_dynamics_published()
+                            && (b0 == Some(b'*') || name.starts_with("PROCESS::")))
                         && (name == "_" || !name.contains('_'))
                         && self.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
@@ -594,7 +601,7 @@ impl Interpreter {
                     // has it, but `process_dynamics` outlives every frame
                     // (#8682). Also last resort — a live `env`/dynamic-scope
                     // binding for the same name always wins.
-                    .or_else(|| self.get_process_dynamic(name).cloned())
+                    .or_else(|| self.get_process_dynamic(name))
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
@@ -1346,7 +1353,7 @@ impl Interpreter {
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
-                    && !self.fatal_mode
+                    && !self.lexical_fatal_mode
                     && {
                         let anon_state_val =
                             self.env().get(name_str).cloned().unwrap_or(Value::NIL);
@@ -1957,7 +1964,16 @@ impl Interpreter {
                     } else {
                         raw_val
                     };
-                    Self::itemize_scalar_store(&name, raw_val)
+                    if &*name == "_"
+                        && self
+                            .get_env_with_main_alias("_")
+                            .is_some_and(|cur| Self::topic_holds_scalar(&cur))
+                    {
+                        // The topic aliasing a `Scalar` itemizes like any `$` store.
+                        Self::itemize_scalar_store_value(raw_val)
+                    } else {
+                        Self::itemize_scalar_store(&name, raw_val)
+                    }
                 } else {
                     raw_val
                 };
@@ -2073,6 +2089,9 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
+                // A Proxy's STORE gets an assigned `Nil` as written (see the
+                // Proxy arm below); the decays that follow are for containers.
+                let assigned_nil = val.is_nil();
                 // A Nil ASSIGNED to an `is default(...)` scalar stores the
                 // default, as `exec_set_local_op`'s STORE does. A write from a
                 // closure (or named sub) that captured the variable lands here
@@ -2175,7 +2194,7 @@ impl Interpreter {
                             // When assigning an unhandled Failure to a typed variable
                             // that can't hold it, explode the Failure first (Raku behavior)
                             if let ValueView::Instance { class_name, .. } = val.view()
-                                && class_name.resolve() == "Failure"
+                                && class_name.as_str() == "Failure"
                                 && !val.is_failure_handled()
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
@@ -2211,7 +2230,7 @@ impl Interpreter {
                     // raw parameter stores and declarations keep their value.
                     val = self.reset_nil_untyped_scalar(&name, val);
                 }
-                if self.fatal_mode
+                if self.lexical_fatal_mode
                     && !name.contains("__mutsu_")
                     && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                 {
@@ -2529,17 +2548,15 @@ impl Interpreter {
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
-                    let proxy_val = match self
-                        .unit_lexical_slot(&name)
-                        .or_else(|| self.env().get(&name))
-                        // A `PROCESS::<$name> := Proxy.new(...)` install that ran
-                        // in a since-exited frame: `env` no longer has it, but
-                        // `process_dynamics` does (#8682) — without this, a
-                        // `$*name = value` reaching this opcode from a LATER,
-                        // unrelated frame would fall through to a plain rebind
-                        // below instead of firing the Proxy's `STORE`.
-                        .or_else(|| self.get_process_dynamic(&name))
-                    {
+                    let proxy_val = match self.unit_lexical_slot(&name).cloned().or_else(|| {
+                        // A `PROCESS::<$name> := Proxy.new(...)` install lives
+                        // only in the process stash, never in a frame's env
+                        // (#8682, ADR-11318) — without the redirect, a
+                        // `$*name = value` reaching this opcode would fall
+                        // through to a plain rebind below instead of firing
+                        // the Proxy's `STORE`.
+                        self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
+                    }) {
                         Some(v) if v.is_proxy_value() => Some(v.clone()),
                         Some(v) if v.is_container_ref() => {
                             let inner = v.deref_container();
@@ -2551,10 +2568,24 @@ impl Interpreter {
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
                     {
+                        let val = if assigned_nil { Value::NIL } else { val };
                         loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
                         *ip += 1;
                         return Ok(());
                     }
+                }
+                // A `$*name = ...` whose binding is the process one (no `my
+                // $*name` in scope) is published to the process stash, which
+                // every thread reads (ADR-11318). Done here, ahead of the
+                // `ContainerRef` write-through below, which returns without
+                // reaching `set_env_with_main_alias`'s own publish.
+                if !is_rebind
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !fresh_binding_decl
+                    && name.starts_with('*')
+                {
+                    self.publish_process_dynamic_write(&name, &val);
                 }
                 // ADR-0024: a mainline named sub's write to one of its OWN
                 // captured lexicals must route through the shared cell in
@@ -2624,7 +2655,7 @@ impl Interpreter {
                             *ip += 1;
                             return Ok(());
                         }
-                        self.check_container_cell_constraint(&arc, &val)?;
+                        let val = self.coerce_container_cell_store(&arc, val)?;
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
@@ -2647,7 +2678,7 @@ impl Interpreter {
                     if let Some(cell_val) = self.escaping_our_write_cell(code, &name)
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        self.check_container_cell_constraint(&arc, &val)?;
+                        let val = self.coerce_container_cell_store(&arc, val)?;
                         Self::cell_store_preserving_container_identity(&name, &arc, &val);
                         *ip += 1;
                         return Ok(());
@@ -2659,7 +2690,7 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        self.check_container_cell_constraint(&arc, &val)?;
+                        let val = self.coerce_container_cell_store(&arc, val)?;
                         Self::cell_store_preserving_container_identity(&name, &arc, &val);
                         *ip += 1;
                         return Ok(());
@@ -2867,15 +2898,6 @@ impl Interpreter {
                 // slot, e.g. a built-in like `$*OUT` that lives only in `env`).
                 if name.starts_with('*') {
                     self.pending_rw_writeback_sources.push(name.clone());
-                }
-                // A plain `$*name = val` (as opposed to `PROCESS::<$name> :=
-                // ...`) to a name previously installed via `PROCESS::`: keep
-                // the durable store in sync so a read from a LATER, unrelated
-                // frame sees the fresh value instead of the one recorded at
-                // install time (#8682). No-op for an ordinary dynamic
-                // variable that was never installed that way.
-                if self.process_dynamics_contains(&name) {
-                    self.set_process_dynamic(name.clone(), val.clone());
                 }
                 // Persist anonymous state variable (`$`) so it survives
                 // across closure calls (e.g. `$ ~= $_` in classify block).
@@ -3217,7 +3239,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name.resolve() == "IO::Path::Parts" => {
+                    } if class_name.as_str() == "IO::Path::Parts" => {
                         let attrs = attributes.as_map();
                         // ADR-0021 I2: a data-minted pair defaults positional.
                         Value::array(
@@ -4470,7 +4492,7 @@ impl Interpreter {
                             // An assignment statement is wanted, not sunk: the
                             // assigned Failure stays soft — unless `use fatal`
                             // is in effect.
-                            if self.fatal_mode
+                            if self.lexical_fatal_mode
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);
@@ -4518,7 +4540,7 @@ impl Interpreter {
                         && val.is_mixin_value()
                         && !matches!(val.view(), ValueView::Mixin(inner, _)
                             if matches!(inner.view(), ValueView::Instance { class_name, .. }
-                                if self.has_user_method(&class_name.resolve(), "STORE")))
+                                if self.has_user_method(class_name.as_str(), "STORE")))
                         && self.mixin_composes_method(&val, "sink");
                     let sink_class = if !user_sink || mixin_sink {
                         None
@@ -4627,7 +4649,7 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } = val.view()
-                                && class_name.resolve() == "Proc"
+                                && class_name.as_str() == "Proc"
                             {
                                 let exitcode =
                                     match attributes.as_map().get("exitcode").map(Value::view) {
@@ -5892,7 +5914,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = val.view()
-                    && class_name.resolve() == "Failure"
+                    && class_name.as_str() == "Failure"
                 {
                     if let Some(exc) = attributes.as_map().get("exception") {
                         exc.clone()
@@ -6642,7 +6664,7 @@ impl Interpreter {
             }
 
             // -- Closures and registration --
-            // Cost: O(s + f), the closure-capture cost (see capture_closure_env), s = visible env names that are not plain user lexicals, f = free vars. Rakudo: O(1) -- see #9170.
+            // Cost: O(f * d + n + l), the closure-capture cost (see capture_closure_env), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared layers.
             OpCode::MakeGather(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
@@ -6703,19 +6725,19 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeLambda(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
@@ -6726,7 +6748,7 @@ impl Interpreter {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeBlockClosure(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
@@ -7065,6 +7087,13 @@ impl Interpreter {
             // Cost: O(1) (gated hashed probes; the error path is cold).
             OpCode::CheckReadOnly(name_idx) => {
                 self.exec_check_read_only_op(code, *name_idx)?;
+                *ip += 1;
+            }
+            // Cost: O(n), n = elements of the right-hand side when the name is
+            // bound to a mutable aggregate (the in-place STORE); otherwise O(1)
+            // (a slot read, or one env probe for a non-local name).
+            OpCode::SigillessAggregateStore { name_idx, slot } => {
+                self.exec_sigilless_aggregate_store_op(code, *name_idx, *slot);
                 *ip += 1;
             }
             // Cost: O(1).

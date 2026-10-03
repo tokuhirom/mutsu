@@ -95,6 +95,22 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // `self` reaches here only from a block nested in a method (the method
+        // body itself reads its `self` slot). It is the invocant the block
+        // closed over, held under the env's `self` key — the innermost lexical
+        // `self`, which in Raku outranks a file- or package-scope
+        // `constant self` exactly as any inner lexical does. Answering it here
+        // also keeps the term-namespace and package-chain probes below (a
+        // `format!` per enclosing package) off a name every closure in a
+        // method reads. Without an invocant in scope it falls through to the
+        // ordinary resolution (a `constant self`, or the undeclared error).
+        if name == "self"
+            && let Some(v) = self.env().get_sym(crate::symbol::wk::self_())
+        {
+            let v = v.clone();
+            self.stack.push(v);
+            return Ok(());
+        }
         // An in-scope sigilless `_` is canonicalized by the parser to its
         // private storage name. Keep the topic spelling out of bareword
         // lookup, since `_` without that declaration is still undeclared.
@@ -589,9 +605,16 @@ impl Interpreter {
                     sym, pkg,
                 )));
             }
+            // A package term stored through its stash from another frame
+            // (`Logic::Ternary::{'True'} = …` inside `sub EXPORT`): the env
+            // entry went with that frame, the package store keeps it.
+            if !self.has_type(name)
+                && let Some(our_val) = self.get_our_var(name).cloned()
+            {
+                our_val
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
-            if let Some((_pkg, short)) = name.rsplit_once("::")
+            } else if let Some((_pkg, short)) = name.rsplit_once("::")
                 && self.has_function(&format!("GLOBAL::{}", short))
             {
                 // Route the package-qualified term fork through the Interpreter's unified

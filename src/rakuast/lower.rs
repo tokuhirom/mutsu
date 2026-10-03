@@ -1084,17 +1084,10 @@ fn routine_return_type(
     }
 }
 
-/// The plain type name of a `Type::Simple` node. Richer type node kinds
-/// (definite / coercion / parameterised) are the coverage boundary, matching
-/// the parameter `type` handling above.
+/// The parser's type-constraint spelling of a type node (`Int`, `Str:D`,
+/// `Int()`, `Array[Int]`) -- see `type_lower`.
 fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
-    if type_node.class != RakuAstClass::TypeSimple {
-        return Err(unsupported(node));
-    }
-    match name_parts::name_shape(named_child_or_positional(type_node)?) {
-        Some(NameShape::Identifier(name)) => Ok(name),
-        _ => Err(unsupported(node)),
-    }
+    super::type_lower::type_constraint(node, type_node)
 }
 
 /// The positional parameter names of a routine's `signature`, each with its
@@ -1171,6 +1164,17 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         None
     };
     let mut sigilless = false;
+    let invocant = match parameter.fields.iter().find(|f| f.name == Some("invocant")) {
+        Some(field) => match &field.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::Bool(b) => b,
+                _ => return Err(unsupported(owner)),
+            },
+            _ => return Err(unsupported(owner)),
+        },
+        None => false,
+    };
+    let has_target = parameter.fields.iter().any(|f| f.name == Some("target"));
     let name = if let Some(target) = parameter.fields.iter().find(|f| f.name == Some("target")) {
         let target = child_node(&target.value)?;
         match target.class {
@@ -1188,6 +1192,10 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             }
             _ => return Err(unsupported(owner)),
         }
+    } else if invocant {
+        // `Foo:D:` / `::?CLASS:U:`: the parser names a synthesized invocant
+        // `self`.
+        "self".to_string()
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
     } else if parameter.fields.iter().any(|f| {
@@ -1203,12 +1211,35 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     };
     let mut def = positional_param(&name);
     def.sigilless = sigilless;
-    // A named parameter `:$x` carries a `names` list; it binds by name and is
-    // optional by default.
-    if parameter.fields.iter().any(|f| f.name == Some("names")) {
-        def.named = true;
-        def.required = false;
+    if invocant {
+        def.is_invocant = true;
+        def.traits.push("invocant".to_string());
+        if !has_target {
+            def.traits
+                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
+        }
     }
+    // A named parameter `:$x` carries a `names` list; it binds by name and is
+    // optional by default. More than one name is an alias chain, rebuilt once
+    // the parameter's own fields are read (`named_param::wrap_aliases`).
+    let names = match parameter.fields.iter().find(|f| f.name == Some("names")) {
+        Some(field) => {
+            let RakuAstFieldValue::List(items) = &field.value else {
+                return Err(unsupported(owner));
+            };
+            let mut names = Vec::with_capacity(items.len());
+            for item in items {
+                let ValueView::Str(name) = item.view() else {
+                    return Err(unsupported(owner));
+                };
+                names.push(name.to_string());
+            }
+            def.named = true;
+            def.required = false;
+            Some(names)
+        }
+        None => None,
+    };
     // `optional => True` makes a positional parameter optional. For named
     // parameters, an explicit False marks it required.
     if let Some(optional) = parameter.fields.iter().find(|f| f.name == Some("optional")) {
@@ -1273,21 +1304,15 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         if let RakuAstFieldValue::Node(val) = &t.value
             && let ValueView::RakuAst(type_node) = val.view()
         {
-            match type_node.class {
-                RakuAstClass::TypeSimple => {
-                    def.type_constraint = Some(simple_type_name(owner, type_node)?);
-                }
-                RakuAstClass::TypeSetting => {} // implicit `Any`
-                _ => return Err(unsupported(owner)),
+            if type_node.class != RakuAstClass::TypeSetting {
+                // `Type::Setting(Any)` is the implicit type of an untyped param.
+                def.type_constraint = Some(simple_type_name(owner, type_node)?);
             }
         } else {
             return Err(unsupported(owner));
         }
     }
     if let Some(type_capture) = type_capture {
-        if def.type_constraint.is_some() {
-            return Err(unsupported(owner));
-        }
         def.type_capture = Some(type_capture);
     }
     // `$y = EXPR` -> an optional positional with a default value.
@@ -1320,7 +1345,10 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         let sub_signature = child_node(&sub_signature.value)?;
         def.sub_signature = Some(lower_signature_parameters(sub_signature, owner)?);
     }
-    Ok(def)
+    match names {
+        Some(names) => super::named_param::wrap_aliases(def, &names, owner),
+        None => Ok(def),
+    }
 }
 
 /// The name the parser gives an anonymous capture parameter (`|`).
@@ -1633,11 +1661,21 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // The initializer field is present only for `= EXPR`; without it a plain
     // `my $x` declares an undefined value.
     let mut is_binding = false;
+    let mut call_assign = None;
     let (expr, has_initializer) = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         Some(_) => {
             let init = named_child(node, "initializer")?;
             is_binding = init.class == RakuAstClass::InitializerBind;
-            (lower_expr(named_child_or_positional(init)?)?, !is_binding)
+            if init.class == RakuAstClass::InitializerCallAssign {
+                let call = named_child_or_positional(init)?;
+                if call.class != RakuAstClass::CallMethod || dispatch_modifier(call)?.is_some() {
+                    return Err(unsupported(node));
+                }
+                call_assign = Some((call_name_str(call)?, arg_exprs(call)?));
+                (Expr::Literal(Value::NIL), false)
+            } else {
+                (lower_expr(named_child_or_positional(init)?)?, !is_binding)
+            }
         }
         // The same sigil-aware default the parser gives an uninitialized
         // declaration: `my @a` is an empty Array and `my %h` an empty Hash,
@@ -1653,6 +1691,24 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     if has_initializer {
         custom_traits.push(("__has_initializer".to_string(), None));
+    }
+    if let Some((method, args)) = call_assign {
+        return Ok(crate::ast::method_assign_decl::expand(
+            crate::ast::method_assign_decl::MethodAssignDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits,
+                where_constraint: None,
+                method: crate::symbol::Symbol::intern(&method),
+                args,
+                is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+            },
+        ));
     }
     // `:=`: the same declaration the parser builds, expanded by the same
     // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
@@ -3117,7 +3173,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::ApplyPrefix => {
             let operand = lower_expr(named_child(node, "operand")?)?;
-            let op = infix_token(named_child(node, "prefix")?)?;
+            let op = prefix_token(named_child(node, "prefix")?)?;
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
@@ -3374,6 +3430,15 @@ fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Runti
         return Err(unsupported(node));
     };
     crate::compiler::helpers_ops::op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
+}
+
+/// Resolve a `Prefix` operator's positional spelling in prefix context.
+fn prefix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+    let name = positional_leaf(node)?;
+    let ValueView::Str(s) = name.view() else {
+        return Err(unsupported(node));
+    };
+    crate::compiler::helpers_ops::prefix_op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
 }
 
 /// An optional boolean-valued named field (an omitted field is `False`, which

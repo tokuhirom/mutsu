@@ -183,6 +183,7 @@ mod tests {
             is_hidden_from_backtrace: false,
             def_file: None,
             invocation_id: 0,
+            callable_id: 0,
         }
     }
 

@@ -454,14 +454,14 @@ impl Interpreter {
         // so this is a no-op for the common case and for the scenario
         // `t/oo/method/class-body-use-import-visible-in-method.t` pins
         // (#8883, no inheritance involved there either).
-        let saved_package = self.current_package();
+        let saved_package = self.current_package_sym();
         if self.has_class_scoped_subs(owner_class) || self.class_has_method_type_decls(owner_class)
         {
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
             // The class is declared inside a package (`class Searcher` inside
             // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
@@ -470,7 +470,7 @@ impl Interpreter {
             // either way, anchor the package to the owner so bare-name
             // lookup can walk outwards to (or start at) the enclosing
             // module's/role's own routines — see `bare_name_packages`.
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods).
@@ -652,7 +652,7 @@ impl Interpreter {
                                 self.pop_method_samewith_context();
                             }
                             self.pop_method_class();
-                            self.set_current_package(saved_package);
+                            self.set_current_package_sym(saved_package);
                             self.stack.truncate(saved_stack_depth);
                             if pushed_caller {
                                 self.pop_caller_env();
@@ -759,7 +759,7 @@ impl Interpreter {
                     // routing's alias-table lookup (Phase 3 Stage 2c (ii)), and
                     // spoil the JIT's inline local read, which skips exactly
                     // that lookup (`vm_jit::LOCAL_READ_SPOILERS`).
-                    self.sigilless_attrs_active = true;
+                    self.threads.sigilless_attrs_active = true;
                     crate::vm::vm_jit::note_local_read_spoiler();
                     // Set up bidirectional alias: !x ↔ alias_name
                     let attr_var = format!("!{actual_attr}");
@@ -842,7 +842,7 @@ impl Interpreter {
                     self.pop_method_samewith_context();
                 }
                 self.pop_method_class();
-                self.set_current_package(saved_package);
+                self.set_current_package_sym(saved_package);
                 self.stack.truncate(saved_stack_depth);
                 if pushed_caller {
                     self.pop_caller_env();
@@ -926,6 +926,7 @@ impl Interpreter {
             method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
+            method_callable_id,
         );
 
         // Execute bytecode
@@ -944,6 +945,10 @@ impl Interpreter {
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
         // full rationale). Reset for the body; restore the caller's value below.
         let saved_when_matched = self.when_matched();
+        // `use fatal` -- explicit, or implied by a caller's `try` -- is lexical
+        // to where this method was declared, not the caller's state (#11391).
+        let saved_lexical_fatal_mode =
+            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1031,6 +1036,7 @@ impl Interpreter {
         // Restore the caller's `when_matched` — a bare `when` inside this method
         // body must not leak its match state to an enclosing given/with.
         self.set_when_matched(saved_when_matched);
+        self.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
@@ -1202,9 +1208,14 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
+            let frame_syms = MethodFrameSyms {
+                params: method_def.param_syms(),
+                locals: cc.locals_syms(),
+            };
             let (mut merged_env, wrote_caller, changed_caller_locals) = merge_method_env(
                 frame.saved_env,
                 current_env,
+                &frame_syms,
                 &is_method_local,
                 &is_unwritten_capture,
             );
@@ -1274,7 +1285,7 @@ impl Interpreter {
                 self.pop_method_samewith_context();
             }
             self.pop_method_class();
-            self.set_current_package(saved_package.clone());
+            self.set_current_package_sym(saved_package);
             // A name the callee env held that the merge did not carry into the
             // caller is one this frame takes with it, so the phaser's captured
             // copy is its last surviving binding; names that merged through stay
@@ -1293,7 +1304,7 @@ impl Interpreter {
         if can_skip_merge {
             // No env writes possible -> the caller's slots stay coherent (pure).
             self.method_dispatch_pure = true;
-            self.set_current_package(saved_package);
+            self.set_current_package_sym(saved_package);
             if pushed_caller {
                 self.pop_caller_env();
             }
@@ -1826,17 +1837,17 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class)
+        let saved_package: Option<Symbol> = if self.has_class_scoped_subs(owner_class)
             || self.class_has_method_type_decls(owner_class)
         {
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
             // The class is declared inside a package (`class Searcher` inside
@@ -1846,8 +1857,8 @@ impl Interpreter {
             // either way, anchor the package to the owner so bare-name
             // lookup can walk outwards to (or start at) the enclosing
             // module's/role's own routines — see `bare_name_packages`.
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else {
             None
@@ -1881,7 +1892,7 @@ impl Interpreter {
                 }
                 self.pop_method_class();
                 if let Some(pkg) = saved_package {
-                    self.set_current_package(pkg);
+                    self.set_current_package_sym(pkg);
                 }
                 self.stack.truncate(saved_stack_depth);
                 if pushed_caller {
@@ -2407,6 +2418,7 @@ impl Interpreter {
             method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
+            method_callable_id,
         );
 
         // Execute bytecode (same as slow path)
@@ -2426,6 +2438,10 @@ impl Interpreter {
         // `when_matched` must not leak to an enclosing given/with (see the slow
         // path above / vm_call_light.rs for the full rationale).
         let saved_when_matched = self.when_matched();
+        // `use fatal` is lexical to the method's declaration (#11391) -- see
+        // the slow path above.
+        let saved_lexical_fatal_mode =
+            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -2509,6 +2525,7 @@ impl Interpreter {
 
         // Restore the caller's `when_matched` — see the slow path above.
         self.set_when_matched(saved_when_matched);
+        self.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
@@ -2598,7 +2615,7 @@ impl Interpreter {
         }
         self.pop_method_class();
         if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
+            self.set_current_package_sym(pkg);
         }
 
         // ADR-0035 slice 2: both branches below unconditionally pop the call
@@ -2658,9 +2675,14 @@ impl Interpreter {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
+                let frame_syms = MethodFrameSyms {
+                    params: method_def.param_syms(),
+                    locals: cc.locals_syms(),
+                };
                 let (merged, wrote_caller, changed_caller_locals) = merge_method_env(
                     frame.saved_env,
                     current_env,
+                    &frame_syms,
                     &is_method_local,
                     &is_unwritten_capture,
                 );
@@ -2866,6 +2888,32 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
     )
 }
 
+/// The env keys every method frame writes for itself -- see the fixture
+/// inserts in `call_compiled_method` / `call_compiled_method_fast`; `$!` and
+/// the callable id are dropped by `merge_method_env`'s own predicates -- plus the
+/// method's parameters and compiled locals, all as symbols, for
+/// [`merge_method_env`]'s cheap first test.
+pub(super) struct MethodFrameSyms<'a> {
+    pub(super) params: &'a [Symbol],
+    pub(super) locals: &'a [Symbol],
+}
+
+impl MethodFrameSyms<'_> {
+    // Cost: O(p + l), p = parameters, l = compiled locals.
+    fn contains(&self, k: Symbol) -> bool {
+        use crate::symbol::wk;
+        k == wk::self_()
+            || k == wk::anon_state()
+            || k == wk::class_decl()
+            || k == wk::role_decl()
+            || k == wk::topic()
+            || k == wk::error_var()
+            || k == wk::callable_id()
+            || self.params.contains(&k)
+            || self.locals.contains(&k)
+    }
+}
+
 /// Merge the callee method frame's caller-visible overlay writes back into the
 /// saved caller env. Returns the merged env and a flag that is `true` iff the
 /// merge changed a value that could alias a caller compiled-local slot — the
@@ -2885,6 +2933,7 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
 fn merge_method_env(
     mut saved: Env,
     current: Env,
+    frame_syms: &MethodFrameSyms<'_>,
     is_method_local: &dyn Fn(&str) -> bool,
     is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
 ) -> (Env, bool, Vec<Symbol>) {
@@ -2906,6 +2955,14 @@ fn merge_method_env(
     };
     let writes: Vec<(Symbol, Value)> = entries
         .filter_map(|(k, v)| {
+            // The frame's own fixtures, parameters and compiled locals, by
+            // symbol: a subset of what `is_method_local` drops below (both
+            // callers' predicates name all three), decided by integer compares
+            // before any of the per-key string work. They are most of what a
+            // method frame writes (#9494).
+            if frame_syms.contains(*k) {
+                return None;
+            }
             // A key the frame received from `method_def.captured_env` (the
             // method's own DEFINING lexical scope) and never wrote is frame
             // setup, not a caller-visible write. An authoritative capture

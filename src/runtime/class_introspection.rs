@@ -298,6 +298,16 @@ impl Interpreter {
         self.has_user_method_sym(class_name, crate::symbol::Symbol::intern(method_name))
     }
 
+    /// Whether a grammar actions class answers `method_name`: it declares the
+    /// method, or a `FALLBACK` that Rakudo's `find_method` hands out in its
+    /// place (the "hash tree from named captures" idiom dispatches every rule
+    /// through one `method FALLBACK($name, $/)`).
+    // Cost: O(1) amortized, two memoized `has_user_method` probes.
+    pub(crate) fn actions_answer_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        self.has_user_method(class_name, method_name)
+            || self.has_user_method_sym(class_name, crate::symbol::Symbol::intern("FALLBACK"))
+    }
+
     /// [`Self::has_user_method`] for a caller that already holds the method
     /// name interned — the compiled dispatch entries do, and on a `Match`
     /// receiver the intern alone was a measurable share of the call (#8888).

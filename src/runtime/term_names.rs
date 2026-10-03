@@ -55,6 +55,12 @@ impl Interpreter {
         if let Some(v) = self.env().get_sym(key_sym) {
             return Some(v.clone());
         }
+        // A definiteness-smiley spelling (`Int:D`) is a type constraint, never
+        // a constant's name: no declaration can store `\Int:D`, so the
+        // module-scope, package-chain and `our` probes below cannot hit.
+        if name_sym.with_str(|n| crate::runtime::types::strip_type_smiley(n).1.is_some()) {
+            return None;
+        }
         key_sym.with_str(|key| {
             self.module_imported_lexical(key)
                 .or_else(|| self.module_scope_lexical(key))

@@ -436,14 +436,11 @@ impl Interpreter {
     /// starts at `code.alias_sym(idx)` and does nothing when that key is absent,
     /// and the readonly refusal reads `code.readonly_sym(idx)`. The other two
     /// key families [`crate::env::closure_meta_keys_possible`] lumps in
-    /// (`__mutsu_state_key::`, `__mutsu_predictive_seq_iter::`) are NOT per-slot
-    /// questions here, so they keep their own whole-program gate
-    /// ([`crate::env::closure_state_meta_keys_possible`]) in the caller.
+    /// (`__mutsu_state_key::`, `__mutsu_predictive_seq_iter::`) have no
+    /// consumer on the store path at all.
     ///
-    /// Only the ALIAS key is asked per slot. The readonly marker keeps its own
-    /// whole-program latch in the caller: it is created only for a bind whose
-    /// source really is readonly (see the `:=` store site below), so it is rare
-    /// enough that a second per-store env probe would cost more than it saves.
+    /// Only the ALIAS key is asked here; the readonly marker is asked by
+    /// `slot_has_sigilless_readonly_marker`.
     ///
     /// A program that never made a sigilless/`:=` binding answers with one
     /// relaxed atomic load and reaches no env at all, exactly as before.
@@ -549,18 +546,43 @@ impl Interpreter {
         //     `slot_has_sigilless_meta`),
         //   - a `Failure` to turn fatal, or a declaration still in flight on
         //     another thread.
+        //
+        // Three lanes used to be asked as whole-program latches and are now
+        // asked of THIS store (#9494 -- a program that loads a module such as
+        // Text::CSV sets all three, which put every scalar store in it on the
+        // full cascade):
+        //   - `is default(...)`: the full path consults a scalar's default
+        //     only for a `Nil` store, and both callers' payload probes exclude
+        //     `Nil` (`is_plain_scalar_store_payload`; `~=` stores a `Str`);
+        //   - the sigilless-readonly refusal reads this slot's own marker
+        //     (`code.readonly_sym(idx)`), so only a set marker declines;
+        //   - `__mutsu_state_key::`/`__mutsu_predictive_seq_iter::` keys have
+        //     no consumer on the store path at all.
         !(crate::env::bound_array_slice_possible()
             || self.bound_decont_active().get()
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
-            || self.has_var_defaults()
-            || crate::env::sigilless_readonly_keys_possible()
+            || self.slot_has_sigilless_readonly_marker(code, idx)
             || Self::atomic_var_seen_anywhere()
-            || crate::env::closure_state_meta_keys_possible()
             || self.slot_has_sigilless_meta(code, idx, desc)
-            || self.fatal_mode
-            || !self.thread_decl_in_flight.is_empty()
+            || self.lexical_fatal_mode
+            || !self.threads.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
+    }
+
+    /// Whether this slot's sigilless-readonly marker is set: the condition the
+    /// full path's readonly refusal starts from. One relaxed load in a program
+    /// that never created such a marker; otherwise one env probe.
+    // Cost: O(1), plus one env lookup once any marker exists.
+    #[inline]
+    fn slot_has_sigilless_readonly_marker(&self, code: &CompiledCode, idx: usize) -> bool {
+        crate::env::sigilless_readonly_keys_possible()
+            && code.readonly_sym(idx).is_some_and(|sym| {
+                matches!(
+                    self.env().get_sym(sym).map(Value::view),
+                    Some(ValueView::Bool(true))
+                )
+            })
     }
 
     /// Whether the typed branch of the full store path would be the IDENTITY
@@ -867,7 +889,7 @@ impl Interpreter {
         } else {
             None
         };
-        if is_vardecl && self.shared_vars_active {
+        if is_vardecl && self.threads.shared_vars_active {
             self.remask_declaration_store(code, idx as usize);
         }
         if !self.rw_param_rebinds.is_empty() && self.rebind_context().get() && !is_vardecl {
@@ -891,10 +913,10 @@ impl Interpreter {
         // The store that ends a declaration's in-flight window: from here the
         // slot holds the new binding, so a spawn may unmask the name again (see
         // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
-        if !self.thread_decl_in_flight.is_empty()
+        if !self.threads.thread_decl_in_flight.is_empty()
             && let Some(name) = code.locals.get(idx as usize)
         {
-            self.thread_decl_in_flight.remove(name);
+            self.threads.thread_decl_in_flight.remove(name);
         }
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
@@ -2111,8 +2133,17 @@ impl Interpreter {
         if !is_bind && !is_rebind && name.starts_with('%') {
             val = self.fetch_proxy_container_elements(val)?;
         }
-        if val.is_nil()
-            && !is_bind
+        // An assignment into a Proxy hands its STORE the value as written: a
+        // `Nil` is the Proxy's to interpret (`STORE => -> $, \v { … if v ===
+        // Nil }`), not a request to fall back to a default (Env's `$USER =
+        // Nil` deletes the variable).
+        let stores_into_proxy = !is_bind
+            && !is_rebind
+            && !scalar_bind
+            && !is_vardecl
+            && matches!(self.locals[idx].view(), ValueView::Proxy { storer, .. } if !storer.is_nil());
+        if !val.is_nil() || stores_into_proxy {
+        } else if !is_bind
             && !is_rebind
             && !is_vardecl
             && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
@@ -2120,13 +2151,11 @@ impl Interpreter {
             // A sigilless alias of another variable: the Nil decays against
             // that variable's container, not this name (#11110).
             val = decayed;
-        } else if val.is_nil()
-            && !self.locals[idx].is_nil()
+        } else if !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
-        } else if val.is_nil()
-            && !is_bind
+        } else if !is_bind
             && !is_rebind
             && let Some(def) = Self::container_cell_default(&self.locals[idx])
         {
@@ -2317,6 +2346,7 @@ impl Interpreter {
             && !is_constant
             && !scalar_bind
             && !param_raw_bind
+            && !stores_into_proxy
             && (!is_vardecl || has_explicit_initializer)
         {
             // Untyped scalar: assigning Nil resets it to the default type
@@ -2950,11 +2980,18 @@ impl Interpreter {
             } else {
                 let arc = arc.clone();
                 if scalar {
-                    val = Self::itemize_scalar_store(
-                        name,
-                        Self::normalize_scalar_assignment_value(val),
-                    );
-                    self.check_container_cell_constraint(&arc, &val)?;
+                    let normalized = Self::normalize_scalar_assignment_value(val);
+                    // The topic aliasing a `Scalar` (an element, a `$` variable)
+                    // itemizes like any scalar store; aliasing a whole bare
+                    // `@`/`%` container (`given @a { .=reverse }`) writes back raw.
+                    val = if name == "_"
+                        && Self::topic_holds_scalar(&Value::container_ref(arc.clone()))
+                    {
+                        Self::itemize_scalar_store_value(normalized)
+                    } else {
+                        Self::itemize_scalar_store(name, normalized)
+                    };
+                    val = self.coerce_container_cell_store(&arc, val)?;
                     Value::store_through_cell(&arc, &val);
                 } else {
                     // Container identity (§3.1): re-apply the element/key-type
@@ -2970,7 +3007,7 @@ impl Interpreter {
                     } else {
                         self.array_container_writethrough_value(&name, val, &old)?
                     };
-                    self.check_container_cell_constraint(&arc, &val)?;
+                    val = self.coerce_container_cell_store(&arc, val)?;
                     // Write back into the EXISTING backing `Gc` (instead of
                     // swapping the cell to a fresh pointer) so any other
                     // holder of the old container (e.g. the outer `%ao` a
@@ -3014,7 +3051,7 @@ impl Interpreter {
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
         // so they can reference the Proxy by its binding variable name (simulating capture-by-ref).
         let val = Self::update_proxy_closure_envs(val, name);
-        if self.fatal_mode
+        if self.lexical_fatal_mode
             && !name.contains("__mutsu_")
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
         {
@@ -3450,8 +3487,9 @@ impl Interpreter {
         // goes through the dedicated shared-state cells — both must keep
         // propagating. Twigil'd forms (`@!x`, `%*y`) share a name across
         // instances/dynamic scopes by design and keep the name lane.
-        if self.shared_vars_active && Self::thread_decl_masks_name(code, name) {
-            self.thread_redeclared_vars
+        if self.threads.shared_vars_active && Self::thread_decl_masks_name(code, name) {
+            self.threads
+                .thread_redeclared_vars
                 .borrow_mut()
                 .insert(name.to_string());
             // The initializer has not run yet, so neither this frame's slot
@@ -3459,7 +3497,7 @@ impl Interpreter {
             // performed BY the initializer cannot unmask the name and let the
             // shadowed outer value be pulled back over it
             // (`thread_decl_in_flight`). Cleared by the store that ends it.
-            self.thread_decl_in_flight.insert(name.to_string());
+            self.threads.thread_decl_in_flight.insert(name.to_string());
         }
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name. The slot's
