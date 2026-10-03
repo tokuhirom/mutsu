@@ -16,7 +16,9 @@ pub(super) fn is_quantifier_start(next: Option<char>) -> bool {
 /// keeps its own meaning, and a `%` separator binds to the quantifier.
 // Cost: O(1).
 pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, escaped: bool) {
-    if escaped || next == Some('%') {
+    // Nothing follows inside this rule (`… <x>? }`): there is nothing to give
+    // an element back to, and the rule itself returns ratcheted.
+    if escaped || next.is_none() || next == Some('%') {
         return;
     }
     let trimmed_len = out.trim_end().len();
