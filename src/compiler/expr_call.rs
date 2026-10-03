@@ -636,6 +636,8 @@ impl Compiler {
                         | Expr::Whatever
                         | Expr::Index { .. }
                         | Expr::MultiDimIndex { .. }
+                        | Expr::MethodCall { .. }
+                        | Expr::DynamicMethodCall { .. }
                 ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
             })
         {
@@ -856,6 +858,28 @@ impl Compiler {
                             value: Box::new(rhs_item),
                             is_positional: *is_positional,
                         });
+                        self.code.emit(OpCode::Pop);
+                        offset += 1;
+                    }
+                    // `($o.x, $y) = 5, 6`: a method-call target (an `is rw`
+                    // accessor, `$o.AT-POS(i)`, an indirect `$o."$n"()`) is a
+                    // single-item target written through the same lowering as
+                    // the item assignment `$o.x = v`, so the accessor's returned
+                    // container receives the value.
+                    Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. } => {
+                        let rhs_item = if seen_slurpy {
+                            Expr::Literal(Value::NIL)
+                        } else {
+                            Expr::Index {
+                                target: Box::new(Expr::Var(snap_name.clone())),
+                                index: Box::new(Expr::Literal(Value::int(offset as i64))),
+                                is_positional: true,
+                            }
+                        };
+                        self.compile_expr(&crate::parser::assign_to_target_expr(
+                            target.clone(),
+                            rhs_item,
+                        ));
                         self.code.emit(OpCode::Pop);
                         offset += 1;
                     }

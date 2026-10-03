@@ -845,6 +845,8 @@ impl Compiler {
                                 | Expr::Whatever
                                 | Expr::Index { .. }
                                 | Expr::MultiDimIndex { .. }
+                                | Expr::MethodCall { .. }
+                                | Expr::DynamicMethodCall { .. }
                         ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
                     }))
         )
