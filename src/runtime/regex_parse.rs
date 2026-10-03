@@ -1226,10 +1226,14 @@ pub(super) fn rewrite_tilde_tokens(
             }
             // Remove trailing ws-like token from out (before tilde) — inserted
             // by sigspace between the opener and `~`.
-            let had_pre_ws = out.last().is_some_and(is_ws_like_token);
-            if had_pre_ws {
-                out.pop();
-            }
+            // Keep the token itself: it is whatever sigspace inserted (a
+            // grammar's own `ws` override included), and the inner pattern
+            // below must match whitespace the same way.
+            let pre_ws = if out.last().is_some_and(is_ws_like_token) {
+                out.pop()
+            } else {
+                None
+            };
             // Skip ws-like tokens after the tilde to find the goal (closer)
             let mut j = i + 1;
             while j < tokens.len() && is_ws_like_token(&tokens[j]) {
@@ -1252,20 +1256,7 @@ pub(super) fn rewrite_tilde_tokens(
             // surrounded by WsRule so `rule` sigspace allows whitespace between
             // opener/content and content/closer.
             let mut inner_tokens = Vec::new();
-            if had_pre_ws {
-                let ws_tok = RegexToken {
-                    atom: RegexAtom::WsRule,
-                    quant: RegexQuant::One,
-                    named_capture: None,
-                    hash_capture: None,
-                    secondary_named_capture: None,
-                    force_list_capture: false,
-                    ratchet: false,
-                    frugal: false,
-                    separator: None,
-                    from_runtime_interpolation: false,
-                    subrule_call_capture: false,
-                };
+            if let Some(ws_tok) = pre_ws {
                 inner_tokens.push(ws_tok.clone());
                 inner_tokens.push(inner_token);
                 inner_tokens.push(ws_tok);

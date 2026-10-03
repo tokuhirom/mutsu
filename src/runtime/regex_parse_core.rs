@@ -2762,11 +2762,14 @@ impl Interpreter {
                     '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
                         // Quoted literal string in Raku regex: 'foo-bar' matches literally
                         // In single-quoted regex strings, \\ matches a literal backslash
-                        // and \' matches a literal single quote.
+                        // and \' matches a literal single quote. A corner-bracket
+                        // `｢...｣` is the raw form (Q): it has no escapes at all, so
+                        // `｢\\｣` matches two backslashes.
+                        let raw = c == '\u{FF62}';
                         let mut literal = String::new();
                         loop {
                             match chars.next() {
-                                Some('\\') => match chars.peek() {
+                                Some('\\') if !raw => match chars.peek() {
                                     Some(&next_ch)
                                         if next_ch == '\\'
                                             || regex_single_quote_closes(c, next_ch) =>
