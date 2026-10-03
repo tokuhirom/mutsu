@@ -664,6 +664,7 @@ mod carray_repr;
 mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
+mod container_role_of;
 mod ctor_phase_plan;
 pub(crate) mod native_decl;
 pub(crate) mod native_pos_ref;

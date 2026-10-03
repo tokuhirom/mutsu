@@ -43,6 +43,34 @@ impl Interpreter {
                 return Some(value_type.clone());
             }
         }
+        // A mixed-in parametric role that passes its parameter on
+        // (`role IntTypedCArray[::TValue] does Positional[TValue]`, #11726).
+        for key in mixins.keys() {
+            let Some(role) = key.strip_prefix("__mutsu_role__") else {
+                continue;
+            };
+            let args: Vec<String> = match mixins
+                .get(&MetaNs::RoleTypeargs.owned_key_for_str(role))
+                .map(Value::view)
+            {
+                Some(ValueView::Array(items, ..)) => items
+                    .iter()
+                    .map(|v| match v.view() {
+                        ValueView::Package(name) => name.resolve(),
+                        _ => v.to_string_value(),
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let spelling = if args.is_empty() {
+                role.to_string()
+            } else {
+                format!("{role}[{}]", args.join(","))
+            };
+            if let Some(value_type) = self.role_spelling_value_type(&spelling, 0) {
+                return Some(Value::package(crate::symbol::Symbol::intern(&value_type)));
+            }
+        }
         None
     }
 

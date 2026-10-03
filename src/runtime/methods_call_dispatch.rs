@@ -18,44 +18,6 @@ use crate::value::value_buf::{
 };
 
 impl Interpreter {
-    /// Return the value type supplied by a parameterized container role
-    /// composed by `class_name` or one of its nominal parents. Container
-    /// subclasses retain their concrete representation, so their `.of` cannot
-    /// rely on per-value container metadata; the composition list is the
-    /// authoritative source for `does Associative[V,K]` / `Positional[V]`.
-    pub(super) fn composed_container_role_value_type(
-        &mut self,
-        class_name: &str,
-    ) -> Option<String> {
-        let mro = self.class_mro(class_name);
-        for class in mro.iter() {
-            let roles = self
-                .registry()
-                .class_composed_roles
-                .get(class.as_str())
-                .cloned()
-                .unwrap_or_default();
-            for role in roles {
-                let Some((base, args)) = role.split_once('[') else {
-                    continue;
-                };
-                if !matches!(base, "Associative" | "Positional") {
-                    continue;
-                }
-                let Some(args) = args.strip_suffix(']') else {
-                    continue;
-                };
-                if let Some(value_type) = super::registration_class::parse_role_type_args(args)
-                    .into_iter()
-                    .next()
-                {
-                    return Some(value_type);
-                }
-            }
-        }
-        None
-    }
-
     /// A `.raku`-legal identifier derived from a `rakuseen` id, used for the
     /// `(my \NAME = ...)` cycle backreference. Non-identifier characters (`::`,
     /// `|`, spaces, …) are folded to `_` so the emitted binding parses.
@@ -4251,6 +4213,16 @@ impl Interpreter {
             && args.is_empty()
             && let ValueView::Instance { class_name, .. } = target.view()
             && let Some(value_type) = self.composed_container_role_value_type(&class_name.resolve())
+        {
+            return Ok(Value::package(Symbol::intern(&value_type)));
+        }
+        // The same on the class's type object (`class A does Positional[Int];
+        // A.of`, #11726).
+        if method == "of"
+            && args.is_empty()
+            && let ValueView::Package(name) = target.view()
+            && !name.as_str().contains('[')
+            && let Some(value_type) = self.composed_container_role_value_type(name.as_str())
         {
             return Ok(Value::package(Symbol::intern(&value_type)));
         }
