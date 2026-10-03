@@ -23,6 +23,47 @@ pub(crate) struct NativeDecl {
     pub(crate) unsigned: bool,
 }
 
+impl NativeDecl {
+    /// The core native type with this declaration's C layout, for the
+    /// marshalling layer, which keys on core names: `uint64` for upstream's
+    /// `native size_t is ctype<size_t> is unsigned is repr<P6int>`. `None`
+    /// for a layout no core native has (`longdouble`).
+    // Cost: O(1).
+    pub(crate) fn core_native_name(&self) -> Option<&'static str> {
+        match self.repr.as_deref()? {
+            "P6int" => {
+                let bits = match self.nativesize? {
+                    // `bool` is C's `_Bool`, which the marshaller keys on its
+                    // own name (one signed byte).
+                    -7 => return Some("bool"),
+                    8 | -1 => 8,
+                    16 | -2 => 16,
+                    32 | -3 => 32,
+                    64 | -4 | -5 | -6 | -8 => 64,
+                    _ => return None,
+                };
+                Some(match (bits, self.unsigned) {
+                    (8, false) => "int8",
+                    (8, true) => "uint8",
+                    (16, false) => "int16",
+                    (16, true) => "uint16",
+                    (32, false) => "int32",
+                    (32, true) => "uint32",
+                    (_, false) => "int64",
+                    (_, true) => "uint64",
+                })
+            }
+            "P6num" => match self.nativesize? {
+                32 | -1 => Some("num32"),
+                64 | -2 => Some("num64"),
+                _ => None,
+            },
+            "P6str" => Some("str"),
+            _ => None,
+        }
+    }
+}
+
 /// The traits [`Interpreter::apply_native_type_traits`] owns. They are
 /// handled here and never dispatched to a user `trait_mod:<is>`.
 pub(crate) fn is_native_type_trait(name: &str) -> bool {

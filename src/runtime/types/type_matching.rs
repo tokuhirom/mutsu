@@ -2107,6 +2107,22 @@ impl Interpreter {
             self.warm_which_identity_for_identity(&bound);
             return crate::runtime::values_identical(value, &bound);
         }
+        // A `native`-declared type (`our native size_t is Int is repr<P6int>`,
+        // upstream `NativeCall::Types`) binds a value of the type its REPR
+        // boxes to, as a core native does: `size_t $n` takes an Int (#11555).
+        if !matches!(value.view(), ValueView::Package(_))
+            && let Some(repr) = self
+                .native_decl(crate::runtime::types::strip_type_smiley(constraint).0)
+                .and_then(|decl| decl.repr)
+        {
+            let boxed = match repr.as_str() {
+                "P6int" => "Int",
+                "P6num" => "Num",
+                "P6str" => "Str",
+                _ => return false,
+            };
+            return self.type_matches_value(boxed, value);
+        }
         // Registered RakuAST type objects have their own hierarchy, including
         // semantic ancestors (`IntLiteral` isa `Term` isa `Expression`) that
         // cannot be derived from namespace spelling alone.

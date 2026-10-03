@@ -983,6 +983,7 @@ mod registration_role_decl;
 mod registration_role_method;
 mod registration_role_same_name;
 pub(crate) mod registration_sub;
+mod signature_type_canon;
 mod registration_subset;
 mod registry;
 mod registry_method_table;
