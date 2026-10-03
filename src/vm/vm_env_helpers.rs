@@ -1462,6 +1462,19 @@ impl Interpreter {
         // here rather than in each of them. Yields the cell's current value: a
         // container's `Gc` is shared with the cell, so an in-place mutation of
         // what this returns is a mutation of the module's own container.
+        // A worker thread reading an `@`/`%` lexical through a lexical sub's
+        // alias cell (`sub outer { my @o; sub peek { @o.elems } ... }`) has to
+        // see the cross-thread atomic lane first, exactly as a by-name read
+        // does below: a closure running on the same worker pushes into the
+        // lane, where the alias cell is not reachable from its frame, so the
+        // cell alone read stale (#11238, Cro::WebSocket's message serializer).
+        if self.is_thread_clone()
+            && name.starts_with(['@', '%'])
+            && self.lexsub_alias_slot(name).is_some()
+            && let Some(v) = self.atomic_lane_value(name)
+        {
+            return Some(v);
+        }
         if let Some(v) = self.unit_scope_lexical(name) {
             return Some(v.into_deref());
         }
@@ -1505,6 +1518,22 @@ impl Interpreter {
             }
         }
         self.get_env_with_main_alias_inner(name, sym)
+    }
+
+    /// The cross-thread atomic lane entry for an `@`/`%` name, unless this
+    /// lineage re-declared the name (the lane then describes the shadowed
+    /// outer binding) or no lane entry exists at all.
+    // Cost: O(1) when no atomic lane was ever created; else one key build and
+    // one shared-store probe.
+    fn atomic_lane_value(&self, name: &str) -> Option<Value> {
+        if self.container_name_is_redeclared(name)
+            || !crate::runtime::shared_store::atomic_lane_entries_exist()
+        {
+            return None;
+        }
+        let is_hash = name.starts_with('%');
+        let atomic_key = crate::runtime::shared_store::atomic_lane_key(name, is_hash);
+        self.get_shared_var(atomic_key.as_str())
     }
 
     fn get_env_with_main_alias_inner(&self, name: &str, sym: Symbol) -> Option<Value> {

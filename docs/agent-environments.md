@@ -49,7 +49,7 @@ All MCP calls take `owner: tokuhirom`, `repo: mutsu`.
 | Failing job logs | `gh run view --log-failed` | `get_job_logs` with `run_id`, `failed_only: true`, `return_content: true` |
 | Enable auto-merge | `gh pr merge --auto --merge <n>` | `enable_pr_auto_merge` with `mergeMethod: "MERGE"` |
 | List workflow runs | `gh run list --branch <b>` | `actions_list` method `list_workflow_runs`, `workflow_runs_filter: {branch: <b>}` |
-| Dispatch a workflow | `gh workflow run tag-release.yml -f version=X.Y.Z` | `actions_run_trigger` method `run_workflow` (`workflow_id`, `ref`, `inputs`) |
+| Dispatch a workflow | `gh workflow run ecosystem-sweep.yml -f scope=stale` | `actions_run_trigger` method `run_workflow` (`workflow_id`, `ref`, `inputs`) |
 | File / update an issue | `gh issue create` / `gh issue edit` | `issue_write` method `create` / `update` (labels go in `labels`) |
 | Update the branch from base | `git fetch origin main && git rebase origin/main` | same, or `update_pull_request_branch` |
 | Comment on an issue | `gh issue comment` | `add_issue_comment` |

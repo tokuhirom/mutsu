@@ -48,6 +48,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let target = self.new_on_builtin_instance_target(target, method_sym);
         let method: &str = method_sym.as_str();
+        let target = self.resource_split_target(target, method)?;
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) whose
         // source has not been pulled yet (ADR-0034 §2.3). Several native
         // interceptors below (`try_native_sort`, `.Seq`/`.Map` coercions, ...)

@@ -1,8 +1,9 @@
 [package]
 name = "mutsu-lsp"
-# Versioned independently of the interpreter. `tag-release.yml` bumps only the
-# root `Cargo.toml`, and the server is not part of the release tarball yet;
-# tying the two together is a decision for whenever it ships.
+# Versioned independently of the interpreter. The release bump PR (cut-release
+# skill) changes only the root `Cargo.toml`, and the server is not part of the
+# release tarball yet; tying the two together is a decision for whenever it
+# ships.
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99.0"

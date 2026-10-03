@@ -816,6 +816,17 @@ pub(crate) fn native_method_1arg(
             {
                 return None;
             }
+            // A `%?RESOURCES` entry splits its content (`resource_split_target`).
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+                && class_name == "IO::Path"
+                && attributes.contains_key("resource")
+            {
+                return None;
+            }
             // IO::Spec::* has its own split method
             if let ValueView::Package(name) = target.view()
                 && name.resolve().starts_with("IO::Spec")

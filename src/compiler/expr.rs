@@ -360,6 +360,17 @@ impl Compiler {
                     } else if crate::runtime::Interpreter::is_builtin_type(name) {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::GetBareWord(name_idx));
+                    } else if self.enclosing_sigilless.contains(name.as_str()) {
+                        // The local is a `$`-sigiled variable that merely shares its
+                        // key with an ENCLOSING sigilless binding (`\attr` outside,
+                        // `my $attr = attr` inside): the bare word names the outer
+                        // binding, not the `$` variable (`my $attr := attr` in a
+                        // trait_mod's `anon method`, Intl::CLDR).
+                        if !self.code.shadowed_sigilless_reads.contains(name) {
+                            self.code.shadowed_sigilless_reads.push(name.clone());
+                        }
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        self.code.emit(OpCode::GetGlobal(name_idx));
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the
                         // same name should resolve as a type/package, not the variable.
@@ -384,6 +395,13 @@ impl Compiler {
                     // GetBareWord, which consults the TYPE registry, so a module
                     // sub's `Str \str` parameter read the `str` TYPE OBJECT
                     // instead of its argument (String::Rotate's `sub rotate`).
+                    //
+                    // The closure may ALSO declare a same-keyed `$` local
+                    // (`my $attr = attr`); that local would hide the capture from
+                    // `compute_free_vars`, so the name is listed explicitly.
+                    if !self.code.shadowed_sigilless_reads.contains(name) {
+                        self.code.shadowed_sigilless_reads.push(name.clone());
+                    }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                 } else {
