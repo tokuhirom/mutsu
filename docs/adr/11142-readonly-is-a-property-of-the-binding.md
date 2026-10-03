@@ -1,6 +1,6 @@
 # ADR-11142: Readonly-ness is a property of the binding, not of a dynamically scoped name
 
-- **Status**: Accepted (user decision 2026-10-03). Not yet implemented; see §7.
+- **Status**: Accepted (user decision 2026-10-03). Partly implemented; see §7.
 - **Date**: 2026-10-03
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11142](https://github.com/tokuhirom/mutsu/issues/11142)
@@ -199,5 +199,36 @@ debug assertion rather than a wrong answer.
 
 ## 7. Implementation status
 
-Not started. The decision was taken on 2026-10-03 after #11142. The interim patches
+The decision was taken on 2026-10-03 after #11142. The interim patches
 (#11085, #11134) stay in place until slice 4 deletes them.
+
+### 7.1 First slice: immutable `:=` bindings carry their kind (#11142, 2026-10-03)
+
+This covers slices 1-3 for one writer, the runtime immutable bind:
+
+- **Representation.** `ContainerCell`'s `readonly` flag is now an encoded
+  `ReadonlyKind` (`ContainerCell::readonly_kind`). The element bind
+  (`BIND-KEY`) keeps the `Immutable` kind it always meant.
+- **Writer.** A `$` variable bound straight to a value or a type object
+  (`my $x := 42`, `my $t := Int`, and the same rebinds) seats that value in a
+  binding cell carrying `Immutable` or `TypeObject`
+  (`ContainerCell::new_readonly_binding`, in `exec_set_local_op_inner`). The
+  cell goes into the slot and the env entry, so every holder of the binding
+  shares it: the in-sequence sub registration that captures it into
+  `unit_lexicals`, a closure capture and a `my $y := $x` alias. A value that
+  reads differently behind a cell (a `Range`, `Seq`, `Slip`, lazy or immutable
+  `List`) keeps a bare slot and only the registry mark.
+- **Reader.** `CheckReadOnly` on a free variable (a name with no local slot in
+  the writing code) resolves the name to its raw binding in the order a read
+  does (the running routine's unit lexical, then the env chain), follows the
+  binding-cell chain, and, when a cell carries a kind, raises that kind's error
+  worded from the bound value. The registry is not asked then. Gated on
+  `readonly_binding_cells_possible()`, so a program with no such bind pays
+  nothing.
+
+Not covered yet: every other readonly writer (parameters, `for`/`given`
+aliases and the topic, `constant`, sigilless terms, `my $y := $ro-param`)
+still records only in the registry. So a free-variable write that resolves to a
+binding without a kind still falls back to the registry. #11165 is the case
+where that fallback is wrong for a *writable* binding. The binding's answer can
+only become final for free variables once slice 2 covers every readonly writer.

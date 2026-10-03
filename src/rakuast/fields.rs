@@ -97,7 +97,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         NamePartSimple => &[("name", Absent::Required)],
         NamePartExpression => &[("expr", Absent::Required)],
         TermName => &[("name", Absent::Required)],
-        CallName | CallNameWithoutParentheses => &[
+        TermTopicCall => &[("call", Absent::Required)],
+        CallName | CallNameWithoutParentheses | CallMethod => &[
             ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
@@ -269,6 +270,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         NamePartSimple => "name",
         NamePartExpression => "expr",
         TermName => "name",
+        TermTopicCall => "call",
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional => "lexical-name",
         InitializerAssign | InitializerBind => "expression",

@@ -2786,6 +2786,21 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `::(...)` name. Both are represented by RakuAST::Term::Name; the
         // nested Name part tells the lowerer which internal expression to keep.
         RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
+        // `.method(...)` on the topic: the same method call `$_.method(...)`
+        // compiles to.
+        RakuAstClass::TermTopicCall => {
+            let call = named_child_or_positional(node)?;
+            if call.class != RakuAstClass::CallMethod {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: crate::symbol::Symbol::intern(&call_name_str(call)?),
+                args: arg_exprs(call)?,
+                modifier: dispatch_modifier(call)?,
+                quoted: false,
+            })
+        }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
         // itself (a leading backslash), which is how the converter reads it

@@ -103,9 +103,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, args) = if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
             let (r, _) = ws(r)?;
-            let (r, args) = parse_call_arg_list(r)?;
+            let (r, mut args) = parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            let (r, ()) = crate::parser::expr::parse_trailing_call_adverbs(r, &mut args)?;
             (r, args)
         } else {
             // `.=method: args` is the topic form of the same colon-argument
@@ -397,9 +398,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, method_args) = if r.starts_with('(') {
             let (r, _) = parse_char(r, '(')?;
             let (r, _) = ws(r)?;
-            let (r, args) = parse_call_arg_list(r)?;
+            let (r, mut args) = parse_call_arg_list(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            let (r, ()) = crate::parser::expr::parse_trailing_call_adverbs(r, &mut args)?;
             (r, args)
         } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
             // Colon-arg syntax: .=method: arg

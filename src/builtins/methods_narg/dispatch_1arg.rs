@@ -883,6 +883,9 @@ pub(crate) fn native_method_1arg(
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
         "join" => {
+            if crate::builtins::is_join_lazy(target) {
+                return Some(Ok(Value::str("...".to_string())));
+            }
             // `.join` stringifies every element, so a zero-denominator Rational
             // among them dies like its own `.Str` (GH #9621).
             if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {

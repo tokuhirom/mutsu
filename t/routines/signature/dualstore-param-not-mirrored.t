@@ -55,5 +55,7 @@ is mtype("hi"), "str:hi", 'multi dispatch Str param';
 # the param it reads ($num) must stay env-synced even though the gather body is
 # not in closure_compiled_codes (regression: S02-types/lazy-lists.t).
 sub make-lazy-list($num) { gather { take $_ for 0 ..^ $num }.lazy }
-is make-lazy-list(4).List.join(','), '0,1,2,3', 'gather body reads slot-only param via env snapshot';
+# Explicit eagerness makes join pull the gather; a lazy List's join renders
+# "..." in Rakudo and would not test the captured parameter at all.
+is make-lazy-list(4).eager.join(','), '0,1,2,3', 'gather body reads slot-only param via env snapshot';
 is make-lazy-list(10).first(*.is-prime), 2, 'lazy gather over param stays correct';

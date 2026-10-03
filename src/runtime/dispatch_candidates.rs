@@ -26,8 +26,11 @@ fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
 ///    or a `subset` type: rakudo draws no line between the two), sub-signature
 ///    count, `rw`/`raw` count (higher is narrower);
 ///
-/// then whether it needs a named bind check (an explicit named parameter, or a
-/// `where` on a slurpy), optional-positional count, and declaration order.
+/// then whether it declares no slurpy positional (rakudo's `is_narrower`
+/// consults slurpiness only once every shared positional type is tied, and a
+/// non-slurpy candidate wins there), whether it needs a named bind check (an
+/// explicit named parameter, or a `where` on a slurpy), optional-positional
+/// count, and declaration order.
 ///
 /// The tier split is rakudo's rule, not a mutsu invention: its `is_narrower`
 /// compares the candidates' nominal parameter types first and only consults a
@@ -40,7 +43,7 @@ pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
     (usize, usize, usize),
-    usize,
+    (usize, usize),
     usize,
     u64,
 );
@@ -121,13 +124,14 @@ impl Interpreter {
         let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
+        let non_slurpy = usize::from(!Self::candidate_has_slurpy_positional(def));
         let bind_check = usize::from(Self::candidate_needs_named_bind_check(def));
         let opt = Self::candidate_optional_positional_count(def);
         (
             (literal, typed),
             dist,
             (constrained, subsig, writable),
-            bind_check,
+            (non_slurpy, bind_check),
             opt,
             def.decl_order,
         )
@@ -135,6 +139,7 @@ impl Interpreter {
 
     /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher nominal
     /// tier first, then lower type distance, then higher refinement tier, then
+    /// a candidate without a slurpy positional over one with, then
     /// a candidate that needs a named bind check over one that does not, then
     /// fewer optional positionals (a required param is narrower than an
     /// optional one), and finally — for candidates tied on all of that — the
@@ -731,6 +736,15 @@ impl Interpreter {
             .any(|p| p.named && !p.slurpy && !p.double_slurpy)
     }
 
+    /// Whether the candidate declares a slurpy *positional* parameter
+    /// (`*@a`, `**@a`, `+@a`) — rakudo's `max_arity == SLURPY_ARITY`. A slurpy
+    /// hash takes only nameds and does not count.
+    fn candidate_has_slurpy_positional(def: &FunctionDef) -> bool {
+        Self::dispatch_visible_params(def)
+            .iter()
+            .any(|p| !p.named && p.is_variadic() && !p.name.starts_with('%'))
+    }
+
     /// Whether binding the candidate needs a check on the *named* side: it
     /// declares an explicit named parameter (see
     /// [`Self::candidate_declares_named`]) or puts a `where` clause on a
@@ -967,6 +981,27 @@ impl Interpreter {
                     && pos_idx >= args.len()
                 {
                     continue;
+                }
+                // A slurpy positional that receives no argument is not
+                // compared at all. Rakudo's `is_narrower` checks only the
+                // positional parameters both candidates declare, and consults
+                // slurpiness only once those are tied (the slurpy step of
+                // [`CandidateRankKey`]). Charging it the flat 1000 here made
+                // `multi a(Str:D $n, *@p)` lose `a('c')` to
+                // `multi a(Any:D $r)` (#11045). A slurpy that does swallow an
+                // argument keeps the charge: that is rakudo's arity-mismatch
+                // rule, under which the non-slurpy candidate that binds the
+                // same call is narrower (`multi f($x)` beats `multi f(*@a)`
+                // for `f(1)`).
+                if pd.is_variadic() && !pd.name.starts_with('%') {
+                    while pos_idx < args.len()
+                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
+                    {
+                        pos_idx += 1;
+                    }
+                    if pos_idx >= args.len() {
+                        continue;
+                    }
                 }
                 total += 1000;
                 pos_idx += 1;

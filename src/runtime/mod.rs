@@ -788,7 +788,7 @@ mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod str_subclass_stringy;
-pub(crate) use str_subclass_stringy::str_subclass_payload;
+pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
 mod methods_io_dispatch;
 mod methods_list_view_default;
@@ -3396,11 +3396,11 @@ pub struct Interpreter {
     /// in the same scope must still be rejected. The set is restored together
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
-    pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    pub(crate) imported_routine_aliases: std::sync::Arc<HashSet<Symbol>>,
     /// Export tags inherited by a local multi that extends an imported
     /// exported proto. Rakudo exports the whole family, including the local
     /// candidate, under those tags.
-    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
+    pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     /// Environment keys installed by imports, paired with the spelling that
     /// should appear in a lexical pseudo-stash. Scalar exports are stored in
     /// `env` without their `$` sigil, so the display spelling cannot be
@@ -5341,12 +5341,12 @@ pub(crate) type RoutineRegistrySnapshot = (
     Arc<crate::runtime::function_table::FunctionTable>,
     Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
     Arc<rustc_hash::FxHashSet<String>>,
-    rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
-    rustc_hash::FxHashSet<String>,
-    rustc_hash::FxHashSet<Symbol>,
+    Arc<crate::runtime::registry::TokenDefsMap>,
+    Arc<rustc_hash::FxHashSet<String>>,
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>, // our-scoped functions snapshot
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
-    HashSet<Symbol>,                  // imported routine aliases snapshot
-    HashMap<Symbol, HashSet<String>>, // imported exported-proto tags snapshot
+    Arc<HashSet<Symbol>>,                  // imported routine aliases snapshot
+    Arc<HashMap<Symbol, HashSet<String>>>, // imported exported-proto tags snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
@@ -5393,13 +5393,13 @@ pub(crate) struct ImportScopeSnapshot {
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
-    pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    pub(crate) imported_routine_aliases: std::sync::Arc<HashSet<Symbol>>,
     /// The routine aliases (`Pkg::name`) imported while this scope was the
     /// innermost one, including re-imports of an alias an enclosing scope
     /// already had: the block's own `MY::` lists exactly these (#10626).
     pub(crate) own_routine_imports: HashSet<Symbol>,
     /// Export tags inherited by local multis extending imported exported protos.
-    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
+    pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,

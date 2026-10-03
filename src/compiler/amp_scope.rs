@@ -54,4 +54,15 @@ impl Compiler {
             self.code.unscoped_amp_reads.push(sym);
         }
     }
+
+    /// Seed the `&`-lexicals visible at an `EVAL` call site, so a routine or
+    /// closure the EVAL'd text declares records a read of one (`&g()`, a bare
+    /// `g()`) as a capture, exactly as it would written inline (#11154). The
+    /// EVAL compiler is fresh and cannot see the caller's scopes; the caller
+    /// passes the names from its env instead.
+    ///
+    /// Cost: O(n), n = `names`.
+    pub(crate) fn seed_outer_code_var_names(&mut self, names: impl IntoIterator<Item = String>) {
+        self.code.outer_code_var_names.extend(names);
+    }
 }

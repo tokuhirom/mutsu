@@ -361,7 +361,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
         let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
         return Ok((rest, Expr::ArrayVar(format!("__ANON_ARRAY_{id}__"))));
     }
-    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name
@@ -525,7 +525,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
     }
     // Special: %*ENV
-    let (rest, name) = parse_qualified_ident_with_hyphens(rest)?;
+    let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name

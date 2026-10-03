@@ -974,6 +974,11 @@ impl Interpreter {
             err.set_from_method_return();
             return Err(err);
         }
+        if let Some(failure) = self.exception_failure_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "Failure");
+            self.stack.push(failure);
+            return Ok(());
+        }
         // `.throw`/`.rethrow`/`.die` on an exception instance: attach a backtrace
         // built from the current call stack. The `die`/`fail` opcodes do this, but
         // an explicit `ExceptionObject.throw` (or `.die`) goes through method
@@ -1546,6 +1551,7 @@ impl Interpreter {
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
+            && !(method == "join" && crate::builtins::is_join_lazy(&target))
             && !(ll.coroutine.is_some() && matches!(method, "List" | "list" | "values"))
             // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
             // spec, OR a gather coroutine appends another lazy stage (interpreter

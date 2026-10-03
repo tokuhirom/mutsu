@@ -86,6 +86,10 @@ impl Interpreter {
         // `args.get(1..)` (not `&args[1..]`) so bare `join()` / `join(sep)` with no
         // list args doesn't panic on an empty slice.
         for v in args.get(1..).unwrap_or(&[]) {
+            if crate::builtins::is_join_lazy(v) {
+                rest.push(Value::str("...".to_string()));
+                continue;
+            }
             if let ValueView::LazyList(list) = v.view() {
                 // A genuinely-lazy `@`-array stays opaque (rendered `...` by
                 // `flat_val`) rather than forcing its capped prefix — this is the

@@ -262,6 +262,9 @@ pub enum RakuAstClass {
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
+    // `.method` on the topic: a positional `Call::Method`. Write direction
+    // only -- the parser does not yet tell `.uc` from `$_.uc`.
+    TermTopicCall,
     // `.^name` — a metamethod call, distinct from `.?`/`.+`/`.*` dispatch.
     CallMetaMethod,
     // `until` / `repeat … until` — raku's own classes, not a negated `while`.
@@ -464,6 +467,7 @@ impl RakuAstClass {
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
             TermName => "RakuAST::Term::Name",
+            TermTopicCall => "RakuAST::Term::TopicCall",
             CallMetaMethod => "RakuAST::Call::MetaMethod",
             StatementLoopUntil => "RakuAST::Statement::Loop::Until",
             StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
@@ -1013,6 +1017,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
     RakuAstClass::TermName,
+    RakuAstClass::TermTopicCall,
     RakuAstClass::CallMetaMethod,
     RakuAstClass::StatementLoopUntil,
     RakuAstClass::StatementLoopRepeatUntil,
@@ -1176,23 +1181,25 @@ pub fn construct(
             ],
         }))));
     }
-    // `RakuAST::Call::Name.new(name => ..., args => ...)`; `args` is optional
-    // and, like the read direction, omitted when absent.
+    // `RakuAST::Call::Name.new(name => ..., args => ...)` and its method-call
+    // sibling `RakuAST::Call::Method`; `args` is optional and, like the read
+    // direction, omitted when absent.
     if matches!(
         class_name,
-        "RakuAST::Call::Name" | "RakuAST::Call::Name::WithoutParentheses"
+        "RakuAST::Call::Name" | "RakuAST::Call::Name::WithoutParentheses" | "RakuAST::Call::Method"
     ) && method == "new"
     {
-        let class = class_from_name(class_name).expect("registered Call::Name class");
+        let class = class_from_name(class_name).expect("registered call class");
         let name = named_arg(args, "name")
             .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `name`")))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Call::Name.new")?;
+        let constructor = format!("{class_name}.new");
+        require_rakuast_class(&name, RakuAstClass::Name, &constructor)?;
         let mut fields = vec![RakuAstField {
             name: Some("name"),
             value: RakuAstFieldValue::Node(name),
         }];
         if let Some(arg_list) = named_arg(args, "args") {
-            require_rakuast_class(&arg_list, RakuAstClass::ArgList, "RakuAST::Call::Name.new")?;
+            require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
             fields.push(RakuAstField {
                 name: Some("args"),
                 value: RakuAstFieldValue::Node(arg_list),
@@ -2442,6 +2449,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
+        ("RakuAST::Term::TopicCall", "new") => RakuAstClass::TermTopicCall,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
@@ -2532,6 +2540,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Regex::Anchor::EndOfString", "new") => RakuAstClass::RegexAnchorEndOfString,
         ("RakuAST::Regex::Anchor::EndOfLine", "new") => RakuAstClass::RegexAnchorEndOfLine,
         ("RakuAST::Regex::CharClass::Digit", "new") => RakuAstClass::RegexCharClassDigit,
+        ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
         _ => return None,
@@ -2584,11 +2593,12 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             return Some(field_to_value(&f.value));
         }
     }
-    if method == "statements"
+    if (method == "statements"
         && matches!(
             node.class,
             RakuAstClass::StatementList | RakuAstClass::StatementSequence
-        )
+        ))
+        || (method == "args" && node.class == RakuAstClass::ArgList)
     {
         let items = node
             .fields
@@ -2790,8 +2800,11 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge
             | RakuAstClass::TermName
+            | RakuAstClass::TermTopicCall
+            | RakuAstClass::TermWhatever
             | RakuAstClass::CallName
             | RakuAstClass::CallNameWithoutParentheses
+            | RakuAstClass::CallMethod
             | RakuAstClass::Pragma
     )
 }

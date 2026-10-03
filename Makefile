@@ -1,4 +1,4 @@
-.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers check-layer-deps check-name-scans check-adr check-runner-pins check-integration-tests adr-index
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev check-interp-construction check-ast-walkers check-layer-deps check-interp-fields check-name-scans check-adr check-runner-pins check-integration-tests adr-index
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -61,7 +61,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
 # and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-layer-deps check-bench-det check-prims check-dev check-adr check-runner-pins check-integration-tests
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-layer-deps check-interp-fields check-bench-det check-prims check-dev check-adr check-runner-pins check-integration-tests
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -151,6 +151,15 @@ check-ast-walkers:
 check-layer-deps:
 	python3 scripts/check-layer-deps.py --self-test
 	python3 scripts/check-layer-deps.py
+
+# Ratchet on the direct fields of `struct Interpreter` (ADR-10779 D4): their
+# number, in scripts/interp-fields-baseline.txt, may go down, never up, and
+# every field must belong to a subsystem (the SUBSYSTEMS rules in the script).
+# New state goes into its subsystem's type. Re-cut after extracting fields:
+#   scripts/interp-field-matrix.py --update
+check-interp-fields:
+	python3 scripts/interp-field-matrix.py --self-test
+	python3 scripts/interp-field-matrix.py --check
 
 # Ban on private copies of the Str primitives (ADR-0117). The nqp:: op tables,
 # the VM's nqp path and TRIR's runtime must call src/builtins/str_prim/ -- the

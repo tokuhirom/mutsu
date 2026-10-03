@@ -341,6 +341,7 @@ fn walk_leaf_use(atom: &RegexAtom) {
         RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
         RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
         RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
+        RegexAtom::RecurseSelf(_) => (WalkUse::Leaf, "recurse-self"),
         _ => (WalkUse::Leaf, "other"),
     };
     record_regex_walk(kind, reason);

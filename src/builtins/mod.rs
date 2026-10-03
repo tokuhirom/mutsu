@@ -105,6 +105,7 @@ pub(crate) use arith::{
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::epoch_nanos;
+pub(crate) use functions::is_join_lazy;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;

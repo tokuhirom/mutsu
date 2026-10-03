@@ -362,7 +362,13 @@ impl Interpreter {
                 | "Promise"
                 // NativeCall aggregate type (a contiguous C array).
                 | "CArray"
+                // The `PROCESS` pseudo-package names its own stash.
+                | "PROCESS"
         )
+        // Every row of the builtin type catalog is a core type too, so a type
+        // added there resolves to its type object without a second list here
+        // (`Macro` used to fall through to the name as a `Str`).
+            || crate::builtin_types::catalog::builtin_type_info(name).is_some()
         // Every core ROLE is a core type name too. Consulting the single
         // core-role oracle instead of re-listing them here is what makes
         // `Sequence` / `PositionalBindFailover` (which have no registry entry of

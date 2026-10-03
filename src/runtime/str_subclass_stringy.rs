@@ -25,6 +25,18 @@ pub(crate) fn str_subclass_payload(value: &Value) -> Option<Value> {
     attributes.as_map().get("__mutsu_str_value").cloned()
 }
 
+/// The `Str` a role mixed into a string (`"foo" but R`) wraps. Such a value
+/// already is a `Str`, so the native string operators (`~`, `eq`, ...) read
+/// this payload past any `Str`/`Stringy` the role declares, as they do for a
+/// `Str` subclass; interpolation honours only a declared `Stringy`.
+// Cost: O(1).
+pub(crate) fn str_mixin_payload(value: &Value) -> Option<Value> {
+    let ValueView::Mixin(inner, _) = value.view() else {
+        return None;
+    };
+    matches!(inner.view(), ValueView::Str(_)).then(|| Value::clone(inner))
+}
+
 impl Interpreter {
     /// The string payload a `Str`-subclass instance answers `.Stringy` with,
     /// when its class does not declare its own `Stringy`; `None` for any

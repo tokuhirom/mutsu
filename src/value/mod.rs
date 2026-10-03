@@ -967,12 +967,19 @@ pub struct ContainerCell {
     /// so generic consumers can retain the lvalue without flattening that
     /// operation into a normal cell store.
     quanthash_weight: Mutex<Option<QuantHashWeightRef>>,
-    /// Set on a cell that stands for an element BOUND to a bare value rather
-    /// than to a container (`%h.BIND-KEY($k, 42)`): raku stores the value
-    /// itself there, so a later assignment to that element dies with
-    /// "Cannot assign to an immutable value". The flag lives on the cell so it
-    /// travels with the entry and disappears with it on delete/reassign.
-    readonly: std::sync::atomic::AtomicBool,
+    /// Why assignment through this cell is refused, encoded by
+    /// [`encode_readonly_kind`]; 0 when it is writable.
+    ///
+    /// Two shapes set it. An element BOUND to a bare value rather than to a
+    /// container (`%h.BIND-KEY($k, 42)`): raku stores the value itself there,
+    /// so a later assignment to that element dies with "Cannot assign to an
+    /// immutable value". And a *binding cell* (ADR-11142 §2.3): a variable
+    /// bound straight to a value (`my $x := 42`, `my $t := Int`) whose
+    /// readonly kind has to reach a writer in another frame, so it travels
+    /// with the binding instead of living in a name-keyed registry. Either way
+    /// the kind lives on the cell, so it travels with every holder of the cell
+    /// and disappears with it on delete/rebind.
+    readonly: std::sync::atomic::AtomicU8,
     /// The container's `is default(...)` value, when it has one: what a `Nil`
     /// store through this cell decays to (ADR-0049). Like the `of`-type, it is
     /// part of rakudo's `$!descriptor`, so it belongs to the container rather
@@ -1019,7 +1026,7 @@ impl ContainerCell {
             value: Mutex::new(value),
             constraint: Mutex::new(None),
             quanthash_weight: Mutex::new(None),
-            readonly: std::sync::atomic::AtomicBool::new(false),
+            readonly: std::sync::atomic::AtomicU8::new(0),
             default: Mutex::new(None),
         }
     }
@@ -1028,14 +1035,37 @@ impl ContainerCell {
     pub fn new_readonly(value: Value) -> Self {
         READONLY_CELL_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let cell = Self::new(value);
-        cell.readonly
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        cell.readonly.store(
+            encode_readonly_kind(crate::ast::ReadonlyKind::Immutable),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        cell
+    }
+
+    /// A binding cell for a variable bound straight to `value`, carrying the
+    /// binding's readonly `kind` (see `readonly`, ADR-11142 §2.3).
+    // Cost: O(1).
+    pub(crate) fn new_readonly_binding(value: Value, kind: crate::ast::ReadonlyKind) -> Self {
+        READONLY_BINDING_CELL_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let cell = Self::new(value);
+        cell.readonly.store(
+            encode_readonly_kind(kind),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         cell
     }
 
     /// Whether assignment through this cell must be refused.
+    // Cost: O(1).
     pub fn is_readonly(&self) -> bool {
-        self.readonly.load(std::sync::atomic::Ordering::Relaxed)
+        self.readonly.load(std::sync::atomic::Ordering::Relaxed) != 0
+    }
+
+    /// Why assignment through this cell is refused, or `None` when it is
+    /// writable.
+    // Cost: O(1).
+    pub(crate) fn readonly_kind(&self) -> Option<crate::ast::ReadonlyKind> {
+        decode_readonly_kind(self.readonly.load(std::sync::atomic::Ordering::Relaxed))
     }
 
     pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Value>> {
@@ -1070,6 +1100,42 @@ static READONLY_CELL_SEEN: std::sync::atomic::AtomicBool =
 #[inline]
 pub fn readonly_cells_possible() -> bool {
     READONLY_CELL_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Set once any [`ContainerCell::new_readonly_binding`] cell has been created,
+/// so a by-name assignment skips resolving its binding in the common program
+/// that never binds a variable straight to a value.
+static READONLY_BINDING_CELL_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a readonly binding cell may exist anywhere. See
+/// [`READONLY_BINDING_CELL_SEEN`].
+#[inline]
+pub fn readonly_binding_cells_possible() -> bool {
+    READONLY_BINDING_CELL_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn encode_readonly_kind(kind: crate::ast::ReadonlyKind) -> u8 {
+    use crate::ast::ReadonlyKind;
+    match kind {
+        ReadonlyKind::Alias => 1,
+        ReadonlyKind::Immutable => 2,
+        ReadonlyKind::ImmutableValue => 3,
+        ReadonlyKind::ImmutableDeep => 4,
+        ReadonlyKind::TypeObject => 5,
+    }
+}
+
+fn decode_readonly_kind(code: u8) -> Option<crate::ast::ReadonlyKind> {
+    use crate::ast::ReadonlyKind;
+    Some(match code {
+        0 => return None,
+        1 => ReadonlyKind::Alias,
+        2 => ReadonlyKind::Immutable,
+        3 => ReadonlyKind::ImmutableValue,
+        4 => ReadonlyKind::ImmutableDeep,
+        _ => ReadonlyKind::TypeObject,
+    })
 }
 
 /// Mark a transient cell yielded by a mutable QuantHash `.values` view.

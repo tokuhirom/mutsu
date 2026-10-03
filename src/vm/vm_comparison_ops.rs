@@ -354,6 +354,12 @@ impl Interpreter {
                         == crate::runtime::utils::list_items_len(&r),
                 ));
             }
+            // `Map.Numeric` / `Setty.Numeric` are `.elems`, so two such
+            // values are equal when they hold the same number of entries.
+            // Cost: O(1), the entry count is read in place.
+            if let (Some(a), Some(b)) = (unordered_elems_len(&l), unordered_elems_len(&r)) {
+                return Ok(Value::truth(a == b));
+            }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -738,5 +744,16 @@ impl Interpreter {
         let im_ok = (li == 0.0 && ri == 0.0) || approx_f64(li, ri);
         let result = approx_f64(lr, rr) && im_ok;
         Ok(Value::truth(result))
+    }
+}
+
+/// Entry count of a `Hash` or `Set`, the operands whose `.Numeric` is `.elems`.
+/// `None` for anything else (`Bag`/`Mix` numify to their total weight).
+// Cost: O(1).
+fn unordered_elems_len(value: &Value) -> Option<usize> {
+    match value.view() {
+        ValueView::Hash(data) => Some(data.map.len()),
+        ValueView::Set(data, _) => Some(data.len()),
+        _ => None,
     }
 }
