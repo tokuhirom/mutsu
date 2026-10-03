@@ -189,9 +189,7 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             continue;
         }
         if c == '[' && !in_single && !in_double && angle_depth > 0 && brace_depth == 0 {
-            let opens_class = out
-                .trim_end()
-                .ends_with(['<', '-', '+', '?', '!']);
+            let opens_class = out.trim_end().ends_with(['<', '-', '+', '?', '!']);
             if opens_class {
                 in_charclass = true;
                 out.push(c);
