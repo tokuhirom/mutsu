@@ -1371,7 +1371,12 @@ impl Interpreter {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method_memo(cn, method_sym),
+                    // A quoted or run-time name reaches a generated accessor
+                    // (`$obj."$n"()` with `$n = "hash"` and `has %.hash`).
+                    _ => {
+                        self.grammar_has_user_method_memo(cn, method_sym)
+                            || (quoted && self.has_public_accessor(&cn.resolve(), method))
+                    }
                 }
             {
                 skip_native = true;
