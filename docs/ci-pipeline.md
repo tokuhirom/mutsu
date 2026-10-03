@@ -5,27 +5,33 @@ this — run both full suites before publishing, trust `main`, fix forward — a
 
 ## Job layout
 
-CI does not invoke `make test`; it runs the steps individually, and **one `build` job compiles the release binary once for the whole workflow** — `test-suites` downloads that artifact instead of compiling its own (it installs no toolchain at all). `test-suites` runs **both** the TAP suite (`prove t/`) and `make roast` on it (`MUTSU_BIN=target/release/mutsu`); local `make test` matches (see `docs/adr/0075-make-test-runs-tap-on-release-binary.md`, superseding ADR-0014). `test-check` runs fmt, clippy and the unit tests (`cargo test --test-threads=1` with `MUTSU_GC=on`, the configuration that ships). The **`debug-tap` job runs `prove t/` on its own debug binary** with default runtime settings — that is where the `debug_assert!`s in `src/` get their suite-wide pass, so do not "align" it onto release. `test` is an **aggregator job**: it runs nothing and exists only to keep the required-status-check name the `main` ruleset asks for, failing when `build`, `test-check`, `test-suites` or `debug-tap` did. `cargo test` is debug everywhere. A *debug* run of a heavy file is ~3.3x slower than release, so a local timeout on one does not by itself indicate a real failure — confirm on `target/release/mutsu` before assuming a regression.
+CI does not invoke `make test`; it runs the steps individually, and **one `build` job compiles the release binary once for the whole workflow** — `test-suites` downloads that artifact instead of compiling its own (it installs no toolchain at all). `test-suites` runs **both** the TAP suite (`prove t/`) and `make roast` on it (`MUTSU_BIN=target/release/mutsu`); local `make test` matches (see `docs/adr/0075-make-test-runs-tap-on-release-binary.md`, superseding ADR-0014). `test-check` runs fmt, clippy and the unit tests (`cargo test --test-threads=1` with `MUTSU_GC=on`, the configuration that ships). The **`debug-tap` job runs `prove t/` on its own debug binary** with default runtime settings — that is where the `debug_assert!`s in `src/` get their suite-wide pass, so do not "align" it onto release. `debug-tap` and `wasm-e2e` are **post-merge only** ([ADR-11581](adr/11581-ci-runner-budget.md)): skipped on pull requests, run on `main` and in the release gate. `test` is an **aggregator job**: it runs nothing and exists only to keep the required-status-check name the `main` ruleset asks for, failing when `build`, `test-check`, `test-suites` or (outside a pull request) `debug-tap` did. `cargo test` is debug everywhere. A *debug* run of a heavy file is ~3.3x slower than release, so a local timeout on one does not by itself indicate a real failure — confirm on `target/release/mutsu` before assuming a regression.
 
-## Runner budget: `main` and the site run on a schedule
+## Runner budget ([ADR-11581](adr/11581-ci-runner-budget.md))
 
 The repository is public, so hosted-runner *minutes* are free; what is scarce is **concurrency** —
 the free plan's 20 concurrent hosted jobs, shared by every PR run, every run on `main`, Bench, Pages
 and the nightly sweeps. At ~100 merges a day, PR runs queued for 5-15 minutes per job. So since
-2026-10-03 the post-merge work no longer runs per push:
+2026-10-03:
 
+- **`wasm-e2e` and `debug-tap` do not run on pull requests.** They run on every other `ci.yml` run:
+  hourly on `main`, `workflow_dispatch`, and the release gate. A PR still fails if the wasm32 build
+  does not compile (`lint-configs`) or a `cargo test` debug assertion fires (`test-check`). A PR
+  touching wasm-specific code or debug-assertion paths should dispatch `ci.yml` on its branch
+  ("Use workflow from") before merging.
 - **CI on `main` runs hourly** (`schedule`, `23 * * * *`) and on `workflow_dispatch`. The `changes`
   job looks up the head of the last green non-PR run on `main` and classifies the diff since then
   exactly as it would a push: an unchanged `main` skips every build job, and a stretch of
   documentation-only merges skips them the way a docs-only PR does. Those runs still save the cargo
   caches every PR restores (`save-if: github.ref == 'refs/heads/main'`). A red hourly run can cover
   several merges, so bisect over the PRs merged in that hour.
+- **A release runs everything.** `release.yml` calls `ci.yml` (`workflow_call`, `full: true`) on the
+  tagged commit; every job runs, Miri included, and the npm publish and the GitHub Release need it.
+- **Bench**: the deterministic callgrind series runs on every push to `main` (pending runs
+  replaced); the wall-clock series runs hourly and skips a commit it already measured.
 - **Pages deploys every two hours** (`17 */2 * * *`), plus after a tagged Release and after the
   daily Ecosystem sweep, and on `workflow_dispatch`. The site (roast figure, bench trend) lags
   `main` by at most that interval.
-
-Bench (`bench.yml`) still runs per push, serialized with pending runs replaced, so it already
-measures at most one commit per ~30 minutes.
 
 ## Stress runs (`.github/workflows/stress.yml`)
 

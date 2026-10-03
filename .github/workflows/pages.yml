@@ -7,7 +7,7 @@ name: Deploy the site to GitHub Pages
 # `workflow_run` is safe here: the build checks out `main` itself and consumes
 # nothing (no artifact, no output) from the run that triggered it.
 on: # zizmor: ignore[dangerous-triggers]
-  # On a schedule, not on every push to main. Hosted-runner concurrency (20
+  # On a schedule, not on every push to main (ADR-11581). Hosted-runner concurrency (20
   # jobs on the free plan) is shared with the CI that gates every PR, and at
   # ~100 merges a day a deploy per push -- plus a second one per completed
   # Bench run -- queued ~200 small jobs a day in front of PR CI for a site

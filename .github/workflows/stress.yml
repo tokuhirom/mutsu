@@ -24,8 +24,9 @@ name: Stress
 #     is what a PR touching the collector, the JIT or the concurrency runtime
 #     should do before it merges.
 #
-# The suite-wide debug_assert pass these TAP jobs used to provide stays on the
-# PR gate as ci.yml's `debug-tap` (default runtime settings).
+# The suite-wide debug_assert pass these TAP jobs used to provide is ci.yml's
+# `debug-tap` (default runtime settings), which runs post-merge on `main` and
+# in the release gate (ADR-11581).
 on:
   schedule:
     # 18:41 UTC = 03:41 JST, after the day's merge traffic.
