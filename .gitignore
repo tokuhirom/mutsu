@@ -94,3 +94,14 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# The ecosystem parity ledger's measurements live on the `ecosystem-data`
+# branch (ADR-0085, 2026-10-03 amendment); `scripts/ecosystem-ledger.sh pull`
+# materializes them here. Keep in sync with OUTPUTS in that script.
+/ecosystem/dists/
+/ecosystem/summary.json
+/ecosystem/summary.md
+/ecosystem/history.tsv
+/ecosystem/history.svg
+/ecosystem/index-snapshot.json
+/ecosystem/.ledger-ref

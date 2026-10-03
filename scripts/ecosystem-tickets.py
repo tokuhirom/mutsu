@@ -446,6 +446,7 @@ def main():
     if args.self_test:
         raise SystemExit(self_test())
 
+    eco.require_ledger(DISTS_DIR)
     records = eco.load_records(DISTS_DIR)
     clusters = cluster(records, want_class=args.cls)
     if args.family:

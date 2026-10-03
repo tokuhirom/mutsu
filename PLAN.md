@@ -148,8 +148,8 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
 - [ ] **★Ecosystem parity: per-distribution work** — the KPI itself is **built and running**; what
       remains is turning red records green, one distribution (or one root cause) at a time. The
       corpus is measured nightly at 03:20 JST and published: **41.1%** dist parity, 53.4% file,
-      63.1% assertion, with per-distribution records in `ecosystem/` and the chart in
-      `ecosystem/history.svg`. Pick work one of two ways — by **root cause** from the clustered
+      63.1% assertion, with per-distribution records and the chart `ecosystem/history.svg` on the
+      `ecosystem-data` branch (`scripts/ecosystem-ledger.sh pull`). Pick work one of two ways — by **root cause** from the clustered
       issues (`scripts/ecosystem-tickets.py`, see docs/ecosystem-parity.md §9; the ten largest
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /

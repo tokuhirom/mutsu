@@ -59,6 +59,7 @@ of every live lock; you will need it in step 3.
 ## 2. Draw a shortlist
 
 ```sh
+scripts/ecosystem-ledger.sh pull     # the records live on the `ecosystem-data` branch
 .agents/skills/ecosystem-dist-roulette/pick-dist.py --exclude Held::One --exclude Held::Two
 ```
 
@@ -135,14 +136,14 @@ or on "looks abandoned".
 Hand over to [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md) and follow it as written: read
 the record, `checkout-dist.py`, load probe, rakudo first and mutsu second per file, reduce into
 `tmp/`, fix what is bounded and file a `tokuhirom/mutsu` issue for what is not, pin every fix with a
-`t/` test, re-measure the record, and open the PR with auto-merge.
+`t/` test, and open the PR with auto-merge.
 
 Three things that belong to this wrapper rather than that one:
 
-- **Do NOT re-measure and do NOT commit `ecosystem/dists/**` records** (user decision,
-  2026-10-01). Skip `ecosystem-dist-fix` step 7 entirely: no `--only` re-measure, no record in the
-  diff. Parallel roulette PRs each rewrote their own record from a different `main`, and the
-  records conflicted constantly; the nightly sweep refreshes the ledger instead. Verify the fix with
+- **Do NOT re-measure** (user decision, 2026-10-01). Skip `ecosystem-dist-fix` step 7 entirely:
+  no `--only` re-measure. Parallel roulette PRs each rewrote their own record from a different
+  `main`, and the records conflicted constantly; that is why the records now live on the
+  `ecosystem-data` branch, which only the nightly sweep writes. Verify the fix with
   the distribution's own test files (step 3) and the `t/` pin, and report "file X now passes under
   mutsu" in the PR body in place of a record transition.
 

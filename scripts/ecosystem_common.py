@@ -603,6 +603,20 @@ def rmtree(path: str) -> None:
     subprocess.run(["rm", "-rf", path], check=False)
 
 
+def require_ledger(dists_dir: str) -> None:
+    """Stop with a pointer when the ledger's records are not in this checkout.
+
+    The records live on the `ecosystem-data` branch, not on `main` (ADR-0085,
+    2026-10-03 amendment), so a fresh clone has an `ecosystem/` with no
+    `dists/`. Reading that as "an empty ledger" would select every distribution
+    as stale, roll up a summary of nothing, or draw from an empty pool.
+    """
+    if not os.path.isdir(dists_dir):
+        raise SystemExit(
+            f"{dists_dir}: no ledger records here. They live on the "
+            "`ecosystem-data` branch; run `scripts/ecosystem-ledger.sh pull` first.")
+
+
 # --- record filenames --------------------------------------------------------
 
 # Characters `actions/upload-artifact` refuses in a path, because NTFS cannot

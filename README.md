@@ -111,9 +111,10 @@ a rakudo baseline, and **69.4%** of those (834) pass every test file that
 rakudo passes (**77.1%** of test files, **89.4%** of assertions). Look up a
 particular distribution on the [ecosystem
 page](https://tokuhirom.github.io/mutsu/ecosystem.html); the per-distribution
-records are in [`ecosystem/`](ecosystem/), the metric over time is
-[`ecosystem/history.tsv`](ecosystem/history.tsv) and its chart
-[`ecosystem/history.svg`](ecosystem/history.svg), and the method is
+records are on the [`ecosystem-data`](https://github.com/tokuhirom/mutsu/tree/ecosystem-data/ecosystem)
+branch, the metric over time is
+[`history.tsv`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.tsv) and its chart
+[`history.svg`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.svg), and the method is
 [docs/ecosystem-parity.md](docs/ecosystem-parity.md). rakudo is the denominator
 throughout: a test rakudo also fails is not counted against mutsu.
 

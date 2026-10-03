@@ -1,6 +1,6 @@
 # ADR-0085 — The ecosystem KPI is per-distribution test-suite parity against rakudo
 
-- Status: Accepted and **fully implemented** (design confirmed 2026-09-10; P1-P5 landed by 2026-09-12 — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep, and again 2026-09-11 to schedule it nightly on measured cost)
+- Status: Accepted and **fully implemented** (design confirmed 2026-09-10; P1-P5 landed by 2026-09-12 — see "Implementation status"; D9 amended 2026-09-10 to allow an operator-dispatched CI sweep, again 2026-09-11 to schedule it nightly on measured cost, and 2026-10-03 to move the records from `main` to the `ecosystem-data` branch)
 - Date: 2026-09-10
 - Issue: [#7785](https://github.com/tokuhirom/mutsu/issues/7785)
 - Operations manual (the "how"): [docs/ecosystem-parity.md](../ecosystem-parity.md)
@@ -199,6 +199,9 @@ Derived artifacts (`ecosystem/summary.json`, `ecosystem/summary.md`,
 edited, so a conflict in them is resolved by regenerating rather than by
 merging.
 
+*(Since the fourth D9 amendment the tree is on the `ecosystem-data` branch, not
+on `main`; the layout under `ecosystem/` is unchanged.)*
+
 ### D7. Every record carries the versions it was measured at, and staleness is visible
 
 Each record stores the mutsu commit and version, the rakudo version and backend,
@@ -396,6 +399,59 @@ Everything this ADR decided about the numbers is unchanged:
 
 `publish: branch` and sweeps from a feature ref push `ecosystem/hold-*` instead,
 and the routine never lands those.
+
+#### Fourth amendment, 2026-10-03: the records live on the `ecosystem-data` branch
+
+*(Supersedes the third amendment's routine, and the "Store the data on a side
+branch" rejection under "Alternatives considered".)*
+
+The measurements — `ecosystem/dists/**.json`, `summary.{json,md}`,
+`history.{tsv,svg}` and `index-snapshot.json` — move off `main` onto an orphan
+branch, `ecosystem-data`, which the `collect` job commits to **directly** with
+the default `GITHUB_TOKEN`. That is the `bench-data` pattern. `main` keeps the
+hand-maintained inputs (`ecosystem/README.md`, `exclude.txt`,
+`accepted-divergences.toml`), which are policy and get reviewed like code.
+`scripts/ecosystem-ledger.sh pull` materializes the measurements into a
+checkout's gitignored `ecosystem/`, so every script still reads the same paths.
+
+The pull request was paying for nothing:
+
+- **It was not a gate.** A records-only diff is classified docs-only
+  (`scripts/ci-docs-only.sh`), so CI ran nothing on it. Every guard that makes
+  the numbers trustworthy (one binary/rakudo/index, the sandbox, provenance,
+  "the newer mutsu commit wins", the history-row conditions) runs inside the
+  workflow, before any commit exists.
+- **It needed a whole agent routine to exist.** A pull request opened with
+  `GITHUB_TOKEN` starts no CI, so the third amendment had a scheduled Claude
+  Code session open, auto-merge, rebuild-on-conflict and clean up every
+  night's branch — a moving part with its own failure modes, for a merge
+  nobody reviewed.
+- **It bloated `main`.** One corpus sweep rewrites ~1600 files (~15k lines);
+  nightly, that is the bulk of `main`'s history by volume.
+- **It made the records a merge-conflict surface.** Feature PRs that also
+  rewrote a record conflicted with the nightly sweep, which is why the
+  `ecosystem-dist-roulette` flow already stopped committing records
+  (2026-10-01). With the records off `main`, the sweep is their only writer.
+
+The rejected alternative's two reasons no longer hold. "The issue says *in the
+repository*": the branch is in the repository. "Invisible to someone browsing
+the project or reviewing a PR that changes compatibility": the browsing surface
+is `site/ecosystem.html`, which `pages.yml` now rebuilds when a sweep completes
+(the same `workflow_run` trigger `bench-data` uses), and the nightly records PRs
+were by this ADR's own decision never reviewed. A PR that moves a distribution
+states the re-measured verdict in its body instead
+(`ecosystem-dist-fix`, step 7).
+
+What does not change: everything this ADR decided about the numbers, the
+`collect` job's "newer mutsu commit wins" rule (now against the ledger tip),
+and `publish: branch` / feature-ref sweeps, which push `ecosystem/hold-*` on top
+of the ledger for a human to fast-forward. A push the ledger rejects (it moved
+during the run, which only a hand push can cause since sweeps are serialized)
+fails the job instead of rebasing, because the apply decision was made against
+the old tip; `scope: stale` re-measures what is left. Filing issues for new
+root-cause clusters (§9), which the routine also did, is now its own skill,
+[`ecosystem-cluster-filing`](../../.agents/skills/ecosystem-cluster-filing/SKILL.md),
+run on demand or by a routine.
 
 ## Consequences
 
@@ -782,6 +838,8 @@ leads remain independent.
 - **Store the data on a side branch** (the `bench-data` pattern). Cheaper diffs,
   but the issue says *in the repository*, and a side branch is invisible to
   someone browsing the project or reviewing a PR that changes compatibility.
+  *(Adopted after all by D9's fourth amendment, 2026-10-03, which explains why
+  these two reasons no longer hold.)*
 - **Measure only load success (extend the existing L0 sweep to the whole
   corpus).** Much cheaper, and genuinely useful — but "it loads" is not "it
   works", and the gap between the two is precisely the interesting part.

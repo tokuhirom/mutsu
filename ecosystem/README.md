@@ -11,16 +11,26 @@ with rakudo as the denominator.
   [#7785](https://github.com/tokuhirom/mutsu/issues/7785), closed 2026-09-12 — read it for the
   method and the numbers it started from
 
-## What is here
+## What is here — and what is on the `ecosystem-data` branch
 
-| path | what it is |
-|---|---|
-| `dists/<S>/<Dist--Name>.json` | one record per distribution — the measurement |
-| `index-snapshot.json` | which ecosystem index snapshot the run drew from (fez + REA, with digests) |
-| `summary.json` / `summary.md` | generated rollup — **do not edit**, regenerate with `--rollup` |
-| `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
-| `exclude.txt` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering |
-| `accepted-divergences.toml` | hand-maintained — single test files whose rakudo pass rests on an artefact mutsu decided not to copy, pinned to the exact failure shape (ADR-0130) |
+The measurements are **not on `main`**. They live under this same `ecosystem/`
+path on the orphan [`ecosystem-data`](https://github.com/tokuhirom/mutsu/tree/ecosystem-data/ecosystem)
+branch, which only the sweep workflow commits to (ADR-0085, D9's fourth
+amendment — the `bench-data` pattern). In a checkout of `main`,
+
+```sh
+scripts/ecosystem-ledger.sh pull     # put the newest measurements here (gitignored)
+scripts/ecosystem-ledger.sh status   # which ledger commit you have
+```
+
+| path | branch | what it is |
+|---|---|---|
+| `dists/<S>/<Dist--Name>.json` | `ecosystem-data` | one record per distribution — the measurement |
+| `index-snapshot.json` | `ecosystem-data` | which ecosystem index snapshot the run drew from (fez + REA, with digests) |
+| `summary.json` / `summary.md` | `ecosystem-data` | generated rollup — **do not edit**, regenerate with `--rollup` |
+| `history.tsv` / `history.svg` | `ecosystem-data` | one row per full sweep, and its chart — the KPI over time |
+| `exclude.txt` | `main` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering |
+| `accepted-divergences.toml` | `main` | hand-maintained — single test files whose rakudo pass rests on an artefact mutsu decided not to copy, pinned to the exact failure shape (ADR-0130) |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
 not an ASCII letter). The rest of the filename is
@@ -40,9 +50,8 @@ not an ASCII letter). The rest of the filename is
   `Config::INI`/`Config::Ini`. Without the digest the first two pairs overwrote
   each other in the ledger and the last two were dropped by the artifact upload.
 
-One file per distribution is not an accident. It is what keeps parallel PRs from
-conflicting (the same reasoning as `news/`), and it makes re-measuring one
-distribution a one-file change.
+One file per distribution is not an accident: it makes re-measuring one
+distribution a one-file change, and a sweep's diff readable per distribution.
 
 ## Reading a record
 
@@ -76,13 +85,15 @@ neither side) · `skipped`.
 ## Where this is published
 
 `site/ecosystem.html` — searchable, one row per distribution, worst first —
-is generated from this tree by `scripts/gen-ecosystem-manifest.py` and deployed
-with the rest of the site by `.github/workflows/pages.yml`. It is a projection:
+is generated from the ledger by `scripts/gen-ecosystem-manifest.py` and deployed
+with the rest of the site by `.github/workflows/pages.yml`, which redeploys
+whenever a sweep run completes. It is a projection:
 these records stay the authority.
 
 ## Re-measuring
 
 ```sh
+scripts/ecosystem-ledger.sh pull                 # first: the current records
 scripts/ecosystem-sweep.py --only BTree          # one distribution
 scripts/ecosystem-sweep.py --prefix A --jobs 8   # everything starting with A
 scripts/ecosystem-sweep.py --status partial      # everything currently red
@@ -103,11 +114,12 @@ re-measure.
 the [`Ecosystem sweep`](../.github/workflows/ecosystem-sweep.yml) workflow
 (`gh workflow run ecosystem-sweep.yml -f scope=stale`). It builds mutsu once,
 pins one rakudo and one index snapshot for the whole run, fans `scope: all` out
-across the 27 shards, and opens the pull request itself — which auto-merges once
-CI passes, because a diff of machine-generated measurements has nothing in it for
-a reviewer to act on (`publish: branch` if you do want to inspect one first). Records it measures
-carry a `gha-*` `measured.host`, so a CI number is never silently mixed with a
-locally-measured one.
+across the 27 shards, and commits the result straight to `ecosystem-data` — no
+pull request, because a diff of machine-generated measurements has nothing in it
+for a reviewer to act on (`publish: branch` if you do want to inspect one
+first). It also runs nightly on its own. Records it measures carry a `gha-*`
+`measured.host`, so a CI number is never silently mixed with a locally-measured
+one. A local re-measure (above) only changes your gitignored copy.
 
 Full runbook, and what the workflow refuses to do:
 [docs/ecosystem-parity.md](../docs/ecosystem-parity.md) §8.
@@ -160,7 +172,8 @@ worked example is DSL::Shared's `t/Array-of-regexes-matches.rakutest` and
 [#9746](https://github.com/tokuhirom/mutsu/issues/9746): rakudo's regex cache
 mixes a role into an interpolated Str) — add a `[[divergence]]` entry to
 `accepted-divergences.toml` with the exact failure shape from the record, run
-`scripts/ecosystem-sweep.py --regrade`, and commit the regraded record with it.
+`scripts/ecosystem-sweep.py --regrade` to check it now grades `accepted`, and
+commit the entry; the next sweep grades with it.
 The rest of the distribution stays measured and drawable.
 
 ## Current state — the corpus, measured at one commit

@@ -1,17 +1,21 @@
 name: Ecosystem sweep
 
 # Re-measure the ecosystem parity KPI (issue #7785) on hosted runners and push
-# the result as an `ecosystem/sweep-*` branch. A scheduled Claude Code routine
-# (.agents/skills/ecosystem-sweep-landing/) turns that branch into a pull request
-# that auto-merges once CI passes. This is the CI entry point to
-# `scripts/ecosystem-sweep.py`, whose numbers live in `ecosystem/` and are
-# published to `site/ecosystem.html`.
+# the result straight to the orphan `ecosystem-data` branch -- the `bench-data`
+# pattern. This is the CI entry point to `scripts/ecosystem-sweep.py`; the
+# measurements live under `ecosystem/` on that branch (main keeps only the
+# hand-maintained inputs: README.md, exclude.txt, accepted-divergences.toml),
+# `scripts/ecosystem-ledger.sh pull` materializes them in a checkout, and
+# pages.yml publishes them to `site/ecosystem.html` when this run completes.
 #
 # The records are not reviewed by a human and are not meant to be: a diff of
 # thousands of machine-generated measurements tells a reader nothing a reviewer
 # could act on. Every guard that makes the numbers trustworthy runs before the
-# diff exists (see below), so CI is the gate and the pull request is the audit
-# trail and the revert handle.
+# commit exists (see below), and the data branch's history is the audit trail
+# and the revert handle. Until 2026-10-03 each sweep instead became a pull
+# request into main, opened by a scheduled agent routine because a pull request
+# opened with GITHUB_TOKEN never starts CI; ADR-0085's 2026-10-03 amendment
+# records why that was dropped.
 #
 # Method and metric definitions: docs/ecosystem-parity.md
 # Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md (D9 + its
@@ -112,10 +116,10 @@ on:
         type: boolean
         default: false
       publish:
-        description: 'pull-request = ecosystem/sweep-* branch the landing routine opens a PR for; branch = ecosystem/hold-* left for a human; none = push nothing'
+        description: 'land = commit to the ecosystem-data branch; branch = an ecosystem/hold-* branch on top of it, left for a human; none = push nothing'
         type: choice
-        default: pull-request
-        options: [pull-request, branch, none]
+        default: land
+        options: [land, branch, none]
 
 # Read-only by default: the `sweep` shards run third-party distributions'
 # test suites and must hold no write token. Only `collect` writes.
@@ -316,6 +320,12 @@ jobs:
           target/release/mutsu --version
           target/release/mutsu -e 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "vendored Test"'
 
+      # The records the sweep compares against (`--stale`, `--status`) and
+      # rewrites. /tmp/ledger is a git checkout of `ecosystem-data`, so the
+      # staging step below can ask git which records this shard changed.
+      - name: Check out the ledger
+        run: scripts/ecosystem-ledger.sh worktree /tmp/ledger
+
       # See ci.yml's "Use canonical apt mirror": the default runner mirror
       # (azure.archive.ubuntu.com) has been observed hanging indefinitely.
       - name: Use canonical apt mirror
@@ -388,6 +398,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/eco-staging
+          # The sweep wrote into the working tree's (gitignored) ecosystem/;
+          # mirror that into the ledger checkout, where git can diff it.
+          scripts/ecosystem-ledger.sh stage /tmp/ledger
+          cd /tmp/ledger
           # `-uall` is load-bearing, not tidiness: plain `git status --porcelain`
           # COLLAPSES a wholly-new directory into one entry (`?? ecosystem/dists/D/`),
           # and a shard whose letter has never been measured creates exactly that.
@@ -454,27 +468,33 @@ jobs:
       && needs.sweep.result != 'cancelled' && needs.sweep.result != 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # This job only pushes an `ecosystem/sweep-*` branch, with the default
-    # GITHUB_TOKEN. It opens no pull request: one opened with GITHUB_TOKEN never
-    # starts CI, and the old workaround (a ruleset-bypass App key in this job)
-    # put a secret next to a job that handles third-party test output. A
-    # scheduled Claude Code routine opens the pull request instead, as the
-    # maintainer, so CI runs on it (.agents/skills/ecosystem-sweep-landing/).
+    # The only job that writes: one commit to `ecosystem-data` (or to an
+    # `ecosystem/hold-*` branch), with the default GITHUB_TOKEN. No pull
+    # request, so no CI run to start and no secret beyond that token next to a
+    # job that handles third-party test output. `ecosystem-data` is not `main`:
+    # main's ruleset does not cover it, exactly like `bench-data`.
     permissions:
       contents: write
     steps:
       # `ref: main` deliberately, not the dispatch-time commit: a corpus sweep
-      # runs for over an hour and main moves under it, so the records are
-      # assembled on top of whatever main is NOW. `fetch-depth: 0` is what lets
-      # `ecosystem-ci.py apply` order two commits with `merge-base`.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] -- this job pushes the records branch with the persisted token
+      # runs for over an hour and main moves under it, so the scripts and the
+      # hand-maintained inputs (exclude list, accepted divergences) are main's
+      # as of NOW. `fetch-depth: 0` is what lets `ecosystem-ci.py apply` order
+      # two mutsu commits with `merge-base`.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] -- this job pushes the ledger branch with the persisted token
         with:
           ref: main
           fetch-depth: 0
 
-      # A sweep whose every verdict matched what is already committed uploads no
-      # artifact at all (`if-no-files-found: ignore`), which is a real and
-      # expected outcome -- "the numbers did not move" -- not a download
+      # A worktree of the same repository, so it shares the persisted token the
+      # push below needs. The ledger's tip is fetched now, after the shards
+      # finished, so "the base" that `apply` compares against is the newest one.
+      - name: Check out the ledger
+        run: scripts/ecosystem-ledger.sh worktree /tmp/ledger
+
+      # A sweep whose every verdict matched what is already on the ledger
+      # uploads no artifact at all (`if-no-files-found: ignore`), which is a real
+      # and expected outcome -- "the numbers did not move" -- not a download
       # failure. The next step counts what actually arrived.
       - name: Download every shard's records
         continue-on-error: true
@@ -484,12 +504,12 @@ jobs:
           merge-multiple: true
           path: /tmp/incoming
 
-      # Not `cp -a`: a record the base branch measured at a NEWER mutsu commit
-      # must survive. An interpreter fix that lands mid-sweep re-measures the one
-      # distribution it fixed, and copying the sweep's older measurement over it
-      # would silently re-open a record that is already green -- and produce
-      # exactly the merge conflict this job exists to avoid. The rule and its
-      # git-backed ordering are in scripts/ecosystem-ci.py, under --self-test.
+      # Not `cp -a`: a record the ledger already holds at a NEWER mutsu commit
+      # must survive. Sweeps are serialized, but a hand-pushed local measurement
+      # or a fast-forwarded `ecosystem/hold-*` branch can put one there, and
+      # copying this sweep's older measurement over it would silently re-open a
+      # record that is already green. The rule and its git-backed ordering are in
+      # scripts/ecosystem-ci.py, under --self-test.
       - name: Apply them to the tree
         id: apply
         run: |
@@ -497,15 +517,16 @@ jobs:
           if [ -d /tmp/incoming ] && [ -n "$(find /tmp/incoming -type f -print -quit)" ]; then
             python3 scripts/ecosystem-ci.py apply --source /tmp/incoming --repo .
           fi
-          # Same `-uall` requirement as the staging step above: a new shard
+          scripts/ecosystem-ledger.sh stage /tmp/ledger
+          # Same `-uall` requirement as the shards' staging step: a new shard
           # directory would otherwise arrive as a single directory entry, which
           # the `.json` filter in the provenance step drops -- leaving the
           # records unattributed and silently vetoing the history row.
-          git -c core.quotePath=false status --porcelain -uall -z -- ecosystem \
+          git -C /tmp/ledger -c core.quotePath=false status --porcelain -uall -z -- ecosystem \
             | tr '\0' '\n' | sed -n 's/^.\{3\}//p' | sort -u > /tmp/changed.txt
           count=$(grep -c . /tmp/changed.txt || true)
           echo "changed=$count" >> "$GITHUB_OUTPUT"
-          echo "$count record file(s) differ from main"
+          echo "$count record file(s) differ from the ledger"
 
       - name: Check the provenance
         id: provenance
@@ -515,6 +536,8 @@ jobs:
           # Only the per-distribution records carry a `measured` block;
           # index-snapshot.json and the generated summaries do not, and feeding
           # them in would read as an unreadable record and veto the history row.
+          # The paths are read from the working tree's ecosystem/, which `stage`
+          # just mirrored into the ledger checkout byte for byte.
           grep -E '^ecosystem/dists/.*\.json$' /tmp/changed.txt > /tmp/records.txt || true
           python3 scripts/ecosystem-ci.py provenance --markdown /tmp/provenance.md < /tmp/records.txt
 
@@ -533,7 +556,7 @@ jobs:
           UNIFORM: ${{ steps.provenance.outputs.uniform }}
         run: |
           set -euo pipefail
-          # `ecosystem/` deliberately carries no summary until a full corpus
+          # The ledger deliberately carries no summary until a full corpus
           # sweep has produced one: a rollup over a partial ledger reports a
           # rate that reads as the ecosystem KPI and is not one
           # (ecosystem/README.md). Refreshing a summary that already exists is
@@ -581,7 +604,7 @@ jobs:
             echo "| shards | ${{ needs.build.outputs.count }} (\`${{ needs.sweep.result }}\`) |"
             echo "| records changed | ${{ steps.apply.outputs.changed }} |"
             if [ "${{ steps.apply.outputs.superseded || 0 }}" != "0" ]; then
-              echo "| records left alone (base branch measured them later) | ${{ steps.apply.outputs.superseded }} |"
+              echo "| records left alone (the ledger measured them later) | ${{ steps.apply.outputs.superseded }} |"
             fi
             # These are rates over the WHOLE ledger, not over this run's slice:
             # that is what the published KPI is, and a per-run rate over a
@@ -601,66 +624,69 @@ jobs:
               cat /tmp/provenance.md
               echo ""
             fi
-            echo "Measured by [\`ecosystem-sweep.yml\`](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-            echo "on a hosted runner, so \`measured.host\` reads \`gha-*\`. Method:"
-            echo "[docs/ecosystem-parity.md](docs/ecosystem-parity.md); decisions:"
-            echo "[ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md)."
-            echo ""
-            echo "Refs #7785"
-            echo ""
-            echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+            echo "Measured by ecosystem-sweep.yml, run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }},"
+            echo "on a hosted runner, so \`measured.host\` reads \`gha-*\`. Method: docs/ecosystem-parity.md;"
+            echo "decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md."
           } > /tmp/report.md
           cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
 
-      # Push the records as a branch; the `ecosystem-sweep-landing` routine
-      # opens the pull request from it (see the job comment above). The report
-      # rides in the commit message body, which is where the routine reads the
-      # pull request description from.
+      # One commit on top of the ledger; the report is its message body.
       #
-      #   publish=pull-request -> ecosystem/sweep-<date>-<run>  (the routine lands it)
-      #   publish=branch       -> ecosystem/hold-<date>-<run>   (left for a human)
+      #   publish=land   -> ecosystem-data                        (the ledger)
+      #   publish=branch -> ecosystem/hold-<date>-<run>, on top of it (left for a human)
       #
-      # A sweep dispatched from a feature ref measured that ref's mutsu; a pull
-      # request from it would be fine (the branch is built on main), but the
-      # numbers are not main's, so it is always pushed as a `hold-` branch.
-      - name: Push the records branch
-        if: ${{ (inputs.publish || 'pull-request') != 'none' && steps.apply.outputs.changed != '0' }}
+      # A sweep dispatched from a feature ref measured that ref's mutsu, not
+      # main's, so it is always pushed as a `hold-` branch. A human lands one
+      # with `git push origin <hold-branch>:ecosystem-data` (a fast-forward while
+      # the ledger has not moved since).
+      #
+      # A rejected push is NOT rebased and retried: `apply` decided "newer
+      # measurement wins" against the ledger tip it saw, so a ledger that moved
+      # under this run needs that decision made again. Sweeps are serialized by
+      # the concurrency group, so only a hand push can cause it; re-dispatch
+      # with `scope: stale`, which measures again exactly what is still old.
+      - name: Push to the ledger
+        if: ${{ (inputs.publish || 'land') != 'none' && steps.apply.outputs.changed != '0' }}
         env:
-          PUBLISH: ${{ inputs.publish || 'pull-request' }}
+          PUBLISH: ${{ inputs.publish || 'land' }}
           SCOPE: ${{ inputs.scope || 'all' }}
           MUTSU_COMMIT: ${{ needs.build.outputs.mutsu-commit }}
           RAKU_VERSION: ${{ needs.build.outputs.raku-version }}
         run: |
           set -euo pipefail
-          kind=sweep
-          if [ "$PUBLISH" != "pull-request" ] || [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            kind=hold
+          target=ecosystem-data
+          if [ "$PUBLISH" != "land" ] || [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            target="ecosystem/hold-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
           fi
-          branch="ecosystem/${kind}-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          # The rollup rewrote the summaries after the apply step's stage.
+          scripts/ecosystem-ledger.sh stage /tmp/ledger
+          cd /tmp/ledger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git add ecosystem/
+          git add -A ecosystem/
           {
-            echo "chore(ecosystem): refresh parity records (scope=${SCOPE})"
+            echo "ecosystem: refresh parity records (scope=${SCOPE})"
             echo ""
-            echo "Measured by .github/workflows/ecosystem-sweep.yml on a hosted runner:"
             echo "mutsu ${MUTSU_COMMIT}, rakudo ${RAKU_VERSION}."
             echo ""
             cat /tmp/report.md
           } > /tmp/commit-message.txt
-          git commit -F /tmp/commit-message.txt
+          git commit -q -F /tmp/commit-message.txt
+          pushed=false
           for attempt in 1 2 3; do
-            git push -u origin "$branch" && break
+            if git push origin "HEAD:refs/heads/$target"; then
+              pushed=true
+              break
+            fi
             echo "push failed, retrying ($attempt)"
             sleep $((attempt * 4))
           done
-          if [ "$kind" = "sweep" ]; then
-            echo "Pushed \`$branch\`; the \`ecosystem-sweep-landing\` routine opens its pull request." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Pushed \`$branch\` (not landed automatically: publish=$PUBLISH, ref=$GITHUB_REF)." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$pushed" != true ]; then
+            echo "::error title=ledger not updated::could not push to $target; if the ledger moved during this run, re-dispatch with scope=stale"
+            exit 1
           fi
+          echo "Pushed \`$(git rev-parse --short HEAD)\` to \`$target\`." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Nothing changed
         if: steps.apply.outputs.changed == '0'
-        run: echo "No record changed — every selected distribution measured identically to what is on main." >> "$GITHUB_STEP_SUMMARY"
+        run: echo "No record changed — every selected distribution measured identically to what is on the ledger." >> "$GITHUB_STEP_SUMMARY"

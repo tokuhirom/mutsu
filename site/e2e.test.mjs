@@ -112,7 +112,9 @@ if (rendered.status !== 0) {
 
 // The ecosystem parity chart is copied out of the ledger at deploy time
 // (pages.yml), and the manifest's `has_chart` is what makes the page ask for it.
-// Stage it the same way here so that wiring is exercised rather than 404ing.
+// Stage it the same way here so that wiring is exercised rather than 404ing --
+// when this checkout has a ledger (`scripts/ecosystem-ledger.sh pull`; the
+// chart lives on the `ecosystem-data` branch, not on main).
 const ECO_CHART = 'site/history.svg';
 const ECO_CHART_STAGED = !existsSync(ECO_CHART) && existsSync('ecosystem/history.svg');
 if (ECO_CHART_STAGED) copyFileSync('ecosystem/history.svg', ECO_CHART);
