@@ -8,7 +8,7 @@
 use super::escapes::process_escape_sequence;
 
 /// The decoded text of the body of a `"..."` regex term, or `None` when the
-/// body interpolates (`$x`, `@a[0]`, `{ ... }`, `&f()`) or holds an escape
+/// body interpolates (`$x`, `@a[0]`, `%h<k>`, `{ ... }`, `&f()`) or holds an escape
 /// a plain string would not accept. The source-level regex tree has no node
 /// for interpolated segments yet, so such a term keeps the runtime parser.
 // Cost: O(n), n = length of the body.
@@ -23,9 +23,12 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
                     .0;
             }
             '$' | '@' | '{' => return None,
-            '&' if rest[1..].starts_with(|c: char| c.is_alphabetic() || c == '_') => {
+            // `%h<x>` interpolates a hash element.
+            '%' if rest[1..].starts_with(|c: char| c.is_alphabetic() || c == '_') => {
                 return None;
             }
+            // `&name` interpolates only as a call (`&f()`).
+            '&' if calls_a_routine(&rest[1..]) => return None,
             _ => {
                 text.push(ch);
                 rest = &rest[ch.len_utf8()..];
@@ -33,6 +36,15 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
         }
     }
     Some(text)
+}
+
+/// Whether `rest`, right after a `&`, is a routine name followed by `(`.
+// Cost: O(k), k = length of the name.
+fn calls_a_routine(rest: &str) -> bool {
+    let name_len = rest
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '\''))
+        .unwrap_or(rest.len());
+    name_len > 0 && rest[name_len..].starts_with('(')
 }
 
 /// The decoded text of the body of a `'...'` (or `‘...’`) regex term whose

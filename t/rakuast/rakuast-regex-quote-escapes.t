@@ -4,7 +4,7 @@ use Test;
 # `Regex::Quote` around a `StrLiteral` does, and a `StrLiteral` renders
 # through `Str.raku`'s escaping.
 
-plan 11;
+plan 12;
 
 sub quoted-text($src) {
     $src.AST.statements.head.expression.body.quoted.segments.head.value
@@ -17,6 +17,7 @@ is quoted-text(Q|/'a\'b'/|), "a'b", 'a q string unescapes its quote';
 is quoted-text(Q|/'\b'/|), '\b', 'and keeps any other backslash';
 is quoted-text(Q|/‘a%b’/|), 'a%b', 'curly single quotes';
 is quoted-text(Q|/｢a\b｣/|), 'a\b', 'corner brackets have no escapes';
+is quoted-text(Q|/"x &f y"/|), 'x &f y', 'a `&name` without a call does not interpolate';
 
 ok "x\ny" ~~ EVAL(Q|/"x\ny"/|.AST), 'a decoded escape survives the round trip';
 ok 'q$' ~~ EVAL(Q|/"q\$"/|.AST), 'an escaped sigil is not interpolated after it';
