@@ -299,6 +299,7 @@ impl Interpreter {
         slot: Option<u32>,
         increment: bool,
         return_new: bool,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         // The variable's name as a `Symbol`, taken once from the chunk's
@@ -348,6 +349,67 @@ impl Interpreter {
         // that reads as a bare `ContainerRef` matches none of the QuantHash
         // arms, and `%h<k>++` silently did nothing. The write side is handled
         // separately, at the in-place writeback below.
+        // An undefined base autovivifies into the container the subscript asks
+        // for, as an element assignment already does: a `:=`-bound missing
+        // element or an `is rw` routine's absent entry (`my $t := %h<a>;
+        // $t[0]++`) vivifies IN that entry, and an untyped undefined scalar
+        // (`my $x; $x<a>++`) takes the fresh container itself.
+        // A base reached through such a location is stepped in place: the
+        // variable holds the location, not the container, so the by-name
+        // write-back below would have nowhere to store the element.
+        if let Some(raw) = &container
+            && (matches!(raw.view(), ValueView::HashEntryRef { .. })
+                || matches!(raw.view(), ValueView::ContainerRef(cell)
+                    if crate::value::is_container_hole(
+                        &cell.lock().unwrap_or_else(|e| e.into_inner()))))
+            && let vivifies = !crate::runtime::types::value_is_defined(&raw.deref_container())
+            && let Some(base) = Self::lvalue_object_step_container(raw, is_positional)
+        {
+            // The variable is now bound to the container it vivified, as in
+            // rakudo (`my $t := %h<a>; $t[0]++; $t` is `[1]`).
+            if vivifies {
+                let held = base.clone().itemize_for_element_store();
+                self.set_env_with_main_alias(&name, held.clone());
+                self.update_local_if_exists(code, &name, &held);
+            }
+            let old = match base.view() {
+                ValueView::Hash(map) => map.get(&idx_val.to_string_value()).cloned(),
+                ValueView::Array(items, ..) => {
+                    Self::index_to_usize(&idx_val).and_then(|i| items.get(i).cloned())
+                }
+                _ => None,
+            }
+            .map(|v| v.deref_container())
+            .unwrap_or(Value::NIL);
+            let effective =
+                Self::normalize_incdec_source(if old.is_nil() { Value::int(0) } else { old });
+            let new_val = if increment {
+                self.increment_value_smart(&effective)?
+            } else {
+                self.decrement_value_smart(&effective)?
+            };
+            self.assign_into_computed_target(&base, &idx_val, new_val.clone())?;
+            self.stack
+                .push(if return_new { new_val } else { effective });
+            return Ok(());
+        }
+        let container = match container {
+            Some(raw)
+                if !name.starts_with(['@', '%', '&'])
+                    && declared_constraint_incdec.is_none()
+                    && match raw.descalarize().view() {
+                        ValueView::Nil => true,
+                        ValueView::Package(p) => p == "Any",
+                        _ => false,
+                    } =>
+            {
+                let fresh = Self::fresh_autoviv_container(is_positional);
+                self.set_env_with_main_alias(&name, fresh.clone());
+                self.update_local_if_exists(code, &name, &fresh);
+                Some(fresh)
+            }
+            other => other,
+        };
         let container_raw = container.clone();
         let container = container.map(|c| {
             // A scalar assignment from an aggregate preserves the shared

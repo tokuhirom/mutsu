@@ -189,7 +189,13 @@ impl Compiler {
             let slot = self.local_map.get(&var_name).copied();
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostIncrement(name_idx, slot));
-        } else if let Expr::Index { target, index, .. } = expr {
+        } else if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             if let Some(name) = self.postfix_index_name(target) {
                 self.compile_expr(index);
                 // §1.5: bake the base container's scope-correct slot (as
@@ -197,8 +203,11 @@ impl Compiler {
                 // `my $b` is not resolved to the outer `$b`'s slot by name.
                 let target_slot = self.local_map.get(&name).copied();
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code
-                    .emit(OpCode::PostIncrementIndex(name_idx, target_slot));
+                self.code.emit(OpCode::PostIncrementIndex(
+                    name_idx,
+                    target_slot,
+                    *is_positional,
+                ));
             } else {
                 // Nested index (e.g. $foo[0][0]++): read old value, increment,
                 // write back via IndexAssign, and return old value.
@@ -306,13 +315,22 @@ impl Compiler {
             let slot = self.local_map.get(&var_name).copied();
             let name_idx = self.code.add_constant(Value::str(var_name));
             self.code.emit(OpCode::PostDecrement(name_idx, slot));
-        } else if let Expr::Index { target, index, .. } = expr {
+        } else if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             if let Some(name) = self.postfix_index_name(target) {
                 self.compile_expr(index);
                 let target_slot = self.local_map.get(&name).copied();
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code
-                    .emit(OpCode::PostDecrementIndex(name_idx, target_slot));
+                self.code.emit(OpCode::PostDecrementIndex(
+                    name_idx,
+                    target_slot,
+                    *is_positional,
+                ));
             } else {
                 // Nested index (e.g. $foo[0][0]--): read old value, decrement,
                 // write back via IndexAssign, and return old value.

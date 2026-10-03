@@ -3735,7 +3735,16 @@ impl Interpreter {
                 rhs_is_bare_topic,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_smart_match_expr_op(
+                // A routine whose `$/` is a (readonly) parameter -- the
+                // action-method idiom `method term($/) { ... when $s ~~ /.../
+                // ... make ... }` -- keeps that `$/` across a regex
+                // smartmatch: rakudo answers the match but leaves `$/`, and so
+                // `$0` / `$<name>`, alone.
+                let saved_slash = self
+                    .is_readonly("/")
+                    .then(|| self.env().get("/").cloned())
+                    .flatten();
+                let result = self.exec_smart_match_expr_op(
                     code,
                     ip,
                     *rhs_end,
@@ -3746,7 +3755,12 @@ impl Interpreter {
                     *rhs_pure_regex,
                     *rhs_is_bare_topic,
                     compiled_fns,
-                )?;
+                );
+                if let Some(slash) = saved_slash {
+                    self.env_mut().insert("/".to_string(), slash.clone());
+                    self.update_local_if_exists(code, "/", &slash);
+                }
+                result?;
             }
             // Cost: O(1).
             OpCode::ScalarizeRegexMatchResult => {
@@ -5354,13 +5368,27 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PostIncrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, false)?;
+            OpCode::PostIncrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    true,
+                    false,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PostDecrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, false)?;
+            OpCode::PostDecrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    false,
+                    false,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -5534,13 +5562,27 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PreIncrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, true)?;
+            OpCode::PreIncrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    true,
+                    true,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PreDecrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, true)?;
+            OpCode::PreDecrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    false,
+                    true,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
 

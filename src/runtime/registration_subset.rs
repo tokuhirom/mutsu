@@ -103,10 +103,12 @@ impl Interpreter {
             self.registry_mut()
                 .subsets
                 .insert(qualified.clone(), def.clone());
-            self.env.insert(
-                qualified.clone(),
-                Value::package(Symbol::intern(&qualified)),
-            );
+            if !self.qualified_identity_binding_is_redundant(&qualified, &qualified) {
+                self.env.insert(
+                    qualified.clone(),
+                    Value::package(Symbol::intern(&qualified)),
+                );
+            }
             canonical = qualified;
         }
         // A `my subset` has declaration-site identity (ADR-0047 P1, #9894),
@@ -160,7 +162,9 @@ impl Interpreter {
                 .or_insert_with(|| canonical.clone());
         }
         self.registry_mut().subsets.insert(name.to_string(), def);
-        self.env
-            .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
+        if !self.qualified_identity_binding_is_redundant(name, &canonical) {
+            self.env
+                .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
+        }
     }
 }

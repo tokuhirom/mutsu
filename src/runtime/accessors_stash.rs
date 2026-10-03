@@ -34,7 +34,10 @@ impl Interpreter {
             return false;
         }
         let prefix = format!("{name}::");
-        self.env.keys().any(|k| k.resolve().starts_with(&prefix))
+        self.env
+            .keys()
+            .chain(self.module_toplevel.package_symbols.keys())
+            .any(|k| k.resolve().starts_with(&prefix))
             || self
                 .registry()
                 .classes
@@ -494,7 +497,10 @@ impl Interpreter {
 
     fn has_package_members(&self, package: &str) -> bool {
         let prefix = format!("{package}::");
-        self.env.keys().any(|k| k.starts_with(&prefix))
+        self.env
+            .keys()
+            .chain(self.module_toplevel.package_symbols.keys())
+            .any(|k| k.starts_with(&prefix))
             || self
                 .registry()
                 .functions
@@ -627,6 +633,11 @@ impl Interpreter {
             && (!self.is_my_scoped_package_item(name)
                 && (!self.is_my_scoped_type_name(name) || self.my_scoped_type_visible_here(name)))
         {
+            return value.clone();
+        }
+        // A module's top-level enum value under a package-qualified name lives
+        // off the frame env (ADR-0084 §2 group 2).
+        if let Some(value) = self.toplevel_package_symbol(name) {
             return value.clone();
         }
         // Fallback: check persistent `our`-scoped variables (constants, `our` decls)

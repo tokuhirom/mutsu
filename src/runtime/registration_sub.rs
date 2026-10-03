@@ -2563,7 +2563,9 @@ impl Interpreter {
             self.env.insert(name.to_string(), type_object.clone());
             // Also register with fully-qualified package name
             if enum_type_name != name {
-                self.env.insert(enum_type_name.to_string(), type_object);
+                if !self.qualified_identity_binding_is_redundant(enum_type_name, enum_type_name) {
+                    self.env.insert(enum_type_name.to_string(), type_object);
+                }
                 // An enum declared in a class or role body is a nested type:
                 // the body's exit drops the short-name binding
                 // (`restore_nested_type_short_names`), so the owner's methods
@@ -2585,11 +2587,10 @@ impl Interpreter {
                 index,
             );
             if !is_anonymous {
-                self.env
-                    .insert(format!("{}::{}", name, key), enum_val.clone());
+                self.bind_package_symbol(format!("{}::{}", name, key), enum_val.clone());
                 // Also register with fully-qualified package name
                 if self.current_package() != "GLOBAL" {
-                    self.env.insert(
+                    self.bind_package_symbol(
                         format!("{}::{}::{}", self.current_package(), name, key),
                         enum_val.clone(),
                     );
@@ -2597,7 +2598,7 @@ impl Interpreter {
             }
             // Also register bare variant with package prefix for import lookup
             if self.current_package() != "GLOBAL" {
-                self.env.insert(
+                self.bind_package_symbol(
                     format!("{}::{}", self.current_package(), key),
                     enum_val.clone(),
                 );

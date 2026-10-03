@@ -3285,10 +3285,13 @@ pub(crate) enum OpCode {
     /// The element is autovivified when missing (a typed array fills with
     /// its element type), stepped, and written back; `@!attr` elements reach
     /// the attribute's cell. The indexed forms share `exec_inc_dec_index_op`.
-    PreIncrementIndex(u32, Option<u32>),
+    /// The third operand is whether the subscript is positional (`[ ]`),
+    /// which decides what an undefined base autovivifies into
+    /// (`my $x; $x<a>++` makes a Hash, `$x[0]++` an Array).
+    PreIncrementIndex(u32, Option<u32>, bool),
     /// Prefix `--` on a subscripted element, `--@a[$i]` / `--%h<k>`. Stack:
     /// `[index] → [new value]`. As [`Self::PreIncrementIndex`].
-    PreDecrementIndex(u32, Option<u32>),
+    PreDecrementIndex(u32, Option<u32>, bool),
 
     // -- Variable access --
     /// Read a named capture, `$<name>`. Stack: `[] → [value]`.
@@ -3344,11 +3347,13 @@ pub(crate) enum OpCode {
     /// `my $b = [0, 3]` shadowing an outer `my $b` inside the same frame
     /// (a bare block, which shares the enclosing frame's locals) incremented the
     /// OUTER array's element.
-    PostIncrementIndex(u32, Option<u32>),
+    /// The third field is the subscript's positional flag, as
+    /// [`Self::PreIncrementIndex`]'s.
+    PostIncrementIndex(u32, Option<u32>, bool),
     /// Postfix `--` on a subscripted element, `@a[$i]--` / `%h<k>--`. Stack:
     /// `[index] → [old value]`. Operands as [`Self::PostIncrementIndex`];
     /// shares `exec_inc_dec_index_op` with the other indexed forms.
-    PostDecrementIndex(u32, Option<u32>),
+    PostDecrementIndex(u32, Option<u32>, bool),
     /// Named index assignment: `var[idx] = value` where `var` is a known
     /// variable name. `is_positional` records whether the subscript was
     /// `[...]` (positional) or `{...}`/`<...>` (associative); used to
@@ -9585,10 +9590,10 @@ impl CompiledCode {
             // ONLY use of an outer aggregate is `%h{$k}++` / `:delete` never
             // captured it, so the mutation vanished once the closure escaped its
             // declaring frame (Track B T6 probe).
-            OpCode::PostIncrementIndex(name_idx, _)
-            | OpCode::PostDecrementIndex(name_idx, _)
-            | OpCode::PreIncrementIndex(name_idx, _)
-            | OpCode::PreDecrementIndex(name_idx, _) => Some(*name_idx),
+            OpCode::PostIncrementIndex(name_idx, ..)
+            | OpCode::PostDecrementIndex(name_idx, ..)
+            | OpCode::PreIncrementIndex(name_idx, ..)
+            | OpCode::PreDecrementIndex(name_idx, ..) => Some(*name_idx),
             OpCode::DeleteIndexNamed(name_idx, _) => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => Some(*stash_name_idx),
