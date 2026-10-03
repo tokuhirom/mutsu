@@ -1080,6 +1080,20 @@ Rakudo gives no reference for the last two: it reports two such `multi regex` ca
 ambiguous call, and it loops forever on left recursion. A wrapped proto candidate is not honored by
 either engine ([#11151](https://github.com/tokuhirom/mutsu/issues/11151)).
 
+### Slice E, twelfth part: `<~~>`
+
+`recurse-self` is no longer a decline. In the walk, `<~~>` takes the enclosing regex's first end at the
+cursor and discards its captures. It is guarded against re-entering at the same position
+(`regex_match_recurse_self`). That leaf matches the regex through
+`regex_match_end_from_caps_in_pkg`, which answers from the regex's compiled program, so the atom
+compiles to a `CapAtom` leaf (`leaf=recurse-self`), the way a lookaround does, and no walk is entered.
+The 7 declined patterns over `t/` and the roast whitelist compile
+(`t/regex/regex-recurse-self-compiled.t`, rakudo's values).
+
+The most common whole-pattern decline left is `seqalt-nullable-ratchet`. Rakudo's rule for it turned
+out to depend on sigspace after the group, and the walk's heuristic does not follow it
+([#11162](https://github.com/tokuhirom/mutsu/issues/11162)).
+
 ### Reproducing §2
 
 ```raku
