@@ -1,8 +1,9 @@
 use super::adverb::{
-    DeleteAdverb, apply_delete_to_exists, build_adverb_error_call, collect_remaining_adverbs,
-    determine_subscript_what, multidim_delete_fn, multidim_target_var_name, normalize_adverb_name,
-    parse_delete_adverb, parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
-    subscript_adverb_expr_with_cond, supports_postfix_call_adverbs, try_parse_exists_adverb,
+    DeleteAdverb, apply_delete_adverb, build_adverb_error_call, collect_remaining_adverbs,
+    delete_with_exists, determine_subscript_what, multidim_delete_fn, multidim_target_var_name,
+    normalize_adverb_name, parse_delete_adverb, parse_dynamic_subscript_adverb,
+    parse_subscript_adverb_with_expr, subscript_adverb_expr_with_cond,
+    supports_postfix_call_adverbs, try_parse_exists_adverb,
 };
 use super::call_method::{
     ParsedBracketIndex, QuotedMethodName, append_call_arg, auto_invoke_bareword_method_target,
@@ -18,6 +19,7 @@ use super::helpers::{
 use super::named_adverb::{
     has_subscript_named_adverb, lower_subscript_named_adverbs, scan_subscript_named_adverbs,
 };
+use crate::ast::subscript_adverb::{conditional_delete, delete_flag, delete_key};
 use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
     PrefixUnaryOp, parse_postfix_update_op, parse_prefix_unary_op,
@@ -2310,11 +2312,7 @@ fn postfix_expr_loop_from(
                         if let Some((r_after, exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
                         {
-                            expr = if matches!(delete_adv, DeleteAdverb::Delete(_)) {
-                                apply_delete_to_exists(exists_expr)
-                            } else {
-                                exists_expr
-                            };
+                            expr = delete_with_exists(delete_adv, exists_expr);
                             rest = r_after;
                             continue;
                         }
@@ -2387,11 +2385,7 @@ fn postfix_expr_loop_from(
                 && let Some((r_after, exists_expr)) =
                     try_parse_exists_adverb(r_after_delete, expr.clone())
             {
-                expr = if matches!(delete_adv, DeleteAdverb::Delete(_)) {
-                    apply_delete_to_exists(exists_expr)
-                } else {
-                    exists_expr
-                };
+                expr = delete_with_exists(delete_adv, exists_expr);
                 rest = r_after;
                 continue;
             }
@@ -2451,20 +2445,19 @@ fn postfix_expr_loop_from(
                 // the *answer* in `DELETE-KEY` (which would call it on a Bool,
                 // or on the List a slice answers with).
                 if let Expr::Exists { delete: false, .. } = &expr {
-                    match delete_adv {
-                        DeleteAdverb::NoDelete => {}
-                        DeleteAdverb::Delete(None) => {
-                            expr = apply_delete_to_exists(expr);
-                        }
-                        DeleteAdverb::Delete(Some(cond)) => {
-                            let deleting = apply_delete_to_exists(expr.clone());
-                            expr = Expr::Ternary {
-                                cond: Box::new(cond),
-                                then_expr: Box::new(deleting),
-                                else_expr: Box::new(expr),
-                            };
-                        }
-                    }
+                    expr = delete_with_exists(delete_adv, expr);
+                    continue;
+                }
+                // `:delete:k` — a value adverb after the `:delete` reads the
+                // removed element the same way as the `:k:delete` order.
+                if matches!(expr, Expr::Index { .. })
+                    && let Some((r_after_adv, adv_name, adv_cond)) =
+                        parse_subscript_adverb_with_expr(r_after_delete)
+                    && !has_ternary_else_after(r_after_adv)
+                {
+                    let read = subscript_adverb_expr_with_cond(expr, adv_name, adv_cond);
+                    expr = apply_delete_adverb(delete_adv, read);
+                    rest = r_after_adv;
                     continue;
                 }
                 match delete_adv {
@@ -2490,7 +2483,7 @@ fn postfix_expr_loop_from(
                         } else if let Expr::Call { name, mut args } = expr {
                             if name == "__mutsu_subscript_adverb" {
                                 // Inject delete flag into the subscript adverb call
-                                args.push(Expr::Literal(Value::pair("delete".into(), Value::TRUE)));
+                                args.push(delete_flag());
                                 expr = Expr::Call { name, args };
                             } else if name == "__mutsu_multidim_subscript_adverb" {
                                 // `@a[i;j;k]:k:delete` (static delete combined with a
@@ -2517,22 +2510,10 @@ fn postfix_expr_loop_from(
                                     args: new_args,
                                 };
                             } else {
-                                expr = Expr::MethodCall {
-                                    target: Box::new(Expr::Call { name, args }),
-                                    name: Symbol::intern("DELETE-KEY"),
-                                    args: vec![],
-                                    modifier: None,
-                                    quoted: false,
-                                };
+                                expr = delete_key(Expr::Call { name, args });
                             }
                         } else {
-                            expr = Expr::MethodCall {
-                                target: Box::new(expr),
-                                name: Symbol::intern("DELETE-KEY"),
-                                args: vec![],
-                                modifier: None,
-                                quoted: false,
-                            };
+                            expr = delete_key(expr);
                         }
                     }
                     DeleteAdverb::Delete(Some(cond)) => {
@@ -2570,13 +2551,9 @@ fn postfix_expr_loop_from(
                         {
                             // Inject conditional delete into subscript adverb call
                             if let Expr::Call { name, mut args } = original_expr.clone() {
-                                args.push(Expr::Literal(Value::pair("delete".into(), Value::TRUE)));
+                                args.push(delete_flag());
                                 let delete_expr = Expr::Call { name, args };
-                                expr = Expr::Ternary {
-                                    cond: Box::new(cond),
-                                    then_expr: Box::new(delete_expr),
-                                    else_expr: Box::new(original_expr),
-                                };
+                                expr = conditional_delete(cond, delete_expr, original_expr);
                             }
                         } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_multidim_subscript_adverb")
                         {
@@ -2608,18 +2585,8 @@ fn postfix_expr_loop_from(
                                 };
                             }
                         } else {
-                            let delete_expr = Expr::MethodCall {
-                                target: Box::new(original_expr.clone()),
-                                name: Symbol::intern("DELETE-KEY"),
-                                args: vec![],
-                                modifier: None,
-                                quoted: false,
-                            };
-                            expr = Expr::Ternary {
-                                cond: Box::new(cond),
-                                then_expr: Box::new(delete_expr),
-                                else_expr: Box::new(original_expr),
-                            };
+                            let delete_expr = delete_key(original_expr.clone());
+                            expr = conditional_delete(cond, delete_expr, original_expr);
                         }
                     }
                 }

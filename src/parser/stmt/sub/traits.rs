@@ -225,7 +225,17 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             } else if trait_name == "raw" {
                 is_raw = true;
             } else if trait_name == "looser" || trait_name == "tighter" || trait_name == "equiv" {
-                associativity = Some(trait_name.to_string());
+                // A precedence trait leaves its name as a placeholder, which
+                // the prefix-`looser` parse check reads. It must not clobber
+                // an explicit `is assoc<...>` written before it:
+                // `is assoc<list> is equiv(&[~])` stays list-associative, as
+                // in rakudo (OneSeq's `[>>>] @a, @b`).
+                if associativity
+                    .as_deref()
+                    .is_none_or(|a| matches!(a, "looser" | "tighter" | "equiv"))
+                {
+                    associativity = Some(trait_name.to_string());
+                }
             } else if trait_name == "DEPRECATED" {
                 // Will capture parenthesized arg below
                 custom_traits.push(("DEPRECATED".to_string(), None));
