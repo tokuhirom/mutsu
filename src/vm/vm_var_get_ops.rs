@@ -578,14 +578,6 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
-        } else if crate::runtime::utils::has_double_colon(name)
-            && !self.has_type(name)
-            && let Some(our_val) = self.get_our_var(name).cloned()
-        {
-            // A package term stored through its stash from another frame
-            // (`Logic::Ternary::{'True'} = …` inside `sub EXPORT`): the env entry
-            // went with that frame, the package store keeps it.
-            our_val
         } else if crate::runtime::utils::has_double_colon(name) {
             // Check if this is an access to a non-existent enum variant
             if let Some((pkg, sym)) = name.rsplit_once("::")
@@ -597,9 +589,16 @@ impl Interpreter {
                     sym, pkg,
                 )));
             }
+            // A package term stored through its stash from another frame
+            // (`Logic::Ternary::{'True'} = …` inside `sub EXPORT`): the env
+            // entry went with that frame, the package store keeps it.
+            if !self.has_type(name)
+                && let Some(our_val) = self.get_our_var(name).cloned()
+            {
+                our_val
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
-            if let Some((_pkg, short)) = name.rsplit_once("::")
+            } else if let Some((_pkg, short)) = name.rsplit_once("::")
                 && self.has_function(&format!("GLOBAL::{}", short))
             {
                 // Route the package-qualified term fork through the Interpreter's unified
