@@ -338,6 +338,26 @@ pub(crate) fn param_display_name(name: &str) -> String {
     }
 }
 
+/// A parameter as it is spelled in a signature-shape compile error
+/// (X::Parameter::WrongOrder): `$x`, `@p`, `%h`, `&f`, a sigilless `x`, and
+/// an anonymous parameter as its bare sigil (`$`, `@`, `%`), as rakudo
+/// renders them (#11373).
+// Cost: O(|name|).
+fn param_def_spelling(pd: &ParamDef) -> String {
+    if crate::value::signature::is_anonymous_param_name(&pd.name) {
+        return match pd.name.chars().next() {
+            Some(sigil @ ('@' | '%' | '&')) => sigil.to_string(),
+            _ if pd.name == "__ANON_ARRAY__" => "@".to_string(),
+            _ if pd.name == "__ANON_HASH__" => "%".to_string(),
+            _ => "$".to_string(),
+        };
+    }
+    if pd.sigilless {
+        return pd.name.clone();
+    }
+    param_display_name(&pd.name)
+}
+
 pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PError> {
     // The `:` invocant marker may only appear after the *first* parameter
     // (`method m($self: ...)`). On any later parameter (`sub f($x, $y:)`,
@@ -542,7 +562,7 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             } else {
                 "required"
             };
-            let display = format!("${}", pd.name);
+            let display = param_def_spelling(pd);
             let msg = format!(
                 "Cannot put {} parameter {} after {} parameters",
                 misplaced, display, after
