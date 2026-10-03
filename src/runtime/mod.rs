@@ -671,6 +671,7 @@ mod nqp_ops_builtin;
 mod nqp_ops_coerce;
 mod nqp_ops_compare;
 pub(crate) mod nqp_ops_list;
+mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;
 mod nqp_ops_numeric;
 mod nqp_ops_process;

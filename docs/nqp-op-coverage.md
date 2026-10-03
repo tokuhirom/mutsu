@@ -35,7 +35,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Category | Implemented | Missing | Tracking |
 | --- | ---: | ---: | --- |
 | Arithmetic | 26 / 26 | 0 | #11490 |
-| Array | 34 / 61 | 27 | #11493 |
+| Array | 60 / 60 | 0 | #11493 |
 | Asynchronous | 0 / 11 | 11 | #11502 |
 | Atomic | 0 / 11 | 11 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
@@ -68,11 +68,10 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **305 / 586** | **281** | |
+| **Total** | **331 / 585** | **254** | |
 
 ## Missing ops by category
 
-- **Array** (#11493): `atpos2d`, `atpos2d_i`, `atpos2d_n`, `atpos2d_s`, `atpos3d`, `atpos3d_i`, `atpos3d_n`, `atpos3d_s`, `atposnd`, `atposnd_i`, `atposnd_n`, `atposnd_s`, `atposref_s`, `bindpos2d`, `bindpos2d_i`, `bindpos2d_n`, `bindpos2d_s`, `bindpos3d`, `bindpos3d_i`, `bindpos3d_n`, `bindpos3d_s`, `bindposnd`, `bindposnd_i`, `bindposnd_n`, `bindposnd_s`, `existspos`, `list_b`
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
 - **Captures** (#11496): `captureexistsnamed`, `capturehasnameds`, `captureposelems`, `savecapture`, `usecapture`
@@ -101,3 +100,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindassert`, `p6bindcaptosig`, `p6bindsig`, `p6box`, `p6capturelex`, `p6clearpre`, `p6decontrv`, `p6decontrv_6c`, `p6definite`, `p6getouterctx`, `p6invokeflat`, `p6isbindable`, `p6return`, `p6setautothreader`, `p6setfirstflag`, `p6setpre`, `p6sink`, `p6stateinit`, `p6staticouter`, `p6store`, `p6takefirstflag`, `p6trialbind`, `p6trybindsig`, `p6typecheckrv`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6invokehandler`
+
+## Not applicable
+
+- `list_b`: Rakudo rejects every Raku call at compile time ("The 'list_b' op needs a list of blocks, got QAST::Op"): a Raku block literal never compiles to the bare QAST::Block the op requires.
