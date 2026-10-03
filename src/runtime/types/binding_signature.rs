@@ -4,14 +4,17 @@ use crate::meta_ns::MetaNs;
 /// Does this legacy-path placeholder/signature param list contain a *plain
 /// positional* param — a real signature name like `p` (from a pointy block
 /// `-> $p {...}`), as opposed to a `$:name` named placeholder, a `^`-twigil
-/// implicit placeholder (`$^a`/`@^x`/`%^h`/`&^cb`), or the `_`/`@_`/`%_`
-/// topic/args slots?
+/// implicit placeholder (`$^a`/`@^x`/`%^h`/`&^cb`), or the `@_`/`%_` args
+/// slots?
 ///
 /// Pointy lambdas compile to `params: ["p"]` with an empty `param_defs`, so they
-/// reach the legacy binding path. When a positional pair value (`ValuePair(Str,
-/// _)`, produced by `pair_as_positional` for `.first`/etc. over Hash/Pair
-/// elements) is passed, it must bind to such a plain param positionally rather
-/// than be siphoned off as a named argument.
+/// reach the legacy binding path. The topic `_` counts as such a name: it is the
+/// one real positional parameter of a WhateverCode (`*.value`) and of a
+/// `-> $_ { }` block, and it binds a positional pair value like any other.
+/// When a positional pair value (`ValuePair(Str, _)`, produced by
+/// `pair_as_positional` for `.first`/etc. over Hash/Pair elements) is passed,
+/// it must bind to such a plain param positionally rather than be siphoned off
+/// as a named argument.
 /// Whether `value` is a multi-dimensional slice lvalue produced by
 /// `MultiDimIndexBindRef` for a subscript with a slice dimension — a plain,
 /// non-empty list whose elements are ALL shared `ContainerRef` cells (one per
@@ -76,7 +79,6 @@ fn legacy_has_plain_positional_param(params: &[String]) -> bool {
             && !p.starts_with("@^")
             && !p.starts_with("%^")
             && !p.starts_with("&^")
-            && p != "_"
             && p != "@_"
             && p != "%_"
     })
@@ -1287,21 +1289,18 @@ impl Interpreter {
             // undeclared variable (#8353).
             //
             // Checked against `arity_positional_count`, NOT `positional_args`:
-            // for a bare WhateverCode's `["_"]` sentinel, `positional_args`
-            // excludes a Pair-shaped argument that `pair_as_positional`
-            // promoted to a `ValuePair` (`promote_valuepair_positional` above
-            // is false for that shape -- such a block reads its implicit
-            // argument through the dynamically-scoped topic `$_`, set by
-            // whatever topicalizes it, e.g. `.sort`'s per-element call, not
-            // through a real positional bind). Counting it as "0 positionals
-            // supplied" there is a false "too few": one argument WAS
-            // supplied, this binder's `_`-shape just does not bind it
-            // positionally by design. `arity_positional_count` counts
-            // anything that is not a genuinely-named `Pair` (a `ValuePair`
-            // included, whether or not this shape promotes it), so a truly
-            // empty call (`(* + 1)()`) still correctly reports "too few"
-            // while a `.sort(-*.value)`-style Pair-element call does not
-            // (`t/routines/closure/whatevercode-pair-arg-arity.t`).
+            // `positional_args` leaves out a `ValuePair` whenever the params
+            // carry no plain positional name to promote it to (a `$:name`-only
+            // placeholder list), and counting it as "0 positionals supplied"
+            // there would be a false "too few". `arity_positional_count`
+            // counts anything that is not a genuinely-named `Pair`, so a truly
+            // empty call (`(* + 1)()`) still correctly reports "too few" while
+            // a `.sort(-*.value)`-style Pair-element call does not
+            // (`t/routines/closure/whatevercode-pair-arg-arity.t`). A bare
+            // WhateverCode's `["_"]` and a `-> $_` block DO promote: their `_`
+            // is a real positional parameter, and a positional Pair handed to
+            // one by a caller that does not also topicalize it (a Supply
+            // callback, #8825) must still bind to it.
             let arity_positional_count = plain_args
                 .iter()
                 .filter(|a| !matches!(a.view(), ValueView::Pair(..)))

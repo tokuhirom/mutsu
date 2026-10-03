@@ -37,7 +37,7 @@ impl Interpreter {
                 if let Some(ValueView::Array(taps, ..)) = attrs.get("taps").map(Value::view) {
                     for tap in taps.iter().cloned().collect::<Vec<_>>() {
                         if Self::supply_has_active_callback(&tap) {
-                            let _ = self.call_sub_value(tap, vec![value.clone()], true);
+                            let _ = self.call_supply_callback(tap, vec![value.clone()], true);
                         }
                     }
                 }
@@ -318,10 +318,10 @@ impl Interpreter {
                             for line in
                                 split_supply_chunks_into_lines(&[Value::str(collected)], chomp)
                             {
-                                let _ = self.call_sub_value(tap_cb.clone(), vec![line], true);
+                                let _ = self.call_supply_callback(tap_cb.clone(), vec![line], true);
                             }
                         } else {
-                            let _ = self.call_sub_value(
+                            let _ = self.call_supply_callback(
                                 tap_cb.clone(),
                                 vec![Value::str(collected)],
                                 true,
@@ -671,7 +671,7 @@ impl Interpreter {
                                 // reaches the subscriber).
                                 if inner_attrs.as_map().contains_key("preserving") {
                                     for v in supplier_take_preserved_backlog(supplier_id) {
-                                        self.call_sub_value(body_cb.clone(), vec![v], true)?;
+                                        self.call_supply_callback(body_cb.clone(), vec![v], true)?;
                                     }
                                 }
                                 // A non-live source can carry values seeded next
@@ -684,7 +684,7 @@ impl Interpreter {
                                         inner_attrs.as_map().get("values").map(Value::view)
                                 {
                                     for v in seeded.iter() {
-                                        self.call_sub_value(
+                                        self.call_supply_callback(
                                             body_cb.clone(),
                                             vec![v.clone()],
                                             true,
@@ -1229,14 +1229,14 @@ impl Interpreter {
                                 });
                             }
                             let key = if let Some(ref func) = as_fn {
-                                self.call_sub_value(func.clone(), vec![item.clone()], true)?
+                                self.call_supply_callback(func.clone(), vec![item.clone()], true)?
                             } else {
                                 item.clone()
                             };
                             let mut duplicate = false;
                             for (seen, _) in &seen_keys {
                                 let is_same = if let Some(ref func) = with_fn {
-                                    self.call_sub_value(
+                                    self.call_supply_callback(
                                         func.clone(),
                                         vec![seen.clone(), key.clone()],
                                         true,
@@ -1497,13 +1497,13 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for val in &values {
                     let key = if let Some(ref f) = as_fn {
-                        self.call_sub_value(f.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(f.clone(), vec![val.clone()], true)?
                     } else {
                         val.clone()
                     };
                     let found = seen_keys.iter().any(|s| {
                         if let Some(ref f) = with_fn {
-                            self.call_sub_value(f.clone(), vec![s.clone(), key.clone()], true)
+                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()], true)
                                 .map(|v| v.truthy())
                                 .unwrap_or(false)
                         } else {

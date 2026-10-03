@@ -40,7 +40,7 @@ impl Interpreter {
             let attrs = attributes.as_map();
             if let Some(ValueView::Array(cbs, ..)) = attrs.get("do_callbacks").map(Value::view) {
                 for cb in cbs.iter().cloned().collect::<Vec<_>>() {
-                    self.call_sub_value(cb, args.clone(), true)?;
+                    self.call_supply_callback(cb, args.clone(), true)?;
                 }
             }
             attrs.get("real_tap").cloned().unwrap_or(Value::NIL)
@@ -83,7 +83,7 @@ impl Interpreter {
         // via a nested sub call) — see `runtime::react_done_handler_depth`.
         let _react_done_handler =
             crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-        let res = self.call_sub_value(tap, args, propagate_return);
+        let res = self.call_supply_callback(tap, args, propagate_return);
         let res = res.and_then(|value| {
             // Tap callbacks are invoked for their side effects; their return
             // value is discarded by the supply machinery.  Sink a deferred
@@ -1097,7 +1097,7 @@ impl Interpreter {
             // body's dynamic extent — see `runtime::react_done_handler_depth`.
             let _react_done_handler =
                 crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-            let res = this.call_sub_value(cb, args, true);
+            let res = this.call_supply_callback(cb, args, true);
             drop(_react_done_handler);
             let emitted = this
                 .async_state

@@ -204,9 +204,9 @@ impl Interpreter {
                     .map(Value::to_string_value)
                     .as_deref()
                 {
-                    Some("map") => Some(self.call_sub_value(callable, vec![arg], true)?),
+                    Some("map") => Some(self.call_supply_callback(callable, vec![arg], true)?),
                     Some("do") => {
-                        self.call_sub_value(callable, vec![arg.clone()], true)?;
+                        self.call_supply_callback(callable, vec![arg.clone()], true)?;
                         Some(arg)
                     }
                     _ => self.smart_match_values(&arg, &callable).then_some(arg),
