@@ -9,7 +9,7 @@
 //! the native `is native` path uses (`nativecall.rs`: libloading + libffi,
 //! `nativecall_callback.rs`, `nativecall_cast.rs`, `nativecall_global.rs`). The
 //! translation from upstream's argument/return-info hashes to that machinery's
-//! [`NativeCallSpec`] is in [`super::nativecall_info`].
+//! [`NativeCallSpec`](crate::runtime::nativecall::NativeCallSpec) is in [`super::nativecall_info`].
 //!
 //! The `__mutsu_nativesizeof` / `__mutsu_nativecast` entry points of the
 //! native provider share their bodies with `nqp::nativecallsizeof` /
