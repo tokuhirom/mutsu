@@ -174,6 +174,13 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     r = r3;
                     continue;
                 }
+                // `unit class A::B::C is export;` publishes the short name `C`
+                // to the importer; carry the marker the module loader reads.
+                if parent == "export" && name.contains("::") {
+                    let mut tags = Vec::new();
+                    super::class_decl::push_export_tags(r2, &mut tags);
+                    custom_traits.push(super::class_decl::export_type_marker(&tags));
+                }
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;

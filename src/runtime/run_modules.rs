@@ -1632,6 +1632,17 @@ impl Interpreter {
                 if *qualified == module || qualified.starts_with(&format!("{module}::")) {
                     return true;
                 }
+                // The compunit's own `unit class` need not be named after its
+                // file (`A/B/MD5.rakumod` declaring `unit class A::B::Other::MD5
+                // is export`): an exported one is still this compunit's.
+                if unit_name.as_deref() == Some(qualified.as_str())
+                    && qualified
+                        .rsplit("::")
+                        .next()
+                        .is_some_and(|short| exported_here.contains(short))
+                {
+                    return true;
+                }
                 let Some(prefix) = unit_prefix.as_deref() else {
                     return false;
                 };
