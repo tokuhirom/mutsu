@@ -68,9 +68,13 @@ impl Interpreter {
                 | "≡"
                 | "≢"
         );
+        // Numeric operators whose only one-arg CORE candidate is `(\a)`: the lone
+        // operand is numified as is (`infix:<+>($[1,2])` is 2), never spread.
+        let is_one_arg_numify_op = matches!(op, "+" | "-" | "*" | "/" | "**" | "%" | "gcd" | "lcm");
         // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
-        // which coerce their single argument to a QuantHash instead
-        let args: Vec<Value> = if args.len() == 1 && !is_set_op {
+        // which coerce their single argument to a QuantHash instead, nor for the
+        // numeric operators above
+        let args: Vec<Value> = if args.len() == 1 && !is_set_op && !is_one_arg_numify_op {
             match args[0].view() {
                 ValueView::Array(items, ..) => items.to_vec(),
                 ValueView::Hash(map) if matches!(op, "andthen" | "notandthen" | "orelse") => map
@@ -206,6 +210,11 @@ impl Interpreter {
             }
             if matches!(op, "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖") {
                 return Ok(coerce_value_to_quanthash(&args[0]));
+            }
+            if is_one_arg_numify_op && matches!(args[0].view(), ValueView::Array(..)) {
+                return Ok(crate::value::radix_numeric::coerce_to_numeric(
+                    args[0].clone(),
+                ));
             }
             return Ok(args[0].clone());
         }
