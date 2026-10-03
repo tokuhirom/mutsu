@@ -282,7 +282,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexBlock => "block",
         StatementLanguageVersion => "version",
         CircumfixHashComposer => "expression",
-        ContextualizerHash => "target",
+        ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
         ColonPairTrue | ColonPairFalse => "key",
         StatementModifierGiven
         | StatementModifierIf

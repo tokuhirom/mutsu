@@ -8,7 +8,9 @@
 
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
+use crate::ast::{
+    ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
+};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
@@ -2713,7 +2715,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(lowered)
         }
         RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),
-        RakuAstClass::ContextualizerHash => super::hash_literal::lower_contextualizer(node),
+        RakuAstClass::ContextualizerHash => super::contextualizer::lower(node, ContextKind::Hash),
+        RakuAstClass::ContextualizerItem => super::contextualizer::lower(node, ContextKind::Item),
+        RakuAstClass::ContextualizerList => super::contextualizer::lower(node, ContextKind::List),
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {

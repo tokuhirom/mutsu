@@ -614,6 +614,18 @@ impl Compiler {
             Expr::UserRoutineCall { name, args } => {
                 self.compile_expr_user_routine_call(name, args);
             }
+            // A contextualizer is the `.item` / `.list` / `.hash` call rakudo
+            // lowers it to; it is its own node only so `.AST` can tell it from
+            // a user-written call of the same name.
+            Expr::Contextualizer { kind, inner } => {
+                self.compile_expr(&Expr::MethodCall {
+                    target: inner.clone(),
+                    name: Symbol::intern(kind.method()),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                });
+            }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
             // pure grouping: they never introduce a container and never strip
             // one, so a parenthesized target must reach the SAME specialised

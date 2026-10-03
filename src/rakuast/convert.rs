@@ -1532,6 +1532,20 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
+/// The statement held by `(...)`. The contents of parentheses are a semilist
+/// of *statements*, so a declaration written inside them (`(my $x = 9) given 2`)
+/// renders as the statement it is rather than as an expression.
+pub(super) fn parenthesized_statement(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match inner {
+        Expr::DoStmt(stmt) => convert_stmt(stmt)?.ok_or_else(|| {
+            RuntimeError::new(format!(
+                "RakuAST: `.AST` does not yet support this construct: {stmt:?}"
+            ))
+        }),
+        other => Ok(statement_expression(convert_expr(other)?)),
+    }
+}
+
 /// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,
 /// with the assigned value as the postcircumfix's `assignee` when there is one.
 fn subscript_node(
@@ -1808,17 +1822,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         },
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
-            // The contents of `(...)` are a semilist of *statements*, so a
-            // declaration written inside them (`(my $x = 9) given 2`) renders
-            // as the statement it is rather than as an expression.
-            let content = match inner.as_ref() {
-                Expr::DoStmt(stmt) => convert_stmt(stmt)?.ok_or_else(|| {
-                    RuntimeError::new(format!(
-                        "RakuAST: `.AST` does not yet support this construct: {stmt:?}"
-                    ))
-                })?,
-                other => statement_expression(convert_expr(other)?),
-            };
+            let content = parenthesized_statement(inner)?;
             let semilist = RakuAstNode {
                 class: RakuAstClass::SemiList,
                 fields: vec![node_field(None, content)],
@@ -2140,6 +2144,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `{a => 1}` / `%(a => 1)` -> `Circumfix::HashComposer` /
         // `Contextualizer::Hash`, by the spelling the parser recorded.
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
+        // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
+        Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         Expr::BracketArray(items, _) => {
