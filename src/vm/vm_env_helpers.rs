@@ -490,6 +490,17 @@ impl Interpreter {
         {
             return None;
         }
+        // A closure's authoritative capture -- a `my` its creating routine
+        // declared and never writes -- is lexically nearer than the package
+        // body: a method's `my $enc` read by a block it hands to `.map` must
+        // not resolve to the class body's `my $enc` (#10651). The running
+        // frame vouches for exactly those names (`frame_authoritative`), and
+        // its env holds their captured values.
+        if !self.frame_authoritative.is_empty()
+            && self.frame_authoritative.contains(&Symbol::intern(name))
+        {
+            return None;
+        }
         let cur: &str = cur_sym.as_str();
         // `package_lexicals` is keyed by the package's own env name for the
         // lexical: scalars sigil-less (`CONFIG`), `@`/`%`/`&` keep their sigil
