@@ -2468,18 +2468,11 @@ pub struct Interpreter {
     pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
-    /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
-    /// can read/write it through its own handle (mirroring `io_handles` /
-    /// `registry`) rather than bouncing through `self.interpreter`. Snapshot-cloned
-    /// per thread (see `clone_for_thread`). Accessed only via
-    /// `current_package()` / `set_current_package()`, which read-clone / write the
-    /// lock and never hold the guard across user-code re-entry.
-    current_package: Arc<RwLock<String>>,
-    /// Interned-symbol mirror of `current_package`, kept in lockstep by the two
-    /// setters. Reading the `RwLock<String>` clones a `String` (one malloc), which
-    /// is far too expensive for per-call use; the name-keyed call caches need the
-    /// package identity on every hit to stay package-scoped, so they read this
-    /// relaxed atomic instead.
+    /// declaration, held as its interned `Symbol` id. A relaxed atomic (not a
+    /// `Cell`) so the `&self` regex matcher can switch it
+    /// (`set_current_package_shared_sym`); snapshot-copied per thread (see
+    /// `clone_for_thread`). It used to be an `Arc<RwLock<String>>` with this
+    /// atomic as a mirror, which made every package switch and read allocate.
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,

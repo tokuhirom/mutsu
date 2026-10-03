@@ -454,14 +454,14 @@ impl Interpreter {
         // so this is a no-op for the common case and for the scenario
         // `t/oo/method/class-body-use-import-visible-in-method.t` pins
         // (#8883, no inheritance involved there either).
-        let saved_package = self.current_package();
+        let saved_package = self.current_package_sym();
         if self.has_class_scoped_subs(owner_class) || self.class_has_method_type_decls(owner_class)
         {
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
             // The class is declared inside a package (`class Searcher` inside
             // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
@@ -470,7 +470,7 @@ impl Interpreter {
             // either way, anchor the package to the owner so bare-name
             // lookup can walk outwards to (or start at) the enclosing
             // module's/role's own routines — see `bare_name_packages`.
-            self.set_current_package(owner_class.to_string());
+            self.set_current_package_sym(owner_sym);
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods).
@@ -652,7 +652,7 @@ impl Interpreter {
                                 self.pop_method_samewith_context();
                             }
                             self.pop_method_class();
-                            self.set_current_package(saved_package);
+                            self.set_current_package_sym(saved_package);
                             self.stack.truncate(saved_stack_depth);
                             if pushed_caller {
                                 self.pop_caller_env();
@@ -842,7 +842,7 @@ impl Interpreter {
                     self.pop_method_samewith_context();
                 }
                 self.pop_method_class();
-                self.set_current_package(saved_package);
+                self.set_current_package_sym(saved_package);
                 self.stack.truncate(saved_stack_depth);
                 if pushed_caller {
                     self.pop_caller_env();
@@ -1279,7 +1279,7 @@ impl Interpreter {
                 self.pop_method_samewith_context();
             }
             self.pop_method_class();
-            self.set_current_package(saved_package.clone());
+            self.set_current_package_sym(saved_package);
             // A name the callee env held that the merge did not carry into the
             // caller is one this frame takes with it, so the phaser's captured
             // copy is its last surviving binding; names that merged through stay
@@ -1298,7 +1298,7 @@ impl Interpreter {
         if can_skip_merge {
             // No env writes possible -> the caller's slots stay coherent (pure).
             self.method_dispatch_pure = true;
-            self.set_current_package(saved_package);
+            self.set_current_package_sym(saved_package);
             if pushed_caller {
                 self.pop_caller_env();
             }
@@ -1831,17 +1831,17 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class)
+        let saved_package: Option<Symbol> = if self.has_class_scoped_subs(owner_class)
             || self.class_has_method_type_decls(owner_class)
         {
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
             // The class is declared inside a package (`class Searcher` inside
@@ -1851,8 +1851,8 @@ impl Interpreter {
             // either way, anchor the package to the owner so bare-name
             // lookup can walk outwards to (or start at) the enclosing
             // module's/role's own routines — see `bare_name_packages`.
-            let saved = self.current_package();
-            self.set_current_package(owner_class.to_string());
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(owner_sym);
             Some(saved)
         } else {
             None
@@ -1886,7 +1886,7 @@ impl Interpreter {
                 }
                 self.pop_method_class();
                 if let Some(pkg) = saved_package {
-                    self.set_current_package(pkg);
+                    self.set_current_package_sym(pkg);
                 }
                 self.stack.truncate(saved_stack_depth);
                 if pushed_caller {
@@ -2603,7 +2603,7 @@ impl Interpreter {
         }
         self.pop_method_class();
         if let Some(pkg) = saved_package {
-            self.set_current_package(pkg);
+            self.set_current_package_sym(pkg);
         }
 
         // ADR-0035 slice 2: both branches below unconditionally pop the call
