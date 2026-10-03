@@ -520,6 +520,30 @@ fn expr_has_phaser_expr(expr: &Expr) -> bool {
 /// Marks a declaration whose initializer reads its static cell (ADR-0134).
 pub(crate) const BEGIN_STATIC_TRAIT: &str = "__begin_static";
 
+/// Marks the static half of a `:D`-typed scalar declaration (`my Int:D $x =
+/// 3`). Its container holds the nominal type object (`Int`), which the `:D`
+/// constraint itself rejects, so the compiler stores the value first and
+/// registers the constraint after it, the order an `is default` trait already
+/// uses. The run-time assignment that follows is checked as usual.
+pub(crate) const BEGIN_STATIC_DEFINITE_TRAIT: &str = "__begin_static_definite";
+
+/// The nominal type a `:D` scalar declaration's static half holds, for a
+/// constraint whose base is a plain type name (`Int:D`, `Foo::Bar:D`).
+fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<String> {
+    if name.starts_with(['@', '%', '&']) {
+        return None;
+    }
+    let base = type_constraint?.strip_suffix(":D")?;
+    let plain = !base.is_empty()
+        && base.split("::").all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        });
+    plain.then(|| base.to_string())
+}
+
 /// Split a `VarDecl` into its *static* declaration and the run-time assignment
 /// of its initializer, if it has one. The static half is the container holding
 /// what an uninitialized declaration of its sigil holds; it is what a BEGIN-time
@@ -591,6 +615,24 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
                 .unwrap_or(Value::NIL),
         ),
     };
+    // A `:D` scalar's static state is its nominal type object, as in Rakudo
+    // (`my Int:D $x = 3; BEGIN say $x.raku` prints `Int`). It is not an
+    // initializer, so it carries no `__has_initializer` mark.
+    let (static_default, static_traits) =
+        match static_definite_type(name, type_constraint.as_deref())
+            .filter(|_| has_init && !*is_our)
+        {
+            Some(nominal) => {
+                let mut traits: Vec<_> = custom_traits
+                    .iter()
+                    .filter(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
+                    .cloned()
+                    .collect();
+                traits.push((BEGIN_STATIC_DEFINITE_TRAIT.to_string(), None));
+                (Expr::BareWord(nominal), traits)
+            }
+            None => (static_default, custom_traits.clone()),
+        };
     let static_decl = Stmt::VarDecl {
         name: name.clone(),
         expr: static_default,
@@ -600,7 +642,7 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         is_dynamic: *is_dynamic,
         is_export: *is_export,
         export_tags: export_tags.clone(),
-        custom_traits: custom_traits.clone(),
+        custom_traits: static_traits,
         where_constraint: where_constraint.clone(),
     };
     let assign = has_init.then(|| Stmt::Assign {
