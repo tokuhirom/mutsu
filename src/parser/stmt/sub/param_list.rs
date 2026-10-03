@@ -383,3 +383,64 @@ pub(crate) fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> 
         rest = r;
     }
 }
+
+/// Type captures in a signature are lexical type names in its body. Register
+/// them before parsing the body so they also shadow same-named quote languages
+/// (notably `S`, whose `.^name` otherwise looks like an `S.` substitution).
+pub(crate) fn register_body_type_captures(params: &[crate::ast::ParamDef]) {
+    for param in params {
+        if let Some(name) = &param.type_capture {
+            super::super::simple::register_user_type_verbatim(name);
+        }
+        if let Some(nested) = &param.sub_signature {
+            register_body_type_captures(nested);
+        }
+    }
+}
+
+pub(crate) fn has_type_capture(params: &[crate::ast::ParamDef]) -> bool {
+    params.iter().any(|param| {
+        param.type_capture.is_some() || param.sub_signature.as_deref().is_some_and(has_type_capture)
+    })
+}
+
+// Sigilless params inside a destructuring sub-signature are terms too, so
+// they shadow keywords and built-in listops in the routine body.
+pub(crate) fn any_sigilless(params: &[crate::ast::ParamDef]) -> bool {
+    params
+        .iter()
+        .any(|p| p.sigilless || p.sub_signature.as_deref().is_some_and(any_sigilless))
+}
+
+pub(crate) fn register_sigilless_terms(params: &[crate::ast::ParamDef]) {
+    for pd in params {
+        if pd.sigilless {
+            super::super::simple::register_user_term_symbol(&pd.name);
+        }
+        if let Some(sub) = &pd.sub_signature {
+            register_sigilless_terms(sub);
+        }
+    }
+}
+
+// A `&name` parameter shadows a same-named builtin or control-flow keyword
+// for bare calls, including calls inside closures nested in the body.
+pub(crate) fn any_callable_param(params: &[crate::ast::ParamDef]) -> bool {
+    params.iter().any(|p| {
+        p.name.starts_with('&') || p.sub_signature.as_deref().is_some_and(any_callable_param)
+    })
+}
+
+pub(crate) fn register_callable_param_terms(params: &[crate::ast::ParamDef]) {
+    for pd in params {
+        if let Some(callable_name) = pd.name.strip_prefix('&')
+            && !callable_name.is_empty()
+            && !callable_name.contains(':')
+        {
+            super::super::simple::register_user_sub(callable_name);
+        }
+        if let Some(sub) = &pd.sub_signature {
+            register_callable_param_terms(sub);
+        }
+    }
+}
