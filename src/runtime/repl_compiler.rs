@@ -178,6 +178,17 @@ impl Interpreter {
         })
     }
 
+    /// A context over `env`, as `nqp::p6getouterctx` answers it for the scope a
+    /// closure captured: readable with `nqp::ctxlexpad` like any `nqp::ctx`,
+    /// with no known caller.
+    // Cost: O(v), v = variables visible in `env` (flattened into the snapshot).
+    pub(crate) fn nqp_ctx_of_env(&mut self, env: &Env) -> Value {
+        self.new_eval_context(EvalContext {
+            env: env.flattened(),
+            ..EvalContext::default()
+        })
+    }
+
     /// `nqp::ctxcaller($ctx)`: the context `$ctx`'s frame was called from, or
     /// `Mu` when that is not known.
     // Cost: O(1).

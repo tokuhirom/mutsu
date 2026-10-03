@@ -243,6 +243,7 @@ impl Interpreter {
             let sub = SigInfo {
                 params: sub_params.clone(),
                 return_type: None,
+                param_defs: None,
             };
             if !self.signature_accepts_value(candidate, &sub) {
                 return false;

@@ -4,7 +4,7 @@
 //! `decont_i` / `decont_n` / `decont_s`, `isinvokable`, `isttyfh`.
 //!
 //! A link of the chained `nqp::` tables (`... -> nqp_ops_native -> here ->
-//! nativecall_nqp`). The conversions share their routines with the Raku
+//! nqp_ops_p6 -> nativecall_nqp`). The conversions share their routines with the Raku
 //! spellings: a Num renders through the same `Str` form `Num.Str` gives, a
 //! big integer parses and prints through `num_bigint` as `Int.Str` /
 //! `Str.Int` do, `isprime_I` is `Int.is-prime`'s `builtins::primality`,
@@ -277,8 +277,8 @@ impl Interpreter {
                     Err(e) => return Some(Err(e)),
                 }
             }
-            // The FFI ops (`nativecall_nqp.rs`).
-            _ => return self.call_nqp_op_ffi(op, args),
+            // The Rakudo `p6*` ops (`nqp_ops_p6.rs`), then the FFI ops.
+            _ => return self.call_nqp_op_p6(op, args),
         }))
     }
 }

@@ -7,8 +7,8 @@
 //! `atpos_u`/`bindpos_u` for typed `CArray` element traffic, `atposref_{i,n,u}` for an
 //! element's lvalue, and `setcodename`/`neverrepossess` for the routine body
 //! NativeCall's backend-neutral path installs. The FFI ops themselves
-//! (`nqp::buildnativecall` and kin, #11211) are the next link, in
-//! `nativecall_nqp.rs`.
+//! (`nqp::buildnativecall` and kin, #11211) follow the Rakudo `p6*` ops
+//! (`nqp_ops_p6.rs`) at the end of the chain, in `nativecall_nqp.rs`.
 
 use super::*;
 use crate::value::ValueView;

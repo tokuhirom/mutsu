@@ -1127,6 +1127,7 @@ pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
+mod nqp_p6_forms;
 mod numeric_operand_names;
 mod outer_ref;
 mod package_runtime_body;

@@ -65,6 +65,37 @@ pub(crate) struct SigParam {
 pub(crate) struct SigInfo {
     pub(crate) params: Vec<SigParam>,
     pub(crate) return_type: Option<String>,
+    /// The declared parameters this signature was built from, when it was
+    /// built from a declaration (a routine's `.signature`, a `:(...)`
+    /// literal). `params` is the introspection view; these are what the one
+    /// signature binder (`Interpreter::bind_function_args_values`) and the
+    /// multi-dispatch bindability check run on, so the `nqp::` binder ops
+    /// (`p6bindcaptosig`, `p6isbindable`, `p6trialbind`) bind a Signature
+    /// value exactly as a call to its routine would. `None` for a signature
+    /// assembled from parts (`Signature.new`, a synthesized native one).
+    #[serde(default, with = "param_defs_serde")]
+    pub(crate) param_defs: Option<std::sync::Arc<Vec<ParamDef>>>,
+}
+
+/// Serde for [`SigInfo::param_defs`]: the shared `Arc` is written as the plain
+/// list (serde's `Arc` support needs its `rc` feature).
+mod param_defs_serde {
+    use crate::ast::ParamDef;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::sync::Arc;
+
+    pub(super) fn serialize<S: Serializer>(
+        defs: &Option<Arc<Vec<ParamDef>>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        defs.as_deref().serialize(s)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<Arc<Vec<ParamDef>>>, D::Error> {
+        Ok(Option::<Vec<ParamDef>>::deserialize(d)?.map(Arc::new))
+    }
 }
 
 impl SigParam {
@@ -101,6 +132,7 @@ pub(crate) fn synthesize_native_signature(owner: &str) -> SigInfo {
     SigInfo {
         params: vec![invocant, capture],
         return_type: None,
+        param_defs: None,
     }
 }
 
@@ -305,6 +337,7 @@ pub(crate) fn sig_info_from_new_args(args: &[Value]) -> SigInfo {
     SigInfo {
         params,
         return_type,
+        param_defs: None,
     }
 }
 
@@ -678,6 +711,7 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
     SigInfo {
         params: params.iter().map(param_def_to_sig_param).collect(),
         return_type,
+        param_defs: Some(std::sync::Arc::new(params.to_vec())),
     }
 }
 
@@ -1032,6 +1066,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
             SigInfo {
                 params: sub.clone(),
                 return_type: None,
+                param_defs: None,
             },
             interp,
         ),
@@ -1251,6 +1286,7 @@ pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
         return Some(SigInfo {
             params: Vec::new(),
             return_type: None,
+            param_defs: None,
         });
     }
     None
