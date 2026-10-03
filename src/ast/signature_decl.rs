@@ -18,6 +18,10 @@ use super::{Expr, Stmt};
 pub(crate) enum SourceForm {
     SignatureDecl(SignatureDecl),
     MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
+    /// `supply { BODY }`: the body as written, before the expansion rewrites
+    /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
+    /// lambda's body.
+    SupplyBlock(Vec<Stmt>),
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

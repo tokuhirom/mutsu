@@ -177,7 +177,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
-            None => Err(unsupported("source form")),
+            // Only the on-demand lambda opens with a supply record.
+            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
@@ -1627,6 +1628,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             math_constant_spelling(v, None).unwrap_or_default(),
         )),
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
+        // `supply { … }`: the parser's on-demand expansion opens its emitter
+        // lambda with the written body.
+        Expr::MethodCall { args, .. } if super::react::supply_record(args).is_some() => {
+            super::react::convert_supply(super::react::supply_record(args).expect("just checked"))
+        }
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
@@ -1845,7 +1851,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
                 super::method_assign_decl::convert(decl)
             }
-            None => Err(unsupported("source form")),
+            // Only the on-demand lambda opens with a supply record.
+            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {

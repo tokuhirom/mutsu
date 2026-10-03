@@ -24,7 +24,7 @@ use crate::parser::primary::ident::predicates::{
     is_zero_arg_callable_builtin, keyword_as_function_error, looks_like_binding, parens_then_block,
     starts_with_term_keyword, try_extend_colon_name,
 };
-use crate::parser::primary::ident::supply::supply_method_call;
+use crate::parser::primary::ident::supply::{supply_block, supply_method_call};
 use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
     parse_block_body_routine, parse_tracked_block_body,
@@ -2059,7 +2059,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && r.starts_with('{')
         && let Ok((r2, block_body)) = parse_block_body(r)
     {
-        return Ok((r2, supply_method_call(block_body)));
+        return Ok((r2, supply_block(block_body)));
     }
 
     // `supply STATEMENT` — the statement-prefix form (S06), e.g.

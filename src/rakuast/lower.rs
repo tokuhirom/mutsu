@@ -2724,6 +2724,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        RakuAstClass::StatementPrefixSupply => super::react::lower_supply(node),
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.
         RakuAstClass::VarDeclarationSignature => {
