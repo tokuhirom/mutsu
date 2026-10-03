@@ -591,9 +591,9 @@ impl Interpreter {
             attributes.commit_attrs(updated);
             if result.is_proxy_value()
                 && self.should_fetch_returned_proxy(qualifier, actual_method)
-                && let ValueView::Proxy { fetcher, .. } = result.view()
+                && matches!(result.view(), ValueView::Proxy { .. })
             {
-                return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));
+                return Some(self.proxy_fetch(&result, None, qualifier, &attributes.to_map(), 0));
             }
             return Some(Ok(result));
         }

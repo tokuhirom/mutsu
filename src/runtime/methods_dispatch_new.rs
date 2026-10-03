@@ -324,26 +324,63 @@ impl Interpreter {
         instance: Value,
         mixins: &crate::value::MixinOverrides,
     ) -> Result<Value, RuntimeError> {
-        // Composed role names are recorded as `__mutsu_role__<name>` markers in
-        // the mixin map. Sort for a deterministic composition order.
+        let mut result = instance;
+        for (role_name, args) in Self::mixin_role_applications(mixins) {
+            let role = match args {
+                Some(args) => Value::parametric_role(Symbol::intern(&role_name), args),
+                None => Value::package(Symbol::intern(&role_name)),
+            };
+            result = self.eval_does_values(result, role)?;
+        }
+        Ok(result)
+    }
+
+    /// [`Self::compose_mixin_type_roles`] for `nqp::create` / `.CREATE`: the
+    /// roles are composed onto `instance` but nothing runs -- no role
+    /// `BUILD`/`TWEAK`, as `create` is a bare REPR allocation (#11209).
+    // Cost: O(r), r = number of mixed-in roles.
+    pub(crate) fn compose_mixin_type_roles_unbuilt(
+        &mut self,
+        instance: Value,
+        mixins: &crate::value::MixinOverrides,
+    ) -> Result<Value, RuntimeError> {
+        let mut result = instance;
+        for (role_name, args) in Self::mixin_role_applications(mixins) {
+            let is_param = args.is_some();
+            let args = args.unwrap_or_default();
+            result = self.compose_role_on_value(result, &role_name, &args, is_param)?;
+            result = self.stamp_role_application_group(result, std::slice::from_ref(&role_name));
+        }
+        Ok(result)
+    }
+
+    /// The roles a mixin carries, as `(role name, type arguments)`, in a
+    /// deterministic (sorted) order. Composed role names are recorded as
+    /// `__mutsu_role__<name>` markers in the mixin map, and a parameterised
+    /// role's arguments under its `RoleTypeargs` key (`None` for a role
+    /// applied without brackets).
+    // Cost: O(k log k), k = keys of the mixin map.
+    pub(crate) fn mixin_role_applications(
+        mixins: &crate::value::MixinOverrides,
+    ) -> Vec<(String, Option<Vec<Value>>)> {
         let mut role_names: Vec<String> = mixins
             .keys()
             .filter_map(|k| k.strip_prefix("__mutsu_role__").map(str::to_string))
             .collect();
         role_names.sort();
-        let mut result = instance;
-        for role_name in role_names {
-            let role = if let Some(ValueView::Array(args, _)) = mixins
-                .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
-                .map(Value::view)
-            {
-                Value::parametric_role(Symbol::intern(&role_name), args.to_vec())
-            } else {
-                Value::package(Symbol::intern(&role_name))
-            };
-            result = self.eval_does_values(result, role)?;
-        }
-        Ok(result)
+        role_names
+            .into_iter()
+            .map(|role_name| {
+                let args = match mixins
+                    .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
+                    .map(Value::view)
+                {
+                    Some(ValueView::Array(args, _)) => Some(args.to_vec()),
+                    _ => None,
+                };
+                (role_name, args)
+            })
+            .collect()
     }
 
     /// Handle the "bless" method: creates a new instance with attributes from named args.

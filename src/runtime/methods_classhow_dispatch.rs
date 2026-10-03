@@ -505,9 +505,9 @@ impl Interpreter {
             }
             "array_type" if !args.is_empty() => {
                 // A type that recorded one (`is array_type(T)`, a composed
-                // role's trait, `.^set_array_type`) answers it.
-                let owner = self.mop_receiver_owner(&args[0]);
-                if let Some(recorded) = self.recorded_array_type(&owner) {
+                // role's trait -- a mixin's included --, `.^set_array_type`)
+                // answers it.
+                if let Some(recorded) = self.type_array_type(&args[0])? {
                     return Ok(recorded);
                 }
                 // The element type of a native array-ish container. Derived from

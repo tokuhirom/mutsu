@@ -1338,6 +1338,11 @@ impl Interpreter {
             "await" => self.builtin_await(&args),
             "full-barrier" => Ok(Value::NIL),
             "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
+            // The FETCH/STORE of a native positional reference (#11209).
+            // Cost: O(1) amortized (one element decoded or encoded).
+            "__mutsu_native_posref_fetch" | "__mutsu_native_posref_store" => self
+                .try_native_pos_ref_routine(name, &args)
+                .unwrap_or_else(|| Err(RuntimeError::new(format!("Unknown function: {name}")))),
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(&args),

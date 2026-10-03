@@ -166,6 +166,12 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
                 value_type_name(inner)
             }
         }
+        // A Proxy subclass (`class P is Proxy`, a native positional
+        // reference's `IntPosRef`) is named after the subclass.
+        ValueView::Proxy {
+            subclass: Some((name, _)),
+            ..
+        } => name.as_str(),
         ValueView::Proxy { .. } => "Proxy",
         ValueView::ParametricRole { .. } => "Package",
         ValueView::CustomType { .. } => "CustomType",

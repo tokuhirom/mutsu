@@ -52,7 +52,8 @@ use crate::symbol::Symbol;
 
 mod inplace;
 pub(crate) use inplace::{
-    buf_storage_as, buf_target, pop_buf_elem, set_buf_elem, shift_buf_elem, with_buf_storage_mut,
+    buf_storage_as, buf_target, install_empty_storage, pop_buf_elem, set_buf_elem, shift_buf_elem,
+    with_buf_storage_mut,
 };
 
 /// The attribute a `Buf`/`Blob`-shaped instance keeps its storage under.

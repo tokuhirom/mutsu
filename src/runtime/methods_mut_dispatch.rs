@@ -2902,10 +2902,10 @@ impl Interpreter {
                     );
                     if result.is_proxy_value()
                         && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                        && let ValueView::Proxy { fetcher, .. } = result.view()
+                        && matches!(result.view(), ValueView::Proxy { .. })
                     {
                         return self.proxy_fetch(
-                            fetcher,
+                            &result,
                             Some(target_var),
                             &class_name.resolve(),
                             &updated_clone,
@@ -2931,10 +2931,10 @@ impl Interpreter {
                 // Auto-FETCH if the method returned a Proxy
                 if result.is_proxy_value()
                     && self.should_fetch_returned_proxy(&class_name.resolve(), method)
-                    && let ValueView::Proxy { fetcher, .. } = result.view()
+                    && matches!(result.view(), ValueView::Proxy { .. })
                 {
                     return self.proxy_fetch(
-                        fetcher,
+                        &result,
                         Some(target_var),
                         &class_name.resolve(),
                         &updated_clone,

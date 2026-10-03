@@ -452,7 +452,11 @@ impl Interpreter {
     /// consecutive stamps -- so the grouping is recorded separately. Only
     /// stamped when absent, mirroring the seq marker, so a rebuilt mixin map
     /// keeps the grouping it was first given.
-    fn stamp_role_application_group(&mut self, value: Value, role_names: &[String]) -> Value {
+    pub(crate) fn stamp_role_application_group(
+        &mut self,
+        value: Value,
+        role_names: &[String],
+    ) -> Value {
         if role_names.is_empty() {
             return value;
         }
