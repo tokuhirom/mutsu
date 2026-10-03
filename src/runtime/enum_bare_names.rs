@@ -62,6 +62,11 @@ pub(crate) fn enum_bare_key_for_insert(name: &str) -> String {
     enum_bare_key(name)
 }
 
+/// True once any enum key has been installed in this process.
+pub(crate) fn enum_bare_keys_in_use() -> bool {
+    ENUM_BARE_KEY_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Interpreter {
     /// Install an enum key's value in the bare-name namespace.
     pub(crate) fn insert_enum_bare_value(&mut self, name: &str, value: Value) {

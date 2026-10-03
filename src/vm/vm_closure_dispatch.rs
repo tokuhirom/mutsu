@@ -587,6 +587,16 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
+        // An enum key this closure read is lexical to the scope that declared it,
+        // so the captured binding beats a same-named key the caller sees (a
+        // routine's `enum M2 <Normal>` against the caller's `Volume::Normal`).
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use() {
+            for key in cc.free_enum_bare_keys() {
+                if let Some(val) = data.env.get_sym(*key).cloned() {
+                    self.env_mut().insert_sym(*key, val);
+                }
+            }
+        }
         // Runtime transitive vouching (see `SubData::authoritative_captures` and
         // `Interpreter::frame_authoritative`): free vars this closure inherited as
         // authoritative from its creating frame. Same overwrite-install as
