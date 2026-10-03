@@ -112,25 +112,26 @@ fn list_odd_error(items: &[Value]) -> Option<RuntimeError> {
     (singles % 2 != 0).then(|| make_odd_number_error(&items))
 }
 
-/// Unwrap an itemized Pair (`Scalar`) or a Pair held in a `:=` element cell
-/// (`ContainerRef`) for hash-initializer purposes. Non-Pair contents (e.g. an
-/// itemized hash, which must die "Odd number" like raku) pass through as-is.
+/// The value a hash initializer sees for one list item: an itemized Pair
+/// (`Scalar`) is unwrapped to its Pair, and a `ContainerRef` always yields its
+/// contents (ADR-0079 slice 4).
+///
+/// The `ContainerRef` case is unconditional because the holder's itemization
+/// lives on the word, not on the cell: a `$`-scalar or `Array`-element holder
+/// is a `ContainerRefItemized` word (or holds a value ADR-0040 itemized at the
+/// store), so its dereference is an itemized value that stays opaque here and
+/// still dies "Odd number" like raku; a plain word holds a value that flattens,
+/// as a `List` element does. Any other `Scalar` contents pass through as-is.
+// Cost: O(1).
 pub(crate) fn unwrap_contained_pair(v: &Value) -> Value {
-    let held = match v.view() {
-        ValueView::Scalar(inner) => inner.clone(),
+    match v.view() {
+        ValueView::Scalar(inner)
+            if matches!(inner.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) =>
+        {
+            inner.clone()
+        }
         ValueView::ContainerRef(_) => v.deref_container(),
-        _ => return v.clone(),
-    };
-    if matches!(held.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
-        held
-    } else if v.is_container_ref() && v.container_ref_is_itemized() {
-        // An itemized ContainerRef is a scalar holder, so its value stays
-        // opaque to hash initialization. Returning the itemized value rather
-        // than the wrapper keeps downstream value consumers consistent; the
-        // odd-element check still rejects it.
-        held
-    } else {
-        v.clone()
+        _ => v.clone(),
     }
 }
 

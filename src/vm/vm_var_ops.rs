@@ -68,15 +68,10 @@ impl Interpreter {
         match items.get(key) {
             Some(value) => match value.view() {
                 // Phase 2 element container: a `:=`-bound entry holds a shared
-                // `ContainerRef` cell; decontainerize on read (the chokepoint).
-                ValueView::ContainerRef(cell) => {
-                    let inner = cell.lock().unwrap().clone();
-                    if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
-                        inner.hash_entry_read()
-                    } else {
-                        inner
-                    }
-                }
+                // `ContainerRef` cell; decontainerize on read (the chokepoint),
+                // through `deref_container` like the array chokepoint, so an
+                // itemized holder word (ADR-0079) reads as an itemized value.
+                ValueView::ContainerRef(_) => value.deref_container(),
                 _ => value.clone(),
             },
             None => Value::NIL,

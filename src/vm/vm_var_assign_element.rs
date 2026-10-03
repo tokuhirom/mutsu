@@ -1262,6 +1262,12 @@ impl Interpreter {
         if result.is_ok()
             && let Some((var_name, encoded)) = elem_share_mark
         {
+            // ADR-0079 slice 3: the element is a `Scalar` holder in raku, so
+            // its copy of the shared cell's word reads itemized; the source
+            // variable's own word stays plain.
+            if let Some(container) = self.env().get_sym(save_var_sym) {
+                container.deref_container().itemize_shared_element(&encoded);
+            }
             self.mark_element_share(&var_name, encoded);
         }
         // Object index-assign (`$obj[i] = v` / `$obj{k} = v` dispatching

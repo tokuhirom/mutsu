@@ -36,8 +36,10 @@ impl PromotionTag {
 /// cell, or return the existing cell when it already is one.
 // Cost: O(1).
 fn promote_leaf(elem: &mut Value, tag: &PromotionTag) -> Value {
-    if let ValueView::ContainerRef(cell) = elem.view() {
-        return Value::ContainerRef(cell.clone());
+    // An already-promoted element hands out its own word, so a holder's
+    // itemized flavour (ADR-0079) survives into the binding.
+    if elem.is_container_ref() {
+        return elem.clone();
     }
     let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(std::mem::replace(
         elem,

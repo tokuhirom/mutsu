@@ -279,5 +279,37 @@ unconditional and delete it.
 | 0 — comment justification | Complete (2026-09-09; comments now state the RHS `List` rule) |
 | 1 — `Kind::ContainerRefItemized` | Complete (2026-09-09; the holder flavour is encoded, decoded, probed, projected through the unchanged `ValueView::ContainerRef`, traced by GC, and covered by NanBox round-trip tests) |
 | 2 — `$`-share holder (rows 1, 3, 4) | Complete (2026-09-09; scalar shares and scalar parameter binds now carry itemization on the target word, while source words remain plain; dereference and hash-initializer consumers preserve the distinction) |
-| 3 — audit remaining producers | Not started |
-| 4 — drop the `unwrap_contained_pair` hedge | Not started |
+| 3 — audit remaining producers | Partial (2026-10-02; the `=`-element share — `@a[i] = %h`, `%x<k> = @r` — retags the element's own word as `ContainerRefItemized`; `array_slot_ref`/`hash_slot_ref` hand out an already-promoted element's own word instead of rebuilding a plain one; the hash element read chokepoint and the `.raku` element renderer read through `deref_container`. See §7.1) |
+| 4 — drop the `unwrap_contained_pair` hedge | Complete (2026-10-02; the hash initializer unwraps every `ContainerRef` unconditionally. See §7.1) |
+
+### 7.1 Slices 3 (element shares) and 4 (2026-10-02)
+
+Slice 4 could not land alone. With the hedge gone, `@a[0] = %h; my %c = (@a[0],)` flattened where
+rakudo dies. That assignment is an `=`-element share (a `:=` bind plus `MarkElementShare`, ADR
+"slice 2b"), and it left the source's **plain** word in the element, so nothing marked the element
+as the `Scalar` holder it is in rakudo. Before this change the hedge masked the problem by refusing
+to unwrap the wrapper at all. That same refusal broke the opposite case: a `List` element's hash
+(`my @l := 1, %h; my %c = (@l[1],)`) died where rakudo flattens.
+
+So the share producer is the first slice-3 site to opt in: after the share is installed,
+`Value::itemize_shared_element` (`value/element_share_holder.rs`) retags the element slot's own word
+as itemized and leaves the source variable's word plain. Two places threw that tag away, and both now
+keep it:
+
+- `array_slot_ref` and `promote_leaf` rebuilt a plain `ContainerRef` from an already-promoted
+  element's cell. They now return the element's word, so `my $r := @a[0]` and a subscript read in
+  list context see the holder.
+- `resolve_hash_entry` and the `.raku` element renderer read the cell directly. They now go through
+  `deref_container`, like the array chokepoint already did.
+
+Measured against rakudo and pinned by `t/collections/element-share-holder-itemized.t`:
+
+| Program | Result (rakudo and now mutsu) |
+| --- | --- |
+| `@a[0] = %h; @a[0].raku` | `${:a(1)}` |
+| `%k<x> = %h; %k.raku` | `{:x(${:a(1)})}` |
+| `(@a[0],)` as a hash initializer | dies `X::Hash::Store::OddNumber` |
+| `(@l[1],)` with `@l := 1, %h` | flattens |
+
+The remaining slice-3 producers (other `container_ref` sites) are unaudited.
+

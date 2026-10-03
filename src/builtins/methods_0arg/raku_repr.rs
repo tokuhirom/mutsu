@@ -724,10 +724,9 @@ pub fn raku_value(v: &Value) -> String {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element inside a hash/array renders like a plain one
         // (Phase 5 leak hardening).
-        ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
-            raku_value(&inner)
-        }
+        // Through `deref_container`, so an itemized holder word (ADR-0079)
+        // renders `${...}`/`$[...]` like the itemized value it reads as.
+        ValueView::ContainerRef(_) => raku_value(&v.deref_container()),
         ValueView::HashEntryRef { .. } => raku_value(&v.hash_entry_read()),
         ValueView::Array(items, kind) => {
             // Lazy arrays should not be materialized
