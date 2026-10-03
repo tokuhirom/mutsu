@@ -224,3 +224,23 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     `try_baggy_storage_delegate_mut`, `try_env_pure_mut_dispatch`). The call-site inline cache
     (§2.5) and the single guard step (§2.4) have to sit in front of those to pay off, so they
     are deferred to slice 1b instead of being bolted onto `try_native_method`.
+- 2026-10-03, slice 1b: `vm/vm_method_site_lane.rs` answers a `CallMethodMut` from its row
+  before the opcode's probe chain runs, in `exec_call_method_mut_site`. This is the single
+  guard step (§2.4) for the shapes the table covers. The guard requires a site with no
+  arguments, no modifier, no quoted name, no argument sources and no `@!`/`%!` receiver. The
+  method name must be one the full path does not inspect before its native probe. No
+  accessor-ref marker, no pending writeback and no user `find_method` may exist. The receiver
+  must have a `DispatchShape` with a row, and no augment of its type may define the method.
+  The call-site cache (§2.5) is `CompiledCode::method_sites`: one memo per method-name
+  constant, holding `(shape, row)` for one registry write generation, so a hit skips the
+  table lookup and the augment probe. It is never filled during a `native_base_bypass`. In
+  debug builds the full path still runs and must agree with the lane. The whole `t/` suite
+  (6173 files) passes with that check on.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `@a.elems` 1,264M to 369M (-70.7%), `@a.end` -70.8%, `%h.elems` -70.8%,
+    `$s.chars` -43.8%, `$n.isNaN` -47.8%, `$r.numerator` -73.0%. The miss case
+    (`@a.map(*+1).elems`) moved +0.1%, and the empty loop did not move. A table-answered call
+    on a variable now costs ~930 Ir per iteration, down from ~5,400.
+  - Next: slice 2 migrates the first family. Rows that take arguments need the lane to grow
+    the argument checks the full path makes (Junction autothreading, `use fatal` Failures).
+    The plain `CallMethod` opcode (an inline receiver) does not take the lane yet.
