@@ -108,6 +108,17 @@ impl Value {
                 if self.is_match_instance() && self.match_is_failed() {
                     return false;
                 }
+                // An `nqp::iterator` (runtime::nqp_iter): truthy while
+                // elements remain, so `while $it { nqp::shift($it) }` ends.
+                if class_name == "BOOTIter" {
+                    let map = attributes.as_map();
+                    let len = match map.get("items").map(Value::view) {
+                        Some(ValueView::Array(items, _)) => items.len() as i64,
+                        _ => 0,
+                    };
+                    let pos = map.get("pos").and_then(Value::as_int).unwrap_or(0);
+                    return pos < len;
+                }
                 // Buf/Blob: truthy when non-empty
                 let cn = class_name.resolve();
                 if crate::value::buf_class_names::is_buf_or_blob_class(&cn) {
