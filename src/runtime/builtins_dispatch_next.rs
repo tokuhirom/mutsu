@@ -976,6 +976,8 @@ impl Interpreter {
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
                     {
                         res?
+                    } else if let Some(res) = self.native_grammar_builtin_rule_next_candidate() {
+                        res?
                     } else if let Some(res) =
                         self.native_mu_base_next_candidate(override_args.as_deref())
                     {
@@ -1538,7 +1540,10 @@ impl Interpreter {
                 // path above does — without it the deferral answered Nil and
                 // the write was silently dropped.
                 let native_base = self
-                    .native_baggy_storage_next_candidate(override_for_native.as_deref())
+                    .native_grammar_builtin_rule_next_candidate()
+                    .or_else(|| {
+                        self.native_baggy_storage_next_candidate(override_for_native.as_deref())
+                    })
                     .or_else(|| {
                         self.native_hash_storage_next_candidate(override_for_native.as_deref())
                     })
