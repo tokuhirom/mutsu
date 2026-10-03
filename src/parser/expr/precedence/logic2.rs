@@ -8,9 +8,10 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;
-        // Use assign_not_expr_mode so that `not $x = 42` parses as `not($x = 42)`
-        // since item assignment is tighter than loose unary not/so.
-        let (r, expr) = assign_not_expr_mode(r, mode)?;
+        // Loose unary is looser than item assignment and the conditional, so
+        // the operand is a whole item-level expression: `not $x = 42` is
+        // `not($x = 42)` and `not A ?? B !! C` is `not(A ?? B !! C)` (#11478).
+        let (r, expr) = item_expr(r, mode)?;
         return Ok((
             r,
             Expr::Unary {
@@ -26,9 +27,10 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     {
         let r = &input[2..];
         let (r, _) = ws(r)?;
-        // Use assign_not_expr_mode so that `so $x = 42` parses as `so($x = 42)`
-        // since item assignment is tighter than loose unary not/so.
-        let (r, expr) = assign_not_expr_mode(r, mode)?;
+        // Loose unary is looser than item assignment and the conditional, so
+        // the operand is a whole item-level expression: `so $x = 42` is
+        // `so($x = 42)` and `so A ?? B !! C` is `so(A ?? B !! C)` (#11478).
+        let (r, expr) = item_expr(r, mode)?;
         return Ok((
             r,
             Expr::Unary {
