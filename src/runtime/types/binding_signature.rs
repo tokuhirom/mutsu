@@ -647,33 +647,24 @@ impl Interpreter {
                 // nominal check, so skip the arms below as they always have.
             } else if let Some((target, source)) = parse_coercion_type(&resolved_constraint) {
                 // Coercion type: check source type if specified, then coerce.
-                // A `T(S)` parameter accepts a value that is already a `T`
-                // (no coercion needed) as well as an `S` (coerced via `.T`),
-                // so only reject a value that matches neither.
-                if let Some(src) = source
-                    && !self.type_matches_value(src, &value)
-                    && !self.type_matches_value(target, &value)
-                {
-                    return Err(self
-                        .typecheck_binding_parameter_failure(
-                            &param_display_name(pd),
-                            &resolved_constraint,
-                            &value,
-                        )
-                        .with_parameter_object(pd, Some(&*self)));
-                }
-                let original = value.clone();
+                let display = param_display_name(pd);
                 value = self
-                    .try_coerce_value_for_constraint(&resolved_constraint, value)
-                    .map_err(|e| Self::normalize_coercion_binding_error(e, pd, Some(&*self)))?;
-                // A Failure from coercion is passed through as-is
-                // (it will throw when sunk or used). Only check
-                // type match for non-Failure results.
-                if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
-                    && !self.type_matches_value(target, &value)
-                {
-                    return Err(coerce_impossible_error(&resolved_constraint, &original));
-                }
+                    .bind_coercion_param_value(
+                        &display,
+                        &resolved_constraint,
+                        target,
+                        source,
+                        value,
+                    )
+                    .map_err(|e| match e {
+                        CoercionBindError::TypeCheck(e) => {
+                            e.with_parameter_object(pd, Some(&*self))
+                        }
+                        CoercionBindError::Coerce(e) => {
+                            Self::normalize_coercion_binding_error(e, pd, Some(&*self))
+                        }
+                        CoercionBindError::Impossible(e) => e,
+                    })?;
             } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
                 let expected = self
                     .typed_container_param_expected(&pd.name, &resolved_constraint)
