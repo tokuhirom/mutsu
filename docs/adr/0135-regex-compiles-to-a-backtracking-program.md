@@ -1021,6 +1021,35 @@ Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 11,469 t
 `t/grammar/grammar-rule-dynvar-decl-frames.t` pins the rakudo values: ratchet commit, scope and
 shadowing, re-installation on backtracking, and the action's view.
 
+### Slice E, tenth part: quantified calls are loops of frame calls
+
+`ratchet-scan` and `quantified-call` are gone. A quantified `<subrule>` (`<x>*`, `<x>+`,
+`<x> ** n`, `<x>+ % sep`) compiled to a loop whose body asked the walk's single-candidate arm for
+the callee's first end (`CapAtom`). A ratcheted `*` / `+` was first offered to the walk's
+possessive scan (`NamedRun` over `regex_named_ratchet_run`). The loop body is now the same `Call`
+op as an unquantified call, committed under ratchet, and the `NamedRun` op is deleted.
+
+That also fixes a wrong answer, with rakudo as the reference. The walk's chain took each
+iteration's first end only, so a later failure could never backtrack into an iteration's callee:
+`regex TOP { <x>+ a }; regex x { a+ }` failed on `aaa`, where rakudo matches with `x => aa`. An
+uncommitted frame resumes there (Slice D's non-ratchet resumption). D6 therefore disagrees with the
+walk on that shape.
+
+The walk's scan dropped the `:sym<…>` of a proto with a single candidate on each iteration's Match,
+and D6 caught it (`t/grammar/role-proto-regex-reinstantiate.t`). The scan's resolution
+(`try_resolve_named_to_pattern`) now returns the candidate's sym, and the scan files it.
+
+Measured on release builds, best of five, against `main`: `bench-grammar-parse-big`,
+`bench-grammar-json-tiny`, `bench-yaml-parse` and `bench-yaml-parse-big` are unchanged within noise.
+So removing the scan's fast path costs nothing measurable.
+
+Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 10,563 to 9,098.
+
+- `bridged` 5,010 → 3,608: `ratchet-scan` 1,239 → 0 and `quantified-call` 211 → 0.
+- `walked` 3,352 → 3,281.
+
+`t/grammar/grammar-quantified-subrule-frames.t` pins the rakudo values.
+
 ### Reproducing §2
 
 ```raku
