@@ -33,6 +33,11 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
         // `join_flat`/`flat_val` path can only stringify it in place, so
         // route to `Interpreter::builtin_join`, which does the threading.
         ValueView::Junction { .. } => true,
+        // A deferred `.map`/`.grep` Seq (an inner `(3,4).map({...})` returned
+        // by an outer map's block) has not run its callback yet; only the
+        // interpreter can, and `to_str_context` would render it as "".
+        ValueView::LazyList(_) | ValueView::LazyThunk(_) => true,
+        ValueView::Seq(items) if items.awaits_vm_reify() => true,
         // Exactly one level, no recursion past the cell: the bind puts the
         // Proxy directly behind it, whereas a cell holding a structure may be a
         // self-reference and following it walks the cycle forever.
