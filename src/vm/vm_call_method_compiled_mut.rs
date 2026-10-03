@@ -63,8 +63,12 @@ impl Interpreter {
                 // A parametric role whose type parameters all have defaults
                 // puns to that default parameterization, as `.new` already
                 // does (`dispatch_new`): `role E[::R = Any] { method r(R $v)
-                // {...} }; E.r(21)` binds `R` to `Any`, not to nothing.
-                if method != "new" {
+                // {...} }; E.r(21)` binds `R` to `Any`, not to nothing. Only a
+                // method the role provides puns it; a meta-method such as
+                // `.^name` still answers for the role itself.
+                if method != "new"
+                    && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
+                {
                     let materialized = self.materialize_default_parametric_role(target.clone())?;
                     if materialized != target {
                         return self.try_compiled_method_mut_or_interpret_sym(
