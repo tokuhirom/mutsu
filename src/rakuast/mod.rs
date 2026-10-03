@@ -11,8 +11,10 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod attribute;
+mod bareword;
 mod contextualizer;
 mod convert;
+mod core_term_names;
 mod core_type_names;
 mod decl_traits;
 mod fields;
@@ -157,6 +159,7 @@ pub enum RakuAstClass {
     Signature,
     Parameter,
     ParameterTargetVar,
+    ParameterTargetTerm,
     // Phase 2 slice 4: conditionals and loops.
     StatementIf,
     StatementUnless,
@@ -227,6 +230,9 @@ pub enum RakuAstClass {
     // Phase 2 slice 32: slurpy parameter markers (`*@a` / `**@a`).
     ParameterSlurpyFlattened,
     ParameterSlurpyUnflattened,
+    // `+a` / `+@a` and `|c` / `|`.
+    ParameterSlurpySingleArgument,
+    ParameterSlurpyCapture,
     // Phase 2 slice 33: array-composer literal (`[1, 2, 3]`).
     CircumfixArrayComposer,
     // A hash composer `{a => 1}` and the `%(…)` hash contextualizer, whose
@@ -406,6 +412,7 @@ impl RakuAstClass {
             Signature => "RakuAST::Signature",
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
+            ParameterTargetTerm => "RakuAST::ParameterTarget::Term",
             StatementIf => "RakuAST::Statement::If",
             StatementUnless => "RakuAST::Statement::Unless",
             StatementLoopWhile => "RakuAST::Statement::Loop::While",
@@ -451,6 +458,8 @@ impl RakuAstClass {
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
+            ParameterSlurpySingleArgument => "RakuAST::Parameter::Slurpy::SingleArgument",
+            ParameterSlurpyCapture => "RakuAST::Parameter::Slurpy::Capture",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             CircumfixHashComposer => "RakuAST::Circumfix::HashComposer",
             ContextualizerHash => "RakuAST::Contextualizer::Hash",
@@ -532,7 +541,10 @@ impl RakuAstClass {
     pub fn renders_bare(self) -> bool {
         matches!(
             self,
-            RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
+            RakuAstClass::ParameterSlurpyFlattened
+                | RakuAstClass::ParameterSlurpyUnflattened
+                | RakuAstClass::ParameterSlurpySingleArgument
+                | RakuAstClass::ParameterSlurpyCapture
         )
     }
 
@@ -956,6 +968,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Signature,
     RakuAstClass::Parameter,
     RakuAstClass::ParameterTargetVar,
+    RakuAstClass::ParameterTargetTerm,
     RakuAstClass::StatementIf,
     RakuAstClass::StatementUnless,
     RakuAstClass::StatementLoopWhile,
@@ -1001,6 +1014,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CircumfixParentheses,
     RakuAstClass::ParameterSlurpyFlattened,
     RakuAstClass::ParameterSlurpyUnflattened,
+    RakuAstClass::ParameterSlurpySingleArgument,
+    RakuAstClass::ParameterSlurpyCapture,
     RakuAstClass::CircumfixArrayComposer,
     RakuAstClass::CircumfixHashComposer,
     RakuAstClass::ContextualizerHash,
@@ -2413,19 +2428,16 @@ pub(crate) fn slurpy_marker_value(class: RakuAstClass) -> Value {
 /// uses. `None` for anything that is not a slurpy marker.
 pub(crate) fn slurpy_marker_class(value: &Value) -> Option<RakuAstClass> {
     match value.view() {
-        ValueView::RakuAst(node)
-            if matches!(
-                node.class,
-                RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
-            ) =>
-        {
-            Some(node.class)
-        }
+        ValueView::RakuAst(node) if node.class.renders_bare() => Some(node.class),
         ValueView::Package(name) => match name.resolve().as_str() {
             "RakuAST::Parameter::Slurpy::Flattened" => Some(RakuAstClass::ParameterSlurpyFlattened),
             "RakuAST::Parameter::Slurpy::Unflattened" => {
                 Some(RakuAstClass::ParameterSlurpyUnflattened)
             }
+            "RakuAST::Parameter::Slurpy::SingleArgument" => {
+                Some(RakuAstClass::ParameterSlurpySingleArgument)
+            }
+            "RakuAST::Parameter::Slurpy::Capture" => Some(RakuAstClass::ParameterSlurpyCapture),
             _ => None,
         },
         _ => None,
@@ -2450,6 +2462,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
         ("RakuAST::Term::TopicCall", "new") => RakuAstClass::TermTopicCall,
+        ("RakuAST::ParameterTarget::Term", "new") => RakuAstClass::ParameterTargetTerm,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
@@ -2750,6 +2763,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TraitOf
             | RakuAstClass::Parameter
             | RakuAstClass::ParameterTargetVar
+            | RakuAstClass::ParameterTargetTerm
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
             | RakuAstClass::InitializerBind
