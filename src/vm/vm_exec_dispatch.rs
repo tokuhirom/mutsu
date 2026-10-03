@@ -6108,9 +6108,11 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) avg (O(R) copy-on-write when the registry Arc is shared, R = registry
-            // size).
+            // size; O(P) copy-on-write of the provenance table, P = attributed names, when a
+            // module-attributed name is redeclared).
             OpCode::SetPackageKind { name_idx, kind } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                self.release_foreign_provenance(&name);
                 self.registry_mut().package_kinds.insert(name, *kind);
                 *ip += 1;
             }
