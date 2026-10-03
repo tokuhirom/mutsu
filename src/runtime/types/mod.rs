@@ -7,6 +7,7 @@ mod args_matching_simple;
 pub(crate) use args_matching_simple::unwrap_varref_value_for_dispatch;
 mod binding_helpers;
 mod binding_signature;
+mod capture_param_containers;
 mod coercion;
 mod coercion_bind;
 pub(crate) use coercion_bind::CoercionBindError;
@@ -683,8 +684,11 @@ impl Interpreter {
             // back to its caller source — a scalar (`$a`) or an array element
             // (`@arr[idx]`).
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
+                // A `|c` capture records its variable-sourced positionals the
+                // same way (`capture_param_containers`).
                 let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v.view() {
                     ValueView::Array(arr, _) => arr.items().get(elem_idx).cloned(),
+                    ValueView::Capture { positional, .. } => positional.get(elem_idx).cloned(),
                     _ => None,
                 }) else {
                     continue;

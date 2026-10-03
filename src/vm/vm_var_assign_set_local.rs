@@ -85,7 +85,7 @@ impl Interpreter {
     /// container -- but the Scalar is readonly, and an assignment is rakudo's
     /// "Cannot assign to a readonly variable or a value" (#11129).
     // Cost: O(1).
-    fn bind_source_is_itemized_aggregate(v: &Value) -> bool {
+    pub(super) fn bind_source_is_itemized_aggregate(v: &Value) -> bool {
         match v.view() {
             ValueView::Hash(_) => v.hash_is_itemized(),
             ValueView::Array(_, kind) => kind.is_itemized(),

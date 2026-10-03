@@ -47,7 +47,7 @@ impl Interpreter {
     /// name once and reusing the cached term key keeps a type check that
     /// probes an alias from re-interning and re-formatting the name.
     // Cost: O(1) expected, plus O(p) for the module-scope probe (see above).
-    fn term_binding_sym(&self, name_sym: Symbol) -> Option<Value> {
+    pub(crate) fn term_binding_sym(&self, name_sym: Symbol) -> Option<Value> {
         if crate::qualified::is_qualified(name_sym) {
             return None;
         }

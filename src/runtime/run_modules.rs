@@ -916,6 +916,27 @@ impl Interpreter {
         // (#7797) so the package-visibility bookkeeping after that branch can
         // read it too, for a use-only module that skips the branch entirely.
         let unit_name = Self::detect_unit_package_name(&stmts);
+        // ADR-11136: the module's own top-level constants, packages, enums and
+        // subsets, attributed to it once the load has run.
+        // A `unit class Foo;`/`unit module Foo;` declares its own bare package
+        // name; its other declarations are `Foo::`-qualified and reached through
+        // #7797's qualified gate.
+        let own_scope_names = match unit_name.as_deref() {
+            None => self.module_scope_declared_names(&stmts),
+            Some(name) => {
+                let sym = Symbol::intern(name);
+                let known = self.env.contains_key(name)
+                    || self.has_type(name)
+                    || Self::is_builtin_type(name);
+                if crate::qualified::is_qualified(sym) || known {
+                    Vec::new()
+                } else {
+                    crate::runtime::cow_table_mut(&mut self.module_visibility.unit_package_names)
+                        .insert(sym);
+                    vec![sym]
+                }
+            }
+        };
         if let Some(dist) = &module_dist {
             // Also record the distribution under the package this module's OWN
             // top-level subs actually register under: `unit_name` if it declares
@@ -954,6 +975,7 @@ impl Interpreter {
                 self.unit_of_source(Some(&source_path.to_string_lossy()));
             self.module_loading_unit_stack
                 .push((module_unit_for_loading_stack, self.routine_stack_len()));
+            self.premerge_top_level_uses(module_unit_for_loading_stack, &stmts);
             // Scope `current_unit` to this module's own compilation unit while
             // its mainline runs, exactly like `?FILE` just below. Without this,
             // a top-level declaration made directly in the module's own body
@@ -1055,6 +1077,10 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
+            // The importer's hoisted `multi`s are already registered; they are
+            // lexical to it and must not take part in this module's dispatch
+            // (#11310).
+            self.scope_importer_families_for_nested_load(importer_unit);
             // `sub EXPORT` is per-compunit: hide whatever hook an enclosing
             // compunit already registered so this module's own (hoisted)
             // declaration lands on a clean `GLOBAL::EXPORT` instead of tripping
@@ -1457,6 +1483,12 @@ impl Interpreter {
                 main_exported,
             );
             self.invalidate_fn_resolution();
+            // The module's own package-less `our sub`s are part of its GLOBAL
+            // merge (ADR-11136).
+            if unit_name.is_none() {
+                let our_routines = Self::module_our_routine_names(&stmts);
+                self.record_module_routine_provenance(module, our_routines);
+            }
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of
@@ -1550,16 +1582,21 @@ impl Interpreter {
                 [pkg, top]
             })
             .collect();
-        let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
-            .entry(importer_unit)
-            .or_default();
-        visible_here.extend(grant.iter().cloned());
+        // The module's own bare declarations are attributed to it, and the
+        // importer gets them -- and the package grant -- only where its
+        // `need`/`use` ran (ADR-11136).
+        // Attributed from the module's own top-level declarations, not from
+        // the registry delta, which also holds the stub parent packages
+        // (`Log` for `class Log::Timeline`) and lazily-registered core types.
+        let own_names = own_scope_names;
+        self.record_module_provenance(module, module_unit, own_names);
+        self.merge_module_into_importer(importer_unit, module, &grant);
         // Remember the grant so a LATER importer of this same module gets it
         // too. Its `use` will be an already-loaded no-op that never reaches
         // this code, and the packages a module declares are not derivable
         // from its name -- `Acme/Cow.rakumod` declares `unit module Cow;`.
         // See `Interpreter::module_granted_packages`.
-        crate::runtime::cow_table_mut(&mut self.module_granted_packages)
+        crate::runtime::cow_table_mut(&mut self.module_visibility.module_granted_packages)
             .entry(module.to_string())
             .or_default()
             .extend(grant);
