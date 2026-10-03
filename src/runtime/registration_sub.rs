@@ -1245,6 +1245,16 @@ impl Interpreter {
             return_type: effective_return_type,
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
+            op_prec: custom_traits.iter().find_map(|(t, arg)| {
+                (t == "__prec")
+                    .then(|| {
+                        arg.as_ref()?
+                            .literal()?
+                            .as_str()
+                            .map(crate::op_prec::OpPrec::decode)
+                    })
+                    .flatten()
+            }),
             source_file: self.executing_source_file_for_module_load(),
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
@@ -2069,6 +2079,7 @@ impl Interpreter {
             return_type: None,
             is_default: false,
             deprecated_message: None,
+            op_prec: None,
             source_file: self.current_source_file(),
             source_line,
             decl_order: crate::runtime::resolution::next_decl_order(),
@@ -2267,6 +2278,7 @@ impl Interpreter {
                 return_type: return_type.cloned(),
                 is_default: false,
                 deprecated_message: None,
+                op_prec: None,
                 source_file: self.current_source_file(),
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
@@ -2344,6 +2356,7 @@ impl Interpreter {
                 return_type: return_type.cloned(),
                 is_default: false,
                 deprecated_message: None,
+                op_prec: None,
                 source_file: self.current_source_file(),
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),

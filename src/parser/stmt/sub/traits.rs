@@ -305,12 +305,11 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     if let Some(pos) = custom_traits.iter().position(|(t, _)| t == "DEPRECATED") {
                         custom_traits[pos] = (format!("DEPRECATED:{}", msg), None);
                     }
-                } else if (trait_name == "tighter"
-                    || trait_name == "looser"
-                    || trait_name == "equiv")
-                    && precedence_trait.is_none()
+                } else if trait_name == "tighter" || trait_name == "looser" || trait_name == "equiv"
                 {
-                    // Extract the reference operator from parenthesized form
+                    // Extract the reference operator from parenthesized form.
+                    // Traits apply in order, so a later precedence trait
+                    // replaces an earlier one, as in rakudo.
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let ref_op = paren_content.trim().to_string();
                     precedence_trait = Some((trait_name.to_string(), ref_op));

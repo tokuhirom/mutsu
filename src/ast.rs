@@ -530,6 +530,12 @@ pub(crate) struct FunctionDef {
     /// `is DEPRECATED` trait message: None = not deprecated, Some(msg) = deprecated.
     /// Empty string means "something else", non-empty is the custom replacement text.
     pub(crate) deprecated_message: Option<String>,
+    /// The `Routine.prec` hash an operator's `is equiv/tighter/looser` or
+    /// `is assoc` trait declared (the parser's `__prec` trait, see
+    /// [`crate::op_prec`]). `None` when no trait declared one: `.prec` then
+    /// answers the built-in operator's or the category default.
+    #[serde(default)]
+    pub(crate) op_prec: Option<crate::op_prec::OpPrec>,
     /// Source file this routine was declared in (None = the main script).
     /// Set at registration time from the interpreter's `?FILE` (which module
     /// loading scopes to the module path), so backtrace frames for module subs

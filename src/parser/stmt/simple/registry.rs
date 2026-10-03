@@ -141,6 +141,29 @@ pub(crate) fn register_op_precedence(name: &str, level: i32) {
     });
 }
 
+/// Record a user operator's `Routine.prec` hash for the rest of the scope.
+pub(crate) fn register_op_prec(name: &str, prec: crate::op_prec::OpPrec) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current.op_prec.insert(name.to_string(), prec);
+    });
+}
+
+/// The `Routine.prec` hash the innermost user declaration of the operator
+/// `name` in scope declared with a trait, if any did.
+// Cost: O(d), d = lexical scope depth.
+pub(crate) fn lookup_op_prec(name: &str) -> Option<crate::op_prec::OpPrec> {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .rev()
+            .find_map(|scope| scope.op_prec.get(name).cloned())
+    })
+}
+
 /// Look up the numeric precedence level for an operator.
 pub(crate) fn lookup_op_precedence(name: &str) -> Option<i32> {
     SCOPES.with(|s| {

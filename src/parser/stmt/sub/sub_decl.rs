@@ -143,7 +143,15 @@ pub(crate) fn sub_decl_with_semicolon_mode(
 /// Record the traits of a routine declaration that change how LATER source
 /// parses: associativity and precedence of an operator, `is test-assertion`.
 /// Shared by `sub` and `proto sub` declarations.
-pub(crate) fn register_parse_affecting_traits(name: &str, traits: &SubTraits) {
+///
+/// Returns the `Routine.prec` hash the traits declare when `name` is an
+/// operator with an `is equiv/tighter/looser` or `is assoc` trait (see
+/// [`crate::op_prec`]); it is also recorded for the rest of the scope, so a
+/// later operator can be declared relative to this one.
+pub(crate) fn register_parse_affecting_traits(
+    name: &str,
+    traits: &SubTraits,
+) -> Option<crate::op_prec::OpPrec> {
     if let Some(assoc) = traits.associativity.as_ref() {
         super::super::simple::register_user_infix_assoc(name, assoc);
     }
@@ -160,6 +168,60 @@ pub(crate) fn register_parse_affecting_traits(name: &str, traits: &SubTraits) {
         };
         super::super::simple::register_op_precedence(name, level);
     }
+    declared_op_prec(name, traits)
+}
+
+/// The `Routine.prec` hash `traits` declare for the operator `name`.
+fn declared_op_prec(name: &str, traits: &SubTraits) -> Option<crate::op_prec::OpPrec> {
+    use crate::op_prec::{OpPrec, category_default, for_name, trait_target_name};
+    let (category, _) = crate::op_prec::split_op_name(name)?;
+    // Without an `is assoc`, `associativity` holds the precedence trait's own
+    // name (`traits.rs`), which is not an associativity.
+    let assoc = traits
+        .associativity
+        .as_deref()
+        .filter(|a| !matches!(*a, "equiv" | "tighter" | "looser"));
+    let mut prec = match &traits.precedence_trait {
+        Some((relation, target)) => {
+            let target = trait_target_name(target);
+            let base = super::super::simple::lookup_op_prec(&target)
+                .or_else(|| for_name(&target).map(OpPrec::from_entries))
+                .or_else(|| category_default(category).map(OpPrec::from_entries))?;
+            OpPrec::relative_to(relation, base)
+        }
+        None => OpPrec::from_entries(category_default(category)?),
+    };
+    match assoc {
+        Some(assoc) => prec = prec.with_assoc(assoc),
+        None if traits.precedence_trait.is_none() => return None,
+        None => {}
+    }
+    super::super::simple::register_op_prec(name, prec.clone());
+    Some(prec)
+}
+
+/// Hand a declared `Routine.prec` hash to the runtime as the `__prec` trait.
+/// A `multi` candidate with no trait of its own takes the one its operator
+/// already has in scope (from its `proto` or an earlier candidate), as the
+/// candidates of one Rakudo `proto` share its `prec`.
+fn push_op_prec_trait(
+    name: &str,
+    multi: bool,
+    declared: Option<crate::op_prec::OpPrec>,
+    traits: &mut SubTraits,
+) {
+    let prec = match declared {
+        Some(prec) => prec,
+        None if multi => match super::super::simple::lookup_op_prec(name) {
+            Some(prec) => prec,
+            None => return,
+        },
+        None => return,
+    };
+    traits.custom_traits.push((
+        "__prec".to_string(),
+        Some(Expr::Literal(Value::str(prec.encode()))),
+    ));
 }
 
 pub(crate) fn sub_decl_body(
@@ -217,8 +279,9 @@ pub(crate) fn sub_decl_body(
 
     let (rest, _) = ws(rest)?;
     // Parse traits (is test-assertion, is export, returns ..., etc.)
-    let (rest, traits) = parse_sub_traits(rest)?;
-    register_parse_affecting_traits(&name, &traits);
+    let (rest, mut traits) = parse_sub_traits(rest)?;
+    let declared_prec = register_parse_affecting_traits(&name, &traits);
+    push_op_prec_trait(&name, multi, declared_prec, &mut traits);
     let (rest, _) = ws(rest)?;
     let mut signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)> = Vec::new();
     let rest = if multi {

@@ -254,6 +254,11 @@ impl Interpreter {
         // `is implementation-detail` -- see the matching arm in
         // `dispatch_sub_method` below (a bare `&name` reference reaches this
         // function instead, as a `ValueView::Routine`, so both need the arm).
+        if method == "prec" && args.is_empty() {
+            return Some(Ok(
+                self.routine_prec(Symbol::intern(package), Symbol::intern(name))
+            ));
+        }
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
             let is_impl_detail = self
@@ -1074,6 +1079,9 @@ impl Interpreter {
         // custom_traits.iter().any(...)`). A builtin like `&say` has no
         // registry entry under its own name and answers `False`, matching
         // real Raku rather than raising "No such method".
+        if method == "prec" && args.is_empty() {
+            return Some(Ok(self.routine_prec(data.package, data.name)));
+        }
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(data.package, data.name);
             let is_impl_detail = self

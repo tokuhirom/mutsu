@@ -864,6 +864,7 @@ mod methods_string_search;
 mod methods_string_subst_repl;
 mod methods_string_substr;
 pub(crate) mod methods_sub;
+mod methods_sub_prec;
 mod methods_sub_rw_proxy;
 mod methods_subscript_protocol;
 mod methods_supply_dispatch;

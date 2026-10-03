@@ -393,6 +393,7 @@ mod tests {
             return_type: None,
             is_default: false,
             deprecated_message: None,
+            op_prec: None,
             source_file: None,
             source_line: None,
             decl_order: 0,
