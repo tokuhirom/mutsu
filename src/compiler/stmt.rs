@@ -1809,15 +1809,6 @@ impl Compiler {
                 {
                     *local_slot = Some(slot);
                 }
-                if bind_vardecl {
-                    // `my $x := EXPR` / `my @a := EXPR` / `my %h := EXPR`:
-                    // record the declared slot as a bind target regardless of
-                    // sigil (#8748) — `is_scalar_colon_bind` below is
-                    // deliberately scalar-only for `scalar_bind_locals`, but
-                    // an array/hash rebind installs a `ContainerRef` into its
-                    // slot exactly the same way.
-                    self.code.note_rebind_target(Some(slot));
-                }
                 if is_scalar_colon_bind {
                     let sym = Symbol::intern(name);
                     if !self.code.scalar_bind_locals.contains(&sym) {
@@ -2508,11 +2499,10 @@ impl Compiler {
                 // A statement-level `$x := ...` rebind (no `my`, not
                 // `$CALLER::...`) has no `TagContainerRef` of its own — it
                 // goes straight to `SetLocal`/`SetGlobal` below — so record
-                // its target slot here for `rebind_target_slots` (#8748).
+                // its target slot here for `rebound_slots` (#9237).
                 if matches!(op, AssignOp::Bind) {
                     let source_slot =
                         self.assignment_target_slot(effective_name, *target_is_sigilless);
-                    self.code.note_rebind_target(source_slot);
                     self.code.note_rebound_slot(source_slot);
                     if source_slot.is_none() {
                         self.code.note_rebound_name(effective_name);
@@ -3136,7 +3126,6 @@ impl Compiler {
                     if let Some(source_name) = source_name {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();
                         let name_idx = self.code.add_constant(Value::str(source_name));
-                        self.code.note_rebind_target(source_slot);
                         self.code
                             .emit(OpCode::TagContainerRef(name_idx, source_slot));
                     }

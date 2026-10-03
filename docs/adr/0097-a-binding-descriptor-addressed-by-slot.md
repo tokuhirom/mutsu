@@ -988,3 +988,32 @@ The `GetLocal` side is identical. The residual is the store side: a
 sigilless-alias key written by the bind makes every scalar `SetLocal` probe the
 env (`slot_has_sigilless_meta`, about 48 Ir per store). That latch is a
 different one, tracked in #10691.
+
+### 15.7 Close condition met (#9914, 2026-10-03)
+
+With #10691's store-side fixes merged (#10765, #10836), the #8748 repro meets
+the §15.4 step 4 close condition. Measured at `680cc202`,
+`--profile profiling`, callgrind, 4-core container, second run of each:
+
+| | `nospoil` | `spoil` | |
+| --- | ---: | ---: | --- |
+| Ir, JIT on | 353,588,160 | 353,884,904 | +0.08% |
+| Ir, JIT off | 519,331,084 | 519,625,934 | +0.06% |
+| `exec_get_local_op_inner` Ir (JIT on) | 48,327,773 | 48,327,416 | equal |
+
+The ~0.3M difference is the bind statement itself, not a per-read or per-store
+cost.
+
+`MUTSU_VM_STATS=1` now reports the latch itself (`local_read_spoilers=` on the
+`jit:` line). It reads 0 for every program under `benchmarks/`, for
+`use Test; ok 1; done-testing`, and for a closure-captured cell, so the fast
+read is live in test files and realistic workloads, not only in
+micro-benchmarks. `tests/unrelated_bind_keeps_local_read_fast_path.rs` pins
+this; it also checks that an atomic variable still trips the latch.
+
+`rebind_target_slots` and `note_rebind_target` are removed, as §15.3 required
+once nothing read them. `rebound_slots` (§14) is a separate record and stays.
+
+The per-interpreter word for `atomic_var_seen` and `sigilless_attrs_active`
+(§15.6, "Not done") is still not done. Neither source fires in any measured
+workload.
