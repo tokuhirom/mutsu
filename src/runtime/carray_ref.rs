@@ -5,7 +5,7 @@
 //! addresses (`char**`, `void**`, `struct s**`). MoarVM's CArray REPR keeps two
 //! parallel tables for it: the addresses C sees (`storage`) and the Raku object
 //! each slot was bound to or last read as (`child_objs`). This module is that
-//! REPR for the classes [`carray_repr`](super::carray_repr) allocates:
+//! REPR for the classes [`carray_repr`] allocates:
 //!
 //! - **The address table** is the same [`BufData`](crate::value::BufData) node a
 //!   native numeric `CArray` keeps its elements in, at pointer width. So a native

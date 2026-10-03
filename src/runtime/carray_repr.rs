@@ -19,7 +19,7 @@
 //!
 //! An array whose element type is a reference (`Pointer`, `Str`, a CStruct
 //! class) is a `CArray` of addresses that read back as objects, which bytes
-//! alone cannot hold; [`carray_ref`](super::carray_ref) keeps MoarVM's parallel
+//! alone cannot hold; [`carray_ref`] keeps MoarVM's parallel
 //! child table beside the address table (ADR-0015 P3c).
 
 use super::*;
