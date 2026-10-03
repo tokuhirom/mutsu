@@ -2422,6 +2422,7 @@ pub(crate) enum AssignOp {
     MatchAssign,
 }
 
+pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
 mod lvalue;

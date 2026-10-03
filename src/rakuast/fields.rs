@@ -264,6 +264,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     Some(match class {
         IntLiteral | NumLiteral | RatLiteral | StrLiteral => "value",
         FunctionInfix => "function",
+        Infix | Prefix => "operator",
         VarLexical => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
