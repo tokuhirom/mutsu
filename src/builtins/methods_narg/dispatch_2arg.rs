@@ -116,6 +116,16 @@ pub(crate) fn native_method_2arg(
         {
             return None;
         }
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name == "IO::Path"
+            && attributes.contains_key("resource")
+        {
+            return None;
+        }
         if let ValueView::Package(name) = target.view()
             && name.resolve().starts_with("IO::Spec")
         {
