@@ -21,12 +21,11 @@
 use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, SourceForm, Stmt};
+use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
-pub(super) fn convert(form: &SourceForm) -> Result<RakuAstNode, RuntimeError> {
-    let SourceForm::SignatureDecl(decl) = form;
+pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError> {
     if decl.type_constraint.is_some()
         || decl.group_default.is_some()
         || decl.has_nested_group

@@ -1661,11 +1661,21 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // The initializer field is present only for `= EXPR`; without it a plain
     // `my $x` declares an undefined value.
     let mut is_binding = false;
+    let mut call_assign = None;
     let (expr, has_initializer) = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         Some(_) => {
             let init = named_child(node, "initializer")?;
             is_binding = init.class == RakuAstClass::InitializerBind;
-            (lower_expr(named_child_or_positional(init)?)?, !is_binding)
+            if init.class == RakuAstClass::InitializerCallAssign {
+                let call = named_child_or_positional(init)?;
+                if call.class != RakuAstClass::CallMethod || dispatch_modifier(call)?.is_some() {
+                    return Err(unsupported(node));
+                }
+                call_assign = Some((call_name_str(call)?, arg_exprs(call)?));
+                (Expr::Literal(Value::NIL), false)
+            } else {
+                (lower_expr(named_child_or_positional(init)?)?, !is_binding)
+            }
         }
         // The same sigil-aware default the parser gives an uninitialized
         // declaration: `my @a` is an empty Array and `my %h` an empty Hash,
@@ -1681,6 +1691,24 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     if has_initializer {
         custom_traits.push(("__has_initializer".to_string(), None));
+    }
+    if let Some((method, args)) = call_assign {
+        return Ok(crate::ast::method_assign_decl::expand(
+            crate::ast::method_assign_decl::MethodAssignDecl {
+                name,
+                type_constraint,
+                is_state,
+                is_our,
+                is_dynamic,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits,
+                where_constraint: None,
+                method: crate::symbol::Symbol::intern(&method),
+                args,
+                is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+            },
+        ));
     }
     // `:=`: the same declaration the parser builds, expanded by the same
     // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
