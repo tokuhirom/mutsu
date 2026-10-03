@@ -16,6 +16,7 @@ impl Interpreter {
     // Cost: O(t), t = registered tokens across all grammars (one prefix test
     // each); `.^methods` is not on a hot path.
     pub(super) fn collect_grammar_token_methods(&self, owner: &str, result: &mut Vec<Value>) {
+        let owner_sym = Symbol::intern(owner);
         let registry = self.registry();
         let mut entries: Vec<(
             String,
@@ -24,7 +25,7 @@ impl Interpreter {
             Vec<crate::ast::ParamDef>,
         )> = Vec::new();
         for (key, defs) in registry.token_defs.iter() {
-            let Some(name) = Self::grammar_token_member(key.as_str(), owner) else {
+            let Some(name) = Self::grammar_token_member(*key, owner_sym) else {
                 continue;
             };
             let first = defs.first();
@@ -36,7 +37,7 @@ impl Interpreter {
             ));
         }
         for key in registry.proto_tokens.iter() {
-            if let Some(name) = Self::grammar_token_member(key, owner)
+            if let Some(name) = Self::grammar_token_member(Symbol::intern(key), owner_sym)
                 && !entries.iter().any(|(n, ..)| n == name)
             {
                 entries.push((name.to_string(), None, None, Vec::new()));
@@ -61,15 +62,11 @@ impl Interpreter {
     }
 
     /// The member name of a `token_defs` key that `owner` itself declares
-    /// (`G::a` → `a` for `G`; `G::Inner::a` is not `G`'s).
-    // Cost: O(m), m = bytes of the key.
-    fn grammar_token_member<'a>(key: &'a str, owner: &str) -> Option<&'a str> {
-        let name = key.strip_prefix(owner)?.strip_prefix("::")?;
-        // A nested grammar's member has its own package segment, unless the
-        // segment sits inside an adverb (`infix:sym<::>`).
-        let head = name.split(':').next().unwrap_or(name);
-        (!name.is_empty() && !head.is_empty() && !name[head.len()..].starts_with("::"))
-            .then_some(name)
+    /// (`G::a` -> `a` for `G`; `G::Inner::a` is `G::Inner`'s).
+    // Cost: O(1) amortized (memoized `package_parent` / `unqualified_part`).
+    fn grammar_token_member(key: Symbol, owner: Symbol) -> Option<&'static str> {
+        (crate::qualified::package_parent(key) == Some(owner))
+            .then(|| crate::qualified::unqualified_part(key).as_str())
     }
 
     /// Whether `value` is a method object named `name`.
