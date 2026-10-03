@@ -1,0 +1,57 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
+      "OO::Monitors",
+      "Pod::Load",
+      "Pod::To::HTML",
+      "Template::Mustache",
+      "Test::META",
+      "Test::Output",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Pod::To::Markdown",
+  "files": [],
+  "load": {
+    "Pod::To::Markdown": "Failed to parse module 'Pod::To::HTML': Confused. Two terms in a row [at Pod/To/HTML.pm6:79]"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/P/OD/POD_TO_MARKDOWN/42183b7e0d8c2bcb431549df113f43cbbc808eea.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2.2"
+}

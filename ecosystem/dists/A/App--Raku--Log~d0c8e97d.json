@@ -1,0 +1,103 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::IRC::Log",
+      "Array::Sorted::Util",
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebApp",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "IRC::Channel::Log",
+      "IRC::Log",
+      "IRC::Log::Colabti",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "String::Color",
+      "String::Utils",
+      "Test::META",
+      "TinyFloats",
+      "URI",
+      "has-word",
+      "highlighter",
+      "if",
+      "raku-RandomColor"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Raku::Log",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "App::Raku::Log": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAKU_LOG/7f32cda123345033b85ee88965a7575491b0dc01.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.37"
+}

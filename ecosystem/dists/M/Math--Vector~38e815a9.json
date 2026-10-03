@@ -1,0 +1,62 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Vector",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 201,
+        "plan": 201,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basics.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 201,
+        "plan": 201,
+        "secs": 7.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Vector": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_VECTOR/65d90fab013d6a4c85d29700f20acce357108d23.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 201,
+    "baseline_files": 1,
+    "mutsu_assertions": 201,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.6.0"
+}

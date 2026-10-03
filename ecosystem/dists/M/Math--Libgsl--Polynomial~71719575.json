@@ -1,0 +1,119 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Distribution::Builder::MakeFromJSON",
+      "JSON::Fast",
+      "Math::Libgsl::Complex",
+      "Math::Libgsl::Constants",
+      "System::Query"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::Libgsl::Polynomial",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 7.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-raw-polynomial.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_poly_eval' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-polynomial.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'gsl_poly_eval' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/99-meta.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.72,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Libgsl::Polynomial": "ok",
+    "Math::Libgsl::Raw::Polynomial": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_POLYNOMIAL/ae99eb5a351a132f4696328513cd321d283d9dbe.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 2,
+    "mutsu_assertions": 3,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

@@ -1,0 +1,40 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "App::MoarVM::HeapAnalyzer::Model",
+  "files": [],
+  "load": {
+    "App::MoarVM::HeapAnalyzer::Model": "Undeclared routine:",
+    "App::MoarVM::HeapAnalyzer::Shell": "Undeclared routine:"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_MOARVM_HEAPANALYZER_MODEL/721c1c2ffdd1bda1d56a96c375dc3063d1720733.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.2"
+}

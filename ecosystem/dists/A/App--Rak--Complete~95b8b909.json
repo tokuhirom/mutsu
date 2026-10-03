@@ -1,0 +1,106 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "App::Rak",
+      "Array::Agnostic",
+      "Backtrace::Files",
+      "CLI::Version",
+      "Edit::Files",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Git::Blame::File",
+      "Git::Files",
+      "IO::Path::AutoDecompress",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Fast::Hyper",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Path",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "List::Agnostic",
+      "META6",
+      "META::constants",
+      "META::verauthapi",
+      "MoarVM::Bytecode",
+      "Needle::Compile",
+      "P5getgrnam",
+      "P5getpwnam",
+      "PDF::Extract",
+      "Slang::Tuxic",
+      "Slangify",
+      "String::Utils",
+      "Test::META",
+      "Text::CSV",
+      "Trap",
+      "URI",
+      "as-cli-arguments",
+      "has-word",
+      "highlighter",
+      "hyperize",
+      "path-utils",
+      "paths",
+      "rak",
+      "sourcery"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Rak::Complete",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 44.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "App::Rak::Complete": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_RAK_COMPLETE/02ab23e146ff6c3b6a6d7c46a8308ea5a213248a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.13"
+}

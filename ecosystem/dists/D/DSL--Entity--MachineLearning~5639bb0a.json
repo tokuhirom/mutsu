@@ -1,0 +1,136 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DSL::Shared",
+      "Hash::Merge",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "Lingua::NumericWordForms",
+      "META6",
+      "Math::DistanceFunctions::Edit",
+      "NativeHelpers::Array",
+      "Test::META",
+      "Text::Levenshtein::Damerau",
+      "Trap",
+      "URI",
+      "silently"
+    ],
+    "unresolved": []
+  },
+  "dist": "DSL::Entity::MachineLearning",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Classifier-measurement-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 59.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Classifier-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ROC-function-names-parsing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "DSL::Entity::MachineLearning": "ok",
+    "DSL::Entity::MachineLearning::Actions::Bulgarian::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::English::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Korean::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Raku::System": "ok",
+    "DSL::Entity::MachineLearning::Actions::Russian::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::Spanish::Standard": "ok",
+    "DSL::Entity::MachineLearning::Actions::WL::Entity": "ok",
+    "DSL::Entity::MachineLearning::Actions::WL::System": "ok",
+    "DSL::Entity::MachineLearning::Grammar": "ok",
+    "DSL::Entity::MachineLearning::Grammar::EntityNames": "ok",
+    "DSL::Entity::MachineLearning::ResourceAccess": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/D/SL/DSL_ENTITY_MACHINELEARNING/d68f324ddb580e8bf85ae06442273015ec85d46b.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 20,
+    "baseline_files": 3,
+    "mutsu_assertions": 20,
+    "parity_files": 3,
+    "regressed_files": 0
+  },
+  "version": "0.1.2"
+}

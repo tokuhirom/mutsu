@@ -1,0 +1,97 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Abbreviations",
+      "AlgorithmsIT",
+      "App::Prove6",
+      "Base64::Native",
+      "CSV::Parser",
+      "Color",
+      "Compress::Zlib",
+      "Compress::Zlib::Raw",
+      "Date::Names",
+      "File::Directory::Tree",
+      "File::Temp",
+      "Font::AFM",
+      "Getopt::Long",
+      "Hash::int",
+      "JSON::Fast",
+      "Method::Also",
+      "Native::Packing",
+      "OpenSSL",
+      "PDF",
+      "PDF::Content",
+      "PDF::Grammar",
+      "PDF::Lite",
+      "Path::Finder",
+      "Pod::Usage",
+      "TAP",
+      "Test::Output",
+      "Text::Utils",
+      "sigpipe"
+    ],
+    "unresolved": []
+  },
+  "dist": "Calendar",
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 82.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-class.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Calendar": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/AL/CALENDAR/e0eea11e4edb4da98aa51d65194f91e4d4f8d334.tar.gz"
+  },
+  "status": "no_baseline",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

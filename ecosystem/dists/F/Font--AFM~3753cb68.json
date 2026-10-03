@@ -1,0 +1,142 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Font::AFM",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/font-afm.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 12.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/font-metrics-courier.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/font-metrics-times.t",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 6.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/metrics-path.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Font::AFM": "ok",
+    "Font::Metrics::courier": "ok",
+    "Font::Metrics::courier-bold": "ok",
+    "Font::Metrics::courier-boldoblique": "ok",
+    "Font::Metrics::courier-oblique": "ok",
+    "Font::Metrics::helvetica": "ok",
+    "Font::Metrics::helvetica-bold": "ok",
+    "Font::Metrics::helvetica-boldoblique": "ok",
+    "Font::Metrics::helvetica-oblique": "ok",
+    "Font::Metrics::symbol": "ok",
+    "Font::Metrics::times-bold": "ok",
+    "Font::Metrics::times-bolditalic": "ok",
+    "Font::Metrics::times-italic": "ok",
+    "Font::Metrics::times-roman": "ok",
+    "Font::Metrics::zapfdingbats": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/F/ON/FONT_AFM/aefcbd806b42dfdc92c96f5744e9c3dae31d9e48.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 38,
+    "baseline_files": 4,
+    "mutsu_assertions": 38,
+    "parity_files": 4,
+    "regressed_files": 0
+  },
+  "version": "1.24.10"
+}

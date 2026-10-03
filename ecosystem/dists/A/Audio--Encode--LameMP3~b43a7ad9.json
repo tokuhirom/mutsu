@@ -1,0 +1,157 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "AccessorFacade",
+      "Audio::Sndfile",
+      "Audio::Taglib::Simple",
+      "File::Directory::Tree",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryCheck",
+      "License::SPDX",
+      "META6",
+      "NativeHelpers::Array",
+      "Test::META",
+      "URI"
+    ],
+    "unresolved": []
+  },
+  "dist": "Audio::Encode::LameMP3",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 14.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/010-meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 24.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/020-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/030-constructor.t",
+      "raku": {
+        "first_failure": "create a new Audio::Encode::LameMP3",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 2.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/040-parameters.t",
+      "raku": {
+        "first_failure": "No such method 'in-samplerate' for invocant of type 'Any'",
+        "nok": 86,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/050-encode.t",
+      "raku": {
+        "first_failure": "No such method 'read-short' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/060-id3tag.t",
+      "raku": {
+        "first_failure": "Missing declarand for trailing declarator doc",
+        "nok": 8,
+        "ok": 1,
+        "plan": null,
+        "secs": 4.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Audio::Encode::LameMP3": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/UD/AUDIO_ENCODE_LAMEMP3/95ca5756f3dcf302086d5fe66f1db54db97fc80c.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 2,
+    "baseline_files": 2,
+    "mutsu_assertions": 2,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.0.15"
+}

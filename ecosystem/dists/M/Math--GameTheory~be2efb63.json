@@ -1,0 +1,46 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "Math::SpecialFunctions",
+      "Statistics::Distributions"
+    ],
+    "unresolved": []
+  },
+  "dist": "Math::GameTheory",
+  "files": [],
+  "load": {
+    "Math::GameTheory": "Failed to parse module 'Math::GameTheory::Creators': Confused. Two terms in a row [at Math/GameTheory/Creators.rakumod:474]",
+    "Math::GameTheory::Creators": "Failed to parse module 'Math::GameTheory::Creators': Confused. Two terms in a row [at Math/GameTheory/Creators.rakumod:474]",
+    "Math::GameTheory::MatrixGame": "ok",
+    "Math::GameTheory::MatrixGame::Formatish": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_GAMETHEORY/23ed442a69948983a77f85804e888f5afc62b1be.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.1"
+}

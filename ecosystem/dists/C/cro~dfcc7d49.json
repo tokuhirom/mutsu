@@ -1,0 +1,167 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Cro::WebSocket",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "Docker::File",
+      "File::Find",
+      "File::Ignore",
+      "File::Which",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::JWT",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibraryMake",
+      "Log::Timeline",
+      "META6",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "Terminal::ANSIColor",
+      "TinyFloats",
+      "YAMLish",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "cro",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/tools-crofile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 6.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/tools-link-editor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 7.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tools-runner.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tools-services.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Cro::Tools::CLI": "ok",
+    "Cro::Tools::CroFile": "ok",
+    "Cro::Tools::Link::Editor": "ok",
+    "Cro::Tools::LinkTemplate": "ok",
+    "Cro::Tools::LinkTemplate::HTTP": "ok",
+    "Cro::Tools::LinkTemplate::HTTPS": "ok",
+    "Cro::Tools::LinkTemplate::WS": "ok",
+    "Cro::Tools::LinkTemplate::WSS": "ok",
+    "Cro::Tools::Runner": "ok",
+    "Cro::Tools::Serve": "raku_also_fails",
+    "Cro::Tools::Services": "ok",
+    "Cro::Tools::Template": "ok",
+    "Cro::Tools::Template::Common": "ok",
+    "Cro::Tools::Template::HTTPService": "ok",
+    "Cro::Tools::Template::ReactReduxSPA": "ok",
+    "Cro::Tools::Template::ZeroMQWorkSinkService": "ok",
+    "Cro::Tools::Template::ZeroMQWorkerService": "ok",
+    "Cro::Tools::TemplateLocator": "ok",
+    "Cro::Tools::Web": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/RO/CRO/a5a43185d592498a4f2bc93865c66bed383123fc.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 82,
+    "baseline_files": 2,
+    "mutsu_assertions": 82,
+    "parity_files": 2,
+    "regressed_files": 0
+  },
+  "version": "0.8.10"
+}

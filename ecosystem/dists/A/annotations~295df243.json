@@ -1,0 +1,42 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "annotations",
+  "files": [],
+  "load": {
+    "annotations": "raku_also_fails",
+    "annotations::containers": "ok",
+    "annotations::core": "Runtime error: Failed to parse module 'annotations::core': X::Syntax::Malformed: Malformed my (did you mean to declare a sigilless \\var or $var?).",
+    "annotations::how": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/NN/ANNOTATIONS/1328482a7fccd36a16ed5498e6e4ab2015f611b5.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.1.0"
+}

@@ -1,0 +1,30 @@
+{
+  "dist": "L10N::Complete",
+  "files": [],
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "note": "harness error: FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/.cache/mutsu-ecosystem/tarballs/adf956313335-L_10_L10N_FR_2a5f24dfd2dea464c15d9f729a28e3046abd4ae6.tar.gz.part' -> '/home/runner/.cache/mutsu-ecosystem/tarballs/adf956313335-L_10_L10N_FR_2a5f24dfd2dea464c15d9f729a28e3046abd4ae6.tar.gz'",
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/10/L10N_COMPLETE/be48e06c007aee91c8726b1d2880c5e71ce1455b.tar.gz"
+  },
+  "status": "skipped",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.4"
+}

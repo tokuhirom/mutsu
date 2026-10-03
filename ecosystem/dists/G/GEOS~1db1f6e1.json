@@ -1,0 +1,48 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast",
+      "Log::Async",
+      "OO::Monitors",
+      "Terminal::ANSI"
+    ],
+    "unresolved": []
+  },
+  "dist": "GEOS",
+  "files": [],
+  "load": {
+    "GEOS": "ok",
+    "GEOS::Geometry": "Failed to parse module 'GEOS::Geometry': Confused. Two terms in a row [at lib/GEOS/Geometry.rakumod:148]",
+    "GEOS::Native": "ok",
+    "GEOS::Reader": "Failed to parse module 'GEOS::Reader': Confused. Two terms in a row [at lib/GEOS/Reader.rakumod:34]",
+    "GEOS::Writer": "Failed to parse module 'GEOS::Geometry': Confused. Two terms in a row [at lib/GEOS/Geometry.rakumod:148]"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/G/EO/GEOS/e8825be4816fdc1b9c776ece34a44f055f997a80.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.5"
+}

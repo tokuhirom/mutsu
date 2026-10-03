@@ -1,0 +1,78 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Base64",
+      "CBOR::Simple",
+      "Cro::Core",
+      "Cro::HTTP",
+      "Cro::TLS",
+      "Crypt::Random",
+      "DateTime::Parse",
+      "Digest",
+      "Digest::HMAC",
+      "Digest::SHA1::Native",
+      "File::Find",
+      "File::Which",
+      "HTTP::HPACK",
+      "IO::Path::ChildSecure",
+      "IO::Socket::Async::SSL",
+      "JSON::Fast",
+      "JSON::JWT",
+      "LibraryMake",
+      "Log::Timeline",
+      "MIME::Base64",
+      "OO::Monitors",
+      "OpenSSL",
+      "Shell::Command",
+      "TinyFloats",
+      "if"
+    ],
+    "unresolved": []
+  },
+  "dist": "Cro::WebSocket",
+  "files": [],
+  "load": {
+    "Cro::HTTP::Router::WebSocket": "raku_also_fails",
+    "Cro::WebSocket::BodyParsers": "ok",
+    "Cro::WebSocket::BodySerializers": "ok",
+    "Cro::WebSocket::Client": "raku_also_fails",
+    "Cro::WebSocket::Client::Connection": "ok",
+    "Cro::WebSocket::Frame": "ok",
+    "Cro::WebSocket::FrameParser": "ok",
+    "Cro::WebSocket::FrameSerializer": "ok",
+    "Cro::WebSocket::Handler": "Failed to parse module 'Cro::WebSocket::Handler': X::Comp::Group: Function 'Cro::WebSocket::Message::Ping' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or availabl",
+    "Cro::WebSocket::Internal": "ok",
+    "Cro::WebSocket::Message": "ok",
+    "Cro::WebSocket::Message::Opcode": "ok",
+    "Cro::WebSocket::MessageParser": "ok",
+    "Cro::WebSocket::MessageSerializer": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/RO/CRO_WEBSOCKET/ed1f2481248f53caafc607573edd72b2f1402e58.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.8.10"
+}

@@ -1,0 +1,161 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Data::TypeSystem",
+      "Math::SparseMatrix",
+      "Math::SparseMatrix::Native",
+      "Math::SpecialFunctions",
+      "NativeHelpers::Array",
+      "Statistics::Distributions"
+    ],
+    "unresolved": []
+  },
+  "dist": "ML::SparseMatrixRecommender",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Constraint type check failed in binding to parameter '@data'; expected anonymous constraint to be met but got Array ([({:Value(\"30\"), :Variable(\"passengerAge\"), :id(\"1\")}, {:Value(\"0\"), :Variable(\"pas",
+        "nok": 0,
+        "ok": 3,
+        "plan": null,
+        "secs": 43.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-creation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 52.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 17.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-basic-workflows.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 6.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 16.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-classification.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 5.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "should",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 14.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-retrieval-by-query-elements.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 5.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-categorize-to-intervals.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "ML::SparseMatrixRecommender": "ok",
+    "ML::SparseMatrixRecommender::DocumentTermWeightish": "ok",
+    "ML::SparseMatrixRecommender::Utilities": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/L_/ML_SPARSEMATRIXRECOMMENDER/427f66e800bebc04d509305db2f923c85bb5c6b4.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 20,
+    "baseline_files": 5,
+    "mutsu_assertions": 17,
+    "parity_files": 3,
+    "regressed_files": 2
+  },
+  "version": "0.0.4"
+}

@@ -1,0 +1,70 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Symbolic",
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Error: cannot create a chain with no children",
+        "nok": 0,
+        "ok": 4,
+        "plan": 11,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basics.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 14.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Symbolic": "ok",
+    "Math::Symbolic::Actions": "ok",
+    "Math::Symbolic::Constants": "ok",
+    "Math::Symbolic::Grammar": "ok",
+    "Math::Symbolic::Language": "ok",
+    "Math::Symbolic::MultiHash": "ok",
+    "Math::Symbolic::Operation": "ok",
+    "Math::Symbolic::Tree": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/M/Math%3A%3ASymbolic/Math%3A%3ASymbolic%3Aver%3C%2A%3E%3Aauth%3Cgithub%3Araydiak%3E.tar.gz"
+  },
+  "status": "red",
+  "totals": {
+    "baseline_assertions": 11,
+    "baseline_files": 1,
+    "mutsu_assertions": 4,
+    "parity_files": 0,
+    "regressed_files": 1
+  },
+  "version": "*"
+}

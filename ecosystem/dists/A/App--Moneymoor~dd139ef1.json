@@ -1,0 +1,1145 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "DBIish",
+      "JSON::Fast",
+      "MacOS::NativeLib",
+      "NativeHelpers::Blob",
+      "NativeLibs",
+      "Notcurses::Native",
+      "Selkie"
+    ],
+    "unresolved": []
+  },
+  "dist": "App::Moneymoor",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-util-money.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-db.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 34.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-gateway-account.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 26.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-gateway-category.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 16,
+        "secs": 3.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-gateway-payee.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 5.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-gateway-transaction.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 3.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-gateway-assignment.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-workspace.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 9.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-budget-periods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-budget-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-budget-rollover.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-budget-future-months.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-budget-credit.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/14-budget-transfers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 132.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-invariants-property.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 28.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/16-explain.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-money-locale.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/18-period.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 2.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 99.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/19-period-property.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-db-period-migration.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 3.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-scheme-persistence.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 3.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 3.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/22-target-derivation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 7.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/50-theme-completeness.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 47.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/51-icons.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/moneymoor-icons-config-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 4,
+        "plan": 5,
+        "secs": 4.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 27.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/60-hint-bar.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 37.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/61-empty-state.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/62-config.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/moneymoor-config-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 2,
+        "plan": 9,
+        "secs": 2.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 67.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/63-login-layout.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 45.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/64-store-handlers.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 20.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/65-main-shell.rakutest",
+      "raku": {
+        "first_failure": "Type check failed for return value; expected Str but got WhateverCode ((TABS.first({ $_<nam...)",
+        "nok": 0,
+        "ok": 4,
+        "plan": 8,
+        "secs": 77.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 10.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/66-diagnostics.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/67-budget-row.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 2.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/68-inspector-pane.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 20.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/69-budget-keys.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/70-budget-store.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/71-budget-pane.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/72-register-row.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 9.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/73-transaction-form.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/74-accounts-store.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 1.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 19.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/75-accounts-keys.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/76-accounts-pane.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 2.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/77-transaction-editor.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 2.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/78-accounts-dialogs.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 2.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 10.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/79-reconcile-view.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/80-reconcile-flow.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 9,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/81-report-row.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/82-reports-pane.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 20.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/83-reports-keys.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/84-tab-focus.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 2.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/85-distribution.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-0nyq5e8e/dist/App-Moneymoor-0.4.2/.github/workflows/release.yml: No such file or directory",
+        "nok": 0,
+        "ok": 1,
+        "plan": 6,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/86-budget-delete.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 7,
+        "secs": 2.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/87-budget-editors.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 2.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/88-settings-dialog.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/moneymoor-settings-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 2,
+        "plan": 8,
+        "secs": 1.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/89-budget-fund.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 14,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/90-period-picker.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 12,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 7.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/91-boot-pipeline.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 7.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/92-db-thread-handoff.rakutest",
+      "raku": {
+        "first_failure": "Detail: Cannot locate native library 'libsqlcipher.so.0'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/93-banner-resize-repaint.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "App::Moneymoor": "ok",
+    "App::Moneymoor::Config": "ok",
+    "App::Moneymoor::DB": "ok",
+    "App::Moneymoor::Gateway::Account": "ok",
+    "App::Moneymoor::Gateway::Assignment": "ok",
+    "App::Moneymoor::Gateway::Category": "ok",
+    "App::Moneymoor::Gateway::Payee": "ok",
+    "App::Moneymoor::Gateway::Transaction": "ok",
+    "App::Moneymoor::Handlers::Boot": "ok",
+    "App::Moneymoor::Model::Account": "ok",
+    "App::Moneymoor::Model::Assignment": "ok",
+    "App::Moneymoor::Model::Category": "ok",
+    "App::Moneymoor::Model::CategoryGroup": "ok",
+    "App::Moneymoor::Model::Payee": "ok",
+    "App::Moneymoor::Model::Split": "ok",
+    "App::Moneymoor::Model::Transaction": "ok",
+    "App::Moneymoor::Screen::Accounts": "ok",
+    "App::Moneymoor::Screen::Budget": "ok",
+    "App::Moneymoor::Screen::Login": "ok",
+    "App::Moneymoor::Screen::Main": "ok",
+    "App::Moneymoor::Screen::Main::Keybinds": "ok",
+    "App::Moneymoor::Screen::Main::Modals": "ok",
+    "App::Moneymoor::Screen::Main::Subscriptions": "ok",
+    "App::Moneymoor::Screen::Reports": "ok",
+    "App::Moneymoor::Service::Budget": "ok",
+    "App::Moneymoor::Service::Icons": "ok",
+    "App::Moneymoor::Service::Target": "ok",
+    "App::Moneymoor::Service::Workspace": "ok",
+    "App::Moneymoor::StoreHandlers": "ok",
+    "App::Moneymoor::Theme": "ok",
+    "App::Moneymoor::Theme::Catppuccin": "ok",
+    "App::Moneymoor::Theme::Dracula": "ok",
+    "App::Moneymoor::Theme::Everforest": "ok",
+    "App::Moneymoor::Theme::Gruvbox": "ok",
+    "App::Moneymoor::Theme::Kanagawa": "ok",
+    "App::Moneymoor::Theme::Monokai": "ok",
+    "App::Moneymoor::Theme::Nord": "ok",
+    "App::Moneymoor::Theme::OneDark": "ok",
+    "App::Moneymoor::Theme::RosePine": "ok",
+    "App::Moneymoor::Theme::Solarized": "ok",
+    "App::Moneymoor::Theme::TokyoNight": "ok",
+    "App::Moneymoor::Themes": "ok",
+    "App::Moneymoor::UI": "ok",
+    "App::Moneymoor::Util::Money": "ok",
+    "App::Moneymoor::Util::Period": "ok",
+    "App::Moneymoor::View::BudgetRow": "ok",
+    "App::Moneymoor::View::EmptyState": "ok",
+    "App::Moneymoor::View::HintBar": "ok",
+    "App::Moneymoor::View::InspectorPane": "ok",
+    "App::Moneymoor::View::ModalChrome": "ok",
+    "App::Moneymoor::View::RegisterRow": "ok",
+    "App::Moneymoor::View::ReportRow": "ok",
+    "App::Moneymoor::Widget::BannerBar": "ok",
+    "App::Moneymoor::Widget::BootProgressModal": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-02",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "387bd201",
+    "mutsu_version": "0.24.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/A/PP/APP_MONEYMOOR/8df5ea655ce4ff4642ba32b6a66a89eba03b4e7a.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 258,
+    "baseline_files": 29,
+    "mutsu_assertions": 258,
+    "parity_files": 29,
+    "regressed_files": 0
+  },
+  "version": "0.4.2"
+}
