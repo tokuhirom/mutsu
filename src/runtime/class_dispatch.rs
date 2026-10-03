@@ -634,7 +634,7 @@ impl Interpreter {
             crate::symbol::Symbol::intern(method_name),
             method_def,
             &cc,
-            attributes,
+            crate::vm::vm_method_call_attrs::CallAttrs::Map(attributes),
             args,
             invocant,
             fns_ref,

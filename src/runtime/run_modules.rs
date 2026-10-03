@@ -374,13 +374,14 @@ impl Interpreter {
         paths
     }
 
-    pub(super) fn default_repo_dir(kind: &str) -> Option<std::path::PathBuf> {
-        let base = if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+    /// Reads `XDG_DATA_HOME` / `HOME` through `%*ENV`, which a program may
+    /// change (writes never reach the process environment, #11241).
+    pub(super) fn default_repo_dir(&self, kind: &str) -> Option<std::path::PathBuf> {
+        let base = if let Some(xdg) = self.env_var_or_process("XDG_DATA_HOME") {
             std::path::PathBuf::from(xdg)
-        } else if let Ok(home) = std::env::var("HOME") {
-            std::path::PathBuf::from(home).join(".local").join("share")
         } else {
-            return None;
+            let home = self.env_var_or_process("HOME")?;
+            std::path::PathBuf::from(home).join(".local").join("share")
         };
         Some(base.join("mutsu").join("repo").join(kind))
     }
@@ -394,7 +395,7 @@ impl Interpreter {
     /// front of the default site/vendor/core chain. No-op if the directory
     /// can't be determined; the directory need not exist yet.
     pub fn add_default_site_repo(&mut self) {
-        if let Some(dir) = Self::default_repo_dir("site") {
+        if let Some(dir) = self.default_repo_dir("site") {
             self.add_lib_path(format!("inst#{}", dir.display()));
 
             // Hang a CompUnit::Repository::Installation for the site repo off the

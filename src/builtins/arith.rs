@@ -26,7 +26,7 @@ pub(crate) use pow_negate::{arith_negate, arith_pow};
 // (ADR-0118), shared by the VM opcodes, the reduction fold and the methods.
 pub(crate) use int_ops::{
     BitOp, int_abs, int_abs_value, int_bitneg, int_bitop, int_cmp, int_div, int_gcd, int_lcm,
-    int_mod_i64, int_negate, int_operand, int_shift_left, int_shift_right,
+    int_mod_i64, int_negate, int_operand, int_shift_left, int_shift_right, int_to_base,
 };
 pub(crate) use succ::{value_pred, value_succ};
 

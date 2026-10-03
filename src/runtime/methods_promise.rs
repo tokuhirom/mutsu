@@ -97,8 +97,12 @@ impl Interpreter {
                 // reaches the caller. Behind a catch marker, so a `CATCH` around
                 // the `.then` call is not run inline at the callback's `die`
                 // (ADR-0072) — it would run again when the promise is awaited.
-                let cb_result = self.with_catch_marker(|this| {
-                    this.vm_call_on_value(block, vec![promise_val], None)
+                // Run inline, but as a stack of its own (`$*STACK-ID`), as
+                // Rakudo's scheduled callback is.
+                let cb_result = crate::runtime::stack_id::run_on_fresh_stack(|| {
+                    self.with_catch_marker(|this| {
+                        this.vm_call_on_value(block, vec![promise_val], None)
+                    })
                 });
                 self.resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {
@@ -127,7 +131,11 @@ impl Interpreter {
             orig.on_resolve(Box::new(move |status, result, output, stderr| {
                 if should_run(&status) {
                     let promise_val = Value::promise(orig_for_waiter);
-                    let cb_result = thread_interp.vm_call_on_value(block, vec![promise_val], None);
+                    // Each queued waiter is a stack of its own (`$*STACK-ID`),
+                    // though they share the resolving thread.
+                    let cb_result = crate::runtime::stack_id::run_on_fresh_stack(|| {
+                        thread_interp.vm_call_on_value(block, vec![promise_val], None)
+                    });
                     let out = std::mem::take(&mut thread_interp.output_sink_mut().output);
                     let err = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
                     thread_interp.resolve_promise_callback(

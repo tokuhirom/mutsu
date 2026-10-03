@@ -141,16 +141,30 @@ impl Interpreter {
     /// Return the value of `%*ENV<RAKU_EXCEPTIONS_HANDLER>`, if set.
     /// This selects the format used to print uncaught exceptions (e.g. "JSON").
     pub fn exceptions_handler(&self) -> Option<String> {
-        let env_hash = self.env.get("%*ENV")?;
-        if let ValueView::Hash(map) = env_hash.view()
-            && let Some(v) = map.get("RAKU_EXCEPTIONS_HANDLER")
-        {
-            let s = v.to_string_value();
-            if !s.is_empty() {
-                return Some(s);
-            }
+        self.env_hash_var("RAKU_EXCEPTIONS_HANDLER")
+            .filter(|s| !s.is_empty())
+    }
+
+    /// The string value of `%*ENV<name>`, if the key exists. `%*ENV` is the
+    /// program's view of the environment: writes are never mirrored into the
+    /// process environment (#11241), so a run-time environment read goes
+    /// through this rather than `std::env::var`.
+    // Cost: O(1) expected, one hash probe plus the value's stringification.
+    pub(crate) fn env_hash_var(&self, name: &str) -> Option<String> {
+        match self.env.get("%*ENV").map(Value::view) {
+            Some(ValueView::Hash(map)) => map.get(name).map(Value::to_string_value),
+            _ => None,
         }
-        None
+    }
+
+    /// Like [`Self::env_hash_var`], but before `%*ENV` exists (early start-up)
+    /// it reads the process environment, which `%*ENV` is built from.
+    // Cost: O(1) expected, one hash probe (or one `getenv`) plus stringification.
+    pub(crate) fn env_var_or_process(&self, name: &str) -> Option<String> {
+        match self.env.get("%*ENV").map(Value::view) {
+            Some(ValueView::Hash(map)) => map.get(name).map(Value::to_string_value),
+            _ => std::env::var(name).ok(),
+        }
     }
 
     pub(crate) fn is_halted(&self) -> bool {

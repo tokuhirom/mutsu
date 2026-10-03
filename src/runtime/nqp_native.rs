@@ -108,6 +108,65 @@ pub(crate) fn mod_i(a: i64, b: i64) -> Option<i64> {
     (b != 0).then(|| a.wrapping_rem(b))
 }
 
+/// Euclid's algorithm on the raw signed operands with MoarVM's *truncated*
+/// remainder; the sign of the answer is whatever the last step leaves, which
+/// `lcm_i` depends on. Cost: O(log min(|a|, |b|)).
+#[inline]
+fn raw_gcd(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let t = b;
+        b = a.wrapping_rem(b);
+        a = t;
+    }
+    a
+}
+
+/// `nqp::gcd_i`: always non-negative except `gcd_i(i64::MIN, 0)`, whose
+/// absolute value wraps back to `i64::MIN` as in MoarVM.
+/// Cost: O(log min(|a|, |b|)).
+#[inline]
+pub(crate) fn gcd_i(a: i64, b: i64) -> i64 {
+    raw_gcd(a, b).wrapping_abs()
+}
+
+/// `nqp::lcm_i`: `a / gcd * b` with the *signed* gcd, so the sign follows
+/// MoarVM (`lcm_i(-4, 6)` is -12, `lcm_i(4, -6)` is 12). `lcm_i(0, 0)` is 0
+/// (MoarVM divides by zero there; Raku's `lcm` answers 0).
+/// Cost: O(log min(|a|, |b|)).
+#[inline]
+pub(crate) fn lcm_i(a: i64, b: i64) -> i64 {
+    match raw_gcd(a, b) {
+        0 => 0,
+        g => a.wrapping_div(g).wrapping_mul(b),
+    }
+}
+
+/// `nqp::pow_i`: wrapping exponentiation by squaring; a negative exponent
+/// answers 0, as in MoarVM (even `pow_i(1, -1)`). Cost: O(log e), e = exponent.
+#[inline]
+pub(crate) fn pow_i(base: i64, exp: i64) -> i64 {
+    if exp < 0 {
+        return 0;
+    }
+    let (mut result, mut base, mut exp) = (1i64, base, exp as u64);
+    while exp > 0 {
+        if exp & 1 == 1 {
+            result = result.wrapping_mul(base);
+        }
+        base = base.wrapping_mul(base);
+        exp >>= 1;
+    }
+    result
+}
+
+/// `nqp::mod_n`: floored, `a - b * floor(a / b)` (the result takes the
+/// divisor's sign); a zero divisor answers the dividend, as in MoarVM.
+/// Cost: O(1).
+#[inline]
+pub(crate) fn mod_n(a: f64, b: f64) -> f64 {
+    if b == 0.0 { a } else { a - b * (a / b).floor() }
+}
+
 /// `nqp::cmp_i`. Cost: O(1).
 #[inline]
 pub(crate) fn cmp_i(a: i64, b: i64) -> i64 {
@@ -150,5 +209,22 @@ mod tests {
         assert_eq!(abs_i(i64::MIN), i64::MIN);
         assert_eq!(cmp_n(f64::NAN, f64::NAN), 0);
         assert_eq!(add_i(i64::MAX, 1), i64::MIN);
+        assert_eq!(gcd_i(12, -18), 6);
+        assert_eq!(gcd_i(-12, -18), 6);
+        assert_eq!(gcd_i(0, 0), 0);
+        assert_eq!(gcd_i(i64::MIN, 0), i64::MIN);
+        assert_eq!(lcm_i(4, 6), 12);
+        assert_eq!(lcm_i(-4, 6), -12);
+        assert_eq!(lcm_i(4, -6), 12);
+        assert_eq!(lcm_i(0, 6), 0);
+        assert_eq!(pow_i(2, 10), 1024);
+        assert_eq!(pow_i(2, 64), 0);
+        assert_eq!(pow_i(3, 41), -420491770248316829);
+        assert_eq!(pow_i(1, -5), 0);
+        assert_eq!(pow_i(0, 0), 1);
+        assert_eq!(mod_n(-7.0, 3.0), 2.0);
+        assert_eq!(mod_n(7.0, -3.0), -2.0);
+        assert_eq!(mod_n(-7.5, 0.0), -7.5);
+        assert!(mod_n(7.0, f64::INFINITY).is_nan());
     }
 }

@@ -1385,12 +1385,9 @@ pub(crate) fn native_method_1arg(
             Some(crate::builtins::parse_base::parse_base(&s, radix))
         }
         "base" => match target.view() {
-            ValueView::Int(i) => {
+            ValueView::Int(_) | ValueView::BigInt(_) => {
                 let radix = match arg.view() {
                     ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
-                    ValueView::Int(_) => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
                     ValueView::Str(s) => match s.parse::<u32>() {
                         Ok(r) if (2..=36).contains(&r) => r,
                         _ => {
@@ -1401,64 +1398,7 @@ pub(crate) fn native_method_1arg(
                         return Some(Ok(out_of_range_failure("base requires radix 2..36")));
                     }
                 };
-                let negative = i < 0;
-                let mut n = if negative { (-i) as u64 } else { i as u64 };
-                if n == 0 {
-                    return Some(Ok(Value::str_from("0")));
-                }
-                let digits = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                let mut buf = Vec::new();
-                while n > 0 {
-                    buf.push(digits[(n % radix as u64) as usize]);
-                    n /= radix as u64;
-                }
-                if negative {
-                    buf.push(b'-');
-                }
-                buf.reverse();
-                Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
-            }
-            ValueView::BigInt(n) => {
-                let radix = match arg.view() {
-                    ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
-                    ValueView::Int(_) => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                    ValueView::Str(s) => match s.parse::<u32>() {
-                        Ok(r) if (2..=36).contains(&r) => r,
-                        _ => {
-                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                        }
-                    },
-                    _ => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                };
-                use num_traits::{Signed, Zero};
-                let negative = n.is_negative();
-                let mut val = if negative {
-                    -n.as_ref().clone()
-                } else {
-                    n.as_ref().clone()
-                };
-                if val.is_zero() {
-                    return Some(Ok(Value::str_from("0")));
-                }
-                let digits = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                let radix_big = num_bigint::BigInt::from(radix);
-                let mut buf = Vec::new();
-                while !val.is_zero() {
-                    let rem = &val % &radix_big;
-                    use num_traits::ToPrimitive;
-                    let digit_idx = rem.to_usize().unwrap_or(0);
-                    buf.push(digits[digit_idx]);
-                    val /= &radix_big;
-                }
-                if negative {
-                    buf.push(b'-');
-                }
-                buf.reverse();
-                Some(Ok(Value::str(String::from_utf8(buf).unwrap())))
+                Some(Ok(Value::str(crate::builtins::int_to_base(target, radix))))
             }
             ValueView::Num(f) => {
                 if f.is_infinite() || f.is_nan() {

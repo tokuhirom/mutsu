@@ -234,6 +234,18 @@ impl Interpreter {
     /// (e.g., `my T $v .= new;`) may create closure variables that
     /// are referenced by composed methods, so we must keep their
     /// effects on the env (only clean up the type capture markers).
+    /// Put `key` back to `saved` (or remove it when it was unset).
+    fn restore_env_entry(env: &mut crate::env::Env, key: &str, saved: Option<Value>) {
+        match saved {
+            Some(value) => {
+                env.insert(key.to_string(), value);
+            }
+            None => {
+                env.remove(key);
+            }
+        }
+    }
+
     pub(super) fn run_composed_role_deferred_body(
         &mut self,
         cx: &mut RoleCompositionCx<'_>,
@@ -341,6 +353,16 @@ impl Interpreter {
         // block, that would retopicalize the caller.
         let saved_topic = self.env.get("_").cloned();
         let body_env_before: HashSet<crate::symbol::Symbol> = self.env.keys().copied().collect();
+        // `$?CLASS` in a role body is the class being composed: Rakudo runs
+        // the body once per consuming class, so `my @attrs =
+        // $?CLASS.^attributes` computes each class's own list (SBOM). The
+        // class body sets `?CLASS` only after its roles are composed, so
+        // without this the body saw the PREVIOUSLY registered class.
+        let saved_class = self.env.get("?CLASS").cloned();
+        self.env.insert(
+            "?CLASS".to_string(),
+            Value::package(Symbol::intern(cx.name)),
+        );
         for op in &role.deferred_body {
             // A sub-level `proto` declares one routine per role: registered
             // by the first composition (or, exported, at declaration), never
@@ -473,6 +495,7 @@ impl Interpreter {
             // borrowed before unwinding, and report it as Rakudo
             // does: X::Role::Instantiation wrapping the original.
             if let Err(err) = r {
+                Self::restore_env_entry(&mut self.env, "?CLASS", saved_class.clone());
                 if err.control.is_none() {
                     match saved_topic.clone() {
                         Some(topic) => {
@@ -498,6 +521,7 @@ impl Interpreter {
                 self.env.remove("_");
             }
         }
+        Self::restore_env_entry(&mut self.env, "?CLASS", saved_class);
         self.leave_source_file(saved_file);
         self.apply_nested_method_captures(base_role_name, cx.name);
         // Persist the role body's lexicals as class-body statics of

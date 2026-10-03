@@ -881,7 +881,7 @@ impl Interpreter {
     /// Index of the entry `add_default_site_repo` registered, if it is still in
     /// the chain. Everything the user adds explicitly belongs in front of it.
     fn default_site_repo_position(&self) -> Option<usize> {
-        let dir = Self::default_repo_dir("site")?;
+        let dir = self.default_repo_dir("site")?;
         let marker = format!("inst#{}", dir.display());
         self.lib_paths.iter().position(|p| *p == marker)
     }
