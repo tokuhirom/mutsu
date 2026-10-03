@@ -12,6 +12,7 @@ mod dispatch_1arg;
 mod dispatch_2arg;
 mod flatten;
 mod fmt_contains;
+mod head_tail;
 mod indent;
 mod numeric;
 mod str_match;
