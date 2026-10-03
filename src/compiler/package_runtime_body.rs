@@ -105,4 +105,19 @@ impl Compiler {
         }
         names
     }
+
+    /// The names a package body declares `our` at its own top level, which
+    /// stay package variables there even when an enclosing lexical of the
+    /// same name is in scope.
+    // Cost: O(n), n = the body's top-level statements.
+    pub(crate) fn package_body_our_names(body: &[Stmt]) -> HashSet<String> {
+        crate::ast::scope_members(body)
+            .filter_map(|stmt| match stmt {
+                Stmt::VarDecl {
+                    name, is_our: true, ..
+                } => Some(name.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }

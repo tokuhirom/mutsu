@@ -332,7 +332,21 @@ impl Compiler {
                 _ => None,
             })
             .collect();
-        let body_lexicals = Self::package_body_lexical_names(body);
+        // The declaring scope's lexicals are in scope for the body too, and a
+        // lexical always wins over a same-named package variable: a body
+        // statement `$z = 4` writes the outer `my $z`, not `$C::z`. Compiling
+        // it package-qualified made the write land on a stray `C::z` that the
+        // registration then copied over the outer binding by value, cutting a
+        // method capture off the outer variable's shared cell (#11086). A
+        // name the body itself declares `our` is a package variable there.
+        let mut body_lexicals = Self::package_body_lexical_names(body);
+        let body_our_names = Self::package_body_our_names(body);
+        body_lexicals.extend(
+            self.local_map
+                .keys()
+                .filter(|name| !body_our_names.contains(name.as_str()))
+                .cloned(),
+        );
         let class_body_type_aliases = body
             .iter()
             .filter_map(|stmt| match stmt {
