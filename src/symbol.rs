@@ -733,11 +733,9 @@ impl Symbol {
         // is pure string arithmetic — it interns nothing — so calling it under the
         // table's write lock cannot re-enter.
         store_flags(id as usize, compute_flags(leaked));
-        // Same choke-point argument for the qualified-member index: no key can
-        // reach any store without passing through here first, so recording it
-        // now keeps that index a superset (#9171). Lock order is one-way
-        // (table write -> index write), as for the capture registry below.
-        crate::qualified_tail_index::record(sym, leaked);
+        // The qualified-member indexes (#9171, #9845) are not fed from here:
+        // they fold this append-only id sequence in lazily on their first
+        // read, which keeps them a superset at no startup cost.
         // Record the capture shape once, here, where a name becomes a symbol
         // for the first time. Doing it at the intern choke point rather than at
         // the (many) sites that insert a capture into the env is what makes the

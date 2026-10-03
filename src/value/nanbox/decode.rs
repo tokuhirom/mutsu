@@ -22,6 +22,34 @@ impl NanBox {
     }
 }
 
+impl NanBox {
+    /// The `Str` payload for in-place mutation, when this word is a `Str` and
+    /// holds the only reference to its buffer; `None` (nothing touched)
+    /// otherwise.
+    ///
+    /// The word itself is left as it is: the payload allocation does not move,
+    /// so the bits stay valid while the body behind them is grown. That is
+    /// what lets an append skip the move-out / decode / re-encode / store-back
+    /// round trip `into_repr` + `from_repr` would cost.
+    // Cost: O(1).
+    pub(in crate::value) fn str_body_mut(&mut self) -> Option<&mut crate::value::StrBody> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::Str)) {
+            return None;
+        }
+        // SAFETY: `bits` is a live `Str` word, so its payload is an
+        // `Arc<StrBody>` this word owns one strong reference of. The
+        // `ManuallyDrop` borrows that reference without consuming it (no
+        // refcount change on any path), and `Arc::get_mut` hands out the body
+        // only when that reference is the sole one, so the `&mut` cannot alias
+        // a read through another holder. The body lives in the allocation the
+        // word points at, which outlives the returned borrow of `self`.
+        let mut arc = ManuallyDrop::new(unsafe { take_arc::<crate::value::StrBody>(bits) });
+        let body: *mut crate::value::StrBody = Arc::get_mut(&mut arc)?;
+        Some(unsafe { &mut *body })
+    }
+}
+
 /// # Safety
 /// `bits` must be a live kind word of kind `kind` whose payload ownership is
 /// being consumed exactly once.

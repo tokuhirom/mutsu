@@ -20,6 +20,7 @@ use crate::value::ValueMap;
 /// actually holds.
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
+mod rebind;
 pub(crate) mod stats;
 
 /// Process-wide immutable "base" tier of the environment.
