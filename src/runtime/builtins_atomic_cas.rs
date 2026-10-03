@@ -453,6 +453,8 @@ impl Interpreter {
         // assignment would. Raku checks the swap value even when the compare
         // fails, so this runs before the compare (roadmap T5).
         self.check_atomic_elem_type(&arr_name, &new_val)?;
+        // The element is a `Scalar`: an aggregate is itemized on the way in.
+        let new_val = Self::itemize_value_for_element_store(new_val);
 
         // Use an internal key to avoid interference with set_shared_var
         // which would overwrite our atomic array with stale local values.

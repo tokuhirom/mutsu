@@ -120,6 +120,12 @@ impl Interpreter {
                 value = self.try_coerce_value_for_constraint(&constraint, value)?;
             }
         }
+        // The target is a `$` scalar container, so an aggregate is itemized
+        // on the way in, as a plain `=` store does (`atomic-assign($x, %h);
+        // $x.raku` is `${...}`).
+        if !name.starts_with(['@', '%']) {
+            value = Self::itemize_scalar_store(name, value);
+        }
         Ok(value)
     }
 
