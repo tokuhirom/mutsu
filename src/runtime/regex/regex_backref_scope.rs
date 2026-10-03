@@ -207,6 +207,24 @@ impl RegexCaptures {
         visible
     }
 
+    /// The `from`/`to` of the `$/` inline regex code sees, on a view from
+    /// [`Self::inline_capture_view`]: the text matched so far, narrowed by any
+    /// `<(` / `)>` already passed, exactly as they narrow the final match
+    /// (`/ x <( a )> b { make ~$/ } /` makes "a").
+    // Cost: O(n), n = the matched-so-far text (its char count).
+    pub(crate) fn inline_cursor_bounds(&self, matched_so_far: &str) -> (i64, i64) {
+        let so_far_end = self.match_from + matched_so_far.chars().count();
+        let from = self
+            .capture_start
+            .unwrap_or(self.match_from)
+            .min(so_far_end);
+        let to = self
+            .capture_end
+            .unwrap_or(so_far_end)
+            .clamp(from, so_far_end);
+        (from as i64, to as i64)
+    }
+
     fn inline_capture_view_unsettled(&self) -> RegexCaptures {
         let Some(outer) = self.outer_backref() else {
             return self.clone();
