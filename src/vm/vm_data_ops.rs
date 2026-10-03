@@ -452,6 +452,41 @@ impl Interpreter {
         box_type_objects: bool,
         slot_hint: Option<u32>,
     ) -> (Value, bool) {
+        self.capture_var_cell_with(code, name, inner, box_type_objects, false, slot_hint)
+    }
+
+    /// The shared cell an `is rw` parameter binds for a `$`-scalar argument
+    /// (`f($h)` with `sub f($p is rw)`): [`Self::capture_var_cell_inner`] with
+    /// `box_type_objects`, and ALSO boxing a slot that holds a reference value
+    /// (a `Hash`, `Array`, `List`, object). Raku gives every `$` variable a
+    /// Scalar container whatever it holds, so `my $h = {}; f($h)` aliases that
+    /// container and `$p = 5` replaces the Hash in `$h` (#11077). List
+    /// aliasing must not box those (`($h,)` keeps the item), so only the rw
+    /// binding sites ask for it, and only for a `$`-shaped name: an `@`/`%`
+    /// variable IS its aggregate and has no Scalar to alias.
+    // Cost: O(l), l = locals of the frame (the by-name slot fallback).
+    pub(super) fn capture_rw_arg_cell(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+        slot_hint: Option<u32>,
+    ) -> Value {
+        let box_references = !name.starts_with(['@', '%', '&']);
+        self.capture_var_cell_with(code, name, inner, true, box_references, slot_hint)
+            .0
+    }
+
+    // Cost: O(l), l = locals of the frame (the by-name slot fallback).
+    fn capture_var_cell_with(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+        box_type_objects: bool,
+        box_references: bool,
+        slot_hint: Option<u32>,
+    ) -> (Value, bool) {
         if inner.is_container_ref() {
             return (inner, true);
         }
@@ -543,14 +578,15 @@ impl Interpreter {
         // re-containerized (mirrors the box-on-capture guard). A bare type object
         // (`Any`) is boxed only for List aliasing (`box_type_objects`), so that
         // distinct uninitialized scalars stay distinct containers.
-        let is_reference = matches!(
-            self.locals[idx].view(),
-            ValueView::Array(..)
-                | ValueView::Hash(..)
-                | ValueView::Sub(..)
-                | ValueView::Instance { .. }
-                | ValueView::Proxy { .. }
-        );
+        let is_reference = matches!(self.locals[idx].view(), ValueView::Proxy { .. })
+            || (!box_references
+                && matches!(
+                    self.locals[idx].view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Sub(..)
+                        | ValueView::Instance { .. }
+                ));
         let is_type_object = matches!(self.locals[idx].view(), ValueView::Package(_));
         if is_reference || (is_type_object && !box_type_objects) {
             return (self.locals[idx].clone(), true);

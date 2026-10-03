@@ -462,6 +462,7 @@ impl Compiler {
                         // boxes the named local into a shared `ContainerRef` cell.
                         // Consumers that decontainerize (`@arr = (...)`, param
                         // binding, single-scalar push) deref the cell to its value.
+                        let dollar_scalar = Self::scalar_container_alias_name(elem).is_some();
                         if let Some(name) = Self::scalar_container_alias_name(elem)
                             .map(str::to_string)
                             // A SIGILLESS lexical (`\c`, `my \y := ...`) names the
@@ -482,6 +483,12 @@ impl Compiler {
                             && !c.suppress_list_var_alias
                         {
                             c.emit_wrap_var_ref(&name);
+                            // A relayed lvalue-call argument binds the `$`
+                            // variable's Scalar even when it holds an
+                            // aggregate (#11077).
+                            if rw_arg_callee.is_some() && dollar_scalar {
+                                c.code.emit(OpCode::CaptureRwArgCell);
+                            }
                         } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
                         }

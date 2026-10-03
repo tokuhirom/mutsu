@@ -311,12 +311,10 @@ impl Interpreter {
                     // `integration/advent2011-day16.t` pins exactly this
                     // shape: `sub set_five($x is rw) { $x = 5 } my $var;
                     // set_five $var`).
-                    let cell = self.capture_var_cell_boxing_type_objects(
-                        caller_code,
-                        &name,
-                        inner,
-                        slot_hint,
-                    );
+                    // `capture_rw_arg_cell` also boxes a slot holding a
+                    // Hash/Array/object: `$h` is a Scalar whatever it
+                    // holds, and `$p = 5` must replace it (#11077).
+                    let cell = self.capture_rw_arg_cell(caller_code, &name, inner, slot_hint);
                     // The alias writes into the CALLER's container, so the
                     // caller's `of` (`my Str $t`) rides on the cell and a
                     // callee store is checked against it (#10146). Resolved

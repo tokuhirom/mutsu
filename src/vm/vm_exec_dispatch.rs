@@ -3289,6 +3289,11 @@ impl Interpreter {
                 self.exec_capture_var_cell_op(code);
                 *ip += 1;
             }
+            // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
+            OpCode::CaptureRwArgCell => {
+                self.exec_capture_rw_arg_cell_op(code);
+                *ip += 1;
+            }
             // Cost: O(1) (attribute map probes).
             OpCode::AttrContainerRef(name_idx) => {
                 self.exec_attr_container_ref_op(code, *name_idx);

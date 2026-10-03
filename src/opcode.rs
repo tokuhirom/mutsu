@@ -1585,6 +1585,16 @@ pub(crate) enum OpCode {
     /// `MakeCapture`/`MakePair` consume the `VarRef` tag inline; this opcode is
     /// the standalone spelling for the one-value case.
     CaptureVarCell,
+    /// Resolve a `WrapVarRef`-tagged top-of-stack `$`-scalar to the shared cell
+    /// an `is rw` parameter binds (`capture_rw_arg_cell`): like
+    /// [`Self::CaptureVarCell`], but a slot holding a Hash/Array/object is
+    /// boxed too, since a `$` variable is a Scalar whatever it holds. Emitted
+    /// for each `$`-variable element of the argument list the parser relays to
+    /// `__mutsu_assign_named_sub_lvalue` / `__mutsu_incdec_named_sub_lvalue`
+    /// (`f($h) = 1`), where `MakeArray` would otherwise hand the routine the
+    /// bare aggregate and an `is rw` parameter would reject it (#11077). A
+    /// value that is not a `VarRef` passes through untouched.
+    CaptureRwArgCell,
     /// ADR-0067: the `is rw` tail of a method whose body is a bare private
     /// attribute (`method acc is rw { $!v }`) hands its caller the
     /// *attribute's* container, not a copy of its value.
