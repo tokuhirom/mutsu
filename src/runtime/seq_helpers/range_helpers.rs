@@ -208,7 +208,7 @@ impl Interpreter {
         // A big rational against whole-number bounds is compared exactly: its
         // nearest double can land on the bound (`4.99...9 ~~ 0..^5`, 44 nines).
         if let ValueView::BigRat(n, d) = val.view()
-            && num_traits::Zero::is_zero(d) == false
+            && !num_traits::Zero::is_zero(d)
         {
             let cmp_bound = |bound: f64| -> Option<std::cmp::Ordering> {
                 if !bound.is_finite() || bound.fract() != 0.0 || bound.abs() >= 9.0e15 {
