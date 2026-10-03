@@ -115,7 +115,7 @@ Each is a general compatibility gap; none is NativeCall-specific.
 | #11204 native type semantics | Done (#11260) |
 | #11205 `multi` term evaluates to its candidate | Done (#11278) |
 | Upstream files vendored (`modules/Rakudo-Core/lib/NativeCall*`), not yet in `provides` | Done |
-| #11310 user `trait_mod:<is>` candidates leak across compunits (blocks `use NativeCall`) | Open (next) |
+| #11310 user `trait_mod:<is>` candidates leak across compunits; `is array_type` is core | Done; `load UNC` now stops at `nqp::nativecallsizeof` (#11211) |
 | #11209 REPRs selected by `is repr<...>` | Open (next) |
 | #11211 the six VM FFI ops | Open |
 | #11207 `Code.$!do` | Open |
