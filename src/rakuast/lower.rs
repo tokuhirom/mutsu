@@ -2707,14 +2707,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
-                // Only a plain parameter fits `Lambda`; an optional (`$p?`) or
-                // trait-carrying one keeps its `ParamDef`, as the parser does.
+                // Only a plain parameter fits `Lambda`; an optional (`$p?`),
+                // trait-carrying or destructuring (`-> [$a, $b]`) one keeps its
+                // `ParamDef`, as the parser does.
                 1 if param_defs.first().is_some_and(|param| {
                     !param.named
                         && param.type_constraint.is_none()
                         && param.default.is_none()
                         && !param.optional_marker
                         && param.traits.is_empty()
+                        && param.sub_signature.is_none()
                 }) =>
                 {
                     Ok(Expr::Lambda {

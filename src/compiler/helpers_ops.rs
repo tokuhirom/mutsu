@@ -123,6 +123,44 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "//" => TokenKind::SlashSlash,
         ".." => TokenKind::DotDot,
         "..." => TokenKind::DotDotDot,
+        // The excluding range and sequence infixes have tokens of their own;
+        // as an `Ident` they would lower to a call of an undeclared infix.
+        "..^" => TokenKind::DotDotCaret,
+        "^.." => TokenKind::CaretDotDot,
+        "^..^" => TokenKind::CaretDotDotCaret,
+        "...^" => TokenKind::DotDotDotCaret,
+        "!%%" => TokenKind::BangPercentPercent,
+        "!===" => TokenKind::BangEqEqEq,
+        // The low-precedence logicals short-circuit; as an `Ident` they would
+        // lower to an eager call that runs the right-hand side unconditionally
+        // (`5 < 3 and say "X"` printed X).
+        "and" => TokenKind::AndWord,
+        "or" => TokenKind::OrWord,
+        "+&" => TokenKind::BitAnd,
+        "+|" => TokenKind::BitOr,
+        "+^" => TokenKind::BitXor,
+        "+<" => TokenKind::BitShiftLeft,
+        "+>" => TokenKind::BitShiftRight,
+        "~&" => TokenKind::StrBitAnd,
+        "~|" => TokenKind::StrBitOr,
+        "~^" => TokenKind::StrBitXor,
+        "~<" => TokenKind::StrShiftLeft,
+        "~>" => TokenKind::StrShiftRight,
+        "?&" => TokenKind::BoolBitAnd,
+        "?|" => TokenKind::BoolBitOr,
+        "?^" => TokenKind::BoolBitXor,
+        "(|)" => TokenKind::SetUnion,
+        "(+)" => TokenKind::SetAddition,
+        "(&)" => TokenKind::SetIntersect,
+        "(.)" => TokenKind::SetMultiply,
+        "(-)" => TokenKind::SetDiff,
+        "(^)" => TokenKind::SetSymDiff,
+        "(elem)" => TokenKind::SetElem,
+        "(cont)" => TokenKind::SetCont,
+        "(<=)" => TokenKind::SetSubset,
+        "(>=)" => TokenKind::SetSuperset,
+        "(<)" => TokenKind::SetStrictSubset,
+        "(>)" => TokenKind::SetStrictSuperset,
         // Prefix-only operators (`!$x`, `?$x`). The prefixes shared with an infix
         // spelling (`-`/`+`/`~`) already map above.
         "!" => TokenKind::Bang,
@@ -157,4 +195,34 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         // `token_kind_to_op_name`'s `Ident(name) => name`).
         name => TokenKind::Ident(name.to_string()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{op_name_to_token_kind, token_kind_to_op_name};
+    use crate::token_kind::TokenKind;
+
+    /// Every infix token the parser emits lowers back from its own spelling.
+    /// A spelling that fell to the `Ident` catch-all instead compiled as a
+    /// call of a named infix: `..^` died "Two terms in a row" and `and`
+    /// lost its short circuit under the RakuAST round trip.
+    #[test]
+    fn infix_spellings_round_trip() {
+        use TokenKind::*;
+        let infixes = [
+            Plus, Minus, Star, StarStar, Slash, Percent, PercentPercent, BangPercentPercent,
+            Tilde, EqEq, BangEq, Lt, Lte, Gt, Gte, LtEqGt, EqEqEq, BangEqEqEq, AndAnd, OrOr,
+            XorXor, SlashSlash, SmartMatch, BangTilde, FatArrow, DotDot, DotDotDot,
+            DotDotCaret, CaretDotDot, CaretDotDotCaret, DotDotDotCaret, BitAnd, BitOr, BitXor,
+            BitShiftLeft, BitShiftRight, StrBitAnd, StrBitOr, StrBitXor, StrShiftLeft,
+            StrShiftRight, BoolBitAnd, BoolBitOr, BoolBitXor, OrElse, AndThen, NotAndThen,
+            OrWord, AndWord, SetUnion, SetAddition, SetIntersect, SetMultiply, SetDiff,
+            SetSymDiff, SetElem, SetCont, SetSubset, SetSuperset, SetStrictSubset,
+            SetStrictSuperset, Pipe, Ampersand, Caret,
+        ];
+        for token in infixes {
+            let name = token_kind_to_op_name(&token);
+            assert_eq!(op_name_to_token_kind(&name), Some(token), "`{name}`");
+        }
+    }
 }
