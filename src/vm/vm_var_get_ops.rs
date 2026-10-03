@@ -435,6 +435,10 @@ impl Interpreter {
             } else {
                 Value::str(name.to_string())
             }
+        } else if let Some(v) = self.toplevel_package_symbol(name).cloned() {
+            // A module's top-level enum value under a package-qualified name
+            // (ADR-0084 §2 group 2): kept off the frame env.
+            v
         } else if let Some(enum_val) = self.resolve_qualified_enum_alias(name) {
             // A qualified name `Alias::variant` where `Alias` is a constant (or
             // `my`/`our` symbol) bound to an enum type object. Raku resolves the
@@ -877,7 +881,11 @@ impl Interpreter {
             return None;
         }
         // The enum registration stores variants under `{enum_type}::{variant}`.
-        self.env().get(&format!("{pkg}::{variant}")).cloned()
+        let key = format!("{pkg}::{variant}");
+        self.env()
+            .get(&key)
+            .or_else(|| self.toplevel_package_symbol(&key))
+            .cloned()
     }
 
     /// Get a variable from an outer lexical scope.

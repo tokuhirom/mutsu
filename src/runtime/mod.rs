@@ -2894,6 +2894,10 @@ pub struct Interpreter {
     /// Kept here rather than in the env the module body ran in (ADR-0084 §2
     /// group 1); see `runtime::toplevel_callable_ids`.
     pub(crate) toplevel_callable_ids: std::sync::Arc<rustc_hash::FxHashMap<Symbol, i64>>,
+    /// Package-qualified symbols (enum values) a loaded module's mainline
+    /// installed at its top level, kept off the frame env (ADR-0084 §2
+    /// group 2). See `runtime::toplevel_callable_ids`.
+    pub(crate) toplevel_package_symbols: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Value>>,
     /// The depths the executing module mainline started at, while one runs.
     /// See `Interpreter::run_module_mainline`.
     pub(crate) module_toplevel_depth: Option<toplevel_callable_ids::ModuleToplevelDepth>,

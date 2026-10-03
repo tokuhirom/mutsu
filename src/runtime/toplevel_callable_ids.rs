@@ -129,4 +129,25 @@ impl Interpreter {
             && self.at_module_toplevel()
             && !self.env.contains_key(qualified)
     }
+
+    /// Bind the package-qualified symbol `name`: in the module top-level
+    /// package-symbol table when a module's mainline makes it directly, else
+    /// in the frame env. EXPERIMENT.
+    pub(crate) fn bind_package_symbol(&mut self, name: String, value: Value) {
+        if self.at_module_toplevel() && !self.env.contains_key(&name) {
+            crate::runtime::cow_table_mut(&mut self.toplevel_package_symbols)
+                .insert(Symbol::intern(&name), value);
+            return;
+        }
+        self.env.insert(name, value);
+    }
+
+    /// A package-qualified symbol bound by [`Self::bind_package_symbol`]
+    /// into the module top-level table.
+    pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
+        if self.toplevel_package_symbols.is_empty() {
+            return None;
+        }
+        self.toplevel_package_symbols.get(&Symbol::intern(name))
+    }
 }

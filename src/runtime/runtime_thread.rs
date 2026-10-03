@@ -729,6 +729,7 @@ impl Interpreter {
             package_stash_hidden: self.package_stash_hidden.clone(),
             chain_declared_packages: self.chain_declared_packages.clone(),
             toplevel_callable_ids: self.toplevel_callable_ids.clone(),
+            toplevel_package_symbols: self.toplevel_package_symbols.clone(),
             module_toplevel_depth: None,
             module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),

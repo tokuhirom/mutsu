@@ -3209,6 +3209,7 @@ impl Interpreter {
             package_stash_hidden: Default::default(),
             chain_declared_packages: Default::default(),
             toplevel_callable_ids: Default::default(),
+            toplevel_package_symbols: Default::default(),
             module_toplevel_depth: None,
             module_packages: Default::default(),
             closure_env_overrides: HashMap::new(),
