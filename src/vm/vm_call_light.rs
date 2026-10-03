@@ -1203,7 +1203,7 @@ impl Interpreter {
                 || (bang_is_callee_private
                     && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
                 || cf.is_callee_local_sym(k)
-                || cf.code.my_declared_enum_sym.contains(&k)
+                || cf.is_own_enum_key_sym(k)
         };
         match caller_env {
             Some(caller_env) => {

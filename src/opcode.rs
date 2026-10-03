@@ -13308,6 +13308,30 @@ impl CompiledFunction {
         }
     }
 
+    /// True if `sym` is an env key this body's own `my enum` declared: the enum's
+    /// type name, or a variant, which `RegisterEnum` stores under the reserved
+    /// bare-name prefix (`enum_bare_key`) rather than under its plain name. Those
+    /// are lexicals of the body and must not be merged back into the caller on
+    /// return.
+    // Cost: O(1) hash probe; keys without the enum prefix cost one string-prefix test.
+    #[inline]
+    pub(crate) fn is_own_enum_key_sym(&self, sym: Symbol) -> bool {
+        if self.code.my_declared_enum_sym.is_empty() {
+            return false;
+        }
+        if self.code.my_declared_enum_sym.contains(&sym) {
+            return true;
+        }
+        sym.with_str(|s| {
+            s.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+                .is_some_and(|base| {
+                    self.code
+                        .my_declared_enum_sym
+                        .contains(&Symbol::intern(base))
+                })
+        })
+    }
+
     /// Recursively collect parameter names from param_defs, including
     /// sub-signature parameters (e.g. `[$p, *@r]` in array unpacking).
     fn collect_param_names(
