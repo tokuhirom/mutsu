@@ -76,6 +76,7 @@ impl Absent {
 
 const EXPRESSION: Absent = Absent::TypeObject("RakuAST::Expression");
 const BLOCK: Absent = Absent::TypeObject("RakuAST::Block");
+const BACKTRACK: Absent = Absent::TypeObject("RakuAST::Regex::Backtrack");
 
 /// The fields a RakuAST class declares, in rakudo's own declaration order
 /// (which is the order `.^attributes` reports and the renderer emits).
@@ -86,12 +87,38 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("statement-list", Absent::Required),
             ("comp-unit-name", Absent::Required),
         ],
+        RegexCharClass(kind) => kind.model_fields(),
+        RegexAssertionCharClass => &[("elements", Absent::EmptyList)],
+        RegexCharClassElementEnumeration => {
+            &[("elements", Absent::EmptyList), ("negated", Absent::False)]
+        }
+        RegexCharClassElementRule => &[("name", Absent::Required), ("negated", Absent::False)],
+        RegexCharClassEnumerationElementCharacter => &[("character", Absent::Required)],
+        RegexCharClassEnumerationElementRange => {
+            &[("from", Absent::Required), ("to", Absent::Required)]
+        }
         RegexInternalModifierIgnoreCase => {
             &[("modifier", Absent::Str("i")), ("negated", Absent::False)]
         }
         RegexInternalModifierIgnoreMark => {
             &[("modifier", Absent::Str("m")), ("negated", Absent::False)]
         }
+        RegexInternalModifierSigspace => {
+            &[("modifier", Absent::Str("s")), ("negated", Absent::False)]
+        }
+        RegexInternalModifierRatchet => {
+            &[("modifier", Absent::Str("r")), ("negated", Absent::False)]
+        }
+        RegexQuantifierZeroOrMore | RegexQuantifierOneOrMore | RegexQuantifierZeroOrOne => {
+            &[("backtrack", BACKTRACK)]
+        }
+        RegexQuantifierRange => &[
+            ("min", Absent::TypeObject("Int")),
+            ("max", Absent::TypeObject("Int")),
+            ("excludes-min", Absent::False),
+            ("excludes-max", Absent::False),
+            ("backtrack", BACKTRACK),
+        ],
         StatementList => &[("statements", Absent::EmptyList)],
         StatementExpression => &[
             ("expression", Absent::Required),
@@ -297,6 +324,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexLiteral => "text",
         RegexQuote => "quoted",
         RegexSequence => "terms",
+        RegexAssertionCharClass => "elements",
+        RegexCharClassEnumerationElementCharacter => "character",
         RegexAlternation | RegexSequentialAlternation => "branches",
         RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
         RegexBlock => "block",

@@ -365,15 +365,20 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
             v.visit_name(code, NameKind::Source);
             walk_stmts(v, body);
         }
-        RegexNode::Quantified {
-            atom,
-            quantifier: _,
-        } => v.visit_regex_node(atom),
+        RegexNode::Quantified { atom, quantifier } => {
+            v.visit_regex_node(atom);
+            if let Some(separator) = &quantifier.separator {
+                v.visit_regex_node(&separator.node);
+            }
+        }
         RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
-        | RegexNode::CharClassDigit
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
+        | RegexNode::CharClass(_)
+        | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => {}
     }
 }

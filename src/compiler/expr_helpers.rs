@@ -915,7 +915,7 @@ impl Compiler {
     /// later assignments stay visible to `Regex.Bool` but rebinds do not
     /// (#9396); see `RegexClosure::topic`.
     pub(super) fn regex_literal_topic_capture(&self, v: &Value) -> Option<u32> {
-        if !self.escaping_position {
+        if !self.escaping_position || !regex_captures_topic() {
             return None;
         }
         if !matches!(v.view(), ValueView::Regex(_)) {
@@ -931,6 +931,7 @@ impl Compiler {
     /// defining topic just like a slash regex.
     pub(super) fn regex_literal_topic_capture_for_rx(&self, v: &Value) -> Option<u32> {
         if !self.escaping_position
+            || !regex_captures_topic()
             || !matches!(
                 v.view(),
                 ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
@@ -1151,4 +1152,14 @@ impl Compiler {
             None => true,
         }
     }
+}
+
+/// Whether a regex literal captures its defining scope's `$_` for
+/// `Regex.Bool`. Under `use v6.c` it does not: rakudo's 6.c `Regex.Bool`
+/// matches against the `$_` of the scope that boolifies it, so
+/// `my $r := rx/a/; <a>.map({ so $r })` is `(True)` there and `(False)` from
+/// 6.d on.
+// Cost: O(1).
+fn regex_captures_topic() -> bool {
+    !crate::parser::current_language_version_starts_with("6.c")
 }

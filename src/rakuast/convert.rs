@@ -17,7 +17,7 @@ use crate::ast::{
     Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
-use crate::regex_tree::{RegexModifierKind, RegexNode, RegexQuantifier, RegexTree};
+use crate::regex_tree::{RegexModifierKind, RegexNode, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn unsupported(what: &str) -> RuntimeError {
@@ -2818,24 +2818,16 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             ],
         ),
         RegexNode::Quantified { atom, quantifier } => {
-            let quantifier = match quantifier {
-                RegexQuantifier::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
-                RegexQuantifier::OneOrMore => RakuAstClass::RegexQuantifierOneOrMore,
-                RegexQuantifier::ZeroOrOne => RakuAstClass::RegexQuantifierZeroOrOne,
-            };
-            (
-                RakuAstClass::RegexQuantifiedAtom,
-                vec![
-                    node_field(Some("atom"), regex_node(atom)?),
-                    node_field(
-                        Some("quantifier"),
-                        RakuAstNode {
-                            class: quantifier,
-                            fields: Vec::new(),
-                        },
-                    ),
-                ],
-            )
+            let separator = quantifier
+                .separator
+                .as_ref()
+                .map(|separator| regex_node(&separator.node))
+                .transpose()?;
+            return Ok(super::regex_quantifier::convert(
+                regex_node(atom)?,
+                quantifier,
+                separator,
+            ));
         }
         RegexNode::AnchorBeginningOfString => {
             (RakuAstClass::RegexAnchorBeginningOfString, Vec::new())
@@ -2843,7 +2835,16 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
         RegexNode::AnchorBeginningOfLine => (RakuAstClass::RegexAnchorBeginningOfLine, Vec::new()),
         RegexNode::AnchorEndOfString => (RakuAstClass::RegexAnchorEndOfString, Vec::new()),
         RegexNode::AnchorEndOfLine => (RakuAstClass::RegexAnchorEndOfLine, Vec::new()),
-        RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
+        RegexNode::AnchorLeftWordBoundary => {
+            (RakuAstClass::RegexAnchorLeftWordBoundary, Vec::new())
+        }
+        RegexNode::AnchorRightWordBoundary => {
+            (RakuAstClass::RegexAnchorRightWordBoundary, Vec::new())
+        }
+        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
+        RegexNode::CharClassAssertion(elements) => {
+            return Ok(super::regex_enumeration::convert(elements));
+        }
         RegexNode::InternalModifier {
             kind,
             long,
@@ -2852,6 +2853,8 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             let class = match kind {
                 RegexModifierKind::IgnoreCase => RakuAstClass::RegexInternalModifierIgnoreCase,
                 RegexModifierKind::IgnoreMark => RakuAstClass::RegexInternalModifierIgnoreMark,
+                RegexModifierKind::Sigspace => RakuAstClass::RegexInternalModifierSigspace,
+                RegexModifierKind::Ratchet => RakuAstClass::RegexInternalModifierRatchet,
             };
             let mut fields = Vec::new();
             if *long {
