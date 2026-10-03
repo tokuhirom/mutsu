@@ -777,6 +777,13 @@ impl crate::runtime::Interpreter {
         if !matches!(method, "REPR" | "WHERE") {
             return None;
         }
+        // A role mixed into a handle (the typed `CArray` upstream's
+        // `^parameterize` builds with `.^mixin`, #11209) leaves its storage
+        // and so its REPR alone.
+        if let ValueView::Mixin(inner, _) = target.view() {
+            let inner = Value::clone(&inner);
+            return self.try_native_handle_repr_where(&inner, method);
+        }
         if let ValueView::Array(data, _) = target.view()
             && let Some(body) = data.native_repr_body_address()
         {
@@ -832,7 +839,8 @@ impl crate::runtime::Interpreter {
         // `$bb.realstart` off an `MVMArrayB`. An array whose element type is a
         // reference (`CArray[Str]`) has no storage node and so keeps
         // `P6opaque`, which is the safe direction (§2.1).
-        if crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+        if (crate::value::value_carray::is_native_carray_class(&class_name.resolve())
+            || self.is_carray_repr_class(class_name.as_str()))
             && let Some(body) = crate::value::value_carray::carray_repr_body_address(&attributes)
         {
             return Some(match method {
@@ -894,7 +902,8 @@ impl crate::runtime::Interpreter {
         } else if holds(&reg.cpointer_classes) {
             Some("CPointer")
         } else {
-            None
+            drop(reg);
+            self.is_carray_repr_class(name).then_some("CArray")
         }
     }
 }

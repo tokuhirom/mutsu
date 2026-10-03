@@ -790,6 +790,11 @@ impl Interpreter {
             {
                 return Some(result);
             }
+            // The FETCH/STORE of a native positional reference (`IntPosRef`,
+            // #11209): its first argument is the reference itself.
+            if crate::runtime::native_pos_ref::is_native_pos_ref_routine(name) {
+                return self.try_native_pos_ref_routine(name, args);
+            }
         }
         // #9012: `floor`/`ceiling` as FREE FUNCTIONS return `Int` for a boxed
         // `Num` argument (a literal, a computed value, or a `Num`-typed

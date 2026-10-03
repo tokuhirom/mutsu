@@ -28,6 +28,9 @@ pub(crate) enum CreateKind {
     VmHash,
     /// A bare `is repr('VMArray')` class: mutsu's own array.
     VmArray,
+    /// An `is repr('CArray')` class: an instance with native element storage
+    /// of the type's `.^array_type` (#11209).
+    CArray,
     /// A native array, a Buf/Blob, or a Map/Hash/List/Array: `.new` with no
     /// arguments. In mutsu these are indistinguishable from their own
     /// storage, and nqp code creates one to fill it with `nqp::bindkey` /
@@ -108,6 +111,10 @@ impl Interpreter {
     // Cost: O(a), a = attributes of the class (the cached slot template is copied); a
     // `New` type costs its `.new`.
     pub(crate) fn nqp_create(&mut self, ty: Value) -> Result<Value, RuntimeError> {
+        // A mixin type object keeps its roles (#11209).
+        if let Some(result) = self.nqp_create_mixin(&ty) {
+            return result;
+        }
         // An instance operand creates its class, as MoarVM's `create` takes
         // the operand's type.
         let ty = match ty.view() {
@@ -135,6 +142,7 @@ impl Interpreter {
             }
             CreateKind::VmHash => Ok(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
             CreateKind::VmArray => Ok(Value::real_array(Vec::new())),
+            CreateKind::CArray => self.create_carray_instance(Symbol::intern(name), &ty),
             CreateKind::New => self.call_method_with_values(ty, "new", vec![]),
             // Allocate directly rather than through `call_method_with_values`,
             // whose resolution walk before its own `CREATE` arm cost ~20K
@@ -161,11 +169,16 @@ impl Interpreter {
                 .method_entries
                 .iter()
                 .any(|(key, entry)| key.owner == owner && !entry.user_candidates.is_empty());
-        CreateKind::of(
+        let kind = CreateKind::of(
             name,
             bare && reg.vmhash_classes.contains(short),
             bare && reg.vmarray_classes.contains(short),
-        )
+        );
+        drop(reg);
+        if kind == CreateKind::Create && self.is_carray_repr_class(name) {
+            return CreateKind::CArray;
+        }
+        kind
     }
 
     /// [`Self::create_kind`] of type object `sym`, memoized per type.

@@ -137,6 +137,11 @@ fn elem_from(chunk: &[u8], w: usize, kind: ElemKind) -> Value {
 /// element storage — the targets the in-place editors above apply to. `None`
 /// for anything else (a list, an `IterationBuffer`, a type object, or a user
 /// class that merely has an attribute of the same name).
+///
+/// A role mixed into such a value (`$buf but R`, or the typed `CArray` an
+/// upstream `^parameterize` builds with `.^mixin`, #11209) is the same object
+/// with more methods, so the storage is found through the mixin.
+// Cost: O(m), m = mixin layers (one in practice).
 pub(crate) fn buf_target(
     v: &Value,
 ) -> Option<(crate::symbol::Symbol, crate::gc::Gc<InstanceAttrs>)> {
@@ -146,6 +151,15 @@ pub(crate) fn buf_target(
             attributes,
             ..
         } if node_in(&attributes.as_map()).is_some() => Some((class_name, (*attributes).clone())),
+        crate::value::ValueView::Mixin(inner, _) => buf_target(&inner),
         _ => None,
     }
+}
+
+/// Give `attrs` empty element storage of element type `width`/`kind`: what
+/// `nqp::create` allocates for an `is repr('CArray')` class whose
+/// `.^array_type` is a native numeric type (#11209).
+// Cost: O(1).
+pub(crate) fn install_empty_storage(attrs: &InstanceAttrs, width: u8, kind: ElemKind) {
+    attrs.insert(elems_key(), storage_value(Vec::new(), width, kind));
 }
