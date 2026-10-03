@@ -411,8 +411,16 @@ impl Interpreter {
             // A name imported explicitly into a live scope (an `is export`ed
             // type, `require M <Name>`) is visible however the module was
             // reached.
+            //
+            // So is one a merged module nests its own declarations under:
+            // `use Monad::Maybe` merges the package `Monad` that
+            // `role Monad::Maybe` lives in, and in that module `Monad` is the
+            // class it `use`d -- the bare name resolves (verified against
+            // rakudo), as the qualified gate already lets `Monad::Maybe` do.
             Some(&module) => {
-                self.module_merged_here(module) || self.imported_env_aliases.contains_key(&name)
+                self.module_merged_here(module)
+                    || self.imported_env_aliases.contains_key(&name)
+                    || self.package_granted_here(name.as_str())
             }
         }
     }
