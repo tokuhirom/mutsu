@@ -66,100 +66,6 @@ pub(super) fn parse_leading_int(s: &str) -> i64 {
     signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-/// Parse the native-int form of `nqp::radix`.
-///
-/// Rakudo returns an array containing the wrapped native result, the number of
-/// result digits, and the codepoint offset after the consumed input. The
-/// fourth argument is a flag word: bit 0 forces a negative result, bit 1
-/// parses a leading sign, and bit 2 drops trailing zeroes from the result
-/// while still consuming them. A native integer wraps on overflow, as does
-/// the MoarVM operation.
-fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
-    let radix = iarg(args, 0);
-    let Ok(radix) = u32::try_from(radix) else {
-        return Err(RuntimeError::new("nqp::radix: radix must be in 2..36"));
-    };
-    if !(2..=36).contains(&radix) {
-        return Err(RuntimeError::new("nqp::radix: radix must be in 2..36"));
-    }
-    let no_match = || Value::array(vec![Value::int(0), Value::int(0), Value::int(-1)]);
-    let Some(source) = args.get(1) else {
-        return Ok(no_match());
-    };
-    let pos = iarg(args, 2).max(0) as usize;
-    let flags = iarg(args, 3);
-
-    // `$pos` and the returned offset are grapheme positions, like every other
-    // nqp string op. The scan walks forward from `$pos` over the cached
-    // grapheme index, so it costs the digits consumed, not the whole string.
-    let scanned = crate::builtins::grapheme_index::with_str_index(source, |text, idx| {
-        if pos >= idx.len() {
-            return None;
-        }
-        let mut chars = crate::builtins::str_prim::chars_from(text, idx, pos).peekable();
-        let mut cursor = pos;
-        let mut negative = flags & 0x01 != 0;
-        if flags & 0x02 != 0
-            && let Some(&sign @ ('-' | '+')) = chars.peek()
-        {
-            negative |= sign == '-';
-            chars.next();
-            cursor += 1;
-        }
-        // `acc` accumulates every digit; `kept` is the (value, digit count)
-        // up to the last non-zero digit, the result under flag 0x04.
-        let mut acc = 0i64;
-        let mut count = 0usize;
-        let mut kept = (0i64, 0usize);
-        let mut underscore = false;
-        for ch in chars {
-            if let Some(digit) = crate::builtins::parse_base::char_digit_value(ch, radix) {
-                // Digit accumulation into a native int, wrapping as MoarVM's does.
-                let (base, digit_i) = (i64::from(radix), i64::from(digit));
-                // native-prim: allow
-                acc = acc.wrapping_mul(base).wrapping_add(digit_i);
-                count += 1;
-                if digit != 0 {
-                    kept = (acc, count);
-                }
-                cursor += 1 + usize::from(underscore);
-                underscore = false;
-                continue;
-            }
-            // NQP permits a single underscore between two digits. It is
-            // consumed but does not contribute to either the result or its
-            // digit count; one not followed by a digit is left unconsumed.
-            if ch == '_' && count > 0 && !underscore {
-                underscore = true;
-                continue;
-            }
-            break;
-        }
-        if count == 0 {
-            return None;
-        }
-        let (mut result, digits) = if flags & 0x04 != 0 {
-            kept
-        } else {
-            (acc, count)
-        };
-        if negative {
-            // native-prim: allow
-            result = result.wrapping_neg();
-        }
-        Some((result, digits, cursor))
-    });
-
-    let Some((result, digits, cursor)) = scanned else {
-        return Ok(no_match());
-    };
-    Ok(Value::array(vec![
-        Value::int(result),
-        Value::int(digits as i64),
-        Value::int(cursor as i64),
-    ]))
-}
-
 /// The string forms of a native str op's first two operands, borrowed for a
 /// plain `Str` (a missing operand is the empty string).
 fn str_operands(args: &[Value]) -> (std::borrow::Cow<'_, str>, std::borrow::Cow<'_, str>) {
@@ -206,7 +112,7 @@ fn write_method_for(size: usize, signed: bool) -> &'static str {
 ///
 /// The storage is what MoarVM's byte ops address: `nqp::decode` reads it whole,
 /// and `readuint`/`writeuint` place `offset * width` bytes in.
-fn with_buf_storage_of<R>(
+pub(super) fn with_buf_storage_of<R>(
     op: &str,
     v: &Value,
     f: impl FnOnce(&[u8], usize) -> R,
@@ -223,7 +129,7 @@ fn with_buf_storage_of<R>(
 /// Edit a Buf instance's raw storage in place through its shared attribute cell
 /// (alias-visible), or error naming the op. Costs only what `f` touches (see
 /// [`value_buf::with_buf_storage_mut`]).
-fn buf_storage_mutate(
+pub(super) fn buf_storage_mutate(
     op: &str,
     v: &Value,
     f: impl FnOnce(&mut BufBytes, usize) -> Result<(), RuntimeError>,
@@ -377,7 +283,7 @@ impl Interpreter {
             // offset after consuming the input.
             // Cost: O(k), k = digits consumed from $pos (plus an O(STRIDE) seek to
             // $pos on a non-ASCII string; the grapheme index is cached per string).
-            "radix" => nqp_radix(args),
+            "radix" => super::nqp_radix::nqp_radix(args),
 
             // -- native num comparisons --
             // Cost: O(1).

@@ -34,7 +34,27 @@ pub(crate) fn directives_count_message(fmt: &str, args_used: usize, args_have: u
 /// This is the number of directives (excluding `%%`), counting `*` width/precision
 /// as additional sequential args, and using the highest positional index when
 /// `N$` positional directives are used. Used for `Format.count` / `Format.arity`.
+// Cost: O(n), n = bytes of the format.
 pub(crate) fn sprintf_directive_count(fmt: &str) -> usize {
+    let (sequential_args, max_positional, uses_positional) = directive_tally(fmt);
+    if uses_positional {
+        max_positional
+    } else {
+        sequential_args
+    }
+}
+
+/// The arguments a format consumes in order, leaving out every explicitly
+/// indexed (`N$`) directive: what `nqp::sprintfdirectives` answers
+/// (`"%s %1$s %s"` is 2, `"%2$s %1$d"` is 0 -- measured).
+// Cost: O(n), n = bytes of the format.
+pub(crate) fn sprintf_sequential_count(fmt: &str) -> usize {
+    directive_tally(fmt).0
+}
+
+/// One walk over a format's directives: (args consumed in order, highest
+/// explicit `N$` index, whether any directive was explicitly indexed).
+fn directive_tally(fmt: &str) -> (usize, usize, bool) {
     let bytes = fmt.as_bytes();
     let len = bytes.len();
     let mut pos = 0usize;
@@ -113,11 +133,7 @@ pub(crate) fn sprintf_directive_count(fmt: &str) -> usize {
             sequential_args += 1;
         }
     }
-    if uses_positional {
-        max_positional
-    } else {
-        sequential_args
-    }
+    (sequential_args, max_positional, uses_positional)
 }
 
 /// Validate sprintf format directives. Throws typed exceptions for:

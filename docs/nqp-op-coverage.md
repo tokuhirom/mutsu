@@ -59,16 +59,16 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Profiling | 0 / 3 | 3 | #11504 |
 | Serialization context | 1 / 18 | 17 | #11504 |
 | Stream Decoding | 0 / 10 | 10 | #11503 |
-| String | 25 / 48 | 23 | #11495 |
+| String | 48 / 48 | 0 | #11495 |
 | System Introspection | 18 / 29 | 11 | #11501 |
 | Threads | 0 / 7 | 7 | #11502 |
 | Timish | 1 / 3 | 2 | #11501 |
 | Trigonometric | 10 / 10 | 0 | #11490 |
 | Type / Conversion | 36 / 53 | 17 | #11553 |
-| Unicode Properties | 3 / 8 | 5 | #11495 |
+| Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **365 / 577** | **212** | |
+| **Total** | **393 / 577** | **184** | |
 
 ## Missing ops by category
 
@@ -86,12 +86,10 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
 - **Stream Decoding** (#11503): `decoderaddbytes`, `decoderbytesavailable`, `decoderconfigure`, `decoderempty`, `decodersetlineseps`, `decodertakeallchars`, `decodertakeavailablechars`, `decodertakebytes`, `decodertakechars`, `decodertakeline`
-- **String** (#11495): `codepointfromname`, `codes`, `decodetocodes`, `encode`, `encodefromcodes`, `escape`, `fc`, `indexfrom`, `indexingoptimized`, `normalizecodes`, `ordfirst`, `ordbaseat`, `radix_I`, `replace`, `rindexfrom`, `sprintf`, `sprintfaddargumenthandler`, `sprintfdirectives`, `strfromname`, `substr_s`, `tc`, `tclc`, `unicmp_s`
 - **System Introspection** (#11501): `backendconfig`, `cpucores`, `freemem`, `getenvhash`, `getsignals`, `totalmem`, `uname`, `UNAME_SYSNAME`, `UNAME_RELEASE`, `UNAME_VERSION`, `UNAME_MACHINE`
 - **Threads** (#11502): `currentthread`, `newthread`, `threadid`, `threadjoin`, `threadlockcount`, `threadrun`, `threadyield`
 - **Timish** (#11501): `decodelocaltime`, `sleep`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
-- **Unicode Properties** (#11495): `getuniname`, `getuniprop_bool`, `hasuniprop`, `matchuniprop`, `unipvalcode`
 - **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
