@@ -86,6 +86,18 @@ fn backtrackable_term_atom_end(text: &str) -> Option<usize> {
     }
 }
 
+/// The whitespace after a separator wraps the whole separated quantifier in
+/// a rule. Leave its quantifier backtrackable so a later term can take the last
+/// item. An explicit quantifier modifier keeps its own backtracking policy.
+pub(super) fn mark_separated_quantifier_backtracking(out: &mut String) {
+    let operator_end = out.trim_end().len();
+    let quant_end = out[..operator_end].trim_end_matches('%').trim_end().len();
+    let before = &out[..quant_end];
+    if backtrackable_term_atom_end(before).is_some_and(|atom_end| atom_end < quant_end) {
+        out.insert_str(quant_end, ":!");
+    }
+}
+
 /// Whether the body of a `<…>` assertion is a call that can backtrack: a
 /// named rule, a method or a lexical/variable regex. Lookarounds, character
 /// classes, code assertions and `<.ws>` itself have a single end.
