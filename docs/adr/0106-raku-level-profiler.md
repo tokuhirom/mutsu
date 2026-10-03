@@ -696,6 +696,47 @@ is absent. The default build and all normal profiles pay no allocation-attributi
 regression test runs the feature build and checks the published document, while the normal profile
 tests continue to assert the sampled-time and exact-count halves independently.
 
+### 9.1 A hit is an arrival, and a return is not one (#8737)
+
+**Decision.** `hits` counts *arrivals* at a line: from a different line (the transition edge Slice 3
+shipped), or by coming back around a loop — a compound loop entering its body range for the next trip
+(`run_range`'s entry poll, interpreted or `try_enter_range` native), or a backward transfer (the
+interpreter's dispatch loops and `exec_one_backedge_polled` at the target; the native
+`profile_safepoint` at the jump, which ends the visit so the target block's `profile_line` hook counts
+it). `vm_poll::poll_code` carries an `arrival` flag that is read only inside the armed-profiler
+branch, where it calls `profile::end_line_visit`. A line holding a whole loop therefore reports trips +
+1, the same `trips + 1` a multi-line `while` header always reported. This is a change, not an option:
+a per-entry count of a one-line loop answered no question a reader brings to a line profile.
+
+**A return is not an arrival.** The counter's "last line" is kept per routine depth
+(`routine_stack().len()`; a routine frame resets the slot it is about to occupy). Before, the
+interpreter — polling every op under the profiler — counted the calling line again when a call
+returned, while native code, which hooks only line transitions and jump targets, did not; a
+20-iteration statement-modifier loop calling a sub reported 21 hits interpreted and 20 native, a
+gate-4 violation the Slice 3 fixture (no calls) could not show. Both now report 21.
+
+**Gates, re-measured** (release binaries of `721b221c` and this change, callgrind `Ir`,
+`MUTSU_GC=off`, the §8.1 protocol):
+
+| workload | JIT | baseline Ir | after #8737 | delta |
+|---|---|---:|---:|---:|
+| `bench-fib` | off | 2,971,171,918 | 2,971,167,208 | -0.000% |
+| `bench-tak` | off | 2,912,242,682 | 2,912,241,556 | -0.000% |
+| `bench-mandelbrot` | off | 1,138,537,427 | 1,142,012,302 | +0.305% |
+| `bench-fib` | on | 1,566,018,766 | 1,566,016,666 | -0.000% |
+| `bench-tak` | on | 1,876,213,260 | 1,876,210,194 | -0.000% |
+| `bench-mandelbrot` | on | 623,724,514 | 623,792,646 | +0.011% |
+
+Gates 1 and 1c pass (all inside 0.5%). Gate 1b is untouched: the only new state is the per-thread
+`LAST_LINES` vector, created by the first armed poll. Gate 2: `bench-json-fast`, release, median of
+seven runs — 218 ms armed on the baseline against 219 ms armed after the change (disarmed 247/229 ms,
+i.e. on this 4-core container the armed/disarmed ratio is inside run-to-run noise either way, far under
+the 1.30x budget). Gates 3 and 4: `tests/profile_counts.rs` adds one-line `for`, `while`, C-style
+`loop`, `repeat`, statement-modifier `for` and `nqp::while` at trips + 1, and a calling line at one hit
+per arrival, each with JIT on/off parity. Still open on gate 4: an interpreted routine body run on a
+call fast path records no line hits at all
+([#11660](https://github.com/tokuhirom/mutsu/issues/11660)).
+
 ## 10. Open questions
 
 - **Rate and clock.** The 1000 Hz default, borrowed from stackprof/py-spy, now has a number against
