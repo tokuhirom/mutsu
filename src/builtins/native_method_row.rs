@@ -119,6 +119,12 @@ impl NativeRowFlags {
     /// by a throwaway generator, like the other flags. Read by
     /// [`native_method_declared`].
     pub(crate) const DECLARED: NativeRowFlags = NativeRowFlags(1 << 4);
+    /// #10234: the method Rakudo declares as `name` on `owner` (a
+    /// [`Self::DECLARED`] row) is an `only` method, not a multi dispatcher,
+    /// so an `augment` of `owner` may not redeclare it. Checked against the
+    /// `only` lines of `rakudo_method_tables.txt`. Read by
+    /// [`native_method_declared_only`].
+    pub(crate) const ONLY_METHOD: NativeRowFlags = NativeRowFlags(1 << 5);
 
     pub(crate) const fn contains(self, bit: NativeRowFlags) -> bool {
         self.0 & bit.0 != 0
@@ -240,6 +246,49 @@ pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
     classification_table()
         .get(&(owner, name))
         .is_some_and(|&(_, flags)| NativeRowFlags(flags).contains(NativeRowFlags::DECLARED))
+}
+
+/// #10234: Rakudo declares `name` directly on `owner` as an `only` method
+/// ([`NativeRowFlags::ONLY_METHOD`]). `owner` is the exact type, never
+/// folded: a name an owner only inherits (`Array.sort`, declared on `List`)
+/// is free to augment.
+// Cost: O(1) expected (one hash probe).
+pub(crate) fn native_method_declared_only(owner: &str, name: &str) -> bool {
+    classification_table()
+        .get(&(owner, name))
+        .is_some_and(|&(_, flags)| {
+            let flags = NativeRowFlags(flags);
+            flags.contains(NativeRowFlags::DECLARED) && flags.contains(NativeRowFlags::ONLY_METHOD)
+        })
+}
+
+/// #10234: the compile-time error Rakudo raises when `augment class owner`
+/// declares a method `name` that `owner` itself already declares. A plain,
+/// `only` or `proto` method cannot be added next to any method of that name
+/// in `owner`'s own method table, multi dispatcher or not (`augment class Str
+/// { method uc {...} }` dies although `Str.uc` is a multi). A `multi`
+/// candidate can join a multi, but not an `only` method. `None` when the
+/// declaration is legal, including for a name `owner` only inherits
+/// (`Array.sort`, declared on `List`; `Str.FatRat`, declared on `Cool`).
+// Cost: O(1) expected (one hash probe).
+pub(crate) fn augment_core_method_conflict(
+    owner: &str,
+    name: &str,
+    is_multi: bool,
+) -> Option<String> {
+    if is_multi {
+        native_method_declared_only(owner, name).then(|| {
+            format!(
+                "Cannot have a multi candidate for '{name}' when an only method is also in the package '{owner}'"
+            )
+        })
+    } else {
+        native_method_declared(owner, name).then(|| {
+            format!(
+                "Package '{owner}' already has a method '{name}' (did you mean to declare a multi method?)"
+            )
+        })
+    }
 }
 
 /// ADR-0019 Phase F box F3 step 3: the `.^methods` name list for a *folded*

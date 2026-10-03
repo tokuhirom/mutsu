@@ -8,9 +8,14 @@
 #                                             (what `.^can` walks per MRO level)
 #   methods<TAB>Owner<TAB>name<TAB>name...    names of ::(Owner).^methods
 #                                             (what `.^methods` reports)
+#   only<TAB>Owner<TAB>name<TAB>name...       the `declared` names whose method
+#                                             is an `only` method, not a multi
+#                                             dispatcher (what an `augment`
+#                                             may not redeclare, #10234)
 #
 # A `#[test]` in src/builtins/native_method_row.rs reads this snapshot as the
-# oracle for the row catalog's DECLARED / INTROSPECTABLE flags (#11271). Owners
+# oracle for the row catalog's DECLARED / INTROSPECTABLE / ONLY_METHOD flags
+# (#11271, #10234). Owners
 # that are not classes in Rakudo (roles such as Blob, RakuAST model nodes that
 # mutsu models separately) are skipped. Regenerate with
 #
@@ -35,6 +40,10 @@ for @owners -> $owner {
     next unless $type.HOW ~~ Metamodel::ClassHOW | Metamodel::EnumHOW;
     my @declared = try { clean($type.^method_table.keys) } // next;
     my @methods = try { clean($type.^methods.map(*.name)) } // next;
+    my @only = try {
+        clean($type.^method_table.pairs.grep({ !.value.?is_dispatcher }).map(*.key))
+    } // next;
     say join "\t", 'declared', $owner, |@declared;
     say join "\t", 'methods', $owner, |@methods;
+    say join "\t", 'only', $owner, |@only;
 }
