@@ -918,15 +918,7 @@ impl Compiler {
         if !self.escaping_position {
             return None;
         }
-        // An `rx/.../` the static regex tree cannot represent (`\w`, `.`,
-        // `<-[:]>`, ...) stays a plain `RegexWithAdverbs` literal instead of
-        // an `Expr::RegexLiteral`; it escapes just the same
-        // (`.grep({ rx/ ^ \w+ ':' / })`), so `Regex.Bool` must see the
-        // defining `$_`, not answer True for any regex value.
-        if !matches!(
-            v.view(),
-            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-        ) {
+        if !matches!(v.view(), ValueView::Regex(_)) {
             return None;
         }
         Some(self.regex_topic_capture_slot())

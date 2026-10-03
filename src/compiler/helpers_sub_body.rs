@@ -828,6 +828,18 @@ impl Compiler {
     pub(super) fn compile_routine_tail_expr(&mut self, expr: &Expr) {
         if self.rw_tail {
             self.compile_return_rw_arg(expr);
+        } else if let Expr::Literal(v) = expr
+            && matches!(v.view(), crate::value::ValueView::RegexWithAdverbs(_))
+            && self.escaping_position
+        {
+            // A block returning an `rx/.../` the static regex tree could not
+            // represent (`.grep({ rx/ ^ \w+ ':' / })`, so a plain literal,
+            // not an `Expr::RegexLiteral`): the returned value answers
+            // `Regex.Bool` against this block's topic, as a returned
+            // `RegexLiteral` does. A regex merely stored in a variable
+            // (`my $r := rx/.../`) keeps `Regex.Bool` dynamic.
+            let topic = self.regex_literal_topic_capture_for_rx(v);
+            self.compile_literal_constant_with_topic(v, topic);
         } else {
             self.with_stmt_root(|c| c.compile_expr(expr));
         }
