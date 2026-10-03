@@ -249,12 +249,17 @@ impl Interpreter {
                 .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
                 .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
         };
-        let cacheable = match self.caches.private_type_cacheable.get(&(class_sym, method_sym)) {
+        let cacheable = match self
+            .caches
+            .private_type_cacheable
+            .get(&(class_sym, method_sym))
+        {
             Some(&c) => c,
             None => {
                 let (_, value_dependent) =
                     self.method_candidate_shape(class_sym.as_str(), private_rest);
-                self.caches.private_type_cacheable
+                self.caches
+                    .private_type_cacheable
                     .insert((class_sym, method_sym), !value_dependent);
                 !value_dependent
             }
@@ -271,7 +276,9 @@ impl Interpreter {
         let resolved = self
             .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
             .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
-        self.caches.private_resolve_cache.insert(key, resolved.clone());
+        self.caches
+            .private_resolve_cache
+            .insert(key, resolved.clone());
         resolved
     }
 
