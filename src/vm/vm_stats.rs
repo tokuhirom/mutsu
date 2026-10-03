@@ -1638,12 +1638,16 @@ pub(crate) fn dump() {
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
     let jit_bailouts = JIT_BAILOUTS.load(Ordering::Relaxed);
-    // Tier B GetLocal fast-path spoiler latches (J4d): nonzero means every
-    // inline local read fell back to the shim for the rest of the run.
+    // Tier B GetLocal fast-path spoiler latch (J4d): a nonzero
+    // `local_read_spoilers` means every `GetLocal` fast read (the JIT's inline
+    // one and the interpreter's #8332 one) fell back to the full guard chain
+    // for the rest of the run. `container_cells` is a statistic only; a cell no
+    // longer spoils the latch (ADR-0097 §15).
     let cells = crate::value::CONTAINER_CELLS.load(Ordering::Relaxed);
     let caller_binds = crate::vm::vm_jit::CALLER_VAR_BINDS.load(Ordering::Relaxed);
+    let spoilers = crate::vm::vm_jit::LOCAL_READ_SPOILERS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds}"
+        "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds} local_read_spoilers={spoilers}"
     );
     eprintln!(
         "[mutsu vm-stats] poll: polls={}",
