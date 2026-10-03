@@ -950,6 +950,15 @@ def stale_files(root: str, base: str, paths: list[str]) -> list[tuple[str, str]]
     return sorted(found.items())
 
 
+def declared_deletion(root: str, path: str, messages: list[str]) -> bool:
+    """Whether the branch deletes `path` on purpose: it is gone from the working
+    tree and one of the branch's commit messages carries a `Deletes: <path>`
+    trailer. Retiring a file main added recently is otherwise indistinguishable
+    from the stale-tree shape (a deletion of a file main added recently)."""
+    return (worktree_state(root, path) is None
+            and any(line.strip() == f"Deletes: {path}" for line in messages))
+
+
 def stale_tree_self_test() -> bool:
     """main gains `other` after the branch point; a branch whose own tree is
     then committed on top of that main must have `other` flagged, its own
@@ -977,11 +986,15 @@ def stale_tree_self_test() -> bool:
         write("own", "2\n")
         git("commit", "-q", "-am", "own change")
         clean = stale_files(repo, newer_main, ["own"])
+        os.remove(os.path.join(repo, "other"))
+        declared = (declared_deletion(repo, "other", ["Deletes: other"])
+                    and not declared_deletion(repo, "other", ["Deletes: own"]))
+        git("checkout", "-q", "--", "other")
         git("reset", "-q", "--soft", newer_main)
         git("commit", "-q", "-m", "squash onto the newer main")
         paths = git_lines(repo, "diff", "--name-only", newer_main) or []
         stale = [path for path, _ in stale_files(repo, newer_main, paths)]
-        return clean == [] and stale == ["other"] and "own" in paths
+        return clean == [] and stale == ["other"] and "own" in paths and declared
 
 
 def cmd_branch_check(root: str, _args) -> int:
@@ -1007,7 +1020,8 @@ def cmd_branch_check(root: str, _args) -> int:
     if any(line.startswith("This reverts commit") for line in messages):
         print("branch-check: the branch carries a `git revert`; older states are expected")
         return 0
-    stale = stale_files(root, base, paths)
+    stale = [(path, commit) for path, commit in stale_files(root, base, paths)
+             if not declared_deletion(root, path, messages)]
     for path, commit in stale:
         print(f"branch-check: {path} is back at its state in older main commit {commit[:12]}: "
               f"this branch would revert main's later changes to it")

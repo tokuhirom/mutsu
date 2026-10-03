@@ -187,7 +187,8 @@ work, so free space with the `reclaim-disk` skill and continue.
 Run **`scripts/dev gate`** and **do not publish until its verdict is `pass`.** It is one job that runs
 the branch check (`scripts/dev branch-check`: lists every file the branch changes against its merge
 base with `origin/main`, and fails when one is back at an *older* `main` state — the shape of a stale
-tree committed on a newer `main`; read that list against what you meant to change), then
+tree committed on a newer `main`; read that list against what you meant to change; deleting a file
+`main` added recently on purpose needs a `Deletes: <path>` trailer in one of the branch's commits), then
 `make checks` (the build-free static guards: `t/` layout, ratchets, self-tests — first, so they fail in
 seconds), `cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
 writes a structured `report.json` ([ADR-0126](docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md)).
