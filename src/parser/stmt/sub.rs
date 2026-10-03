@@ -11,6 +11,7 @@ use super::super::add_parse_warning;
 use super::{block_inner, ident, keyword, parse_raku_ident, routine_block};
 
 mod op_name;
+mod outer_slurpy;
 mod param_list;
 mod param_validate;
 mod return_type;
@@ -21,6 +22,7 @@ mod traits;
 // --- Re-exports preserving each function's original visibility. ---
 
 // Signature/parameter validation (param_validate.rs).
+pub(crate) use outer_slurpy::enter_routine_body;
 pub(crate) use param_validate::{is_builtin_param_trait, placeholder_overrides_signature_error};
 pub(super) use param_validate::{
     literal_value_from_expr, validate_param_trait, validate_param_trait_pub,

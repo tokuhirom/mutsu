@@ -149,6 +149,7 @@ fn method_decl_body_with_my(
 
     let (rest, traits) = super::super::sub::parse_sub_traits(rest)?;
     let return_type = traits.return_type.or(param_return_type);
+    let slurpy_scope = super::super::sub::enter_routine_body(&param_defs, true);
     let (rest, body) = if param_defs.iter().any(|p| p.sigilless) {
         // When there are sigilless params, register them as term symbols in the
         // block scope so bare references resolve to the parameter rather than to
@@ -169,6 +170,7 @@ fn method_decl_body_with_my(
     } else {
         super::super::method_block(rest)?
     };
+    drop(slurpy_scope);
     // When no explicit signature is given, collect placeholder variables
     // (@_, $^a, $^b, etc.) from the body as implicit parameters.
     let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {

@@ -437,6 +437,7 @@ pub(crate) fn sub_decl_body(
             }
         }
     }
+    let slurpy_scope = super::outer_slurpy::enter_routine_body(&param_defs, false);
     let (rest, body) = if any_sigilless(&param_defs) || any_callable_param(&param_defs) {
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
@@ -454,6 +455,7 @@ pub(crate) fn sub_decl_body(
             Err(err) => return Err(err),
         }
     };
+    drop(slurpy_scope);
     // A routine declared with an explicit signature (`sub f() { ... }`, even an
     // empty one) cannot also use placeholder variables in its body — that would
     // override the existing signature. This is X::Signature::Placeholder.
