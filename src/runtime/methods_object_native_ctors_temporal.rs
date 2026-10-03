@@ -435,7 +435,7 @@ impl Interpreter {
             Value::rat_raw(0, 0)
         } else {
             match args.first() {
-                Some(v) => crate::builtins::arith::real_to_rat(v),
+                Some(v) => crate::builtins::arith::tai_rat(v),
                 None => crate::value::make_rat(0, 1),
             }
         };

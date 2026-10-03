@@ -268,7 +268,7 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
         // Duration.new($seconds % $real). arith_mod throws X::Numeric::DivideByZero
         // when the divisor is zero.
         let modded = arith_mod(real_to_rat(&raw), right)?;
-        return Ok(make_duration_from_value(real_to_rat(&modded)));
+        return Ok(make_duration_from_value(super::temporal::tai_rat(&modded)));
     }
     let (mut l, mut r) = crate::runtime::coerce_numeric(left, right);
     // Mixed Num/Rat modulo should use floating semantics; routing through

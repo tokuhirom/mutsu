@@ -531,10 +531,12 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let cn = class_name.resolve();
         if cn == "Instant" && method.replace('-', "_") == "from_posix" {
-            let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
-            let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(secs);
+            let posix = args.first().cloned().unwrap_or_else(|| Value::int(0));
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::num(tai));
+            attrs.insert(
+                "value".to_string(),
+                crate::builtins::arith::posix_to_tai(&posix),
+            );
             return Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)));
         }
         None
