@@ -12,7 +12,9 @@
 
 mod attribute;
 mod contextualizer;
+mod bareword;
 mod convert;
+mod core_term_names;
 mod core_type_names;
 mod decl_traits;
 mod fields;
@@ -157,6 +159,7 @@ pub enum RakuAstClass {
     Signature,
     Parameter,
     ParameterTargetVar,
+    ParameterTargetTerm,
     // Phase 2 slice 4: conditionals and loops.
     StatementIf,
     StatementUnless,
@@ -406,6 +409,7 @@ impl RakuAstClass {
             Signature => "RakuAST::Signature",
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
+            ParameterTargetTerm => "RakuAST::ParameterTarget::Term",
             StatementIf => "RakuAST::Statement::If",
             StatementUnless => "RakuAST::Statement::Unless",
             StatementLoopWhile => "RakuAST::Statement::Loop::While",
@@ -956,6 +960,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Signature,
     RakuAstClass::Parameter,
     RakuAstClass::ParameterTargetVar,
+    RakuAstClass::ParameterTargetTerm,
     RakuAstClass::StatementIf,
     RakuAstClass::StatementUnless,
     RakuAstClass::StatementLoopWhile,
@@ -2450,6 +2455,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
         ("RakuAST::Term::TopicCall", "new") => RakuAstClass::TermTopicCall,
+        ("RakuAST::ParameterTarget::Term", "new") => RakuAstClass::ParameterTargetTerm,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
@@ -2750,6 +2756,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TraitOf
             | RakuAstClass::Parameter
             | RakuAstClass::ParameterTargetVar
+            | RakuAstClass::ParameterTargetTerm
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
             | RakuAstClass::InitializerBind

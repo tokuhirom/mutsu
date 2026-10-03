@@ -1169,19 +1169,31 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     } else {
         None
     };
+    let mut sigilless = false;
     let name = if let Some(target) = parameter.fields.iter().find(|f| f.name == Some("target")) {
         let target = child_node(&target.value)?;
-        if target.class != RakuAstClass::ParameterTargetVar {
-            return Err(unsupported(owner));
+        match target.class {
+            RakuAstClass::ParameterTargetVar => {
+                let raw = leaf_str(target, "name")?;
+                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
+            }
+            // `\x`: the term's name is the parameter's, with no sigil to strip.
+            RakuAstClass::ParameterTargetTerm => {
+                sigilless = true;
+                match name_parts::name_shape(named_child_or_positional(target)?) {
+                    Some(NameShape::Identifier(name)) => name,
+                    _ => return Err(unsupported(owner)),
+                }
+            }
+            _ => return Err(unsupported(owner)),
         }
-        let raw = leaf_str(target, "name")?;
-        raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
     } else {
         return Err(unsupported(owner));
     };
     let mut def = positional_param(&name);
+    def.sigilless = sigilless;
     // A named parameter `:$x` carries a `names` list; it binds by name and is
     // optional by default.
     if parameter.fields.iter().any(|f| f.name == Some("names")) {
@@ -2906,10 +2918,12 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         },
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
-        // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
+        // `True`/`False` -> the Bool literal; any other setting enum value
+        // (`Less`, `Kept`) -> the bareword the parser produces for it.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
             ValueView::Str(s) if s.as_str() == "False" => Ok(Expr::Literal(Value::truth(false))),
+            ValueView::Str(s) if !s.is_empty() => Ok(Expr::BareWord(s.to_string())),
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.

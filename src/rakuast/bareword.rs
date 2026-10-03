@@ -1,0 +1,225 @@
+//! What a bareword renders as (`Expr::BareWord` → RakuAST).
+//!
+//! Rakudo resolves a bareword at parse time, so its RakuAST node says what the
+//! name *is*: a type object renders as `Type::Simple`, a constant or other
+//! defined term as `Term::Name`, a setting enum value as `Term::Enum`, and a
+//! routine called without arguments as `Call::Name::WithoutParentheses`.
+//! mutsu's parser leaves all of these as `Expr::BareWord`, so the converter
+//! re-derives which is which from the setting (the generated name lists) and
+//! from the compilation unit's own declarations. A bareword none of those
+//! resolves stays the conversion boundary: guessing would render a wrong node.
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use super::convert::{leaf_field, name_from_identifier, node_field};
+use super::{RakuAstClass, RakuAstNode, core_term_names, core_type_names, name_parts};
+use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
+use crate::qualified::qualified;
+use crate::runtime::utils::is_known_type_constraint;
+use crate::symbol::Symbol;
+use crate::value::Value;
+
+/// What a bareword naming something the same compilation unit declared means.
+///
+/// raku resolves such a name at parse time, so `class C { }; C.new` renders `C`
+/// as a `Type::Simple` — exactly like a builtin type — and
+/// `constant X = 5; X` renders `X` as a `Term::Name`. Both measured against
+/// rakudo 2026.07.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeclaredKind {
+    /// A `class` / `role` / `grammar` / `enum` name.
+    Type,
+    /// A `constant` name, an enum value the unit declares (`Red`,
+    /// `Color::Red`), or a sigilless parameter (`\x`): all render as
+    /// `Term::Name` (measured on rakudo 2026.09).
+    Term,
+}
+
+thread_local! {
+    /// The names the compilation unit currently being converted declares.
+    /// Empty outside a conversion, so a nested/re-entrant conversion that never
+    /// ran `statement_list` simply sees no declarations and keeps the old
+    /// bareword boundary.
+    static DECLARED_NAMES: RefCell<HashMap<String, DeclaredKind>> =
+        RefCell::new(HashMap::new());
+}
+
+/// RAII guard installing the unit's declared names for the duration of a
+/// conversion, restoring whatever was there before (so a nested conversion
+/// cannot leak its names into the outer one).
+pub(super) struct DeclaredNames(HashMap<String, DeclaredKind>);
+
+impl DeclaredNames {
+    // Cost: O(n), n = size of the unit's AST (one `collect_declared_names` scan).
+    pub(super) fn collect(stmts: &[Stmt]) -> Self {
+        let mut names = HashMap::new();
+        collect_declared_names(stmts, &mut names);
+        Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
+    }
+}
+
+impl Drop for DeclaredNames {
+    fn drop(&mut self) {
+        DECLARED_NAMES.with(|d| {
+            *d.borrow_mut() = std::mem::take(&mut self.0);
+        });
+    }
+}
+
+fn declared_kind(name: &str) -> Option<DeclaredKind> {
+    DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
+}
+
+/// Whether a `::`-qualified package name resolves at parse time: a run of
+/// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
+/// declares (including the stub `A` a `class A::B { }` creates).
+pub(super) fn package_resolves(stem: &str) -> bool {
+    name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
+        || is_known_type_constraint(stem)
+        || declared_kind(stem) == Some(DeclaredKind::Type)
+}
+
+/// Record a declared type name, together with the stub packages a qualified
+/// name implies: `class A::B { }` makes `A` resolve too, and raku renders a
+/// later bareword `A` as a `Type::Simple` (measured on 2026.09).
+fn insert_declared_type(name: Symbol, out: &mut HashMap<String, DeclaredKind>) {
+    out.insert(name.resolve(), DeclaredKind::Type);
+    for stub in crate::qualified::package_ancestors(name).skip(1) {
+        out.entry(stub.resolve()).or_insert(DeclaredKind::Type);
+    }
+}
+
+/// The names a statement list declares, at any depth: raku resolves a name
+/// declared anywhere the reference can see it, and a bareword that reaches
+/// conversion at all was already accepted by the parser. So the scan enters
+/// every child -- a declaration in an `if` or loop body, a closure or a `do`
+/// block counts as well as one in a class, routine or bare block.
+// Cost: O(n), n = size of the AST.
+fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind>) {
+    struct Scan<'o>(&'o mut HashMap<String, DeclaredKind>);
+
+    impl<'ast> Visit<'ast> for Scan<'_> {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            match stmt {
+                // An enum's values are terms of their own, bare and qualified
+                // by the enum's name (`Red`, `Color::Red`).
+                Stmt::EnumDecl { name, variants, .. } => {
+                    insert_declared_type(*name, self.0);
+                    for (variant, _) in variants {
+                        self.0.entry(variant.clone()).or_insert(DeclaredKind::Term);
+                        let qualified = qualified(*name, Symbol::intern(variant));
+                        self.0
+                            .entry(qualified.resolve())
+                            .or_insert(DeclaredKind::Term);
+                    }
+                }
+                // A `module`/`package`/`grammar` name resolves at parse time
+                // just like a class one: raku renders a later bareword `M` as
+                // a `Type::Simple` (measured on `module M { }; M.HOW`).
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. }
+                | Stmt::Package { name, .. } => insert_declared_type(*name, self.0),
+                Stmt::VarDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                    self.0.insert(name.clone(), DeclaredKind::Term);
+                }
+                _ => {}
+            }
+            walk_stmt(self, stmt);
+        }
+
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            // `-> \v { v }` keeps its one parameter outside a `ParamDef`.
+            if let Expr::Lambda {
+                param,
+                param_sigilless: true,
+                ..
+            } = expr
+            {
+                self.0.entry(param.clone()).or_insert(DeclaredKind::Term);
+            }
+            walk_expr(self, expr);
+        }
+
+        fn visit_param(&mut self, param: &'ast ParamDef) {
+            // A sigilless parameter (`\x`, `-> \v`) is a term; a `+a` /
+            // `|c` slurpy carries the same flag and renders the same way.
+            if param.sigilless && !param.name.is_empty() {
+                self.0
+                    .entry(param.name.clone())
+                    .or_insert(DeclaredKind::Term);
+            }
+            walk_param(self, param);
+        }
+    }
+
+    walk_stmts(&mut Scan(out), stmts);
+}
+
+/// The redispatch routines a body calls without arguments (`callsame`,
+/// `nextsame`): raku renders each as `Call::Name::WithoutParentheses` with no
+/// `args`, the node an argument-less listop call of a declared sub gets too.
+/// mutsu's parser keeps them as barewords; the call they lower back to
+/// dispatches the same way.
+const REDISPATCH_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcallee"];
+
+/// The RakuAST node a bareword renders as, or `None` when nothing resolves the
+/// name (the conversion boundary).
+// Cost: O(k), k = length of `name` (a fixed number of hash lookups).
+pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
+    // `self` -> `Term::Self`, a node with no fields.
+    if name == "self" {
+        return Some(RakuAstNode {
+            class: RakuAstClass::TermSelf,
+            fields: Vec::new(),
+        });
+    }
+    // A bare type name used as a term (`Int`, `X::AdHoc`) -> `Type::Simple`.
+    if is_known_type_constraint(name) || core_type_names::contains(name) {
+        return Some(simple_type_node(name));
+    }
+    // A name the same compilation unit declared shadows a setting one.
+    match declared_kind(name) {
+        Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
+        Some(DeclaredKind::Term) => return Some(term_name(name)),
+        None => {}
+    }
+    match core_term_names::kind(name) {
+        Some(core_term_names::TermKind::Enum) => {
+            return Some(RakuAstNode {
+                class: RakuAstClass::TermEnum,
+                fields: vec![leaf_field(None, Value::str(name.to_string()))],
+            });
+        }
+        Some(core_term_names::TermKind::Name) => return Some(term_name(name)),
+        None => {}
+    }
+    if REDISPATCH_CALLS.contains(&name) {
+        return Some(RakuAstNode {
+            class: RakuAstClass::CallNameWithoutParentheses,
+            fields: vec![node_field(Some("name"), name_from_identifier(name))],
+        });
+    }
+    None
+}
+
+fn term_name(name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::TermName,
+        fields: vec![node_field(None, name_from_identifier(name))],
+    }
+}
+
+/// A bare simple type `Int` -> `Type::Simple(Name.from-identifier("Int"))`.
+pub(super) fn simple_type_node(t: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::TypeSimple,
+        fields: vec![node_field(None, name_from_identifier(t))],
+    }
+}
