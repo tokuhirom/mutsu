@@ -14,8 +14,9 @@ impl Interpreter {
         target: crate::runtime::PosLightTarget,
     ) {
         self.bump_pos_light_ic_epoch();
-        let generation = self.fn_resolve_gen;
-        self.pos_light_call_cache
+        let generation = self.caches.fn_resolve_gen;
+        self.caches
+            .pos_light_call_cache
             .insert(generation, (name, pkg), target);
     }
 
@@ -418,8 +419,9 @@ impl Interpreter {
             let name_sym = code.const_sym(name_idx);
             let cur_pkg_sym = self.current_package_sym();
             if let Some((cached_key, cached_fp)) = self
+                .caches
                 .light_call_cache
-                .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
@@ -738,9 +740,9 @@ impl Interpreter {
             // The entries are generation-tagged and survive a generation
             // change; only the `call_ic` slots, which carry no generation of
             // their own, have to be retired by one (#9073).
-            if self.pos_light_call_cache_gen != self.fn_resolve_gen {
+            if self.caches.pos_light_call_cache_gen != self.caches.fn_resolve_gen {
                 self.bump_pos_light_ic_epoch();
-                self.pos_light_call_cache_gen = self.fn_resolve_gen;
+                self.caches.pos_light_call_cache_gen = self.caches.fn_resolve_gen;
             }
             {
                 // An OTF-compiled body is owned by the cache rather than by
@@ -771,8 +773,9 @@ impl Interpreter {
                     .map(|p| unsafe { Self::ic_target(compiled_fns, p) });
                 if cached.is_none() {
                     cached = match self
+                        .caches
                         .pos_light_call_cache
-                        .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                        .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                     {
                         Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
                             let (key, fingerprint) = (*key, *fingerprint);
@@ -950,8 +953,9 @@ impl Interpreter {
             {
                 let cur_pkg_sym = self.current_package_sym();
                 if let Some((cached_key, cached_fp)) = self
+                    .caches
                     .light_call_cache
-                    .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                    .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                     && let Some(cf) = compiled_fns.get(cached_key)
                     && cf.fingerprint == *cached_fp
                 {
@@ -1046,8 +1050,9 @@ impl Interpreter {
                 let cur_pkg_sym = self.current_package_sym();
                 if !self.has_multi_candidates_cached_sym(name_sym)
                     && let Some((def_pkg_sym, cf)) = self
+                        .caches
                         .otf_call_cache
-                        .get(self.fn_resolve_gen, &name_sym)
+                        .get(self.caches.fn_resolve_gen, &name_sym)
                         .filter(|(pkg, _, _)| *pkg == cur_pkg_sym)
                         .map(|(_, def_pkg, cf)| (*def_pkg, Arc::clone(cf)))
                     && !cf.has_inner_subs
@@ -1265,8 +1270,10 @@ impl Interpreter {
             if use_cache
                 && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
-                && let Some((cached_key, cached_fp, _)) =
-                    self.fn_resolve_cache.get(self.fn_resolve_gen, &cache_key)
+                && let Some((cached_key, cached_fp, _)) = self
+                    .caches
+                    .fn_resolve_cache
+                    .get(self.caches.fn_resolve_gen, &cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)
@@ -1461,6 +1468,11 @@ impl Interpreter {
         // above can never hold one of these names because they are only
         // populated further down, past this gate.
         if Self::name_is_core_type_coercer(&name) && !args.is_empty() {
+            // The coercers read their argument's elements directly, so a
+            // still-deferred `.map`/`.grep` Seq must be pulled first (the
+            // same ADR-0058 guard `try_native_function` applies); otherwise
+            // `Bag(@rows.map({ ... }))` sees the empty seed.
+            self.reify_map_grep_seq_args(&args)?;
             let result = self.vm_call_function(&name, args)?;
             self.stack.push(result);
             return Ok(());
@@ -1995,8 +2007,9 @@ impl Interpreter {
                 {
                     let cur_pkg_sym = self.current_package_sym();
                     if self
+                        .caches
                         .pos_light_call_cache
-                        .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                        .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                         .is_none()
                     {
                         let mut found: Option<Symbol> = None;
@@ -2055,8 +2068,9 @@ impl Interpreter {
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let cur_pkg_sym = self.current_package_sym();
-                    let generation = self.fn_resolve_gen;
+                    let generation = self.caches.fn_resolve_gen;
                     if self
+                        .caches
                         .light_call_cache
                         .get(generation, &(name_sym, cur_pkg_sym))
                         .is_none()
@@ -2064,7 +2078,7 @@ impl Interpreter {
                         // Find the compiled_fns key for this function
                         for (key, func) in compiled_fns.iter() {
                             if std::ptr::eq(func, cf) {
-                                self.light_call_cache.insert(
+                                self.caches.light_call_cache.insert(
                                     generation,
                                     (name_sym, cur_pkg_sym),
                                     (*key, cf.fingerprint),

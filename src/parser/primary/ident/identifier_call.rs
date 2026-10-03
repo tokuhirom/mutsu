@@ -2467,9 +2467,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     let is_terminator_or_dot = is_terminator || rest_trimmed.starts_with('.');
 
     // User-declared and imported subs can be called with no args as bare words
-    // in statement position (e.g., `make-temp-dir;`).
+    // in statement position (e.g., `make-temp-dir;`). A declared enum value of
+    // the same name is a term, and a bare identifier names the term before it
+    // names `&name`: with `enum U <minutes>` and `sub minutes($n)` both in
+    // scope, `timeunit(3, minutes)` passes the enum value (TimeUnit).
     if (crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name))
+        && !crate::parser::stmt::simple::is_user_declared_enum_value(&name)
         // A comma ends a no-arg call too (`:$user = generate-key, :$host`): left
         // as a BareWord it would resolve at run time in the *caller's* scope, which
         // cannot see a module's lexical sub (Email::MessageID). A capitalised name is a type object.

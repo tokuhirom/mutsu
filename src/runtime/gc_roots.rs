@@ -98,8 +98,8 @@ impl Interpreter {
         }
         visit_slice(visitor, &self.enter_result_stack);
         visit_opt(visitor, &self.rw_map_topic_capture);
-        visit_opt(visitor, &self.action_made);
-        visit_opt(visitor, &self.current_grammar_actions);
+        visit_opt(visitor, &self.regex_state.action_made);
+        visit_opt(visitor, &self.regex_state.current_grammar_actions);
         // ForLoopResumeState::LazyGather holds an `crate::gc::Gc<LazyList>`, not a bare
         // `Value` — LazyList's internal Value graph is traced starting in the
         // third wave (design doc §11 step 10); revisit once
@@ -128,7 +128,7 @@ impl Interpreter {
         for env in self.closure_env_overrides.values() {
             env.visit_values(visitor);
         }
-        self.capture_cache.visit_roots(visitor);
+        self.caches.capture_cache.visit_roots(visitor);
         for env in &self.caller_env_stack {
             env.visit_values(visitor);
         }

@@ -11,7 +11,11 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
     // bareword-dot like `foo.new` is a method call on the type object, NOT a
     // call to a same-named sub. The type shadows the sub for this syntax — e.g.
     // a file-scope `sub foo` plus an inner `my class foo` (S06-advanced/wrap.t).
-    if crate::parser::stmt::simple::is_user_declared_type(&name) {
+    // A declared enum value of the same name is a term and shadows the sub
+    // the same way (`enum U <mins>; sub mins($n) {...}; mins.value`).
+    if crate::parser::stmt::simple::is_user_declared_type(&name)
+        || crate::parser::stmt::simple::is_user_declared_enum_value(&name)
+    {
         return Expr::BareWord(name);
     }
     if crate::parser::stmt::simple::is_user_declared_sub(&name)

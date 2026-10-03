@@ -251,6 +251,13 @@ pub(crate) struct Registry {
     /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
     /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
     pub(crate) lexical_classes: HashSet<String>,
+    /// Qualified names of lexical types declared under an already-namespaced
+    /// spelling (`my class AST::Param {}` at file scope), as opposed to a
+    /// `my class Param {}` written inside `module AST { }`. The former keeps
+    /// its qualified name visible in its own compilation unit even when the
+    /// leading package is a `module`/`package` (Badger's `my module AST {}`);
+    /// see `Interpreter::my_scoped_type_visible_here`.
+    pub(crate) namespaced_lexical_types: HashSet<String>,
     /// Classes with a method whose body declares a class or role (see
     /// `runtime::method_type_decls`). Method dispatch anchors
     /// `current_package` to the owner of such a method so the nested type is

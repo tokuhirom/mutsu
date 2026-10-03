@@ -70,6 +70,7 @@ impl Interpreter {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         if arg_values.is_empty()
             && let Some(cached) = self
+                .caches
                 .private_zeroarg_method_cache
                 .get(&(class_name.to_string(), method_name.to_string()))
         {
@@ -121,7 +122,7 @@ impl Interpreter {
                 }
             }
             if let Some(resolved) = resolved {
-                self.private_zeroarg_method_cache.insert(
+                self.caches.private_zeroarg_method_cache.insert(
                     (class_name.to_string(), method_name.to_string()),
                     Some(resolved.clone()),
                 );

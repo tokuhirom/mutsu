@@ -287,7 +287,11 @@ impl Interpreter {
         let shape = CallShape::for_args(args);
         let mro_arc = self.class_mro(cn);
         let mro: Vec<Symbol> = mro_arc.iter().copied().collect();
-        let seq = match self.resolved_seq_cache.get(&(owner, method_sym, shape)) {
+        let seq = match self
+            .caches
+            .resolved_seq_cache
+            .get(&(owner, method_sym, shape))
+        {
             Some(cached) => cached.clone(),
             None => {
                 let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
@@ -302,7 +306,8 @@ impl Interpreter {
                     MethodVisibility::Public,
                     RoleFallback::Disabled,
                 ));
-                self.resolved_seq_cache
+                self.caches
+                    .resolved_seq_cache
                     .insert((owner, method_sym, shape), built.clone());
                 built
             }

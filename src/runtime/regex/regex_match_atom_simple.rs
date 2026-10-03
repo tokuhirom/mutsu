@@ -66,6 +66,7 @@ impl Interpreter {
             RegexAtom::Named(name)
                 if !LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
                     && self
+                        .regex_state
                         .grammar_rule_dynvar_decls
                         .contains_key(&name.spec().lookup_name) =>
             {

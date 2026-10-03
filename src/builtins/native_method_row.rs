@@ -36,6 +36,11 @@
 //! E2b drove the gap between this conservative table and the cascades'
 //! actual behavior to zero (see the design doc's classification table and the
 //! `native_call_unmodeled` counter that box wired up).
+//!
+//! The one-off baking left nothing keeping the `DECLARED` / `INTROSPECTABLE`
+//! bits in step with methods added to the cascades later, and `.^can` denied
+//! them (#11271). `native_method_row_rakudo_oracle` now checks the bits
+//! against a committed snapshot of Rakudo's method tables on every test run.
 
 #[cfg(test)]
 use super::builtin_type_methods::builtin_method_entries;
@@ -613,11 +618,13 @@ mod tests {
         }
     }
 
-    /// The `Match` rows deliberately omit `so`/`not`/`defined`: a Match's
-    /// `dispatch_owner_chain` includes `Any`, so those three are already
+    /// The `Match` rows deliberately omit `so`/`defined`: a Match's
+    /// `dispatch_owner_chain` includes `Any`, so those two are already
     /// covered by the `Any` universal rows via the chain-walk. Confirm that
     /// premise directly, since it is what justifies leaving them out of the
-    /// `Match`-owner rows above (mirroring `Pair`/`Seq`).
+    /// `Match`-owner rows above (mirroring `Pair`/`Seq`). `not` used to be
+    /// in this list too, but Rakudo declares `Match.not` itself, so it has
+    /// its own `DECLARED` row (#11271).
     #[test]
     fn match_so_not_defined_are_covered_via_the_any_chain() {
         let mut interp = crate::runtime::Interpreter::new();
@@ -628,7 +635,7 @@ mod tests {
             chain.iter().any(|t| t.as_str() == "Any"),
             "Match's dispatch_owner_chain should include Any: {chain:?}"
         );
-        for name in ["so", "not", "defined"] {
+        for name in ["so", "defined"] {
             assert!(
                 native_method_row("Match", name).0 == NativeArityMask::N,
                 "{name} should not have its own Match row (covered via Any)"

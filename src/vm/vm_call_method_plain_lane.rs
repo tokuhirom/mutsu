@@ -102,7 +102,7 @@ impl Interpreter {
         key: &crate::runtime::PlainMethodLaneKey,
     ) -> bool {
         self.refresh_method_caches_for_generation();
-        self.plain_method_lane.contains(key)
+        self.caches.plain_method_lane.contains(key)
     }
 
     /// Dispatch a lane hit: everything the skipped stretch does that is *not* a
@@ -126,7 +126,7 @@ impl Interpreter {
         self.flatten_scoped_env();
         self.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-        self.plain_method_lane_active = true;
+        self.caches.plain_method_lane_active = true;
         let call_result = self.dispatch_compiled_method_mut_with_raw_invocant(
             code,
             target_name,
@@ -139,7 +139,7 @@ impl Interpreter {
         // clear it unconditionally so an error path that never reached it (the
         // native-stack guard, a panic-free early return) cannot leak the lane
         // into the next dispatch.
-        self.plain_method_lane_active = false;
+        self.caches.plain_method_lane_active = false;
         if let Err(e) = &call_result
             && Self::is_method_not_found_error(e)
         {
@@ -162,6 +162,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
     ) {
         let Some(key) = self
+            .caches
             .plain_method_lane_candidate
             .take_if(|key| key.0 == class_sym && key.1 == method_sym)
         else {
@@ -178,7 +179,7 @@ impl Interpreter {
             return;
         }
         self.refresh_method_caches_for_generation();
-        self.plain_method_lane.insert(key);
+        self.caches.plain_method_lane.insert(key);
     }
 
     /// The three class families whose prefix probes read the *instance* (or a
