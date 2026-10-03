@@ -746,6 +746,7 @@ impl Interpreter {
         // A verdict that depends on a conditional `use` comes back as guards
         // that run right after the prologue, which decides the condition
         // (#10331).
+        self.premerge_top_level_uses(crate::runtime::main_unit(), &body_main);
         // An undeclared bareword term is the same CHECK-time failure
         // ("Undeclared name", #9768).
         let checked = self

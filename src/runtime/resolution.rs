@@ -148,7 +148,7 @@ impl Interpreter {
                 // A prelude splice is registered under `GLOBAL::` for every
                 // package to reach, but is lexical to the compunits it was
                 // spliced into — see `prelude_visible_here`.
-                if !self.prelude_visible_here(key) {
+                if !self.prelude_visible_here(key) || !self.module_routine_visible_here(key) {
                     continue;
                 }
                 return Some(def);
