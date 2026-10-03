@@ -1021,12 +1021,13 @@ mod tests {
 
     #[test]
     fn parse_match_regex_with_compact_adverbs() {
+        // `:s` is a modifier the source tree keeps as a QuotedRegex adverb.
         let (rest, expr) = primary("ms/ab cd/").unwrap();
         assert_eq!(rest, "");
         assert!(matches!(
             &expr,
-            Expr::MatchRegex(v)
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == ":s ab cd" && a.sigspace)
+            Expr::MatchRegexTree { value: v, tree }
+                if tree.adverbs.len() == 1 && matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == ":s ab cd" && a.sigspace)
         ));
     }
 
