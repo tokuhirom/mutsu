@@ -103,7 +103,11 @@ impl Interpreter {
                 Some(slot)
                     if plan.hoist_seed_slots.contains(&slot)
                         && !code.param_locals.contains(&a.var)
-                        && !a.var.as_str().starts_with(['@', '%', '&']) =>
+                        && !a.var.as_str().starts_with(['@', '%', '&'])
+                        // A still-empty slot boxes nothing (the in-sequence
+                        // pass binds it); only a value showing through
+                        // before the declaration needs the seeded cell.
+                        && self.locals.get(slot as usize).is_some_and(|v| !v.is_nil()) =>
                 {
                     let name = a.var.resolve();
                     self.pending_hoist_cell_at(slot as usize)
