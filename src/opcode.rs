@@ -8349,9 +8349,11 @@ impl CompiledCode {
             if let OpCode::GetBareWord(idx) = op
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(*idx as usize).map(Value::view)
-                && !name.contains("::")
             {
-                names.insert(Symbol::intern(&name));
+                let sym = Symbol::intern(&name);
+                if !crate::qualified::is_qualified(sym) {
+                    names.insert(sym);
+                }
             }
         }
         for nested in &self.closure_compiled_codes {
