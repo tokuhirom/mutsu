@@ -11,8 +11,8 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod attribute;
-mod contextualizer;
 mod bareword;
+mod contextualizer;
 mod convert;
 mod core_term_names;
 mod core_type_names;
