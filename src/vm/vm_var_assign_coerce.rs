@@ -950,21 +950,28 @@ impl Interpreter {
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..)
-                | ValueView::Hash(_)
                 | ValueView::Set(..)
                 | ValueView::Bag(..)
                 | ValueView::Mix(..) => true,
+                // An itemized hash (`:= $hi`, `:= $(%h)`) is held in a Scalar.
+                ValueView::Hash(_) => !val.hash_is_itemized(),
                 ValueView::Instance { .. } => self.instance_decomposes_on_array_assign(val),
                 // A `:=` bind to a whole-container `@`/`%` variable holds a
-                // shared cell whose inner value is the container.
-                ValueView::ContainerRef(cell) => matches!(
-                    cell.lock().unwrap().view(),
-                    ValueView::Array(..)
-                        | ValueView::Hash(_)
-                        | ValueView::Set(..)
-                        | ValueView::Bag(..)
-                        | ValueView::Mix(..)
-                ),
+                // shared cell whose inner value is the container. A `Scalar`
+                // holder is not that: an itemized word (a `$`-scalar or an
+                // `=`-shared element, ADR-0079) or a cell holding an itemized
+                // aggregate (an element ADR-0040 itemized at the store) is a
+                // container of its own, so `.VAR` stays `Scalar` (#11111).
+                ValueView::ContainerRef(cell) => {
+                    let inner = cell.lock().unwrap().clone();
+                    !val.container_ref_is_itemized()
+                        && match inner.view() {
+                            ValueView::Array(_, k) => !k.is_itemized(),
+                            ValueView::Hash(_) => !inner.hash_is_itemized(),
+                            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => true,
+                            _ => false,
+                        }
+                }
                 _ => false,
             };
             if is_container {
