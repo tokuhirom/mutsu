@@ -438,13 +438,15 @@ impl Interpreter {
         // parameter is never at risk here.
         let stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let args = stripped.unwrap_or(args);
-        if let Some(wrapped) = self.try_builtin_method_wrap(
-            class_name,
-            &Value::make_instance(Symbol::intern(class_name), attributes.clone()),
-            method,
-            &args,
-        ) {
-            return wrapped;
+        // The invocant is rebuilt from its attributes only for a wrapped
+        // method, and without a DESTROY of its own: dropping a second
+        // `IO::Handle` instance closed the shared handle.
+        if let Some(chain) = self.builtin_method_wrap_chain(class_name, method) {
+            let invocant = Value::make_instance_without_destroy(
+                Symbol::intern(class_name),
+                attributes.clone(),
+            );
+            return self.run_builtin_method_wrap(class_name, &invocant, method, &args, &chain);
         }
         let dispatch_class = if matches!(
             class_name,
