@@ -30,12 +30,15 @@
 //!
 //! Thread accounting: every mutator thread REGISTERS — workers via
 //! `spawn_user_thread` (counter raised parent-side to close the spawn window,
-//! per-thread flag set in the worker) and the CLI main thread via
-//! `mutsu::gc_register_main_thread`. Only registered threads count toward the
+//! per-thread flag set in the worker), the CLI main thread via
+//! `mutsu::gc_register_main_thread`, and any other thread the first time it
+//! builds an `Interpreter` (`gc::register_interpreter_thread`; an embedder or
+//! `cargo test` thread was invisible before #11714, so a collector elsewhere
+//! scanned under it). Only registered threads count toward the
 //! quiescence target (`needed = registered_total - self`) and increment the
 //! quiescent counter, so the equation stays self-consistent under arbitrary
-//! extra threads (e.g. `cargo test` harness threads running in-process
-//! interpreters — those obey a stop but are invisible to the accounting). A
+//! extra threads (a thread that never builds an interpreter obeys a stop but
+//! is invisible to the accounting). A
 //! worker that is mid-exit (dropping its interpreter's `Value`s) is neither
 //! quiescent nor unregistered, so the collector keeps waiting until those
 //! drops are done.
@@ -91,7 +94,7 @@ pub(crate) fn mark_thread_registered(on: bool) {
     REGISTERED_MUTATOR.with(|r| r.set(on));
 }
 
-fn thread_is_registered() -> bool {
+pub(crate) fn thread_is_registered() -> bool {
     REGISTERED_MUTATOR.with(|r| r.get())
 }
 
