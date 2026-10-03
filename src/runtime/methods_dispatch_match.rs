@@ -500,11 +500,11 @@ impl Interpreter {
             // An `rx//` / `rx:i//` literal is a `RegexWithAdverbs` whose
             // pattern already carries its inline adverbs (`":i A"`); it combs
             // exactly like a bare `/.../`, not as its stringified form.
-            Some(ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
-                let pat: String = match matcher.map(Value::view) {
-                    Some(ValueView::RegexWithAdverbs(a)) => a.pattern.to_string(),
-                    Some(ValueView::Regex(p)) => p.to_string(),
-                    _ => unreachable!("matched a Regex arm"),
+            Some(view @ (ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))) => {
+                let pat: String = match view {
+                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                    ValueView::Regex(p) => p.to_string(),
+                    _ => String::new(),
                 };
                 let max = limit.map_or(usize::MAX, |lim| lim as usize);
                 // Use the capturing path only when the regex contains code
