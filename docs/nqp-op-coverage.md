@@ -39,7 +39,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Asynchronous | 0 / 11 | 11 | #11502 |
 | Atomic | 0 / 11 | 11 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
-| Bit | 12 / 15 | 3 | #11491 |
+| Bit | 15 / 15 | 0 | #11491 |
 | Captures | 0 / 5 | 5 | #11496 |
 | Coercion | 2 / 10 | 8 | #11492 |
 | Conditional | 3 / 5 | 2 | #11500 |
@@ -51,7 +51,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Hash | 5 / 15 | 10 | #11494 |
 | HLL-Specific | 3 / 13 | 10 | #11504 |
 | Input/Output | 6 / 14 | 8 | #11501 |
-| Relational / Logic | 27 / 40 | 13 | #11491 |
+| Relational / Logic | 40 / 40 | 0 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 17 / 31 | 14 | #11499 |
@@ -68,14 +68,13 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **266 / 586** | **320** | |
+| **Total** | **282 / 586** | **304** | |
 
 ## Missing ops by category
 
 - **Array** (#11493): `atpos2d`, `atpos2d_i`, `atpos2d_n`, `atpos2d_s`, `atpos3d`, `atpos3d_i`, `atpos3d_n`, `atpos3d_s`, `atposnd`, `atposnd_i`, `atposnd_n`, `atposnd_s`, `atposref_s`, `bindpos2d`, `bindpos2d_i`, `bindpos2d_n`, `bindpos2d_s`, `bindpos3d`, `bindpos3d_i`, `bindpos3d_n`, `bindpos3d_s`, `bindposnd`, `bindposnd_i`, `bindposnd_n`, `bindposnd_s`, `existspos`, `list_b`
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
-- **Bit** (#11491): `bitand_s`, `bitor_s`, `bitxor_s`
 - **Captures** (#11496): `captureexistsnamed`, `capturehasnameds`, `captureposelems`, `savecapture`, `usecapture`
 - **Coercion** (#11492): `coerce_in`, `coerce_iu`, `coerce_ni`, `coerce_ns`, `coerce_ui`, `coerce_us`, `intify`, `numify`
 - **Conditional** (#11500): `with`, `without`
@@ -87,7 +86,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Hash** (#11494): `atkey_i`, `atkey_n`, `atkey_s`, `atkey_u`, `bindkey_i`, `bindkey_n`, `bindkey_s`, `iterator`, `iterkey_s`, `iterval`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **Input/Output** (#11501): `eoffh`, `filenofh`, `flushfh`, `print`, `say`, `seekfh`, `tellfh`, `writefh`
-- **Relational / Logic** (#11491): `cmp_u`, `eqaticim`, `eqatim`, `iseq_u`, `isge_s`, `isge_u`, `isgt_s`, `isgt_u`, `isle_s`, `isle_u`, `islt_s`, `islt_u`, `isne_u`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `bind`, `bindcomp`, `call`, `callmethod`, `findmethod`, `how`, `how_nd`, `objectid`, `rebless`, `reprname`, `setwho`, `tryfindmethod`, `what_nd`, `who`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
@@ -104,7 +102,3 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindassert`, `p6bindcaptosig`, `p6bindsig`, `p6box`, `p6capturelex`, `p6clearpre`, `p6decontrv`, `p6decontrv_6c`, `p6definite`, `p6getouterctx`, `p6invokeflat`, `p6isbindable`, `p6return`, `p6setautothreader`, `p6setfirstflag`, `p6setpre`, `p6sink`, `p6stateinit`, `p6staticouter`, `p6store`, `p6takefirstflag`, `p6trialbind`, `p6trybindsig`, `p6typecheckrv`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6invokehandler`
-
-## Not applicable
-
-None recorded yet.
