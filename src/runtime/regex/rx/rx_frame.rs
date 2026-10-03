@@ -75,8 +75,9 @@ pub(super) struct Frame {
     /// callee runs and uninstalled by its return.
     pub(super) window: Option<usize>,
     /// The frame runs the pattern a `$( … )` / `@( … )` yielded (`site` is
-    /// that `CodeInterp` atom): its return merges the callee's captures into
-    /// the caller's level as a group's, instead of filing a subrule Match.
+    /// that `CodeInterp` atom): its return drops the callee's captures, as
+    /// rakudo keeps none of an interpolated regex's, instead of filing a
+    /// subrule Match.
     pub(super) interp: bool,
 }
 

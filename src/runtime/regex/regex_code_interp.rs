@@ -232,9 +232,9 @@ impl Interpreter {
     }
 
     /// Every end of an interpolated pattern `parsed` at `pos`, lowest priority
-    /// first, each with its capture delta: the shape the backtracking engine
-    /// expects of a `Group` (a list element that is a `Regex` keeps its
-    /// captures, as it did when it was spliced in as text). Every end is
+    /// first, each with an empty capture delta: the interpolated pattern is a
+    /// regex of its own, and rakudo keeps none of its captures
+    /// (`"ab" ~~ / @( rx{ (\w) } ) b /` has no `$0`). Every end is
     /// computed up front; the compiled engine runs the pattern as a frame
     /// instead, resumed on demand, and comes here only for one that declines.
     ///
@@ -249,7 +249,7 @@ impl Interpreter {
         let mut out: Vec<(usize, RegexCaptures)> = self
             .regex_match_ends_from_caps_in_pkg(parsed, chars, pos, pkg)
             .into_iter()
-            .map(|(end, inner_caps)| (end, super::regex_match_delta::group_merge_delta(inner_caps)))
+            .map(|(end, _)| (end, RegexCaptures::default()))
             .collect();
         out.reverse();
         out

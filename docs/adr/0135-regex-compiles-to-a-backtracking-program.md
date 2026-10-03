@@ -1228,6 +1228,31 @@ which the fifteenth part removes. With both parts, `declined` is 0 over these di
 `t/regex/regex-last-declines-compiled.t` pins rakudo's values. The patterns run with no walk
 under `MUTSU_RX_DIFF=1` too.
 
+### Slice E, seventeenth part: an interpolated pattern runs as a lazy frame
+
+The `code-interp` bridge goes. `$( … )` / `@( … )` is the last call-out whose ends were computed
+up front: `InterpEnds` ran the code, parsed the pattern it yielded, asked the all-ends entry for
+every end and entered them through one `Choice::Cands`. Code inside the yielded regex therefore ran
+at every end, where rakudo's interpolated regex is a cursor resumed on demand:
+`my $r = rx/ a+ { $n++ } /; "aaab" ~~ / $($r) b /` ran the block three times instead of once.
+
+`InterpEnds` now runs the code once, where the cursor reaches it (`regex_code_interp_parsed`). If
+the yielded pattern has a program, the op enters it as a frame. An *interp* frame
+(`Frame::interp`, whose `site` is the `CodeInterp` atom) is entered and resumed like a call's, so
+backtracking into it continues from its own choice points. Its return drops the callee's level
+instead of filing a subrule Match: rakudo keeps none of an interpolated regex's captures
+(`"ab" ~~ / @( rx{ (\w) } ) b /` has no `$0`). Both engines kept them before; both drop them now.
+A yielded pattern that declines is still matched up front, counted as `leaf=code-interp-declined`.
+The program that holds the op runs the frame-capable loop (`has_call`).
+
+D6 records the code's run on its own (`CodeResult::Source`, the pattern source it yielded), so the
+two engines are compared on the source they get. A yielded regex that runs code is the one shape D6
+cannot compare: the walk still matches it up front, and so runs that code at every end.
+
+`t/regex/regex-code-interp-lazy-frame.t` pins rakudo's values (code run counts, backtracking,
+dropped captures, ratchet). Found on the way: a `/`-delimited `rx/…/` inside `$( … )` in a `/…/`
+regex ends the outer literal early ([#11606](https://github.com/tokuhirom/mutsu/issues/11606)).
+
 ### Reproducing §2
 
 ```raku

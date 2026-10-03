@@ -964,11 +964,10 @@ impl Interpreter {
                                     None => root,
                                 };
                                 if f.interp {
-                                    // An interpolated pattern's captures join the
-                                    // caller's level as a group's do.
-                                    let delta =
-                                        super::super::regex_match_delta::group_merge_delta(inner);
-                                    levels.edit(|s| s.merge_delta(delta));
+                                    // An interpolated pattern is a regex of its
+                                    // own: rakudo keeps none of its captures, so
+                                    // its level goes with the frame.
+                                    drop(inner);
                                 } else {
                                     let RegexAtom::Named(name) = &caller.atoms[f.site as usize]
                                     else {
