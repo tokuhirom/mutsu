@@ -643,25 +643,15 @@ impl Interpreter {
                                     arr[*i as usize] = hole_value.clone();
                                 }
                             }
-                            // Trim trailing holes.
-                            while let Some(last) = arr.last() {
-                                let is_hole = match last.view() {
-                                    ValueView::Nil => true,
-                                    ValueView::Package(name) => {
-                                        name == "Any" || name == hole_type.as_str()
-                                    }
-                                    _ => false,
-                                };
-                                if is_hole {
-                                    arr.pop();
-                                } else {
-                                    break;
-                                }
-                            }
                         })
                     })
                     .is_some();
                 if was_array {
+                    // The slots are holes only once the delete bookkeeping
+                    // records them, exactly as for a plain `:delete`: an
+                    // un-recorded type object is an element that exists.
+                    let idx = Value::array(leaves.iter().map(|i| Value::int(*i)).collect());
+                    self.finish_array_slot_delete(var_name, &idx);
                     // Sync the env mutation back to the local slot (dual store) so
                     // a later read of the array observes the deletion.
                     self.writeback_multidim_var_to_local(var_name);
