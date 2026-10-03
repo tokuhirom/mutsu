@@ -1329,8 +1329,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // lives on the `Iterable` family (`Map`, `List`, `Seq`, `Range`), not on
     // `Any` (`Any.^can("lazy")` is 0).
     ("Instant", "succ", 1, 16),
-    ("Instant", "pred", 1, 16),
     ("Instant", "rand", 1, 16),
+    ("Instant", "pred", 1, 16),
     ("Instant", "base", 6, 16),
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),
