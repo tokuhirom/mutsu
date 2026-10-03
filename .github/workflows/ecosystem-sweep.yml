@@ -1,9 +1,11 @@
 name: Ecosystem sweep
 
-# Re-measure the ecosystem parity KPI (issue #7785) on hosted runners and land
-# the result as a pull request that auto-merges once CI passes. This is the CI
-# entry point to `scripts/ecosystem-sweep.py`, whose numbers live in
-# `ecosystem/` and are published to `site/ecosystem.html`.
+# Re-measure the ecosystem parity KPI (issue #7785) on hosted runners and push
+# the result as an `ecosystem/sweep-*` branch. A scheduled Claude Code routine
+# (.agents/skills/ecosystem-sweep-landing/) turns that branch into a pull request
+# that auto-merges once CI passes. This is the CI entry point to
+# `scripts/ecosystem-sweep.py`, whose numbers live in `ecosystem/` and are
+# published to `site/ecosystem.html`.
 #
 # The records are not reviewed by a human and are not meant to be: a diff of
 # thousands of machine-generated measurements tells a reader nothing a reviewer
@@ -110,7 +112,7 @@ on:
         type: boolean
         default: false
       publish:
-        description: 'What to do with the updated records'
+        description: 'pull-request = ecosystem/sweep-* branch the landing routine opens a PR for; branch = ecosystem/hold-* left for a human; none = push nothing'
         type: choice
         default: pull-request
         options: [pull-request, branch, none]
@@ -452,36 +454,21 @@ jobs:
       && needs.sweep.result != 'cancelled' && needs.sweep.result != 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The App key lives in the `release` environment, which only `main` (and
-    # `v*` tags) may deploy to, so a sweep dispatched from another branch
-    # stops here instead of handing that branch's workflow the key.
-    environment: release
+    # This job only pushes an `ecosystem/sweep-*` branch, with the default
+    # GITHUB_TOKEN. It opens no pull request: one opened with GITHUB_TOKEN never
+    # starts CI, and the old workaround (a ruleset-bypass App key in this job)
+    # put a secret next to a job that handles third-party test output. A
+    # scheduled Claude Code routine opens the pull request instead, as the
+    # maintainer, so CI runs on it (.agents/skills/ecosystem-sweep-landing/).
     permissions:
       contents: write
-      pull-requests: write
     steps:
-      # A pull request opened with the default GITHUB_TOKEN does not start CI --
-      # GitHub suppresses workflow triggers from it. The repo already has an App
-      # for exactly this problem (tag-release.yml), so use it when configured
-      # and say so in the summary when it is not.
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        id: app-token
-        if: ${{ vars.TAGPR_APP_CLIENT_ID != '' }}
-        with:
-          client-id: ${{ vars.TAGPR_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TAGPR_APP_PRIVATE_KEY }}
-          # Push the records branch, open the PR and enable auto-merge -- not
-          # the App's whole installation scope (it is a ruleset bypass actor).
-          permission-contents: write
-          permission-pull-requests: write
-
       # `ref: main` deliberately, not the dispatch-time commit: a corpus sweep
       # runs for over an hour and main moves under it, so the records are
       # assembled on top of whatever main is NOW. `fetch-depth: 0` is what lets
       # `ecosystem-ci.py apply` order two commits with `merge-base`.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] -- this job pushes with the persisted App token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] -- this job pushes the records branch with the persisted token
         with:
-          token: ${{ steps.app-token.outputs.token || github.token }}
           ref: main
           fetch-depth: 0
 
@@ -625,72 +612,53 @@ jobs:
           } > /tmp/report.md
           cat /tmp/report.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Push the branch and open the pull request
+      # Push the records as a branch; the `ecosystem-sweep-landing` routine
+      # opens the pull request from it (see the job comment above). The report
+      # rides in the commit message body, which is where the routine reads the
+      # pull request description from.
+      #
+      #   publish=pull-request -> ecosystem/sweep-<date>-<run>  (the routine lands it)
+      #   publish=branch       -> ecosystem/hold-<date>-<run>   (left for a human)
+      #
+      # A sweep dispatched from a feature ref measured that ref's mutsu; a pull
+      # request from it would be fine (the branch is built on main), but the
+      # numbers are not main's, so it is always pushed as a `hold-` branch.
+      - name: Push the records branch
         if: ${{ (inputs.publish || 'pull-request') != 'none' && steps.apply.outputs.changed != '0' }}
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
           PUBLISH: ${{ inputs.publish || 'pull-request' }}
           SCOPE: ${{ inputs.scope || 'all' }}
-          HAVE_APP_TOKEN: ${{ steps.app-token.outputs.token != '' }}
+          MUTSU_COMMIT: ${{ needs.build.outputs.mutsu-commit }}
+          RAKU_VERSION: ${{ needs.build.outputs.raku-version }}
         run: |
           set -euo pipefail
-          branch="ecosystem/sweep-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          kind=sweep
+          if [ "$PUBLISH" != "pull-request" ] || [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            kind=hold
+          fi
+          branch="ecosystem/${kind}-$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add ecosystem/
-          git commit -F - <<EOF
-          chore(ecosystem): refresh parity records (scope=${SCOPE})
-
-          Measured by .github/workflows/ecosystem-sweep.yml on a hosted runner:
-          mutsu ${{ needs.build.outputs.mutsu-commit }}, rakudo ${{ needs.build.outputs.raku-version }}.
-
-          Refs #7785
-          EOF
+          {
+            echo "chore(ecosystem): refresh parity records (scope=${SCOPE})"
+            echo ""
+            echo "Measured by .github/workflows/ecosystem-sweep.yml on a hosted runner:"
+            echo "mutsu ${MUTSU_COMMIT}, rakudo ${RAKU_VERSION}."
+            echo ""
+            cat /tmp/report.md
+          } > /tmp/commit-message.txt
+          git commit -F /tmp/commit-message.txt
           for attempt in 1 2 3; do
             git push -u origin "$branch" && break
             echo "push failed, retrying ($attempt)"
             sleep $((attempt * 4))
           done
-          if [ "$PUBLISH" != "pull-request" ]; then
-            echo "pushed \`$branch\`; open the pull request by hand" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # A sweep dispatched from a feature ref measured that ref's mutsu,
-          # which is a legitimate thing to want -- but a pull request from it
-          # into main would carry every other commit on that ref alongside the
-          # records. Keep the measurement, skip the pull request.
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::warning title=no pull request::dispatched from $GITHUB_REF, not main; the records are pushed to \`$branch\` but a pull request from a feature ref would carry its other commits too"
-            echo "Records pushed to \`$branch\` (measured on \`$GITHUB_REF\`)." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if ! pr_url=$(gh pr create --base main --head "$branch" \
-                 --title "chore(ecosystem): refresh parity records (scope=${SCOPE})" \
-                 --body-file /tmp/report.md); then
-            echo "::warning title=could not open the pull request::the branch is pushed; open it from the compare view"
-            echo "Open it here: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "opened $pr_url" >> "$GITHUB_STEP_SUMMARY"
-
-          # Auto-merge, like every other pull request in this repository
-          # (AGENTS.md's "Git, PRs and CI" step 3). There is nothing in a records diff
-          # for a human to read: it is thousands of machine-generated
-          # measurements, and a reviewer cannot tell a right number from a wrong
-          # one by looking at it. What protects the numbers is upstream of the
-          # diff and already automatic -- the vendored-Test.rakumod probe, the
-          # required sandbox, one binary and one rakudo per run, the provenance
-          # check, and the guards that withhold a summary or a history row from a
-          # partial or mixed sweep. So the gate here is CI, and the pull request
-          # is the audit trail and the revert handle, not a review queue. Merge,
-          # never squash: squash merging is disabled on this repository and
-          # `--squash` silently leaves auto-merge off.
-          if ! gh pr merge --auto --merge "$pr_url"; then
-            echo "::warning title=auto-merge not enabled::$pr_url is open but will not merge on its own; merge it by hand"
-          fi
-          if [ "$HAVE_APP_TOKEN" != "true" ]; then
-            echo "::warning title=CI will not start by itself::the pull request was opened with the default GITHUB_TOKEN, which does not trigger workflows, so auto-merge will never fire. Configure the TAGPR_APP_CLIENT_ID / TAGPR_APP_PRIVATE_KEY App credentials, or push one commit to the branch from a clone."
+          if [ "$kind" = "sweep" ]; then
+            echo "Pushed \`$branch\`; the \`ecosystem-sweep-landing\` routine opens its pull request." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pushed \`$branch\` (not landed automatically: publish=$PUBLISH, ref=$GITHUB_REF)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Nothing changed

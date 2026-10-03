@@ -114,7 +114,7 @@ this document:
 
 | Setting | Value |
 | --- | --- |
-| Environment `release` | Deployment branches and tags: `main` and tag `v*` only. Holds the secret `TAGPR_APP_PRIVATE_KEY` (not a repository secret). Used by `tag-release.yml`, `release.yml`'s `npm` job and `ecosystem-sweep.yml`'s `collect` job. |
+| Environment `release` | Deployment branches and tags: `main` and tag `v*` only. Holds the secret `TAGPR_APP_PRIVATE_KEY` (not a repository secret). Used by `tag-release.yml` and `release.yml`'s `npm` job. The ecosystem sweep needs no secret: it pushes a branch with `GITHUB_TOKEN`, and the `ecosystem-sweep-landing` routine opens the pull request. |
 | Ruleset for `main` | Required status checks (`docs/ci-pipeline.md`) and "Require review from Code Owners" (`.github/CODEOWNERS`). |
 | Tag ruleset for `v*` | Creation, update and deletion restricted; only the release App may bypass. |
 | npm trusted publisher | `@tokuhirom/mutsu`: this repository, workflow `release.yml`, environment `release`. |
