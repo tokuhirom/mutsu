@@ -93,7 +93,7 @@ impl Interpreter {
         caps: &crate::runtime::regex_types::RegexCaptures,
     ) -> Option<ResolvedCall> {
         let spec = name.spec();
-        if let Err(why) = self.rx_call_blockers(name) {
+        if let Err(why) = self.rx_call_blockers(name, pkg) {
             // Bridged without evaluating: the producer evaluates them itself.
             return Some(ResolvedCall {
                 verdict: Err(why),
@@ -123,7 +123,7 @@ impl Interpreter {
         // Only a frame keeps the window: the producer installs its own.
         let window = match (&verdict, window) {
             (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => {
-                self.rx_call_rule_frame(name, window)
+                self.rx_call_rule_frame(name, pkg, window)
             }
             (_, Some(saved)) => {
                 self.restore_subrule_dynamic_params(saved);
@@ -141,20 +141,27 @@ impl Interpreter {
     /// Install the binding window a call of `name` with `args` runs its callee
     /// in, when it needs one: what the walk's producer installs around the
     /// callee's whole match (`install_subrule_dynamic_params`).
-    // Cost: O(1) when no rule declares a `$*` parameter and no argument is
-    // opaque; else O(a + b), a = the arguments, b = the bindings installed.
+    // Cost: O(1) when no rule declares a `$*` parameter, no argument is opaque
+    // and the call cannot name a lexical; else O(a + b), a = the arguments,
+    // b = the bindings installed.
     fn rx_call_window(
         &mut self,
         name: &NamedAtom,
         pkg: Symbol,
         args: &[Value],
     ) -> Option<SavedDynParams> {
+        let spec = name.spec();
+        // `<&r>` naming a lexical Regex: its defining scope joins the window,
+        // since its code blocks read it where the cursor reaches them.
+        if Self::may_name_lexical_regex(spec) {
+            return self.install_subrule_dynamic_params(spec, pkg, args);
+        }
         if !ANY_DYNAMIC_TOKEN_PARAM.load(std::sync::atomic::Ordering::Relaxed)
             && !regex_args_have_opaque(args)
         {
             return None;
         }
-        self.install_subrule_dynamic_params_named(&name.spec().lookup_name, pkg, args, None)
+        self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, args, None)
     }
 
     /// The whole window of a call that runs as a frame: `params` (what
@@ -169,6 +176,7 @@ impl Interpreter {
     fn rx_call_rule_frame(
         &mut self,
         name: &NamedAtom,
+        pkg: Symbol,
         params: Option<SavedDynParams>,
     ) -> Option<CallWindow> {
         let rule_frame = if self.grammar_rule_dynvar_decls.is_empty()
@@ -180,7 +188,10 @@ impl Interpreter {
         } else {
             self.enter_grammar_rule_dynvars(&name.spec().lookup_name)
         };
-        if params.is_none() && rule_frame.is_none() {
+        let routine = self
+            .has_any_wrap_chains()
+            .then(|| (pkg, name.spec().lookup_sym));
+        if params.is_none() && rule_frame.is_none() && routine.is_none() {
             return None;
         }
         let mut saved = params.unwrap_or_default();
@@ -195,6 +206,7 @@ impl Interpreter {
             saved,
             attach,
             scope_keys,
+            routine,
         })
     }
 
@@ -206,6 +218,11 @@ impl Interpreter {
     // candidates (a program probe each).
     fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
         let spec = name.spec();
+        // `<&r>` may name a lexical Regex, a value of this call's scope: never
+        // cached.
+        if Self::may_name_lexical_regex(spec) {
+            return self.resolve_call_target(name, pkg, ic);
+        }
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         let key = (spec.lookup_sym, pkg, ic);
@@ -229,15 +246,17 @@ impl Interpreter {
     /// What keeps any call of `<name>` off the compiled engine, whatever its
     /// arguments: a name resolved per call, or dispatch the engine does not
     /// model.
-    // Cost: O(1).
-    fn rx_call_blockers(&self, name: &NamedAtom) -> Result<(), &'static str> {
+    // Cost: O(1) while no method is wrapped anywhere; else O(m) for the
+    // caller package's MRO of m classes (`token_method_wrap_chain`).
+    fn rx_call_blockers(&self, name: &NamedAtom, pkg: Symbol) -> Result<(), &'static str> {
         let spec = name.spec();
-        if spec.lookup_name == "::" || Self::may_name_lexical_regex(spec) {
-            return Err("lexical-regex");
+        // `<::(EXPR)>`: the rule's name is computed per call.
+        if spec.lookup_name == "::" {
+            return Err("symbolic-name");
         }
-        // Dispatch the compiled engine does not model: a wrapped token, a
-        // custom HOW.
-        if self.has_any_wrap_chains() {
+        // Dispatch the compiled engine does not model: a wrapped token (its
+        // wrapper is user code around the rule's invocation), a custom HOW.
+        if self.token_method_has_wrap_chain(pkg.as_str(), &spec.lookup_name) {
             return Err("wrapped");
         }
         if !self.registry().grammar_custom_how.is_empty() {

@@ -1050,6 +1050,36 @@ Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 10,563 t
 
 `t/grammar/grammar-quantified-subrule-frames.t` pins the rakudo values.
 
+### Slice E, eleventh part: `<&lexical>` calls, and wraps narrowed to the wrapped rule
+
+Two more bridges become frames. Both were shapes #7548 lists as still eager.
+
+- **`<&r>` naming a lexical Regex** (`lexical-regex`). Such a call resolves per call: a lexical's value
+  belongs to the call's scope, so the verdict is never cached. The Regex's defining scope joins the
+  call's binding window (`install_subrule_dynamic_params`, which the walk's producer installs too).
+  `<::(EXPR)>` still bridges, under its own reason, `symbolic-name`.
+- **Wrapped tokens** (`wrapped`). The blocker used to be global: one `.wrap` on any method sent every
+  later call of every grammar to the walk. The reason was that a wrapper reads its caller's rule name
+  from a Backtrace (#9151), out of the routine frame the walk's eager arm pushes around each call while
+  a wrap exists (`subrule_candidate_ends_with_frame`). That routine frame is now part of the call
+  window (`CallWindow::routine`), pushed and popped like the bindings: installed while the callee
+  runs, removed at its return, and pushed again when backtracking re-enters it. Only a call of the
+  wrapped rule itself bridges, since its wrapper is user code around the invocation.
+
+What #7548 measured as eager is now lazy for proto candidates, calls with arguments, `$*` parameters,
+lexical Regex calls and unwrapped rules in a wrapped grammar. Each `{ … }` block in the callee runs
+once per end entered, as rakudo runs it (`t/grammar/grammar-lexical-and-wrap-subrule-frames.t`). Still
+eager:
+
+- a call of a wrapped rule;
+- custom-HOW grammars and grammar methods;
+- several candidates without a proto;
+- left recursion.
+
+Rakudo gives no reference for the last two: it reports two such `multi regex` candidates as an
+ambiguous call, and it loops forever on left recursion. A wrapped proto candidate is not honored by
+either engine ([#11151](https://github.com/tokuhirom/mutsu/issues/11151)).
+
 ### Reproducing §2
 
 ```raku
