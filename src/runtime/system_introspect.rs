@@ -335,6 +335,7 @@ impl Interpreter {
             .or_else(|| env::var("USERNAME").ok())
     }
 
+    // Cost: O(1), one kill(2) syscall.
     pub(super) fn send_signal(
         pid: i64,
         #[cfg_attr(not(unix), allow(unused_variables))] signal: i64,
@@ -342,14 +343,19 @@ impl Interpreter {
         if pid == 0 {
             return false;
         }
-        #[cfg(any(unix, windows))]
+        #[cfg(windows)]
         let pid_str = pid.to_string();
-        #[cfg(unix)]
+        #[cfg(all(unix, feature = "native"))]
         {
-            let mut cmd = Command::new("kill");
-            cmd.arg(format!("-{}", signal));
-            cmd.arg(&pid_str);
-            cmd.status().map(|status| status.success()).unwrap_or(false)
+            let (Ok(pid), Ok(signal)) = (i32::try_from(pid), i32::try_from(signal)) else {
+                return false;
+            };
+            // SAFETY: kill(2) takes two plain integers and touches no memory.
+            unsafe { libc::kill(pid, signal) == 0 }
+        }
+        #[cfg(all(unix, not(feature = "native")))]
+        {
+            false
         }
         #[cfg(windows)]
         {
