@@ -791,6 +791,7 @@ mod methods_instance_ops;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
+pub(crate) use methods_introspect::embedded_container_type_name;
 mod methods_io_dispatch;
 mod methods_list_view_default;
 mod methods_match_dispatch;

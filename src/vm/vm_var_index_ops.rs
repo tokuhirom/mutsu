@@ -1648,6 +1648,11 @@ impl Interpreter {
                 };
                 Value::seq(slice)
             }
+            // `*` on a Seq that kept its source's element cells (`%h.values`,
+            // which the Seq normalization above leaves as a Seq): every
+            // element, as a List -- `%h.values[*]` was `Nil`
+            // (Data::TypeSystem's `has-homogeneous-type`).
+            (ValueView::Seq(items), ValueView::Whatever) => Value::array(items.to_vec()),
             // WhateverCode index on Seq: (1,2,3).Seq[*-1]
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
