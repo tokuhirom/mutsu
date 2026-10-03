@@ -77,9 +77,7 @@ impl Interpreter {
             // walk-create builds there.
             if *positional && matches!(idx.view(), ValueView::Sub(_)) {
                 idx = self.resolve_whatever_index_for_target(idx, None);
-                if Self::index_to_usize(&idx).is_none() {
-                    return None;
-                }
+                Self::index_to_usize(&idx)?;
             }
             // A slice / junction subscript names several elements at once; the
             // deferred path addresses exactly one.
