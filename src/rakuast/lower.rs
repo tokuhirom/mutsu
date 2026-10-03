@@ -1871,10 +1871,6 @@ fn term_identifier_expr(name: &str) -> Expr {
     match name {
         "True" => Expr::Literal(Value::truth(true)),
         "False" => Expr::Literal(Value::truth(false)),
-        // The math constants are the numeric literals the parser folds them to.
-        "pi" | "π" => Expr::Literal(Value::num(std::f64::consts::PI)),
-        "tau" | "τ" => Expr::Literal(Value::num(std::f64::consts::TAU)),
-        "e" | "\u{1D452}" => Expr::Literal(Value::num(std::f64::consts::E)),
         _ => Expr::BareWord(name.to_string()),
     }
 }
