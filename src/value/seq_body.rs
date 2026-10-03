@@ -1183,7 +1183,16 @@ impl SeqBody {
             }
         }
         let state = self.core.state.lock().unwrap();
-        match &state.source {
+        state.source.trace_edges(visit);
+    }
+}
+
+impl SeqSource {
+    /// Every `Value` edge this not-yet-pulled source retains (see
+    /// [`SeqBody::trace_edges`]; a chained `.map`/`.grep` traces its
+    /// upstream source through this too).
+    pub(crate) fn trace_edges(&self, visit: &mut dyn FnMut(&crate::gc::ErasedGc)) {
+        match self {
             SeqSource::Iterator(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),
             SeqSource::MapGrep {

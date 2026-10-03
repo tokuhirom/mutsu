@@ -501,6 +501,13 @@ impl Interpreter {
             fresh.mark_lazy();
             return Ok(Value::seq_body(fresh));
         }
+        // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
+        // source (`MapGrepItems::Chain`, #11176) instead of running the
+        // upstream callback over everything first: `dispatch_map_method` /
+        // `dispatch_grep` steal the source themselves.
+        if matches!(method, "map" | "grep") && body.has_map_grep_stream_source() {
+            return Ok(target);
+        }
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
             return Ok(target);
         }

@@ -42,6 +42,17 @@ impl SeqBody {
         Some((self.live_generation().clone(), source))
     }
 
+    /// Whether [`SeqBody::take_map_grep_stream_source`] would hand this
+    /// body's source out — a `.map`/`.grep` called on this Seq chains onto
+    /// it (`MapGrepItems::Chain`) instead of reifying it first (#11176).
+    // Cost: O(1).
+    pub(crate) fn has_map_grep_stream_source(&self) -> bool {
+        let state = self.core.state.lock().unwrap();
+        !state.cache_requested
+            && !state.retained
+            && matches!(state.source, SeqSource::MapGrep { .. })
+    }
+
     /// Advance the [`SeqSource::MapGrep`] of a stream body built from
     /// [`SeqBody::take_map_grep_stream_source`]: hand it to `pull`, which
     /// advances its `pos` and returns the elements it produced plus whether

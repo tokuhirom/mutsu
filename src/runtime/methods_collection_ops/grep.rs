@@ -75,6 +75,22 @@ impl Interpreter {
         };
         let args = &positional_args;
 
+        // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the
+        // two callbacks interleave per element (#11176). The adverbed forms
+        // need indices over the whole result, so they take it whole.
+        let (chain, target) =
+            self.map_grep_receiver_chain(target, matches!(grep_adverb, GrepAdverb::V))?;
+        if let Some(items) = chain {
+            return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items,
+                pos: 0,
+                func: args.first().cloned(),
+                fatal: self.fatal_mode,
+                mode: crate::value::MapGrepMode::Grep,
+                plan: Default::default(),
+            }));
+        }
+
         // Infinite/lazy source with the default (`:v`) adverb: return a truly
         // lazy `grep` pipeline stage instead of materializing the (possibly
         // infinite) source. Adverbed greps (`:k`/`:kv`/`:p`) need positional
