@@ -1353,14 +1353,17 @@ impl Interpreter {
                 ValueView::Package(pkg) => pkg,
                 _ => return None,
             },
-            None if constants_only => return None,
             // A module-scope short name a `use` installed for a package declared
             // under a longer name (`unit module A::B::Fac is export`), which the
             // module's own routines keep after the load restores the importer.
+            // The head has no binding at all here, so this cannot shadow a
+            // lexically declared type even on the bareword (constants-only) path.
             None => {
                 let target =
                     self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
-                if !self.is_declared_package(target) {
+                if !self.is_declared_package(target)
+                    && !self.registry().enum_types.contains_key(target.as_str())
+                {
                     return None;
                 }
                 Symbol::intern(target)
