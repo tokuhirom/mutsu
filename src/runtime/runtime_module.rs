@@ -89,7 +89,7 @@ impl Interpreter {
                 scope_classes,
                 imported_env_aliases: self.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
-                unit: self.current_unit,
+                unit: self.executing_unit_sym_for_module_load(),
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -263,7 +263,8 @@ impl Interpreter {
     /// removing any entries added since the push.
     /// The class registry keys an import scope's rollback keeps: everything
     /// registered before the scope, every `A::B`-qualified class (a loaded
-    /// module's own, see below), every type minted at run time by
+    /// module's own, see below), every class a module load published
+    /// (`module_name_providers`, ADR-11136), every type minted at run time by
     /// `new_type` (`persistent_classes`), and -- transitively -- every class
     /// one of those names as a parent. The last rule is what keeps
     /// `sub f { use Base; my $c := ....new_type(...); $c.^add_parent(Base); $c }`
@@ -287,6 +288,12 @@ impl Interpreter {
                     // module closed: a later `use` re-ran the module's
                     // EXPORT, whose `P.new` then found no class.
                     || key.contains('\u{0}')
+                    // A class a module load published stays registered: escaped
+                    // instances and the module's own code need it, and whether
+                    // its name resolves here is the ADR-11136 gate's call, not
+                    // the registry's.
+                    || crate::symbol::Symbol::lookup(key)
+                        .is_some_and(|sym| self.module_name_providers.contains_key(&sym))
             })
             .cloned()
             .collect();

@@ -698,6 +698,7 @@ mod end_phasers;
 mod eval_check;
 mod eval_decl_scans;
 mod eval_import_scope;
+mod module_merge;
 mod eval_name_scans;
 mod eval_routine_magicals;
 mod eval_type_scans;
@@ -2396,6 +2397,21 @@ pub struct Interpreter {
     /// load came from an `EVAL` (`Test`'s `use-ok`) reached `Cow::cow` only
     /// through a grant its own `use Acme::Cow;` never made.
     pub(crate) module_granted_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
+    /// ADR-11136: the module whose load published each bare package-scope
+    /// name (a class, role, enum, subset, package, `our` sub or term) its own
+    /// body declared. A name the program or a module had published before
+    /// is never attributed, so only a module's own GLOBAL merge is gated.
+    pub(crate) module_name_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// ADR-11136: the compunit each loaded module's source is.
+    pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// ADR-11136: the modules a compunit merged at its top level. A
+    /// block-level merge lives in the block's env tier instead
+    /// (`MetaNs::ModuleMerge`).
+    pub(crate) unit_merged_modules: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
+    /// ADR-11136: the modules whose load granted each package
+    /// (`module_granted_packages` inverted), so the #7797 qualified gate
+    /// can honour a block-level merge.
+    pub(crate) package_granting_modules: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
@@ -4967,9 +4983,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
-    /// The compilation unit whose code opened this scope (`current_unit` at
-    /// the push). An import made here shadows that unit's own top-level
-    /// routines, but not another unit's (#11103).
+    /// The compilation unit whose code opened this scope
+    /// (`executing_unit_sym_for_module_load` at the push). An import made here
+    /// shadows that unit's own top-level routines, but not another unit's
+    /// (#11103), and a `need`/`use` it runs merges into it (ADR-11136).
     pub(crate) unit: Symbol,
 }
 

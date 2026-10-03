@@ -446,10 +446,10 @@ impl Interpreter {
         if self.import_scope_stack.is_empty() {
             return false;
         }
-        let unit = self.current_unit;
+        let units = [self.current_unit, self.executing_unit_sym_for_module_load()];
         let packages = self.bare_name_packages_syms();
         self.import_scope_stack.iter().any(|scope| {
-            scope.unit == unit
+            units.contains(&scope.unit)
                 && !scope.own_routine_imports.is_empty()
                 && packages.iter().any(|&package| {
                     scope

@@ -1550,10 +1550,21 @@ impl Interpreter {
                 [pkg, top]
             })
             .collect();
-        let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
-            .entry(importer_unit)
-            .or_default();
-        visible_here.extend(grant.iter().cloned());
+        // The module's own bare declarations are attributed to it, and the
+        // importer gets them -- and the package grant -- only where its
+        // `need`/`use` ran (ADR-11136).
+        let own_names: Vec<Symbol> = new_types
+            .iter()
+            .filter(|name| !name.contains("::") && !name.contains('\u{0}'))
+            .filter(|name| {
+                self.module_owned_types
+                    .get(module)
+                    .is_none_or(|owned| owned.contains(name.as_str()))
+            })
+            .map(|name| Symbol::intern(name))
+            .collect();
+        self.record_module_provenance(module, module_unit, own_names);
+        self.merge_module_into_importer(importer_unit, module, &grant);
         // Remember the grant so a LATER importer of this same module gets it
         // too. Its `use` will be an already-loaded no-op that never reaches
         // this code, and the packages a module declares are not derivable

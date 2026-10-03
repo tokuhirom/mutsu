@@ -283,8 +283,17 @@ impl Interpreter {
         if Self::top_segment_is_setting_package(top) {
             return true;
         }
+        // A package a module published bare (`package OuterPkg { }` in a
+        // package-less module) is the module's own declaration: visible only
+        // where the module is merged (ADR-11136).
+        if let Some(sym) = Symbol::lookup(top)
+            && let Some(&module) = self.module_name_providers.get(&sym)
+        {
+            return self.module_merged_here(module);
+        }
         if self.package_granted_in_unit_chain(executing, top)
             || self.package_granted_in_unit_chain(self.current_unit, top)
+            || self.package_merged_here(top)
         {
             return true;
         }
@@ -485,14 +494,13 @@ impl Interpreter {
         // for every importer after the first -- and `Test`'s `use-ok` makes
         // the first importer an `EVAL` unit routinely, so the script's own
         // `use` was the one that lost.
-        let recorded = self.module_granted_packages.get(module).cloned();
-        let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
-            .entry(importer_unit)
-            .or_default();
-        entry.insert(module.to_string());
-        entry.insert(top.to_string());
-        if let Some(recorded) = recorded {
-            entry.extend(recorded);
-        }
+        let mut grant: HashSet<String> = self
+            .module_granted_packages
+            .get(module)
+            .cloned()
+            .unwrap_or_default();
+        grant.insert(module.to_string());
+        grant.insert(top.to_string());
+        self.merge_module_into_importer(importer_unit, module, &grant);
     }
 }
