@@ -257,7 +257,8 @@ impl Interpreter {
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // One-shot: consumed here so a nested call inside the body does not
         // inherit the carrier's raw-binding-error request.
-        let suppress_bind_enhance = std::mem::take(&mut self.suppress_binding_error_enhance);
+        let suppress_bind_enhance =
+            std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
         // One-shot, and read BEFORE `push_call_frame` (which clears it): the
         // call site said every positional argument is a container-less
         // expression, so this block's implicit `$_` has nothing behind it to

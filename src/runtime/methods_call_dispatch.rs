@@ -3135,7 +3135,7 @@ impl Interpreter {
             if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
                 let mut removed = false;
                 if let Some(chain) =
-                    crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id)
+                    crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id)
                 {
                     let before = chain.len();
                     chain.retain(|(hid, _)| *hid != handle_id);
@@ -3842,6 +3842,7 @@ impl Interpreter {
 
         // Native fast path bypass and dispatch
         let skip_pseudo = self
+            .dispatch
             .skip_pseudo_method_native
             .as_ref()
             .is_some_and(|m| m == method);

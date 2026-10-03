@@ -316,11 +316,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.stack.push(target);
         self.stack.push(index);
-        self.skip_postcircumfix_overload = true;
+        self.dispatch.skip_postcircumfix_overload = true;
         let result = self.exec_index_op_with_positional(is_positional);
         // The op consumes the flag itself; clear it on the error path too so a
         // failed subscript cannot leak the suppression onto the next dispatch.
-        self.skip_postcircumfix_overload = false;
+        self.dispatch.skip_postcircumfix_overload = false;
         result?;
         Ok(self.stack.pop().unwrap_or(Value::NIL))
     }

@@ -679,7 +679,7 @@ impl Interpreter {
         // The core-subscript re-entry guard means this dispatch is not an
         // ordinary one, so leave it to the general path (which also has to
         // CLEAR the flag — this helper never touches it).
-        if self.skip_postcircumfix_overload {
+        if self.dispatch.skip_postcircumfix_overload {
             return None;
         }
         let n = self.stack.len();
@@ -799,7 +799,7 @@ impl Interpreter {
         // delegating back to it does not re-enter itself. Take it here, before
         // any early return, so the suppression covers exactly this dispatch and
         // never leaks onto a later, unrelated subscript.
-        let core_subscript_call = std::mem::take(&mut self.skip_postcircumfix_overload);
+        let core_subscript_call = std::mem::take(&mut self.dispatch.skip_postcircumfix_overload);
         let mut index = self.stack.pop().unwrap();
         // Aggregate parameters bind their elements through shared scalar cells.
         // A cell can therefore reach a later subscript as the index itself

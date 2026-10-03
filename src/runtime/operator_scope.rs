@@ -74,7 +74,7 @@ impl Interpreter {
             return;
         }
         let importer = self.current_unit;
-        crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
+        crate::runtime::cow_table_mut(&mut self.dispatch.user_declared_infix_ops)
             .entry(name.to_string())
             .or_default()
             .insert(importer);

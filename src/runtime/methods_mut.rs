@@ -587,12 +587,12 @@ impl Interpreter {
             }
         }
         // Also update wrappers in wrap_chains that captured the old mixin
-        for chain in crate::runtime::cow_table_mut(&mut self.wrap_chains).values_mut() {
+        for chain in crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).values_mut() {
             for (_handle_id, wrapper) in chain.iter_mut() {
                 Self::update_mixin_in_sub(old_mixins, new_mixin, wrapper);
             }
         }
-        for wrapper in self.wrap_name_to_sub.values_mut() {
+        for wrapper in self.dispatch.wrap_name_to_sub.values_mut() {
             Self::update_mixin_in_sub(old_mixins, new_mixin, wrapper);
         }
     }

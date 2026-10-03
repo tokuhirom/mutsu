@@ -44,7 +44,7 @@ impl Interpreter {
         self.caches.light_call_cache.clear();
         self.caches.pos_light_call_cache.clear();
         self.caches.otf_call_cache.clear();
-        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
+        crate::vm::vm_stats::record_fn_keys_base_invalidation(self.dispatch.fn_keys_by_base.len());
         self.clear_fn_keys_index();
         // ...and give the map a version it has never had, so that the caches
         // which self-refresh off the generation rather than being cleared here

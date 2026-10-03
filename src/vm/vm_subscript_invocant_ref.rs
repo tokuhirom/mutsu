@@ -54,7 +54,7 @@ impl Interpreter {
             // onto the next, unrelated subscript. (An overload can only be
             // declared for an `Instance` receiver, which the producer declines,
             // so this is hygiene rather than a reachable bug today.)
-            self.skip_postcircumfix_overload = false;
+            self.dispatch.skip_postcircumfix_overload = false;
             self.stack.push(cell);
             return Ok(());
         }
@@ -79,7 +79,7 @@ impl Interpreter {
         {
             // Scoped to ONE subscript dispatch; consume it here too so producing
             // a cell instead cannot leak the suppression onto the next one.
-            self.skip_postcircumfix_overload = false;
+            self.dispatch.skip_postcircumfix_overload = false;
             self.stack.push(cell);
             return Ok(());
         }

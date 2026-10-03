@@ -33,7 +33,10 @@ impl Interpreter {
         // slow path). `user_declared_infix_ops` keeps this a cheap no-op HashSet
         // lookup on the (overwhelmingly common) no-override path.
         let op_eq_name = op.user_infix_name();
-        if self.user_declared_infix_ops.contains_key(op_eq_name)
+        if self
+            .dispatch
+            .user_declared_infix_ops
+            .contains_key(op_eq_name)
             && let Some(def) =
                 self.resolve_function_with_types(op_eq_name, &[left.clone(), right.clone()])
         {
@@ -82,7 +85,10 @@ impl Interpreter {
         matches!(current.view(), ValueView::Str(_))
             && matches!(rhs.view(), ValueView::Str(_))
             && !self.user_infix_override("infix:<~>")
-            && !self.user_declared_infix_ops.contains_key("infix:<~=>")
+            && !self
+                .dispatch
+                .user_declared_infix_ops
+                .contains_key("infix:<~=>")
             && crate::value::lookup_cell_constraint(cell)
                 .is_none_or(|c| matches!(c.ty.as_str(), "Any" | "Mu" | "Str" | "Stringy" | "Cool"))
     }

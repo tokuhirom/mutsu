@@ -197,7 +197,7 @@ impl Interpreter {
     /// same already-reduced base name in its two forms.
     fn fn_keys_for_base_inner(&mut self, base: &str, base_sym: Symbol) -> std::sync::Arc<[Symbol]> {
         crate::vm::vm_stats::record_fn_keys_base_lookup();
-        if let Some(cached) = self.fn_keys_by_base.get(&base_sym) {
+        if let Some(cached) = self.dispatch.fn_keys_by_base.get(&base_sym) {
             // Staleness is audited once per resolution in
             // `fn_base_name_registered`, not here — see the note there.
             return cached.clone();
@@ -370,8 +370,11 @@ impl Interpreter {
         // The name set is maintained by proto registration and cleared when a
         // plain `sub` supersedes the proto; the registry lookup re-verifies.
         if arity > 0
-            && !self.empty_sig_proto_names.is_empty()
-            && self.empty_sig_proto_names.contains(&Symbol::intern(name))
+            && !self.dispatch.empty_sig_proto_names.is_empty()
+            && self
+                .dispatch
+                .empty_sig_proto_names
+                .contains(&Symbol::intern(name))
             && let Some(proto) = self.resolve_proto_function(name)
             && proto.empty_sig
         {
@@ -771,17 +774,29 @@ mod base_name_tests {
         let beta_before = i.fn_keys_for_base("beta");
         assert!(!alpha_before.is_empty(), "alpha is registered");
         assert!(!beta_before.is_empty(), "beta is registered");
-        assert!(i.fn_keys_by_base.contains_key(&Symbol::intern("alpha")));
-        assert!(i.fn_keys_by_base.contains_key(&Symbol::intern("beta")));
+        assert!(
+            i.dispatch
+                .fn_keys_by_base
+                .contains_key(&Symbol::intern("alpha"))
+        );
+        assert!(
+            i.dispatch
+                .fn_keys_by_base
+                .contains_key(&Symbol::intern("beta"))
+        );
 
         // A registration that names only `alpha` evicts only `alpha`.
         i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::alpha/0")]);
         assert!(
-            !i.fn_keys_by_base.contains_key(&Symbol::intern("alpha")),
+            !i.dispatch
+                .fn_keys_by_base
+                .contains_key(&Symbol::intern("alpha")),
             "the named base name is evicted"
         );
         assert!(
-            i.fn_keys_by_base.contains_key(&Symbol::intern("beta")),
+            i.dispatch
+                .fn_keys_by_base
+                .contains_key(&Symbol::intern("beta")),
             "an unrelated base name survives"
         );
 
@@ -789,7 +804,7 @@ mod base_name_tests {
         // cannot say which keys it touched.
         i.invalidate_fn_resolution();
         assert!(
-            i.fn_keys_by_base.is_empty(),
+            i.dispatch.fn_keys_by_base.is_empty(),
             "the wholesale form clears the index"
         );
 

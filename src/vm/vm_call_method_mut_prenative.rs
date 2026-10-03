@@ -113,7 +113,7 @@ impl Interpreter {
             // Same bookkeeping as the general path's user-dispatch completion
             // this used to reach: the rendering may run user `gist` code, so
             // the dispatch is not assumed env-pure.
-            self.method_dispatch_pure = false;
+            self.dispatch.method_dispatch_pure = false;
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
             self.shadow_check_native_row_candidate(target, method, method_sym, args.len(), false);
             return Some(result);
@@ -157,7 +157,7 @@ impl Interpreter {
             return None;
         }
         let native_result = self.try_native_method(target, method_sym, args)?;
-        self.method_dispatch_pure = true;
+        self.dispatch.method_dispatch_pure = true;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
         Some(native_result)
     }
@@ -216,7 +216,7 @@ impl Interpreter {
         let native_result = self.try_native_method(target, method_sym, args)?;
         // Same bookkeeping as the general path's native completion: a
         // value-returning native on an immutable receiver is env-pure.
-        self.method_dispatch_pure = true;
+        self.dispatch.method_dispatch_pure = true;
         crate::vm::vm_stats::record_dispatch_entry_outcome(entry, "native");
         self.shadow_check_native_row_candidate(target, method, method_sym, args.len(), true);
         Some(native_result)
@@ -252,7 +252,7 @@ impl Interpreter {
             return None;
         }
         let native_result = self.try_native_method(&target, method_sym, &[])?;
-        self.method_dispatch_pure = true;
+        self.dispatch.method_dispatch_pure = true;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
         Some(native_result)
     }

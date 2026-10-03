@@ -105,7 +105,8 @@ impl Interpreter {
             let runs_message =
                 (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
                     && self.has_user_method(cn, "message");
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name) && !runs_message;
+            self.dispatch.method_dispatch_pure =
+                !self.mro_has_build_or_tweak(class_name) && !runs_message;
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
@@ -120,7 +121,7 @@ impl Interpreter {
             && let Some(result) =
                 self.try_native_builtin_construct(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native QuantHash construction: `Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/
@@ -132,7 +133,7 @@ impl Interpreter {
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native aggregate construction: `Array`/`List`/`Positional`/`array`/
@@ -144,7 +145,7 @@ impl Interpreter {
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native IO::Path family construction: `IO::Path`/`IO::Path::Unix`/`::Win32`/
@@ -156,7 +157,7 @@ impl Interpreter {
         if let Some(class_name) = new_on_package
             && let Some(result) = self.try_native_io_path_construct(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native Failure construction: `Failure.new($exception?)` — pure data
@@ -167,7 +168,7 @@ impl Interpreter {
         if let Some(class_name) = new_on_package
             && class_name == "Failure"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
         }
         // Native Seq construction: `Seq.new($iterator?)` — registers the
@@ -179,7 +180,7 @@ impl Interpreter {
         if let Some(class_name) = new_on_package
             && class_name == "Seq"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
         }
         // Native IO::Socket::INET construction: `IO::Socket::INET.new(...)` —
@@ -191,7 +192,7 @@ impl Interpreter {
         if let Some(class_name) = new_on_package
             && class_name == "IO::Socket::INET"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
         }
         // Native `bless`: route straight to the interpreter's single
@@ -210,7 +211,7 @@ impl Interpreter {
                 _ => unreachable!("try_native_bless only fires on Package/Instance"),
             };
             let plan = self.native_ctor_plan(class_sym);
-            self.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
+            self.dispatch.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
             return result;
         }
         // Native built-in *class* method (a pure type-object method other than
@@ -221,7 +222,7 @@ impl Interpreter {
                 class_name, method, &args,
             )
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // `IO::Notification.watch-path` (#9586): starts a watcher thread and
@@ -229,7 +230,7 @@ impl Interpreter {
         if let Some(class_name) = package_sym
             && let Some(result) = self.try_io_notification_class_method(class_name, method, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {
@@ -373,7 +374,7 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or(Value::real_array(Vec::new()));
                 if let Some(native_result) = self.try_native_method(&storage, method_sym, &args) {
-                    self.method_dispatch_pure = true;
+                    self.dispatch.method_dispatch_pure = true;
                     return native_result;
                 }
             }
@@ -383,12 +384,12 @@ impl Interpreter {
             // on an `is Hash` Instance reach the backing
             // `__mutsu_hash_storage` instead of returning Nil.
             if let Some(result) = self.try_hash_storage_delegate(&target, method_sym, &args) {
-                self.method_dispatch_pure = true;
+                self.dispatch.method_dispatch_pure = true;
                 return result;
             }
             // The QuantHash twin — see `vm_baggy_subclass_delegate.rs`.
             if let Some(result) = self.try_baggy_storage_delegate(&target, method_sym, &args) {
-                self.method_dispatch_pure = true;
+                self.dispatch.method_dispatch_pure = true;
                 return result;
             }
             // A user-defined subclass of a builtin type may override an inherited

@@ -276,7 +276,7 @@ impl Interpreter {
         }
         let base = (
             Arc::clone(&self.registry().functions),
-            Arc::clone(&self.user_declared_infix_ops),
+            Arc::clone(&self.dispatch.user_declared_infix_ops),
         );
         let saved_base = self.repl_compiler.capture_base.replace(base);
         self.repl_compiler.capture_request = true;
@@ -350,7 +350,7 @@ impl Interpreter {
             self.invalidate_fn_resolution_for_keys(keys);
         }
         if !ctx.infix_ops.is_empty() {
-            let ops = std::sync::Arc::make_mut(&mut self.user_declared_infix_ops);
+            let ops = std::sync::Arc::make_mut(&mut self.dispatch.user_declared_infix_ops);
             for (op, units) in &ctx.infix_ops {
                 ops.entry(op.clone())
                     .or_default()
@@ -396,6 +396,7 @@ impl Interpreter {
             .map(|(key, def)| (*key, def.clone()))
             .collect();
         let infix_ops: Vec<(String, HashSet<Symbol>)> = self
+            .dispatch
             .user_declared_infix_ops
             .iter()
             .filter(|(op, units)| infix_before.get(*op) != Some(*units))

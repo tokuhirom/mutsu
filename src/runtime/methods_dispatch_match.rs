@@ -23,11 +23,12 @@ impl Interpreter {
         // `skip_pseudo_method_native`; consume it here (once per dispatch) so the
         // WHAT/HOW/WHO/WHY macro arms below fall through to user resolution.
         let quoted_pseudo = self
+            .dispatch
             .skip_pseudo_method_native
             .as_deref()
             .is_some_and(|m| m == method);
         if quoted_pseudo {
-            self.skip_pseudo_method_native = None;
+            self.dispatch.skip_pseudo_method_native = None;
         }
         match method {
             "are" => Some(self.dispatch_are(target, &args)),

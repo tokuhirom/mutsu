@@ -215,4 +215,8 @@ these preconditions:
     CONTROL/CATCH, `let`/`temp`, phaser, `once` and exit-status fields. `new()` starts `once`
     ids at 1; `fork_for_thread` shares the `once` store and continues its ids, the rest fresh.
     `pending_dispatch_error` stayed (a D3 side channel, now classified `handoff`); 319 → 295.
-  - Next: `io`, `dispatch`, `lexicals`.
+  - `dispatch`: done. `DispatchState` (`src/runtime/dispatch_state.rs`) holds the 30
+    dispatch-stack, `.wrap`, operator-table, function-key-index and dispatch-flag fields;
+    `fork_for_thread` carries the operator tables, `.wrap` chains and stub decl sites over and
+    starts the rest fresh; 295 → 266.
+  - Next: `io`, `lexicals`.

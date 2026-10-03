@@ -43,7 +43,7 @@ impl Interpreter {
         if !self.has_any_wrap_chains() {
             return None;
         }
-        if let Some((name, frames, routines)) = &self.dispatcher_wrap_bypass
+        if let Some((name, frames, routines)) = &self.dispatch.dispatcher_wrap_bypass
             && name == method
             && *frames == self.call_frames.len()
             && *routines == self.routine_stack_len()
@@ -79,7 +79,7 @@ impl Interpreter {
         self.shift_arg_sources_for_wrap_invocant();
         let result = self.call_sub_value(outermost, call_args, false);
         self.pop_method_samewith_context();
-        self.method_dispatch_stack.pop();
+        self.dispatch.method_dispatch_stack.pop();
         result
     }
 }

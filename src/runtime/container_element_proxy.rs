@@ -73,11 +73,12 @@ impl Interpreter {
     /// actually being a subscript-protocol call on a container subclass — the
     /// only situation where the element `Proxy` is the right answer.
     pub(crate) fn container_element_base_callee(&mut self) -> Option<Value> {
-        let ctx = self.samewith_context_stack.last().cloned()?;
+        let ctx = self.dispatch.samewith_context_stack.last().cloned()?;
         if ctx.name != "AT-KEY" {
             return None;
         }
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())

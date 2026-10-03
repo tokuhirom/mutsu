@@ -74,7 +74,7 @@ impl Interpreter {
         if !self.registry().dispatcher_wrapped_methods.contains(method) {
             return None;
         }
-        if let Some((name, frames, routines)) = &self.dispatcher_wrap_bypass
+        if let Some((name, frames, routines)) = &self.dispatch.dispatcher_wrap_bypass
             && name == method
             && *frames == self.call_frames.len()
             && *routines == self.routine_stack_len()
@@ -155,16 +155,18 @@ impl Interpreter {
             name: method_name.to_string(),
         });
         let dispatch_token = self.next_dispatch_token();
-        self.method_dispatch_stack.push(MethodDispatchFrame {
-            receiver_class: receiver_class.to_string(),
-            invocant,
-            args: args.to_vec(),
-            remaining,
-            rw_params: Vec::new(),
-            dispatch_token,
-            arg_sources,
-            in_wrapper: true,
-        });
+        self.dispatch
+            .method_dispatch_stack
+            .push(MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining,
+                rw_params: Vec::new(),
+                dispatch_token,
+                arg_sources,
+                in_wrapper: true,
+            });
     }
 
     /// The terminal leg of a dispatcher wrap chain: dispatch `method` afresh
@@ -176,13 +178,13 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let saved = self.dispatcher_wrap_bypass.replace((
+        let saved = self.dispatch.dispatcher_wrap_bypass.replace((
             method.to_string(),
             self.call_frames.len(),
             self.routine_stack_len(),
         ));
         let result = self.call_method_with_values(invocant, method, args);
-        self.dispatcher_wrap_bypass = saved;
+        self.dispatch.dispatcher_wrap_bypass = saved;
         result
     }
 }

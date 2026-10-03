@@ -115,18 +115,20 @@ impl Interpreter {
                 invocant,
                 dispatch_token,
             );
-            self.method_dispatch_stack.push(frame);
+            self.dispatch.method_dispatch_stack.push(frame);
             return true;
         }
-        self.pending_method_dispatch.push(PendingMethodDispatch {
-            dispatch_token,
-            call: PendingMethodCall {
-                receiver_class: Symbol::intern(receiver_class),
-                method_name: Symbol::intern(method_name),
-                invocant,
-                args: args.to_vec(),
-            },
-        });
+        self.dispatch
+            .pending_method_dispatch
+            .push(PendingMethodDispatch {
+                dispatch_token,
+                call: PendingMethodCall {
+                    receiver_class: Symbol::intern(receiver_class),
+                    method_name: Symbol::intern(method_name),
+                    invocant,
+                    args: args.to_vec(),
+                },
+            });
         true
     }
 
@@ -164,14 +166,19 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn pop_method_dispatch(&mut self) {
         let pending = self
+            .dispatch
             .pending_method_dispatch
             .last()
             .map(|p| p.dispatch_token);
-        let built = self.method_dispatch_stack.last().map(|f| f.dispatch_token);
+        let built = self
+            .dispatch
+            .method_dispatch_stack
+            .last()
+            .map(|f| f.dispatch_token);
         if pending.is_some_and(|p| built.is_none_or(|b| p > b)) {
-            self.pending_method_dispatch.pop();
+            self.dispatch.pending_method_dispatch.pop();
         } else {
-            self.method_dispatch_stack.pop();
+            self.dispatch.method_dispatch_stack.pop();
         }
     }
 
@@ -181,13 +188,13 @@ impl Interpreter {
     // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
     // pending frame, each frame built at most once.
     pub(super) fn materialize_pending_method_dispatch(&mut self) {
-        if self.pending_method_dispatch.is_empty() {
+        if self.dispatch.pending_method_dispatch.is_empty() {
             return;
         }
-        let unbuilt = std::mem::take(&mut self.pending_method_dispatch);
+        let unbuilt = std::mem::take(&mut self.dispatch.pending_method_dispatch);
         // Resolving the winner resets this flag; the caller's view of the
         // last dispatch must not change because a frame was built late.
-        let saved_ambiguous = self.dispatch_ambiguous;
+        let saved_ambiguous = self.dispatch.dispatch_ambiguous;
         for entry in unbuilt {
             let call = entry.call;
             let frame = self.build_method_dispatch_frame(
@@ -198,14 +205,15 @@ impl Interpreter {
                 entry.dispatch_token,
             );
             let at = self
+                .dispatch
                 .method_dispatch_stack
                 .partition_point(|f| f.dispatch_token < frame.dispatch_token);
-            self.method_dispatch_stack.insert(at, frame);
+            self.dispatch.method_dispatch_stack.insert(at, frame);
         }
-        self.dispatch_ambiguous = saved_ambiguous;
+        self.dispatch.dispatch_ambiguous = saved_ambiguous;
         // A `where` clause run by the build may make method calls of its own;
         // they push and pop their own pending entries during the build.
-        debug_assert!(self.pending_method_dispatch.is_empty());
+        debug_assert!(self.dispatch.pending_method_dispatch.is_empty());
     }
 
     /// The deferral frame a method call establishes. With no next candidate,

@@ -282,7 +282,7 @@ impl Interpreter {
         // sets it `true` on ambiguity, never clears it, so callers that check
         // it right after resolving (multi-resolve-cache's "never cache an
         // ambiguous outcome" rule) need it reset here too.
-        self.dispatch_ambiguous = false;
+        self.dispatch.dispatch_ambiguous = false;
         let owner = TypeId::intern(cn);
         let shape = CallShape::for_args(args);
         let mro_arc = self.class_mro(cn);
@@ -619,7 +619,7 @@ impl Interpreter {
     ///
     /// Two care points, both required to keep this a true zero-behavior-change
     /// probe:
-    /// - `self.dispatch_ambiguous` is saved and restored around the shadow
+    /// - `self.dispatch.dispatch_ambiguous` is saved and restored around the shadow
     ///   ranking, since [`Self::pick_method_winner`] can set it — without the
     ///   save/restore, a shadow-only ambiguity would silently overwrite the real
     ///   resolution's (correct) flag, which `resolve_method_cached`'s caller reads
@@ -701,7 +701,7 @@ impl Interpreter {
         if !crate::vm::vm_stats::enabled() {
             return;
         }
-        let saved_ambiguous = self.dispatch_ambiguous;
+        let saved_ambiguous = self.dispatch.dispatch_ambiguous;
         let definite = invocant.map(value_is_definite).unwrap_or(false);
         let native_shape = NativeCallShape::new(arg_values.len(), definite);
         let seq = self.resolve_sequence(
@@ -718,7 +718,7 @@ impl Interpreter {
             def.param_defs.iter().any(|p| p.where_constraint.is_some())
         });
         if has_where_candidate {
-            self.dispatch_ambiguous = saved_ambiguous;
+            self.dispatch.dispatch_ambiguous = saved_ambiguous;
             return;
         }
         let role_bindings = self.registry().get_role_param_bindings(class_name);
@@ -731,7 +731,7 @@ impl Interpreter {
             invocant,
             role_bindings.as_ref(),
         );
-        self.dispatch_ambiguous = saved_ambiguous;
+        self.dispatch.dispatch_ambiguous = saved_ambiguous;
         let matched_ok = match (real, shadow.as_ref()) {
             (None, None) => true,
             (Some((ro, rd)), Some((so, sd))) => ro == so && Arc::ptr_eq(&rd.body, &sd.body),

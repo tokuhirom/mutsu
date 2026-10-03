@@ -342,8 +342,8 @@ impl Interpreter {
         }
         // Ambiguous multi dispatch: two or more candidates were equally
         // specific. Raise X::Multi::Ambiguous rather than silently choosing.
-        if self.dispatch_ambiguous {
-            self.dispatch_ambiguous = false;
+        if self.dispatch.dispatch_ambiguous {
+            self.dispatch.dispatch_ambiguous = false;
             let sigs = self.format_method_candidate_signatures(
                 receiver_class_name,
                 method_name,
@@ -415,7 +415,7 @@ impl Interpreter {
                 }
             }
             self.pop_method_samewith_context();
-            self.method_dispatch_stack.pop();
+            self.dispatch.method_dispatch_stack.pop();
             // The wrapped call mutated attributes (if any) through the live
             // cell; there is no `:=` reconcile on this path.
             return result.map(|v| (v, None));
@@ -447,16 +447,18 @@ impl Interpreter {
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
             let dispatch_token = self.next_dispatch_token();
-            self.method_dispatch_stack.push(MethodDispatchFrame {
-                receiver_class: receiver_class_name.to_string(),
-                invocant: invocant_for_dispatch,
-                args: args.clone(),
-                remaining,
-                rw_params,
-                dispatch_token,
-                arg_sources: None,
-                in_wrapper: false,
-            });
+            self.dispatch
+                .method_dispatch_stack
+                .push(MethodDispatchFrame {
+                    receiver_class: receiver_class_name.to_string(),
+                    invocant: invocant_for_dispatch,
+                    args: args.clone(),
+                    remaining,
+                    rw_params,
+                    dispatch_token,
+                    arg_sources: None,
+                    in_wrapper: false,
+                });
         }
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
@@ -483,7 +485,7 @@ impl Interpreter {
         );
         self.pop_method_samewith_context();
         if pushed_dispatch {
-            self.method_dispatch_stack.pop();
+            self.dispatch.method_dispatch_stack.pop();
         }
         result
     }
@@ -694,7 +696,7 @@ impl Interpreter {
             // delegator's own method name, but we're about to forward to a
             // different name on a (possibly different) target, so the flag
             // must not leak into the delegate dispatch.
-            let saved_skip_pseudo = self.skip_pseudo_method_native.take();
+            let saved_skip_pseudo = self.dispatch.skip_pseudo_method_native.take();
             // Method-based delegation: attr_var_name starts with `&`, meaning
             // the delegate is obtained by invoking the named method on self.
             let delegate = if let Some(source_method) = attr_var_name.strip_prefix('&') {
@@ -759,7 +761,7 @@ impl Interpreter {
                 };
                 let r = r?;
                 if let Some(updated) = updated {
-                    self.skip_pseudo_method_native = saved_skip_pseudo;
+                    self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
                     let mut attrs = attributes;
                     attrs.insert(attr_key.to_string(), updated);
                     return Ok((r, attrs));
@@ -769,7 +771,7 @@ impl Interpreter {
                 self.call_method_with_values(delegate, target_method, args)?
             };
             // Restore the saved skip_pseudo flag so the outer caller is unaffected.
-            self.skip_pseudo_method_native = saved_skip_pseudo;
+            self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
             // For Instance delegates, check if the delegate was mutated and update
             // the frontend's attribute with the updated delegate.
             if !is_method_based && let (Some(did), Some(dcn)) = (delegate_id, delegate_class) {

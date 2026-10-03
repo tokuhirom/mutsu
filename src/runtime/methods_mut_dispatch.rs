@@ -2615,7 +2615,7 @@ impl Interpreter {
                 // Clear skip_pseudo_method_native so the inner delegate dispatch
                 // does not inherit the outer call's bypass flag (which was set
                 // for the delegator's own method name).
-                let saved_skip_pseudo = self.skip_pseudo_method_native.take();
+                let saved_skip_pseudo = self.dispatch.skip_pseudo_method_native.take();
                 let (attr_var_name, target_method) = method_def.delegation.as_ref().unwrap();
                 let is_method_based = attr_var_name.starts_with('&');
                 let attr_key = attr_var_name
@@ -2675,7 +2675,7 @@ impl Interpreter {
                     );
                 }
                 // Restore skip_pseudo for the outer caller.
-                self.skip_pseudo_method_native = saved_skip_pseudo;
+                self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
                 return Ok(result);
             }
 
@@ -2844,11 +2844,12 @@ impl Interpreter {
                 }
             }
             let skip_pseudo = self
+                .dispatch
                 .skip_pseudo_method_native
                 .as_ref()
                 .is_some_and(|m| m == method);
             if skip_pseudo {
-                self.skip_pseudo_method_native = None;
+                self.dispatch.skip_pseudo_method_native = None;
             }
             // WHICH/WHY are excluded here: unlike the other six MOP
             // pseudo-methods, raku treats them as ordinary, overridable

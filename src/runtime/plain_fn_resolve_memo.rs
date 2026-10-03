@@ -65,7 +65,8 @@ impl Interpreter {
         if self.operator_has_import_scope(name) {
             return None;
         }
-        if !self.empty_sig_proto_names.is_empty() && self.empty_sig_proto_names.contains(&name_sym)
+        if !self.dispatch.empty_sig_proto_names.is_empty()
+            && self.dispatch.empty_sig_proto_names.contains(&name_sym)
         {
             return None;
         }

@@ -503,7 +503,7 @@ impl Interpreter {
         let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
         let saved_transliterate = self.topic_state.transliterate_in_smartmatch;
         let saved_substitution = self.topic_state.substitution_in_smartmatch;
-        let saved_method_dispatch_pure = self.method_dispatch_pure;
+        let saved_method_dispatch_pure = self.dispatch.method_dispatch_pure;
         // Save AND clear the whole mark-context one-shot flag family in one
         // step (`crate::runtime::mark_context`): they are a single packed
         // word plus the share-source name, so this boundary no longer spells
@@ -560,7 +560,7 @@ impl Interpreter {
         self.topic_state.in_smartmatch_rhs = false;
         self.topic_state.transliterate_in_smartmatch = false;
         self.topic_state.substitution_in_smartmatch = false;
-        self.method_dispatch_pure = false;
+        self.dispatch.method_dispatch_pure = false;
         self.topic_state.container_ref_reversed = false;
         self.accessor_ref_pending = false;
         self.topic_state.loop_cond_active = false;
@@ -603,7 +603,7 @@ impl Interpreter {
         self.topic_state.in_smartmatch_rhs = saved_in_smartmatch_rhs;
         self.topic_state.transliterate_in_smartmatch = saved_transliterate;
         self.topic_state.substitution_in_smartmatch = saved_substitution;
-        self.method_dispatch_pure = saved_method_dispatch_pure;
+        self.dispatch.method_dispatch_pure = saved_method_dispatch_pure;
         self.mark_ctx
             .restore_all(saved_mark_flags, saved_mark_share_source);
         self.topic_state.loop_cond_active = saved_loop_cond_active;

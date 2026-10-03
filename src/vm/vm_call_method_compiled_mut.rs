@@ -99,7 +99,7 @@ impl Interpreter {
             // a captured-outer caller lexical, in which case the dispatch is impure
             // and the call site must reconcile the caller slot (Slice F twin of the
             // non-mut path; `reconcile_locals_from_env_at_site`).
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name);
+            self.dispatch.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name);
             if result.is_ok() {
                 self.note_ctor_lane_reached(class_name);
             }
@@ -113,7 +113,7 @@ impl Interpreter {
             && let Some(result) =
                 self.try_native_builtin_construct(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native QuantHash construction (mut path twin of the above).
@@ -121,7 +121,7 @@ impl Interpreter {
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native aggregate construction (mut path twin of the above).
@@ -129,35 +129,35 @@ impl Interpreter {
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native IO::Path family construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
             && let Some(result) = self.try_native_io_path_construct(class_name, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native Failure construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
             && class_name == "Failure"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
         }
         // Native Seq construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
             && class_name == "Seq"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
         }
         // Native IO::Socket::INET construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
             && class_name == "IO::Socket::INET"
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
         }
         // Native built-in class method (mut path twin of the above).
@@ -166,7 +166,7 @@ impl Interpreter {
                 class_name, method, &args,
             )
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // `IO::Notification.watch-path` (#9586): starts a watcher thread and
@@ -174,7 +174,7 @@ impl Interpreter {
         if let Some(class_name) = package_sym
             && let Some(result) = self.try_io_notification_class_method(class_name, method, &args)
         {
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             return result;
         }
         // Native `bless` (mut path twin — `self.bless(...)` has a variable
@@ -193,7 +193,7 @@ impl Interpreter {
                 _ => unreachable!("try_native_bless only fires on Package/Instance"),
             };
             let plan = self.native_ctor_plan(class_sym);
-            self.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
+            self.dispatch.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {

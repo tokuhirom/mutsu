@@ -102,7 +102,7 @@ impl Interpreter {
             }
             _ => {
                 let row = self.resolve_method_site_lane(code, name_idx, target_name_idx, shape)?;
-                if self.native_base_bypass.is_none() {
+                if self.dispatch.native_base_bypass.is_none() {
                     code.method_sites
                         .remember(sites, idx, generation, pack(shape, row));
                 }
@@ -159,7 +159,7 @@ impl Interpreter {
         self.set_pending_call_arg_sources(None);
         self.pending_call_arg_source_slots.clear();
         self.caches.ctor_lane_candidate = None;
-        self.method_dispatch_pure = true;
+        self.dispatch.method_dispatch_pure = true;
         if crate::vm::vm_stats::enabled() {
             self.record_method_site_lane_stats(answer.row);
         }

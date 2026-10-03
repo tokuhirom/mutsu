@@ -25,8 +25,9 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.samewith_context_stack.last().cloned()?;
+        let ctx = self.dispatch.samewith_context_stack.last().cloned()?;
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -47,6 +48,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
@@ -57,7 +59,7 @@ impl Interpreter {
         // receiver and method while the builtin runs, so neither the pure
         // native probe nor the interpreter's builtin dispatch re-enters it.
         let type_name = crate::runtime::utils::value_type_name(&invocant);
-        let saved = self.native_base_bypass.replace((
+        let saved = self.dispatch.native_base_bypass.replace((
             type_name.as_ptr() as usize,
             method_sym,
             invocant.nanbox_bits(),
@@ -67,7 +69,7 @@ impl Interpreter {
             // A builtin that needs the interpreter (`sort` with a comparator).
             None => self.call_method_with_values(invocant, &ctx.name, args),
         };
-        self.native_base_bypass = saved;
+        self.dispatch.native_base_bypass = saved;
         Some(result)
     }
 
@@ -82,8 +84,8 @@ impl Interpreter {
     pub(super) fn native_grammar_builtin_rule_next_candidate(
         &mut self,
     ) -> Option<Result<Value, RuntimeError>> {
-        let name = self.samewith_context_stack.last()?.name.clone();
-        let invocant = self.method_dispatch_stack.last()?.invocant.clone();
+        let name = self.dispatch.samewith_context_stack.last()?.name.clone();
+        let invocant = self.dispatch.method_dispatch_stack.last()?.invocant.clone();
         self.grammar_builtin_rule_on_cursor(&invocant, &name)
             .map(Ok)
     }

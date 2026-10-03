@@ -118,9 +118,10 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.samewith_context_stack.last().cloned();
+        let ctx = self.dispatch.samewith_context_stack.last().cloned();
         let method_name = ctx.as_ref().map(|c| c.name.clone())?;
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -129,6 +130,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())

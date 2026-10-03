@@ -209,7 +209,7 @@ impl Interpreter {
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
             let dispatch_token = self.next_dispatch_token();
-            self.multi_dispatch_stack.push((
+            self.dispatch.multi_dispatch_stack.push((
                 proto_name.clone(),
                 remaining,
                 args.clone(),
@@ -228,7 +228,7 @@ impl Interpreter {
         let result = self.call_routine_def(&def, args);
         self.pop_samewith_context();
         if pushed_dispatch {
-            self.multi_dispatch_stack.pop();
+            self.dispatch.multi_dispatch_stack.pop();
         }
         result
     }

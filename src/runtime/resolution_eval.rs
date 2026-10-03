@@ -648,8 +648,8 @@ impl Interpreter {
         let mut saved_functions = self.registry().functions.clone();
         let saved_proto_subs = self.registry().proto_subs_snapshot();
         let saved_proto_functions = self.registry().proto_functions.clone();
-        let saved_operator_assoc = self.operator_assoc.clone();
-        let saved_user_declared_infix_ops = self.user_declared_infix_ops.clone();
+        let saved_operator_assoc = self.dispatch.operator_assoc.clone();
+        let saved_user_declared_infix_ops = self.dispatch.user_declared_infix_ops.clone();
         // Sub/proto/operator declarations in block scope are lexical, so the
         // registry is snapshotted here and restored on block exit. The restore
         // reassigns the three registry maps through `registry_mut()`, which bumps
@@ -840,8 +840,8 @@ impl Interpreter {
             }
             // Invalidate name-keyed resolution caches.
             self.invalidate_fn_resolution();
-            self.operator_assoc = saved_operator_assoc;
-            self.user_declared_infix_ops = saved_user_declared_infix_ops;
+            self.dispatch.operator_assoc = saved_operator_assoc;
+            self.dispatch.user_declared_infix_ops = saved_user_declared_infix_ops;
         }
         // Undo the block's own code-var writes: drop every code entry the
         // overlay now holds that was not in the entry snapshot, then reinstate

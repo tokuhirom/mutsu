@@ -252,7 +252,7 @@ impl Interpreter {
         invocant: Option<&Value>,
         boundary_owner: Option<Symbol>,
     ) -> Option<(Symbol, MethodDef)> {
-        self.dispatch_ambiguous = false;
+        self.dispatch.dispatch_ambiguous = false;
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro_full = self.class_mro(class_name);
         let truncate_at: Option<usize> =
@@ -379,7 +379,7 @@ impl Interpreter {
     /// Pick the winning candidate from an MRO walk's collected multi-method
     /// matches: type-hierarchy distance, then `is default`/narrowness/
     /// explicit-named/most-derived-owner tie-breaks, raising
-    /// `X::Multi::Ambiguous` (`self.dispatch_ambiguous`) when none of those
+    /// `X::Multi::Ambiguous` (`self.dispatch.dispatch_ambiguous`) when none of those
     /// break the tie. Extracted from `resolve_method_with_owner_impl`
     /// (ADR-0019 E4a) so a candidate list collected a different way — e.g.
     /// `resolution_sequence::resolve_sequence`'s TypeId-chain walk — can be
@@ -607,7 +607,7 @@ impl Interpreter {
                 && !all_named
                 && invocant.is_some()
             {
-                self.dispatch_ambiguous = true;
+                self.dispatch.dispatch_ambiguous = true;
             }
         }
         Some(all_matches.remove(best_idx))

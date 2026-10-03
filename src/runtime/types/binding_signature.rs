@@ -707,6 +707,7 @@ impl Interpreter {
                         crate::runtime::value_type_name(&value).to_string()
                     };
                     let routine = self
+                        .dispatch
                         .samewith_context_stack
                         .last()
                         .map(|ctx| ctx.name.as_str())

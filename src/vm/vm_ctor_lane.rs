@@ -106,7 +106,7 @@ impl Interpreter {
         let result = loan_env!(self, try_native_default_construct(class_sym, args))?;
         // No BUILD/TWEAK (checked on install), so the construction cannot
         // write the caller's env.
-        self.method_dispatch_pure = true;
+        self.dispatch.method_dispatch_pure = true;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "ctor-lane");
         Some(result)
     }

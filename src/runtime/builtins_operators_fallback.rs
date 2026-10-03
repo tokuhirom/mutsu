@@ -598,7 +598,7 @@ impl Interpreter {
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
                 let dispatch_token = self.next_dispatch_token();
-                self.multi_dispatch_stack.push((
+                self.dispatch.multi_dispatch_stack.push((
                     name.to_string(),
                     remaining,
                     args.to_vec(),
@@ -630,7 +630,7 @@ impl Interpreter {
                 let result = self.call_routine_def(&def, args.to_vec());
                 self.pop_samewith_context();
                 if pushed_dispatch {
-                    self.multi_dispatch_stack.pop();
+                    self.dispatch.multi_dispatch_stack.pop();
                 }
                 return result.and_then(|v| {
                     let v = if Self::routine_is_rw_capable(&def) {
@@ -838,7 +838,7 @@ impl Interpreter {
             self.exit_readonly_frame(saved_readonly);
             self.pop_samewith_context();
             if pushed_dispatch {
-                self.multi_dispatch_stack.pop();
+                self.dispatch.multi_dispatch_stack.pop();
             }
             // Convert fail errors to Failure values (same as closure call path)
             if let Err(e) = &result
