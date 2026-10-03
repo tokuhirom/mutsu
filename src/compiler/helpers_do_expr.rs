@@ -309,22 +309,25 @@ impl crate::ast_visit::VisitMut for TakeLoopControlValues {
     }
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
-        match expr {
+        if matches!(
+            expr,
             Expr::AnonSub { .. }
-            | Expr::AnonSubParams { .. }
-            | Expr::Lambda { .. }
-            | Expr::WhateverCurry(_)
-            | Expr::Gather(_) => {}
-            Expr::ControlFlow {
-                label: None,
-                value: Some(value),
-                take_value,
-                ..
-            } => {
-                *take_value = true;
-                self.visit_expr_mut(value);
-            }
-            _ => crate::ast_visit::walk_expr_mut(self, expr),
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+                | Expr::WhateverCurry(_)
+                | Expr::Gather(_)
+        ) {
+            return;
         }
+        if let Expr::ControlFlow {
+            label: None,
+            value: Some(_),
+            take_value,
+            ..
+        } = expr
+        {
+            *take_value = true;
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
     }
 }
