@@ -51,7 +51,10 @@ impl Interpreter {
         if matches!(varref, Some((_, _, Some(_)))) {
             return value;
         }
-        let Some(source) = varref.map(|(name, _, _)| name).or_else(|| arg_source.cloned()) else {
+        let Some(source) = varref
+            .map(|(name, _, _)| name)
+            .or_else(|| arg_source.cloned())
+        else {
             return value;
         };
         // Only a plain `$` scalar variable (`$a` is recorded as `a`): `@`/`%`
