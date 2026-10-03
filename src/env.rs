@@ -316,15 +316,9 @@ static CLOSURE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// scalar-store fast path therefore wants to ask "does THIS slot have one",
 /// which needs the whole-program latch only as the cheap `false` answer for a
 /// program that never made such a binding. Lumped in with the `state` and
-/// predictive-`Seq` families it could not do that -- and those two are not
-/// per-slot questions, so they keep their own latch below. Same soundness
-/// argument as [`CLOSURE_META_KEY_SEEN`], of which this is a strict subset.
+/// predictive-`Seq` families it could not do that. Same soundness argument as
+/// [`CLOSURE_META_KEY_SEEN`], of which this is a strict subset.
 static SIGILLESS_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
-
-/// The `__mutsu_state_key::*` / `__mutsu_predictive_seq_iter::*` half of
-/// [`CLOSURE_META_KEY_SEEN`]. See [`SIGILLESS_META_KEY_SEEN`] for why the two
-/// halves are tracked separately.
-static CLOSURE_STATE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
 /// Monotonic, process-global flag for `__mutsu_sigilless_readonly::*` keys
 /// alone.
@@ -442,14 +436,6 @@ pub(crate) fn sigilless_meta_keys_possible() -> bool {
     SIGILLESS_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
-/// True if any `__mutsu_state_key::*` or `__mutsu_predictive_seq_iter::*` key
-/// may exist in some env. Strictly narrower than
-/// [`closure_meta_keys_possible`]. See [`CLOSURE_STATE_META_KEY_SEEN`].
-#[inline]
-pub(crate) fn closure_state_meta_keys_possible() -> bool {
-    CLOSURE_STATE_META_KEY_SEEN.load(Ordering::Relaxed)
-}
-
 /// True if any `__mutsu_bound::*` marker may exist in some env. See
 /// [`BOUND_KEY_SEEN`].
 #[inline]
@@ -525,7 +511,6 @@ pub(crate) fn note_env_key(key: &str) {
             || key.starts_with("__mutsu_predictive_seq_iter::")
         {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
-            CLOSURE_STATE_META_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound::") {
             BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_array_slice::") {

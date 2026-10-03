@@ -436,14 +436,11 @@ impl Interpreter {
     /// starts at `code.alias_sym(idx)` and does nothing when that key is absent,
     /// and the readonly refusal reads `code.readonly_sym(idx)`. The other two
     /// key families [`crate::env::closure_meta_keys_possible`] lumps in
-    /// (`__mutsu_state_key::`, `__mutsu_predictive_seq_iter::`) are NOT per-slot
-    /// questions here, so they keep their own whole-program gate
-    /// ([`crate::env::closure_state_meta_keys_possible`]) in the caller.
+    /// (`__mutsu_state_key::`, `__mutsu_predictive_seq_iter::`) have no
+    /// consumer on the store path at all.
     ///
-    /// Only the ALIAS key is asked per slot. The readonly marker keeps its own
-    /// whole-program latch in the caller: it is created only for a bind whose
-    /// source really is readonly (see the `:=` store site below), so it is rare
-    /// enough that a second per-store env probe would cost more than it saves.
+    /// Only the ALIAS key is asked here; the readonly marker is asked by
+    /// `slot_has_sigilless_readonly_marker`.
     ///
     /// A program that never made a sigilless/`:=` binding answers with one
     /// relaxed atomic load and reaches no env at all, exactly as before.
@@ -549,18 +546,43 @@ impl Interpreter {
         //     `slot_has_sigilless_meta`),
         //   - a `Failure` to turn fatal, or a declaration still in flight on
         //     another thread.
+        //
+        // Three lanes used to be asked as whole-program latches and are now
+        // asked of THIS store (#9494 -- a program that loads a module such as
+        // Text::CSV sets all three, which put every scalar store in it on the
+        // full cascade):
+        //   - `is default(...)`: the full path consults a scalar's default
+        //     only for a `Nil` store, and both callers' payload probes exclude
+        //     `Nil` (`is_plain_scalar_store_payload`; `~=` stores a `Str`);
+        //   - the sigilless-readonly refusal reads this slot's own marker
+        //     (`code.readonly_sym(idx)`), so only a set marker declines;
+        //   - `__mutsu_state_key::`/`__mutsu_predictive_seq_iter::` keys have
+        //     no consumer on the store path at all.
         !(crate::env::bound_array_slice_possible()
             || self.bound_decont_active().get()
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
-            || self.has_var_defaults()
-            || crate::env::sigilless_readonly_keys_possible()
+            || self.slot_has_sigilless_readonly_marker(code, idx)
             || Self::atomic_var_seen_anywhere()
-            || crate::env::closure_state_meta_keys_possible()
             || self.slot_has_sigilless_meta(code, idx, desc)
             || self.fatal_mode
             || !self.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
+    }
+
+    /// Whether this slot's sigilless-readonly marker is set: the condition the
+    /// full path's readonly refusal starts from. One relaxed load in a program
+    /// that never created such a marker; otherwise one env probe.
+    // Cost: O(1), plus one env lookup once any marker exists.
+    #[inline]
+    fn slot_has_sigilless_readonly_marker(&self, code: &CompiledCode, idx: usize) -> bool {
+        crate::env::sigilless_readonly_keys_possible()
+            && code.readonly_sym(idx).is_some_and(|sym| {
+                matches!(
+                    self.env().get_sym(sym).map(Value::view),
+                    Some(ValueView::Bool(true))
+                )
+            })
     }
 
     /// Whether the typed branch of the full store path would be the IDENTITY
