@@ -118,6 +118,29 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
     if items.len() < 2 {
         return None;
     }
+    // A Whatever-curried list infix leading the list (`* op a, b`, curried
+    // when its element was parsed) takes the rest of the list into its right
+    // operand too, and stays curried: `@x.map: * op a, b` is
+    // `@x.map: { $_ op (a, b) }`, as `(1,2).map(* Z 7, 8)` is in rakudo.
+    if let Expr::WhateverCurry(inner) = &items[0]
+        && let Expr::InfixFunc {
+            name,
+            left,
+            right,
+            modifier: None,
+        } = inner.as_ref()
+        && right.len() == 1
+        && is_list_infix_func(name)
+    {
+        let mut rhs_items: Vec<Expr> = vec![right[0].clone()];
+        rhs_items.extend_from_slice(&items[1..]);
+        return Some(Expr::WhateverCurry(Box::new(Expr::InfixFunc {
+            name: name.clone(),
+            left: left.clone(),
+            right: vec![Expr::ArrayLiteral(rhs_items)],
+            modifier: None,
+        })));
+    }
     let idx = items.iter().position(|expr| {
         matches!(
             expr,

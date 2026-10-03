@@ -70,7 +70,19 @@ impl Interpreter {
     pub(super) fn capture_to_call_args(value: &Value) -> Vec<Value> {
         match value.view() {
             ValueView::Capture { positional, named } => {
-                let mut args = positional.to_vec();
+                // A positional Pair travels as the positional (`ValuePair`)
+                // flavour, as a call site's `ContainerizePair` makes it;
+                // the named flavour would read back as a named argument
+                // (`-> Pair $p { }.cando(\($pair))` must match).
+                let mut args: Vec<Value> = positional
+                    .iter()
+                    .map(|item| match item.view() {
+                        ValueView::Pair(k, v) => {
+                            Value::value_pair(Value::str(k.clone()), v.clone())
+                        }
+                        _ => item.clone(),
+                    })
+                    .collect();
                 for (k, v) in named.iter() {
                     args.push(Value::pair(k.clone(), v.clone()));
                 }
@@ -165,7 +177,19 @@ impl Interpreter {
                         .count();
                     return positional == data.params.len();
                 }
-                self.method_args_match(args, &data.param_defs)
+                // A routine or block without an invocant matches like a sub
+                // call: a positional Pair (`ValuePair`) is a positional
+                // argument there, while the method matcher reads a Str-keyed
+                // one as named.
+                if data
+                    .param_defs
+                    .iter()
+                    .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
+                {
+                    self.method_args_match(args, &data.param_defs)
+                } else {
+                    self.args_match_param_types(args, &data.param_defs)
+                }
             }
             ValueView::WeakSub(weak) => weak
                 .upgrade()
