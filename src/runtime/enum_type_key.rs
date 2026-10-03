@@ -30,6 +30,15 @@ impl Interpreter {
                 return Some(key.to_string());
             }
         }
+        // A module routine naming an enum by the short alias its module's own
+        // `use` installed (`use A::Level; ... Level($n)`), after the load
+        // restored the importer's env. `package_type_alias` answers `None` in
+        // one probe for a name no package aliases.
+        if let Some(target) = self.package_type_alias(name)
+            && self.registry().enum_types.contains_key(target.as_str())
+        {
+            return Some(target);
+        }
         // Only a package-scoped enum lives under a qualified key, so the
         // package-chain probe (which interns) runs only for a name one was
         // declared under -- this is reached on every unresolved call.

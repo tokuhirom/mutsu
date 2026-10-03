@@ -268,6 +268,10 @@ impl Interpreter {
             "*RAKU" | "?RAKU" => Self::cached_raku_instance(),
             "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
             "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
+            // `$?NL`: the newline a `\n` stands for. `use newline :crlf` binds
+            // its own value in the scope that runs it; everywhere else it is
+            // the default line feed.
+            "?NL" => Value::str_from("\n"),
             "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
             // `$*TOLERANCE` is a plain `Num` constant, not an expensive instance,
             // but it belongs here rather than in the `Interpreter::new` env seed

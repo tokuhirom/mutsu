@@ -1551,6 +1551,25 @@ impl Interpreter {
                 .filter(|short| !short.is_empty());
                 self.record_import_env_key(&env_target);
                 self.env.insert(env_target, value.clone());
+                // The loading module's own routines run in their CALLER's env
+                // once the load restores it, so they find a short type name
+                // only through the package's alias table
+                // (`resolve_package_alias_prefix`): `Level::error` inside a
+                // `unit module LogP6` sub whose importer took only `:configure`.
+                if let Some(short) = short_pkg.as_ref()
+                    && !self.module_load_stack.is_empty()
+                {
+                    let importer_package = self
+                        .import_target_package
+                        .clone()
+                        .or_else(|| self.unit_module_loading_stack.last().cloned())
+                        .unwrap_or_else(|| self.current_package());
+                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                        .entry(importer_package)
+                        .or_default()
+                        .entry(short.clone())
+                        .or_insert_with(|| target.clone());
+                }
                 if let Some(short) = short_pkg
                     && self.env.get(&short).is_none()
                 {
