@@ -84,7 +84,7 @@ impl Interpreter {
                 // Under `use fatal`, a sunk list/Seq holding an unhandled Failure
                 // throws too; without the pragma such a list stays soft. Same
                 // rule as SinkPop.
-                if self.fatal_mode
+                if self.lexical_fatal_mode
                     && let Some(err) = self.unhandled_failure_in_list_for_fatal(value)
                 {
                     return Err(err);

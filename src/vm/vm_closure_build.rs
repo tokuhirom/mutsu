@@ -174,7 +174,7 @@ impl Interpreter {
             // enclosing routine frame's own `def_file` instead, which stays
             // correct regardless of who is calling.
             source_file: self.executing_source_file(),
-            captured_fatal_mode: self.fatal_mode,
+            captured_fatal_mode: self.lexical_fatal_mode,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard,

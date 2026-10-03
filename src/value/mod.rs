@@ -1591,8 +1591,9 @@ pub struct SubData {
     /// Installed as `Interpreter::upvalues` on closure entry. Empty for closures
     /// with no upvalue-eligible free variables.
     pub(crate) upvalues: Vec<Option<Value>>,
-    /// `fatal_mode` value captured at closure-creation time. When a closure is
-    /// created inside a `use fatal` scope, this is `true`; the pragma propagates
+    /// `lexical_fatal_mode` value captured at closure-creation time. When a
+    /// closure is created inside a `use fatal` scope or a `try` body (not merely
+    /// in a routine called from one, #11391), this is `true`; the pragma propagates
     /// into the closure so that Failures produced inside it (even via sub-closures
     /// evaluated lazily after the creating scope has exited) still throw.
     pub(crate) captured_fatal_mode: bool,

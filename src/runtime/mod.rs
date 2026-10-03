@@ -3327,26 +3327,30 @@ pub struct Interpreter {
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
-    /// Whether the EXPLICIT `use fatal` pragma is lexically active for the
-    /// call site currently executing (#9521) — separate from `fatal_mode`,
-    /// which ALSO carries `try`'s own implicit, genuinely dynamic-scope
-    /// "fatal" marking (`vm_try_catch_ops.rs`) used by a deferred `.map`/
-    /// `.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
-    /// (`resolution_map_grep.rs`, `vm_closure_build.rs`) to decide whether a
-    /// later force explodes hard. `use fatal` itself is lexical: a routine
-    /// declared outside a `use fatal` block must not have its own
-    /// `explode_if_fatal_failure_in_*` checks fire merely because its caller
-    /// is dynamically inside one, while `try`'s marking legitimately DOES
-    /// reach into a called routine's own deferred-Seq construction
-    /// (`t/collections/transform/map-callback-runs-at-consumption.t`,
-    /// verified against `raku`). Driven by exactly the same statements that
-    /// set `fatal_mode` for `use fatal`/`no fatal` and import-scope save/
-    /// restore (`save_pragma_state`/`restore_pragma_state`,
-    /// `push_import_scope`/`pop_import_scope`) — but, unlike `fatal_mode`,
-    /// ALSO reset at every routine-call entry to the callee's own
-    /// `CompiledFunction::captured_fatal_mode` (baked at compile time from
-    /// `Compiler::fatal_pragma_active`), and never touched by `try`'s own
-    /// implicit marking or by the deferred-`Seq`-consumption pull.
+    /// Whether `use fatal` — explicit, or implied by an enclosing `try` body —
+    /// is lexically active for the code currently executing (#9521, #11391).
+    /// Every Failure explosion check reads this channel: the store-time
+    /// checks (`SetLocal`/`SetGlobal`/`AssignExpr`/`SinkPopAssign`), the
+    /// sunk-list check, and the `explode_if_fatal_failure_in_*` composite/
+    /// call-argument checks. It is separate from `fatal_mode`, which also
+    /// carries `try`'s marking but with genuinely DYNAMIC scope: a deferred
+    /// `.map`/`.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
+    /// (`resolution_map_grep.rs`) reads `fatal_mode`, because `try`'s marking
+    /// legitimately reaches into a called routine's own deferred-Seq
+    /// construction (`t/collections/transform/map-callback-runs-at-consumption.t`,
+    /// verified against `raku`). An explosion, by contrast, is lexical: a
+    /// routine declared outside a `use fatal` block and called from inside
+    /// one — or from inside a `try` — keeps a Failure it stores or sinks soft
+    /// (`t/exceptions/try-fatal-is-lexical.t`). Driven by the same statements
+    /// that set `fatal_mode` for `use fatal`/`no fatal`, by import-scope
+    /// save/restore (`save_pragma_state`/`restore_pragma_state`,
+    /// `push_import_scope`/`pop_import_scope`) and by a genuine `try`
+    /// (`vm_try_catch_ops.rs`), and ALSO reset at every routine-call entry to
+    /// the callee's own `CompiledFunction::captured_fatal_mode` (baked at
+    /// compile time from `Compiler::fatal_pragma_active`) or, for a closure,
+    /// to the value captured from this field when the closure was built
+    /// (`vm_closure_build.rs`). The deferred-`Seq`-consumption pull never
+    /// touches it.
     pub(crate) lexical_fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
     /// `eval-dies-ok` construct to run their code string.
