@@ -232,8 +232,32 @@ fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
     let mut quote: Option<char> = None;
     let mut escaped = false;
     let mut comment = false;
+    // The last non-whitespace code character outside strings/comments, to
+    // recognise a nested regex literal (`<!{ $s ~~ / <["']> / }>`) whose quote
+    // characters are regex text, not string openers.
+    let mut prev_sig = '{';
+    let mut skip_to = 0usize;
 
     for (idx, &ch) in rest.iter().enumerate() {
+        if idx < skip_to {
+            code.push(ch);
+            continue;
+        }
+        if quote.is_none()
+            && !comment
+            && !escaped
+            && ch == '/'
+            && crate::regex_code_nested::slash_opens_regex_after(prev_sig)
+            && let Some(len) = crate::regex_code_nested::nested_regex_literal_len(&rest[idx + 1..])
+        {
+            code.push(ch);
+            skip_to = idx + 1 + len;
+            prev_sig = '/';
+            continue;
+        }
+        if quote.is_none() && !comment && !ch.is_whitespace() {
+            prev_sig = ch;
+        }
         if comment {
             code.push(ch);
             if ch == '\n' {
