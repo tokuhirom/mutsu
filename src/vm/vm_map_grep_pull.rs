@@ -321,7 +321,6 @@ impl Interpreter {
         // The end of the source elements consumed: `end`, unless a grep fed
         // lazily stopped at its last match first.
         let mut consumed_end = end;
-        let fetch = |i: usize| items.get(start + i);
         let result = match mode {
             // ADR-0058 step 3b: `@a.grep({...})` promotes every matched
             // source slot to a shared element cell and builds its result
@@ -343,14 +342,14 @@ impl Interpreter {
                         result
                     }),
                 _ => self
-                    .grep_map_grep_items(func, items, start, end, max_matches, &fetch, plan)
+                    .grep_map_grep_items(func, items, start, end, max_matches, plan)
                     .map(|(result, grep_end)| {
                         consumed_end = grep_end;
                         result
                     }),
             },
             MapGrepMode::Grep => self
-                .grep_map_grep_items(func, items, start, end, max_matches, &fetch, plan)
+                .grep_map_grep_items(func, items, start, end, max_matches, plan)
                 .map(|(result, grep_end)| {
                     consumed_end = grep_end;
                     result
@@ -397,7 +396,6 @@ impl Interpreter {
     /// `max_matches` those `fetch` reads from `start` on, up to that many
     /// matches. Returns the result and the end of the elements consumed.
     // Cost: one callback call per element consumed.
-    #[allow(clippy::too_many_arguments)]
     fn grep_map_grep_items(
         &mut self,
         func: &Option<Value>,
@@ -405,12 +403,12 @@ impl Interpreter {
         start: usize,
         end: usize,
         max_matches: Option<usize>,
-        fetch: &dyn Fn(usize) -> Option<Value>,
         plan: &mut MapGrepPlanSlot,
     ) -> Result<(Value, usize), RuntimeError> {
         let (result, consumed, _) = match max_matches {
             Some(max_matches) => {
-                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(fetch, max_matches);
+                let fetch = |i: usize| items.get(start + i);
+                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_planned(func.clone(), feed, plan)?
             }
             None => {
