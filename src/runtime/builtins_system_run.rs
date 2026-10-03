@@ -7,16 +7,10 @@ impl Interpreter {
     -> Result<(std::process::Stdio, std::process::Stdio, std::fs::File), RuntimeError> {
         use std::os::fd::{FromRawFd, OwnedFd};
 
-        let mut fds = [0; 2];
-        // SAFETY: `fds` points to two writable file-descriptor slots, as
-        // required by pipe(2). Ownership is transferred to the Rust types
-        // immediately below on success.
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
-            return Err(RuntimeError::new(format!(
-                "Cannot create :merge pipe: {}",
-                std::io::Error::last_os_error()
-            )));
-        }
+        let fds = super::cloexec_pipe::cloexec_pipe()
+            .map_err(|err| RuntimeError::new(format!("Cannot create :merge pipe: {err}")))?;
+        // SAFETY: both fds were just created and are owned by nobody else;
+        // ownership moves to the Rust types below.
         let reader = unsafe { std::fs::File::from_raw_fd(fds[0]) };
         let writer = unsafe { OwnedFd::from_raw_fd(fds[1]) };
         let stderr_writer = writer

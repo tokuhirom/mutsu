@@ -647,6 +647,8 @@ mod class;
 mod class_attr_table;
 mod class_dispatch;
 mod class_introspection;
+#[cfg(unix)]
+pub(crate) mod cloexec_pipe;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 pub(crate) mod array_type_trait;
