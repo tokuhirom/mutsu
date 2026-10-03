@@ -2014,12 +2014,23 @@ impl Interpreter {
                 let result = if is_positional && !has_user_at_pos && has_user_at_key {
                     // For an Associative object, `[...]` falls back to AT-KEY
                     // when the class has no positional protocol of its own.
+                    // An exception the user's AT-KEY throws propagates.
                     self.try_compiled_method_or_interpret(
                         target.clone(),
                         "AT-KEY",
                         vec![Value::int(i)],
-                    )
-                    .unwrap_or(Value::NIL)
+                    )?
+                } else if has_user_at_pos {
+                    // The class's own AT-POS answers, and an exception it
+                    // throws (an out-of-range index, `Rake`'s
+                    // `X::OutOfRange.new(...).throw`) propagates to the
+                    // caller. Swallowing it into Nil made `dies-ok { $o[2] }`
+                    // fail and a CATCH around the read resume with Nil.
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-POS",
+                        vec![Value::int(i)],
+                    )?
                 } else if has_typed_positional_default {
                     // A parameterized Array subclass stores its element type
                     // in side metadata rather than in a user AT-POS method.

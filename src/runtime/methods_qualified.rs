@@ -232,6 +232,10 @@ impl Interpreter {
                     Some(Ok(Value::str(rendered)))
                 }
                 "Bool" | "defined" => Some(Ok(Value::truth(true))),
+                // `self.Mu::WHICH` is the object's own identity, bypassing a
+                // class's `WHICH` override (Rake's `$!WHICH := self.Mu::WHICH`
+                // for a non-value-type instance).
+                "WHICH" => crate::builtins::native_method_0arg(target, Symbol::intern("WHICH")),
                 _ => None,
             },
             _ => None,

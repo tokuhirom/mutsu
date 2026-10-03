@@ -132,7 +132,11 @@ impl Interpreter {
         match value.view() {
             ValueView::Instance { class_name, .. } => {
                 let class_name = class_name.resolve();
-                if !self.has_user_method(&class_name, "WHICH") {
+                // A `has $.WHICH` accessor overrides the identity as well as an
+                // explicit `method WHICH` does.
+                if !self.has_user_method(&class_name, "WHICH")
+                    && !self.has_public_accessor(&class_name, "WHICH")
+                {
                     return;
                 }
                 let target = value.clone();

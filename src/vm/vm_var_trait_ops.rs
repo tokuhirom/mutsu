@@ -1038,6 +1038,27 @@ impl Interpreter {
     /// See the call site in [`Self::exec_apply_var_trait_op`] for why this is
     /// deliberately narrow.
     fn trait_name_through_constant_alias(&mut self, trait_name: &str) -> Option<String> {
+        // A curried role spelled in the trait (`my @a is Rake[Int,Str]`) ties
+        // the variable to the role's pun, the class `Rake[Int,Str].new`
+        // constructs through. Only plain type-name arguments are resolved here.
+        // Checked before the registered-name early return: the concretization
+        // itself can already be registered as a role under this very name.
+        if let Some((base, args)) = Self::parse_parametric_type_name(trait_name)
+            && (self.registry().roles.contains_key(&base)
+                || self.registry().role_candidates.contains_key(&base))
+            && args
+                .iter()
+                .all(|a| Self::is_builtin_type(a) || self.has_type(a))
+        {
+            let type_args: Vec<Value> = args
+                .iter()
+                .map(|a| Value::package(crate::symbol::Symbol::intern(a)))
+                .collect();
+            return self
+                .ensure_parametric_role_pun_class(&base, &type_args)
+                .ok()
+                .flatten();
+        }
         if self.registry().classes.contains_key(trait_name)
             || self.registry().roles.contains_key(trait_name)
         {
@@ -1047,6 +1068,17 @@ impl Interpreter {
         let bound = self
             .term_binding(trait_name)
             .or_else(|| self.get_env_with_main_alias(trait_name))?;
+        // `constant RIS = Rake[Int,Str]; my @a is RIS` — the same pun.
+        if let ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } = bound.view()
+        {
+            return self
+                .ensure_parametric_role_pun_class(&base_name.resolve(), type_args)
+                .ok()
+                .flatten();
+        }
         let ValueView::Package(p) = bound.view() else {
             return None;
         };
