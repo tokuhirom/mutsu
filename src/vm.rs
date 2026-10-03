@@ -300,6 +300,7 @@ mod vm_package_containers;
 pub(crate) mod vm_poll;
 mod vm_positional_index_key;
 mod vm_pseudo_stash_ops;
+mod vm_quanthash_autoviv;
 mod vm_rakudo_internals;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;

@@ -663,7 +663,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         if !pd.slurpy {
             if pd.name.starts_with('@')
                 && !candidate.is_nil()
-                && !interpreter.type_matches_value("Positional", &candidate)
+                && !interpreter.binds_to_positional_param(&candidate)
             {
                 return false;
             }

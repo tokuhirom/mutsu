@@ -593,7 +593,10 @@ impl Interpreter {
         // Only an `@` parameter binds through `PositionalBindFailover`, so the
         // role check (a full type walk for an object argument) is asked of
         // those alone.
-        if pd.name.starts_with('@')
+        // A `Positional`-typed parameter (`sub f(Positional $p)`) binds a
+        // Seq through the same failover (rakudo#4864).
+        let positional_typed = pd.type_constraint.as_deref() == Some("Positional");
+        if (pd.name.starts_with('@') || positional_typed)
             && !seq_list_array_context
             && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
@@ -3112,7 +3115,15 @@ impl Interpreter {
                         && (pd.name.starts_with('@') || pd.name.starts_with('%'))
                         // Exclude attribute-binding twigil params (@!x, %.y, ...).
                         && !pd.name[1..].starts_with(['!', '.']);
-                    if alias_plain_container && let Some(source_name) = &source_name {
+                    // Only a `@`/`%` source variable needs the writeback: a
+                    // `$` source (`my $q = (1,2); f($q)`) holds its List/Array
+                    // by reference already, and writing the param back would
+                    // replace the caller's itemized value with the bare one
+                    // (`$q` then flattened as a hash-slice key afterwards).
+                    if alias_plain_container
+                        && let Some(source_name) = &source_name
+                        && source_name.starts_with(['@', '%'])
+                    {
                         rw_bindings.push((pd.name.clone(), source_name.clone()));
                     }
                     // Slice 2d: a readonly scalar `$` param receiving an array/hash
@@ -3253,6 +3264,13 @@ impl Interpreter {
                             self.env
                                 .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
                         }
+                        // An itemized holder (`$(1,2)` read from a `$`-variable
+                        // or an Array element) copies its Positional, not the
+                        // Scalar wrapper -- the List reification below must
+                        // see the List.
+                        if pd.name.starts_with('@') && !pd.slurpy {
+                            value = value.deitemize_for_sigil_bind();
+                        }
                         value = value.copy_for_list_assignment();
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
@@ -3277,6 +3295,25 @@ impl Interpreter {
                                 crate::gc::Gc::new((**gc).clone()),
                                 ArrayKind::Array,
                             );
+                        } else if pd.name.starts_with('@')
+                            && let ValueView::Seq(body) = value.view()
+                            && !body.is_lazy()
+                        {
+                            let body = std::sync::Arc::clone(&body);
+                            // A Seq argument reaches here as its cached `List`
+                            // view (`seq_list_view`, bound like `.cache`); the
+                            // copy is a fresh mutable Array of its elements,
+                            // as `my @c = $seq` makes (`mutation(Bool.pick xx
+                            // $n)` in Algorithm::Evolutionary::Simple).
+                            value = Value::real_array(self.reify_seq_body(&body)?);
+                        } else if pd.name.starts_with('@')
+                            && let ValueView::LazyList(list) = value.view()
+                            && !list.is_genuinely_lazy()
+                        {
+                            // A finite `gather` arrives as a LazyList; the copy
+                            // is its elements in a fresh Array, as above.
+                            let list = crate::gc::Gc::clone(&list);
+                            value = Value::real_array(self.force_lazy_list_vm(&list)?);
                         }
                     }
                     if pd.sigilless {

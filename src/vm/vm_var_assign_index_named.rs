@@ -1979,6 +1979,17 @@ impl Interpreter {
                 // `keys`, then early-return the per-key result list (Set → Bool,
                 // Bag/Mix → the assigned value).
                 {
+                    // A typed QuantHash scalar still holding its type object
+                    // (`my MixHash $m; $m{@keys} = ...`) autovivifies to the
+                    // empty container first, so the slice store below records
+                    // each key's element object as the single-key store does.
+                    if let Some(ValueView::Package(sym)) =
+                        self.env().get(&var_name).map(Value::view)
+                        && matches!(sym.resolve().as_str(), "MixHash" | "BagHash" | "SetHash")
+                    {
+                        let empty = Self::empty_mutable_quanthash(&sym.resolve());
+                        self.env_mut().insert(var_name.clone(), empty);
+                    }
                     let (is_set, is_bag, is_mix, is_mut) =
                         match self.env().get(&var_name).map(Value::view) {
                             Some(ValueView::Set(_, m)) => (true, false, false, m),
@@ -2085,8 +2096,18 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-                // Check value type constraint for hash slice assignment
-                if let Some(constraint) = self.element_store_constraint(&var_name)
+                // Check value type constraint for hash slice assignment. For a
+                // `$`-sigil variable the lane constraint names the whole
+                // container (`my MixHash $m; $m{@keys} = ...`), so only a
+                // parameterised one says what its elements must be -- the same
+                // reduction the single-element store path applies.
+                let slice_constraint = match self.element_store_constraint(&var_name) {
+                    Some(c) if !var_name.starts_with('@') && !var_name.starts_with('%') => {
+                        self.scalar_container_element_constraint(&c)
+                    }
+                    other => other,
+                };
+                if let Some(constraint) = slice_constraint
                     && !self.is_container_subclass(&constraint)
                 {
                     for v in &vals {
@@ -2679,36 +2700,8 @@ impl Interpreter {
                             Some(ValueView::Nil) | Some(ValueView::Package(_)) | None
                         )
                     {
-                        let new_container = match type_name {
-                            "MixHash" => {
-                                let mut weights = HashMap::new();
-                                let weight = Self::mix_assignment_weight(&val)?;
-                                if weight != 0.0 {
-                                    weights.insert(key, weight);
-                                }
-                                Value::mix_hash(weights)
-                            }
-                            "BagHash" => {
-                                let mut counts = HashMap::new();
-                                if let ValueView::Int(n) = val.view()
-                                    && n > 0
-                                {
-                                    counts.insert(key, n);
-                                }
-                                Value::bag_hash(counts)
-                            }
-                            "SetHash" => {
-                                let mut items = std::collections::HashSet::new();
-                                if val.truthy() {
-                                    items.insert(key);
-                                }
-                                Value::set_parts(
-                                    crate::gc::Gc::new(crate::value::SetData::new(items)),
-                                    true,
-                                )
-                            }
-                            _ => unreachable!(),
-                        };
+                        let new_container =
+                            Self::autoviv_quanthash_with_key(type_name, &key, &idx, &val)?;
                         self.env_mut().insert(var_name.clone(), new_container);
                         // A SetHash element assignment evaluates to the key's Bool
                         // existence (`$sh<k> = 2` is `Bool::True`), not the RHS.
@@ -3003,40 +2996,8 @@ impl Interpreter {
                         // Autovivify typed containers: MixHash, BagHash, SetHash
                         // (the store key is the `.WHICH` string; record the key
                         // object so `.keys` reports it).
-                        let type_name = sym.resolve();
-                        let mut originals = ValueMap::default();
-                        crate::runtime::utils::record_quanthash_original(
-                            &mut originals,
-                            &key,
-                            &idx.deref_container(),
-                        );
-                        match type_name.as_str() {
-                            "MixHash" => {
-                                let mut weights = std::collections::HashMap::new();
-                                let weight = Self::mix_assignment_weight(&val)?;
-                                if weight != 0.0 {
-                                    weights.insert(key.clone(), weight);
-                                }
-                                *container = Value::mix_hash_with_original_keys(weights, originals);
-                            }
-                            "BagHash" => {
-                                let mut counts = std::collections::HashMap::new();
-                                let count = Self::bag_assignment_count(&val)?;
-                                if num_traits::Signed::is_positive(&count) {
-                                    counts.insert(key.clone(), count);
-                                }
-                                *container = Value::bag_typed_big(counts, originals);
-                                let _ = container.with_bag_mut(|_, m| *m = true);
-                            }
-                            "SetHash" => {
-                                let mut items = std::collections::HashSet::new();
-                                if val.truthy() {
-                                    items.insert(key.clone());
-                                }
-                                *container = Value::set_hash_typed(items, originals);
-                            }
-                            _ => unreachable!(),
-                        }
+                        *container =
+                            Self::autoviv_quanthash_with_key(&sym.resolve(), &key, &idx, &val)?;
                     } else if let Some(res) = {
                         let container_snapshot = container.clone();
                         container.with_set_mut(|set, is_mutable| {

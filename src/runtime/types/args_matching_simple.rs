@@ -66,7 +66,7 @@ impl Interpreter {
                     {
                         return Some(false);
                     }
-                    if !self.type_matches_value(tc, &arg) {
+                    if !self.param_constraint_accepts(tc, &arg) {
                         return Some(false);
                     }
                 }

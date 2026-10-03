@@ -124,7 +124,7 @@ impl Interpreter {
                             constraint: tc.to_string(),
                         });
                     } else if !self.native_dispatch_arg_matches(tc, args, Some(idx), &arg)
-                        || !self.type_matches_value(tc, &arg)
+                        || !self.param_constraint_accepts(tc, &arg)
                     {
                         nominal_ok = false;
                     }

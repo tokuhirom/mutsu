@@ -657,7 +657,7 @@ impl Interpreter {
                             arg_idx,
                             &dispatch_arg,
                         ))
-                        || !self.type_matches_value(&resolved_constraint, &dispatch_arg)
+                        || !self.param_constraint_accepts(&resolved_constraint, &dispatch_arg)
                     {
                         return false;
                     }
@@ -685,7 +685,7 @@ impl Interpreter {
                     && pd.type_constraint.is_none()
                     && let Some(arg) = arg_for_checks.as_ref()
                     && !matches!(arg.view(), ValueView::Array(..) | ValueView::Slip(..))
-                    && !self.type_matches_value("Positional", arg)
+                    && !self.binds_to_positional_param(arg)
                 {
                     return false;
                 }
@@ -954,7 +954,7 @@ impl Interpreter {
                     // on the alias; the outer parameter is named for its
                     // external key `c` and has none.
                     let sigil_name = pd.sigil_carrying_name();
-                    if sigil_name.starts_with('@') && !self.type_matches_value("Positional", val) {
+                    if sigil_name.starts_with('@') && !self.binds_to_positional_param(val) {
                         return false;
                     }
                     if sigil_name.starts_with('%') && !self.type_matches_value("Associative", val) {

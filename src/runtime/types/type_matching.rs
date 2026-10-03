@@ -526,6 +526,26 @@ impl Interpreter {
         }
     }
 
+    /// Whether `value` can bind to an untyped `@` parameter: it is
+    /// `Positional`, or it composes `PositionalBindFailover` (a `Seq`, which
+    /// is cached into a List on bind). Multi dispatch must accept the latter
+    /// too -- `(1,2).Seq ~~ Positional` is False, yet `multi f(@a)` takes it.
+    // Cost: O(1) amortized, as `type_matches_value`.
+    pub(crate) fn binds_to_positional_param(&mut self, value: &Value) -> bool {
+        self.type_matches_value("Positional", value)
+            || self.type_matches_value("PositionalBindFailover", value)
+    }
+
+    /// Whether an argument satisfies a parameter's nominal `constraint` for
+    /// dispatch: the type check, plus the failover a `Positional`-typed
+    /// parameter grants a Seq (`sub f(Positional $p)`, rakudo#4864).
+    // Cost: O(1) amortized, as `type_matches_value`.
+    pub(crate) fn param_constraint_accepts(&mut self, constraint: &str, value: &Value) -> bool {
+        self.type_matches_value(constraint, value)
+            || (constraint == "Positional"
+                && self.type_matches_value("PositionalBindFailover", value))
+    }
+
     // Cost: O(1) when the constraint matches or names no lexical type; the
     // miss path adds one registry-name probe and, on a hit, a scan of the type
     // tables.
