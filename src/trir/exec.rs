@@ -448,7 +448,15 @@ impl Interpreter {
                     let _class = self.opop();
                     let obj = self.opop();
                     let (name, conv) = **site;
-                    let v = conv.read(Self::nqp_getattr_named(&obj, name));
+                    let code_do = if name.code_do {
+                        self.nqp_code_do_attr(&obj, "$!do", None)
+                    } else {
+                        None
+                    };
+                    let v = match code_do {
+                        Some(body) => conv.read(Some(body?)),
+                        None => conv.read(Self::nqp_getattr_named(&obj, name)),
+                    };
                     self.trir.os.push(v);
                 }
                 TrOp::BindAttrC(site) => {
@@ -456,7 +464,17 @@ impl Interpreter {
                     let val = conv.bind(self.opop());
                     let _class = self.opop();
                     let obj = self.opop();
-                    Self::nqp_bindattr_named(conv.bind_op(), &obj, name, val.clone())?;
+                    let code_do = if name.code_do {
+                        self.nqp_code_do_attr(&obj, "$!do", Some(&val))
+                    } else {
+                        None
+                    };
+                    match code_do {
+                        Some(done) => {
+                            done?;
+                        }
+                        None => Self::nqp_bindattr_named(conv.bind_op(), &obj, name, val.clone())?,
+                    }
                     self.trir.os.push(val);
                 }
                 TrOp::NqpOpGen { id, arity } => {

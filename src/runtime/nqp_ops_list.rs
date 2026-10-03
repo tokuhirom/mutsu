@@ -492,6 +492,9 @@ impl Interpreter {
                     .map(|v| v.string_value_cow())
                     .unwrap_or_default();
                 let val = args.get(3).cloned().unwrap_or(Value::NIL);
+                if let Some(done) = self.nqp_code_do_attr(&obj, &attr, Some(&val)) {
+                    return Some(done.map(|_| obj));
+                }
                 match Self::nqp_bindattr_value(op, &obj, &attr, val) {
                     Ok(()) => Ok(obj),
                     Err(e) => Err(e),

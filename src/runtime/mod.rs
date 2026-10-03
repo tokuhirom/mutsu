@@ -821,6 +821,7 @@ pub(crate) mod multi_dispatch_plan;
 pub(crate) mod multi_dispatch_program;
 mod object_hash_assign;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
+mod code_do_attr;
 pub(crate) mod find_method_intercept;
 mod methods_dispatcher_raku;
 mod methods_object_default_ctor;
