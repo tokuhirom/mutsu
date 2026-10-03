@@ -53,6 +53,5 @@ pub(crate) fn enter_routine_body(param_defs: &[ParamDef], is_method: bool) -> Ro
 /// parse position.
 // Cost: O(d), d = implicit slurpies declared by enclosing routines (tiny).
 pub(crate) fn outer_declares_implicit_slurpy(name: &str) -> bool {
-    matches!(name, "@_" | "%_")
-        && OUTER_IMPLICIT_SLURPIES.with(|s| s.borrow().contains(&name))
+    matches!(name, "@_" | "%_") && OUTER_IMPLICIT_SLURPIES.with(|s| s.borrow().contains(&name))
 }
