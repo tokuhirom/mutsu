@@ -219,6 +219,13 @@ pub(crate) struct Registry {
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
     pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
+    /// `.^array_type` of a class that recorded one (`is array_type(T)`, a
+    /// composed role's trait, or `.^set_array_type`; see
+    /// `runtime::array_type_trait`).
+    pub(crate) array_types: HashMap<String, Value>,
+    /// A role's `is array_type(...)` argument, evaluated against the role's
+    /// type arguments when a class composes it (`runtime::array_type_trait`).
+    pub(crate) role_array_type_args: HashMap<String, crate::opcode::DeclTraitArg>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
@@ -279,7 +286,11 @@ pub(crate) struct Registry {
     /// outward package walk in `resolve_type_in_current_package`, which would
     /// otherwise re-derive `Foo` as a scope and let the class resolve *itself*
     /// under its own short name.
-    pub(crate) compound_declared_types: HashSet<String>,
+    ///
+    /// Maps each such name to the package it was really declared in, which is
+    /// the next scope the outward walk visits after it (skipping the
+    /// intermediate segments the compound name merely spells).
+    pub(crate) compound_declared_types: HashMap<String, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
