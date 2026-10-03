@@ -68,9 +68,12 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
   upstream module runs verbatim (rung 2). Neither "the implementation is large" nor "the real
   module is slow" justifies a native substitute — a measured gap justifies a transparent,
   semantics-preserving optimization only (ADR-0096 §D3). The exceptions are enumerated in ADR-0096
-  §D4: `NativeCall` (justified; measured not retirable, [#7560](https://github.com/tokuhirom/mutsu/issues/7560))
-  and the JSON `to-json`/`from-json` interception (scheduled for retirement,
-  [#8183](https://github.com/tokuhirom/mutsu/issues/8183)). Retire a provider the way `Pod::To::Text`
+  §D4, and none is permanent: the JSON `to-json`/`from-json` interception is retired
+  ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)), and `NativeCall` is being moved to
+  the vendored upstream module through its backend-neutral path
+  ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
+  [#11203](https://github.com/tokuhirom/mutsu/issues/11203)); its native provider stays only
+  until that lands. Retire a provider the way `Pod::To::Text`
   (`docs/batteries/pod-to-text.md`) and the native `monitor` declarator
   (`news/2026-08/exporthow-declare-mop.md`) were retired — but measure before assuming it is retirable.
 - **No stubs, hardcoded outputs, early returns or test-specific hacks** to make a test pass. Every
