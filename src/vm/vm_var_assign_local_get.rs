@@ -103,7 +103,7 @@ impl Interpreter {
                     // file-scope `my` resolves inside `get_env_with_main_alias`,
                     // which does not consult `env` for such a name (`unit_lexicals`).
                     self.get_env_with_main_alias(name)
-                        .or_else(|| self.package_chain_var_fallback(name))
+                        .or_else(|| self.package_chain_var_fallback(code.const_sym(name_idx)))
                         .unwrap_or(Value::NIL)
                 }
             }

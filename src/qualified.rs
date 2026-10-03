@@ -50,6 +50,9 @@
 
 use crate::symbol::{Symbol, wk};
 
+mod var;
+pub(crate) use var::{QualifiedVar, qualified_var, split_qualified_var};
+
 /// `<pkg>::<name>` as an interned `Symbol`, built once per pair.
 ///
 /// Use [`Symbol::as_str`] on the result for the `&str`-keyed APIs; it hands

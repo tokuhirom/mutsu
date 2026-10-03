@@ -524,7 +524,9 @@ impl Interpreter {
             Value::package(Symbol::intern(&qualified))
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
             Value::package(Symbol::intern(Self::resolve_type_alias(name)))
-        } else if let Some(enum_val) = self.resolve_enum_member_in_current_package(name) {
+        } else if let Some(enum_val) =
+            self.resolve_enum_member_in_current_package(Symbol::intern(name))
+        {
             // A bare enum member read from inside the package that declared the
             // enum (`unit class URI::Query; our enum HashFormat <… Lists>;
             // method new(:$h = Lists)`). The bare env key exists after a
@@ -685,7 +687,7 @@ impl Interpreter {
                 // Single-character `our`-scoped constant declared in an inner
                 // block (see the multi-char case below for rationale).
                 our_val
-            } else if let Some(pkg_val) = self.package_chain_var_fallback(name) {
+            } else if let Some(pkg_val) = self.package_chain_var_fallback(Symbol::intern(name)) {
                 // Same package-qualified fallback as the multi-char case below
                 // (see its comment) — a single-character sigilless `constant`
                 // inside a non-unit `module`/`package` hits this branch first
@@ -715,7 +717,7 @@ impl Interpreter {
             // Resolve the bare word to that persisted package value rather than
             // treating it as an undeclared bareword string.
             our_val
-        } else if let Some(pkg_val) = self.package_chain_var_fallback(name) {
+        } else if let Some(pkg_val) = self.package_chain_var_fallback(Symbol::intern(name)) {
             // A sigilless `constant \NAME` (or other `our`-scoped bareword)
             // declared directly inside a non-unit `module`/`package` block: its
             // value is stored under the package-qualified key (e.g. `RSV::EOR`),

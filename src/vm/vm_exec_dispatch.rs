@@ -486,7 +486,7 @@ impl Interpreter {
                         // variables accessed via package-qualified names (e.g., $Pkg::var).
                         // Bare variable names should NOT fall back to our_vars — the
                         // lexical alias for `our` variables is block-scoped.
-                        if crate::runtime::utils::has_double_colon(name) {
+                        if crate::qualified::is_qualified(code.const_sym(*name_idx)) {
                             self.get_our_var(name)
                                 .cloned()
                                 .or_else(|| self.our_var_pseudo_unqualified(name))
@@ -496,40 +496,30 @@ impl Interpreter {
                                     // ancestor of it), also try the fully-qualified
                                     // forms by prepending each ancestor prefix.
                                     // The cheap gate first: the common case is
-                                    // GLOBAL, and `current_package()` clones the
-                                    // name onto the heap to find that out.
+                                    // GLOBAL.
                                     if self.current_package_is_global() {
                                         return None;
                                     }
-                                    let cur = self.current_package();
-                                    let (sigil, bare) = if let Some(rest) = name.strip_prefix('$') {
-                                        ("$", rest)
-                                    } else if let Some(rest) = name.strip_prefix('@') {
-                                        ("@", rest)
-                                    } else if let Some(rest) = name.strip_prefix('%') {
-                                        ("%", rest)
-                                    } else if let Some(rest) = name.strip_prefix('&') {
-                                        ("&", rest)
-                                    } else {
-                                        ("", name)
-                                    };
-                                    // Walk up the current package, trying each prefix
-                                    // joined with the requested name.
-                                    let parts: Vec<&str> = cur.split("::").collect();
-                                    for i in (0..=parts.len()).rev() {
-                                        let prefix = parts[..i].join("::");
-                                        let candidate = if prefix.is_empty() {
-                                            format!("{sigil}{bare}")
-                                        } else {
-                                            format!("{sigil}{prefix}::{bare}")
-                                        };
-                                        if candidate == name {
-                                            continue;
-                                        }
-                                        if let Some(v) = self.get_our_var(&candidate).cloned() {
+                                    // Walk up the current package, longest prefix
+                                    // first, trying each joined with the requested
+                                    // name (sigil kept in front). The walk and each
+                                    // `<sigil><prefix>::<name>` key are memoized per
+                                    // symbol; the empty prefix would rebuild the
+                                    // name itself, which already missed above.
+                                    let name_sym = code.const_sym(*name_idx);
+                                    for pkg in crate::qualified::package_ancestors(
+                                        self.current_package_sym(),
+                                    ) {
+                                        let candidate =
+                                            crate::qualified::qualified_var(pkg, name_sym);
+                                        if let Some(v) =
+                                            self.get_our_var(candidate.as_str()).cloned()
+                                        {
                                             return Some(v);
                                         }
-                                        if let Some(v) = self.get_env_with_main_alias(&candidate) {
+                                        if let Some(v) =
+                                            self.get_env_with_main_alias(candidate.as_str())
+                                        {
                                             return Some(v);
                                         }
                                     }
@@ -546,22 +536,21 @@ impl Interpreter {
                         // This handles class body statements that access outer
                         // lexical variables which are stored in env under their
                         // unqualified names (not as `A::x`).
-                        if !crate::runtime::utils::has_double_colon(name) {
-                            return None;
-                        }
+                        // The split is memoized per symbol: no `"::"` search
+                        // on each miss.
+                        let split =
+                            crate::qualified::split_qualified_var(code.const_sym(*name_idx))?;
                         // Only apply when the qualifier matches the current package
                         // (i.e. the name was auto-qualified by the compiler, not
                         // explicitly written as a package-qualified access).
                         if self.current_package_is_global() {
                             return None;
                         }
-                        // Extract bare component after the last `::`
-                        let pos = name.rfind("::")?;
-                        let bare = &name[pos + 2..];
-                        if bare.is_empty() {
+                        // The bare component after the last `::`.
+                        if split.bare.is_empty() {
                             return None;
                         }
-                        self.get_env_with_main_alias(bare)
+                        self.get_env_with_main_alias(split.bare)
                     })
                     // Bare-name package-chain fallback: `our` variables and
                     // package-block `my` lexicals of the enclosing package
@@ -569,7 +558,7 @@ impl Interpreter {
                     // method's is its owner class, whose qualified name walks
                     // up to the enclosing module). See
                     // `package_chain_var_fallback`.
-                    .or_else(|| self.package_chain_var_fallback(name))
+                    .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
                     // `$E::v` through `constant E = A::B` (#11315).
                     .or_else(|| self.package_alias_var_read(name))
                     // Anonymous state variable (`$`): fall back to persisted
@@ -860,11 +849,11 @@ impl Interpreter {
                     // class Inner { method m { @a } } }`). Walk package
                     // ancestors just as scalar reads do; the immediate package
                     // lookup below cannot see Outer from Outer::Inner.
-                    .or_else(|| self.package_chain_var_fallback(name))
+                    .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
                     // `$E::v` through `constant E = A::B` (#11315).
                     .or_else(|| self.package_alias_var_read(name))
                     // Class-body outer-lexical fallback — see the GetHashVar twin.
-                    .or_else(|| self.auto_qualified_bare_env_read(name))
+                    .or_else(|| self.auto_qualified_bare_env_read(code.const_sym(*name_idx)))
                     // Last resort before the undeclared-variable default: a
                     // package-block/class-body `my @a` static persisted in
                     // `package_lexicals` (persist_class_body_statics /
@@ -1043,7 +1032,7 @@ impl Interpreter {
                     .or_else(|| self.module_scope_lexical(name).cloned())
                     // Nested classes inherit enclosing package-body container
                     // lexicals; mirror the array read's package-chain fallback.
-                    .or_else(|| self.package_chain_var_fallback(name))
+                    .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
                     // `$E::v` through `constant E = A::B` (#11315).
                     .or_else(|| self.package_alias_var_read(name))
                     // Outer-lexical fallback, mirroring GetGlobal: each class-body
@@ -1052,7 +1041,7 @@ impl Interpreter {
                     // (`%C::predef`) while the declaration flushed to env under the
                     // bare sigiled name (`%predef`). Strip the qualifier and retry
                     // when it names the current package.
-                    .or_else(|| self.auto_qualified_bare_env_read(name))
+                    .or_else(|| self.auto_qualified_bare_env_read(code.const_sym(*name_idx)))
                     // Last resort: a package-block/class-body `my %h` static
                     // persisted in `package_lexicals` after its bare `env` key
                     // was deliberately removed — see the `GetArrayVar` twin's
