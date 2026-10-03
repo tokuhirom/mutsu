@@ -3,7 +3,36 @@
 //! so the ~340 literal rows do not push the logic/tests in
 //! `native_method_row.rs` past the repo's 500-line-per-file guideline.
 
-/// `(owner, name, arity_bits, flag_bits)`.
+use std::collections::HashSet;
+use std::sync::OnceLock;
+
+pub(super) type RawRow = (&'static str, &'static str, u8, u8);
+
+/// [`RAW_ROWS`] with every repeated `(owner, name)` key folded into its first
+/// occurrence, in table order. Readers that must see each key once (the
+/// lookup table, `.^methods` enumeration) read this, never `RAW_ROWS`
+/// directly. Repeats are allowed so that sibling PRs adding the same row
+/// merge cleanly instead of breaking `main` (2026-10-03); the
+/// `raw_rows_repeated_keys_agree` test still rejects a repeat whose arity or
+/// flags differ, since folding that would silently drop one claim.
+// Cost: O(1) after the first call; that call is O(r), r = rows in `RAW_ROWS`.
+pub(super) fn rows() -> &'static [RawRow] {
+    static ROWS: OnceLock<Vec<RawRow>> = OnceLock::new();
+    ROWS.get_or_init(|| fold_repeated_keys(RAW_ROWS))
+}
+
+/// Keeps the first row of each `(owner, name)` key, in order.
+// Cost: O(r), r = `raw.len()`.
+pub(super) fn fold_repeated_keys(raw: &[RawRow]) -> Vec<RawRow> {
+    let mut seen = HashSet::new();
+    raw.iter()
+        .filter(|&&(owner, name, _, _)| seen.insert((owner, name)))
+        .copied()
+        .collect()
+}
+
+/// `(owner, name, arity_bits, flag_bits)`. A key may appear more than once
+/// with identical values; see [`rows`].
 #[rustfmt::skip]
 pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "chars", 1, 25),
@@ -1331,6 +1360,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "succ", 1, 16),
     ("Instant", "rand", 1, 16),
     ("Instant", "pred", 1, 16),
+    ("Instant", "rand", 1, 16),
     ("Instant", "base", 6, 16),
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),
