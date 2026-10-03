@@ -117,7 +117,7 @@ impl Compiler {
                 Stmt::ClassDecl {
                     name: qualified_sym,
                     name_expr: name_expr.clone(),
-                    parents: new_parents,
+                    parents: new_parents.clone(),
                     class_is_rw: *class_is_rw,
                     is_hidden: *is_hidden,
                     is_lexical: *is_lexical,
@@ -133,6 +133,21 @@ impl Compiler {
                                 "__source_compound_name".to_string(),
                                 Some(Expr::Literal(Value::str(bare.clone()))),
                             ));
+                        }
+                        // The qualified parent names above are a guess that the
+                        // name is a type of this package. When it is a trait
+                        // instead (`is foo`), it is dispatched under the name
+                        // as written (#11349).
+                        for (written, qualified) in parents.iter().zip(&new_parents) {
+                            if written != qualified {
+                                traits.push((
+                                    "__parent_spelling".to_string(),
+                                    Some(Expr::Literal(Value::pair(
+                                        qualified.clone(),
+                                        Value::str(written.clone()),
+                                    ))),
+                                ));
+                            }
                         }
                         traits
                     },
