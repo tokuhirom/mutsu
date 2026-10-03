@@ -375,6 +375,17 @@ impl Interpreter {
     }
 
     pub(crate) fn join_constraint_smiley(base: &str, smiley: &str) -> String {
+        // An object-hash constraint (`Str{Int}`): the smiley belongs to the
+        // value type, ahead of the key part.
+        if let (value_type, Some(key_type)) =
+            crate::runtime::types::split_object_hash_constraint(base)
+        {
+            return format!(
+                "{}{{{}}}",
+                Self::join_constraint_smiley(value_type, smiley),
+                key_type
+            );
+        }
         let base = base
             .trim_end_matches(":D")
             .trim_end_matches(":U")
@@ -430,7 +441,11 @@ impl Interpreter {
                         &attr_type_constraints,
                     )
                     .unwrap_or_else(|| "Any".to_string());
-                    let constraint = Self::join_constraint_smiley(&base, smiley);
+                    // Elements are checked against the value type alone; an
+                    // object hash's key part (`Str{Int}`) is not theirs.
+                    let (value_type, _) =
+                        crate::runtime::types::split_object_hash_constraint(&base);
+                    let constraint = Self::join_constraint_smiley(value_type, smiley);
                     let display = format!("{}!{}", attr.sigil, attr_name);
                     let mut elements = Vec::new();
                     match value.view() {

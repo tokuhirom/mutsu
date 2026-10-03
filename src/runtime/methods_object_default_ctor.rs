@@ -396,7 +396,11 @@ impl Interpreter {
                 continue;
             };
             if let Some(val) = attrs.get(attr_sym).cloned() {
-                match self.finalize_typed_container_attr(attr_name, sigil, elem_type, val) {
+                // `has Str:D @.e` is an `Array[Str:D]`; the smiley is recorded
+                // apart from the type constraint (`attribute_smileys`).
+                let elem_type =
+                    self.attribute_reported_constraint(cn_resolved, attr_name, elem_type);
+                match self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val) {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
                     Ok(tagged) => {

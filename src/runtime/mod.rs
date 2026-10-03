@@ -3986,7 +3986,7 @@ pub struct Interpreter {
     /// Maps bare name -> latest enum package name.
     poisoned_enum_aliases: std::sync::Arc<HashMap<String, String>>,
     /// Per-scope stack of bare enum names introduced, for cleanup on scope exit.
-    enum_scope_names: Vec<Vec<String>>,
+    enum_scope_names: Vec<Vec<(String, u64)>>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: std::sync::Arc<HashSet<String>>,

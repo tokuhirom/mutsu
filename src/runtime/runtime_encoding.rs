@@ -643,10 +643,21 @@ impl Interpreter {
     /// Record a bare enum name in the current scope for poisoning detection.
     /// Only marks as poisoned if the name was already declared in the *same*
     /// scope level by a different enum.
+    ///
+    /// A routine or closure body is a lexical scope of its own but pushes no
+    /// enum frame, so each entry also records the invocation it was declared
+    /// in: an `enum` inside a `supply { }` body run from a tap is not a sibling
+    /// of a same-named key declared by the unit that called it.
     pub(crate) fn register_enum_bare_name(&mut self, name: &str, enum_type: &str) {
+        let invocation = self
+            .routine_stack()
+            .last()
+            .map_or(0, |frame| frame.invocation_id);
         // Check only the current scope for the same name from a different enum
         if let Some(current_scope) = self.enum_scope_names.last()
-            && current_scope.iter().any(|n| n == name)
+            && current_scope
+                .iter()
+                .any(|(n, inv)| n == name && *inv == invocation)
             && let Some(ValueView::Enum {
                 enum_type: prev_type,
                 ..
@@ -657,7 +668,7 @@ impl Interpreter {
                 .insert(name.to_string(), enum_type.to_string());
         }
         if let Some(scope) = self.enum_scope_names.last_mut() {
-            scope.push(name.to_string());
+            scope.push((name.to_string(), invocation));
         }
     }
 
@@ -670,7 +681,7 @@ impl Interpreter {
     /// that were introduced in the exiting scope.
     pub(crate) fn pop_enum_scope(&mut self) {
         if let Some(names) = self.enum_scope_names.pop() {
-            for name in names {
+            for (name, _) in names {
                 crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases).remove(&name);
             }
         }

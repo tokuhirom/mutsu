@@ -434,6 +434,7 @@ impl Interpreter {
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
+                    let tc = self.attribute_reported_constraint(&cn, method, &tc);
                     let (value_type, key_type) =
                         crate::runtime::types::split_object_hash_constraint(&tc);
                     let info = crate::runtime::ContainerTypeInfo {

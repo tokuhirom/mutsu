@@ -1325,7 +1325,21 @@ impl Interpreter {
                         // `runtime::react_done_handler_depth`.
                         let _react_done_handler =
                             crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
+                        // A `whenever` body driven by a chained on-demand
+                        // source is a stamped callback: make its own supply
+                        // block's emitter the innermost active one while it
+                        // runs, as `call_supply_tap` does, so a bare `emit` in
+                        // a sub the body calls reaches that block (TAP's
+                        // `parse-stream` emits from a nested `sub emit-reset`).
+                        let (own_emitter, stamped) = Self::whenever_tap_emitter(&tap_cb);
+                        let own_emitter = own_emitter.filter(|_| stamped);
+                        if let Some(ref e) = own_emitter {
+                            self.active_supply_emitters.push(e.clone());
+                        }
                         let tap_result = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                        if own_emitter.is_some() {
+                            self.active_supply_emitters.pop();
+                        }
                         drop(_react_done_handler);
                         match tap_result {
                             Ok(_) => {}
