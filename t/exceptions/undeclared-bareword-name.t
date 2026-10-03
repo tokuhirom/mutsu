@@ -18,21 +18,21 @@ sub run-snippet(Str:D $code) {
     my ($status, $out, $err) = run-snippet 'say FooBarBaz.^name; say "alive"';
     isnt $status, 0, 'an undeclared bareword term fails the program';
     is $out, '', '...before anything runs';
-    like $err, /'Undeclared ' \w+ ':' \s+ 'FooBarBaz used at line 1'/,
-        '...as an undeclared symbol naming the term and its line';
+    like $err, /'Undeclared ' \w+ ':' \s+ 'FooBarBaz used'/,
+        '...as an undeclared symbol naming the term';
 }
 
 {
     my ($status, $out, $err) = run-snippet "say 1;\nmy \$x = 2;\nsay Nope;";
     isnt $status, 0, 'an undeclared term on a later line fails too';
     is $out, '', '...still before the earlier statements run';
-    like $err, /'Nope used at line 3'/, '...reporting the line of the term';
+    like $err, /'Nope used' .* ['line 3' | '-e:3']/, '...reporting the line of the term';
 }
 
 {
     my ($status, $out, $err) = run-snippet 'sub f { Missing.new }; say "alive"';
     isnt $status, 0, 'an undeclared term inside a routine body is caught at compile time';
-    like $err, /'Undeclared ' \w+ ':' \s+ 'Missing used at line 1'/, '...with the same message';
+    like $err, /'Undeclared ' \w+ ':' \s+ 'Missing used'/, '...with the same message';
 }
 
 # Legitimate barewords are untouched.

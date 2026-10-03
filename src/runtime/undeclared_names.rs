@@ -16,6 +16,7 @@
 use super::undeclared_routines::{module_imports_no_names, scope_blind_declared_names};
 use super::*;
 use crate::ast_visit::{NameKind, Visit, walk_stmt, walk_stmts};
+use crate::value::RuntimeErrorCode;
 
 /// Whether the unit pulls in names the walk cannot see.
 #[derive(Default)]
