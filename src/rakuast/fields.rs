@@ -86,6 +86,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("statement-list", Absent::Required),
             ("comp-unit-name", Absent::Required),
         ],
+        RegexCharClass(kind) => kind.model_fields(),
         RegexInternalModifierIgnoreCase => {
             &[("modifier", Absent::Str("i")), ("negated", Absent::False)]
         }

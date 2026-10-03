@@ -2523,7 +2523,9 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 quantifier,
             })
         }
-        RakuAstClass::RegexCharClassDigit => Ok(RegexNode::CharClassDigit),
+        RakuAstClass::RegexCharClass(kind) => super::regex_char_class::lower(kind, node)
+            .map(RegexNode::CharClass)
+            .ok_or_else(|| unsupported(node)),
         RakuAstClass::RegexInternalModifierIgnoreCase
         | RakuAstClass::RegexInternalModifierIgnoreMark => {
             let kind = if node.class == RakuAstClass::RegexInternalModifierIgnoreCase {

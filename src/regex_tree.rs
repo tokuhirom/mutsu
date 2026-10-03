@@ -6,6 +6,10 @@
 //! dynamic constructs stay on the existing string-based execution path until
 //! their own tree nodes are implemented.
 
+mod char_class;
+
+pub(crate) use char_class::{BackslashClass, CharClassAtom};
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RegexTree {
     pub(crate) body: RegexNode,
@@ -202,7 +206,7 @@ pub(crate) enum RegexNode {
     AnchorBeginningOfLine,
     AnchorEndOfString,
     AnchorEndOfLine,
-    CharClassDigit,
+    CharClass(CharClassAtom),
     WithWhitespace(Box<RegexNode>),
     /// An internal modifier (`:i`, `:ignorecase`, `:!m`) that switches a
     /// matching mode for the rest of its enclosing group. `long` records the
@@ -473,7 +477,10 @@ impl RegexTree {
                 // A modifier switches the mode for the rest of its group,
                 // which the runtime parser tracks; keep such a pattern on it.
                 RegexNode::InternalModifier { .. } => None,
-                RegexNode::CharClassDigit => Some(vec![token(
+                RegexNode::CharClass(CharClassAtom::Backslash {
+                    class: BackslashClass::Digit,
+                    negated: false,
+                }) => Some(vec![token(
                     crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
                         negated: false,
                         items: vec![crate::runtime::ClassItem::Digit],
@@ -481,6 +488,8 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                // The other classes keep the runtime parser's plan.
+                RegexNode::CharClass(_) => None,
                 RegexNode::AnchorBeginningOfString => {
                     if root {
                         *anchor_start = true;
@@ -905,7 +914,7 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit
+            | Self::CharClass(_)
             | Self::InternalModifier { .. } => {}
         }
     }
@@ -940,7 +949,7 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit
+            | Self::CharClass(_)
             | Self::InternalModifier { .. } => false,
         }
     }
@@ -976,7 +985,7 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit
+            | Self::CharClass(_)
             | Self::InternalModifier { .. } => false,
         }
     }
@@ -1009,20 +1018,22 @@ impl RegexNode {
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
-            | Self::CharClassDigit
+            | Self::CharClass(_)
             | Self::InternalModifier { .. } => false,
         }
     }
 
     fn to_source(&self) -> String {
         match self {
+            // A literal also holds escaped metacharacters (`a\#b` is the one
+            // literal `a#b`), which need their backslash back.
             Self::Literal(text) => text
                 .chars()
                 .flat_map(|ch| {
-                    if matches!(ch, '\\' | '|' | '+' | '*' | '?' | '(' | ')' | '[' | ']') {
-                        vec!['\\', ch]
-                    } else {
+                    if is_literal_char(ch) {
                         vec![ch]
+                    } else {
+                        vec!['\\', ch]
                     }
                 })
                 .collect(),
@@ -1164,7 +1175,7 @@ impl RegexNode {
             Self::AnchorBeginningOfLine => "^^".to_string(),
             Self::AnchorEndOfString => "$".to_string(),
             Self::AnchorEndOfLine => "$$".to_string(),
-            Self::CharClassDigit => "\\d".to_string(),
+            Self::CharClass(atom) => atom.to_source(),
             Self::InternalModifier {
                 kind,
                 long,
@@ -1177,6 +1188,13 @@ impl RegexNode {
             Self::WithWhitespace(child) => child.to_source(),
         }
     }
+}
+
+/// A character that stands for itself in regex source: a word character, or
+/// a combining mark continuing one (`क्ष`).
+// Cost: O(1).
+fn is_literal_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_' || unicode_normalization::char::is_combining_mark(ch)
 }
 
 fn sequence_for_multichar_literal(node: RegexNode) -> RegexNode {
@@ -1536,41 +1554,21 @@ impl Parser {
                 {
                     let last = text.pop().expect("literal has more than one character");
                     let prefix = std::mem::take(text);
-                    atom = RegexNode::Sequence(vec![
-                        RegexNode::Literal(prefix),
-                        RegexNode::Quantified {
-                            atom: Box::new(RegexNode::Literal(last.to_string())),
-                            quantifier,
-                        },
-                    ]);
-                    // The quantifier has already been attached to the final
-                    // literal in the sequence.
-                } else {
+                    self.push_term(&mut nodes, RegexNode::Literal(prefix), saw_whitespace);
                     atom = RegexNode::Quantified {
-                        atom: Box::new(atom),
+                        atom: Box::new(RegexNode::Literal(last.to_string())),
                         quantifier,
                     };
+                    // The prefix took the whitespace written before it.
+                    nodes.push(atom);
+                    continue;
                 }
+                atom = RegexNode::Quantified {
+                    atom: Box::new(atom),
+                    quantifier,
+                };
             }
-
-            if self.declaration {
-                // WithWhitespace belongs to the term before a written space.
-                // The root declaration gets one implicit final wrapper, while
-                // nested groups only retain wrappers caused by their own
-                // written whitespace. This is the distinction Rakudo exposes
-                // for `rule x { a[bc]d }`.
-                if saw_whitespace {
-                    wrap_last_with_whitespace(&mut nodes);
-                }
-            } else if saw_whitespace
-                && nodes
-                    .last()
-                    .is_some_and(|n| !matches!(n, RegexNode::InternalModifier { .. }))
-                && let Some(previous) = nodes.pop()
-            {
-                nodes.push(RegexNode::WithWhitespace(Box::new(previous)));
-            }
-            nodes.push(atom);
+            self.push_term(&mut nodes, atom, saw_whitespace);
         }
 
         if nodes.is_empty() {
@@ -1581,6 +1579,38 @@ impl Parser {
         } else {
             Some(RegexNode::Sequence(nodes))
         }
+    }
+
+    /// Append a parsed term to a sequence. `saw_whitespace` says whether
+    /// whitespace was written before it. A literal written right after
+    /// another one joins it, as in rakudo (`a\#b` is the one literal `a#b`).
+    // Cost: O(n), n = length of the joined literal.
+    fn push_term(&self, nodes: &mut Vec<RegexNode>, term: RegexNode, saw_whitespace: bool) {
+        if !saw_whitespace
+            && let RegexNode::Literal(text) = &term
+            && let Some(RegexNode::Literal(previous)) = nodes.last_mut()
+        {
+            previous.push_str(text);
+            return;
+        }
+        if self.declaration {
+            // WithWhitespace belongs to the term before a written space.
+            // The root declaration gets one implicit final wrapper, while
+            // nested groups only retain wrappers caused by their own
+            // written whitespace. This is the distinction Rakudo exposes
+            // for `rule x { a[bc]d }`.
+            if saw_whitespace {
+                wrap_last_with_whitespace(nodes);
+            }
+        } else if saw_whitespace
+            && nodes
+                .last()
+                .is_some_and(|n| !matches!(n, RegexNode::InternalModifier { .. }))
+            && let Some(previous) = nodes.pop()
+        {
+            nodes.push(RegexNode::WithWhitespace(Box::new(previous)));
+        }
+        nodes.push(term);
     }
 
     fn parse_atom(
@@ -1640,7 +1670,11 @@ impl Parser {
             }
             '@' | '%' => None,
             ')' | ']' if stops.contains(&ch) => None,
-            '|' | '+' | '*' | '?' | '.' | '^' | '>' => None,
+            '.' => {
+                self.pos += 1;
+                Some(RegexNode::CharClass(CharClassAtom::Any))
+            }
+            '|' | '+' | '*' | '?' | '^' | '>' => None,
             '<' => self
                 .parse_lookaround(sequential_interpolation)
                 .or_else(|| self.parse_subrule()),
@@ -2111,19 +2145,6 @@ impl Parser {
         None
     }
 
-    fn parse_escape(&mut self) -> Option<RegexNode> {
-        self.pos += 1;
-        let escaped = self.chars.get(self.pos).copied()?;
-        self.pos += 1;
-        match escaped {
-            'd' => Some(RegexNode::CharClassDigit),
-            // A quoted escaped character is still a static literal. The
-            // runtime parser remains authoritative for all other escapes.
-            c if c.is_ascii_punctuation() => Some(RegexNode::Literal(c.to_string())),
-            _ => None,
-        }
-    }
-
     fn parse_literal(&mut self) -> Option<RegexNode> {
         // Regex declarators contain Main-slang code rather than regex source
         // terms.  Keeping a partial tree for one would route a declaration
@@ -2133,16 +2154,15 @@ impl Parser {
         if self.declaration && self.starts_embedded_declaration() {
             return None;
         }
+        // Only word characters are literal in a regex; every other glyph is a
+        // metacharacter (rakudo: "Unrecognized regex metacharacter ,"), so a
+        // construct this tree does not model ends the literal and declines.
         let start = self.pos;
-        while let Some(ch) = self.chars.get(self.pos).copied() {
-            if ch.is_whitespace()
-                || matches!(
-                    ch,
-                    '|' | '+' | '*' | '?' | '(' | ')' | '[' | ']' | '$' | '@' | '%'
-                )
-            {
-                break;
-            }
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|&ch| is_literal_char(ch))
+        {
             self.pos += 1;
         }
         (self.pos > start).then(|| RegexNode::Literal(self.chars[start..self.pos].iter().collect()))
@@ -2937,14 +2957,14 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
-        | RegexNode::CharClassDigit
+        | RegexNode::CharClass(_)
         | RegexNode::InternalModifier { .. } => false,
     }
 }
 
 fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     match node {
-        RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClassDigit => true,
+        RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClass(_) => true,
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
         | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_supported_lookaround_body),

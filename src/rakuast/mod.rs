@@ -24,6 +24,7 @@ mod hash_literal;
 mod lower;
 mod name_parts;
 mod named_param;
+mod regex_char_class;
 mod render;
 mod routine_traits;
 mod signature_decl;
@@ -104,7 +105,7 @@ pub enum RakuAstClass {
     RegexAnchorBeginningOfLine,
     RegexAnchorEndOfString,
     RegexAnchorEndOfLine,
-    RegexCharClassDigit,
+    RegexCharClass(regex_char_class::RegexCharClassKind),
     RegexInternalModifierIgnoreCase,
     RegexInternalModifierIgnoreMark,
     ColonPairTrue,
@@ -368,7 +369,7 @@ impl RakuAstClass {
             RegexAnchorBeginningOfLine => "RakuAST::Regex::Anchor::BeginningOfLine",
             RegexAnchorEndOfString => "RakuAST::Regex::Anchor::EndOfString",
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
-            RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
+            RegexCharClass(kind) => kind.printed_name(),
             RegexInternalModifierIgnoreCase => "RakuAST::Regex::InternalModifier::IgnoreCase",
             RegexInternalModifierIgnoreMark => "RakuAST::Regex::InternalModifier::IgnoreMark",
             ColonPairTrue => "RakuAST::ColonPair::True",
@@ -538,7 +539,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorBeginningOfLine
                 | RakuAstClass::RegexAnchorEndOfString
                 | RakuAstClass::RegexAnchorEndOfLine
-                | RakuAstClass::RegexCharClassDigit
+                | RakuAstClass::RegexCharClass(_)
                 | RakuAstClass::RegexInternalModifierIgnoreCase
                 | RakuAstClass::RegexInternalModifierIgnoreMark
                 | RakuAstClass::NamePartEmpty
@@ -649,12 +650,7 @@ impl RakuAstClass {
                 &["RakuAST::Regex"]
             }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
-            RegexCharClassDigit => &[
-                "RakuAST::Regex::CharClass",
-                "RakuAST::Regex::Atom",
-                "RakuAST::Regex::Term",
-                "RakuAST::Regex",
-            ],
+            RegexCharClass(kind) => regex_char_class::ancestors(kind),
             RegexInternalModifierIgnoreCase | RegexInternalModifierIgnoreMark => &[
                 "RakuAST::Regex::InternalModifier",
                 "RakuAST::Regex::Atom",
@@ -953,7 +949,19 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorBeginningOfLine,
     RakuAstClass::RegexAnchorEndOfString,
     RakuAstClass::RegexAnchorEndOfLine,
-    RakuAstClass::RegexCharClassDigit,
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Digit),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Word),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Space),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Newline),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::HorizontalSpace),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::VerticalSpace),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Tab),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Escape),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::FormFeed),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::CarriageReturn),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Nul),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Any),
+    RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Specified),
     RakuAstClass::RegexInternalModifierIgnoreCase,
     RakuAstClass::RegexInternalModifierIgnoreMark,
     RakuAstClass::ColonPairTrue,
@@ -2338,6 +2346,9 @@ pub fn construct(
             ],
         }))));
     }
+    if let Some(node) = regex_char_class::construct(class_name, method, args) {
+        return node.map(Some);
+    }
     // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:
     // both nameds optional. A field equal to its default (the short spelling,
     // `False`) is left off, which is what the renderer then elides.
@@ -2509,7 +2520,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorBeginningOfLine
                     | RakuAstClass::RegexAnchorEndOfString
                     | RakuAstClass::RegexAnchorEndOfLine
-                    | RakuAstClass::RegexCharClassDigit
+                    | RakuAstClass::RegexCharClass(_)
                     | RakuAstClass::RegexInternalModifierIgnoreCase
                     | RakuAstClass::RegexInternalModifierIgnoreMark
             ) =>
@@ -2693,7 +2704,6 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         }
         ("RakuAST::Regex::Anchor::EndOfString", "new") => RakuAstClass::RegexAnchorEndOfString,
         ("RakuAST::Regex::Anchor::EndOfLine", "new") => RakuAstClass::RegexAnchorEndOfLine,
-        ("RakuAST::Regex::CharClass::Digit", "new") => RakuAstClass::RegexCharClassDigit,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
@@ -2960,7 +2970,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorBeginningOfLine
             | RakuAstClass::RegexAnchorEndOfString
             | RakuAstClass::RegexAnchorEndOfLine
-            | RakuAstClass::RegexCharClassDigit
+            | RakuAstClass::RegexCharClass(_)
             | RakuAstClass::ColonPairTrue
             | RakuAstClass::ColonPairFalse
             | RakuAstClass::ColonPairVariable

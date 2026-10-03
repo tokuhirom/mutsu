@@ -2824,7 +2824,7 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
         RegexNode::AnchorBeginningOfLine => (RakuAstClass::RegexAnchorBeginningOfLine, Vec::new()),
         RegexNode::AnchorEndOfString => (RakuAstClass::RegexAnchorEndOfString, Vec::new()),
         RegexNode::AnchorEndOfLine => (RakuAstClass::RegexAnchorEndOfLine, Vec::new()),
-        RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
+        RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
         RegexNode::InternalModifier {
             kind,
             long,
