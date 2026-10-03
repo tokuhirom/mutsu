@@ -342,15 +342,49 @@ impl Interpreter {
                     return Ok(target);
                 }
             }
+            // A `$` name whose container is a shared cell that knows the
+            // variable it was declared as -- an `is rw` / `is raw` / `\x`
+            // parameter aliasing the caller's `$a` -- reports that name, as
+            // rakudo's container descriptor does (#11196).
+            let cell_name = (!target_var.starts_with(['@', '%', '&']))
+                .then(|| {
+                    // The binder's record of the caller's variable, made in
+                    // this very frame (a dynamic `f(my $*OUT)` gets no shared
+                    // cell), first; then the descriptor of the shared cell the
+                    // name holds.
+                    self.env
+                        .get(MetaNs::VarSourceName.str_key_for_str(target_var))
+                        .map(Value::to_string_value)
+                        .or_else(|| {
+                            self.env
+                                .get(target_var)
+                                .and_then(|v| match v.view() {
+                                    ValueView::ContainerRef(cell) => cell.descriptor_name(),
+                                    _ => None,
+                                })
+                                .map(|s| s.resolve())
+                        })
+                })
+                .flatten();
+            let display_name = if let Some(src) = container_source_name.clone().or(cell_name) {
+                src
+            } else if target_var.starts_with('$')
+                || target_var.starts_with('@')
+                || target_var.starts_with('%')
+                || target_var.starts_with('&')
+            {
+                target_var.to_string()
+            } else {
+                format!("${}", target_var)
+            };
             if let Some(existing) = self.var_meta_value(target_var) {
                 // The cached meta instance goes stale when the SAME param name
                 // is re-bound differently on a later call of the sub (call 1
                 // unsupplied -> "element", call 2 supplied -> the param /
-                // caller name): only reuse it when its recorded name matches
-                // the current binding's descriptor name.
-                let expected = container_source_name
-                    .clone()
-                    .unwrap_or_else(|| target_var.to_string());
+                // caller name, or a `$` param aliasing a different caller
+                // variable, #11196): only reuse it when its recorded name
+                // matches the current binding's descriptor name.
+                let expected = display_name.clone();
                 let cached_name = match existing.view() {
                     ValueView::Instance { attributes, .. } => attributes
                         .as_map()
@@ -359,9 +393,7 @@ impl Interpreter {
                         .unwrap_or_default(),
                     _ => expected.clone(),
                 };
-                if !(target_var.starts_with('@') || target_var.starts_with('%'))
-                    || cached_name == expected
-                {
+                if cached_name == expected {
                     // ADR-0064: the descriptor delegates every non-container
                     // method to the value the container holds, so refresh that
                     // snapshot before handing the cached instance back --
@@ -405,17 +437,6 @@ impl Interpreter {
                 "Sub"
             } else {
                 "Scalar"
-            };
-            let display_name = if let Some(src) = container_source_name {
-                src
-            } else if target_var.starts_with('$')
-                || target_var.starts_with('@')
-                || target_var.starts_with('%')
-                || target_var.starts_with('&')
-            {
-                target_var.to_string()
-            } else {
-                format!("${}", target_var)
             };
             let mut attributes = HashMap::new();
             attributes.insert("name".to_string(), Value::str(display_name));
