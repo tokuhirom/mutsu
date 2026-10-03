@@ -55,7 +55,13 @@ impl Interpreter {
         let parameterized = !type_params.is_empty();
         let saved_package = self.current_package().to_string();
         self.set_current_package(role_name.to_string());
+        // `use`/`need` statements seen so far in the body: they are BEGIN-time,
+        // so a nested type declared after one may name the module's role.
+        let mut used_modules: Vec<String> = Vec::new();
         for op in deferred_body_ops {
+            if let Stmt::Use { module, .. } | Stmt::Need { module } = &op.raw {
+                used_modules.push(module.clone());
+            }
             let eager = match &op.raw {
                 // An exported `my constant`/`my $x` is a compile-time
                 // declaration too (#9981).
@@ -89,7 +95,12 @@ impl Interpreter {
             if !eager {
                 continue;
             }
-            if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
+            let loaded = nested_type_parent_names(&op.raw).try_for_each(|parent| {
+                self.load_role_body_module_for_parent(&used_modules, &parent)
+            });
+            if let Err(error) =
+                loaded.and_then(|()| self.run_block_raw(std::slice::from_ref(&op.raw)))
+            {
                 self.set_current_package(saved_package);
                 return Err(error);
             }
@@ -177,4 +188,27 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
+}
+
+/// The `is`/`does` parents a nested class/role declaration names, header
+/// clauses and body `also does` alike.
+// Cost: O(p + b), p = header parents, b = top-level body statements.
+fn nested_type_parent_names(stmt: &Stmt) -> impl Iterator<Item = String> + '_ {
+    let (header, body): (Vec<&String>, &[Stmt]) = match stmt {
+        Stmt::ClassDecl {
+            parents,
+            does_parents,
+            body,
+            ..
+        } => (parents.iter().chain(does_parents).collect(), body),
+        Stmt::RoleDecl { body, .. } => (Vec::new(), body),
+        _ => (Vec::new(), &[]),
+    };
+    header
+        .into_iter()
+        .cloned()
+        .chain(crate::ast::scope_members(body).filter_map(|s| match s {
+            Stmt::DoesDecl { name, .. } => Some(name.resolve()),
+            _ => None,
+        }))
 }

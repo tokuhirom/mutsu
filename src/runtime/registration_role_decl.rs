@@ -324,3 +324,91 @@ impl Interpreter {
         }
     }
 }
+
+impl Interpreter {
+    /// Load (without importing) the body-`use`d module that supplies a
+    /// role-body parent named `parent`, when it is not loaded yet.
+    ///
+    /// `use` is a BEGIN-time statement, so in
+    /// `role R { use A::B; also does A::B; }` the module is loaded before the
+    /// `also does` is composed. mutsu defers every non-declaration statement
+    /// of a role body (the `use` included) to composition time, so the
+    /// parent walk would otherwise look `A::B` up before anything registered
+    /// it and report `Unknown role: A::B` (PDF::Class's `PDF::Destination`).
+    /// Only a module whose name is the parent's, or a package prefix of it,
+    /// is loaded; the import itself still happens when the deferred `use`
+    /// runs, which finds the module already loaded.
+    ///
+    /// Cost: O(u + L), u = modules used in the role body, L = the matched
+    /// module's load cost (paid once; later calls see it loaded).
+    pub(crate) fn load_role_body_module_for_parent<'m>(
+        &mut self,
+        body_used_modules: impl IntoIterator<Item = &'m String>,
+        parent: &str,
+    ) -> Result<(), RuntimeError> {
+        let mut body_used_modules = body_used_modules.into_iter().peekable();
+        if body_used_modules.peek().is_none()
+            || self.is_role_type_name(parent)
+            || self.registry().classes.contains_key(parent)
+        {
+            return Ok(());
+        }
+        let base = parent.split_once('[').map_or(parent, |(b, _)| b);
+        let mut supplying: Vec<&String> = body_used_modules
+            .filter(|m| {
+                base == m.as_str()
+                    || base
+                        .strip_prefix(m.as_str())
+                        .is_some_and(|rest| rest.starts_with("::"))
+            })
+            .filter(|m| !self.loaded_modules.contains(m.as_str()))
+            .collect();
+        // Longest name first: the most specific module is the likeliest home.
+        supplying.sort_by_key(|m| std::cmp::Reverse(m.len()));
+        for module in supplying {
+            self.need_module(module)?;
+            if self.is_role_type_name(base) || self.registry().classes.contains_key(base) {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Interpreter {
+    /// Record a role attribute's custom traits (`has $.x is entry(...)`) for
+    /// `apply_pending_role_attribute_traits` to run at the role's first
+    /// composition. Rakudo applies them once to the role's own attribute at
+    /// compile time, with the role body's `use` imports already in scope;
+    /// mutsu runs that `use` only when the role is composed, so the handler
+    /// may not be callable yet at declaration.
+    ///
+    /// A parameterized role is skipped: a trait argument may name a type
+    /// parameter that is only bound per composition.
+    ///
+    /// Cost: O(t), t = traits on the attribute.
+    pub(super) fn record_role_attribute_traits(
+        &mut self,
+        cx: &RoleDeclCx<'_>,
+        decl: &crate::opcode::CompiledAttrDecl,
+        attr_name: &str,
+    ) {
+        if !cx.type_params.is_empty()
+            || decl
+                .unknown_traits
+                .iter()
+                .all(|(kind, _, _)| kind == "does")
+        {
+            return;
+        }
+        let key = (cx.name.to_string(), attr_name.to_string());
+        let mut registry = self.registry_mut();
+        // A re-registration (hoisted shell, then the real declaration) of a
+        // role whose traits already ran must not run them twice.
+        if !registry.class_attribute_trait_objects.contains_key(&key) {
+            registry
+                .role_attribute_pending_traits
+                .insert(key, decl.clone());
+        }
+    }
+}

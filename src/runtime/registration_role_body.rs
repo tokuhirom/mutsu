@@ -166,6 +166,7 @@ impl Interpreter {
             format!("!{}", attr_name_str)
         };
         self.apply_handle_specs_to_role(&decl.handles, &attr_var_name, &mut cx.role_def);
+        self.record_role_attribute_traits(cx, &decl, &attr_name_str);
         Ok(())
     }
 
@@ -215,6 +216,7 @@ impl Interpreter {
         // `registry().roles` nor `registry().classes`, only its mangled
         // storage name is.
         let role_name_str = self.lexical_env_remap_name(&op.name.resolve());
+        self.load_role_body_module_for_parent(&cx.body_used_modules, &role_name_str)?;
         // A sibling role referenced by its short name (`role Derived
         // does Base` inside `unit module M`, where Base is registered
         // as `M::Base`) must resolve to its qualified name — the same
