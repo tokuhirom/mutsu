@@ -49,6 +49,17 @@ pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
 /// cannot be parsed as a number; `None` for every other operand.
 /// Cost: O(n), n = length of a Str operand; O(1) otherwise.
 pub(crate) fn str_numeric_operand_failure(value: &Value) -> Option<Value> {
+    // A Str-valued enum numifies through its value (`Enumeration.Numeric` is
+    // `$!value.Numeric`), so `enum T (A => "text")` makes `A == A` the same
+    // Failure as `"text" == "text"` -- and `A != A` is True, not a throw.
+    if let ValueView::Enum {
+        value: crate::value::EnumValue::Str(s),
+        ..
+    } = value.view()
+    {
+        crate::runtime::str_numeric::str_numeric_failure(s)?;
+        return Some(crate::builtins::methods_0arg::str_numeric_failure(s));
+    }
     let s = match value.view() {
         ValueView::Str(s) => s,
         ValueView::Mixin(inner, _) => match inner.view() {
