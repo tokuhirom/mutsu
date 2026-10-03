@@ -208,7 +208,7 @@ impl Interpreter {
     }
 
     /// The type names this unit declares, without harvesting `use`d modules.
-    fn unit_declared_types(stmts: &[Stmt]) -> DeclaredTypes {
+    pub(super) fn unit_declared_types(stmts: &[Stmt]) -> DeclaredTypes {
         scan(
             TypeDecls {
                 harvest: None,
