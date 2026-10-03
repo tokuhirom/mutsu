@@ -1,5 +1,10 @@
 # An `nqp::` op layer, measured and rejected — and the three fixes that closed the question
 
+> **Superseded (2026-10-03, #11488).** The "do not build an `nqp::` layer"
+> conclusion is retired: the documented op set is now implemented category by
+> category. See `news/2026-10/nqp-op-coverage-campaign.md` and
+> `docs/nqp-op-coverage.md`.
+
 This started as `todo/deep/nqp-op-layer-missing.md`, whose framing ("build an
 `nqp::` op layer, ~53 ops missing, needs an ADR") did not survive measurement.
 What follows is what was actually measured on 2026-07-26, the conclusion it
