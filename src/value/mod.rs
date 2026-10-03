@@ -976,7 +976,9 @@ pub struct ContainerCell {
     /// readonly kind has to reach a writer in another frame, so it travels
     /// with the binding instead of living in a name-keyed registry. Either way
     /// the kind lives on the cell, so it travels with every holder of the cell
-    /// and disappears with it on delete/rebind.
+    /// and disappears with it on delete/rebind. A captured variable's cell may
+    /// also hold [`DECIDED_WRITABLE`]: its declaring frame decided the binding
+    /// is writable (see [`Self::set_binding_decision`]).
     readonly: std::sync::atomic::AtomicU8,
     /// The container's `is default(...)` value, when it has one: what a `Nil`
     /// store through this cell decays to (ADR-0049). Like the `of`-type, it is
@@ -1056,7 +1058,31 @@ impl ContainerCell {
     /// Whether assignment through this cell must be refused.
     // Cost: O(1).
     pub fn is_readonly(&self) -> bool {
-        self.readonly.load(std::sync::atomic::Ordering::Relaxed) != 0
+        self.readonly_kind().is_some()
+    }
+
+    /// Record that this cell is a variable's binding whose writability its
+    /// declaring frame has decided: `None` means writable, `Some(kind)` refused
+    /// for that reason (ADR-11142 §2.3). A cell no frame decided for answers
+    /// nothing, and a free-variable write through it still asks the registry.
+    // Cost: O(1).
+    pub(crate) fn set_binding_decision(&self, kind: Option<crate::ast::ReadonlyKind>) {
+        READONLY_BINDING_CELL_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let code = kind.map_or(DECIDED_WRITABLE, encode_readonly_kind);
+        self.readonly
+            .store(code, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The writability this cell's declaring frame decided for the binding:
+    /// `None` when nobody decided, `Some(None)` writable, `Some(Some(kind))`
+    /// readonly for `kind`. See [`Self::set_binding_decision`].
+    // Cost: O(1).
+    pub(crate) fn binding_decision(&self) -> Option<Option<crate::ast::ReadonlyKind>> {
+        match self.readonly.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => None,
+            DECIDED_WRITABLE => Some(None),
+            code => Some(decode_readonly_kind(code)),
+        }
     }
 
     /// Why assignment through this cell is refused, or `None` when it is
@@ -1113,6 +1139,11 @@ pub fn readonly_binding_cells_possible() -> bool {
     READONLY_BINDING_CELL_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// [`ContainerCell::readonly`]'s code for a binding its declaring frame
+/// decided is writable (see [`ContainerCell::set_binding_decision`]). Not a
+/// `ReadonlyKind`: [`decode_readonly_kind`] maps it to `None`.
+const DECIDED_WRITABLE: u8 = 6;
+
 fn encode_readonly_kind(kind: crate::ast::ReadonlyKind) -> u8 {
     use crate::ast::ReadonlyKind;
     match kind {
@@ -1132,7 +1163,8 @@ fn decode_readonly_kind(code: u8) -> Option<crate::ast::ReadonlyKind> {
         2 => ReadonlyKind::Immutable,
         3 => ReadonlyKind::ImmutableValue,
         4 => ReadonlyKind::ImmutableDeep,
-        _ => ReadonlyKind::TypeObject,
+        5 => ReadonlyKind::TypeObject,
+        _ => return None,
     })
 }
 

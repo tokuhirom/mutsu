@@ -823,6 +823,19 @@ impl Interpreter {
         // itself explicitly right after this store. `vardecl_context` is
         // consumed inside the inner handler, so snapshot it here.
         let is_vardecl = self.vardecl_context().get();
+        // A `:=` declaration decides its own readonly state inside the inner
+        // handler (an immutable bind marks it, a container bind aliases a
+        // binding decided elsewhere), so only a plain `=` declaration is a
+        // fresh writable binding this frame can decide for (#11165). Snapshot
+        // the bind flags before the inner handler consumes them.
+        let decl_is_plain_store = is_vardecl
+            && !self.bind_context().get()
+            && !self.scalar_bind_context().get()
+            && !self.rebind_context().get()
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::VarRef { .. })
+            );
         // Container-descriptor naming (`@kh.VAR.name`): a plain `my @x`/`my %h`
         // declaration stamps the variable name into the fresh container below,
         // after the store. A `:=` bind keeps the bound container's original
@@ -901,6 +914,9 @@ impl Interpreter {
                     || code.needs_cell_ref_capture_slots.contains(&idx))
             {
                 self.box_decl_local_cell(code, idx as usize);
+                if decl_is_plain_store {
+                    self.decide_declared_binding_writable(code, idx as usize);
+                }
             }
             // ADR-0055's container lane: an own `@`/`%` an escaping child closure
             // captures and this frame cannot vouch for becomes a shared cell at
@@ -928,6 +944,9 @@ impl Interpreter {
                 // `my $a` reaches this same site and must not pollute the persisted
                 // map with its value.
                 self.box_decl_local_cell_any_sigil(code, idx as usize);
+                if decl_is_plain_store {
+                    self.decide_declared_binding_writable(code, idx as usize);
+                }
             }
         }
         r
@@ -1461,11 +1480,13 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Immutable);
         } else if bind_marks_type_object {
             let bare = code.locals[idx]
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::TypeObject);
         } else if bind_marks_itemized_scalar {
             // A readonly Scalar holds the itemized aggregate: the name owns a
             // container (so `.VAR` is `Scalar`), but cannot be assigned through.
@@ -1473,6 +1494,7 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Alias);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later

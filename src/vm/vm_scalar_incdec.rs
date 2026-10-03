@@ -95,7 +95,7 @@ impl Interpreter {
         }
         // `++$n` on a read-only parameter (non-`is rw`/`is copy`) is an
         // X::Multi::NoMatch in Raku: the operator requires a mutable argument.
-        self.check_readonly_for_incdec_for(name, Some(name_sym), k.routine_name())?;
+        self.check_named_incdec_readonly(code, name, name_sym, k.routine_name())?;
         if let Some(r) = self.try_slotless_attr_incdec(code, name, k.increment, k.prefix) {
             return r;
         }
