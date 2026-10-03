@@ -134,6 +134,17 @@ pub(super) enum RxOp {
         ctr: u16,
         min: u32,
     },
+    /// `regs[ctr] >= regs[min]` (a `** { … } % sep` quantifier's minimum).
+    AtLeastReg {
+        ctr: u16,
+        min: u16,
+    },
+    /// `regs[ctr] <= regs[max]` (`usize::MAX`: no bound), for the first atom
+    /// of a `** { … } % sep` quantifier, which is not under its loop head.
+    AtMostReg {
+        ctr: u16,
+        max: u16,
+    },
     /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
     OpenCapture,
     /// Open an inline level: part of the enclosing level's regex (a `&`

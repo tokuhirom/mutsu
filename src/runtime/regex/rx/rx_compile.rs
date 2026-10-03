@@ -42,7 +42,7 @@ pub(super) struct Compiler {
     pub(super) ltm_alts: Vec<super::LtmAltTable>,
     pub(super) nregs: usize,
     /// Set when a `Code` or `VarDecl` op is emitted.
-    has_code: bool,
+    pub(super) has_code: bool,
     /// Set when a `Call` op is emitted.
     has_call: bool,
     /// How many enclosing quantified bodies contain an alternation: the walk

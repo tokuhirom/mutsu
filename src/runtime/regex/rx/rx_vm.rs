@@ -773,6 +773,16 @@ impl Interpreter {
                         pc += 1;
                         reg!(ctr) >= min as usize
                     }
+                    // Cost: O(1).
+                    RxOp::AtLeastReg { ctr, min } => {
+                        pc += 1;
+                        reg!(ctr) >= reg!(min)
+                    }
+                    // Cost: O(1).
+                    RxOp::AtMostReg { ctr, max } => {
+                        pc += 1;
+                        reg!(ctr) <= reg!(max)
+                    }
                     // Cost: see `rx_capture_op`.
                     op @ (RxOp::OpenCapture
                     | RxOp::OpenInline
