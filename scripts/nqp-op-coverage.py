@@ -41,6 +41,15 @@ RAKUDO_OPS_URL = ("https://raw.githubusercontent.com/rakudo/rakudo/main/"
                   "src/vm/moar/Perl6/Ops.nqp")
 RAKUDO_CATEGORY = "Rakudo p6* (HLL)"
 
+# Ops a Raku program can name but never actually run, with the reason; they
+# are reported under "Not applicable" instead of as missing. Add an entry only
+# with evidence (what Rakudo itself does), never to make the table look done.
+NOT_APPLICABLE = {
+    "list_b": "Rakudo rejects every Raku call at compile time (\"The 'list_b' op "
+              "needs a list of blocks, got QAST::Op\"): a Raku block literal "
+              "never compiles to the bare QAST::Block the op requires.",
+}
+
 # Tracking issue per category (the campaign's sub-issues). Several small
 # categories share one issue.
 TRACKING = {
@@ -127,6 +136,8 @@ def out_of_scope(o):
     """
     if o["op"].startswith("jvm") or o["op"] in ("js", "const"):
         return True
+    if o["op"] in NOT_APPLICABLE:
+        return True
     if o.get("raku_unreachable"):
         return True
     return bool(o["only"]) and "moar" not in o["only"]
@@ -194,11 +205,17 @@ def markdown(results):
             suffix = " (#%d)" % issue if issue else ""
             lines.append("- **%s**%s: %s" % (
                 cat, suffix, ", ".join("`%s`" % m for m in missing)))
-    skipped = [r["op"] for r in results if out_of_scope(r)]
+    skipped = [r["op"] for r in results
+               if out_of_scope(r) and r["op"] not in NOT_APPLICABLE]
     lines.append("")
     lines.append("Out of scope (JS/JVM-only, `const` as a call, or rejected "
                  "by Rakudo itself): %s"
                  % ", ".join("`%s`" % s for s in skipped))
+    lines.append("")
+    lines.append("## Not applicable")
+    lines.append("")
+    for op, reason in sorted(NOT_APPLICABLE.items()):
+        lines.append("- `%s`: %s" % (op, reason))
     return "\n".join(lines) + "\n"
 
 

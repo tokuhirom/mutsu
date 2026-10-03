@@ -504,7 +504,8 @@ impl Interpreter {
                 }
             }
 
-            _ => return self.call_nqp_op_native(op, args),
+            // `existspos` + multi-dim ops (nqp_ops_multidim.rs), then native.
+            _ => return self.call_nqp_op_multidim(op, args),
         })
     }
 }
