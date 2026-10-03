@@ -11,124 +11,14 @@ use crate::value::Value;
 use super::parse_comma_or_expr;
 
 mod bind_arity;
+mod elements;
+mod named;
+use elements::{collect_nested_group_vars, parse_element_traits};
+use named::parse_named_destructuring;
 pub(crate) mod desugar;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
 
-use crate::ast::{ParamTrait, SignatureDecl, SignatureInit, SignatureVar as DestructureVar};
-
-/// Parse the `is rw` / `is raw` / `is copy` / `is readonly` traits a
-/// declarator-list element may carry (`my ($a is rw, $b) := ...`). An unknown
-/// trait is a compile-time error, as in a parameter declaration; `is rw` on an
-/// `@`/`%` element is refused like rakudo does. Returns the input past the
-/// traits (and trailing whitespace) plus the last trait seen.
-fn parse_element_traits<'a>(
-    input: &'a str,
-    name: &str,
-) -> Result<(&'a str, Option<ParamTrait>), PError> {
-    let mut r = input;
-    let mut found = None;
-    while let Some(after_is) = keyword("is", r) {
-        let Ok((after_ws, _)) = ws1(after_is) else {
-            break;
-        };
-        let (after_name, trait_name) = ident(after_ws)?;
-        let t = match trait_name.as_str() {
-            "rw" => ParamTrait::Rw,
-            "raw" => ParamTrait::Raw,
-            "copy" => ParamTrait::Copy,
-            "readonly" => ParamTrait::Readonly,
-            other => {
-                return Err(PError::fatal(format!(
-                    "Can't use unknown trait 'is' -> '{other}' in a parameter declaration."
-                )));
-            }
-        };
-        if t == ParamTrait::Rw && name.starts_with(['@', '%']) {
-            let sigil = &name[..1];
-            return Err(PError::fatal(format!(
-                "For parameter '{name}', '{sigil}' sigil containers don't need 'is rw' to be writable\n\
-Can only use 'is rw' on a scalar ('$' sigil) parameter, not '{name}'"
-            )));
-        }
-        found = Some(t);
-        let (after, _) = ws(after_name)?;
-        r = after;
-    }
-    Ok((r, found))
-}
-
-/// Recursively collect the (flattened) sigilless/sigilled targets of a nested
-/// destructure group `(\e, (\f, \g), $h)`, appending one `DestructureVar` per
-/// leaf to `vars`. Returns the remaining input past the closing `)`.
-fn collect_nested_group_vars<'a>(
-    input: &'a str,
-    vars: &mut Vec<DestructureVar>,
-) -> Result<&'a str, PError> {
-    let (mut r, _) = parse_char(input, '(')?;
-    let (r2, _) = ws(r)?;
-    r = r2;
-    loop {
-        if r.starts_with(')') {
-            break;
-        }
-        if r.starts_with('(') {
-            r = collect_nested_group_vars(r, vars)?;
-        } else if let Some(after_backslash) = r.strip_prefix('\\') {
-            let (r2, name) = ident(after_backslash)?;
-            register_term_symbol_from_decl_name(&name);
-            vars.push(DestructureVar {
-                name,
-                is_slurpy: false,
-                is_optional: false,
-                is_named: false,
-                default: None,
-                per_var_type_constraint: None,
-                where_constraint: None,
-                sigilless: true,
-                literal_value: None,
-                param_trait: None,
-            });
-            r = r2;
-        } else {
-            let sigil = r.as_bytes().first().copied().unwrap_or(0);
-            if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
-                let prefix = match sigil {
-                    b'@' => "@",
-                    b'%' => "%",
-                    b'&' => "&",
-                    _ => "",
-                };
-                let (r2, n) = crate::parser::stmt::lexical_var_name(r)?;
-                vars.push(DestructureVar {
-                    name: format!("{}{}", prefix, n),
-                    is_slurpy: false,
-                    is_optional: false,
-                    is_named: false,
-                    default: None,
-                    per_var_type_constraint: None,
-                    where_constraint: None,
-                    sigilless: false,
-                    literal_value: None,
-                    param_trait: None,
-                });
-                r = r2;
-            } else {
-                return Err(PError::expected(
-                    "variable sigil ($, @, %, &) or sigilless (\\name) in nested destructure group",
-                ));
-            }
-        }
-        let (r2, _) = ws(r)?;
-        r = r2;
-        if r.starts_with(',') {
-            let (r2, _) = parse_char(r, ',')?;
-            let (r2, _) = ws(r2)?;
-            r = r2;
-        }
-    }
-    let (r, _) = parse_char(r, ')')?;
-    Ok(r)
-}
+use crate::ast::{SignatureDecl, SignatureInit, SignatureVar as DestructureVar};
 
 pub(in crate::parser::stmt) fn parse_destructuring_decl(
     input: &str,
@@ -220,6 +110,30 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 }
                 per_var_type_constraint = Some(tc);
                 r = after_tc_ws;
+            } else if !is_slurpy
+                && !is_named
+                && (after_tc_ws.starts_with(',') || after_tc_ws.starts_with(')'))
+            {
+                // A bare type in the list (`my ($a, Any, $b) = ...`) is an
+                // anonymous typed scalar placeholder, the same as `Any $`.
+                vars.push(DestructureVar {
+                    name: "__ANON_STATE__".to_string(),
+                    is_slurpy: false,
+                    is_optional: false,
+                    is_named: false,
+                    default: None,
+                    per_var_type_constraint: Some(tc),
+                    where_constraint: None,
+                    sigilless: false,
+                    literal_value: None,
+                    param_trait: None,
+                });
+                r = after_tc_ws;
+                if let Some(after_comma) = r.strip_prefix(',') {
+                    let (r2, _) = ws(after_comma)?;
+                    r = r2;
+                }
+                continue;
             }
         }
 
@@ -544,99 +458,4 @@ fn native_type_default(tc: &Option<String>) -> Expr {
         Some("str") => Expr::Literal(Value::str(String::new())),
         _ => Expr::Literal(Value::NIL),
     }
-}
-
-/// Parse named destructuring: bind from a hash.
-fn parse_named_destructuring(
-    rest: &str,
-    vars: Vec<DestructureVar>,
-    rhs: Expr,
-    type_constraint: Option<String>,
-    is_state: bool,
-) -> PResult<'_, Stmt> {
-    let tmp_name = "%__destructure_tmp__".to_string();
-    let hash_bare = "__destructure_tmp__".to_string();
-    // The named targets read the source's named part: `.hash` is the Hash
-    // itself for a Hash/Map and the named arguments of a Capture
-    // (`my (:$path, :@globbers) := @open-list.shift`, IO::Glob).
-    let rhs = Expr::MethodCall {
-        target: Box::new(rhs),
-        name: crate::symbol::Symbol::intern("hash"),
-        args: Vec::new(),
-        modifier: None,
-        quoted: false,
-    };
-    let mut stmts = vec![Stmt::VarDecl {
-        name: tmp_name,
-        expr: rhs,
-        type_constraint: None,
-        is_state: false,
-        is_our: false,
-        is_dynamic: false,
-        is_export: false,
-        export_tags: Vec::new(),
-        custom_traits: Vec::new(),
-        where_constraint: None,
-    }];
-    for dvar in &vars {
-        let bare_name = if dvar.name.starts_with('@')
-            || dvar.name.starts_with('%')
-            || dvar.name.starts_with('&')
-        {
-            &dvar.name[1..]
-        } else {
-            &dvar.name
-        };
-        let index_expr = Expr::Index {
-            target: Box::new(Expr::HashVar(hash_bare.clone())),
-            index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
-            is_positional: false,
-        };
-        // A named `@`-sigil destructure target binds (`:=`) the hash value, which
-        // spreads an itemized array (e.g. a `.classify` bucket `$[2,4]`) into the
-        // array. mutsu's destructure lowers to assignment, so de-itemize the value
-        // via `.list` for `@`-targets — a no-op for a plain list, but it unwraps a
-        // single itemized array so `my (:@even) := classify(...)` yields `[2,4]`.
-        //
-        // When the key is ABSENT the named-array bind must yield an empty array
-        // (Rakudo parameter-binding semantics), not `[Any]`: a bare `%h<absent>`
-        // is `Any`, and `Any.list` is `(Any,)`, so guard with `:exists` and fall
-        // back to an empty list. `my (:@paths, :@uris) := <a>.classify(...)` must
-        // leave the unmatched `@uris` empty, or a downstream `%(... )` init sees a
-        // stray `(Any,)` and dies with X::Hash::Store::OddNumber.
-        let value_expr = if dvar.name.starts_with('@') {
-            Expr::Ternary {
-                cond: Box::new(Expr::Exists {
-                    target: Box::new(index_expr.clone()),
-                    negated: false,
-                    delete: false,
-                    arg: None,
-                    adverb: crate::ast::ExistsAdverb::None,
-                }),
-                then_expr: Box::new(Expr::MethodCall {
-                    target: Box::new(index_expr),
-                    name: crate::symbol::Symbol::intern("list"),
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                }),
-                else_expr: Box::new(Expr::ArrayLiteral(Vec::new())),
-            }
-        } else {
-            index_expr
-        };
-        stmts.push(Stmt::VarDecl {
-            name: dvar.name.clone(),
-            expr: value_expr,
-            type_constraint: type_constraint.clone(),
-            is_state,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        });
-    }
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
