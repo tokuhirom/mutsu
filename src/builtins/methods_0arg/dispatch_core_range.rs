@@ -101,8 +101,15 @@ pub(super) fn dispatch(
             // Argless `.head` reads the backing store raw (Rakudo's Array.head
             // candidate): a hole at index 0 yields `Nil`, not the vivified
             // `Any` that iteration (`for @a`, `.head(n)`) would produce.
-            ValueView::Array(items, ..) => Some(Ok(if items.hole_at(0) {
+            // An `Array`'s element comes back as its container, as rakudo's
+            // `Array.head` hands out the element itself: `$_ = 9 with
+            // @a.head` and `my $x := @a.head` write into `@a`.
+            ValueView::Array(items, kind) => Some(Ok(if items.hole_at(0) || items.is_empty() {
                 Value::NIL
+            } else if !kind.is_immutable_list() {
+                target
+                    .array_slot_ref(0, true)
+                    .unwrap_or_else(|| items.first().cloned().unwrap_or(Value::NIL))
             } else {
                 items.first().cloned().unwrap_or(Value::NIL)
             })),
@@ -171,7 +178,14 @@ pub(super) fn dispatch(
             // method — defer to runtime dispatch so the user accessor wins
             // over the list-like fallback.
             ValueView::Instance { .. } => return None,
-            ValueView::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::NIL))),
+            // As for `.head`: an `Array`'s last element comes back as its
+            // container.
+            ValueView::Array(items, kind) => Some(Ok(match items.len().checked_sub(1) {
+                Some(last) if !kind.is_immutable_list() && !items.hole_at(last) => target
+                    .array_slot_ref(last, true)
+                    .unwrap_or_else(|| items.last().cloned().unwrap_or(Value::NIL)),
+                _ => items.last().cloned().unwrap_or(Value::NIL),
+            })),
             _ => Some(Ok(runtime::with_receiver_items(target, |items| {
                 items.last().cloned().unwrap_or(Value::NIL)
             }))),
