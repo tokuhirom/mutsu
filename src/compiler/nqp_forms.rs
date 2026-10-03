@@ -7,6 +7,9 @@ use super::*;
 /// (`1 << (flags >> 2)` bytes).
 pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
     let konst = name.strip_prefix("nqp::const::")?;
+    if let Some(v) = crate::runtime::nqp_control_const_value(konst) {
+        return Some(v);
+    }
     // Cost: O(1) at run time (every constant folds to an integer literal at compile time).
     Some(match konst {
         "BINARY_ENDIAN_NATIVE" => 0,

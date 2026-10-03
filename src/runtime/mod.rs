@@ -677,6 +677,8 @@ mod nqp_ops_bigint;
 mod nqp_ops_builtin;
 mod nqp_ops_coerce;
 mod nqp_ops_compare;
+mod nqp_ops_exception;
+pub(crate) use nqp_ops_exception::control_const_value as nqp_control_const_value;
 pub(crate) mod nqp_ops_list;
 mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;

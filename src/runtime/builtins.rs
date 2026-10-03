@@ -1012,12 +1012,7 @@ impl Interpreter {
                         crate::value::ArrayKind::List,
                     )
                 };
-                if self.gather_items_len() > 0 {
-                    self.take_value(value.clone())?;
-                    Ok(value)
-                } else {
-                    Err(RuntimeError::take_signal(value))
-                }
+                self.builtin_take_value(value)
             }
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);

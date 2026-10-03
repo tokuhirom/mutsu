@@ -45,7 +45,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Conditional | 3 / 5 | 2 | #11500 |
 | Context Introspection | 4 / 24 | 20 | #11498 |
 | Loop/Control | 5 / 7 | 2 | #11500 |
-| Exception Handling | 3 / 15 | 12 | #11497 |
+| Exception Handling | 15 / 15 | 0 | #11497 |
 | Processes | 0 / 4 | 4 | #11501 |
 | File / Directory / Network | 9 / 25 | 16 | #11501 |
 | Hash | 8 / 8 | 0 | #11494 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **350 / 578** | **228** | |
+| **Total** | **362 / 578** | **216** | |
 
 ## Missing ops by category
 
@@ -78,7 +78,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Conditional** (#11500): `with`, `without`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **Loop/Control** (#11500): `defor`, `for`
-- **Exception Handling** (#11497): `backtracestrings`, `die`, `die_s`, `exception`, `getextype`, `newexception`, `resume`, `rethrow`, `setextype`, `setmessage`, `setpayload`, `throw`
 - **Processes** (#11501): `execname`, `exit`, `getpid`, `getppid`
 - **File / Directory / Network** (#11501): `chdir`, `chmod`, `chown`, `copy`, `cwd`, `fileexecutable`, `filewritable`, `getport`, `link`, `lstat_time`, `mkdir`, `rename`, `rmdir`, `stat_time`, `symlink`, `unlink`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`

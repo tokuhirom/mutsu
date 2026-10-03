@@ -6,6 +6,28 @@
 use super::*;
 
 impl Interpreter {
+    /// Run `code[begin..end]` as a CATCH or CONTROL handler for `exception`
+    /// (`None` for a control signal that has no topic object), recording it
+    /// as the exception being handled for the duration of the run. That
+    /// record is what `nqp::exception()` reads; every path that runs a handler
+    /// body (unwinding, inline at the throw or warn site) goes through here.
+    // Cost: O(1) plus the handler body.
+    pub(crate) fn run_handler_range(
+        &mut self,
+        code: &CompiledCode,
+        begin: usize,
+        end: usize,
+        compiled_fns: &CompiledFns,
+        exception: Option<Value>,
+    ) -> Result<(), RuntimeError> {
+        self.control
+            .handled_exceptions
+            .push(exception.unwrap_or(Value::NIL));
+        let result = self.run_range(code, begin, end, compiled_fns);
+        self.control.handled_exceptions.pop();
+        result
+    }
+
     /// ADR-0072: finish an exception whose CATCH handler already ran inline at
     /// the throw site. The handler body is NOT re-run; only this region's own
     /// disposition (end the region, swallow into `$!`, or keep propagating) is
@@ -164,7 +186,13 @@ impl Interpreter {
         let saved_when = self.when_matched();
         loan_env!(self, set_when_matched(false));
         let catch_stack_base = self.stack.len();
-        let when_handled = match self.run_range(code, catch_begin, control_begin, compiled_fns) {
+        let when_handled = match self.run_handler_range(
+            code,
+            catch_begin,
+            control_begin,
+            compiled_fns,
+            Some(err_val.clone()),
+        ) {
             Ok(()) => self.when_matched(),
             // succeed from `when` inside CATCH means exception was handled
             Err(catch_err) if catch_err.is_succeed() => {

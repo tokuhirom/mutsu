@@ -263,45 +263,6 @@ impl Interpreter {
                     a
                 }
             }),
-            // nqp::getpayload($ex): the payload MoarVM attached to a low-level
-            // (non-Raku) exception object via `nqp::setpayload` at throw time --
-            // e.g. a foreign/NativeCall exception wrapping an arbitrary value.
-            // mutsu's exception values are always already-boxed Raku `Value`s,
-            // with no separate native-exception-with-payload representation, so
-            // there is never a distinct payload to report here.
-            // TODO: if mutsu ever models a genuine native/foreign exception
-            // wrapper (e.g. for a future NativeCall exception-trapping
-            // feature), thread its payload through instead of always
-            // reporting "none" -- see #8573.
-            // Cost: O(1).
-            "getpayload" => Ok(Value::NIL),
-            // nqp::getmessage($ex): the message of a low-level exception
-            // object. Reuses raku's own message-derivation rules
-            // (`exception_message_text`: a user `method message` wins over the
-            // stored attribute) for a Raku exception instance, and falls back
-            // to stringifying anything else (mutsu has no separate native
-            // exception representation to introspect).
-            // Cost: O(n), n = chars of the message (a user `method message` runs at its own cost).
-            "getmessage" => {
-                let ex = args.first().cloned().unwrap_or(Value::NIL);
-                let msg = self
-                    .exception_message_text(&ex)
-                    .unwrap_or_else(|| ex.to_string_value());
-                Ok(Value::str(msg))
-            }
-            // nqp::backtrace($ex): the native backtrace MoarVM captured when
-            // `$ex` was thrown, as the array-of-frame-hashes `Backtrace.new`
-            // expects. mutsu's `Backtrace.new` does not consume that shape --
-            // it always captures the *current* call stack directly (see
-            // `build_backtrace_value`) -- so an empty array is a safe,
-            // non-crashing placeholder for the argument; `Backtrace.new(...)`
-            // ignores it and returns backtrace of the current point of the
-            // program's execution.
-            // TODO: thread the exception's own captured frames through here
-            // once `Backtrace.new` can be constructed from an explicit frame
-            // list instead of always sampling the live stack -- see #8573.
-            // Cost: O(1).
-            "backtrace" => Ok(Value::array(Vec::new())),
             // nqp::unbox_i($x): the native integer inside a boxed value. A
             // NativeCall `Pointer` unboxes to its address, which is what makes
             // pointer arithmetic expressible — `NativeHelpers::Pointer` builds
@@ -468,7 +429,7 @@ impl Interpreter {
                 }
                 Ok(target)
             }
-            _ => return None,
+            _ => return self.call_nqp_op_exception(op, args),
         })
     }
 
