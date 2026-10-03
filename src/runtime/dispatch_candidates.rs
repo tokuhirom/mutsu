@@ -909,6 +909,18 @@ impl Interpreter {
                         } else {
                             "Associative"
                         };
+                        // A `Seq` binds to `@` through `PositionalBindFailover`
+                        // (it is cached into a `List`), so it ranks as that
+                        // List: `multi h(@raw)` stays narrower than
+                        // `multi h(Any:D $x)` for `h("a b".words)`, as in rakudo,
+                        // instead of scoring as unrelated to `Positional`.
+                        if implicit == "Positional" && arg.is_seq_value() {
+                            total += self.type_hierarchy_distance(
+                                implicit,
+                                &Value::package(Symbol::intern("List")),
+                            );
+                            continue;
+                        }
                         total += self.type_hierarchy_distance_with_var_type(
                             implicit,
                             &arg,
@@ -1106,6 +1118,17 @@ impl Interpreter {
         } else {
             base
         };
+        // A `constant` bound to a mixin type object (`constant StrType = Str
+        // but Type`) names the composed type `Str+{Type}` itself, which the
+        // matching value is an instance of: distance 0, narrower than its
+        // base `Str`. Only a candidate that already matched is ranked.
+        if !crate::runtime::utils::is_known_type_constraint(base)
+            && let Some(bound_val) = self.type_name_binding(base)
+            && let ValueView::Mixin(inner, _) = bound_val.view()
+            && matches!(inner.view(), ValueView::Package(_))
+        {
+            return 0;
+        }
         if base == "Inf" {
             return match value.view() {
                 ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,

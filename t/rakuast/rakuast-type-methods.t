@@ -23,11 +23,11 @@ is RakuAST::Name.^methods(:local).map(*.name).sort.join(','),
     'Name exposes its supported constructors and accessor';
 
 is RakuAST::StatementList.^methods(:local).map(*.name).sort.join(','),
-    'add-statement,new,statements',
+    'add-statement,new,statements,unshift-statement',
     'StatementList exposes construction, mutation, and its read accessor';
 
 is RakuAST::Statement::Expression.^methods(:local).map(*.name).sort.join(','),
-    'condition-modifier,expression,loop-modifier,new',
+    'condition-modifier,expression,loop-modifier,new,set-expression',
     'statement wrapper exposes constructor and accessors';
 
 is RakuAST::Postfix.^methods(:local).map(*.name).sort.join(','),
