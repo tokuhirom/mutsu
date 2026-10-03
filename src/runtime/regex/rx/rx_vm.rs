@@ -586,35 +586,6 @@ impl Interpreter {
                             }
                         }
                     }
-                    // Cost: O(k·m) for the k iterations the scan matches, m = one
-                    // match of the callee (`regex_named_ratchet_run`); O(1) when the
-                    // scan does not apply.
-                    RxOp::NamedRun { atom, min, skip } => {
-                        match self.regex_named_ratchet_run(
-                            &program.atoms[atom as usize],
-                            chars,
-                            pos,
-                            min as usize,
-                            pkg,
-                        ) {
-                            None => {
-                                pc += 1;
-                                true
-                            }
-                            Some(None) => {
-                                walk_use(WalkUse::Bridged, "ratchet-scan");
-                                false
-                            }
-                            Some(Some((end, delta))) => {
-                                walk_use(WalkUse::Bridged, "ratchet-scan");
-                                levels.edit(|s| s.merge_delta(delta));
-                                pos = end;
-                                farthest = farthest.max(pos);
-                                pc = skip;
-                                true
-                            }
-                        }
-                    }
                     // Cost: O(1).
                     RxOp::Jmp(to) => {
                         pc = to;

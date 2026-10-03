@@ -15,8 +15,8 @@
 //! `:my` lexical and `<{ … }>` (`DropCapture`, `CapAtom`). Slice D (#10254) adds
 //! the `<subrule>` call (`Call`): a plain rule or a proto runs as a frame in the
 //! run's own loop (`rx_frame`, `rx_call`), any other callee goes through the
-//! walk's producer, and a ratcheted `*` / `+` over a call keeps the walk's
-//! possessive scan (`NamedRun`); `~` goal matches compile too. A pattern
+//! walk's producer, and a quantified call (`<x>*`) is a loop of committed calls;
+//! `~` goal matches compile too. A pattern
 //! holding anything else is declined as a whole and keeps the tree walk
 //! (ADR-0135 D5); the reason is reported under `MUTSU_VM_STATS`.
 //!
@@ -305,17 +305,6 @@ pub(super) enum RxOp {
     Call {
         atom: u32,
         commit: bool,
-    },
-    /// The ratcheted `*` (`min == 0`) / `+` (`min == 1`) of the `<subrule>`
-    /// `atoms[atom]` as one possessive scan, when the walk's fast path applies
-    /// to the call (`regex_named_ratchet_run`, the walk's own): the scan's
-    /// captures are merged and the pc jumps to `skip`, past the general loop
-    /// that follows. When it does not apply, the general loop runs. Fails when
-    /// the scan matched fewer than `min` iterations.
-    NamedRun {
-        atom: u32,
-        min: u32,
-        skip: u32,
     },
     /// The end of a `~` goal match's goal, which ran in a capture level of its
     /// own after the inner pattern's (`Collect`ed since `regs[base]`): close it

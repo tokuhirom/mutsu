@@ -119,7 +119,7 @@ impl Interpreter {
         &mut self,
         atom: &RegexAtom,
         pkg: Symbol,
-    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol)> {
+    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol, Option<Symbol>)> {
         let RegexAtom::Named(name) = atom else {
             return None;
         };
@@ -134,8 +134,14 @@ impl Interpreter {
         if candidates.len() != 1 {
             return None;
         }
-        let (parsed, sub_pkg, _sym_key) = &candidates[0];
-        Some((std::sync::Arc::clone(parsed), *sub_pkg))
+        // A proto with one candidate: its `:sym<…>` goes on the Match, as the
+        // proto dispatch files it.
+        let (parsed, sub_pkg, sym_key) = &candidates[0];
+        Some((
+            std::sync::Arc::clone(parsed),
+            *sub_pkg,
+            sym_key.as_deref().map(Symbol::intern),
+        ))
     }
 
     /// A regex `:my $var = EXPR;` — wherever it appears in the pattern, not
