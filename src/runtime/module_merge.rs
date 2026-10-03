@@ -133,6 +133,55 @@ impl Interpreter {
         names
     }
 
+    /// The types a unit declares under an explicit `GLOBAL::` name (`class
+    /// GLOBAL::Pointer`, as NativeCall's prelude splice does). Registration
+    /// strips the prefix, but such a declaration really goes into the shared
+    /// GLOBAL -- in Rakudo too -- so it is no module's own merge.
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(crate) fn explicit_global_type_names(stmts: &[crate::ast::Stmt]) -> HashSet<String> {
+        use crate::ast::Stmt;
+        crate::ast::scope_members(stmts)
+            .through_unit_package()
+            .filter_map(|stmt| match stmt {
+                Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => {
+                    name.with_str(|n| n.strip_prefix("GLOBAL::").map(str::to_string))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Record the modules `unit` merges at its top level before its body runs.
+    ///
+    /// A top-level `need`/`use` is a compile-time merge in Rakudo: the whole
+    /// unit sees the module, including the CHECK-time checks mutsu runs ahead
+    /// of the in-position statement, and including code that runs before the
+    /// statement because the module was already loaded elsewhere. A
+    /// conditional `use Foo:if(...)` is left to its in-position merge.
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(crate) fn premerge_top_level_uses(&mut self, unit: Symbol, stmts: &[crate::ast::Stmt]) {
+        use crate::ast::Stmt;
+        let modules: Vec<Symbol> = crate::ast::scope_members(stmts)
+            .through_unit_package()
+            .filter_map(|stmt| match stmt {
+                Stmt::Use {
+                    module,
+                    condition: None,
+                    ..
+                }
+                | Stmt::Need { module } => Some(Symbol::intern(module)),
+                _ => None,
+            })
+            .collect();
+        if modules.is_empty() {
+            return;
+        }
+        crate::runtime::cow_table_mut(&mut self.unit_merged_modules)
+            .entry(unit)
+            .or_default()
+            .extend(modules);
+    }
+
     /// Merge `module`'s GLOBAL into the scope running its `need`/`use`, and
     /// grant `importer` the packages the module's load granted (#7797).
     ///

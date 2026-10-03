@@ -918,6 +918,7 @@ impl Interpreter {
         let unit_name = Self::detect_unit_package_name(&stmts);
         // ADR-11136: the module's own top-level constants, packages, enums and
         // subsets, attributed to it once the load has run.
+        let explicit_global_types = Self::explicit_global_type_names(&stmts);
         let own_scope_names = if unit_name.is_none() {
             self.module_scope_declared_names(&stmts)
         } else {
@@ -961,6 +962,7 @@ impl Interpreter {
                 self.unit_of_source(Some(&source_path.to_string_lossy()));
             self.module_loading_unit_stack
                 .push((module_unit_for_loading_stack, self.routine_stack_len()));
+            self.premerge_top_level_uses(module_unit_for_loading_stack, &stmts);
             // Scope `current_unit` to this module's own compilation unit while
             // its mainline runs, exactly like `?FILE` just below. Without this,
             // a top-level declaration made directly in the module's own body
@@ -1474,6 +1476,9 @@ impl Interpreter {
                     .filter(|key| {
                         !before_function_keys.contains(key)
                             && registry.our_scoped_functions.contains_key(key)
+                            // A prelude splice is ambient compunit machinery
+                            // with its own gate (`prelude_visible_here`).
+                            && !self.prelude_registered_functions.contains(key)
                     })
                     .filter_map(|key| {
                         Self::toplevel_global_routine_name(&key.resolve()).map(Symbol::intern)
@@ -1579,7 +1584,11 @@ impl Interpreter {
         // `need`/`use` ran (ADR-11136).
         let own_names: Vec<Symbol> = new_types
             .iter()
-            .filter(|name| !name.contains("::") && !name.contains('\u{0}'))
+            .filter(|name| {
+                !name.contains("::")
+                    && !name.contains('\u{0}')
+                    && !explicit_global_types.contains(name.as_str())
+            })
             .filter(|name| {
                 self.module_owned_types
                     .get(module)
