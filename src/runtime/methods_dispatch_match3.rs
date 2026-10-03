@@ -785,6 +785,9 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        if crate::builtins::is_join_lazy(&target) {
+            return Some(Ok(Value::str("...".to_string())));
+        }
         if !matches!(
             target.view(),
             ValueView::Array(..)

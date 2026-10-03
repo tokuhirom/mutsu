@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 11;
+plan 12;
 
 # An outer variable a class/role METHOD assigns belongs to the scope the class
 # was declared in. A readonly (non-`is rw`) parameter of whoever calls the
@@ -80,3 +80,10 @@ class Late { method set { $late-imm = 1 } }
 $late-imm := 7;
 throws-like { Late.set }, Exception, message => /immutable/,
     'an immutable bind made after the class was declared is still honored';
+
+# The method's write reaches the immutable binding even when the caller's
+# readonly parameter shares its name (#11142, ADR-11142).
+sub shadow-imm($imm) { Imm.set }
+throws-like { shadow-imm(1) }, Exception,
+    message => 'Cannot assign to an immutable value',
+    'method refuses an immutable outer variable named like the caller\'s readonly param';

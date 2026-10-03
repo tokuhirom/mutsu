@@ -6,7 +6,10 @@
 //!   entry re-validated label uniqueness by scanning every op again (the
 //!   latter once per `map`/`grep` callback iteration);
 //! - the `StateVarInit` positions: resetting / syncing the `state` locals of a
-//!   range scanned the range once per state local, O(t * b).
+//!   range scanned the range once per state local, O(t * b);
+//! - the declaration facts of every `BlockScope` / `BlockLocalScope` range
+//!   ([`BlockRangeFacts`]): each entry scanned the block's ops for the slots it
+//!   declares and the topic binders it holds, O(b) per execution (#9170).
 //!
 //! Both are pure functions of `ops` and the constant pool, so they are built
 //! once per chunk, on first use. Each index records the `ops.len()` it was
@@ -34,6 +37,67 @@ pub(crate) struct OpScanIndex {
     /// Parallel to `CompiledCode::state_locals`: the ips of every
     /// `StateVarInit` op whose `(slot, key)` matches that entry, ascending.
     state_init_ips: Vec<Box<[usize]>>,
+    /// The ip of each `BlockScope` / `BlockLocalScope` op -> the facts of the
+    /// range it scopes.
+    block_facts: FxHashMap<usize, BlockRangeFacts>,
+}
+
+/// What a scope's exit cleanup needs to know about the ops of the scoped range:
+/// pure functions of those ops (and the constant pool), so computed once per
+/// chunk rather than by a scan on every entry.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BlockRangeFacts {
+    /// The slots the range's own declarations (`SetLocalDecl`, a block-scoped
+    /// `DeclareOurScalar`) own.
+    pub(crate) owned_slots: rustc_hash::FxHashSet<usize>,
+    /// The slots of the range's `state` declarations (`StateVarInit`).
+    pub(crate) state_slots: rustc_hash::FxHashSet<usize>,
+    /// Whether the range binds a topic of its own anywhere: an opcode that can
+    /// leave `$_` pointing at something the block chose, or a `$_ := ...`
+    /// rebinding (`MarkRebindContext` plus a store to `_`). A plain `$_ = ...`
+    /// assignment is not one.
+    pub(crate) binds_own_topic: bool,
+}
+
+impl BlockRangeFacts {
+    // Cost: O(b), b = ops in `[start, end)`.
+    pub(crate) fn scan(code: &CompiledCode, start: usize, end: usize) -> Self {
+        let ops = &code.ops[start..end.min(code.ops.len()).max(start)];
+        let mut facts = Self::default();
+        let mut rebind_context = false;
+        let mut stores_topic = false;
+        for op in ops {
+            match op {
+                OpCode::SetLocalDecl { slot, .. } | OpCode::DeclareOurScalar { slot, .. } => {
+                    facts.owned_slots.insert(*slot as usize);
+                }
+                OpCode::StateVarInit(slot, _) => {
+                    facts.state_slots.insert(*slot as usize);
+                }
+                OpCode::SetTopic
+                | OpCode::SaveTopic
+                | OpCode::RestoreTopic
+                | OpCode::EnterPointyTopic
+                | OpCode::ExitPointyTopic
+                | OpCode::ForLoop(_)
+                | OpCode::Given { .. }
+                | OpCode::DoGivenExpr { .. }
+                | OpCode::When { .. } => facts.binds_own_topic = true,
+                OpCode::MarkRebindContext => rebind_context = true,
+                OpCode::SetGlobal(idx)
+                    if code
+                        .constants
+                        .get(*idx as usize)
+                        .is_some_and(|c| c.as_str() == Some("_")) =>
+                {
+                    stores_topic = true;
+                }
+                _ => {}
+            }
+        }
+        facts.binds_own_topic |= rebind_context && stores_topic;
+        facts
+    }
 }
 
 impl OpScanIndex {
@@ -45,8 +109,15 @@ impl OpScanIndex {
             state_slots.entry((*slot, key.id())).or_insert(i);
         }
         let mut state_init_ips: Vec<Vec<usize>> = vec![Vec::new(); code.state_locals.len()];
+        let mut block_facts: FxHashMap<usize, BlockRangeFacts> = FxHashMap::default();
         for (ip, op) in code.ops.iter().enumerate() {
             match op {
+                OpCode::BlockScope { end, .. } => {
+                    block_facts.insert(ip, BlockRangeFacts::scan(code, ip + 1, *end as usize));
+                }
+                OpCode::BlockLocalScope { body_end, .. } => {
+                    block_facts.insert(ip, BlockRangeFacts::scan(code, ip + 1, *body_end as usize));
+                }
                 OpCode::Label(name_idx) => {
                     let name = label_name(code, *name_idx);
                     if label_targets.contains_key(name) {
@@ -81,6 +152,7 @@ impl OpScanIndex {
                 .into_iter()
                 .map(Vec::into_boxed_slice)
                 .collect(),
+            block_facts,
         }
     }
 }
@@ -111,6 +183,24 @@ impl CompiledCode {
         match self.op_scan_index() {
             Some(idx) => idx.duplicate_label.clone(),
             None => OpScanIndex::build(self).duplicate_label,
+        }
+    }
+
+    /// The declaration facts of the range scoped by the `BlockScope` /
+    /// `BlockLocalScope` op at `op_ip`, which covers `[op_ip + 1, end)`.
+    // Cost: O(1) amortized (built with the chunk's index, O(sum of the scoped
+    // ranges) once); a stale index rescans the range, O(b).
+    pub(crate) fn block_range_facts(
+        &self,
+        op_ip: usize,
+        end: usize,
+    ) -> std::borrow::Cow<'_, BlockRangeFacts> {
+        match self
+            .op_scan_index()
+            .and_then(|idx| idx.block_facts.get(&op_ip))
+        {
+            Some(facts) => std::borrow::Cow::Borrowed(facts),
+            None => std::borrow::Cow::Owned(BlockRangeFacts::scan(self, op_ip + 1, end)),
         }
     }
 
@@ -170,6 +260,28 @@ mod tests {
         assert!(code.state_local_init_in_range(0, 1, 2));
         assert!(!code.state_local_init_in_range(0, 2, 3));
         assert!(!code.state_local_init_in_range(0, 0, 1));
+    }
+
+    #[test]
+    fn block_range_facts_are_indexed() {
+        let mut code = CompiledCode::new();
+        code.ops.push(OpCode::BlockLocalScope {
+            body_end: 3,
+            succeed_boundary: false,
+        });
+        code.ops
+            .push(OpCode::StateVarInit(4, Symbol::intern("$n@1").id()));
+        code.ops.push(OpCode::SetTopic);
+        code.ops.push(OpCode::Pop);
+        let facts = code.block_range_facts(0, 3);
+        assert!(facts.state_slots.contains(&4));
+        assert!(facts.owned_slots.is_empty());
+        assert!(facts.binds_own_topic);
+        assert!(matches!(facts, std::borrow::Cow::Borrowed(_)));
+        // An ip that holds no scope op is answered by a scan of the range.
+        let scanned = code.block_range_facts(2, 4);
+        assert!(!scanned.binds_own_topic);
+        assert!(matches!(scanned, std::borrow::Cow::Owned(_)));
     }
 
     #[test]

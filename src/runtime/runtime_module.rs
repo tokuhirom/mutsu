@@ -103,7 +103,11 @@ impl Interpreter {
     /// imports are meant to persist anyway.
     pub(crate) fn record_import_env_key(&mut self, key: &str) {
         let key_sym = Symbol::intern(key);
-        let display = if key.starts_with(['$', '@', '%', '&'])
+        let display = if let Some(term) = key.strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+        {
+            // A sigilless term's env key (`\Y`); its pad name is bare.
+            term.to_string()
+        } else if key.starts_with(['$', '@', '%', '&'])
             || key.chars().next().is_some_and(|c| c.is_uppercase())
         {
             key.to_string()
@@ -133,7 +137,7 @@ impl Interpreter {
         if let Some(top) = self.import_scope_stack.last_mut() {
             top.own_routine_imports.insert(alias);
         }
-        self.imported_routine_aliases.insert(alias);
+        std::sync::Arc::make_mut(&mut self.imported_routine_aliases).insert(alias);
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
@@ -156,7 +160,7 @@ impl Interpreter {
     }
 
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
-        self.imported_routine_aliases
+        std::sync::Arc::make_mut(&mut self.imported_routine_aliases)
             .remove(&Symbol::intern(&format!("{package}::{name}")));
     }
 
@@ -167,7 +171,7 @@ impl Interpreter {
         tags: impl IntoIterator<Item = String>,
     ) {
         let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        self.imported_exported_proto_tags
+        std::sync::Arc::make_mut(&mut self.imported_exported_proto_tags)
             .entry(key)
             .or_default()
             .extend(tags);

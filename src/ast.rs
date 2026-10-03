@@ -1372,9 +1372,20 @@ pub(crate) enum Expr {
         origin: DoBlockOrigin,
     },
     DoStmt(Box<Stmt>),
+    /// `last` / `next` / `redo`, optionally labelled. `value` is v6.e's
+    /// `last VALUE` / `next VALUE`: the loop ends (or the iteration does) and
+    /// `VALUE` is the iteration's contribution to the loop's result list. A
+    /// `Label` value is the labelled form spelled as an argument
+    /// (`last(FOO)`), decided at run time. Never set for `redo`.
+    ///
+    /// `take_value` marks a valued form whose loop is lowered to a `gather`
+    /// (`do while`, `do loop`, `lazy for`): such a loop collects its values by
+    /// `take`, so the value is taken before the signal is raised.
     ControlFlow {
         kind: ControlFlowKind,
         label: Option<String>,
+        value: Option<Box<Expr>>,
+        take_value: bool,
     },
     IndirectTypeLookup(Box<Expr>),
     /// `::(EXPR)::Name` / `::(EXPR)::A::B` / `::(EXPR)::`: an indirect lookup

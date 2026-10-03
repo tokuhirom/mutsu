@@ -445,13 +445,40 @@ impl Interpreter {
                                 window,
                             }) => {
                                 // A frame's binding window: rewinding past the
-                                // call uninstalls it (`rx_scope`).
-                                let window = window.map(|window| {
-                                    let k = self.rx_window_adopt(&mut scopes, window);
-                                    reg_trail.push((UNDO_ENTER, k));
-                                    k
-                                });
+                                // call uninstalls it (`rx_scope`). An eager `Lr`
+                                // evaluation installs its own around itself.
+                                let (window, lr_window) =
+                                    if matches!(verdict, Ok(CallTarget::Lr(_))) {
+                                        (None, window)
+                                    } else {
+                                        let window = window.map(|window| {
+                                            let k = self.rx_window_adopt(&mut scopes, window);
+                                            reg_trail.push((UNDO_ENTER, k));
+                                            k
+                                        });
+                                        (window, None)
+                                    };
                                 match verdict {
+                                    Ok(CallTarget::Lr(cands)) => {
+                                        walk_use(WalkUse::Leaf, "lr-seed");
+                                        let mut ends = self.rx_lr_call_ends(
+                                            &program.atoms[atom as usize],
+                                            &cands,
+                                            lr_window,
+                                            call_args.as_deref().unwrap_or(&[]),
+                                            chars,
+                                            pos,
+                                            pkg,
+                                            (commit, ic),
+                                        );
+                                        // Ratchet commits to the highest-priority
+                                        // end, the last (lowest priority first).
+                                        if commit && ends.len() > 1 {
+                                            ends.drain(..ends.len() - 1);
+                                        }
+                                        pc += 1;
+                                        enter_cands!(ends)
+                                    }
                                     Ok(CallTarget::Plain(callee, callee_pkg)) => {
                                         if frame.is_some_and(|f| {
                                             frames[f as usize].depth >= MAX_FRAME_DEPTH

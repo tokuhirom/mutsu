@@ -29,6 +29,20 @@ impl Interpreter {
         }
     }
 
+    /// The value a caught `last` / `next` signal carries (v6.e's
+    /// `last VALUE` / `next VALUE`, `return_value`): the iteration's
+    /// contribution to a collecting loop's result. A plain `last` / `next`
+    /// carries none and contributes nothing.
+    // Cost: O(1) (O(k) for a Slip value, k = its elements).
+    pub(super) fn collect_loop_control_value(
+        collected: &mut Option<Vec<Value>>,
+        value: Option<Value>,
+    ) {
+        if let (Some(coll), Some(value)) = (collected.as_mut(), value) {
+            Self::collect_loop_value(coll, value);
+        }
+    }
+
     /// `for` over a non-itemized Blob/Buf iterates its bytes (raku: a `Blob`
     /// value, a `Blob:D`-typed param, or a `:=`-bound Blob yields its bytes).
     /// Returns the byte items when `iterable` is such a Blob, else `None` (so
@@ -227,9 +241,9 @@ impl Interpreter {
     /// the if/else case to Slice 3b). The branch runs once, so reusing the
     /// per-iteration `owned_captures`/box-on-capture machinery is harmless and
     /// keeps closure capture of the branch-local correct.
-    // Cost: O(b + w + d) per execution plus the body, b = ops in the branch
-    // (declaration scans), w = names the branch wrote by name (its block tier),
-    // d = names it declared. Rakudo: O(1) -- see #9170.
+    // Cost: O(w + d) per execution plus the body, w = names the branch wrote by
+    // name (its block tier), d = names it declared (the branch's declaration
+    // facts are computed once per chunk, `block_range_facts`).
     pub(super) fn exec_block_local_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -240,30 +254,20 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let body_end = body_end as usize;
-        let owned_slots: rustc_hash::FxHashSet<usize> = code.ops[body_start..body_end]
-            .iter()
-            .filter_map(|op| match op {
-                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
-                // See the matching comment in `exec_block_scope_op`.
-                OpCode::DeclareOurScalar { slot, .. } => Some(*slot as usize),
-                _ => None,
-            })
-            .collect();
-        // A `state` declaration inside this branch is NOT a block-local `my`:
-        // its storage (the state store's shared cell) outlives the block, and
-        // the frame-exit `sync_state_locals` persists the slot/env value back
+        // The slots the branch's own declarations own (see the matching
+        // comment in `exec_block_scope_op`), and its `state` slots. A `state`
+        // declaration inside this branch is NOT a block-local `my`: its storage
+        // (the state store's shared cell) outlives the block, and the
+        // frame-exit `sync_state_locals` persists the slot/env value back
         // through that cell. Treating it as a fresh block-local wiped it — the
         // exit cleanup below removed the env entry and Nil'd the slot, so the
         // sync wrote Nil THROUGH the shared cell and every iteration of
         // `{ state $n = 0; $n = $n + 1 } for 1..3` restarted from Nil (1 1 1
-        // instead of 1 2 3). Exclude state slots from both cleanups.
-        let state_slots: rustc_hash::FxHashSet<usize> = code.ops[body_start..body_end]
-            .iter()
-            .filter_map(|op| match op {
-                OpCode::StateVarInit(slot, _) => Some(*slot as usize),
-                _ => None,
-            })
-            .collect();
+        // instead of 1 2 3). Exclude state slots from both cleanups. Both sets
+        // are computed once per chunk, not scanned per entry (#9170).
+        let facts = code.block_range_facts(*ip, body_end);
+        let owned_slots = &facts.owned_slots;
+        let state_slots = &facts.state_slots;
         // Snapshot the env keys present before the branch runs so that on exit
         // we can tell a *fresh* block-local `my` (no outer binding of that name)
         // apart from one that merely *shadows* an existing outer binding (which
@@ -355,7 +359,7 @@ impl Interpreter {
         // below, which decide RESET behavior, not whether a read is safe) and
         // keyed by exact slot rather than by name.
         if !self.given_pointy_capture_slots.is_empty() {
-            for &slot in &owned_slots {
+            for &slot in owned_slots {
                 if let Some(pos) = self
                     .given_pointy_capture_slots
                     .iter()
@@ -403,7 +407,7 @@ impl Interpreter {
                 .remove_sym(Interpreter::type_meta_key_for_sym(*sym));
             self.env_mut()
                 .remove_sym(Interpreter::hash_key_meta_key_for_sym(*sym));
-            for &idx in &owned_slots {
+            for &idx in owned_slots {
                 if idx < self.locals.len() && code.local_sym(idx) == Some(*sym) {
                     self.locals[idx] = Value::NIL;
                 }
@@ -626,10 +630,12 @@ impl Interpreter {
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         break 'while_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);

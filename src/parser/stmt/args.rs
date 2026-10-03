@@ -416,9 +416,17 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                 || c == b'<'
                 || c.is_ascii_alphabetic()
                 || c == b'_'
-        }) && let Ok((r, expr)) = expression(after_pipe)
+        }) && let Ok((r, expr)) = expression(input)
         {
-            return Ok((r, CallArg::Slip(expr)));
+            // `|` is a tight prefix: `ok |$m == (1,2), "d"` slips only `$m`
+            // and compares the result, it does not slip the comparison.
+            return Ok(match expr {
+                Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: inner,
+                } => (r, CallArg::Slip(*inner)),
+                other => (r, CallArg::Positional(other)),
+            });
         }
     }
 

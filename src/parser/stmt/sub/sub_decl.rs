@@ -113,6 +113,16 @@ pub(crate) fn sub_decl_with_semicolon_mode(
     };
     let (rest, multi) = if let Some(r) = keyword("multi", input) {
         let (r, _) = ws1(r)?;
+        // `multi method of(...)` / `multi method returns(...)` belongs to the
+        // method parser; read as a sub named `method` it would take the method
+        // name for an `of`/`returns` trait.
+        if keyword("sub", r).is_none()
+            && (keyword("method", r).is_some() || keyword("submethod", r).is_some())
+            && let Some(after) = keyword("method", r).or_else(|| keyword("submethod", r))
+            && ws1(after).is_ok()
+        {
+            return Err(PError::expected("sub declaration"));
+        }
         let r = keyword("sub", r).unwrap_or(r);
         let (r, _) = ws(r)?;
         (r, true)
@@ -437,6 +447,7 @@ pub(crate) fn sub_decl_body(
             }
         }
     }
+    let slurpy_scope = super::outer_slurpy::enter_routine_body(&param_defs, false);
     let (rest, body) = if any_sigilless(&param_defs) || any_callable_param(&param_defs) {
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
@@ -454,6 +465,7 @@ pub(crate) fn sub_decl_body(
             Err(err) => return Err(err),
         }
     };
+    drop(slurpy_scope);
     // A routine declared with an explicit signature (`sub f() { ... }`, even an
     // empty one) cannot also use placeholder variables in its body — that would
     // override the existing signature. This is X::Signature::Placeholder.

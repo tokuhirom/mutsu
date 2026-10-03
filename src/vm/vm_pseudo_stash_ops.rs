@@ -305,14 +305,24 @@ impl Interpreter {
             {
                 continue;
             }
+            // No `should_hide_from_my_global_stash` filter here: that set hides
+            // the types a module load brought along from the GLOBAL-ish
+            // stashes, but a name in this table is one the scope explicitly
+            // imported, which its pad does hold (`use M <Type>`).
             let key = key.resolve();
-            if self.should_hide_from_my_global_stash(&key) {
-                continue;
-            }
-            if let Some(value) = self.env().get(&key) {
+            // An imported term or type need not sit in env under its import
+            // key: a sigilless constant lives under its term key, and an
+            // exported type resolves through the type registry. Read it the
+            // way a bare-word read of the name does.
+            let value = self.env().get(&key).cloned().or_else(|| {
+                (!key.starts_with(['$', '@', '%', '&']))
+                    .then(|| self.imported_term_or_type(&key))
+                    .flatten()
+            });
+            if let Some(value) = value {
                 entries
                     .entry(display.resolve().to_string())
-                    .or_insert_with(|| value.clone());
+                    .or_insert(value);
             }
         }
         match own_imports {
@@ -403,5 +413,18 @@ impl Interpreter {
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
         self.pseudo_stash_hash(entries)
+    }
+
+    /// The value a bare-word read of the imported name `key` (an import
+    /// alias key: a type name, or a sigilless term's `\name` key) sees.
+    // Cost: O(1) expected, plus the module-scope probe of `term_binding`.
+    fn imported_term_or_type(&self, key: &str) -> Option<Value> {
+        let bare = key
+            .strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+            .unwrap_or(key);
+        self.term_binding(bare).or_else(|| {
+            self.has_type(bare)
+                .then(|| Value::package(Symbol::intern(bare)))
+        })
     }
 }

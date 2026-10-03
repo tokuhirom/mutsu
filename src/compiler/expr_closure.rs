@@ -180,6 +180,14 @@ impl Compiler {
             .emit(OpCode::MakeAnonSubParams(idx, Some(cc_idx), false));
     }
 
+    /// Whether `name` is an implicit-slurpy spelling (`@_` / `%_`) that an
+    /// enclosing scope declares as a lexical -- `sub f(*%_) { { %_ } }` -- so a
+    /// nested block reads that variable instead of taking it as a placeholder.
+    fn implicit_slurpy_is_outer_lexical(&self, name: &str) -> bool {
+        matches!(name, "@_" | "%_")
+            && (self.local_map.contains_key(name) || self.enclosing_local_names.contains(name))
+    }
+
     /// Compile AnonSubParams expression.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_expr_anon_sub_params(
@@ -215,6 +223,23 @@ impl Compiler {
             self.capture_enclosing_method_named_args = true;
             self.compile_expr_anon_sub(body, false, true);
             self.capture_enclosing_method_named_args = saved;
+            return;
+        }
+        // Likewise outside a method: the parser synthesizes `*@_`/`*%_` for a
+        // block that reads `@_`/`%_`, but when an enclosing scope declares that
+        // name (`sub f(@a, *%_) { @a.map({ to-json $_, |%_ }) }`) the block
+        // reads the outer lexical and keeps the default `$_` signature, as in
+        // rakudo -- it is not a placeholder at all (JSON::Fast::Hyper).
+        if !params.is_empty()
+            && params.len() == param_defs.len()
+            && param_defs.iter().all(|pd| {
+                matches!(pd.name.as_str(), "@_" | "%_")
+                    && pd.slurpy
+                    && pd.block_param
+                    && self.implicit_slurpy_is_outer_lexical(&pd.name)
+            })
+        {
+            self.compile_expr_anon_sub(body, false, true);
             return;
         }
         // Validate for placeholder conflicts
@@ -255,6 +280,7 @@ impl Compiler {
             let body_placeholders: Vec<String> = crate::ast::collect_unattached_placeholders(body)
                 .into_iter()
                 .filter(|ph| !declared.contains(ph.as_str()))
+                .filter(|ph| !self.implicit_slurpy_is_outer_lexical(ph))
                 .collect();
             if has_explicit_sig && !body_placeholders.is_empty() {
                 // `collect_unattached_placeholders` already returns display names

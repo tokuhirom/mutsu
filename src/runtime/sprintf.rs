@@ -190,7 +190,17 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             arg_index += 1;
             idx
         };
-        let raw_arg = args.get(effective_arg_index);
+        // An argument can still be a container: a hash slice (`%h<a b>`)
+        // yields its elements' item containers, and `sprintf('%d', ...)`
+        // formatted those as 0. Format the contained value.
+        let _decont_storage: Value;
+        let raw_arg = match args.get(effective_arg_index) {
+            Some(v) if v.is_container_ref() || matches!(v.view(), ValueView::Scalar(_)) => {
+                _decont_storage = v.deref_container().descalarize().clone();
+                Some(&_decont_storage)
+            }
+            other => other,
+        };
         let _mixin_storage: Value;
         // A Mixin formats as its inner value, and an `Int` subclass instance
         // as its `Int` payload (`builtins::numeric_subclass`).

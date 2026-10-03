@@ -49,6 +49,20 @@ impl Interpreter {
                 }
             }
         }
+        // A `Stash` is a `Map` of its symbols, so `|$pkg.WHO` slips the
+        // symbol pairs exactly as `|%h` does (UML::Translators builds
+        // `($name => $pkg, |$pkg.WHO)` to walk a namespace).
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = val.view()
+            && crate::value::types::is_stash_class_name(class_name.as_str())
+            && let Some(symbols) = attributes.as_map().get("symbols").cloned()
+        {
+            self.stack.push(symbols);
+            return self.exec_make_slip_op();
+        }
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) must first
         // pull all elements from its source (ADR-0034), else `|$seq` yields
         // nothing. `|EXPR` steals the source like `.iterator`/`.list` (a
@@ -420,6 +434,10 @@ impl Interpreter {
         // A role-mixed value is NOT an `Instance` view, so it used to fall
         // straight through to the `_` arm below and lose its composed
         // `Stringy`/`Str` (see `mixin_user_stringifier`).
+        // ...except a mixin over a `Str` (`"foo" but R`), which already is one.
+        if let Some(payload) = crate::runtime::str_mixin_payload(&v) {
+            return Ok(payload);
+        }
         if let Some(r) = self.mixin_user_stringifier(&v) {
             return Ok(Value::str(r?.to_string_value()));
         }

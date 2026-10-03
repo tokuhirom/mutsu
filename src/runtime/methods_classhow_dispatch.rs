@@ -1164,8 +1164,7 @@ impl Interpreter {
                             std::sync::Arc::new(def)
                         })
                         .collect();
-                    self.registry_mut()
-                        .token_defs
+                    std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
                         .insert(target_key, target_defs);
                     crate::runtime::regex_parse::TOKEN_DEFS_GEN
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

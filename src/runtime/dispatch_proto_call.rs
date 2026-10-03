@@ -408,7 +408,7 @@ impl Interpreter {
             && !self.has_multi_candidates(name)
     }
 
-    fn multi_no_match_exception(name: &str, message: String) -> RuntimeError {
+    pub(crate) fn multi_no_match_exception(name: &str, message: String) -> RuntimeError {
         let mut err = RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message));

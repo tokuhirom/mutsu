@@ -3143,6 +3143,19 @@ pub(crate) enum OpCode {
     /// never falls through. Same label and `X::ControlFlow::Illegal` rules
     /// as [`Self::Last`].
     Redo(Option<String>),
+    /// v6.e `last VALUE`: pop `VALUE` and raise the `last` signal carrying it
+    /// as the iteration's contribution to the loop's result (`return_value`).
+    /// A `Label` value is instead the labelled `last` (`last(FOO)`). Stack:
+    /// `[value] → []`; never falls through. Same `X::ControlFlow::Illegal`
+    /// rule as [`Self::Last`].
+    LastValue,
+    /// v6.e `next VALUE`: as [`Self::LastValue`], for `next`.
+    NextValue,
+    /// The `Label` check of a valued `last` (`true`) / `next` (`false`) in a
+    /// gather-lowered loop, before its value is taken: a `Label` on top of
+    /// the stack is popped and raises the labelled signal; any other value is
+    /// left in place. Stack: `[value] → [value]`.
+    LoopControlLabelArg(bool),
 
     // -- Given/When control --
     /// `proceed`: leave the current `when`/`default` body and continue with
@@ -7320,6 +7333,12 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
+    /// True if this code calls `samewith` directly. `samewith` re-dispatches
+    /// through the interpreter's samewith context stack, which only the full
+    /// call paths push, so the light call paths exclude such a body (a plain
+    /// `sub f($x) { samewith($x - 1) if $x; ... }` otherwise died with
+    /// "samewith called outside of a dispatch context"). Set during `emit()`.
+    pub(crate) uses_samewith: bool,
     /// True if *this* chunk (or any closure literal nested in it) can reach a
     /// lexical by a name the compile-time free-variable scan cannot see, so a
     /// closure created from it must capture the WHOLE visible env rather than
@@ -7953,6 +7972,7 @@ impl CompiledCode {
             mentions_native_scalar_type_name: false,
             has_once: false,
             uses_callframe: false,
+            uses_samewith: false,
             needs_reflective_capture: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
@@ -10896,6 +10916,14 @@ impl CompiledCode {
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
         if matches!(op, OpCode::OnceExpr { .. }) {
             self.has_once = true;
+        }
+        if !self.uses_samewith
+            && let OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } = &op
+            && let Some(v) = self.constants.get(*name_idx as usize)
+            && let ValueView::Str(s) = v.view()
+            && s.as_str() == "samewith"
+        {
+            self.uses_samewith = true;
         }
         if !self.uses_callframe {
             match &op {

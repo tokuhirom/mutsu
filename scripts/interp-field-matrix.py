@@ -23,6 +23,15 @@ otherwise `<top>/<first word of the file stem>` (with `vm_` / `builtins_` /
 Usage:
   scripts/interp-field-matrix.py                 # markdown report to stdout
   scripts/interp-field-matrix.py --json OUT.json # also dump the raw matrix
+  scripts/interp-field-matrix.py --check         # the `make checks` ratchet
+  scripts/interp-field-matrix.py --update        # re-cut it after a drop
+  scripts/interp-field-matrix.py --self-test
+
+`--check` is ADR-10779 D4: the number of direct `Interpreter` fields may only
+go down (it is recorded in scripts/interp-fields-baseline.txt), and every field
+must match a `SUBSYSTEMS` rule. New state goes into the subsystem type it
+belongs to instead of onto `Interpreter`. `--check` only parses the struct, so
+it needs no build and takes milliseconds.
 """
 
 import argparse
@@ -50,8 +59,9 @@ def strip_comments(text):
     return re.sub(r"//[^\n]*", "", text)
 
 
-def parse_fields():
-    text = STRUCT_FILE.read_text()
+def parse_fields(text=None):
+    if text is None:
+        text = STRUCT_FILE.read_text()
     m = re.search(r"^pub struct Interpreter \{\n(.*?)^\}", text, re.S | re.M)
     if not m:
         sys.exit("interp-field-matrix: `pub struct Interpreter` not found")
@@ -127,10 +137,95 @@ def trivial_accessors(fields):
 ACCESSOR_MAX_LINES = 6
 
 
+BASELINE = ROOT / "scripts" / "interp-fields-baseline.txt"
+BASELINE_HEADER = """\
+# Direct fields of `struct Interpreter` (src/runtime/mod.rs). ADR-10779 D4:
+# this number may only go down -- new state goes into the subsystem type it
+# belongs to. Checked by `make check-interp-fields`; re-cut after extracting
+# fields with
+#   scripts/interp-field-matrix.py --update
+"""
+
+
+def read_baseline():
+    for line in BASELINE.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            return int(line.strip())
+    sys.exit(f"interp-field-matrix: no count in {BASELINE}")
+
+
+def check(update):
+    fields = parse_fields()
+    count = len(fields)
+    unclassified = sorted(f for f in fields if subsystem_of(f) == "unclassified")
+    allowed = read_baseline()
+    ok = True
+    if unclassified:
+        ok = False
+        print("check-interp-fields: these Interpreter fields match no SUBSYSTEMS rule in "
+              "scripts/interp-field-matrix.py; put each one in the subsystem it belongs "
+              "to (ADR-10779 D2):\n  " + "\n  ".join(unclassified), file=sys.stderr)
+    if count > allowed:
+        ok = False
+        print(f"check-interp-fields: Interpreter has {count} direct fields, the baseline "
+              f"allows {allowed}. Add the new state to its subsystem's type instead of to "
+              f"Interpreter (ADR-10779 D4).", file=sys.stderr)
+    elif count < allowed:
+        if update:
+            BASELINE.write_text(BASELINE_HEADER + f"{count}\n")
+            print(f"interp-fields baseline re-cut: {count} fields")
+            return 0 if ok else 1
+        ok = False
+        print(f"check-interp-fields: Interpreter fell from {allowed} to {count} direct "
+              f"fields -- re-cut:\n  scripts/interp-field-matrix.py --update", file=sys.stderr)
+    if ok:
+        print(f"check-interp-fields: {count} Interpreter fields (baseline {allowed}), "
+              f"all classified")
+    return 0 if ok else 1
+
+
+def self_test():
+    fixture = """\
+pub struct Interpreter {
+    env: Env,
+    /// a doc comment: not_a_field: X,
+    pub(crate) registry: Arc<RwLock<Registry>>,
+    multi_line:
+        HashMap<String, Vec<(u32, u32)>>,
+    nested: Box<Fn(Foo { inner: u8 }) -> u8>,
+    #[cfg(feature = "jit")]
+    jit_thing: u32,
+}
+"""
+    got = list(parse_fields(fixture))
+    want = ["env", "registry", "multi_line", "nested", "jit_thing"]
+    errors = []
+    if got != want:
+        errors.append(f"parse_fields: expected {want}, got {got}")
+    for field, sub in [("env", "frame"), ("pending_call_arg_sources", "handoff"),
+                       ("fn_resolve_cache", "caches"), ("rakuseen_active", "guards"),
+                       ("no_such_field_xyz", "unclassified")]:
+        if subsystem_of(field) != sub:
+            errors.append(f"subsystem_of({field!r}): expected {sub}, got {subsystem_of(field)}")
+    if errors:
+        print("interp-field-matrix: self-test failed:\n  " + "\n  ".join(errors),
+              file=sys.stderr)
+        return 1
+    print("interp-field-matrix: self-test ok")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", help="also write the raw matrix here")
+    ap.add_argument("--check", action="store_true", help="run the field-count ratchet")
+    ap.add_argument("--update", action="store_true", help="re-cut the ratchet baseline")
+    ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    if args.check or args.update:
+        return check(args.update)
 
     fields = parse_fields()
     accessors = trivial_accessors(fields)
@@ -400,4 +495,4 @@ def report(rows, accessors):
     print("\n".join(out))
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

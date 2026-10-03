@@ -746,7 +746,15 @@ impl Interpreter {
         // A verdict that depends on a conditional `use` comes back as guards
         // that run right after the prologue, which decides the condition
         // (#10331).
-        let begin_prologue = match self.check_undeclared_routines_with_guards(&body_main) {
+        // An undeclared bareword term is the same CHECK-time failure
+        // ("Undeclared name", #9768).
+        let checked = self
+            .check_undeclared_routines_with_guards(&body_main)
+            .and_then(|guards| {
+                self.check_undeclared_names_mainline(&body_main)?;
+                Ok(guards)
+            });
+        let begin_prologue = match checked {
             Ok(guards) => {
                 let end = prologue_len + guards.len();
                 body_main.splice(prologue_len..prologue_len, guards);

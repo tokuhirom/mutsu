@@ -642,6 +642,11 @@ impl Interpreter {
             self.stack.push(weight);
             return Ok(());
         }
+        if let Some(failure) = self.exception_failure_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "Failure");
+            self.stack.push(failure);
+            return Ok(());
+        }
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched
@@ -865,6 +870,7 @@ impl Interpreter {
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
+            && !(method == "join" && crate::builtins::is_join_lazy(&target))
             // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
             // spec, OR a gather coroutine appends another lazy stage (interpreter
             // dispatch via `is_lazy_pipe_source`) — it must not force the source
