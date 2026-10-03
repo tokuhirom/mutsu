@@ -55,7 +55,7 @@ fn visit(node: &RakuAstNode, in_decl: bool, found: &mut HashSet<String>) {
 
 fn visit_value(v: &crate::value::Value, in_decl: bool, found: &mut HashSet<String>) {
     match v.view() {
-        ValueView::RakuAst(child) => visit(&child, in_decl, found),
+        ValueView::RakuAst(child) => visit(child, in_decl, found),
         ValueView::Str(s) if in_decl => {
             found.insert(s.to_string());
         }
