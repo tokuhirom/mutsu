@@ -54,8 +54,10 @@ impl Interpreter {
                 }
             }
             ValueView::ContainerRef(cell) => {
-                let inner = cell.lock().unwrap().clone();
-                self.reify_nested_map_grep_for_read_inner(&inner, seen)?;
+                let inner = cell.lock().ok().map(|held| held.clone());
+                if let Some(inner) = inner {
+                    self.reify_nested_map_grep_for_read_inner(&inner, seen)?;
+                }
             }
             _ => {}
         }
