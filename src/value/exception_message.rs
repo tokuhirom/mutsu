@@ -4,7 +4,7 @@ use crate::value::{Value, ValueView};
 /// Construct the `.message` string for a structured exception from its class
 /// name and attribute map.  Returns `None` when the class name is not
 /// recognised (caller should fall back to the generic behaviour).
-pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<String> {
+pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<String> {
     match class_name {
         "X::Str::Numeric" => {
             let reason = attr_str(attrs, "reason");

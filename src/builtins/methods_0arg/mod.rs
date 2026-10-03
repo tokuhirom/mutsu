@@ -17,8 +17,8 @@ pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_str;
 mod dispatch_core_unicode;
-pub(crate) mod match_helpers;
-pub(crate) mod raku_repr;
+pub(crate) use crate::value::match_helpers;
+pub(crate) use crate::value::raku_repr;
 pub(crate) mod temporal;
 pub(crate) mod temporal_dispatch;
 
@@ -1178,17 +1178,6 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
         || matches!(value.view(), ValueView::Seq(items) if items.is_lazy())
 }
 
-/// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
-fn range_endpoint_display(v: i64) -> String {
-    if v == i64::MAX {
-        "Inf".to_string()
-    } else if v == i64::MIN {
-        "-Inf".to_string()
-    } else {
-        v.to_string()
-    }
-}
-
 /// Return the gist (compact display) representation of a Range value.
 fn range_gist_string(value: &Value) -> String {
     // Range.gist is identical to Range.raku in Rakudo: numeric endpoints render
@@ -1646,7 +1635,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
-                        crate::builtins::exception_message::format_exception_message(
+                        crate::value::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )
@@ -1683,7 +1672,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
-                        crate::builtins::exception_message::format_exception_message(
+                        crate::value::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )
@@ -1703,7 +1692,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     // Construct message from typed exception attributes
                     if let Some(formatted) =
-                        crate::builtins::exception_message::format_exception_message(
+                        crate::value::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )
@@ -1991,7 +1980,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                 })
                 .or_else(|| {
-                    crate::builtins::exception_message::format_exception_message(
+                    crate::value::exception_message::format_exception_message(
                         &cn,
                         &attributes.as_map(),
                     )

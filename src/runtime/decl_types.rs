@@ -545,3 +545,10 @@ pub(crate) struct SquishIteratorMeta {
     pub(crate) revert_values: ValueMap,
     pub(crate) revert_remove: Vec<String>,
 }
+
+impl crate::value::signature::SubsetBases for crate::runtime::Interpreter {
+    // Cost: O(1) expected, one registry hash probe.
+    fn subset_base(&self, name: &str) -> Option<String> {
+        self.registry().subsets.get(name).map(|s| s.base.clone())
+    }
+}

@@ -21,11 +21,8 @@ src/parser/stmt/decl/constant_subset.rs                  2
 src/parser/stmt/simple/module_exports.rs                 1
 src/parser/stmt/simple/module_exports/dynamic_stash.rs   1
 src/parser/stmt/simple/slang_use.rs                      5
-src/value/error_construct.rs                             2
-src/value/error_typed.rs                                 1
 src/value/mod.rs                                         3
 src/value/promise_await.rs                               2
 src/value/promise_wake.rs                                7
 src/value/seq_body.rs                                    1
-src/value/signature.rs                                   2
 src/value/value_async.rs                                 1

@@ -273,7 +273,7 @@ trusting the change.
 > found and fixed: **`.raku`/`.gist` of a hash containing a *container-valued*
 > bound element did not itemize the held aggregate** (`{:a([1, 2])}` instead of
 > rakudo's `{:a($[1, 2])}`). `raku_hash_value` now derefs a `ContainerRef` and
-> itemizes on the *held* type (`src/builtins/methods_0arg/raku_repr.rs`); pinned
+> itemizes on the *held* type (`src/value/raku_repr.rs`); pinned
 > by `t/container-cell-raku-render.t`. The behavioral itemization (`.VAR`,
 > list-context non-flatten) was already correct — this was rendering-only.
 

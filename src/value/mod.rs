@@ -558,7 +558,9 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+pub(crate) mod exception_message;
 pub(crate) mod flat;
+pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
@@ -572,6 +574,7 @@ pub mod user_key_map;
 pub use hash_key::HashKey;
 pub use user_key_map::ValueMap;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
+pub(crate) mod match_helpers;
 mod match_lazy;
 pub(crate) mod match_view;
 pub(crate) mod which_id;
@@ -584,6 +587,7 @@ pub(crate) use mix_weight::mix_weight_render;
 pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
+pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;
 pub(crate) use nanbox::CONTAINER_CELLS;
 #[cfg(feature = "jit")]
@@ -601,6 +605,7 @@ pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
 mod signature_smartmatch;
+pub(crate) mod split_lines;
 pub(crate) mod state_scope_reaper;
 mod str_body;
 pub(crate) mod str_increment;
