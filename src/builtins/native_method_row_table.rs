@@ -1177,6 +1177,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Duration", "Int", 1, 16),
     ("Duration", "gist", 1, 16),
     ("Duration", "raku", 1, 16),
+    ("Duration", "rand", 1, 16),
     ("Backtrace", "list", 1, 16),
     ("Backtrace", "Str", 3, 16),
     ("Backtrace", "gist", 1, 16),
@@ -1306,6 +1307,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Complex", "UInt", 1, 0),
     ("Complex", "isNaN", 1, 24),
     ("Instant", "to-posix", 1, 16),
+    ("Instant", "rand", 1, 16),
     ("Instant", "Numeric", 1, 16),
     ("Instant", "DateTime", 1, 16),
     // ADR-0051 P3 audit find (2026-08-21): `Instant.Date` is a genuine own
