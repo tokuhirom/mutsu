@@ -53,10 +53,12 @@ plan 16;
     is $s[100], 201, 'single-arg closure generator deep index';
 }
 
-# --- a closure generator that terminates (`last`) stays finite ---
+# --- a closure generator that terminates (`last`) ends the list ---
+# The `... *` sequence is still lazy (Rakudo: `.elems` throws), but it has no
+# elements past the generator's end, and a strict force answers exactly them.
 {
     my @s = (1, 2, 3, { last } ... *);
-    is @s.elems, 3, 'closure generator that calls last yields a finite list';
+    is @s.eager.elems, 3, 'closure generator that calls last yields a finite list';
     is @s[10]:exists, False, 'no elements past the finite end';
 }
 

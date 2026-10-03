@@ -17,7 +17,12 @@ Making that array lazy exposed a second, older gap shared by every lazy
 `@`-array. Reading past its reified end answered `Nil`
 (`my @a = lazy 1, 2; @a[3]`), where an Array answers its element default
 `Any`. A positional read on an array-context lazy list now reads it as an
-Array, and a bare lazy list still answers `Nil`.
+Array, and a bare lazy list still answers `Nil`. `:exists` on such an array
+answered True for every non-negative index. It now does what Rakudo's
+`EXISTS-POS` does: it reifies through the index and checks the slot, so
+`@a[5]:exists` is False past the end. Only a source that provably never ends
+(an infinite arithmetic/geometric sequence, `xx *`) still answers without
+generating anything.
 
 Still open, filed as #11131: `.join` on a lazy list answers `"..."` in
 Rakudo, where mutsu throws (or, for `1..*`, joins a huge prefix).

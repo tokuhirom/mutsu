@@ -766,27 +766,44 @@ impl Interpreter {
             (target, idxs)
         };
 
-        // A lazy `@`-array (infinite source) is conceptually unbounded: any
-        // non-negative index exists, without forcing the list (raku). Only the
+        // A lazy `@`-array answers `:exists` the way Rakudo's `EXISTS-POS`
+        // does: reify through the index, then ask whether the slot is there.
+        // A source that can never end (an infinite arithmetic/geometric
+        // sequence, `xx *`) has every non-negative index, so it answers
+        // without generating anything; any other lazy source (a closure
+        // sequence, whose generator may `last`, a gather, a map/grep pipe, a
+        // `lazy`-marked finite list) is pulled up to the largest index asked
+        // for, and an index past its end does not exist (#11098). Only the
         // plain `:exists` form (no :kv/:p adverbs) is special-cased here. (L2)
         // A prior `@a[i]:delete` on this same array (L2c, bounded reify) keeps
         // the array lazy afterward instead of collapsing it to a plain Array,
         // so an index the general (non-lazy) path below would have marked
-        // deleted must still report `False` here rather than the blanket
-        // "any non-negative index exists" answer.
+        // deleted must still report `False` here.
         if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
             && matches!(adverb_bits, 0 | 5)
             && !is_zen
         {
+            let reified_len = if ll.never_ends() {
+                usize::MAX
+            } else {
+                let needed = indices
+                    .iter()
+                    .filter(|&&i| i >= 0)
+                    .map(|&i| (i as usize).saturating_add(1))
+                    .max()
+                    .unwrap_or(0);
+                self.force_lazy_list_vm_n(&ll, needed)?.len()
+            };
             let vals: Vec<Value> = indices
                 .iter()
                 .map(|&i| {
                     let deleted = array_var_name
                         .as_deref()
                         .is_some_and(|n| self.is_deleted_index(n, i));
-                    Value::truth((i >= 0 && !deleted) ^ effective_negated)
+                    let present = i >= 0 && (i as usize) < reified_len;
+                    Value::truth((present && !deleted) ^ effective_negated)
                 })
                 .collect();
             self.stack.push(if vals.len() == 1 {

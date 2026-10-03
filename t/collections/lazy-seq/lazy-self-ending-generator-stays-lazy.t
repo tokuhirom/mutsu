@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 29;
 
 # An endpoint-less closure sequence is lazy because of its `... *` iterator,
 # not because it never ends: a generator that ends it with `last` inside the
@@ -32,6 +32,9 @@ ok ending().map(* * 2).is-lazy, 'a map over it is lazy too';
     throws-like { @a.push(9) }, X::Cannot::Lazy, '.push throws';
     is @a.raku, '[...]', '.raku is the lazy placeholder';
     is-deeply @a[^7], (1, 2, 3, 4, 5, Any, Any), 'an array slice past the end is Any';
+    ok @a[4]:exists, ':exists on the last element';
+    nok @a[5]:exists, ':exists past the end is False';
+    is-deeply (@a[3..6]:exists), (True, True, False, False), ':exists slice';
     is-deeply @a.eager, [1, 2, 3, 4, 5], '.eager forces the array';
 }
 {
@@ -50,10 +53,15 @@ ok ending().map(* * 2).is-lazy, 'a map over it is lazy too';
     is-deeply @g[3], Any, 'lazy @-array of a gather';
     my $s = lazy 1, 2;
     is-deeply $s[^4], (1, 2, Nil, Nil), 'a bare lazy list stays Nil';
+    nok @l[5]:exists, ':exists past the end of a lazy finite @-array';
+    ok @l[1]:exists, ':exists inside a lazy finite @-array';
 }
 
 # A closure sequence that never ends is unchanged.
 {
     my @n = 1, { $_ + 1 } ... *;
     ok @n.is-lazy, 'an endless closure sequence is still lazy';
+    ok @n[50]:exists, ':exists far into an endless closure sequence';
+    my @r = 1, 3 ... *;
+    ok @r[100_000]:exists, ':exists on an endless arithmetic sequence';
 }
