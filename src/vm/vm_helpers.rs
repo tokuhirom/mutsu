@@ -136,6 +136,88 @@ impl Interpreter {
         }
     }
 
+    /// What a `Nil` assigned through the sigilless alias in slot `idx` decays
+    /// to, or `None` when the slot is not such an alias.
+    ///
+    /// A sigilless name (`sub t(\p)`, `my \g := $f`) IS the container it was
+    /// bound to, but mutsu reaches that container through the by-name
+    /// `__mutsu_sigilless_alias::` chain rather than a shared cell, so the
+    /// alias's own name carries none of the container's metadata. The decay
+    /// must follow the chain to its root and use the ROOT's `is default`, its
+    /// type object, or `Any` -- exactly what a direct `$root = Nil` stores
+    /// (#11110; the cell-based aliases got the same rule in #9831).
+    ///
+    /// A `:D`-constrained root is left alone: its Nil assignment is an error,
+    /// which the root's own store reports.
+    // Cost: O(h) expected, h = alias-chain length (one env probe per hop).
+    pub(crate) fn sigilless_alias_nil_decay(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+    ) -> Option<Value> {
+        if !crate::env::closure_meta_keys_possible() {
+            return None;
+        }
+        let first = code
+            .alias_sym(idx)
+            .and_then(|sym| self.env().get_sym(sym))
+            .and_then(Self::alias_target_name)?;
+        self.sigilless_alias_root_nil_decay(first)
+    }
+
+    /// [`Self::sigilless_alias_nil_decay`] for a store that reaches the alias
+    /// by name (a closure writing a captured sigilless name via `SetGlobal`).
+    // Cost: O(h) expected, h = alias-chain length.
+    pub(crate) fn sigilless_alias_nil_decay_by_name(&mut self, name: &str) -> Option<Value> {
+        if !crate::env::closure_meta_keys_possible() {
+            return None;
+        }
+        let first = self
+            .env()
+            .get_sym(runtime::sigilless_alias_key(name))
+            .and_then(Self::alias_target_name)?;
+        self.sigilless_alias_root_nil_decay(first)
+    }
+
+    // Cost: O(1).
+    fn alias_target_name(v: &Value) -> Option<String> {
+        match v.view() {
+            ValueView::Str(name) => Some(name.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Follow the sigilless alias chain from `first` to its root and decay a
+    /// `Nil` against the root's container (see
+    /// [`Self::sigilless_alias_nil_decay`]).
+    // Cost: O(h) expected, h = alias-chain length.
+    fn sigilless_alias_root_nil_decay(&mut self, first: String) -> Option<Value> {
+        let mut root = first;
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(root.clone()) {
+            match self
+                .env()
+                .get_sym(runtime::sigilless_alias_key(&root))
+                .and_then(Self::alias_target_name)
+            {
+                Some(next) => root = next,
+                None => break,
+            }
+        }
+        if root.starts_with(['@', '%', '&']) {
+            return None;
+        }
+        if let Some(def) = self.var_default(&root) {
+            return Some(def.clone());
+        }
+        match loan_env!(self, var_type_constraint(&root)) {
+            Some(constraint) if self.is_definite_constraint(&constraint) => None,
+            Some(constraint) if constraint == "Nil" => None,
+            Some(constraint) => Some(self.typed_scalar_nil_seed_value(&root, &constraint)),
+            None => Some(self.reset_nil_untyped_scalar(&root, Value::NIL)),
+        }
+    }
+
     /// Carry a declared scalar's `is default(...)` onto the cell it was just
     /// promoted to, for the same reason the `of`-type travels
     /// ([`Self::register_container_cell_constraint_for_name`]): once the

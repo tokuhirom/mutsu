@@ -2021,6 +2021,15 @@ impl Interpreter {
             val = self.fetch_proxy_container_elements(val)?;
         }
         if val.is_nil()
+            && !is_bind
+            && !is_rebind
+            && !is_vardecl
+            && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
+        {
+            // A sigilless alias of another variable: the Nil decays against
+            // that variable's container, not this name (#11110).
+            val = decayed;
+        } else if val.is_nil()
             && !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {

@@ -2023,6 +2023,17 @@ impl Interpreter {
                     && !raw_mode
                     && !is_bind_ctx
                     && !is_rebind
+                    && !self.vardecl_context().get()
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(decayed) = self.sigilless_alias_nil_decay_by_name(&name)
+                {
+                    // A sigilless alias of another variable: the Nil decays
+                    // against that variable's container (#11110).
+                    val = decayed;
+                } else if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
                     && !name.starts_with(['@', '%', '&'])
                     && let Some(def) = self.var_default(&name)
                 {
