@@ -226,4 +226,5 @@ fn debug_assert_matches_full_path(
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

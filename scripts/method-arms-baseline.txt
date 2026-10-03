@@ -1,2 +1,2 @@
-pure 487
-slow 718
+pure 486
+slow 719
