@@ -83,6 +83,12 @@ impl Interpreter {
         {
             return None;
         }
+        // Most calls name a method no row has. A bit test answers those
+        // without taking the memo's lock, which an `Int` receiver (it has a
+        // shape) would otherwise pay on every such call.
+        if !method_table::names_a_row(code.const_sym(name_idx)) {
+            return None;
+        }
         let shape = self.stack.last()?.dispatch_shape()?;
         let sites = code.constants.len();
         let idx = name_idx as usize;
@@ -95,11 +101,6 @@ impl Interpreter {
                 RowId::from_bits(payload as u16)
             }
             _ => {
-                // Most calls name a method no row has, and the memo holds
-                // only hits; a bit test answers those before the full check.
-                if !method_table::names_a_row(code.const_sym(name_idx)) {
-                    return None;
-                }
                 let row = self.resolve_method_site_lane(code, name_idx, target_name_idx, shape)?;
                 if self.native_base_bypass.is_none() {
                     code.method_sites
