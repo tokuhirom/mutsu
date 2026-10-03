@@ -79,13 +79,19 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> RakuAstNode {
         }
     };
     if let Some(backtrack) = quantifier.backtrack {
-        let class = BACKTRACKS
-            .iter()
-            .find_map(|&(b, class)| (b == backtrack).then_some(class))
-            .expect("every backtrack has a class");
-        fields.push(field("backtrack", super::slurpy_marker_value(class)));
+        fields.push(field("backtrack", backtrack_value(backtrack)));
     }
     RakuAstNode { class, fields }
+}
+
+/// The `Backtrack::*` type object for a modifier.
+// Cost: O(1).
+fn backtrack_value(backtrack: RegexBacktrack) -> Value {
+    super::slurpy_marker_value(match backtrack {
+        RegexBacktrack::Frugal => RakuAstClass::RegexBacktrackFrugal,
+        RegexBacktrack::Greedy => RakuAstClass::RegexBacktrackGreedy,
+        RegexBacktrack::Ratchet => RakuAstClass::RegexBacktrackRatchet,
+    })
 }
 
 fn field_value<'a>(node: &'a RakuAstNode, name: &str) -> Option<&'a Value> {
@@ -253,12 +259,9 @@ fn construct_class(
                 }
             }
             "backtrack" => {
-                let backtrack = backtrack(value).expect("validated above");
-                let class = BACKTRACKS
-                    .iter()
-                    .find_map(|&(b, class)| (b == backtrack).then_some(class))
-                    .expect("every backtrack has a class");
-                fields.push(field(name, super::slurpy_marker_value(class)));
+                if let Some(backtrack) = backtrack(value) {
+                    fields.push(field(name, backtrack_value(backtrack)));
+                }
             }
             _ => fields.push(field(name, value.clone())),
         }

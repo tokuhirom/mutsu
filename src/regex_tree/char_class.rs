@@ -68,10 +68,19 @@ impl BackslashClass {
     /// The backslash letter that spells the class.
     // Cost: O(1).
     pub(crate) fn letter(self, negated: bool) -> char {
-        let lower = Self::ALL
-            .iter()
-            .find_map(|&(class, letter)| (class == self).then_some(letter))
-            .expect("every class has a letter");
+        let lower = match self {
+            Self::Digit => 'd',
+            Self::Word => 'w',
+            Self::Space => 's',
+            Self::Newline => 'n',
+            Self::HorizontalSpace => 'h',
+            Self::VerticalSpace => 'v',
+            Self::Tab => 't',
+            Self::Escape => 'e',
+            Self::FormFeed => 'f',
+            Self::CarriageReturn => 'r',
+            Self::Nul => '0',
+        };
         if negated {
             lower.to_ascii_uppercase()
         } else {

@@ -96,7 +96,7 @@ impl RegexCharClassKind {
         KINDS
             .iter()
             .find_map(|&(kind, name, _)| (kind == self).then_some(name))
-            .expect("every kind has a name")
+            .unwrap_or("RakuAST::Regex::CharClass")
     }
 
     /// Whether the class does `RakuAST::Regex::CharClass::Negatable`.
@@ -118,10 +118,19 @@ impl RegexCharClassKind {
 
     // Cost: O(1).
     fn from_backslash(class: BackslashClass) -> Self {
-        KINDS
-            .iter()
-            .find_map(|&(kind, _, backslash)| (backslash == Some(class)).then_some(kind))
-            .expect("every backslash class has a kind")
+        match class {
+            BackslashClass::Digit => K::Digit,
+            BackslashClass::Word => K::Word,
+            BackslashClass::Space => K::Space,
+            BackslashClass::Newline => K::Newline,
+            BackslashClass::HorizontalSpace => K::HorizontalSpace,
+            BackslashClass::VerticalSpace => K::VerticalSpace,
+            BackslashClass::Tab => K::Tab,
+            BackslashClass::Escape => K::Escape,
+            BackslashClass::FormFeed => K::FormFeed,
+            BackslashClass::CarriageReturn => K::CarriageReturn,
+            BackslashClass::Nul => K::Nul,
+        }
     }
 }
 
