@@ -901,6 +901,8 @@ impl crate::runtime::Interpreter {
             Some("CUnion")
         } else if holds(&reg.cpointer_classes) {
             Some("CPointer")
+        } else if reg.uninstantiable_classes.contains(name) {
+            Some("Uninstantiable")
         } else {
             drop(reg);
             self.is_carray_repr_class(name).then_some("CArray")

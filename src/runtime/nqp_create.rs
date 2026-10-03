@@ -111,6 +111,11 @@ impl Interpreter {
     // Cost: O(a), a = attributes of the class (the cached slot template is copied); a
     // `New` type costs its `.new`.
     pub(crate) fn nqp_create(&mut self, ty: Value) -> Result<Value, RuntimeError> {
+        if let ValueView::Package(sym) = ty.view()
+            && let Some(err) = self.uninstantiable_error(sym.as_str())
+        {
+            return Err(err);
+        }
         // A mixin type object keeps its roles (#11209).
         if let Some(result) = self.nqp_create_mixin(&ty) {
             return result;
@@ -152,6 +157,16 @@ impl Interpreter {
                 None => self.call_method_with_values(ty, "CREATE", vec![]),
             },
         }
+    }
+
+    /// The error constructing an instance of `class_name` raises when it was
+    /// declared `is repr('Uninstantiable')` (upstream NativeCall's `void`).
+    // Cost: O(n), n = chars of the name (one hash probe, skipped while no
+    // such class exists).
+    pub(crate) fn uninstantiable_error(&self, class_name: &str) -> Option<RuntimeError> {
+        let reg = self.registry();
+        (!reg.uninstantiable_classes.is_empty() && reg.uninstantiable_classes.contains(class_name))
+            .then(|| RuntimeError::constrained_type_instantiation(class_name))
     }
 
     /// [`CreateKind`] for the type named `name` (short name `short`).

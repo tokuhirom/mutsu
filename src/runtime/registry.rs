@@ -225,6 +225,10 @@ pub(crate) struct Registry {
     /// `nqp::create` makes of one carries native element storage typed by the
     /// type's `.^array_type` (see `runtime::carray_repr`).
     pub(crate) carray_classes: HashSet<String>,
+    /// Classes declared `is repr('Uninstantiable')` (upstream NativeCall's
+    /// `class void`), by full name: they report that REPR and have no
+    /// instances (`.new` / `nqp::create` die).
+    pub(crate) uninstantiable_classes: HashSet<String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
     pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,

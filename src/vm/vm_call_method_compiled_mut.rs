@@ -50,6 +50,11 @@ impl Interpreter {
                 class_name.as_str(),
             ));
         }
+        if let Some(class_name) = new_on_package
+            && let Some(err) = self.uninstantiable_error(class_name.as_str())
+        {
+            return Err(err);
+        }
         // Calling a method on a role TYPE OBJECT puns the role, and punning is
         // a composition: the role's body runs. This fast path dispatched the
         // role's method straight off the role, so the body never ran at all —
