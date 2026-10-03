@@ -23,7 +23,9 @@ our module RoleSubParamLexical {
                 self!bump;
                 "{$guard.^name} $plain calls=$!calls name=$!name"
             };
-            nqp::bindattr(self, Code, '$!do', nqp::getattr($replacement, Code, '$!do'));
+            my $do := nqp::getattr($replacement, Code, '$!do');
+            nqp::bindattr(self, Code, '$!do', $do);
+            nqp::setcodename($do, $!name);
         }
     }
 }

@@ -20,7 +20,7 @@ is f(), 'Lock plain calls=1 name=f',
     'the rebound body sees the role-body lexicals and the role attributes';
 is f(), 'Lock plain calls=2 name=f',
     'a private method\'s attribute write is seen by the next call';
-is &f.name, 'f', 'a private role attribute $!name is not an accessor';
+is &f.name, 'f', 'a private role attribute $!name is not an accessor (the name follows $!do)';
 
 my role Local[$p] {
     my $x = 'x';
