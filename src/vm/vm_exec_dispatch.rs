@@ -3724,7 +3724,16 @@ impl Interpreter {
                 rhs_is_bare_topic,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_smart_match_expr_op(
+                // A routine whose `$/` is a (readonly) parameter -- the
+                // action-method idiom `method term($/) { ... when $s ~~ /.../
+                // ... make ... }` -- keeps that `$/` across a regex
+                // smartmatch: rakudo answers the match but leaves `$/`, and so
+                // `$0` / `$<name>`, alone.
+                let saved_slash = self
+                    .is_readonly("/")
+                    .then(|| self.env().get("/").cloned())
+                    .flatten();
+                let result = self.exec_smart_match_expr_op(
                     code,
                     ip,
                     *rhs_end,
@@ -3735,7 +3744,12 @@ impl Interpreter {
                     *rhs_pure_regex,
                     *rhs_is_bare_topic,
                     compiled_fns,
-                )?;
+                );
+                if let Some(slash) = saved_slash {
+                    self.env_mut().insert("/".to_string(), slash.clone());
+                    self.update_local_if_exists(code, "/", &slash);
+                }
+                result?;
             }
             // Cost: O(1).
             OpCode::ScalarizeRegexMatchResult => {
