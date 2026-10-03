@@ -278,4 +278,17 @@ is-deeply (3, 1, 2).sort(:qqzz9).list, (1, 2, 3), 'List.sort ignores an undeclar
 is-deeply [3, 1, 2].sort(:qqzz9).list, (1, 2, 3), 'Array.sort ignores an undeclared named';
 is-deeply (3, 1, 2).sort({ $^b <=> $^a }, :qqzz9).list, (3, 2, 1), 'sort with a comparator ignores an undeclared named';
 
+# --- the AT-POS and IO::Path.link residue (#9905) ---------------------------
+# A named argument the method does not declare must not change the answer:
+# it was counted as a second AT-POS dimension, and became `link`'s target.
+
+dies-ok { (1, 2, 3).AT-POS("a", :zzz) }, 'List.AT-POS with a non-numeric index dies with or without an undeclared named';
+is (1, 2, 3).AT-POS("1", :zzz), 2, 'List.AT-POS coerces a Str index and ignores an undeclared named';
+is (1, 2, 3).AT-POS(3/2), 2, 'List.AT-POS coerces a Rat index';
+is (1..5).AT-POS("2"), 3, 'Range.AT-POS coerces a Str index';
+is [1, 2, 3].AT-POS(1, :zzz), 2, 'Array.AT-POS ignores an undeclared named';
+is [1, 2, 3].EXISTS-POS(1, :zzz), True, 'Array.EXISTS-POS ignores an undeclared named';
+throws-like { $*TMPDIR.IO.link(:zzz) }, Exception,
+    message => /'Too few positionals'/, 'IO::Path.link does not take an undeclared named as its target';
+
 done-testing;

@@ -286,3 +286,28 @@ Buf/Blob constructor `new` residue was fixed in #9905 by filtering call-site
 named arguments in the shared native byte-buffer constructor. The remaining
 sweep divergences are plain-call differences that also occur with no named
 argument.
+
+## Residue slice (2026-10-03, #9905): two funnels that still counted a named
+
+Two declared methods still let an undeclared named argument change the answer, because their
+arguments reached a positional reader without passing a strip:
+
+| Probe | Was | Now (= rakudo) |
+| --- | --- | --- |
+| `(1,2,3).AT-POS("a", :zzz)` | `Nil` | dies on the `"a"` index |
+| `[1,2,3].AT-POS(1, :zzz)` | read as a 2-dimensional index | `2` |
+| `"/tmp".IO.link(:zzz)` | hard-linked a file named `zzz\tTrue` | `Too few positionals passed; expected 2 arguments but got 1` |
+
+- The Array `*-POS` block in `methods_call_dispatch` strips before it counts dimensions (only the
+  declared `AT-POS`/`EXISTS-POS`; `ASSIGN-POS` and kin are undeclared and keep their arguments).
+- The `IO::Path` two-path funnel (`io_path_two_path_op`) strips once at its entry, the way the
+  lexical funnel already did.
+- The stripped `AT-POS("a")` then exposed a second divergence: the pure 1-argument `AT-POS` arm
+  answered `Nil` for any non-integer index. It now coerces a `Str`/`Rat` index to an integer as
+  Rakudo's `AT-POS(Any)` candidate does (`.AT-POS("1")` reads element 1, on a Range too), and declines
+  a non-numeric `Str` to the general path, which dies on it.
+
+The remaining #9905 probes (`.grep()` with no matcher, the invocant type named by `{ }.lazy()`'s
+error, the exact text of the `AT-POS("a")` error) involve no named argument, so they are not this
+ADR's subject.
+

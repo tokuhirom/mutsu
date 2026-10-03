@@ -659,9 +659,20 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::str(result)))
         }
         "AT-POS" => {
+            // A Str or Rat index is coerced to Int, as Rakudo's `AT-POS(Any)`
+            // candidate does (`.AT-POS("1")` reads element 1). A Str that is not
+            // a number is declined to the general path, which dies on it as
+            // Rakudo does; answering Nil here made the reply depend on which
+            // path the call took (`.AT-POS("a", :zzz)` was Nil, #9905).
             let idx = match arg.view() {
                 ValueView::Int(i) if i >= 0 => i as usize,
                 ValueView::Num(f) if f >= 0.0 => f as usize,
+                ValueView::Rat(n, d) if d > 0 && n >= 0 => (n / d) as usize,
+                ValueView::Str(s) => match s.trim().parse::<f64>() {
+                    Ok(f) if f >= 0.0 => f as usize,
+                    Ok(_) => return Some(Ok(Value::NIL)),
+                    Err(_) => return None,
+                },
                 _ => return Some(Ok(Value::NIL)),
             };
             // A Range is not array-backed; index its (possibly lazy) element
