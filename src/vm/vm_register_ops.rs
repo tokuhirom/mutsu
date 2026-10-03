@@ -1430,8 +1430,8 @@ impl Interpreter {
     /// that don't yet deref one (immutability, type-object dispatch, `.kv` rw
     /// writeback). Arrays / hashes / subs / type objects are reference-shared
     /// already and untouched.
-    /// The binding cell `v` is, when it is one: a `ContainerRef` whose content
-    /// is itself a `ContainerRef` (the variable's real container).
+    /// A binding cell has a plain `ContainerRef` as its content. An itemized
+    /// nested reference is instead the value of a scalar's own share holder.
     ///
     /// Rakudo's closure reads the lexical *pad slot*, so it sees a later
     /// `$a := X`, while a second name bound earlier (`my $f := $a`) holds the
@@ -1447,13 +1447,12 @@ impl Interpreter {
     /// rebind already leaves behind (#8759), so it needs no new reader.
     pub(crate) fn binding_cell_of(v: &Value) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         match v.view() {
-            ValueView::ContainerRef(arc)
-                if arc
+            ValueView::ContainerRef(arc) => {
+                let inner = arc
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .is_container_ref() =>
-            {
-                Some(arc.clone())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                (inner.is_container_ref() && !inner.container_ref_is_itemized())
+                    .then(|| arc.clone())
             }
             _ => None,
         }
@@ -1464,6 +1463,8 @@ impl Interpreter {
     /// the end of its chain. A read-modify-write (`$x++`, `$x += 1`) steps this
     /// cell; stepping a binding cell instead would overwrite the binding with
     /// a bare value and cut the variable loose from its container (#10826).
+    /// An itemized nested reference is the scalar's value, so its outer cell
+    /// is the RMW target.
     // Cost: O(c), c = binding cells chained in front of the value cell (1 in
     // practice).
     pub(crate) fn value_cell_of(
@@ -1476,7 +1477,9 @@ impl Interpreter {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             match inner.view() {
-                ValueView::ContainerRef(next) => cell = next.clone(),
+                ValueView::ContainerRef(next) if !inner.container_ref_is_itemized() => {
+                    cell = next.clone()
+                }
                 _ => return cell,
             }
         }
