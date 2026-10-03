@@ -2877,7 +2877,8 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
 }
 
 /// The env keys every method frame writes for itself -- see the fixture
-/// inserts in `call_compiled_method` / `call_compiled_method_fast` -- plus the
+/// inserts in `call_compiled_method` / `call_compiled_method_fast`; `$!` and
+/// the callable id are dropped by `merge_method_env`'s own predicates -- plus the
 /// method's parameters and compiled locals, all as symbols, for
 /// [`merge_method_env`]'s cheap first test.
 pub(super) struct MethodFrameSyms<'a> {
@@ -2894,6 +2895,8 @@ impl MethodFrameSyms<'_> {
             || k == wk::class_decl()
             || k == wk::role_decl()
             || k == wk::topic()
+            || k == wk::error_var()
+            || k == wk::callable_id()
             || self.params.contains(&k)
             || self.locals.contains(&k)
     }
