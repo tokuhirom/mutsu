@@ -2526,6 +2526,9 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 quantifier,
             })
         }
+        RakuAstClass::RegexAssertionCharClass => super::regex_enumeration::lower(node)
+            .map(RegexNode::CharClassAssertion)
+            .ok_or_else(|| unsupported(node)),
         RakuAstClass::RegexCharClass(kind) => super::regex_char_class::lower(kind, node)
             .map(RegexNode::CharClass)
             .ok_or_else(|| unsupported(node)),

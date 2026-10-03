@@ -2823,6 +2823,9 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             (RakuAstClass::RegexAnchorRightWordBoundary, Vec::new())
         }
         RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
+        RegexNode::CharClassAssertion(elements) => {
+            return Ok(super::regex_enumeration::convert(elements));
+        }
         RegexNode::InternalModifier {
             kind,
             long,

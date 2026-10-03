@@ -88,6 +88,15 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("comp-unit-name", Absent::Required),
         ],
         RegexCharClass(kind) => kind.model_fields(),
+        RegexAssertionCharClass => &[("elements", Absent::EmptyList)],
+        RegexCharClassElementEnumeration => {
+            &[("elements", Absent::EmptyList), ("negated", Absent::False)]
+        }
+        RegexCharClassElementRule => &[("name", Absent::Required), ("negated", Absent::False)],
+        RegexCharClassEnumerationElementCharacter => &[("character", Absent::Required)],
+        RegexCharClassEnumerationElementRange => {
+            &[("from", Absent::Required), ("to", Absent::Required)]
+        }
         RegexInternalModifierIgnoreCase => {
             &[("modifier", Absent::Str("i")), ("negated", Absent::False)]
         }
@@ -315,6 +324,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexLiteral => "text",
         RegexQuote => "quoted",
         RegexSequence => "terms",
+        RegexAssertionCharClass => "elements",
+        RegexCharClassEnumerationElementCharacter => "character",
         RegexAlternation | RegexSequentialAlternation => "branches",
         RegexGroup | RegexCapturingGroup | RegexWithWhitespace => "regex",
         RegexBlock => "block",

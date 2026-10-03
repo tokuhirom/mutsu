@@ -60,9 +60,11 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.
     let fields = rendered_fields(node);
-    if fields
-        .iter()
-        .all(|f| f.name.is_none() && is_inline_field(f))
+    // Rakudo renders a char-class `Character` on its own line all the same.
+    if node.class != RakuAstClass::RegexCharClassEnumerationElementCharacter
+        && fields
+            .iter()
+            .all(|f| f.name.is_none() && is_inline_field(f))
     {
         let inner = fields
             .iter()

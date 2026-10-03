@@ -7,9 +7,11 @@
 //! their own tree nodes are implemented.
 
 mod char_class;
+mod enumeration;
 mod quantifier;
 
 pub(crate) use char_class::{BackslashClass, CharClassAtom};
+pub(crate) use enumeration::{CharClassElement, EnumerationElement};
 pub(crate) use quantifier::{QuantifierKind, RegexBacktrack, RegexQuantifier, RegexSeparator};
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -213,6 +215,8 @@ pub(crate) enum RegexNode {
     /// `>>` / `»`
     AnchorRightWordBoundary,
     CharClass(CharClassAtom),
+    /// `<[a..z]>`, `<-alpha>`, `<[ab]-[b]>`
+    CharClassAssertion(Vec<CharClassElement>),
     WithWhitespace(Box<RegexNode>),
     /// An internal modifier (`:i`, `:ignorecase`, `:!m`) that switches a
     /// matching mode for the rest of its enclosing group. `long` records the
@@ -492,7 +496,7 @@ impl RegexTree {
                     ratchet,
                 )]),
                 // The other classes keep the runtime parser's plan.
-                RegexNode::CharClass(_) => None,
+                RegexNode::CharClass(_) | RegexNode::CharClassAssertion(_) => None,
                 RegexNode::AnchorBeginningOfString => {
                     if root {
                         *anchor_start = true;
@@ -933,6 +937,7 @@ impl RegexNode {
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
+            | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => {}
         }
     }
@@ -976,6 +981,7 @@ impl RegexNode {
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
+            | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
         }
     }
@@ -1019,6 +1025,7 @@ impl RegexNode {
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
+            | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
         }
     }
@@ -1060,6 +1067,7 @@ impl RegexNode {
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
             | Self::CharClass(_)
+            | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
         }
     }
@@ -1214,6 +1222,7 @@ impl RegexNode {
             Self::AnchorLeftWordBoundary => "<<".to_string(),
             Self::AnchorRightWordBoundary => ">>".to_string(),
             Self::CharClass(atom) => atom.to_source(),
+            Self::CharClassAssertion(elements) => enumeration::assertion_source(elements),
             Self::InternalModifier {
                 kind,
                 long,
@@ -1771,6 +1780,13 @@ impl Parser {
                 Some(RegexNode::AnchorRightWordBoundary)
             }
             '|' | '+' | '*' | '?' | '^' | '>' => None,
+            '<' if self
+                .chars
+                .get(self.pos + 1)
+                .is_some_and(|next| matches!(next, '[' | '-' | '+')) =>
+            {
+                self.parse_char_class_assertion()
+            }
             '<' => self
                 .parse_lookaround(sequential_interpolation)
                 .or_else(|| self.parse_subrule()),
@@ -3043,13 +3059,17 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorLeftWordBoundary
         | RegexNode::AnchorRightWordBoundary
         | RegexNode::CharClass(_)
+        | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => false,
     }
 }
 
 fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     match node {
-        RegexNode::Literal(_) | RegexNode::Quote(_) | RegexNode::CharClass(_) => true,
+        RegexNode::Literal(_)
+        | RegexNode::Quote(_)
+        | RegexNode::CharClass(_)
+        | RegexNode::CharClassAssertion(_) => true,
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
         | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_supported_lookaround_body),

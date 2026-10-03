@@ -25,6 +25,7 @@ mod lower;
 mod name_parts;
 mod named_param;
 mod regex_char_class;
+mod regex_enumeration;
 mod regex_quantifier;
 mod render;
 mod routine_traits;
@@ -113,6 +114,11 @@ pub enum RakuAstClass {
     RegexBacktrackGreedy,
     RegexBacktrackRatchet,
     RegexCharClass(regex_char_class::RegexCharClassKind),
+    RegexAssertionCharClass,
+    RegexCharClassElementEnumeration,
+    RegexCharClassElementRule,
+    RegexCharClassEnumerationElementCharacter,
+    RegexCharClassEnumerationElementRange,
     RegexInternalModifierIgnoreCase,
     RegexInternalModifierIgnoreMark,
     RegexInternalModifierSigspace,
@@ -385,6 +391,15 @@ impl RakuAstClass {
             RegexBacktrackGreedy => "RakuAST::Regex::Backtrack::Greedy",
             RegexBacktrackRatchet => "RakuAST::Regex::Backtrack::Ratchet",
             RegexCharClass(kind) => kind.printed_name(),
+            RegexAssertionCharClass => "RakuAST::Regex::Assertion::CharClass",
+            RegexCharClassElementEnumeration => "RakuAST::Regex::CharClassElement::Enumeration",
+            RegexCharClassElementRule => "RakuAST::Regex::CharClassElement::Rule",
+            RegexCharClassEnumerationElementCharacter => {
+                "RakuAST::Regex::CharClassEnumerationElement::Character"
+            }
+            RegexCharClassEnumerationElementRange => {
+                "RakuAST::Regex::CharClassEnumerationElement::Range"
+            }
             RegexInternalModifierIgnoreCase => "RakuAST::Regex::InternalModifier::IgnoreCase",
             RegexInternalModifierIgnoreMark => "RakuAST::Regex::InternalModifier::IgnoreMark",
             RegexInternalModifierSigspace => "RakuAST::Regex::InternalModifier::Sigspace",
@@ -560,6 +575,11 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorRightWordBoundary
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexCharClass(_)
+                | RakuAstClass::RegexAssertionCharClass
+                | RakuAstClass::RegexCharClassElementEnumeration
+                | RakuAstClass::RegexCharClassElementRule
+                | RakuAstClass::RegexCharClassEnumerationElementCharacter
+                | RakuAstClass::RegexCharClassEnumerationElementRange
                 | RakuAstClass::RegexInternalModifierIgnoreCase
                 | RakuAstClass::RegexInternalModifierIgnoreMark
                 | RakuAstClass::RegexInternalModifierSigspace
@@ -676,6 +696,15 @@ impl RakuAstClass {
             }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
             RegexCharClass(kind) => regex_char_class::ancestors(kind),
+            RegexAssertionCharClass => &[
+                "RakuAST::Regex::Assertion",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            RegexCharClassElementEnumeration | RegexCharClassElementRule => {
+                &["RakuAST::Regex::CharClassElement"]
+            }
             RegexInternalModifierIgnoreCase
             | RegexInternalModifierIgnoreMark
             | RegexInternalModifierSigspace
@@ -926,6 +955,7 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Regex::Quantifier"
             | "RakuAST::Regex::CharClass"
             | "RakuAST::Regex::CharClass::Negatable"
+            | "RakuAST::Regex::CharClassElement"
             | "RakuAST::Regex::Anchor"
             | "RakuAST::Regex::Backtrack"
             | "RakuAST::ColonPair"
@@ -996,6 +1026,11 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Nul),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Any),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Specified),
+    RakuAstClass::RegexAssertionCharClass,
+    RakuAstClass::RegexCharClassElementEnumeration,
+    RakuAstClass::RegexCharClassElementRule,
+    RakuAstClass::RegexCharClassEnumerationElementCharacter,
+    RakuAstClass::RegexCharClassEnumerationElementRange,
     RakuAstClass::RegexInternalModifierIgnoreCase,
     RakuAstClass::RegexInternalModifierIgnoreMark,
     RakuAstClass::RegexInternalModifierSigspace,
@@ -2337,6 +2372,9 @@ pub fn construct(
     if let Some(node) = regex_char_class::construct(class_name, method, args) {
         return node.map(Some);
     }
+    if let Some(node) = regex_enumeration::construct(class_name, method, args) {
+        return node.map(Some);
+    }
     // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:
     // both nameds optional. A field equal to its default (the short spelling,
     // `False`) is left off, which is what the renderer then elides.
@@ -2517,6 +2555,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorLeftWordBoundary
                     | RakuAstClass::RegexAnchorRightWordBoundary
                     | RakuAstClass::RegexCharClass(_)
+                    | RakuAstClass::RegexAssertionCharClass
                     | RakuAstClass::RegexInternalModifierIgnoreCase
                     | RakuAstClass::RegexInternalModifierIgnoreMark
                     | RakuAstClass::RegexInternalModifierSigspace
@@ -2783,6 +2822,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::RegexSequence
             | RakuAstClass::RegexAlternation
             | RakuAstClass::RegexSequentialAlternation
+            | RakuAstClass::RegexAssertionCharClass
     ) && fields::positional_accessor(node.class) == Some(method)
     {
         let items = node
