@@ -594,7 +594,7 @@ impl Interpreter {
                             },
                         );
                     if self.resolve_function(&name).is_some() || captured_match {
-                        return self.call_function(&name, call_args);
+                        return self.call_user_family_by_name(&name, call_args);
                     }
                     // A compunit-scoped family (#11004) that the calling unit
                     // cannot see by name, such as a module invoking a `&sha256`

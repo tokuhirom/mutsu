@@ -588,6 +588,7 @@ impl Interpreter {
         if !self.has_multi_candidates(name) {
             for pkg in &search_pkgs {
                 if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
+                    .filter(|&key| self.module_routine_visible_here(key))
                     .and_then(|key| self.registry().functions.get(&key).cloned())
                     .and_then(|def| self.visible_operator_def(name, def))
                 {
