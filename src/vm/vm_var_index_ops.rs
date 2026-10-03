@@ -37,10 +37,8 @@ impl Interpreter {
     /// range may be lazy, as in `'foo'[2..*]`).
     fn range_start_index(index: &Value) -> i64 {
         match index.view() {
-            ValueView::Range(a, _)
-            | ValueView::RangeExcl(a, _)
-            | ValueView::RangeExclBoth(a, _) => a,
-            ValueView::RangeExclStart(a, _) => a + 1,
+            ValueView::Range(a, _) | ValueView::RangeExcl(a, _) => a,
+            ValueView::RangeExclStart(a, _) | ValueView::RangeExclBoth(a, _) => a + 1,
             ValueView::GenericRange { start, .. } => start.to_f64() as i64,
             _ => 0,
         }
@@ -1553,7 +1551,14 @@ impl Interpreter {
                     }
                 }
             }
-            (ValueView::Array(items, kind), ValueView::Range(a, b)) => {
+            // `a ^.. b` addresses the same window as `a+1 .. b`, and `a ^..^ b`
+            // the same as `a+1 ..^ b`: `range_params` folds the excluded start
+            // in (`@a[25^..^75]` returned Nil, Cro::WebSocket's message test).
+            (
+                ValueView::Array(items, kind),
+                ValueView::Range(..) | ValueView::RangeExclStart(..),
+            ) => {
+                let (a, b) = range_params(&index).map_or((0, -1), |(a, b, ..)| (a, b));
                 let source = Value::array_with_kind(items.clone(), kind);
                 match Self::inclusive_range_window(a, b, items.len())? {
                     Some((start, end_excl)) => {
@@ -1567,7 +1572,11 @@ impl Interpreter {
                     None => self.slice_result_value(&source, Vec::new()),
                 }
             }
-            (ValueView::Array(items, kind), ValueView::RangeExcl(a, b)) => {
+            (
+                ValueView::Array(items, kind),
+                ValueView::RangeExcl(..) | ValueView::RangeExclBoth(..),
+            ) => {
+                let (a, b) = range_params(&index).map_or((0, 0), |(a, b, ..)| (a, b));
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
                     items.len()

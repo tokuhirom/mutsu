@@ -856,11 +856,23 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         .map(|(name, _)| name.as_str())
         .filter(|name| !enum_values.iter().any(|n| n == name))
         .collect();
+    // A package-qualified value (`WS::Msg::Ping`, from `package WS::Msg {
+    // enum Opcode is export (...) }` in a module this one used) is not a
+    // lexical import: the package is global, so the name resolves in every
+    // file that has (transitively) loaded it — Cro::WebSocket's Handler says
+    // `when Cro::WebSocket::Message::Ping` having only used the module that
+    // used the enum's. Keep those; drop only the bare and enum-type-qualified
+    // (`Opcode::Ping`) forms, which do need the import.
+    let is_global_package = |pkg: &str| pkg.contains("::") || type_names.iter().any(|t| t == pkg);
     let scanned_enum_values: Vec<String> = scanned_enum_values
         .into_iter()
         .filter(|name| {
             !restricted.contains(name.as_str())
-                && (declares_export_hook || !imported_enum_values.contains(name))
+                && (declares_export_hook
+                    || !imported_enum_values.contains(name)
+                    || name
+                        .rsplit_once("::")
+                        .is_some_and(|(pkg, _)| is_global_package(pkg)))
         })
         .collect();
     enum_values.extend(scanned_enum_values);

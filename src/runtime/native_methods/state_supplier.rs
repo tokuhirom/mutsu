@@ -1162,6 +1162,13 @@ pub(in crate::runtime) enum SupplierEmitAction {
         mode: TransformMode,
         value: Value,
     },
+    /// A `Supply.Channel` forwarding tap delivering into a channel that has
+    /// Supplies of its own (`.Channel.Supply`): needs the interpreter to run
+    /// `Channel.send`'s tap dispatch (`Interpreter::channel_send_value`).
+    ChannelSend {
+        channel: crate::value::SharedChannel,
+        value: Value,
+    },
 }
 
 /// The taps of `supplier_id` that would receive an emission right now — not
@@ -1231,7 +1238,14 @@ fn supplier_emit_callbacks_inner(
                 continue;
             }
             if let Some(ref ch) = tap.channel_sink {
-                ch.send(emitted_value.clone());
+                if ch.supplier_ids().is_empty() {
+                    ch.send(emitted_value.clone());
+                } else {
+                    actions.push(SupplierEmitAction::ChannelSend {
+                        channel: ch.clone(),
+                        value: emitted_value.clone(),
+                    });
+                }
                 continue;
             }
             if tap.line_mode {

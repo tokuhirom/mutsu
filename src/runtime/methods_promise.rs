@@ -388,6 +388,49 @@ impl Interpreter {
         }
     }
 
+    /// `Channel.send`'s delivery, shared with a `Supply.Channel` forwarding
+    /// tap (`SupplierEmitAction::ChannelSend`): the value reaches one live tap
+    /// of the channel's own Supplies and is queued. The forwarding tap used to
+    /// queue it only, so `$supplier.Supply.Channel.Supply.tap(...)` (Cro's
+    /// WebSocket handler feed) never saw a value emitted after the tap.
+    // Cost: O(t), t = live taps on the channel's Supplies.
+    pub(crate) fn channel_send_value(&mut self, ch: &SharedChannel, value: Value) {
+        use crate::runtime::native_methods::state::supplier_emit;
+        use crate::runtime::native_methods::state_supplier::{
+            supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
+        };
+        let sids = ch.supplier_ids();
+        for sid in &sids {
+            supplier_emit(*sid, value.clone());
+        }
+        // A `Channel` is a queue, not a broadcast point: rakudo's
+        // `Channel.Supply` is a view onto a `.receive` loop, so taps on
+        // it are COMPETING consumers and each sent value reaches
+        // exactly one of them. This used to hand the value to every tap
+        // of every one of the channel's Supplies, so a program fanning
+        // work out to N workers over one channel did every unit N times
+        // (#7604). A `Supplier` is the genuine broadcaster and never
+        // reaches this path, so it keeps fanning out.
+        //
+        // Only this eager send-time dispatch broadcast: a `whenever` on
+        // a channel-backed Supply already competes correctly, because
+        // the react drive loop drains the channel queue itself.
+        let mut targets: Vec<(u64, usize)> = Vec::new();
+        for sid in &sids {
+            targets.extend(
+                supplier_live_tap_indices(*sid)
+                    .into_iter()
+                    .map(|i| (*sid, i)),
+            );
+        }
+        if !targets.is_empty() {
+            let (sid, tap_index) = targets[ch.next_supply_turn() % targets.len()];
+            let actions = supplier_emit_callbacks_for_tap(sid, tap_index, &value);
+            let _ = self.drive_supplier_emit_actions(sid, actions);
+        }
+        ch.send(value);
+    }
+
     pub(super) fn dispatch_channel_method(
         &mut self,
         ch: &SharedChannel,
@@ -401,40 +444,7 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
-                use crate::runtime::native_methods::state::supplier_emit;
-                use crate::runtime::native_methods::state_supplier::{
-                    supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
-                };
-                let sids = ch.supplier_ids();
-                for sid in &sids {
-                    supplier_emit(*sid, value.clone());
-                }
-                // A `Channel` is a queue, not a broadcast point: rakudo's
-                // `Channel.Supply` is a view onto a `.receive` loop, so taps on
-                // it are COMPETING consumers and each sent value reaches
-                // exactly one of them. This used to hand the value to every tap
-                // of every one of the channel's Supplies, so a program fanning
-                // work out to N workers over one channel did every unit N times
-                // (#7604). A `Supplier` is the genuine broadcaster and never
-                // reaches this path, so it keeps fanning out.
-                //
-                // Only this eager send-time dispatch broadcast: a `whenever` on
-                // a channel-backed Supply already competes correctly, because
-                // the react drive loop drains the channel queue itself.
-                let mut targets: Vec<(u64, usize)> = Vec::new();
-                for sid in &sids {
-                    targets.extend(
-                        supplier_live_tap_indices(*sid)
-                            .into_iter()
-                            .map(|i| (*sid, i)),
-                    );
-                }
-                if !targets.is_empty() {
-                    let (sid, tap_index) = targets[ch.next_supply_turn() % targets.len()];
-                    let actions = supplier_emit_callbacks_for_tap(sid, tap_index, &value);
-                    let _ = self.drive_supplier_emit_actions(sid, actions);
-                }
-                ch.send(value);
+                self.channel_send_value(&ch, value);
                 Ok(Value::NIL)
             }
             "receive" => match ch.receive_result() {

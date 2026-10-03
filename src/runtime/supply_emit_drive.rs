@@ -187,6 +187,9 @@ impl Interpreter {
                 } => {
                     self.handle_supply_forward(downstream_supplier_id, value)?;
                 }
+                SupplierEmitAction::ChannelSend { channel, value } => {
+                    self.channel_send_value(&channel, value);
+                }
                 SupplierEmitAction::TransformCall {
                     downstream_supplier_id,
                     callable,
