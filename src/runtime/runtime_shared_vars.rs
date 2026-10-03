@@ -836,6 +836,8 @@ impl Interpreter {
 
     pub(crate) fn clear_private_zeroarg_method_cache(&mut self) {
         self.caches.private_zeroarg_method_cache.clear();
+        self.caches.private_resolve_cache.clear();
+        self.caches.private_type_cacheable.clear();
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {

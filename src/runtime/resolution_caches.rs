@@ -289,6 +289,17 @@ pub(crate) struct ResolutionCaches {
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
     pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// The private-method twin of `multi_resolve_cache`: `$obj!name(args)`
+    /// resolved against `(receiver class, "!name", arg-type-keys)`. Filled only
+    /// when no candidate of that name is value-dependent
+    /// (`private_type_cacheable`), so the winner is a function of the key.
+    /// Cleared with the other method caches (generation bump) and by
+    /// `clear_private_zeroarg_method_cache`.
+    #[allow(clippy::type_complexity)]
+    pub(crate) private_resolve_cache:
+        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<(Symbol, Arc<MethodDef>)>>,
+    /// Memoized `(class, "!name") -> may private_resolve_cache serve it`.
+    pub(crate) private_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized `(native type name, method) -> does a user `augment` declare this
     /// method on that type or an MRO ancestor` — the `native_lever_a_user_override`
     /// gate every native method call passes through. The answer is a pure function
