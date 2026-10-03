@@ -240,6 +240,7 @@ impl ReactWaker {
         });
     }
 
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // only native threads park
     fn set_parked(&self, parked: bool) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
@@ -383,6 +384,7 @@ impl Drop for DispatchGuard {
 }
 
 /// Undoes [`park_dispatching`] on drop.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))] // only native threads park
 pub(crate) struct ParkGuard {
     parked: Vec<ReactWaker>,
 }
@@ -399,6 +401,7 @@ impl Drop for ParkGuard {
 /// cannot progress until it wakes, so their producers must not wait for it
 /// (see [`ReactWaker::await_delivery`]). Called at every blocking point
 /// (`worker_pool::enter_blocking`).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))] // only native threads park
 // Cost: O(d), d = reacts this thread is handling events of (nesting depth).
 pub(crate) fn park_dispatching() -> ParkGuard {
     let parked = DISPATCHING.with(|d| d.borrow().clone());
