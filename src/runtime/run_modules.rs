@@ -1588,6 +1588,9 @@ impl Interpreter {
                 !name.contains("::")
                     && !name.contains('\u{0}')
                     && !explicit_global_types.contains(name.as_str())
+                    // A core type a prelude registers lazily (`Enumeration`)
+                    // may first appear during a module load.
+                    && !Self::is_builtin_type(name)
             })
             .filter(|name| {
                 self.module_owned_types
