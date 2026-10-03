@@ -7,63 +7,36 @@ name: Deploy the site to GitHub Pages
 # `workflow_run` is safe here: the build checks out `main` itself and consumes
 # nothing (no artifact, no output) from the run that triggered it.
 on: # zizmor: ignore[dangerous-triggers]
-  # EVERY push to main deploys, with no `paths:` filter. This job used to build
-  # the wasm playground from source, which is why it was narrowed to the files
-  # that change the site itself; it does not any more — the interpreter comes
-  # from the published npm package (`npm install @tokuhirom/mutsu@latest`), and
-  # what is left is a node install and four small generator scripts. Measured
-  # end to end on 2026-09-21: 30, 35, 36, 37, 41, 47 seconds. At that price a
-  # path filter costs more than it saves, because every path it omits is a way
-  # for the deployed site to disagree with `main`:
+  # On a schedule, not on every push to main (ADR-11581). Hosted-runner concurrency (20
+  # jobs on the free plan) is shared with the CI that gates every PR, and at
+  # ~100 merges a day a deploy per push -- plus a second one per completed
+  # Bench run -- queued ~200 small jobs a day in front of PR CI for a site
+  # whose readers do not need minute-level freshness. Every two hours bounds
+  # how far the site can lag `main`: the landing page's roast figure (counted
+  # from `roast-whitelist.txt` at deploy time), the bench trend (rendered from
+  # the `bench-data` branch, which bench.yml pushes to with the default
+  # GITHUB_TOKEN and so can signal no workflow), and whatever a future
+  # generator script starts reading. `workflow_dispatch` deploys at once when
+  # that is not soon enough.
   #
-  #   - `roast-whitelist.txt` is the landing page's "N% of the official spec
-  #     files pass in full", counted at deploy time. It grows several times a
-  #     day and was on no push path at all, so that headline figure was only
-  #     ever refreshed by the daily cron below -- up to 24 hours behind.
-  #   - `roast/` itself is the denominator of the same figure, so a re-vendor
-  #     moved it with no trigger either.
-  #   - Anything a future generator script starts reading is covered from the
-  #     moment it is written, rather than the first time someone notices the
-  #     page is stale and remembers to extend a list in this file.
+  # No `paths:` filter on top of the schedule: every path a filter omits is a
+  # way for the deployed site to disagree with `main`.
   #
-  # What this does NOT change: the playground still runs the interpreter from
-  # the last published npm package, not from HEAD. Deploying more often cannot
-  # fix that — only a release can, which the `Release` workflow_run below
-  # already picks up.
-  #
-  # The burst case is already handled by the `build` job's `concurrency` group
-  # (`cancel-in-progress: true`): when several PRs merge within a minute — which
-  # happens here routinely — the superseded runs are cancelled and only the last
-  # one deploys. That is what makes an unfiltered trigger safe rather than a way
-  # to queue twenty deploys of the same tree.
-  #
-  # The daily schedule remains the safety net for what no push can signal: an
-  # npm package published outside a tagged release, and a stretch of days with
-  # no merges at all.
+  # What this does NOT change: the playground runs the interpreter from the
+  # last published npm package, not from HEAD; only a release moves it, which
+  # the `Release` workflow_run below picks up.
   schedule:
-    - cron: '17 21 * * *'
-  push:
-    branches: [main]
+    - cron: '17 */2 * * *'
   workflow_run:
     # Release: a successful tagged release publishes npm before the Release
     # workflow completes, so this deploy picks up the new `latest` package
-    # automatically.
+    # right away rather than at the next scheduled run.
     #
-    # Bench: bench-trend.html is rendered from the `bench-data` branch, and
-    # bench.yml pushes there with the default GITHUB_TOKEN — a push GitHub
-    # deliberately does not let start a workflow, on a branch this workflow
-    # does not watch anyway. So no `push:` filter can ever see new perf data;
-    # completion of the run that produced it is the only signal there is.
-    # Waiting for the daily cron instead left the published trend up to 24
-    # hours behind, and this ordering also closes the one-commit lag the
-    # render step used to document: the row for the commit being measured is
-    # already on `bench-data` by the time this fires.
-    #
-    # Ecosystem sweep: the same situation as Bench. The parity records live on
-    # the `ecosystem-data` branch, which ecosystem-sweep.yml pushes to with the
-    # default GITHUB_TOKEN, so the run's completion is the only signal that new
-    # numbers exist (ADR-0085, 2026-10-03 amendment).
-    workflows: [Release, Bench, Ecosystem sweep]
+    # Ecosystem sweep: the parity records live on the `ecosystem-data` branch,
+    # which ecosystem-sweep.yml pushes to with the default GITHUB_TOKEN, so the
+    # run's completion is the only signal that new numbers exist (ADR-0085,
+    # 2026-10-03 amendment). It runs once a day, so this costs one deploy.
+    workflows: [Release, Ecosystem sweep]
     types: [completed]
   workflow_dispatch:
 
@@ -74,29 +47,21 @@ permissions:
 
 jobs:
   build:
-    # A failed upstream run produced nothing to publish. Beyond that the two
-    # watched workflows differ: a `workflow_dispatch` Release run uploads
-    # artifacts but creates no release and publishes no npm package, so there
-    # is nothing new for this deploy to pick up and only a tag push counts —
-    # whereas Bench appends its row to `bench-data` however it was started, so
-    # a dispatched Bench run is just as much a reason to redeploy as a pushed
-    # one. An Ecosystem sweep run counts whatever its conclusion: one failed
-    # shard fails the run, yet its `collect` job still lands the other 26.
+    # A failed upstream run produced nothing to publish. A `workflow_dispatch`
+    # Release run uploads artifacts but creates no release and publishes no npm
+    # package, so only a tag push counts. An Ecosystem sweep run counts whatever
+    # its conclusion: one failed shard fails the run, yet its `collect` job
+    # still lands the other 26.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.name == 'Ecosystem sweep' &&
        github.event.workflow_run.conclusion != 'cancelled') ||
       (github.event.workflow_run.conclusion == 'success' &&
-       (github.event.workflow_run.name != 'Release' ||
-        github.event.workflow_run.event == 'push'))
-    # The burst-cancelling group lives on the JOB, not the workflow. A
-    # workflow-level group is entered by every run, including the
-    # `workflow_run` ones the `if:` above skips. Each push to main queues a
-    # Bench run and cancels the previous push's still-pending one (bench.yml's
-    # own concurrency group); that cancelled Bench run completes within a
-    # second of the new push, so its skipped Pages run started right after the
-    # new push's deploy and cancelled it. On 2026-10-03 that cancelled every
-    # push deploy in a row. A job whose `if:` is false never enters the group.
+       github.event.workflow_run.event == 'push')
+    # The cancelling group lives on the JOB, not the workflow: a workflow-level
+    # group is entered by every run, including the `workflow_run` ones the
+    # `if:` above skips, and such a skipped run used to cancel a real deploy
+    # (2026-10-03). A job whose `if:` is false never enters the group.
     concurrency:
       group: pages-build
       cancel-in-progress: true
@@ -172,12 +137,9 @@ jobs:
       - name: Render bench-trend dashboard
         # Pull the perf history from the bench-data branch and render it into the
         # deployed site as bench-trend.html, so the trend is viewable at
-        # <pages-url>/bench-trend.html with no download. On the `workflow_run`
-        # trigger this fires after Bench finished, so the row for the commit it
-        # measured is already here; on any other trigger the history is simply
-        # whatever `bench-data` holds at that moment. (Before the Bench trigger
-        # existed, a `site/**` push raced bench.yml's append and this page was
-        # reliably one commit behind.) Best-effort: if bench-data has no history
+        # <pages-url>/bench-trend.html with no download. It shows whatever
+        # `bench-data` holds when this runs -- at most one schedule interval
+        # behind bench.yml's last append. Best-effort: if bench-data has no history
         # yet, skip without failing the deploy.
         #
         # BOTH series are rendered onto one page (#8085): the wall-clock one and

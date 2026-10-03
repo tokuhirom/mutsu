@@ -24,8 +24,9 @@ name: Stress
 #     is what a PR touching the collector, the JIT or the concurrency runtime
 #     should do before it merges.
 #
-# The suite-wide debug_assert pass these TAP jobs used to provide stays on the
-# PR gate as ci.yml's `debug-tap` (default runtime settings).
+# The suite-wide debug_assert pass these TAP jobs used to provide is ci.yml's
+# `debug-tap` (default runtime settings), which runs post-merge on `main` and
+# in the release gate (ADR-11581).
 on:
   schedule:
     # 18:41 UTC = 03:41 JST, after the day's merge traffic.
@@ -59,7 +60,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux-release"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       - name: Install mold
@@ -142,7 +143,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       # Link with mold instead of GNU ld — see the `build` job for why it comes
@@ -439,7 +440,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       # Link with mold instead of GNU ld — see the `build` job for why it comes
