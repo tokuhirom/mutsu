@@ -302,6 +302,14 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         }
     }
     let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+    // A loose word-logical after a bare declaration applies to the declared
+    // variable, as after an initialized one: `my %h andthen do { ... }` is
+    // `(my %h) andthen do { ... }` (Net::HTTP's response parser).
+    let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
+        rest,
+        stmt,
+        crate::parser::stmt::word_logical_split::seed_read_expr(&s.name),
+    )?;
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
