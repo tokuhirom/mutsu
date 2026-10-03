@@ -234,9 +234,11 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     // (`(($(EXPR) = a), b)`) -- unlike a bare `(@a[0] = a, b)` which is list
     // assignment and slurps the comma. Parse the RHS comma-blind and fold any
     // trailing comma list into the parenthesized value.
+    let item_form =
+        matches!(lhs, Expr::Contextualizer { .. }).then(|| lhs.clone().contextualizer_call());
     if let Expr::MethodCall {
         target, name, args, ..
-    } = &lhs
+    } = item_form.as_ref().unwrap_or(&lhs)
         && name == "item"
         && args.is_empty()
         && !is_atomic

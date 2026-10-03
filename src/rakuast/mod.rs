@@ -11,6 +11,7 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod attribute;
+mod contextualizer;
 mod convert;
 mod core_type_names;
 mod decl_traits;
@@ -232,6 +233,8 @@ pub enum RakuAstClass {
     // contents are a `StatementSequence`.
     CircumfixHashComposer,
     ContextualizerHash,
+    ContextualizerItem,
+    ContextualizerList,
     StatementSequence,
     // Phase 2 slice 34: the `*` whatever term.
     TermWhatever,
@@ -448,6 +451,8 @@ impl RakuAstClass {
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             CircumfixHashComposer => "RakuAST::Circumfix::HashComposer",
             ContextualizerHash => "RakuAST::Contextualizer::Hash",
+            ContextualizerItem => "RakuAST::Contextualizer::Item",
+            ContextualizerList => "RakuAST::Contextualizer::List",
             StatementSequence => "RakuAST::StatementSequence",
             TermWhatever => "RakuAST::Term::Whatever",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
@@ -995,6 +1000,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CircumfixArrayComposer,
     RakuAstClass::CircumfixHashComposer,
     RakuAstClass::ContextualizerHash,
+    RakuAstClass::ContextualizerItem,
+    RakuAstClass::ContextualizerList,
     RakuAstClass::StatementSequence,
     RakuAstClass::TermWhatever,
     RakuAstClass::WhateverCodeArgument,
