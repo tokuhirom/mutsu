@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 193;
+plan 202;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -132,7 +132,7 @@ ok 'x'.^methods.map(*.Str).grep('tclc'),         'Str.^methods includes tclc';
 ok 'x'.^methods.map(*.Str).grep('Version'),      'Str.^methods includes Version';
 ok 'x'.^methods.map(*.Str).grep('Date'),         'Str.^methods includes Date';
 ok 'x'.^methods.map(*.Str).grep('DateTime'),     'Str.^methods includes DateTime';
-ok (1, 2).^methods.map(*.Str).grep('minpairs'),  'List.^methods includes minpairs';
+ok (1, 2).^methods(:all).map(*.Str).grep('minpairs'), 'List.^methods(:all) includes inherited minpairs';
 ok (1, 2).^methods.map(*.Str).grep('Slip'),      'List.^methods includes Slip';
 ok (1, 2).^methods.map(*.Str).grep('hyper'),     'List.^methods includes hyper';
 ok (1, 2).^methods.map(*.Str).grep('fmt'),       'List.^methods includes fmt';
@@ -171,3 +171,15 @@ ok (1+2i).^methods.map(*.Str).grep('conj'),      'Complex.^methods includes conj
 
 # Methods that mutsu does NOT implement must still report False (no over-claim).
 nok 'abc'.^can('samespace').Bool, 'unimplemented samespace is not over-claimed';
+
+# A method inherited from Any remains callable and appears with :all, but
+# `.^methods` without the adverb lists only this built-in's own methods.
+nok List.^methods.map(*.name).grep('map').Bool, 'List does not claim Any.map locally';
+ok List.^methods(:all).map(*.name).grep('map').Bool, 'List sees Any.map with :all';
+nok Array.^methods.map(*.name).grep('map').Bool, 'Array does not claim Any.map locally';
+ok Array.^methods(:all).map(*.name).grep('map').Bool, 'Array sees Any.map with :all';
+ok List.^can('map').Bool, 'List can still call inherited map';
+nok Any.^methods.map(*.name).grep('say').Bool, 'Any does not claim Mu.say locally';
+ok Any.^methods(:all).map(*.name).grep('say').Bool, 'Any sees Mu.say with :all';
+ok Any.^methods.map(*.name).grep('minpairs').Bool, 'Any declares minpairs';
+ok Cool.^methods.map(*.name).grep('fmt').Bool, 'Cool declares fmt';

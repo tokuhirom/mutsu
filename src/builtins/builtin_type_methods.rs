@@ -366,16 +366,26 @@ mod tests {
     }
 
     #[test]
-    fn coercion_methods_present_on_every_numeric_leaf() {
+    fn coercion_method_ownership_matches_rakudo() {
         const NUMERIC_COERCIONS: &[&str] = &[
             "Numeric", "Int", "Num", "Rat", "Bool", "Str", "gist", "raku",
         ];
+        let snapshot = include_str!("rakudo_method_tables.txt");
         for ty in ["Str", "Int", "Num", "Rat", "Complex", "Bool", "Cool"] {
             let names = builtin_type_method_names(ty);
+            let rakudo_names: Vec<&str> = snapshot
+                .lines()
+                .map(|line| line.split('\t').collect::<Vec<_>>())
+                .find(|fields| fields.first() == Some(&"methods") && fields.get(1) == Some(&ty))
+                .expect("Rakudo methods for built-in owner")
+                .into_iter()
+                .skip(2)
+                .collect();
             for coercion in NUMERIC_COERCIONS {
-                assert!(
+                assert_eq!(
                     names.contains(coercion),
-                    "`{ty}` should report coercion method `{coercion}`"
+                    rakudo_names.contains(coercion),
+                    "`{ty}` should agree with Rakudo on local coercion `{coercion}`"
                 );
             }
         }
