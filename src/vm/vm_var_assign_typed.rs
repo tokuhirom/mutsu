@@ -857,6 +857,12 @@ impl Interpreter {
 
     /// Increment a value, calling .succ() on Instance values with custom methods.
     pub(crate) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                "succ",
+                &crate::value::what_type_name(val),
+            ));
+        }
         // Route user-defined `.succ` through the Interpreter's unified compiled-first
         // dispatch (same entry point `.Str` interpolation already uses) instead
         // of a raw interpreter tree-walk — one method-dispatch path, not two.
@@ -944,10 +950,9 @@ impl Interpreter {
     /// don't lose updates the way a separate lock-read / lock-write would.
     /// `increment` selects `++` vs `--`; `post` selects which value to push
     /// (post-inc/dec pushes the old value, pre-inc/dec the new one).
-    /// Returns `true` if it handled the op atomically. Instance cells run a
-    /// user-defined `.succ`/`.pred`, which can't be dispatched while the cell
-    /// lock is held (reentrancy), so for those it returns `false` and the
-    /// caller falls back to the (non-atomic) smart path.
+    /// Returns `true` if it handled the op atomically. Values needing method
+    /// dispatch or nested-container dereference return `false` for the smart
+    /// path; that path must run outside the cell lock.
     pub(super) fn atomic_container_incdec(
         &mut self,
         arc: &crate::gc::Gc<crate::value::ContainerCell>,
@@ -956,7 +961,13 @@ impl Interpreter {
         post: bool,
     ) -> Result<bool, RuntimeError> {
         let mut guard = arc.lock().unwrap();
-        if matches!(guard.view(), ValueView::Instance { .. }) {
+        if matches!(
+            guard.view(),
+            ValueView::Instance { .. }
+                | ValueView::ContainerRef(_)
+                | ValueView::Array(..)
+                | ValueView::Hash(_)
+        ) {
             return Ok(false);
         }
         let old = self.normalize_incdec_source_with_type(name, guard.clone());
@@ -985,6 +996,12 @@ impl Interpreter {
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.
     pub(crate) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+        if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                "pred",
+                &crate::value::what_type_name(val),
+            ));
+        }
         // Route user-defined `.pred` through the Interpreter's unified compiled-first
         // dispatch (see increment_value_smart's comment on why the call is
         // tried unconditionally and the returned error's shape decides

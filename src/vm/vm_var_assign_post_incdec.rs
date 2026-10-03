@@ -291,6 +291,7 @@ impl Interpreter {
     /// entries — a bare block shares its enclosing frame's locals, so an inner
     /// `my $b` shadowing an outer one gets a second slot under the same name and
     /// the by-name search would find the outer.
+    // Cost: O(c + n), c = nested cells of the indexed container, n = elements copied or grown by the store.
     pub(crate) fn exec_inc_dec_index_op(
         &mut self,
         code: &CompiledCode,
@@ -742,6 +743,17 @@ impl Interpreter {
                 Some(ValueView::Hash(..) | ValueView::Array(..))
             )
         {
+            // A scalar `=` share has its own cell around an itemized word for
+            // the aggregate cell. Element mutation targets the aggregate,
+            // unlike whole-scalar RMW, which targets the outer cell.
+            let mut arc = arc.clone();
+            loop {
+                let held = arc.lock().unwrap().clone();
+                match held.view() {
+                    ValueView::ContainerRef(next) => arc = next.clone(),
+                    _ => break,
+                }
+            }
             let inner = arc.lock().unwrap().clone();
             let current = match inner.view() {
                 ValueView::Hash(h) => h
