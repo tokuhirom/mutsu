@@ -609,8 +609,13 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("statement ({*} is a term)"));
     }
     // Try to parse as a hash expression first (e.g. `{:a(4)}`, `{a => 1}`)
+    // A composer with a non-pair element (`{ a => 1, ($x ?? (b => 2) !!
+    // Empty) }`) comes back as the `hash(...)` builder call rather than an
+    // `Expr::Hash`; it is still a hash, not a block (MCP's `initialize`
+    // response).
     if let Ok((rest, hash_expr)) = crate::parser::primary::misc::block_or_hash_expr(input)
-        && matches!(hash_expr, Expr::Hash(..))
+        && (matches!(hash_expr, Expr::Hash(..))
+            || matches!(&hash_expr, Expr::Call { name, .. } if *name == "hash"))
     {
         // A statement-leading hash literal may carry postfix operators
         // (`{a => 1}.keys`, `{a => 1}<b>`, `{a => 1}.map(...)`). Without this the
