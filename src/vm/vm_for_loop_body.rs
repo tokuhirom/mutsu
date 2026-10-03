@@ -825,8 +825,26 @@ impl Interpreter {
             // `X::TypeCheck::Binding::Parameter` here, so build that directly
             // from the per-iteration `item` before it's ever bound.
             // (todo/tickets/for-loop-multi-param-types-unenforced.md)
+            let mut item = item;
             if let Some(ref name) = param_name {
+                // A coercion type (`-> Int() $o`) coerces the item as a
+                // signature parameter does, rather than only checking it.
                 if let Some(tc) = spec.param_type_constraint.as_deref()
+                    && let Some((target, source)) = crate::runtime::types::parse_coercion_type(tc)
+                {
+                    let display = Self::for_param_display_name(name);
+                    match self.bind_coercion_param_value(&display, tc, target, source, item) {
+                        Ok(coerced) => item = coerced,
+                        Err(
+                            crate::runtime::types::CoercionBindError::TypeCheck(e)
+                            | crate::runtime::types::CoercionBindError::Coerce(e)
+                            | crate::runtime::types::CoercionBindError::Impossible(e),
+                        ) => {
+                            self.unmask_for_params(&masked_params);
+                            return Err(e);
+                        }
+                    }
+                } else if let Some(tc) = spec.param_type_constraint.as_deref()
                     && !self.type_matches_value(tc, &item)
                 {
                     let display = Self::for_param_display_name(name);
