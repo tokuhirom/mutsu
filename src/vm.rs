@@ -354,6 +354,7 @@ mod vm_var_assign_local_get;
 mod vm_var_assign_nested_fast;
 mod vm_var_assign_nil_decay;
 mod vm_var_assign_ops;
+mod vm_positional_index_key;
 mod vm_var_assign_package_stash;
 mod vm_var_assign_post_incdec;
 mod vm_var_assign_set_local;
