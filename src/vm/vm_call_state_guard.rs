@@ -303,9 +303,9 @@ impl ThreadParamMaskGuard {
     ) -> Self {
         let mask = interp.mask_thread_redeclared_params(param_defs);
         ThreadParamMaskGuard {
-            redeclared_cell: &*interp.thread_redeclared_vars
+            redeclared_cell: &*interp.threads.thread_redeclared_vars
                 as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
-            shadow_cell: &*interp.thread_param_shadow_vars
+            shadow_cell: &*interp.threads.thread_param_shadow_vars
                 as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
             mask,
         }

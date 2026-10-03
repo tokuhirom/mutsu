@@ -55,7 +55,7 @@ impl Interpreter {
             return Ok(None);
         };
         let sigiled_target = format!("@{target_name}");
-        if !self.shared_vars_active
+        if !self.threads.shared_vars_active
             || !matches!(
                 self.get_shared_var(&sigiled_target)
                     .as_ref()

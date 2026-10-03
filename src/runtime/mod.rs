@@ -1019,6 +1019,7 @@ mod sprintf_hexfloat;
 mod sprintf_validate;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
+pub(crate) mod thread_sharing;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
@@ -3044,17 +3045,6 @@ pub struct Interpreter {
     /// TODO: entries are never reclaimed; a custom read handle is rare and the
     /// buffer is bounded by one `READ` call's result.
     pub(crate) user_io_read_buffers: HashMap<u64, Vec<u8>>,
-    /// Lock ids this caller chain has entered through
-    /// `Lock::Async.protect-or-queue-on-recursion` (see
-    /// `runtime::lock_async_recursion`). A spawned thread starts with an empty
-    /// stack, which is precisely the "the lock is held by something outside the
-    /// caller chain" case that method distinguishes.
-    lock_async_recursion: Vec<u64>,
-    /// Blocks queued by a *recursive* `protect-or-queue-on-recursion` call,
-    /// drained by the outermost such frame once it has released the lock.
-    /// Held here (rather than in a thread-local) so the queued `Value`s are
-    /// enumerated by `visit_roots` while they wait.
-    lock_async_deferred: Vec<(u64, Value, crate::value::SharedPromise)>,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire
@@ -3579,89 +3569,11 @@ pub struct Interpreter {
     /// has to visit what was inserted since: O(new keys) per spawn instead of
     /// O(every state entry the program ever created) (#9504).
     state_vars_unmigrated: Vec<(Symbol, Option<u64>)>,
-    /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
-    /// cross-thread shared store is active. A re-declaration is a fresh
-    /// binding shadowing the captured outer lexical, so subsequent writes to
-    /// the name must stay thread-local: `set_shared_var_sym` skips the shared
-    /// write and `sync_shared_vars_to_env` skips the pull for these names.
-    /// Reset to empty in `clone_for_thread` (a child thread captures the
-    /// parent's *current* bindings). Only populated while
-    /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
-    /// Boxed and wrapped in `RefCell` (not a plain `HashSet<String>` field) so
-    /// `ThreadParamMaskGuard` (`vm::vm_call_state_guard`) can hold a raw
-    /// pointer into this field's OWN heap allocation -- disjoint from
-    /// `Interpreter`'s own allocation -- and mutate it on `Drop` (including
-    /// during a Rust panic unwind) without ever needing a reference to
-    /// `Interpreter` itself. See that module's doc comment ("v3") for why a
-    /// pointer taken directly into a field embedded in `Interpreter`'s own
-    /// struct is unsound. `RefCell` (not `Cell`, unlike `state_scope_id`/
-    /// `when_matched`) because `HashSet` isn't `Copy`, so `Cell`'s get/set API
-    /// is awkward for it; `RefCell` gives the same disjoint-allocation
-    /// property while keeping ordinary `insert`/`remove`/`contains` methods
-    /// available through `borrow`/`borrow_mut`.
-    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
-    /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
-    /// *in flight*: the `my` has run but its initializer has not stored a value
-    /// yet, so neither the slot nor `env` holds the new binding — both still
-    /// carry the shadowed OUTER value.
-    ///
-    /// `clone_for_thread` normally drops a re-declaration mask because it
-    /// force-seeds the name's *current* value into the child lineage first. That
-    /// premise fails for a name in this set: a spawn that happens **inside the
-    /// initializer** (`my $tap = Supply.tap(...)`, whose `.tap` starts a worker)
-    /// would seed the outer binding's value and then unmask the name, so the
-    /// next `sync_shared_vars_to_env` pulls that stale value back over the
-    /// binding the initializer is about to create. Keeping the mask for the
-    /// in-flight window closes that hole; the store is republished normally once
-    /// the initializer's value lands. Empty for single-threaded programs.
-    pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
     /// Cells a hoisted named-sub registration seeded for a free variable whose
     /// declaration has not run yet (#9911, ADR-0024's textual-order edge); the
     /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
     /// Empty unless a sub is called before a variable it reads is declared.
     pub(crate) hoist_pending_cells: Vec<crate::vm::HoistPendingCell>,
-    /// Plain-lexical `@`/`%` names this frame's spawns put on the bare-name
-    /// cross-thread lane **only because every spawn publishes every live
-    /// container**, not because any spawned block actually names them
-    /// (ADR-0039 §8.6).
-    ///
-    /// Such an entry is needed only for as long as a worker might reach the
-    /// container *indirectly* — through a routine the block calls rather than
-    /// names. Once the next cross-thread drain (`sync_shared_vars_to_env`) has
-    /// merged whatever the workers did back into `env`, it has served its whole
-    /// purpose, and keeping it is what let a callee's own `my @items` outlive
-    /// its frame in a process-visible, bare-name-keyed store and hijack an
-    /// unrelated caller's same-named binding. So the drain withdraws them.
-    ///
-    /// A name a later spawn's block DOES reference is removed from this set at
-    /// that spawn: it is then a genuinely shared container and keeps the lane.
-    /// Empty for single-threaded programs.
-    pub(crate) transient_lane_containers: std::collections::HashSet<String>,
-    /// Bare scalar names currently masked in [`Self::thread_redeclared_vars`]
-    /// because of a **parameter binding** (`mask_thread_redeclared_params`),
-    /// not a `my` declaration. `clone_for_thread_excluding` must treat the two
-    /// differently: a `my` re-declaration's mask means "this spawn should see
-    /// MY new value as authoritative for the rest of the block", so it force-
-    /// `declare`s the value into the shared lineage. A parameter's shadow is
-    /// scoped to exactly this call and must never overwrite an unrelated
-    /// caller's live entry for the same bare name — it should always take the
-    /// `seed_if_absent` (no-op-if-already-visible) branch instead, even for a
-    /// nested spawn *inside this call's own body*.
-    ///
-    /// `thread_decl_in_flight` looked like the same "always seed_if_absent"
-    /// signal, but it is unsuitable here: `exec_set_local_op` clears an entry
-    /// from it as soon as ANY `SetLocal` targets a same-named slot — which the
-    /// call body's own bytecode does routinely (e.g. a coercion or a
-    /// re-assignment of the parameter), silently un-suppressing the force-
-    /// `declare` behavior partway through the call before any nested spawn.
-    /// A dedicated set, touched only by
-    /// [`mask_thread_redeclared_params`](Self::mask_thread_redeclared_params) /
-    /// `unmask_thread_redeclared_params`,
-    /// has no such interference. Empty for single-threaded programs.
-    /// Same `Box<RefCell<...>>` wrapping and same reason as
-    /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
-    /// stable, `Interpreter`-disjoint pointer into this field too.
-    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
@@ -3685,25 +3597,6 @@ pub struct Interpreter {
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
     pub(crate) param_bound_aggregates: param_bound_aggregates::ParamBoundAggregates,
-    /// Set while an *incidental* locals -> env mirror is running: the regex
-    /// interpolation pre-sync before a `~~`. It exists purely so a name-based
-    /// reader in THIS interpreter can observe the frame's live slots through
-    /// `env`. (The I/O ops' own pre-sync was dropped by #9169: a `$*OUT`
-    /// override or a user `.gist` reads its free variables the way any method
-    /// body does, through the per-store mirror.)
-    ///
-    /// `set_env_with_main_alias` does double duty: it writes `env` AND publishes
-    /// to the cross-thread shared store. Publishing from such a mirror is wrong,
-    /// because the store is keyed by BARE NAME while the mirror walks *whichever
-    /// frame happens to be printing*: a callee's parameter `$url` overwrote the
-    /// lane belonging to the caller's own `my $url`, and the caller's next
-    /// `sync_shared_vars_to_env` pulled it back — `Cro::HTTP::Client.get("$url/")`
-    /// grew a `/` on the caller's URL on every request, so the third server on a
-    /// port answered 404.
-    ///
-    /// Frame *teardown* (`sync_env_from_locals`) is deliberately NOT suppressed;
-    /// see the comment there.
-    pub(crate) suppress_shared_publish: bool,
     /// Union of every executed `CompiledCode::type_body_written_lexicals`:
     /// lexicals written by a registered class/role method body. These keep the
     /// name-keyed `shared_vars` lane even when a spawned block also captures
@@ -3794,39 +3687,6 @@ pub struct Interpreter {
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
     /// `let`/`temp` save stack; see [`LetSaveEntry`].
     let_saves: Vec<LetSaveEntry>,
-    /// Cross-thread lexical store for THIS spawn lineage (ADR-0010). `start`
-    /// and friends give the child a store chained to this one, so a child sees
-    /// and can write the parent's lexicals while its own declarations stay
-    /// private to it — sibling threads (e.g. hyper workers each declaring
-    /// `my $uri`) cannot clobber each other, which one process-global bare-name
-    /// map allowed.
-    shared_vars: Arc<crate::runtime::shared_store::SharedStore>,
-    /// True when this interpreter participates in cross-thread variable sharing.
-    /// Set by `clone_for_thread` on both parent and child.
-    pub(crate) shared_vars_active: bool,
-    /// True once any sigilless attribute alias (`has $x`) has been materialized.
-    /// Sigilless attributes are read/written through a bare `Var("x")` that is
-    /// disambiguated only by the runtime `__mutsu_sigilless_alias::` table, so
-    /// the cell-direct read/write routing must consult that table. This flag
-    /// gates that extra lookup so programs without sigilless attributes (the vast
-    /// majority) pay nothing on the hot variable-read path. Process-sticky: set
-    /// true on first use, never reset (Phase 3 Stage 2c (ii)).
-    pub(crate) sigilless_attrs_active: bool,
-    /// Keys in shared_vars that were explicitly updated (not just initialized by
-    /// `clone_for_thread`). `sync_shared_vars_to_env` only syncs these keys so
-    /// that function parameters aren't overwritten with stale values.
-    shared_vars_dirty: Arc<RwLock<HashSet<String>>>,
-    /// Keys in shared_vars that were written by some thread *while it held a
-    /// critical section* (Semaphore/Lock). Entering a critical section syncs
-    /// exactly these scalars back into the local env, so a bare
-    /// read-modify-write of a shared accumulator (`$s.acquire; $r += $i;
-    /// $s.release`) reads the value the previous holder committed — while a
-    /// per-iteration loop lexical (`my $i = $_`, written outside any critical
-    /// section) keeps this thread's own captured snapshot.
-    shared_critical_dirty: Arc<RwLock<HashSet<String>>>,
-    /// Depth of nested critical sections (Semaphore/Lock) this interpreter
-    /// currently holds. Writes performed while > 0 mark `shared_critical_dirty`.
-    critical_section_depth: usize,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
@@ -4635,6 +4495,9 @@ pub struct Interpreter {
     pub(crate) regex_state: regex_grammar_state::RegexGrammarState,
     /// Supply/react/gather/lazy-pull state (the `async` subsystem, ADR-10779).
     pub(crate) async_state: async_state::AsyncState,
+    /// Cross-thread variable sharing and lock bookkeeping (the `threads`
+    /// subsystem, ADR-10779).
+    pub(crate) threads: thread_sharing::ThreadSharing,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.

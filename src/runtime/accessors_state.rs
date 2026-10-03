@@ -399,7 +399,9 @@ impl Interpreter {
     /// blew the stack once a `Cro::Service.start` had run.
     pub(crate) fn remove_state_var(&mut self, key: (Symbol, Option<u64>)) {
         self.state_vars.remove(&key);
-        self.shared_vars.remove(&Self::shared_state_cell_key(key));
+        self.threads
+            .shared_vars
+            .remove(&Self::shared_state_cell_key(key));
     }
 
     /// Reconstruct the pre-rekey display string for a `(Symbol, Option<u64>)`
@@ -504,9 +506,11 @@ impl Interpreter {
             return;
         }
         self.state_vars_unmigrated.retain(|key| !is_dead(key));
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             for key in removed {
-                self.shared_vars.remove(&Self::shared_state_cell_key(key));
+                self.threads
+                    .shared_vars
+                    .remove(&Self::shared_state_cell_key(key));
             }
         }
     }
@@ -557,7 +561,7 @@ impl Interpreter {
     /// is atomic under the `shared_vars` write lock, so the first caller seeds the
     /// cell (from `initial`) and the rest observe it. Returns the cell value.
     pub(crate) fn get_or_init_shared_state_cell(&self, key: &str, initial: Value) -> Value {
-        self.shared_vars.get_or_init_cell(key, || {
+        self.threads.shared_vars.get_or_init_cell(key, || {
             // Track B slice 3: aggregates are celled at StateVarInit in every mode,
             // so the pre-thread seed may already BE a cell — adopt it rather than
             // double-wrapping (a cell inside a cell would break every deref path).

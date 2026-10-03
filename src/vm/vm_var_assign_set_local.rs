@@ -566,7 +566,7 @@ impl Interpreter {
             || Self::atomic_var_seen_anywhere()
             || self.slot_has_sigilless_meta(code, idx, desc)
             || self.lexical_fatal_mode
-            || !self.thread_decl_in_flight.is_empty()
+            || !self.threads.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
     }
 
@@ -889,7 +889,7 @@ impl Interpreter {
         } else {
             None
         };
-        if is_vardecl && self.shared_vars_active {
+        if is_vardecl && self.threads.shared_vars_active {
             self.remask_declaration_store(code, idx as usize);
         }
         if !self.rw_param_rebinds.is_empty() && self.rebind_context().get() && !is_vardecl {
@@ -913,10 +913,10 @@ impl Interpreter {
         // The store that ends a declaration's in-flight window: from here the
         // slot holds the new binding, so a spawn may unmask the name again (see
         // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
-        if !self.thread_decl_in_flight.is_empty()
+        if !self.threads.thread_decl_in_flight.is_empty()
             && let Some(name) = code.locals.get(idx as usize)
         {
-            self.thread_decl_in_flight.remove(name);
+            self.threads.thread_decl_in_flight.remove(name);
         }
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
@@ -3480,8 +3480,9 @@ impl Interpreter {
         // goes through the dedicated shared-state cells — both must keep
         // propagating. Twigil'd forms (`@!x`, `%*y`) share a name across
         // instances/dynamic scopes by design and keep the name lane.
-        if self.shared_vars_active && Self::thread_decl_masks_name(code, name) {
-            self.thread_redeclared_vars
+        if self.threads.shared_vars_active && Self::thread_decl_masks_name(code, name) {
+            self.threads
+                .thread_redeclared_vars
                 .borrow_mut()
                 .insert(name.to_string());
             // The initializer has not run yet, so neither this frame's slot
@@ -3489,7 +3490,7 @@ impl Interpreter {
             // performed BY the initializer cannot unmask the name and let the
             // shadowed outer value be pulled back over it
             // (`thread_decl_in_flight`). Cleared by the store that ends it.
-            self.thread_decl_in_flight.insert(name.to_string());
+            self.threads.thread_decl_in_flight.insert(name.to_string());
         }
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name. The slot's

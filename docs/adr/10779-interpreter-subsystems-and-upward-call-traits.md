@@ -202,6 +202,10 @@ these preconditions:
   - `eval` is deferred: its rule mixes the MAIN fields (copied into a spawned thread) with
     `pending_eval_*`/`pending_supply_*`, which are set-then-taken side channels and so fall
     under D3 (explicit parameters), not into a struct. The rules need splitting first.
-  - Next: `threads` (its thread policy is not uniform: `shared_vars` becomes a child store,
-    `thread_redeclared_vars` is seeded from the block's captured scalars, two dirty sets are
-    shared, the rest start fresh).
+  - `threads`: done. `ThreadSharing` (`src/runtime/thread_sharing.rs`) holds the 13
+    shared-store/masking/lock fields. Its policy is the first non-uniform one, and it is now
+    one method: `fork_for_thread(captured_scalars)` makes the store a child lineage, seeds the
+    redeclared set from the block's captured scalars and the parent's parameter shadows,
+    shares the two dirty sets and starts the rest fresh; `root()` is the main interpreter's.
+    353 → 341 fields.
+  - Next: `io`, `control`, `topic`, `dispatch`, `lexicals`.

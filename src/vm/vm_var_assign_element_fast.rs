@@ -77,7 +77,7 @@ impl Interpreter {
         // / `try_shared_array_element_assign`) are skipped by running here, and
         // they own the store whenever a thread shares this env. Their own gate
         // is this exact flag.
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             return None;
         }
         let stack_len = self.stack.len();

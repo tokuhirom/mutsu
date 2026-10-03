@@ -39,7 +39,7 @@ impl Interpreter {
         if !Self::thread_decl_masks_name(code, name) {
             return;
         }
-        let mut masked = self.thread_redeclared_vars.borrow_mut();
+        let mut masked = self.threads.thread_redeclared_vars.borrow_mut();
         if !masked.contains(name.as_str()) {
             masked.insert(name.to_string());
         }

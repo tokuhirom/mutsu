@@ -41,7 +41,7 @@ impl Interpreter {
         {
             // The atomic-arr/hash lane resolves at the lineage owning `name`,
             // not unconditionally at root (see `atomic_lane_scope`).
-            let atomic_root = self.shared_vars.atomic_lane_scope(name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(name);
             let shared = atomic_root.own_map().read().unwrap();
             if shared.contains_key(atomic_key) {
                 return;
@@ -81,14 +81,14 @@ impl Interpreter {
                 }
             }
         };
-        let atomic_root = self.shared_vars.atomic_lane_scope(name);
+        let atomic_root = self.threads.shared_vars.atomic_lane_scope(name);
         let mut shared = atomic_root.own_map().write().unwrap();
         if !shared.contains_key(atomic_key) {
             shared.insert(atomic_key.to_string(), celled.clone());
             shared.insert(name.to_string(), celled.clone());
             drop(shared);
             self.env.insert(name.to_string(), celled);
-            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                 dirty.insert(atomic_key.to_string());
                 dirty.insert(name.to_string());
             }
@@ -107,7 +107,7 @@ impl Interpreter {
         key: &str,
     ) -> crate::gc::Gc<crate::value::ContainerCell> {
         {
-            let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(hash_name);
             let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = h.get(key).map(Value::view)
@@ -115,7 +115,7 @@ impl Interpreter {
                 return c.clone();
             }
         }
-        let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
+        let atomic_root = self.threads.shared_vars.atomic_lane_scope(hash_name);
         let mut shared = atomic_root.own_map().write().unwrap();
         // Re-check under the write lock (a racer may have boxed it).
         if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
@@ -173,7 +173,7 @@ impl Interpreter {
             }
         };
         {
-            let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(arr_name);
             let shared = atomic_root.own_map().read().unwrap();
             if let Some(arr) = shared.get(atomic_key) {
                 let (_, cell) = resolve(arr, index);
@@ -182,7 +182,7 @@ impl Interpreter {
                 }
             }
         }
-        let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
+        let atomic_root = self.threads.shared_vars.atomic_lane_scope(arr_name);
         let mut shared = atomic_root.own_map().write().unwrap();
         let arr = shared
             .get(atomic_key)
@@ -288,6 +288,7 @@ impl Interpreter {
         }
         self.atomic_array_entry_exists(arr_name)
             || self
+                .threads
                 .shared_vars
                 .get(arr_name)
                 .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
@@ -296,7 +297,8 @@ impl Interpreter {
     pub(crate) fn atomic_array_entry_exists(&self, arr_name: &str) -> bool {
         let atomic_key = atomic_lane_str_key(arr_name, false);
         matches!(
-            self.shared_vars
+            self.threads
+                .shared_vars
                 .atomic_lane_scope(arr_name)
                 .own_map()
                 .read()
@@ -330,7 +332,7 @@ impl Interpreter {
             self.env.remove(arr_name);
         }
         let (result, updated) = {
-            let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(arr_name);
             let mut shared = atomic_root.own_map().write().unwrap();
             // Seed the atomic entry once from the base key (or this thread's
             // local snapshot), preserving ArrayData metadata (default/
@@ -443,7 +445,7 @@ impl Interpreter {
         // its cell in place — every snapshot holder sees it, no COW, no
         // republish.
         {
-            let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(arr_name);
             let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Array(elems, _)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = elems.get(idx).map(Value::view)
@@ -451,14 +453,14 @@ impl Interpreter {
                 let cell = c.clone();
                 drop(shared);
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                     dirty.insert(arr_name.to_string());
                 }
                 return value;
             }
         }
         let updated = {
-            let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(arr_name);
             let mut shared = atomic_root.own_map().write().unwrap();
             // ADR-0039 slice 1: fall back to the unit-lexical container
             // (module file-scope / mainline captured free var) before the
@@ -491,7 +493,7 @@ impl Interpreter {
             shared.insert(atomic_key.to_string(), new_arr.clone());
             new_arr
         };
-        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.insert(arr_name.to_string());
         }
         if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
@@ -520,7 +522,7 @@ impl Interpreter {
         let atomic_key = atomic_lane_str_key(hash_name, true);
         // Track B cell fast path — see `shared_array_elem_set`.
         {
-            let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(hash_name);
             let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = h.get(&elem_key).map(Value::view)
@@ -528,14 +530,14 @@ impl Interpreter {
                 let cell = c.clone();
                 drop(shared);
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = value.clone();
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                     dirty.insert(hash_name.to_string());
                 }
                 return value;
             }
         }
         let updated = {
-            let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
+            let atomic_root = self.threads.shared_vars.atomic_lane_scope(hash_name);
             let mut shared = atomic_root.own_map().write().unwrap();
             // ADR-0039 slice 1: see `shared_array_elem_set`'s twin comment.
             let mut map = match shared.get(atomic_key).map(Value::view) {
@@ -559,7 +561,7 @@ impl Interpreter {
             shared.insert(atomic_key.to_string(), new_hash.clone());
             new_hash
         };
-        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.insert(hash_name.to_string());
         }
         if let Some(cell) = self.unit_lexical_container_cell(hash_name) {
@@ -639,7 +641,7 @@ impl Interpreter {
             }
         }
 
-        if did_swap && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        if did_swap && let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.insert(arr_name.clone());
         }
         Ok(current)
@@ -787,9 +789,9 @@ impl Interpreter {
             .env
             .get(&name_key)
             .cloned()
-            .or_else(|| self.shared_vars.get(&name_key))?;
+            .or_else(|| self.threads.shared_vars.get(&name_key))?;
         let value_key = value_key.as_str()?.to_string();
-        self.shared_vars.get(&value_key)
+        self.threads.shared_vars.get(&value_key)
     }
 
     /// [`Self::scalar_cell_target`] fallback: promote a plain atomic-scalar binding
@@ -931,9 +933,9 @@ impl Interpreter {
                 // the bare name would discard the redeclaration mask and let
                 // await reconcile the worker value into an unrelated outer
                 // lexical with the same spelling.
-                if self.shared_vars_active
-                    && !self.thread_redeclared_vars.borrow().contains(name)
-                    && !self.thread_redeclared_vars.borrow().contains(bare)
+                if self.threads.shared_vars_active
+                    && !self.threads.thread_redeclared_vars.borrow().contains(name)
+                    && !self.threads.thread_redeclared_vars.borrow().contains(bare)
                 {
                     self.set_shared_var(bare, container.clone());
                 }

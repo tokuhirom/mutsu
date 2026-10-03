@@ -45,7 +45,7 @@ fn scalar_param(name: &str) -> crate::ast::ParamDef {
 #[test]
 fn thread_param_mask_guard_restores_on_panic_unwind() {
     let mut interp = Interpreter::new();
-    interp.shared_vars_active = true;
+    interp.threads.shared_vars_active = true;
 
     let param_defs = [scalar_param("$desc")];
 
@@ -55,11 +55,19 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
             param_defs.iter(),
         );
         assert!(
-            interp.thread_redeclared_vars.borrow().contains("desc"),
+            interp
+                .threads
+                .thread_redeclared_vars
+                .borrow()
+                .contains("desc"),
             "the guard's constructor must mask the parameter's bare name"
         );
         assert!(
-            interp.thread_param_shadow_vars.borrow().contains("desc"),
+            interp
+                .threads
+                .thread_param_shadow_vars
+                .borrow()
+                .contains("desc"),
             "and the parameter-shadow companion set too"
         );
         // Simulate a genuine Rust panic raised deep inside the guarded call's
@@ -74,12 +82,20 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
     );
 
     assert!(
-        !interp.thread_redeclared_vars.borrow().contains("desc"),
+        !interp
+            .threads
+            .thread_redeclared_vars
+            .borrow()
+            .contains("desc"),
         "ThreadParamMaskGuard::drop must undo the mask even when the guarded \
          call unwound via panic instead of returning normally"
     );
     assert!(
-        !interp.thread_param_shadow_vars.borrow().contains("desc"),
+        !interp
+            .threads
+            .thread_param_shadow_vars
+            .borrow()
+            .contains("desc"),
         "same for the parameter-shadow companion set"
     );
 }
@@ -89,7 +105,7 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
 #[test]
 fn thread_param_mask_guard_restores_on_normal_drop() {
     let mut interp = Interpreter::new();
-    interp.shared_vars_active = true;
+    interp.threads.shared_vars_active = true;
 
     let param_defs = [scalar_param("$desc")];
 
@@ -98,12 +114,36 @@ fn thread_param_mask_guard_restores_on_normal_drop() {
             &mut interp,
             param_defs.iter(),
         );
-        assert!(interp.thread_redeclared_vars.borrow().contains("desc"));
-        assert!(interp.thread_param_shadow_vars.borrow().contains("desc"));
+        assert!(
+            interp
+                .threads
+                .thread_redeclared_vars
+                .borrow()
+                .contains("desc")
+        );
+        assert!(
+            interp
+                .threads
+                .thread_param_shadow_vars
+                .borrow()
+                .contains("desc")
+        );
     }
 
-    assert!(!interp.thread_redeclared_vars.borrow().contains("desc"));
-    assert!(!interp.thread_param_shadow_vars.borrow().contains("desc"));
+    assert!(
+        !interp
+            .threads
+            .thread_redeclared_vars
+            .borrow()
+            .contains("desc")
+    );
+    assert!(
+        !interp
+            .threads
+            .thread_param_shadow_vars
+            .borrow()
+            .contains("desc")
+    );
 }
 
 /// An ancestor frame's own mask on the same bare name must survive an inner
@@ -113,12 +153,14 @@ fn thread_param_mask_guard_restores_on_normal_drop() {
 #[test]
 fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
     let mut interp = Interpreter::new();
-    interp.shared_vars_active = true;
+    interp.threads.shared_vars_active = true;
     interp
+        .threads
         .thread_redeclared_vars
         .borrow_mut()
         .insert("desc".to_string());
     interp
+        .threads
         .thread_param_shadow_vars
         .borrow_mut()
         .insert("desc".to_string());
@@ -132,11 +174,19 @@ fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
     }
 
     assert!(
-        interp.thread_redeclared_vars.borrow().contains("desc"),
+        interp
+            .threads
+            .thread_redeclared_vars
+            .borrow()
+            .contains("desc"),
         "an ancestor frame's own mask on the same name must survive"
     );
     assert!(
-        interp.thread_param_shadow_vars.borrow().contains("desc"),
+        interp
+            .threads
+            .thread_param_shadow_vars
+            .borrow()
+            .contains("desc"),
         "same for the parameter-shadow companion set"
     );
 }
@@ -150,12 +200,13 @@ fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
 #[test]
 fn suppressed_publish_writes_env_but_not_the_shared_lane() {
     let mut interp = Interpreter::new();
-    interp.shared_vars_active = true;
+    interp.threads.shared_vars_active = true;
     interp
+        .threads
         .shared_vars
         .declare("url", Value::str("lane".to_string()));
 
-    interp.suppress_shared_publish = true;
+    interp.threads.suppress_shared_publish = true;
     interp.set_shared_var_sym("url", None, Value::str("frame-local".to_string()));
 
     assert_eq!(
@@ -167,10 +218,14 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
         "the mirror must still make the value visible by name in env"
     );
     assert_eq!(
-        interp.shared_vars.get("url").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ => None,
-        }),
+        interp
+            .threads
+            .shared_vars
+            .get("url")
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            }),
         Some("lane".to_string()),
         "the cross-thread lane must be left alone"
     );
@@ -185,18 +240,23 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
 #[test]
 fn unsuppressed_write_publishes_to_the_shared_lane() {
     let mut interp = Interpreter::new();
-    interp.shared_vars_active = true;
+    interp.threads.shared_vars_active = true;
     interp
+        .threads
         .shared_vars
         .declare("url", Value::str("lane".to_string()));
 
     interp.set_shared_var_sym("url", None, Value::str("assigned".to_string()));
 
     assert_eq!(
-        interp.shared_vars.get("url").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ => None,
-        }),
+        interp
+            .threads
+            .shared_vars
+            .get("url")
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            }),
         Some("assigned".to_string())
     );
     assert!(interp.is_shared_var_dirty("url"));
@@ -206,9 +266,10 @@ fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str)
     interp.mark_atomic_var_seen();
     let name_key = MetaNs::AtomicName.owned_key_for_str(name);
     interp
+        .threads
         .shared_vars
         .declare(&name_key, Value::str(value_key.to_string()));
-    interp.shared_vars.declare(value_key, Value::int(1));
+    interp.threads.shared_vars.declare(value_key, Value::int(1));
     interp.mark_shared_var_dirty(name);
     interp.mark_shared_var_dirty(value_key);
 }

@@ -2144,10 +2144,10 @@ impl Interpreter {
                 continue;
             }
             let publish = code.needs_env_sync.get(i).copied().unwrap_or(true);
-            let saved_suppress = self.suppress_shared_publish;
-            self.suppress_shared_publish = saved_suppress || !publish;
+            let saved_suppress = self.threads.suppress_shared_publish;
+            self.threads.suppress_shared_publish = saved_suppress || !publish;
             self.set_env_with_main_alias(name, self.locals[i].clone());
-            self.suppress_shared_publish = saved_suppress;
+            self.threads.suppress_shared_publish = saved_suppress;
         }
     }
 
@@ -2198,8 +2198,8 @@ impl Interpreter {
         code: &CompiledCode,
         names: &[String],
     ) {
-        let saved_suppress = self.suppress_shared_publish;
-        self.suppress_shared_publish = true;
+        let saved_suppress = self.threads.suppress_shared_publish;
+        self.threads.suppress_shared_publish = true;
         for name in names {
             let Some(sym) = crate::symbol::Symbol::lookup(name) else {
                 continue;
@@ -2208,7 +2208,7 @@ impl Interpreter {
                 self.sync_regex_interpolation_slot(code, slot as usize);
             }
         }
-        self.suppress_shared_publish = saved_suppress;
+        self.threads.suppress_shared_publish = saved_suppress;
     }
 
     /// Publish local slot `i` into env for a by-name reader in the regex
@@ -2714,7 +2714,7 @@ impl Interpreter {
             if spliced {
                 self.record_caller_var_writeback(&name);
             }
-            if self.shared_vars_active {
+            if self.threads.shared_vars_active {
                 loan_env!(self, set_shared_var(&name, container.clone()));
             }
         }

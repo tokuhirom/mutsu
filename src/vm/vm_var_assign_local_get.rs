@@ -220,7 +220,7 @@ impl Interpreter {
                 "GetLocal fast path taken with an atomic variable registered"
             );
             debug_assert!(
-                !self.sigilless_attrs_active,
+                !self.threads.sigilless_attrs_active,
                 "GetLocal fast path taken with a sigilless attribute alias live"
             );
             debug_assert!(
@@ -525,7 +525,7 @@ impl Interpreter {
             // exactly this set; without the same gate here the read resurrects the
             // foreign value (`my $x := f()` yielding Nil would see the other
             // scope's `$x`).
-            if !self.thread_redeclared_vars.borrow().contains(name)
+            if !self.threads.thread_redeclared_vars.borrow().contains(name)
                 && let Some(shared_val) = self.get_shared_var(name)
             {
                 self.stack.push(shared_val);
@@ -702,7 +702,7 @@ impl Interpreter {
         self.env_mut().insert(nm.clone(), container.clone());
         // Track C: keep a running thread's shared snapshot pointing at the cell
         // (mirrors box_captured_lexicals).
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             loan_env!(self, set_shared_var(&nm, container.clone()));
         }
     }
@@ -807,7 +807,7 @@ impl Interpreter {
         let container = cur.into_container_ref();
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             loan_env!(self, set_shared_var(&name, container));
         }
     }
