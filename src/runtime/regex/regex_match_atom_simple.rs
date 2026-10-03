@@ -623,13 +623,14 @@ impl Interpreter {
             }
             RegexAtom::Any => true,
             RegexAtom::CharClass(class) => {
-                // \r\n is a single grapheme cluster in Raku; treat it as matching \n
-                if c == '\r'
-                    && pos + 1 < chars.len()
-                    && chars[pos + 1] == '\n'
-                    && self.regex_match_class_ignorecase(class, '\n', ignore_case)
-                {
-                    return Some(pos + 2);
+                // \r\n is a single grapheme cluster in Raku that a class tests
+                // as `\n` — for a negated class too: `<-[\n]>` must not match
+                // it (PDF::Grammar's `<-literal-delimiter>+` stops at a CRLF),
+                // while `<-[\r]>` and `<-[a]>` do.
+                if c == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
+                    return self
+                        .regex_match_class_ignorecase(class, '\n', ignore_case)
+                        .then_some(pos + 2);
                 }
                 // In Raku, enumerated char classes like <[Dd]> match whole graphemes.
                 // If the grapheme has combining marks, exact Char/Range items should

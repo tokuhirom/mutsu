@@ -131,16 +131,7 @@ pub(crate) fn destructure_binds(
             // leading array/hash sigil (and any twigil) before looking up;
             // the sigil is kept only for the bind target below so the
             // value lands in an `@`/`%` container.
-            let after_sigil = sub
-                .name
-                .strip_prefix('@')
-                .or_else(|| sub.name.strip_prefix('%'))
-                .unwrap_or(&sub.name);
-            let lookup_name = after_sigil
-                .strip_prefix('!')
-                .or_else(|| after_sigil.strip_prefix('.'))
-                .unwrap_or(after_sigil)
-                .to_string();
+            let lookup_name = named_lookup_name(&sub.name);
             let method_call = Expr::MethodCall {
                 target: Box::new(Expr::Var(target_name.to_string())),
                 name: Symbol::intern(&lookup_name),
@@ -165,6 +156,49 @@ pub(crate) fn destructure_binds(
                 else_expr: Box::new(hash_lookup),
             };
             let method_result = apply_coercion(sub, method_result);
+            // Whether the value's Capture carries this named argument at all
+            // (`\(:key, :value)` for a Pair, the pairs of a Hash, the public
+            // attributes of an object) — what a default or a `!` keys off.
+            let passed = || Expr::MethodCall {
+                target: Box::new(Expr::MethodCall {
+                    target: Box::new(Expr::MethodCall {
+                        target: Box::new(Expr::Var(target_name.to_string())),
+                        name: Symbol::intern("Capture"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    }),
+                    name: Symbol::intern("hash"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                name: Symbol::intern("EXISTS-KEY"),
+                args: vec![Expr::Literal(Value::str(lookup_name.clone()))],
+                modifier: None,
+                quoted: false,
+            };
+            if sub.required {
+                bind_stmts.push(Stmt::Expr(Expr::Ternary {
+                    cond: Box::new(passed()),
+                    then_expr: Box::new(Expr::Literal(Value::NIL)),
+                    else_expr: Box::new(Expr::Call {
+                        name: Symbol::intern("die"),
+                        args: vec![Expr::Literal(Value::str(format!(
+                            "Required named argument '{lookup_name}' not passed in sub-signature"
+                        )))],
+                    }),
+                }));
+            }
+            // `:$rule = 'TOP'`: the default stands in for an absent argument.
+            let method_result = match &sub.default {
+                Some(default) => Expr::Ternary {
+                    cond: Box::new(passed()),
+                    then_expr: Box::new(method_result),
+                    else_expr: Box::new(default.clone()),
+                },
+                None => method_result,
+            };
             // If the named param has a sub_signature (e.g. :key($k)),
             // bind to the sub_signature variable instead of the param name.
             if let Some(inner_params) = &sub.sub_signature {
@@ -221,6 +255,55 @@ pub(crate) fn destructure_binds(
             }]);
             bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
             // No need to increment positional_index; capture consumes all remaining
+        } else if sub.is_variadic() && sub.name.starts_with('%') {
+            // `*%rest`: the named part of the value's Capture minus the keys
+            // the sub-signature's named parameters already took
+            // (`-> % (:$rule!, *%expected)` over a Hash, PDF::Grammar).
+            let named_part = Expr::MethodCall {
+                target: Box::new(Expr::MethodCall {
+                    target: Box::new(Expr::Var(target_name.to_string())),
+                    name: Symbol::intern("Capture"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                name: Symbol::intern("hash"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+            bind_stmts.push(decl_stmt(sub.name.clone(), named_part));
+            let taken: Vec<Expr> = sub_params
+                .iter()
+                .filter(|p| p.named && !p.is_variadic())
+                .map(|p| Expr::Literal(Value::str(named_lookup_name(&p.name))))
+                .collect();
+            if !taken.is_empty() {
+                bind_stmts.push(Stmt::Expr(Expr::MethodCall {
+                    target: Box::new(Expr::Index {
+                        target: Box::new(Expr::HashVar(sub.name[1..].to_string())),
+                        index: Box::new(Expr::ArrayLiteral(taken)),
+                        is_positional: false,
+                    }),
+                    name: Symbol::intern("DELETE-KEY"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }));
+            }
+        } else if sub.is_variadic() && sub.name.starts_with('@') {
+            // `*@rest`: every positional element from here on, not just the
+            // one at this index.
+            let rest_slice = Expr::Index {
+                target: Box::new(Expr::Var(target_name.to_string())),
+                index: Box::new(Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
+                    op: crate::token_kind::TokenKind::DotDot,
+                    right: Box::new(Expr::Whatever),
+                }),
+                is_positional: true,
+            };
+            bind_stmts.push(decl_stmt(sub.name.clone(), rest_slice));
         } else {
             let element_expr = Expr::Index {
                 target: Box::new(Expr::Var(target_name.to_string())),
@@ -286,6 +369,21 @@ pub(crate) fn destructure_binds(
             positional_index += 1;
         }
     }
+}
+
+/// The key a named sub-parameter reads: its name without an `@`/`%` sigil or
+/// a `!`/`.` twigil (`:@dists` reads `dists`).
+// Cost: O(1).
+fn named_lookup_name(name: &str) -> String {
+    let after_sigil = name
+        .strip_prefix('@')
+        .or_else(|| name.strip_prefix('%'))
+        .unwrap_or(name);
+    after_sigil
+        .strip_prefix('!')
+        .or_else(|| after_sigil.strip_prefix('.'))
+        .unwrap_or(after_sigil)
+        .to_string()
 }
 
 /// Declare one positional destructure target (`-> ($a, @b, %c)`).
