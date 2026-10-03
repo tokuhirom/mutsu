@@ -898,6 +898,7 @@ mod quanthash_subclass;
 pub(crate) mod raku_cycle_guards;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
+pub(crate) mod react_setup;
 pub(crate) mod react_whenever;
 mod receiver_class;
 pub(crate) mod regex;
