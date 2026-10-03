@@ -52,6 +52,17 @@ impl Interpreter {
         Self::make_on_demand_derived_supply_named(source, "head", Value::int(count as i64))
     }
 
+    /// The derived on-demand Supply for `source.lines(:chomp)`, where
+    /// `source` is an on-demand supply (`supply { emit $text }`): per tap of
+    /// its own it taps the source, buffers the emitted chunks and passes on
+    /// each complete line, flushing a trailing partial line when the source
+    /// is done. It used to read the source's (empty) materialized values and
+    /// produced nothing (TAP's `parse-stream` over a file's contents).
+    // Cost: O(1).
+    pub(in crate::runtime) fn make_on_demand_lines_supply(source: Value, chomp: bool) -> Value {
+        Self::make_on_demand_derived_supply_named(source, "lines", Value::truth(chomp))
+    }
+
     fn make_on_demand_derived_supply_named(source: Value, mode: &str, callable: Value) -> Value {
         let mut producer_attrs = HashMap::new();
         producer_attrs.insert("source".to_string(), source);
@@ -169,6 +180,13 @@ impl Interpreter {
             "__mutsu_derive_emit" => {
                 let emitter = attributes.get("emitter").cloned().unwrap_or(Value::NIL);
                 let callable = attributes.get("callable").cloned().unwrap_or(Value::NIL);
+                if let Some(id) = lines_id(attributes) {
+                    let chomp = attributes.get("callable").is_some_and(Value::truthy);
+                    for line in lines_take(id, &arg.to_string_value(), chomp, false) {
+                        self.call_method_with_values(emitter.clone(), "emit", vec![line])?;
+                    }
+                    return Ok(Value::NIL);
+                }
                 if let Some(id) = head_id(attributes) {
                     // `head`: pass the value on while the counter lasts, and
                     // finish the derived supply with the last one.
@@ -201,6 +219,13 @@ impl Interpreter {
             // Cost: O(1).
             "__mutsu_derive_done" => {
                 let emitter = attributes.get("emitter").cloned().unwrap_or(Value::NIL);
+                if let Some(id) = lines_id(attributes) {
+                    // A trailing line with no terminator is still a line.
+                    let chomp = attributes.get("callable").is_some_and(Value::truthy);
+                    for line in lines_take(id, "", chomp, true) {
+                        self.call_method_with_values(emitter.clone(), "emit", vec![line])?;
+                    }
+                }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
                 {
@@ -213,6 +238,9 @@ impl Interpreter {
             // Cost: O(1).
             "__mutsu_derive_quit" => {
                 let emitter = attributes.get("emitter").cloned().unwrap_or(Value::NIL);
+                if let Some(id) = lines_id(attributes) {
+                    lines_take(id, "", false, true);
+                }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
                 {
@@ -268,6 +296,12 @@ impl Interpreter {
                 "head_id".to_string(),
                 Value::int(head_register(count) as i64),
             );
+        }
+        if attributes
+            .get("mode")
+            .is_some_and(|m| m.to_string_value() == "lines")
+        {
+            fwd_attrs.insert("lines_id".to_string(), Value::int(lines_register() as i64));
         }
         let forwarder = Value::make_instance(Symbol::intern(CLASS), fwd_attrs);
         let tap_args = vec![
@@ -367,4 +401,47 @@ fn next_collect_id() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// The partial-line buffers of the live `lines` taps, keyed by a per-tap id
+/// (the forwarder instances are rebuilt per delivery, as for `head`).
+fn line_buffers() -> &'static std::sync::Mutex<HashMap<u64, String>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, String>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn lines_register() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = line_buffers().lock() {
+        map.insert(id, String::new());
+    }
+    id
+}
+
+fn lines_id(attributes: &AttrMap) -> Option<u64> {
+    attributes
+        .get("lines_id")
+        .and_then(|v| v.as_int())
+        .map(|n| n as u64)
+}
+
+/// Append `chunk` to the tap's buffer and take every complete line; with
+/// `finish`, also the trailing partial line, and retire the buffer.
+// Cost: O(c + b), c = chars of the chunk, b = chars buffered.
+fn lines_take(id: u64, chunk: &str, chomp: bool, finish: bool) -> Vec<Value> {
+    let Ok(mut map) = line_buffers().lock() else {
+        return Vec::new();
+    };
+    let Some(buffer) = map.get_mut(&id) else {
+        return Vec::new();
+    };
+    buffer.push_str(chunk);
+    let lines = super::state::take_complete_lines_from_buffer(buffer, chomp, finish);
+    if finish {
+        map.remove(&id);
+    }
+    lines.into_iter().map(Value::str).collect()
 }

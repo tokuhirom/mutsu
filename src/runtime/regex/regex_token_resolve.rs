@@ -243,6 +243,7 @@ impl Interpreter {
             return (hit, false);
         }
         if arg_values.is_empty()
+            && !self.argless_call_needs_binding(&spec.lookup_name, pkg)
             && let Some(hit) =
                 self.resolve_parsed_token_candidates_in_pkg(&spec.lookup_name, spec.lookup_sym, pkg)
         {
@@ -603,11 +604,23 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Vec<(String, Symbol, Option<String>)> {
-        if arg_values.is_empty() {
+        if arg_values.is_empty() && !self.argless_call_needs_binding(&spec.lookup_name, pkg) {
             self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
         } else {
             self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, arg_values)
         }
+    }
+
+    /// Whether an argument-less `<name>` still has a defaulted parameter to
+    /// bind (see [`super::regex_dynparams::token_defs_need_binding`]).
+    // Cost: O(1) when no rule declares a defaulted parameter; otherwise
+    // O(s * m + c * p), s = enclosing scopes, m = MRO length, c = candidates,
+    // p = parameters per candidate.
+    fn argless_call_needs_binding(&self, name: &str, pkg: Symbol) -> bool {
+        super::regex_dynparams::ANY_DEFAULTED_TOKEN_PARAM.load(std::sync::atomic::Ordering::Relaxed)
+            && super::regex_dynparams::token_defs_need_binding(
+                &self.resolve_token_defs_in_pkg(name, pkg),
+            )
     }
 
     pub(super) fn format_named_regex_arg_value(value: &Value) -> String {

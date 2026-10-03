@@ -454,12 +454,34 @@ impl Interpreter {
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
         self.trait_mod_default_writeback = None;
-        if let Err(err) =
-            self.apply_attribute_traits(decl, attr_name, cx.name, &mut cx.pending_attr_composes)
-        {
-            self.set_current_package(cx.saved_package.clone());
-            self.env = cx.saved_env.clone();
-            return Err(err);
+        let core_effects = match self.apply_attribute_traits(
+            decl,
+            attr_name,
+            cx.name,
+            &mut cx.pending_attr_composes,
+        ) {
+            Ok(effects) => effects,
+            Err(err) => {
+                self.set_current_package(cx.saved_package.clone());
+                self.env = cx.saved_env.clone();
+                return Err(err);
+            }
+        };
+        // A custom trait that re-dispatched to CORE's `:rw` / `:built`
+        // candidates changes the attribute as if the trait were written on the
+        // `has` line; republish so the accessor is regenerated.
+        if !core_effects.is_empty() {
+            let class_def = &mut cx.class_def;
+            core_effects.fold_into(
+                &mut class_def.attributes,
+                &mut class_def.attribute_built,
+                attr_name,
+            );
+            self.registry_mut()
+                .classes
+                .insert(cx.name.to_string(), cx.class_def.clone());
+            self.registry_mut()
+                .sync_accessor_entries(Symbol::intern(cx.name));
         }
         // A custom attribute trait may have re-dispatched to CORE's own
         // `trait_mod:<is>(Attribute, :$default!)` candidate on this same

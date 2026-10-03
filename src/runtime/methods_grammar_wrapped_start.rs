@@ -40,13 +40,14 @@ impl Interpreter {
         cursor: Value,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
-        self.call_wrapped_token_method_with_terminal(
+        let result = self.call_wrapped_token_method_with_terminal(
             Symbol::intern(package_name),
             start_rule,
             vec![cursor],
             chain,
             Some(parse_call),
-        )
+        )?;
+        Ok(Self::failed_cursor_as_nil(result))
     }
 
     /// The terminal of a wrapped start rule: the regular parse, with the wrap

@@ -507,6 +507,12 @@ impl Compiler {
     /// list at runtime (`my $r := 0..2; @a[$r]`), which
     /// [`Self::desugar_for_scalar_element_source`] handles with a runtime guard.
     fn for_index_is_slice(index: &Expr) -> bool {
+        // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into a
+        // WhateverCode that yields the range.
+        let index = match index {
+            Expr::WhateverCurry(inner) => inner.as_ref(),
+            other => other,
+        };
         match index {
             Expr::Binary { op, .. } => matches!(
                 op,
@@ -4589,14 +4595,20 @@ impl Compiler {
                 // `Header` to a file-scope `class …::Header` alias. It also stops
                 // the binding leaking back to the caller on block exit, which is
                 // what the same set already does for `my $x`.
+                //
+                // The bare variant names of a package-scoped (`our`, the default)
+                // enum are lexical too: rakudo installs `Pkg::E::v` in the package
+                // but the short `v` only in the declaring block, so they get the
+                // same treatment. The type name of such an enum is a package
+                // symbol and is left alone.
                 if *is_my {
                     self.code.my_declared_sym.insert(*name);
                     self.code.my_declared_enum_sym.insert(*name);
-                    for (variant, _) in variants {
-                        let sym = Symbol::intern(variant);
-                        self.code.my_declared_sym.insert(sym);
-                        self.code.my_declared_enum_sym.insert(sym);
-                    }
+                }
+                for (variant, _) in variants {
+                    let sym = Symbol::intern(variant);
+                    self.code.my_declared_sym.insert(sym);
+                    self.code.my_declared_enum_sym.insert(sym);
                 }
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterEnum(idx));

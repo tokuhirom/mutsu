@@ -3297,6 +3297,9 @@ fn postfix_expr_loop_from(
                     let (r_name, name_expr) = expression(r_name)?;
                     let (r_name, _) = ws(r_name)?;
                     let (r_name, _) = parse_char(r_name, ')')?;
+                    // Only an argument list may follow whitespace; otherwise the
+                    // whitespace belongs to the next infix (`».&(…) <<*>> @w`).
+                    let r_before_ws = r_name;
                     let (r_name, _) = ws(r_name)?;
                     if r_name.starts_with('(') {
                         let (r_name, _) = parse_char(r_name, '(')?;
@@ -3319,10 +3322,13 @@ fn postfix_expr_loop_from(
                         args: Vec::new(),
                         modifier,
                     };
-                    rest = r_name;
+                    rest = r_before_ws;
                     continue;
                 }
                 let (r_name, name_expr) = crate::parser::primary::primary(r)?;
+                // As above: `».&f <<*>> @w` is `(».&f) <<*>> @w`, so the
+                // whitespace is not consumed unless an argument list follows.
+                let r_before_ws = r_name;
                 let (r_name, _) = ws(r_name)?;
                 if r_name.starts_with('(') {
                     let (r_name, _) = parse_char(r_name, '(')?;
@@ -3345,7 +3351,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier,
                 };
-                rest = r_name;
+                rest = r_before_ws;
                 continue;
             }
         }

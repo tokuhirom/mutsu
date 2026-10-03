@@ -1,45 +1,10 @@
+use super::attribute_core_traits::AttrCoreTraitEffects;
 use super::registration_class_body::PendingAttrCompose;
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Handle the core Attribute trait that marks a dynamically-created
-    /// attribute read-write. User trait_mod candidates are tried first; this
-    /// native arm supplies the core candidate when no user candidate matches.
-    pub(crate) fn try_native_attribute_trait(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if name != "trait_mod:<is>" || args.len() < 2 {
-            return None;
-        }
-        let attribute: &Value = match args[0].view() {
-            ValueView::VarRef { value, .. } => value,
-            _ => &args[0],
-        };
-        let is_attribute = matches!(
-            attribute.view(),
-            ValueView::Instance { class_name, .. } if class_name == "Attribute"
-        );
-        let is_rw = args[1..].iter().any(|arg| {
-            matches!(arg.view(), ValueView::Pair(key, _) if key == "rw")
-                || matches!(
-                    arg.view(),
-                    ValueView::ValuePair(key, _) if key.to_string_value() == "rw"
-                )
-        });
-        if !is_attribute || !is_rw {
-            return None;
-        }
-        if let ValueView::Instance { attributes, .. } = attribute.view() {
-            attributes.insert("is_rw".to_string(), Value::TRUE);
-            attributes.insert("rw".to_string(), Value::TRUE);
-        }
-        Some(Ok(Value::NIL))
-    }
-
     pub(crate) fn collect_attribute_objects(
         &self,
         class_name: &str,
@@ -440,43 +405,66 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
-    /// The nearest package (walking `current_package` up through its `::`
-    /// ancestors, ending at the current package's registry view of GLOBAL) that
-    /// has a proto or multi candidates for `name`. None when no package in the
-    /// chain has a handler.
-    fn nearest_package_with_trait_handler(&mut self, name: &str) -> Option<String> {
+    /// The packages to dispatch a declaration's `name` trait as, in order: every
+    /// package on the `current_package` `::` chain with a local proto or multi
+    /// candidates for `name` (innermost first), then the loading module's own
+    /// package, then the current package when only GLOBAL has a handler. Empty
+    /// when nothing has a handler.
+    ///
+    /// A package nearer the declaration can hold unrelated candidates of the
+    /// same trait (`HTML::Component` holds some, while the `is html-attr` that
+    /// `HTML::Component::Tag::META-CHARSET` uses was imported by its module
+    /// `HTML::Component::Tag::META`), so the caller tries each in turn until
+    /// one dispatches.
+    ///
+    /// Cost: O(d), d = `::` segments of the current package.
+    fn trait_handler_packages(&mut self, name: &str) -> Vec<String> {
         let base_keys = self.fn_keys_for_base(name);
         let current = self.current_package();
-        let mut pkg = current.as_str();
-        // Local candidates only at each level — has_proto/has_multi_candidates
-        // also match GLOBAL, which would stop the walk at the innermost package
-        // whenever some module exported a same-named trait, hiding the
-        // enclosing package's own candidates. GLOBAL is the last resort; the
-        // dispatch probes {pkg}:: AND GLOBAL:: anyway, so dispatching as the
-        // nearest local package still sees the imported candidates too.
-        loop {
-            let local_proto = self
-                .registry()
-                .proto_subs_contains(&format!("{}::{}", pkg, name));
-            let probe = [Symbol::intern(pkg)];
-            if local_proto
-                || self
+        let mut found: Vec<String> = Vec::new();
+        let has_local = |this: &Self, pkg: &str| {
+            let pkg_sym = Symbol::intern(pkg);
+            let proto_key = crate::qualified::qualified(pkg_sym, Symbol::intern(name));
+            this.registry().proto_subs_contains(proto_key.as_str())
+                || this
                     .registry()
-                    .has_multi_function(Some(&base_keys), &probe, name)
-            {
-                return Some(pkg.to_string());
+                    .has_multi_function(Some(&base_keys), &[pkg_sym], name)
+        };
+        // Local candidates only at each level — has_proto/has_multi_candidates
+        // also match GLOBAL. The dispatch probes {pkg}:: AND GLOBAL:: anyway,
+        // so dispatching as a local package still sees imported candidates.
+        let mut pkg = current.as_str();
+        loop {
+            if has_local(self, pkg) {
+                found.push(pkg.to_string());
             }
             match pkg.rsplit_once("::") {
                 Some((parent, _)) => pkg = parent,
                 None => break,
             }
         }
-        let global = [Symbol::intern("GLOBAL")];
-        (self.registry().has_proto("GLOBAL", name)
-            || self
-                .registry()
-                .has_multi_candidates(Some(&base_keys), &global, name))
-        .then(|| current.clone())
+        // A namespaced module's imports are recorded under the module's own
+        // package (`runtime_module_exports.rs`, `module_import_pkg`), which a
+        // class it declares need not be nested in: `HTML::Component::Tag::META`
+        // declares `class HTML::Component::Tag::META-CHARSET` with the
+        // `is html-attr` trait it imported.
+        if let Some(unit_pkg) = self.module_load_stack.last().cloned()
+            && !found.contains(&unit_pkg)
+            && has_local(self, &unit_pkg)
+        {
+            found.push(unit_pkg);
+        }
+        if found.is_empty() {
+            let global = [Symbol::intern("GLOBAL")];
+            if self.registry().has_proto("GLOBAL", name)
+                || self
+                    .registry()
+                    .has_multi_candidates(Some(&base_keys), &global, name)
+            {
+                found.push(current);
+            }
+        }
+        found
     }
 
     /// Whether a `does`-mixin value carries a non-private `compose` method on
@@ -514,7 +502,7 @@ impl Interpreter {
         attr_name_str: &str,
         owner: &str,
         pending_composes: &mut Vec<PendingAttrCompose>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<AttrCoreTraitEffects, RuntimeError> {
         let sigil = decl.sigil;
         let is_public = decl.is_public;
         let type_constraint = decl.type_constraint.as_deref();
@@ -542,8 +530,8 @@ impl Interpreter {
             // probes current_package + GLOBAL only, so walk up the package
             // chain to the nearest package that has a handler and dispatch as
             // that package.
-            let dispatch_pkg = self.nearest_package_with_trait_handler(&trait_mod_name);
-            let has_handler = dispatch_pkg.is_some();
+            let dispatch_pkgs = self.trait_handler_packages(&trait_mod_name);
+            let has_handler = !dispatch_pkgs.is_empty();
             if has_handler {
                 // Reuse the Attribute meta-object across every trait applied to
                 // this attr, and store it in the registry: instance attrs are a
@@ -633,13 +621,17 @@ impl Interpreter {
                     Some(MetaNs::AttrTrait.owned_key_pair_for_strs(owner, attr_name_str));
                 let saved_attr_wb_value = self.trait_mod_attr_writeback_value.take();
                 let saved_pkg = self.current_package();
-                if let Some(pkg) = &dispatch_pkg
-                    && *pkg != saved_pkg
-                {
-                    self.set_current_package(pkg.clone());
+                let mut call_result = Ok(Value::NIL);
+                for pkg in &dispatch_pkgs {
+                    if *pkg != saved_pkg {
+                        self.set_current_package(pkg.clone());
+                    }
+                    call_result = self.call_function(&trait_mod_name, args.clone());
+                    self.set_current_package(saved_pkg.clone());
+                    if !matches!(&call_result, Err(err) if Self::is_trait_mod_no_candidate(err)) {
+                        break;
+                    }
                 }
-                let call_result = self.call_function(&trait_mod_name, args);
-                self.set_current_package(saved_pkg);
                 self.trait_mod_writeback_key = saved_wb_key;
                 // The attribute's OWN resulting mixin (from `$attr does
                 // SomeRole` specifically, never from a `$class.HOW` mixin
@@ -753,6 +745,13 @@ impl Interpreter {
             )));
             return Err(err);
         }
-        Ok(())
+        // A handler that re-dispatched to CORE's `:rw` / `:built` candidates
+        // left the result on the attribute's meta-object.
+        Ok(self
+            .registry()
+            .class_attribute_trait_objects
+            .get(&(owner.to_string(), attr_name_str.to_string()))
+            .map(|obj| AttrCoreTraitEffects::read(obj, is_public))
+            .unwrap_or_default())
     }
 }

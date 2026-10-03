@@ -56,6 +56,16 @@ fn method_lvalue_assign_expr_with_intent(
     if method_name == "item" && method_args.is_empty() {
         return crate::parser::expr::precedence::assign_to_target_expr(target, value);
     }
+    // A Slip RHS (`self.x = |@v`) would flatten into this call's trailing
+    // arguments, keeping only its first element as the value; carry it as the
+    // one list it assigns instead.
+    let value = match value {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Pipe,
+            ..
+        } => Expr::ArrayLiteral(vec![value]),
+        other => other,
+    };
     let mut args = vec![
         target,
         Expr::Literal(Value::str(method_name)),

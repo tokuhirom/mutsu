@@ -625,7 +625,10 @@ impl Interpreter {
         // A plain receiver's method handing back an immutable `List`
         // (`.self` on a List, `$p.List`) is refused naming the List, before
         // the copy-and-rebind below could leak the write into the variable.
-        if plain_receiver
+        // An instance's accessor can hand back an immutable `List` too: an
+        // `@` attribute rebound with `@!a := @!a.List` (Markdown::Lex's
+        // `Table`, `CodeFence`) must refuse `$obj.a[0] = x` like any List.
+        if (plain_receiver || matches!(target.view(), ValueView::Instance { .. }))
             && let ValueView::Array(items, kind) = current.view()
             && matches!(
                 kind,

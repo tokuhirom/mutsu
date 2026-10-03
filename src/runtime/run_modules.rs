@@ -1542,7 +1542,7 @@ impl Interpreter {
         }
         if let Some(owned_types) = self.module_owned_types.get(module).cloned() {
             let own_prefix = format!("{module}::");
-            for qualified in owned_types {
+            for qualified in owned_types.declared {
                 if let Some((package, _)) = qualified.rsplit_once("::") {
                     let package = package.to_string();
                     owned_granted_packages.insert(package.clone());
@@ -1676,15 +1676,16 @@ impl Interpreter {
                 .filter(|(short, qualified)| {
                     short != qualified
                         && !Self::is_builtin_type(short)
-                        // The compunit's own type (`unit class P::Sto;`) is reached as
-                        // `P::Sto`; its short name `Sto` is not in the importer's
-                        // scope unless the type is `is export`ed.
-                        && (qualified != module || exported_here.contains(short))
-                        && (exported_here.contains(short)
-                            || !self.is_my_scoped_package_item(qualified))
+                        // Only exported types gain a short name in the importer.
+                        // Declaration-time registration already gives the
+                        // module's own code its private short-name alias.
+                        && exported_here.contains(short)
                 })
                 .collect();
             if !aliases.is_empty() {
+                for (_, qualified) in &aliases {
+                    self.record_module_exported_type_alias(module, qualified);
+                }
                 // Also keep them against the module's own name: a later `use` of
                 // this already-loaded module copies from there into ITS importer
                 // (`use_module_with_tags_inner`'s already-loaded branch).

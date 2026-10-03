@@ -568,6 +568,7 @@ impl Interpreter {
             registry
                 .classes
                 .keys()
+                .chain(registry.roles.keys())
                 .find(|key| {
                     (key.starts_with(&prefix) || key.as_str() == fq_name)
                         && self.is_my_scoped_package_item(key)
@@ -584,6 +585,40 @@ impl Interpreter {
         };
         self.unit_chain_contains_unit(self.executing_unit_sym_for_module_load(), declaring_unit)
             || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+    }
+
+    /// The `my`-scoped classes and roles of the running compilation unit's
+    /// top level, keyed by their source name: what `UNIT::` lists besides the
+    /// unit's variables and routines (a module's `sub EXPORT` returning
+    /// `UNIT::.grep({ .key eq 'Type' ... })`, highlighter).
+    // Cost: O(m), m = `my`-scoped package items across all units.
+    pub(crate) fn unit_lexical_types(&self) -> Vec<(String, Value)> {
+        let mut out = Vec::new();
+        for item in self.my_scoped_package_items.iter() {
+            let display = item.split('\u{0}').next().unwrap_or(item);
+            if display.is_empty() || crate::qualified::is_qualified(Symbol::intern(display)) {
+                continue;
+            }
+            let is_type = {
+                let registry = self.registry();
+                registry.classes.contains_key(item) || registry.roles.contains_key(item)
+            };
+            if !is_type {
+                continue;
+            }
+            // Only the running unit's own declarations: a type another unit
+            // declared (a module this one imported) is not in this pad.
+            let Some(&declaring_unit) = self.class_declaring_units.get(item) else {
+                continue;
+            };
+            if self
+                .unit_chain_contains_unit(self.executing_unit_sym_for_module_load(), declaring_unit)
+                || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+            {
+                out.push((display.to_string(), Value::package(Symbol::intern(item))));
+            }
+        }
+        out
     }
 
     /// Must a call to this qualified name stay unresolved? True for a
@@ -608,10 +643,21 @@ impl Interpreter {
     /// Record a bare enum name in the current scope for poisoning detection.
     /// Only marks as poisoned if the name was already declared in the *same*
     /// scope level by a different enum.
+    ///
+    /// A routine or closure body is a lexical scope of its own but pushes no
+    /// enum frame, so each entry also records the invocation it was declared
+    /// in: an `enum` inside a `supply { }` body run from a tap is not a sibling
+    /// of a same-named key declared by the unit that called it.
     pub(crate) fn register_enum_bare_name(&mut self, name: &str, enum_type: &str) {
+        let invocation = self
+            .routine_stack()
+            .last()
+            .map_or(0, |frame| frame.invocation_id);
         // Check only the current scope for the same name from a different enum
         if let Some(current_scope) = self.enum_scope_names.last()
-            && current_scope.iter().any(|n| n == name)
+            && current_scope
+                .iter()
+                .any(|(n, inv)| n == name && *inv == invocation)
             && let Some(ValueView::Enum {
                 enum_type: prev_type,
                 ..
@@ -622,7 +668,7 @@ impl Interpreter {
                 .insert(name.to_string(), enum_type.to_string());
         }
         if let Some(scope) = self.enum_scope_names.last_mut() {
-            scope.push(name.to_string());
+            scope.push((name.to_string(), invocation));
         }
     }
 
@@ -635,7 +681,7 @@ impl Interpreter {
     /// that were introduced in the exiting scope.
     pub(crate) fn pop_enum_scope(&mut self) {
         if let Some(names) = self.enum_scope_names.pop() {
-            for name in names {
+            for (name, _) in names {
                 crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases).remove(&name);
             }
         }

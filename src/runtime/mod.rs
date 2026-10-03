@@ -681,7 +681,9 @@ mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
+pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
+mod attribute_core_traits;
 mod container_store;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
@@ -762,6 +764,7 @@ mod methods_classhow;
 mod methods_classhow_attribute;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
+mod methods_classhow_grammar_tokens;
 mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
@@ -813,6 +816,7 @@ mod methods_object;
 mod methods_object_attr_constraints;
 pub(crate) mod multi_dispatch_plan;
 pub(crate) mod multi_dispatch_program;
+mod object_hash_assign;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 pub(crate) mod find_method_intercept;
 mod methods_dispatcher_raku;
@@ -2869,14 +2873,11 @@ pub struct Interpreter {
     /// loading chain. Saved/restored around each top-level `use_module_with_tags`
     /// call so it only contains packages from the current loading chain.
     pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
-    /// Registration clone ids of routines a loaded module's mainline declared
-    /// at its top level, keyed by their `__mutsu_callable_id::` marker symbol.
-    /// Kept here rather than in the env the module body ran in (ADR-0084 §2
-    /// group 1); see `runtime::toplevel_callable_ids`.
-    pub(crate) toplevel_callable_ids: std::sync::Arc<rustc_hash::FxHashMap<Symbol, i64>>,
-    /// The depths the executing module mainline started at, while one runs.
-    /// See `Interpreter::run_module_mainline`.
-    pub(crate) module_toplevel_depth: Option<toplevel_callable_ids::ModuleToplevelDepth>,
+    /// What a loaded module's mainline declares directly at its top level,
+    /// kept off the env the module body ran in (ADR-0084 §2 groups 1 and 2),
+    /// and the depths the executing mainline started at. See
+    /// `runtime::toplevel_callable_ids` and `runtime::toplevel_package_symbols`.
+    pub(crate) module_toplevel: toplevel_callable_ids::ModuleToplevel,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
     module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
@@ -3224,7 +3225,8 @@ pub struct Interpreter {
     /// visible to a direct importer, but declarations from the module's
     /// dependencies are not. The load stack lets registration attribute the
     /// type to the correct compunit while nested modules are loading.
-    pub(crate) module_owned_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
+    pub(crate) module_owned_types:
+        std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>,
     /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
     /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
@@ -3987,7 +3989,7 @@ pub struct Interpreter {
     /// Maps bare name -> latest enum package name.
     poisoned_enum_aliases: std::sync::Arc<HashMap<String, String>>,
     /// Per-scope stack of bare enum names introduced, for cleanup on scope exit.
-    enum_scope_names: Vec<Vec<String>>,
+    enum_scope_names: Vec<Vec<(String, u64)>>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: std::sync::Arc<HashSet<String>>,
