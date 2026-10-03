@@ -26,6 +26,7 @@
 //! declaration reads `Any`, as in raku.
 
 use crate::gc::Gc;
+use crate::opcode::CompiledCode;
 use crate::runtime::Interpreter;
 use crate::value::{ContainerCell, Value, ValueView};
 
@@ -187,6 +188,81 @@ impl Interpreter {
                 }
                 None => {
                     bucket.remove(&pending.name);
+                }
+            }
+        }
+    }
+
+    /// Before a mainline declaration's store into `slot`: the cell a mainline
+    /// sub captured for this variable, when the slot still holds it. That is
+    /// a same-scope re-declaration of a captured name -- the run-time half of
+    /// a binding declaration the BEGIN prologue split (#11263): its static
+    /// half ran first and the prologue's subs captured that.
+    // Cost: O(1), one hash probe of the mainline capture bucket.
+    pub(super) fn mainline_capture_at(&self, code: &CompiledCode, slot: usize) -> Option<Value> {
+        if self.unit_lexicals.is_empty()
+            || !self.vardecl_context().get()
+            || !self.routine_stack().is_empty()
+            || self.block_scope_depth() != 0
+        {
+            return None;
+        }
+        let cur = self.locals.get(slot)?;
+        let ValueView::ContainerRef(cell) = cur.view() else {
+            return None;
+        };
+        let name = code.locals.get(slot)?;
+        let captured = self
+            .unit_lexicals
+            .get(crate::runtime::MAINLINE_UNIT_KEY)?
+            .get(name)?;
+        let ValueView::ContainerRef(captured_cell) = captured.view() else {
+            return None;
+        };
+        Gc::ptr_eq(&cell, &captured_cell).then(|| cur.clone())
+    }
+
+    /// After the store [`Self::mainline_capture_at`] saw coming: when it
+    /// replaced the captured cell (a `:=` binds the name to a container of
+    /// its own), the capture follows the new binding, the way an in-sequence
+    /// registration would have captured it.
+    // Cost: O(1).
+    pub(super) fn follow_mainline_redeclaration(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        captured: Value,
+    ) {
+        let Some(name) = code.locals.get(slot).cloned() else {
+            return;
+        };
+        let new = self.locals[slot].clone();
+        if let (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) =
+            (new.view(), captured.view())
+            && Gc::ptr_eq(&a, &b)
+        {
+            return;
+        }
+        let entry = if new.is_container_ref() {
+            Some(new)
+        } else if new.is_nil() || self.type_constrained_unboxable(&name) {
+            None
+        } else {
+            let boxed = new.into_container_ref();
+            self.locals[slot] = boxed.clone();
+            self.env_mut().insert(name.clone(), boxed.clone());
+            Some(boxed)
+        };
+        if let Some(bucket) = self
+            .unit_lexicals_cow_mut()
+            .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
+        {
+            match entry {
+                Some(v) => {
+                    bucket.insert(name, v);
+                }
+                None => {
+                    bucket.remove(&name);
                 }
             }
         }

@@ -326,6 +326,27 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         rest.extend(assign);
         return;
     }
+    // A binding declaration (`my $x := …`) arrives wrapped in its bookkeeping
+    // statements. Its static half is a plain declaration; the whole binding
+    // declaration stays at its position and re-declares the same slot. Without
+    // the static half a routine the prologue took was compiled before the name
+    // was declared, so it lost its capture of the binding (#11263).
+    if let Some(Stmt::VarDecl {
+        name,
+        type_constraint,
+        is_state: false,
+        is_our: false,
+        is_dynamic,
+        ..
+    }) = crate::ast::bind_decl::declaration(&stmt)
+        && !type_constraint
+            .as_deref()
+            .is_some_and(|tc| tc.starts_with(|c: char| c.is_ascii_lowercase()))
+    {
+        prologue.push(static_bind_decl(name, type_constraint.clone(), *is_dynamic));
+        rest.push(stmt);
+        return;
+    }
     let stmt = match stmt {
         Stmt::SyntheticBlock(inner) if is_will_begin_group(&inner) => {
             partition_will_begin(inner, prologue, rest);
@@ -350,6 +371,29 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         return;
     }
     rest.push(stmt);
+}
+
+/// The static half of the binding declaration of `name`: the declaration with
+/// no initializer, holding what an unbound variable of its sigil holds.
+// Cost: O(1).
+fn static_bind_decl(name: &str, type_constraint: Option<String>, is_dynamic: bool) -> Stmt {
+    let expr = match name.as_bytes().first() {
+        Some(b'@') => Expr::Literal(crate::value::Value::real_array(Vec::new())),
+        Some(b'%') => Expr::Literal(crate::value::Value::hash(crate::value::ValueMap::default())),
+        _ => Expr::Literal(crate::value::Value::NIL),
+    };
+    Stmt::VarDecl {
+        name: name.to_string(),
+        expr,
+        type_constraint,
+        is_state: false,
+        is_our: false,
+        is_dynamic,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    }
 }
 
 /// A statement that extends the prologue's bound: a `BEGIN`, a `constant`, and
