@@ -450,6 +450,28 @@ impl Interpreter {
         false
     }
 
+    // Cost: O(v), v = number of variants.
+    /// The variant of `enum_name` named `name` (a CLI argument spelling such as
+    /// `Rock`), unlike [`Self::coerce_to_enum_variant`], which looks up by value.
+    pub(super) fn enum_variant_by_name(
+        enum_name: &str,
+        variants: &[(String, EnumValue)],
+        name: &str,
+    ) -> Option<Value> {
+        variants
+            .iter()
+            .enumerate()
+            .find(|(_, (key, _))| key == name)
+            .map(|(idx, (key, val))| {
+                Value::enum_parts(
+                    Symbol::intern(enum_name),
+                    Symbol::intern(key),
+                    val.clone(),
+                    idx,
+                )
+            })
+    }
+
     pub(super) fn coerce_to_enum_variant(
         &mut self,
         enum_name: &str,

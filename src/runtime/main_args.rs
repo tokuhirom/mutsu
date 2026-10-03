@@ -656,12 +656,9 @@ impl Interpreter {
             .map(|(enum_name, _)| enum_name.clone())
             .collect();
         if matching.len() == 1 {
-            // Hoist the registry read so the guard drops before coerce_to_enum_variant
-            // (which needs &mut self); never hold a guard across user-code re-entry.
             let variants = self.registry().enum_types.get(&matching[0]).cloned();
             if let Some(variants) = variants
-                && let Some(enum_val) =
-                    self.coerce_to_enum_variant(&matching[0], &variants, Value::str(name))
+                && let Some(enum_val) = Self::enum_variant_by_name(&matching[0], &variants, &name)
             {
                 return enum_val;
             }
@@ -700,8 +697,7 @@ impl Interpreter {
                     .as_deref()
                     .and_then(|key| self.registry().enum_types.get(key).cloned());
                 if let (Some(key), Some(variants)) = (enum_key.as_deref(), variants)
-                    && let Some(enum_val) =
-                        self.coerce_to_enum_variant(key, &variants, Value::str(s))
+                    && let Some(enum_val) = Self::enum_variant_by_name(key, &variants, &s)
                 {
                     return enum_val;
                 }
