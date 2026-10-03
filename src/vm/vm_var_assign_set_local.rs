@@ -2962,7 +2962,7 @@ impl Interpreter {
                         name,
                         Self::normalize_scalar_assignment_value(val),
                     );
-                    self.check_container_cell_constraint(&arc, &val)?;
+                    val = self.coerce_container_cell_store(&arc, val)?;
                     Value::store_through_cell(&arc, &val);
                 } else {
                     // Container identity (§3.1): re-apply the element/key-type
@@ -2978,7 +2978,7 @@ impl Interpreter {
                     } else {
                         self.array_container_writethrough_value(&name, val, &old)?
                     };
-                    self.check_container_cell_constraint(&arc, &val)?;
+                    val = self.coerce_container_cell_store(&arc, val)?;
                     // Write back into the EXISTING backing `Gc` (instead of
                     // swapping the cell to a fresh pointer) so any other
                     // holder of the old container (e.g. the outer `%ao` a

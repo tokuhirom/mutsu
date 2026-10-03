@@ -676,7 +676,7 @@ impl Interpreter {
                         self.quanthash_set_weight_elem(code, &weight.source, &weight.key, &val)?;
                         self.pending_rw_writeback_sources.push(weight.source);
                     }
-                    self.check_container_cell_constraint(&arc, &val)?;
+                    let val = self.coerce_container_cell_store(&arc, val)?;
                     Value::store_through_cell(&arc, &val);
                     self.stack.push(val);
                     return Ok(());

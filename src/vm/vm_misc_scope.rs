@@ -233,7 +233,7 @@ impl Interpreter {
         // A type-constrained state scalar lives in a cell too (like untyped
         // scalars since #5959), with the constraint registered ON the cell so
         // the `ContainerRef` write chokepoint re-checks it
-        // (`check_container_cell_constraint` — the same side table `my T $`
+        // (`coerce_container_cell_store` — the same side table `my T $`
         // anonymous typed scalars use). One carve-out remains: a NATIVE ARRAY
         // type (`state buf32 $w`) holds a Buf whose element-assignment path
         // (`$w[$j] = ...` — Digest's SHA2) must see the Buf, not a cell, so it

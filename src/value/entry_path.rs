@@ -319,17 +319,9 @@ fn hash_hole(data: &HashData) -> Value {
         })
 }
 
-/// The value a missing array slot is filled with — the declared element type
-/// object, or the `is default(...)` value. Mirrors `array_slot_ref`.
+/// The value a missing array slot is filled with. Mirrors `array_slot_ref`.
 fn array_hole(data: &ArrayData) -> Value {
-    data.default
-        .as_ref()
-        .map(|d| (**d).clone())
-        .unwrap_or_else(|| {
-            Value::Package(crate::symbol::Symbol::intern(
-                data.value_type.as_deref().unwrap_or("Any"),
-            ))
-        })
+    data.hole_value()
 }
 
 impl Value {
