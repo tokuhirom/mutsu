@@ -1003,7 +1003,7 @@ impl Interpreter {
         self.ensure_parametric_role_pun_class_for(base_name, type_args, false)
     }
 
-    /// [`Self::ensure_parametric_role_pun_class`]; `from_defaults` says the
+    /// `ensure_parametric_role_pun_class`; `from_defaults` says the
     /// arguments are the role's own defaults, filled in because the bare role
     /// was punned (`role E[::R = Any] {}; E.new`). Rakudo names that pun after
     /// the role (`E`), and it is a different class from an explicit `E[Any]`
