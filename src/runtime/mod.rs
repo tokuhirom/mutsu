@@ -986,6 +986,7 @@ mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_method_rank;
 mod resolution_private_method;
+mod resolution_qualified_enclosing;
 mod resolution_sequence;
 pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod control_state;

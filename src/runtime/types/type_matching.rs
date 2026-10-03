@@ -894,6 +894,11 @@ impl Interpreter {
                     value: crate::value::EnumValue::Int(i),
                     ..
                 } => *i >= 0,
+                // `$n but Role` is still the number it wraps.
+                ValueView::Mixin(inner, _) => {
+                    let inner = inner.as_ref().clone();
+                    self.type_matches_value_resolved("UInt", &inner)
+                }
                 _ => false,
             };
         }
