@@ -570,7 +570,7 @@ impl Interpreter {
         };
         match result {
             Ok(result) => Ok(result.to_string_value()),
-            Err(e) if e.return_value.is_some() => Err(RuntimeError::controlflow_return(true)),
+            Err(e) if e.return_value.is_some() => Err(self.dead_return_error()),
             // A `LazyList` always has a `.gist` route (either the lazy
             // placeholder or force-and-redispatch onto the resulting `Seq`,
             // which always has one) -- so a `X::Method::NotFound`/no-match

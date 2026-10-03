@@ -7,6 +7,60 @@ type ProtectBlockCapturedBindings = std::sync::Arc<Vec<(usize, String)>>;
 type ProtectBlockWritebackBindings = std::sync::Arc<Vec<(usize, String)>>;
 type ProtectBlockCapturedNames = std::sync::Arc<Vec<String>>;
 
+/// A block body's routine classification for a carrier compile (ADR-0050):
+/// whether the body is itself a Routine (`return` stops at it) and whether a
+/// Routine lexically encloses it (`return` re-targets outward instead of
+/// throwing `X::ControlFlow::Return`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct BlockRoutineness {
+    pub(crate) is_routine: bool,
+    pub(crate) lexically_in_routine: bool,
+}
+
+impl BlockRoutineness {
+    /// The classification `code`'s definition-site compile recorded.
+    // Cost: O(1).
+    pub(crate) fn of_code(code: &crate::opcode::CompiledCode) -> Self {
+        BlockRoutineness {
+            is_routine: code.is_routine,
+            lexically_in_routine: code.lexically_in_routine || code.is_routine,
+        }
+    }
+
+    /// Both flags set to `in_routine` (see `carrier_ambient_routineness`).
+    // Cost: O(1).
+    fn uniform(in_routine: bool) -> Self {
+        BlockRoutineness {
+            is_routine: in_routine,
+            lexically_in_routine: in_routine,
+        }
+    }
+}
+
+/// What kind of body `eval_block_value_inner` runs, as far as its compile's
+/// routine classification goes: an EVAL'd unit's mainline (ADR-0037), a body a
+/// code object owns (its recorded classification, ADR-0050), or a body nothing
+/// owns (the ambient fallback).
+#[derive(Clone, Copy)]
+enum CarrierBody {
+    EvalUnit,
+    Owned(BlockRoutineness),
+    Unowned,
+}
+
+impl CarrierBody {
+    fn is_eval_unit(self) -> bool {
+        matches!(self, CarrierBody::EvalUnit)
+    }
+
+    fn routineness(self) -> Option<BlockRoutineness> {
+        match self {
+            CarrierBody::Owned(routineness) => Some(routineness),
+            CarrierBody::EvalUnit | CarrierBody::Unowned => None,
+        }
+    }
+}
+
 /// The four per-`SubData` mutations `eval_block_value_inner` applies to the
 /// chunk it compiles for a carrier block, gathered so they can be both keyed on
 /// and applied in one place.
@@ -156,15 +210,39 @@ impl Interpreter {
         &self,
         body: &[Stmt],
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
-        self.compile_block_value_opts(body, false)
+        self.compile_block_value_opts(body, false, None)
+    }
+
+    /// The `is_routine` / `lexically_in_routine` a carrier compile sets on its
+    /// compiler: an EVAL unit's own (ADR-0037 §2.3), else whether any frame is
+    /// live. For an EVAL unit that is the whole classification. For any other
+    /// body it is the *activation* half only — "this body runs as a scope
+    /// activation", which the lexical-sub binding, scoped type constraints and
+    /// the phaser scope ask. Where a `return` goes is a separate, lexical fact:
+    /// an owned body gets it from its definition site
+    /// (`Compiler::return_routineness`, ADR-0050), and only a body nothing owns
+    /// (a regex code block, a `where` clause run by name, a grammar action)
+    /// falls back to this dynamic answer for that too. Narrowing the fallback
+    /// to `enclosing_routine_exists()` would turn an anonymous `sub`'s legal
+    /// `return` into a throw, since it pushes a block frame (ADR-0050 §3(a)).
+    // Cost: O(1), plus `eval_unit_in_routine`'s frame walk for an EVAL unit.
+    fn carrier_ambient_routineness(&self, is_eval_unit: bool) -> BlockRoutineness {
+        if is_eval_unit {
+            BlockRoutineness::uniform(self.eval_unit_in_routine())
+        } else {
+            BlockRoutineness::uniform(!self.routine_stack.is_empty())
+        }
     }
 
     /// `compile_block_value`, with `is_eval_unit` marking the body as an EVAL'd
-    /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`).
+    /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`) and
+    /// `routineness` the owning code object's definition-site classification
+    /// (`None` for a body with no owner; see `carrier_ambient_routineness`).
     pub(crate) fn compile_block_value_opts(
         &self,
         body: &[Stmt],
         is_eval_unit: bool,
+        routineness: Option<BlockRoutineness>,
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         // Entered before the compiler exists: `Compiler::new` builds the
         // top-level chunk, which takes its unit stamp from this guard (see
@@ -192,13 +270,24 @@ impl Interpreter {
         // closure/sub BODY to (re-)compile, and there the live frame is the
         // routine being run — including an anonymous `sub`, which pushes a
         // block frame — so narrowing it would turn their `return` into a throw.
-        let in_routine = if is_eval_unit {
-            self.eval_unit_in_routine()
-        } else {
-            !self.routine_stack.is_empty()
-        };
-        compiler.is_routine = in_routine;
-        compiler.lexically_in_routine = in_routine;
+        //
+        // A closure body recompiled here is classified by its own definition
+        // site instead (ADR-0050): sampling the stack made a wrapper block
+        // `.wrap`ped onto a method compile as a routine, so its `return`
+        // returned from the wrapped method instead of throwing.
+        //
+        // Only the *return* half moves to the definition site: `is_routine`
+        // also says "this body is a scope activation" (lexical-sub binding,
+        // scoped type constraints, the phaser scope), which the ambient answer
+        // keeps meaning for a recompiled body, so the classification rides in
+        // `return_routineness` instead of replacing it.
+        let ambient = self.carrier_ambient_routineness(is_eval_unit);
+        compiler.is_routine = ambient.is_routine;
+        compiler.lexically_in_routine = ambient.lexically_in_routine;
+        if !is_eval_unit && let Some(routineness) = routineness {
+            compiler.return_routineness =
+                Some((routineness.is_routine, routineness.lexically_in_routine));
+        }
         // ADR-0037 §2.3: only meaningful together with `is_routine == false`
         // — see the field's doc comment on `Compiler`.
         compiler.eval_context_dead_routine = is_eval_unit
@@ -279,7 +368,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Id(cache_id)),
             None,
@@ -294,13 +383,18 @@ impl Interpreter {
     /// of one literal shares the pool-owned `Arc` (`closure_body_arc`), so the
     /// compiled chunk is reused across instantiations instead of being rebuilt
     /// for each one. See [`CarrierCacheKey`].
+    ///
+    /// `routineness` is the owning code object's definition-site
+    /// classification when there is one (ADR-0050), `None` for a body nothing
+    /// owns.
     pub(crate) fn eval_block_value_cached_for_site(
         &mut self,
         body: &std::sync::Arc<Vec<Stmt>>,
+        routineness: Option<BlockRoutineness>,
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            routineness.map_or(CarrierBody::Unowned, CarrierBody::Owned),
             false,
             Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
             None,
@@ -327,7 +421,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Id(cache_id)),
             Some(free_var_writes_out),
@@ -350,7 +444,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, true, None, None, None)
+        self.eval_block_value_inner(body, CarrierBody::Unowned, true, None, None, None)
     }
 
     /// Run a chunk the compiler built from a signature expression (ADR-0133)
@@ -363,7 +457,14 @@ impl Interpreter {
         chunk: &crate::opcode::CompiledDeclExpr,
         record_free_var_writes: bool,
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(&[], false, record_free_var_writes, None, None, Some(chunk))
+        self.eval_block_value_inner(
+            &[],
+            CarrierBody::Unowned,
+            record_free_var_writes,
+            None,
+            None,
+            Some(chunk),
+        )
     }
 
     /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
@@ -385,7 +486,12 @@ impl Interpreter {
         // retain-on-miss list then refreshes the slot in whichever frame declares
         // the lexical, and `propagate_pending_caller_writes` carries the value
         // across each intervening frame exit.
-        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None, None, None)
+        let kind = if is_eval_unit {
+            CarrierBody::EvalUnit
+        } else {
+            CarrierBody::Unowned
+        };
+        self.eval_block_value_inner(body, kind, is_eval_unit, None, None, None)
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -400,13 +506,11 @@ impl Interpreter {
     fn carrier_compile_ctx_key(
         &self,
         is_eval_unit: bool,
+        routineness: Option<BlockRoutineness>,
         post: &CarrierPostCompile,
     ) -> CarrierCompileCtxKey {
-        let in_routine = if is_eval_unit {
-            self.eval_unit_in_routine()
-        } else {
-            !self.routine_stack.is_empty()
-        };
+        let ambient = self.carrier_ambient_routineness(is_eval_unit);
+        let return_routineness = routineness.filter(|_| !is_eval_unit);
         let scope = if let Some(frame) = self.routine_stack.last() {
             format!("{}::&{}", frame.package, frame.name)
         } else {
@@ -419,7 +523,8 @@ impl Interpreter {
         });
         CarrierCompileCtxKey {
             is_eval_unit,
-            in_routine,
+            in_routine: ambient.is_routine,
+            return_routineness,
             scope,
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
@@ -446,13 +551,14 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
         is_eval_unit: bool,
+        routineness: Option<BlockRoutineness>,
         cache_id: CarrierCacheKey,
         post: &CarrierPostCompile,
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
     ) {
-        let key = self.carrier_compile_ctx_key(is_eval_unit, post);
+        let key = self.carrier_compile_ctx_key(is_eval_unit, routineness, post);
         if let Some(entries) = self.caches.carrier_compile_cache.get(&cache_id)
             && let Some((_, code, fns)) = entries.iter().find(|(k, ..)| *k == key)
         {
@@ -460,7 +566,7 @@ impl Interpreter {
             return (code.clone(), fns.clone());
         }
         crate::vm::vm_stats::record_carrier_compile(false);
-        let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+        let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit, routineness);
         // The four per-`SubData` mutations, applied BEFORE the chunk is shared.
         // They are part of the key above, so an entry served from the cache is
         // byte-identical to what this fresh path produces for the same key --
@@ -508,12 +614,14 @@ impl Interpreter {
     fn eval_block_value_inner(
         &mut self,
         body: &[Stmt],
-        is_eval_unit: bool,
+        kind: CarrierBody,
         record_free_var_writes: bool,
         cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
         precompiled: Option<&crate::opcode::CompiledDeclExpr>,
     ) -> Result<Value, RuntimeError> {
+        let is_eval_unit = kind.is_eval_unit();
+        let routineness = kind.routineness();
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
         let rw_tail = std::mem::take(&mut self.pending_eval_rw_tail);
@@ -596,10 +704,10 @@ impl Interpreter {
             // caller was about to compile, never to a signature expression.
             (chunk.code.clone(), chunk.fns.clone())
         } else if let Some(id) = cache_id {
-            self.compile_block_value_cached(body, is_eval_unit, id, &post)
+            self.compile_block_value_cached(body, is_eval_unit, routineness, id, &post)
         } else {
             crate::vm::vm_stats::record_carrier_compile_uncached();
-            let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+            let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit, routineness);
             post.apply(&mut code);
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };

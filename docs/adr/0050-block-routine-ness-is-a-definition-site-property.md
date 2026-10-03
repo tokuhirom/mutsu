@@ -1,6 +1,6 @@
 # ADR-0050: A Block's routine-ness is a definition-site lexical property, not a re-derived dynamic one
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted — Slices 1 and 2 implemented ([#9892](https://github.com/tokuhirom/mutsu/issues/9892), see §7); Slice 3 residue open as [#11675](https://github.com/tokuhirom/mutsu/issues/11675)
 - Date: 2026-08-20
 - Origin: `todo/deep/nextsame-in-wrap-closure-lexical-return-target.md` (the
   architectural half; the small half became
@@ -273,3 +273,43 @@ constant across that callable's cache entries.
 - `EVAL ..., context => $frame` and the light-dispatch-path routine frames —
   ADR-0037.
 - Deep `CALLER::CALLER::` / `callframes()` chains — ADR-0035.
+
+## 7. Implementation status
+
+**Slices 1 and 2 shipped together** ([#9892](https://github.com/tokuhirom/mutsu/issues/9892),
+`news/2026-10/block-routineness-is-a-definition-site-property.md`):
+
+- `CompiledCode::lexically_in_routine` records the definition-site half beside the existing
+  `is_routine` (`compile_closure_body_with_routine_flag`). The pair travels as
+  `resolution_eval::BlockRoutineness`.
+- `compile_block_value_opts` takes an `Option<BlockRoutineness>` parameter (a parameter, not a
+  `pending_*` field). `call_sub_value`'s closure-body carrier passes the `SubData`'s recorded pair;
+  an EVAL unit keeps ADR-0037's derivation; a body with no owning callable (regex code blocks and
+  closure interpolation, `where` clauses run by name, grammar actions) keeps the dynamic answer.
+- **Deviation from §2: only the `return` half moves.** `Compiler::is_routine` turned out to carry a
+  second meaning on a recompiled body — "this body runs as a scope activation" — which
+  `binds_lexsub_free_vars` (a lexical `sub` binding its free variables per activation, #11238),
+  scoped `my TYPE $x` constraints and the ENTER/LEAVE phaser scope all read. Replacing it with the
+  definition-site answer broke those (a lexical sub inside a `supply` block stopped seeing its
+  block's `@order` from a worker thread). So the carrier keeps setting `is_routine` /
+  `lexically_in_routine` to the ambient answer and hands the definition-site pair to the new
+  `Compiler::return_routineness`, which only `Stmt::Return`'s emission
+  (`Compiler::return_is_routine` / `return_lexically_in_routine`) and the closures nested in that
+  body read. Untangling the activation meaning from `is_routine` is part of the Slice 3 audit.
+- `CarrierCompileCtxKey` keys on both: the ambient `in_routine` and the owned body's
+  `return_routineness` (§2.3).
+- Every site that turns an escaped `return` signal into `X::ControlFlow::Return` (out of dynamic
+  scope) now attaches a backtrace (`Interpreter::dead_return_error`): a lazily-forced `.map`
+  block's `return` reaches that path now that its classification is correct, and rakudo reports a
+  backtrace there too.
+- The inline map/grep compile (`compile_loop_block_cached`) reads the origin chunk's
+  `lexically_in_routine` the same way, keeping its stack sample only for a block with no
+  `CompiledCode`.
+
+Pinned by `t/routines/closure/wrap-block-return-definition-site.t` (§1.2(a) dies, §1.2(b)'s
+enclosing-sub case, the already-correct direct-call shapes, a wrapper `sub`, an anonymous `sub`,
+and a `return` from a map block). The roast files §5 names (`S04-statements/return.t`,
+`S06-advanced/return.t`, `S06-advanced/wrap.t`) stay green.
+
+Slice 3 (auditing the other ambient facts the carrier re-derives — `scope`/`enclosing_package`
+foremost) is [#11675](https://github.com/tokuhirom/mutsu/issues/11675).

@@ -313,7 +313,7 @@ impl Interpreter {
                 // for an enclosing routine that will catch it via its own
                 // call-frame handling further up the stack.
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
-                    let inner_err = RuntimeError::controlflow_return(true);
+                    let inner_err = self.dead_return_error();
                     if self.control.check_phaser_depth > 0 {
                         let wrapped = Self::wrap_in_begin_time(
                             inner_err,

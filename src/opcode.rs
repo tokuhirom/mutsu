@@ -6700,6 +6700,13 @@ pub(crate) struct CompiledCode {
     /// only at routine boundaries, allowing pointy-block returns to propagate
     /// up to the enclosing routine.
     pub(crate) is_routine: bool,
+    /// Whether a Routine lexically encloses this code's definition site (the
+    /// code itself counts when it is one) — the `Compiler::lexically_in_routine`
+    /// its body was compiled under. With [`Self::is_routine`] it is the block's
+    /// definition-site classification that decides where a `return` goes, and
+    /// a carrier that recompiles the body reads it instead of re-deriving it
+    /// from whatever is on the call stack (ADR-0050).
+    pub(crate) lexically_in_routine: bool,
     /// Whether `use fatal` was lexically active where this METHOD body was
     /// declared (`Compiler::fatal_pragma_active`, set by
     /// `compile_method_body`). A method's `CompiledFunction` is not kept past
@@ -8016,6 +8023,7 @@ impl CompiledCode {
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            lexically_in_routine: false,
             method_fatal_pragma: false,
             succeed_passes_through: false,
             reads_topic: false,

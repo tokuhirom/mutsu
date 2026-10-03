@@ -427,4 +427,17 @@ impl Interpreter {
     pub(super) fn attach_backtrace_to_error(&self, err: &mut RuntimeError) {
         self.attach_lazy_backtrace_to_error(err, &[]);
     }
+
+    /// `X::ControlFlow::Return` (out of dynamic scope) for a `return` signal
+    /// whose lexical target routine is no longer on the call stack, carrying
+    /// the backtrace of where it surfaced. The signal itself carries none (a
+    /// `return` is a control signal, not an error, until nothing catches it),
+    /// so every site that turns an escaped signal into this error attaches one
+    /// here, as rakudo reports it.
+    // Cost: O(1) amortized, as `attach_backtrace_to_error`.
+    pub(crate) fn dead_return_error(&self) -> RuntimeError {
+        let mut err = RuntimeError::controlflow_return(true);
+        self.attach_backtrace_to_error(&mut err);
+        err
+    }
 }

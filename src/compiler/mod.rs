@@ -1419,6 +1419,16 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// ADR-0050: where a `return` compiled here goes, when it is not what
+    /// `is_routine` / `lexically_in_routine` say — `(is_routine,
+    /// lexically_in_routine)` of the block's own definition site. Set only by
+    /// the block-value carrier, which recompiles an owned closure body: there
+    /// `is_routine` keeps meaning "this body is a scope activation" (the
+    /// lexical-sub binding, scoped type constraints and phaser scope all ask
+    /// that), while a `return` must keep the answer the definition site gave.
+    /// Inherited by closures nested in such a body. Read through
+    /// [`Compiler::return_is_routine`] / [`Compiler::return_lexically_in_routine`].
+    pub(crate) return_routineness: Option<(bool, bool)>,
     /// ADR-0037 §2.3: set only for an EVAL unit whose `context => $ctx` named
     /// a routine that had already exited the dynamic call stack when the
     /// `EVAL` ran (decided once, at EVAL entry, by `builtin_eval`). Only
@@ -1938,6 +1948,7 @@ impl Compiler {
             unit_tail_discards: false,
             unit_tail_sinks: false,
             lexically_in_routine: false,
+            return_routineness: None,
             eval_context_dead_routine: false,
             lexically_in_block: false,
             lexically_in_method: false,

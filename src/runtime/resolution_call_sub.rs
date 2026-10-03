@@ -1159,7 +1159,17 @@ impl Interpreter {
             // instantiation shares the pool-owned body `Arc`
             // (`CompiledCode::closure_body_arc`), which is the identity the
             // compiled chunk actually depends on. See `CarrierCacheKey`.
-            let body_result = self.eval_block_value_cached_for_site(&data.body);
+            //
+            // ADR-0050: the body keeps the routine classification its
+            // definition site compiled it under, so a `return` in a bare or
+            // pointy block still throws (no enclosing Routine) or re-targets
+            // the lexically enclosing one, whoever happens to be on the stack.
+            // A `SubData` built on the fly has no `CompiledCode` to ask.
+            let routineness = data
+                .compiled_code
+                .as_deref()
+                .map(super::resolution_eval::BlockRoutineness::of_code);
+            let body_result = self.eval_block_value_cached_for_site(&data.body, routineness);
             self.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;

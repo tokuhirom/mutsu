@@ -344,7 +344,7 @@ impl Interpreter {
                     self.apply_pending_rw_writeback(code);
                     self.dispatch_to_catch_handler(
                         code,
-                        RuntimeError::controlflow_return(true),
+                        self.dead_return_error(),
                         catch_begin,
                         control_begin,
                         end,

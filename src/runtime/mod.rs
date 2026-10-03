@@ -398,7 +398,13 @@ pub(crate) enum EvalContextRoutineState {
 #[derive(Clone, PartialEq)]
 struct CarrierCompileCtxKey {
     is_eval_unit: bool,
+    /// The ambient `is_routine` / `lexically_in_routine` the body compiles
+    /// under (both set from it, outside an EVAL unit's ADR-0037 answer).
     in_routine: bool,
+    /// The definition-site `return` classification an owned body carries
+    /// (ADR-0050 §2.3): a chunk compiled for one must not be served for a body
+    /// classified differently.
+    return_routineness: Option<resolution_eval::BlockRoutineness>,
     /// The fully-resolved package scope string `compile_block_value_opts`
     /// passes to `compiler.set_current_package` — already encodes whether an
     /// enclosing routine frame was present (`"{pkg}::&{name}"`) or not (bare
