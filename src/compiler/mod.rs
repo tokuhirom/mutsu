@@ -1078,6 +1078,7 @@ mod adverb_interp;
 mod amp_scope;
 mod begin_use;
 mod body_scans;
+mod code_call_args;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_placeholder;
