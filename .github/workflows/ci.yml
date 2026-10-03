@@ -1201,8 +1201,10 @@ jobs:
           npm install playwright
           # `--with-deps` is the only apt consumer in this job and can hang
           # when the Ubuntu mirror stalls; ubuntu-24.04 already ships the
-          # shared libraries Chromium needs.
-          npx playwright install chromium
+          # shared libraries Chromium needs. `--only-shell`: e2e.test.mjs
+          # launches headless, which runs chrome-headless-shell, so the full
+          # Chrome download (~190 MB) was never used.
+          npx playwright install --only-shell chromium
 
       # The Internals pages (opcodes.html, types.html) render JSON generated
       # from src/ at deploy time; generate it here the same way so the e2e
