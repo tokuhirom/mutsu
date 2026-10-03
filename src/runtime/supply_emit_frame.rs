@@ -20,6 +20,10 @@ use super::*;
 pub(crate) struct EmitFrame {
     pub(crate) values: Vec<Value>,
     pub(crate) owner: Option<u64>,
+    /// A `react` block's subscription storage (`Interpreter::enter_react`).
+    pub(crate) is_react: bool,
+    /// Its setup hold, once a `whenever` taps a live supplier (#11268).
+    pub(crate) react_setup: Option<super::react_setup::ReactSetup>,
 }
 
 impl EmitFrame {
@@ -29,6 +33,16 @@ impl EmitFrame {
         Self {
             values: Vec::new(),
             owner: Some(owner),
+            ..Self::default()
+        }
+    }
+
+    /// A `react` block's subscription storage.
+    // Cost: O(1).
+    pub(crate) fn react() -> Self {
+        Self {
+            is_react: true,
+            ..Self::default()
         }
     }
 }
