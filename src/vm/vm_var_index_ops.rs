@@ -1083,7 +1083,9 @@ impl Interpreter {
         // single non-integer real subscript addresses the element its `Int`
         // names, whatever the target (`$range[6.0]`; Rakudo's CORE
         // `postcircumfix:<[ ]>` calls `AT-POS(pos.Int)`).
-        if is_positional {
+        // A type object's `[ ]` is parameterization (`R[True]`, `Array[Int]`),
+        // whose arguments bind as given.
+        if is_positional && !matches!(target.view(), ValueView::Package(_)) {
             index = Self::positional_index_as_int(index);
         }
         // A not-yet-read `IO::Handle.lines`/`.words` Seq (ADR-0034's
