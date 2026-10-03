@@ -579,8 +579,11 @@ impl Interpreter {
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
             .map(|t| t.deref_container())
-            && matches!(target.view(), ValueView::Mixin(..))
+            && let ValueView::Mixin(_, mixins) = target.view()
             && self.mixin_composes_method(&target, assign_method)
+            // A role that only `handles` the method forwards it to an
+            // attribute; the mixin delegation path owns that write.
+            && self.delegated_mixin_attr_key(&mixins, assign_method).is_none()
             && !matches!(
                 self.stack.last().map(Value::view),
                 Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
