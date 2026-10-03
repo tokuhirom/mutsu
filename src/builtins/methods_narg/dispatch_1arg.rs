@@ -877,7 +877,7 @@ pub(crate) fn native_method_1arg(
             }
             // IO::Spec::* has its own split method
             if let ValueView::Package(name) = target.view()
-                && name.resolve().starts_with("IO::Spec")
+                && name.as_str().starts_with("IO::Spec")
             {
                 return None;
             }

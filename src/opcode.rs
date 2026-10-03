@@ -11781,17 +11781,6 @@ impl CompiledCode {
         else {
             panic!("add_sub_decl_plan expects SubDecl");
         };
-        let fingerprint = name_expr.is_none().then(|| {
-            crate::ast::sub_registration_fingerprint(
-                params,
-                param_defs,
-                body,
-                return_type.as_ref(),
-                *multi,
-                *is_rw,
-                *is_raw,
-            )
-        });
         let routine_metadata = compiled_routine_metadata(
             params,
             param_defs,
@@ -11800,6 +11789,24 @@ impl CompiledCode {
             *is_rw,
             *is_raw,
         );
+        let fingerprint = name_expr.is_none().then(|| {
+            // The metadata already hashed this body; its fingerprint is the one
+            // wanted here unless implicit `@_`/`%_` params were appended to the
+            // copy of `param_defs` it hashed (the only way the two differ).
+            let body_fingerprint =
+                if routine_metadata.effective_param_defs.len() == param_defs.len() {
+                    routine_metadata.body_fingerprint
+                } else {
+                    crate::ast::function_body_fingerprint(params, param_defs, body)
+                };
+            crate::ast::sub_registration_fingerprint_from(
+                body_fingerprint,
+                return_type.as_ref(),
+                *multi,
+                *is_rw,
+                *is_raw,
+            )
+        });
         let alternate_metadata = signature_alternates
             .iter()
             .map(|(alt_params, alt_param_defs)| {

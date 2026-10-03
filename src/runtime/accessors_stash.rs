@@ -37,7 +37,7 @@ impl Interpreter {
         self.env
             .keys()
             .chain(self.module_toplevel.package_symbols.keys())
-            .any(|k| k.resolve().starts_with(&prefix))
+            .any(|k| k.as_str().starts_with(&prefix))
             || self
                 .registry()
                 .classes
@@ -47,7 +47,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .keys()
-                .any(|k| k.resolve().starts_with(&prefix))
+                .any(|k| k.as_str().starts_with(&prefix))
     }
 
     /// Whether an env-key tail component carries a variable sigil, in which
@@ -505,7 +505,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .keys()
-                .any(|k| k.resolve().starts_with(&prefix))
+                .any(|k| k.as_str().starts_with(&prefix))
             || self
                 .registry()
                 .classes

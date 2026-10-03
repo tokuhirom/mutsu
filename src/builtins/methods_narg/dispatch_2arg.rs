@@ -127,7 +127,7 @@ pub(crate) fn native_method_2arg(
             return None;
         }
         if let ValueView::Package(name) = target.view()
-            && name.resolve().starts_with("IO::Spec")
+            && name.as_str().starts_with("IO::Spec")
         {
             return None;
         }

@@ -7,8 +7,8 @@ impl Interpreter {
         if matches!(
             value.view(),
             ValueView::Instance { class_name, .. }
-                if class_name.resolve().contains("Exception")
-                    || class_name.resolve().starts_with("X::")
+                if class_name.as_str().contains("Exception")
+                    || class_name.as_str().starts_with("X::")
         ) {
             return value;
         }

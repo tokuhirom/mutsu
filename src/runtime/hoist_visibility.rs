@@ -67,7 +67,7 @@ impl Interpreter {
             .registry()
             .functions
             .keys()
-            .filter(|k| **k != single_sym && k.resolve().starts_with(&multi_prefix))
+            .filter(|k| **k != single_sym && k.as_str().starts_with(&multi_prefix))
             .copied()
             .collect();
         keys.push(single_sym);

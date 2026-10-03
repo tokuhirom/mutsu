@@ -904,7 +904,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Path" || class_name.resolve().starts_with("IO::Path::") => {
+            } if class_name == "IO::Path" || class_name.as_str().starts_with("IO::Path::") => {
                 attributes
                     .as_map()
                     .get("path")

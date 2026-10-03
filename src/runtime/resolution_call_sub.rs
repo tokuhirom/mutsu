@@ -176,7 +176,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .iter()
-                .find(|(k, _)| k.resolve().starts_with(&multi_prefix))
+                .find(|(k, _)| k.as_str().starts_with(&multi_prefix))
             {
                 return native_of_true_owner(def);
             }

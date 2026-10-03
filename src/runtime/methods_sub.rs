@@ -1101,7 +1101,7 @@ impl Interpreter {
             // spelling is bound to in the closure's scope, which is the one
             // the bare `ofTest` term evaluates to.
             let type_name = match data.env.get(&type_name).map(Value::view) {
-                Some(ValueView::Package(p)) if p.resolve().contains('\u{0}') => {
+                Some(ValueView::Package(p)) if p.as_str().contains('\u{0}') => {
                     p.resolve().to_string()
                 }
                 _ => self.lexical_env_remap_name(&type_name),

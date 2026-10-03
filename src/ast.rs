@@ -717,8 +717,28 @@ pub(crate) fn sub_registration_fingerprint(
     is_rw: bool,
     is_raw: bool,
 ) -> u64 {
+    sub_registration_fingerprint_from(
+        function_body_fingerprint(params, param_defs, body),
+        return_type,
+        multi,
+        is_rw,
+        is_raw,
+    )
+}
+
+/// [`sub_registration_fingerprint`] for a caller that already holds the
+/// declaration's [`function_body_fingerprint`], so the body is not hashed a
+/// second time.
+// Cost: O(r), r = return-type spelling length.
+pub(crate) fn sub_registration_fingerprint_from(
+    body_fingerprint: u64,
+    return_type: Option<&String>,
+    multi: bool,
+    is_rw: bool,
+    is_raw: bool,
+) -> u64 {
     let mut hasher = DefaultHasher::new();
-    function_body_fingerprint(params, param_defs, body).hash(&mut hasher);
+    body_fingerprint.hash(&mut hasher);
     return_type.hash(&mut hasher);
     multi.hash(&mut hasher);
     is_rw.hash(&mut hasher);

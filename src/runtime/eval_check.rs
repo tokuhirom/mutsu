@@ -49,8 +49,7 @@ fn collect_use_declared_type_names(
             continue;
         }
         let Some(kw) = DECLARATORS.iter().find(|kw| {
-            chars_start_with(&bytes[i..], kw)
-                && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
+            chars_start_with(&bytes[i..], kw) && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
         }) else {
             i += 1;
             continue;

@@ -1455,7 +1455,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } if class_name.resolve() == "IO::Path"
-                        || class_name.resolve().starts_with("IO::Path::") =>
+                        || class_name.as_str().starts_with("IO::Path::") =>
                     {
                         let attributes = attributes.as_map();
                         let path = attributes
@@ -4220,7 +4220,7 @@ impl Interpreter {
         // (handled by native IO dispatch which reads the content first).
         if method == "split"
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
-            && !matches!(target.view(), ValueView::Package(name) if name.resolve().starts_with("IO::Spec"))
+            && !matches!(target.view(), ValueView::Package(name) if name.as_str().starts_with("IO::Spec"))
         {
             // The splitter argument may be a stored regex closed over its
             // defining scope; install it around the split the same way `~~`
