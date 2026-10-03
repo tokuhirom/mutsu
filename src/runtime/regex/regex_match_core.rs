@@ -67,21 +67,11 @@ pub(super) type WalkCont<'f> = dyn FnMut(&mut Interpreter, usize, RegexCaptures)
 /// is what keeps an embedded `{ ... }` block from running on a path raku's
 /// cursor never takes.
 pub(super) enum MatchSink<'a> {
-    /// The `usize` of both variants counts the matches reported so far.
-    Collect(&'a mut Vec<(usize, RegexCaptures)>, usize),
-    Cont(&'a mut WalkCont<'a>, usize),
+    Collect(&'a mut Vec<(usize, RegexCaptures)>),
+    Cont(&'a mut WalkCont<'a>),
 }
 
 impl MatchSink<'_> {
-    /// How many matches this sink has been handed so far (whether or not the
-    /// sink then asked to stop).
-    // Cost: O(1).
-    pub(super) fn accepted(&self) -> usize {
-        match self {
-            MatchSink::Collect(_, n) | MatchSink::Cont(_, n) => *n,
-        }
-    }
-
     /// Report one completed match. Returns `true` when the walk should stop.
     pub(super) fn accept(
         &mut self,
@@ -90,15 +80,11 @@ impl MatchSink<'_> {
         caps: RegexCaptures,
     ) -> bool {
         match self {
-            MatchSink::Collect(out, n) => {
-                *n += 1;
+            MatchSink::Collect(out) => {
                 out.push((end, caps));
                 false
             }
-            MatchSink::Cont(f, n) => {
-                *n += 1;
-                f(interp, end, caps)
-            }
+            MatchSink::Cont(f) => f(interp, end, caps),
         }
     }
 }
@@ -390,7 +376,7 @@ impl Interpreter {
             pkg,
             first_only,
             stop_at_full,
-            &mut MatchSink::Collect(&mut matches, 0),
+            &mut MatchSink::Collect(&mut matches),
         );
         matches
     }
@@ -465,13 +451,7 @@ impl Interpreter {
             caps.set_outer_backref(None);
             sink.accept(interp, end, caps)
         };
-        self.walk_tokens(
-            &ctx,
-            0,
-            start,
-            &mut store,
-            &mut MatchSink::Cont(&mut strip, 0),
-        )
+        self.walk_tokens(&ctx, 0, start, &mut store, &mut MatchSink::Cont(&mut strip))
     }
 
     /// Apply a `$<name>=` / `$N=` capture alias for `token` to the store.
@@ -1125,13 +1105,6 @@ impl Interpreter {
                 continue;
             }
             any_branch_matched = true;
-            // A ratcheted ordered alternative may contain an optional first
-            // branch.  Its zero-width candidate is only a provisional choice:
-            // the continuation still has to be allowed to reach the next
-            // branch when that empty choice leaves the rest of the pattern
-            // unable to match (for example, `[ <expr>? || <any-args> ] ')'`).
-            // A consuming candidate remains committed as usual.
-            let branch_only_zero_width = candidates.iter().all(|(next, _)| *next == pos);
             if token.ratchet {
                 // `:ratchet` commits to this branch's highest-priority match and
                 // forbids backtracking into the alternation — which is also why
@@ -1140,7 +1113,6 @@ impl Interpreter {
                 // and the reason a losing branch's `die` never fires).
                 candidates.drain(..candidates.len() - 1);
             }
-            let accepted_before = matches.accepted();
             for (next, delta) in candidates.into_iter().rev() {
                 let m = store.mark();
                 store.merge_delta(delta);
@@ -1152,12 +1124,13 @@ impl Interpreter {
                     return true;
                 }
             }
-            // A zero-width choice is only provisional while the rest of the
-            // pattern has not matched; once it did, the ratcheted alternation
-            // is committed and the next branch (often a `die`ing
-            // `<.panic(...)>` or a code block) must not run.
-            let rest_matched = matches.accepted() != accepted_before;
-            if token.ratchet && (!branch_only_zero_width || rest_matched) {
+            // A ratcheted alternation commits to the first branch that
+            // matches, zero-width or not (rakudo's `altseq` cuts to its end
+            // label), so no later branch (often a `die`ing `<.panic(...)>` or
+            // a code block) runs. Significant whitespace after the group
+            // leaves it unratcheted (#11162), which is where a `rule`'s
+            // `[ <x>? || <y> ] ')'` gets to `<y>`.
+            if token.ratchet {
                 break;
             }
         }

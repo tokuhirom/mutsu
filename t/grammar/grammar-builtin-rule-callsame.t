@@ -6,7 +6,7 @@ use Test;
 # Found through DSL::Entity::Foods, whose grammar composes
 # DSL::Shared::Roles::ErrorHandling's high-water-mark `method ws`.
 
-plan 11;
+plan 12;
 
 # The `$*HIGHWATER` write itself does not reach `parse` yet: #11326.
 role HighWater {
@@ -51,6 +51,9 @@ grammar NextSame {
 }
 ok NextSame.parse('abc def', rule => 'two'), 'nextsame reaches the built-in ws too';
 nok NextSame.subparse('abcdef', rule => 'two'), 'the built-in ws still fails between word chars';
+grammar NextSameMid { method ws() { nextsame }; token t { 'abcde' <.ws> 'f' } }
+nok NextSameMid.subparse('abcdef', rule => 't'),
+    'a failed cursor from nextsame is a failed call, not a zero-width match';
 
 grammar Classes {
     method alpha() { callsame }
