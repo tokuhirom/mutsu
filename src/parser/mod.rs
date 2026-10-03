@@ -16,6 +16,7 @@ pub(crate) use primary::next_anon_role_name;
 pub(crate) use primary::var::is_pseudo_package;
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
+pub(crate) mod no_execute;
 mod outer_redecl;
 mod parse_result;
 mod primary;

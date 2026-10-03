@@ -81,6 +81,11 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     if !super::module_exports::module_activates_slang(module) {
         return Ok(());
     }
+    // Activation executes the module; a non-executing parse (`--dump-ast`,
+    // the analysis API) stays in the ordinary grammar instead (#11212).
+    if crate::parser::no_execute::no_execute() {
+        return Ok(());
+    }
     // No recursive activation: the activation sub-interpreter's own parses
     // (the slang module chain) must not spawn further activation threads.
     if std::thread::current().name()
