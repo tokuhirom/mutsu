@@ -607,12 +607,10 @@ profiler gate/site ABI ready for Slice 2; the JIT supplies the bytecode ip on na
 when the profiler is armed. `tests/jit_diff.rs` pins that arming the profiler consumer preserves JIT
 execution. Slice 3 adds per-thread exact line-transition counters, routine entries, and callsite
 calls, folding them off the hot path; native code emits line-entry hooks while armed so JIT counts
-are not silently partial. Being *transition* counters has a consequence the design did not call out
+are not silently partial. Being *transition* counters had a consequence the design did not call out
 and the first profiles made visible: a loop whose body occupies a single line never transitions, so
-its `hits` is one per loop entry rather than one per trip, for every loop form. Whether a backedge
-landing on the same line should record a hit — which would touch the counter's cheapest branch and
-re-open the §8 gates — is [#8737](https://github.com/tokuhirom/mutsu/issues/8737); `docs/profiler.md`
-documents the behaviour as it is.
+its `hits` was one per loop entry rather than one per trip, for every loop form. Resolved by
+[#8737](https://github.com/tokuhirom/mutsu/issues/8737), see §9.1.
 
 Slice 2 adds the sampler: a detached tick thread at `MUTSU_PROFILE_RATE` Hz (1000 by default), a
 thread-local `last_seen` compared inside the armed branch, and per-thread buffers reserved at arm
