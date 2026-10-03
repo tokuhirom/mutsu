@@ -410,12 +410,9 @@ impl Interpreter {
         }
         let class_key = class_name.resolve();
         let display_name = crate::value::user_facing_type_name(&class_key);
-        self.raku_leaf_active.push(target_id);
+        self.raku_cycle_guards.leaf.enter(target_id);
         let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
-        if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == target_id) {
-            self.raku_leaf_active.remove(pos);
-        }
-        let cycle_hit = self.raku_leaf_cycle_hit.remove(&target_id);
+        let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
         let body = if public_attrs.is_empty() {
             format!("{}.new", display_name)
         } else {
