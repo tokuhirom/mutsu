@@ -842,6 +842,11 @@ impl RoutineDeclarator {
 pub(crate) const METHOD_LITERAL_MARKER: &str = "__method_literal";
 /// See [`RoutineDeclarator::literal_marker`].
 pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
+/// Marks the pooled copy of a `multi` declaration that a `multi` term in
+/// expression position evaluates to (`my $t := multi foo(...) { ... }`): the
+/// closure built from it is that candidate, so it answers `.multi` True and
+/// `.dispatcher` with the multi it joined.
+pub(crate) const MULTI_CANDIDATE_VALUE_MARKER: &str = "__multi_candidate_value";
 
 /// The source spelling of an [`Expr::Hash`] literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
