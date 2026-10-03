@@ -358,6 +358,9 @@ impl Interpreter {
         if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
             return assigned;
         }
+        if let Some(stored) = self.store_into_quanthash_lvalue(&result, value.clone()) {
+            return stored;
+        }
         if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
             return Ok(stored);
         }

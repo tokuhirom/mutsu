@@ -153,11 +153,15 @@ fn set_or_unset(node: &mut Value, setting: bool, args: &[Value]) {
             for key in keys {
                 let (k, elem) = crate::runtime::utils::quanthash_elem_entry(&key);
                 if setting {
-                    crate::runtime::utils::record_quanthash_original(
-                        data.original_keys.get_or_insert_with(Default::default),
-                        &k,
-                        &elem,
-                    );
+                    // Setting an element that is already present stores the new
+                    // element object, as rakudo's `SetHash.set` rebinds the key
+                    // (an object with a custom `WHICH` may differ in every
+                    // other attribute; CRDT's LWW-Element-Set relies on it).
+                    if !matches!(elem.view(), ValueView::Str(_)) {
+                        data.original_keys
+                            .get_or_insert_with(Default::default)
+                            .insert(k.clone(), elem.clone());
+                    }
                     data.elements.insert(k);
                 } else {
                     data.elements.remove(&k);
