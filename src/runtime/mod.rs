@@ -4959,7 +4959,8 @@ mod tests {
     fn last_value_from_expression() {
         use crate::value::Value;
         let mut interp = Interpreter::new();
-        interp.run("3 + 4").unwrap();
+        // A REPL line's tail is its value; a program's tail is sunk.
+        interp.run_value_tail("3 + 4").unwrap();
         assert_eq!(interp.last_value, Some(Value::int(7)));
     }
 

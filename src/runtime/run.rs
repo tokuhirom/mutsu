@@ -546,7 +546,23 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Run `input` as a program: its final statement is in sink context, as
+    /// in Raku (an unhandled `Failure` there throws, a user `sink` runs).
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
+        self.run_unit(input, true)
+    }
+
+    /// Run `input` as a REPL line: its final statement is the line's value
+    /// (reported through `last_value`), not sunk — the rule `EVAL` follows.
+    pub fn run_value_tail(&mut self, input: &str) -> Result<String, RuntimeError> {
+        crate::parser::set_eval_value_tail();
+        self.run_unit(input, false)
+    }
+
+    /// The body of [`Self::run`] / [`Self::run_value_tail`]; `sink_tail`
+    /// selects whether the unit's final statement is sunk
+    /// (`Compiler::unit_tail_sinks`).
+    fn run_unit(&mut self, input: &str, sink_tail: bool) -> Result<String, RuntimeError> {
         // Fresh top-level program: forget which parse warnings were already
         // surfaced by a previous `run()` on this Interpreter (REPL lines,
         // `#[test]` helpers, ... — see `surfaced_parse_warnings`), so this
@@ -777,6 +793,11 @@ impl Interpreter {
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
         compiler.lexical_scope_known = true;
+        compiler.unit_tail_sinks = sink_tail;
+        // A sunk tail expression or call is sunk by its own `SinkPop`; the
+        // checks on `last_value` below are only for the other tail forms.
+        let tail_sunk_by_code =
+            sink_tail && matches!(body_main.last(), Some(Stmt::Expr(_) | Stmt::Call { .. }));
         let (code, compiled_fns) = compiler.compile(&body_main);
         // Seed the escaping-our-sub lexical names from the compiled top-level code
         // (and its nested closures), so a free-variable read inside such an `our`
@@ -864,7 +885,8 @@ impl Interpreter {
         // an `EVAL`/`do`-block value, so the genuine top-level trips it here. A
         // container-wrapped tail (`my $x = @a.pop`, a bare `$x`) does NOT trip,
         // matching Raku, so only fresh-rvalue tail forms are checked.
-        if Self::tail_stmt_sinks_fresh_rvalue(&body_main)
+        if !tail_sunk_by_code
+            && Self::tail_stmt_sinks_fresh_rvalue(&body_main)
             && let Some(v) = last_value.as_ref()
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(v)
         {
@@ -878,7 +900,7 @@ impl Interpreter {
         // SinkPop/Pop LazyList arms). Restricted to safely-finite sources — a
         // finite-bottomed map/grep pipe or a plain (non-`lazy`) gather
         // coroutine; a `.cache` view or a genuinely-lazy list stays undrained.
-        if Self::tail_stmt_sinks_fresh_rvalue(&body_main) {
+        if !tail_sunk_by_code && Self::tail_stmt_sinks_fresh_rvalue(&body_main) {
             let drain = last_value.as_ref().and_then(|v| match v.view() {
                 crate::value::ValueView::LazyList(ll)
                     if !ll.is_cached_no_sink()
