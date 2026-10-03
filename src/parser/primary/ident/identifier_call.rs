@@ -1972,6 +1972,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // regardless: it is a phaser, not a call taking a first argument.
     if r.starts_with('{')
         && !is_keyword(&name)
+        // A nullary term keyword (`self`, `Mu`, ...) is a complete term, so a
+        // brace after it subscripts it (`self{$k}:exists`) rather than opening
+        // a listop's block argument.
+        && !(crate::parser::primary::ident::predicates::is_term_keyword(&name)
+            && !crate::parser::stmt::simple::is_user_declared_sub(&name)
+            && !crate::parser::stmt::simple::is_imported_function(&name))
         && (name == "BEGIN" || !crate::parser::primary::misc::braces_are_hash_composer(r))
         && let Ok((r2, block_body)) = parse_block_body(r)
     {
@@ -1985,7 +1991,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // Also consume unspace before separator: `{ block }\ : args`
         let r3_unspaced = consume_unspace(r3);
         let is_comma = r3_unspaced.starts_with(',');
-        let is_colon = r3_unspaced.starts_with(':') && !r3_unspaced.starts_with("::");
+        // A colon that opens a colonpair (`}:exists`, `}:k`) is an adverb,
+        // not the invocant colon of `name { block }: args`.
+        let is_colon = r3_unspaced.starts_with(':')
+            && !r3_unspaced.starts_with("::")
+            && !crate::parser::primary::ident::listop::colon_starts_colonpair(r3_unspaced);
         if is_comma || is_colon {
             let r3 = &r3_unspaced[1..];
             let (r3, _) = ws(r3)?;
