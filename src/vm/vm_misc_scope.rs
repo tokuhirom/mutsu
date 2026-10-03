@@ -738,11 +738,23 @@ impl Interpreter {
         // remembers for the `our` refresh below.
         let mut restored_env = closed.base;
         let mut fresh_keys: Vec<Symbol> = Vec::new();
+        let no_strict = Self::env_is_no_strict(&restored_env);
         for (k, v) in closed.writes.iter() {
             let (k, v) = (*k, v.clone());
             let in_saved = restored_env.contains_key_sym(k);
             if !in_saved {
                 fresh_keys.push(k);
+                // Under `no strict` a variable the block used without
+                // declaring it is the package's, not the block's: it stays
+                // visible after the block and lands in the package store
+                // (#10622).
+                if no_strict
+                    && !block_declared.contains(&k)
+                    && self.persist_no_strict_package_var(k, &v)
+                {
+                    restored_env.insert_sym(k, v);
+                    continue;
+                }
             }
             // `$!` is implicitly declared in EVERY Raku scope, and a `try`/CATCH
             // in a nested block assigns the one the enclosing scope sees too:

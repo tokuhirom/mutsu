@@ -334,14 +334,11 @@ impl Walker<'_> {
                 // cannot supply. Outside an EVAL, with `strict` off where the
                 // BEGIN sits, it can only be an auto-declared package variable,
                 // which the lifted block (repeating `no strict`) declares the
-                // same way -- but that variable lives in the block, so a name
-                // the unit also mentions outside its BEGINs stays where it is.
+                // same way: a package variable, which outlives that block
+                // (#10622).
                 if !self.unit_names.contains(&name)
                     && crate::env::is_plain_user_lexical(&name)
-                    && !(scope.is_none()
-                        && !self.unit.is_eval
-                        && self.strict_is_off()
-                        && !self.unit.outside_begin.contains(&name))
+                    && !(scope.is_none() && !self.unit.is_eval && self.strict_is_off())
                 {
                     return None;
                 }

@@ -1490,6 +1490,9 @@ impl Interpreter {
             }
         }
         self.get_env_with_main_alias_inner(name, sym)
+            // Under `no strict` an undeclared name is the package variable,
+            // which outlives the block whose write auto-declared it (#10622).
+            .or_else(|| self.no_strict_package_var(name))
     }
 
     /// The cross-thread atomic lane entry for an `@`/`%` name, unless this

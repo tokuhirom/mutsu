@@ -619,6 +619,7 @@ impl Interpreter {
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;
+                self.mark_strict_pragma(true);
             } else if module == "fatal" {
                 self.fatal_mode = true;
                 self.lexical_fatal_mode = true;
@@ -933,6 +934,7 @@ impl Interpreter {
 
             if module == "strict" {
                 self.strict_mode = true;
+                self.mark_strict_pragma(true);
             } else if module == "fatal" {
                 self.fatal_mode = true;
                 self.lexical_fatal_mode = true;

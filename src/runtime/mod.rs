@@ -817,6 +817,7 @@ pub(crate) mod methods_instance_ops;
 pub(crate) mod module_merge;
 mod module_preload_failure;
 mod pragma_monkey_eval;
+mod pragma_strict;
 pub(crate) mod process_stash;
 mod str_subclass_stringy;
 mod subscript_adverb_assoc;

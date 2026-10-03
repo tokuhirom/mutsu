@@ -40,7 +40,6 @@ mod package_phasers;
 mod use_if;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
-use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
 pub(crate) use use_if::if_condition_slot;
 use use_if::{if_condition_check, next_if_condition_slot};
@@ -54,11 +53,9 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     let unit_names = unit_lexical_names(stmts);
-    let outside_begin = names_outside_begin(stmts);
     let mut unit = nested::UnitContext {
         is_eval,
         strict_off: false,
-        outside_begin: &outside_begin,
     };
     let mut lifted = nested::Lifted::default();
     let mut effects: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
@@ -168,64 +165,6 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     rest.extend(tail);
     *stmts = rest;
     prologue
-}
-
-/// The variable names a unit mentions outside its BEGIN bodies.
-///
-/// A BEGIN that is lifted runs in a block of its own, so a variable it
-/// auto-declares (`no strict; BEGIN { $auto = 3 }`) lives only there. Code
-/// outside the BEGIN that reads the same name finds nothing -- where the BEGIN,
-/// left in place, ran in that code's own scope and set it. Such a name is not
-/// lifted.
-struct OutsideBegin(HashSet<String>);
-
-impl<'ast> Visit<'ast> for OutsideBegin {
-    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-        if !matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        ) {
-            walk_stmt(self, stmt);
-        }
-    }
-
-    fn visit_expr(&mut self, expr: &'ast Expr) {
-        if !matches!(
-            expr,
-            Expr::PhaserExpr {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        ) {
-            walk_expr(self, expr);
-        }
-    }
-
-    fn visit_name(&mut self, name: &str, kind: NameKind) {
-        if matches!(
-            kind,
-            NameKind::Var
-                | NameKind::ArrayVar
-                | NameKind::HashVar
-                | NameKind::CodeVar
-                | NameKind::AssignTarget
-                | NameKind::VarDecl
-        ) {
-            self.0.insert(name.to_string());
-        }
-    }
-}
-
-// Cost: O(n), n = size of the unit's AST.
-fn names_outside_begin(stmts: &[Stmt]) -> HashSet<String> {
-    let mut scan = OutsideBegin(HashSet::new());
-    for stmt in stmts {
-        scan.visit_stmt(stmt);
-    }
-    scan.0
 }
 
 /// What a statement does to `strict`: `Some(true)` for `no strict`,
