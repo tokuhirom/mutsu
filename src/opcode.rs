@@ -5405,8 +5405,14 @@ fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
             Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
                 used_modules.push(module.clone());
             }
-            Stmt::EnumDecl { name, .. }
-            | Stmt::SubsetDecl { name, .. }
+            // An enum's members are value constraints a method signature in
+            // the same body may name (`multi method construct(FitWindow, ...)`
+            // in PDF::Destination), declared along with the enum.
+            Stmt::EnumDecl { name, variants, .. } => {
+                declared_types.push(name.resolve());
+                declared_types.extend(variants.iter().map(|(member, _)| member.clone()));
+            }
+            Stmt::SubsetDecl { name, .. }
             | Stmt::ClassDecl { name, .. }
             | Stmt::RoleDecl { name, .. } => declared_types.push(name.resolve()),
             _ => {}

@@ -405,6 +405,11 @@ pub(crate) struct Registry {
     /// `apply_pending_role_attribute_traits`.
     pub(crate) role_attribute_pending_traits:
         HashMap<(String, String), crate::opcode::CompiledAttrDecl>,
+    /// Sub-level `proto`s a role body has already registered: (role,
+    /// routine name). A role's body re-runs at every composition, but its
+    /// `proto sub f(|) {*}` declares one routine for the role — registering
+    /// it again would be a redeclaration.
+    pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

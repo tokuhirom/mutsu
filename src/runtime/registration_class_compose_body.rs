@@ -342,6 +342,22 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         let body_env_before: HashSet<crate::symbol::Symbol> = self.env.keys().copied().collect();
         for op in &role.deferred_body {
+            // A sub-level `proto` declares one routine per role: registered
+            // by the first composition (or, exported, at declaration), never
+            // again.
+            let sub_proto_key = match &op.raw {
+                Stmt::ProtoDecl {
+                    name,
+                    is_method: false,
+                    ..
+                } => Some((base_role_name.to_string(), name.resolve())),
+                _ => None,
+            };
+            if let Some(key) = &sub_proto_key
+                && self.registry().role_registered_sub_protos.contains(key)
+            {
+                continue;
+            }
             let is_type_decl = op.kind == crate::opcode::DeferredBodyOpKind::TypeDecl;
             // A `token`/`rule`/`regex` in a role body is composed into
             // the consuming grammar, exactly like a method: it must
@@ -434,6 +450,11 @@ impl Interpreter {
                 // ran, so nothing will ever fold these names into the role's own
                 // package scope. Do it here (#8842).
                 self.record_deferred_body_imports(base_role_name, import_mark);
+            }
+            if r.is_ok()
+                && let Some(key) = sub_proto_key
+            {
+                self.registry_mut().role_registered_sub_protos.insert(key);
             }
             if r.is_ok()
                 && let (Some(package), Some(name)) =

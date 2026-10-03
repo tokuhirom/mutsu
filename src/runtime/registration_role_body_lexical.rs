@@ -52,15 +52,59 @@ impl Interpreter {
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
     ) -> Result<(), RuntimeError> {
+        self.register_role_body_lexical_types_where(
+            role_name,
+            deferred_body_ops,
+            type_params,
+            |_| true,
+        )
+    }
+
+    /// The nested `my role`/`my class` declarations a role body names as its
+    /// own parents (`unit role L; my role Common {...}; also does Common;` in
+    /// PDF::Attributes::Layout), registered *before* the role's parent walk
+    /// resolves them — Rakudo has declared them by the time the `also does`
+    /// is compiled. The full [`Self::register_role_body_lexical_types`] pass
+    /// runs after the role is registered, as before.
+    ///
+    /// Cost: O(s * p), s = body statements, p = parent ops.
+    pub(crate) fn register_role_body_parent_types(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+        type_params: &[String],
+        parent_ops: &[crate::opcode::RoleParentOp],
+    ) -> Result<(), RuntimeError> {
+        let names_parent = |stmt: &Stmt| match stmt {
+            Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => parent_ops
+                .iter()
+                .any(|op| !op.hides && !op.hidden && op.name == *name),
+            _ => false,
+        };
+        if !deferred_body_ops.iter().any(|op| names_parent(&op.raw)) {
+            return Ok(());
+        }
+        self.register_role_body_lexical_types_where(
+            role_name,
+            deferred_body_ops,
+            type_params,
+            names_parent,
+        )
+    }
+
+    fn register_role_body_lexical_types_where(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+        type_params: &[String],
+        wanted: impl Fn(&Stmt) -> bool,
+    ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
         let saved_package = self.current_package().to_string();
         self.set_current_package(role_name.to_string());
-        // `use`/`need` statements seen so far in the body: they are BEGIN-time,
-        // so a nested type declared after one may name the module's role.
-        let mut used_modules: Vec<String> = Vec::new();
         for op in deferred_body_ops {
-            if let Stmt::Use { module, .. } | Stmt::Need { module } = &op.raw {
-                used_modules.push(module.clone());
+            if !wanted(&op.raw) {
+                continue;
             }
             let eager = match &op.raw {
                 // An exported `my constant`/`my $x` is a compile-time
@@ -95,12 +139,7 @@ impl Interpreter {
             if !eager {
                 continue;
             }
-            let loaded = nested_type_parent_names(&op.raw).try_for_each(|parent| {
-                self.load_role_body_module_for_parent(&used_modules, &parent)
-            });
-            if let Err(error) =
-                loaded.and_then(|()| self.run_block_raw(std::slice::from_ref(&op.raw)))
-            {
+            if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.set_current_package(saved_package);
                 return Err(error);
             }
@@ -188,27 +227,4 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
-}
-
-/// The `is`/`does` parents a nested class/role declaration names, header
-/// clauses and body `also does` alike.
-// Cost: O(p + b), p = header parents, b = top-level body statements.
-fn nested_type_parent_names(stmt: &Stmt) -> impl Iterator<Item = String> + '_ {
-    let (header, body): (Vec<&String>, &[Stmt]) = match stmt {
-        Stmt::ClassDecl {
-            parents,
-            does_parents,
-            body,
-            ..
-        } => (parents.iter().chain(does_parents).collect(), body),
-        Stmt::RoleDecl { body, .. } => (Vec::new(), body),
-        _ => (Vec::new(), &[]),
-    };
-    header
-        .into_iter()
-        .cloned()
-        .chain(crate::ast::scope_members(body).filter_map(|s| match s {
-            Stmt::DoesDecl { name, .. } => Some(name.resolve()),
-            _ => None,
-        }))
 }
