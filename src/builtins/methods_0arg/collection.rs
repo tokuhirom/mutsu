@@ -236,6 +236,16 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
                     crate::builtins::map_hash_coerce::to_hash(target.clone(), false),
                 ),
+                // A package stash is a Map of its symbols (`Foo::.hash`,
+                // `%(Foo::EXPORT::DEFAULT::)`); one implementation with `.Hash`.
+                ValueView::Instance { .. }
+                    if crate::builtins::map_hash_coerce::stash_symbols(target).is_some() =>
+                {
+                    Some(crate::builtins::map_hash_coerce::to_hash(
+                        target.clone(),
+                        false,
+                    ))
+                }
                 ValueView::Instance { .. } => {
                     // Instance types should fall through to accessor dispatch,
                     // not be coerced via .hash builtin

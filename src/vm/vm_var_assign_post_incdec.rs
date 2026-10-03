@@ -1048,6 +1048,12 @@ impl Interpreter {
             Some(guard) => Some(&mut **guard),
             None => match gate_slot {
                 Some(s) => self.locals.get_mut(s),
+                // A module routine's own `our %h` is the package mirror the
+                // read above resolved (`get_env_with_main_alias_sym`), not the
+                // env key, which belongs to the loading scope.
+                None if self.our_package_container_key(&name).is_some() => {
+                    self.our_package_container_mut(&name)
+                }
                 None => self.env_mut().get_mut_sym(name_sym),
             },
         } {

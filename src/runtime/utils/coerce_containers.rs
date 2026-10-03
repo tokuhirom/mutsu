@@ -392,10 +392,13 @@ where
     let mut original_keys: ValueMap = ValueMap::default();
     // An itemized Pair (`$(:a(1))`) or a Pair held in a `:=` element cell (e.g.
     // a classify bucket element) still counts as a hash initializer pair; an
-    // itemized *hash* stays opaque and dies "Odd number" like raku.
+    // itemized *hash* stays opaque and dies "Odd number" like raku. A package
+    // stash item (`%(Foo::EXPORT::DEFAULT::, Bar::EXPORT::DEFAULT::)`, a
+    // `sub EXPORT` re-export) is a Map of its symbols and flattens likewise.
     let items: Vec<Value> = items
         .iter()
         .map(crate::builtins::map_hash_coerce::unwrap_contained_pair)
+        .map(|v| crate::builtins::map_hash_coerce::stash_symbols(&v).unwrap_or(v))
         .collect();
     let mut iter = items.into_iter();
     while let Some(item) = iter.next() {

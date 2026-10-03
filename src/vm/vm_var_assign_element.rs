@@ -243,6 +243,15 @@ impl Interpreter {
         if !var_name.starts_with('%') {
             return None;
         }
+        // A module routine's own `our %h` lives in the package mirror, which
+        // every read resolves before env; the commit below writes env, so it
+        // would store into the loading scope's binding and lose the key
+        // (Ake's `%TASKS{$name} = ...`). The slow path writes through the
+        // mirror (`env_root_descended_mut_tracked`). Same guard as the early
+        // lane's `fast_hash_lane_root_is_env`.
+        if self.our_package_container_key(var_name).is_some() {
+            return None;
+        }
         // Resolved once through the chunk's memoized constant-symbol table and
         // threaded through every env probe below (`get_sym`/`get_mut_sym`/
         // `is_readonly_sym`). This path re-interned `var_name` at each of them
