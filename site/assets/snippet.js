@@ -5,7 +5,7 @@
  */
 
 import { createEditor } from './editor.js';
-import { runIsolated, looksLikeError, isReady, boot } from './runner.js';
+import { runIsolated, stopIsolated, looksLikeError, isReady, boot } from './runner.js';
 import { t } from './i18n.js';
 
 /**
@@ -25,6 +25,11 @@ export function createSnippet(host, opts = {}) {
   runBtn.type = 'button';
   runBtn.className = 'btn run-btn';
 
+  const stopBtn = document.createElement('button');
+  stopBtn.type = 'button';
+  stopBtn.className = 'btn-ghost stop-btn';
+  stopBtn.disabled = true;
+
   const hint = document.createElement('span');
   hint.className = 'hint';
 
@@ -38,7 +43,7 @@ export function createSnippet(host, opts = {}) {
   const verdict = document.createElement('span');
   verdict.className = 'verdict';
 
-  row.append(runBtn, hint, grow, verdict, resetBtn);
+  row.append(runBtn, stopBtn, hint, grow, verdict, resetBtn);
   host.appendChild(row);
 
   // Shown instead of a run for snippets the WebAssembly build cannot execute.
@@ -77,18 +82,19 @@ export function createSnippet(host, opts = {}) {
 
   let original = opts.code || '';
   let busy = false;
+  let runId = 0;
 
   async function run() {
     if (busy || noBrowser) return;
     busy = true;
+    const currentRun = ++runId;
     runBtn.disabled = true;
+    stopBtn.disabled = false;
     runBtn.textContent = isReady() ? t('run.running') : t('run.loading');
     verdict.textContent = '';
     verdict.className = 'verdict';
-    // Let the button repaint before the VM blocks this thread.
-    await new Promise(r => setTimeout(r, 0));
-
     const res = await runIsolated(editor.getCode());
+    if (currentRun !== runId) return;
     const text = res.output;
     out.classList.remove('muted', 'error');
     if (!text) {
@@ -105,8 +111,21 @@ export function createSnippet(host, opts = {}) {
     }
     busy = false;
     runBtn.disabled = false;
+    stopBtn.disabled = true;
     runBtn.textContent = t('run');
     host.dispatchEvent(new CustomEvent('snippetrun', { bubbles: true, detail: { ok: !!expected && text.trim() === expected.trim() } }));
+  }
+
+  function stop() {
+    if (!busy) return;
+    ++runId;
+    stopIsolated();
+    busy = false;
+    runBtn.disabled = false;
+    stopBtn.disabled = true;
+    runBtn.textContent = t('run');
+    out.className = 'output muted';
+    out.textContent = t('run.stopped');
   }
 
   /**
@@ -116,6 +135,7 @@ export function createSnippet(host, opts = {}) {
    */
   function paintNoBrowser() {
     runBtn.disabled = true;
+    stopBtn.disabled = true;
     runBtn.textContent = t('run');
     hint.textContent = t('no-browser.output');
     note.hidden = false;
@@ -133,12 +153,15 @@ export function createSnippet(host, opts = {}) {
     hint.textContent = t('run.hint');
     note.hidden = true;
     resetBtn.textContent = t('reset');
+    stopBtn.textContent = t('run.stop');
     if (summary) summary.textContent = t('expected.summary');
     if (out.classList.contains('muted') && !out.dataset.ran) out.textContent = t('output.empty');
   }
 
   runBtn.addEventListener('click', run);
+  stopBtn.addEventListener('click', stop);
   resetBtn.addEventListener('click', () => {
+    stop();
     editor.setCode(original);
     out.className = 'output muted';
     delete out.dataset.ran;

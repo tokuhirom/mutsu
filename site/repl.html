@@ -129,7 +129,7 @@ async function initWasm() {
   }
 }
 
-/** Rust panics abort the wasm instance; everything after is garbage. */
+/** Report a worker failure or execution timeout. */
 function fatal(e) {
   appendLog(t('repl.fatal', { msg: e.message }), 'out error');
   appendLog(t('repl.fatal-hint'), 'note');
@@ -167,20 +167,24 @@ function remember(line) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); } catch { /* private mode */ }
 }
 
-function submitLine(line) {
-  if (!repl) return;
+async function submitLine(line) {
+  if (!repl || inputEl.disabled) return;
   appendEcho(promptEl.textContent, line);
   inputEl.value = '';
+  inputEl.disabled = true;
   remember(line);
   historyIndex = history.length;
   draft = '';
   try {
-    const res = JSON.parse(repl.evalLine(line));
+    const res = await repl.evaluate(line, 'line');
     appendOutput(res.output);
   } catch (e) {
     fatal(e);
+  } finally {
+    inputEl.disabled = false;
+    inputEl.focus();
+    updatePrompt();
   }
-  updatePrompt();
 }
 
 inputEl.addEventListener('keydown', (e) => {
@@ -219,16 +223,23 @@ clearBtn.addEventListener('click', () => {
 
 resetBtn.addEventListener('click', async () => {
   if (!repl) return;
+  inputEl.disabled = true;
+  resetBtn.disabled = true;
   try {
-    repl.reset();
-  } catch {
-    // A panicked instance cannot reset itself; build a brand new one.
-    repl = await createSession();
+    try {
+      await repl.reset();
+    } catch {
+      // A panicked instance cannot reset itself; build a brand new one.
+      repl = await createSession();
+    }
+    logEl.innerHTML = '';
+    appendLog(t('repl.was-reset'), 'note');
+    updatePrompt();
+  } finally {
+    inputEl.disabled = false;
+    resetBtn.disabled = false;
+    inputEl.focus();
   }
-  logEl.innerHTML = '';
-  appendLog(t('repl.was-reset'), 'note');
-  updatePrompt();
-  inputEl.focus();
 });
 
 /* ------------------------------------------------------------------ *

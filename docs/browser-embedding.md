@@ -25,7 +25,7 @@ say (^10).grep(* %% 2).sum;
 Once the package is published, replace `latest` with the version shown on npm
 (for example, `@tokuhirom/mutsu@0.23.0`) so a future release cannot change an
 existing example unexpectedly. The component includes an
-editor, Run and Reset buttons, and an output pane. Ctrl+Enter (Command+Enter on
+editor, Run, Stop and Reset buttons, and an output pane. Ctrl+Enter (Command+Enter on
 macOS) also runs the code.
 
 The `<script type="text/raku">` wrapper is recommended because it keeps Raku
@@ -111,8 +111,9 @@ Then open <http://localhost:8000/embed-demo.html>.
 
 - The initial WASM download is large, so load it only on pages that contain
   runnable examples. All components on a page share the downloaded module.
-- Execution currently occupies the page's main JavaScript thread. Avoid
-  running untrusted or potentially non-terminating programs.
+- The component executes code in a Web Worker. Stop terminates the worker and
+  the next run starts a fresh interpreter. A run that takes over 30 seconds is
+  stopped automatically.
 - Native-only facilities, including NativeCall and the native JIT, are not
   available in the browser build.
 - mutsu is under active development and does not yet implement all of Raku.

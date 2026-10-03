@@ -12,7 +12,7 @@ manifest.repository = {
 };
 manifest.homepage = 'https://tokuhirom.github.io/mutsu/';
 manifest.keywords = ['raku', 'perl6', 'webassembly', 'wasm', 'interpreter'];
-manifest.files = [...new Set([...(manifest.files || []), 'embed.js', 'README.md'])];
+manifest.files = [...new Set([...(manifest.files || []), 'embed.js', 'worker-client.js', 'wasm-worker.js', 'README.md'])];
 manifest.exports = {
   '.': {
     types: './mutsu.d.ts',
