@@ -418,74 +418,11 @@ impl Interpreter {
             self.registry_mut()
                 .proto_functions_mut()
                 .extend(shadowed_proto_functions);
-            // The `env` half of the same distinction: `import_module` writes
-            // an imported symbol's aliased name straight into `env` too (a
-            // bare `&ok`/`$CONST`, or the `GLOBAL::name`-qualified form under
-            // the importing package), alongside the registry entry handled
-            // above. Remove exactly the keys `record_import_env_key` recorded
-            // for THIS scope — never a before/after diff of the whole `env`.
-            // `env` also carries ordinary statement-level state with nothing
-            // to do with imports (`$!`, `$_`, a plain `my` local, a `package`
-            // type object, ...), and a block is not required to run through
-            // the general `BlockScope` restore that scopes those (a
-            // `use`-containing block takes this lighter path instead, purely
-            // so the registries above can be scoped) — so diffing dropped
-            // any of them that happened to be written for the first time
-            // inside a `use`-containing block. That silently erased `$!`
-            // itself the first time any block anywhere in the process wrote
-            // it while a `use` was in scope, breaking `$!.backtrace`'s
-            // identity across a later, unrelated block
-            // (`roast/integration/error-reporting.t` "Backtrace does not
-            // change on additional .backtrace").
-            //
-            // Same keep-rule as the registry for the keys we DO track: a
-            // module's own package-qualified entry (`Foo::name`, not
-            // `GLOBAL::name`) persists, because a sibling block's later
-            // `use` re-imports by reading that qualified env value (see the
-            // `vars` loop in `import_module`) — though in practice
-            // `import_module` never records one of those (it writes the
-            // module's own qualified form separately, at module-load time,
-            // never through `record_import_env_key`); the check is kept for
-            // symmetry with the registry-side rule above and to cover the
-            // trait-value path's `&{importing_pkg}::{name}` write. A sigil
-            // (`$@%&`) may prefix the qualifier, so strip it before checking.
-            //
-            // A PRELOAD scope (`scope_classes == false`, see
-            // `push_preload_scope`) never removes these bare aliases at all,
-            // for the same reason it keeps the classes/qualified defs a
-            // preload registers (see that function's doc comment): a custom
-            // `sub EXPORT`'s installed symbol (e.g. JSON::Fast's `&to-json`)
-            // lives ONLY in `env` -- unlike a tag-based `is export` routine,
-            // it has no registry entry to fall back on -- and a `sub`
-            // hoisted to the head of the SAME package block (`RegisterDecl`,
-            // emitted before the block's own in-position `use` runs) needs it
-            // visible right away. Removing it here and relying on the
-            // in-position `use`'s later re-install left that hoisted sub
-            // permanently unable to resolve the symbol (#8564): the preload
-            // and the hoisted registration both run before the in-position
-            // `use`, so the bare alias must already be live by then. A real
-            // scope-exit removal still happens for a genuine user block
-            // (`{ use JSON::Fast; ... }` brackets the in-position `use`
-            // with its own ordinary `ImportScope` region, which is not a
-            // preload scope).
+            // The `env` half: drop the aliases this scope imported (see
+            // `restore_import_env_keys`). A PRELOAD scope (`scope_classes ==
+            // false`, see `push_preload_scope`) keeps them.
             if scope_classes {
-                for key in imported_env_keys {
-                    let ks = key.resolve();
-                    let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
-                    let is_module_owned_qualified =
-                        unqualified.contains("::") && !unqualified.starts_with("GLOBAL::");
-                    if is_module_owned_qualified {
-                        continue;
-                    }
-                    match shadowed_env_values.remove(&key) {
-                        Some(previous) => {
-                            self.env.insert_sym(key, previous);
-                        }
-                        None => {
-                            self.env.remove_sym(key);
-                        }
-                    }
-                }
+                self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
             }
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
