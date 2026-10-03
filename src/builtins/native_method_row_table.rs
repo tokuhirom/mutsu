@@ -703,6 +703,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "Capture", 1, 24),
     ("Str", "Stringy", 1, 24),
     ("Str", "WHICH", 1, 24),
+    ("Str", "naive-word-wrapper", 1, 24),
     // ADR-0019 E2b (fifth slice): `Hash` extra rows, hand-probed against a
     // real `Value::hash(...)` sample. `pick`/`roll` (1-arg count form, plus
     // a bare 0-arg single-pick) live in `dispatch_1arg.rs`/
