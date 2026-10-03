@@ -1002,12 +1002,10 @@ impl Interpreter {
     }
 
     /// Slice 2a: `$n = @z` / `$n = %h`. Promote the source container variable to
-    /// a shared `ContainerRef` cell and store that same cell in the scalar
-    /// target, so structural mutations (`.push`) through either name are seen by
-    /// both (raku reference semantics) — a snapshotting copy would COW-detach on
-    /// the first `.push`. Marks the scalar `__mutsu_array_share::` so a later
-    /// whole reassignment (`$n = 5`) replaces the slot instead of mutating the
-    /// shared cell. Does NOT set the bound-decont marker: the scalar stays
+    /// a shared `ContainerRef` cell and store an itemized reference to it in
+    /// the scalar target's own cell. Structural mutations (`.push`) through
+    /// either name remain visible, while assignment to the scalar changes only
+    /// its holder. Does NOT set the bound-decont marker: the scalar stays
     /// itemized (`@a = $n` itemizes, unlike a `:=` bind which flattens).
     ///
     /// `binds_value` is set for a sigilless declaration (`my \x = %h`): it
@@ -1035,18 +1033,31 @@ impl Interpreter {
         } else {
             Value::container_ref_itemized(cell)
         };
-        // Store the shared cell in the scalar target (itemized scalar).
-        self.locals[idx] = itemized_container.clone();
+        // The scalar owns a distinct container. Its value is the itemized
+        // share word, while the source owns the plain word over the same cell.
+        // Preserve an existing cell so a `:=` alias or captured lexical sees
+        // this assignment through its original binding.
+        let holder = match self.locals[idx].view() {
+            ValueView::ContainerRef(outer) if !self.locals[idx].container_ref_is_itemized() => {
+                let value_cell = Self::value_cell_of(&outer);
+                Value::store_through_cell(&value_cell, &itemized_container);
+                Value::container_ref(outer.clone())
+            }
+            _ => Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                itemized_container,
+            ))),
+        };
+        self.locals[idx] = holder.clone();
         // Clear any stale bound-decont marker inherited from an earlier bind of
         // the same name (this `=` share is itemized, not a `:=` decont alias).
         self.update_bound_decont_marker(&name, false, &val);
-        // Mark the scalar so a later whole reassignment replaces the slot.
-        self.env_mut().insert_sym_noting(
-            MetaNs::ArrayShare.key_for_str(&name),
-            itemized_container.clone(),
-        );
+        // Keep the marker for legacy bare share slots and the compiler's
+        // itemization-exempt temporaries. A holder cell takes the ordinary
+        // write-through path, which replaces its itemized inner word.
+        self.env_mut()
+            .insert_sym_noting(MetaNs::ArrayShare.key_for_str(&name), holder.clone());
         self.array_share_active = true;
-        self.set_env_with_main_alias(&name, itemized_container);
+        self.set_env_with_main_alias(&name, holder);
         self.flush_local_to_env(code, idx);
         Ok(())
     }

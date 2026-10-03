@@ -335,3 +335,33 @@ because each needs its own design: a share holder owns no `Scalar`, so a write t
 into a later same-named `$x` ([#11228](https://github.com/tokuhirom/mutsu/issues/11228)); `$_ =
 AGGREGATE` is never itemized ([#11229](https://github.com/tokuhirom/mutsu/issues/11229)).
 
+### 7.3 The `$` share target owns a Scalar cell (#11227, 2026-10-03)
+
+Slice 2 tagged the word in the `$` slot but left that word pointing directly at
+the source's cell. This was enough for reads and itemization, but a closure,
+`is rw` parameter, topic alias or read-modify-write operation could write the
+source cell through the scalar. The named `SetLocal` replacement rule was not
+the only write path. A target already bound by `:=` also lost its alias when
+Slice 2 replaced the slot with the source's cell.
+
+The `$` slot now owns an outer, plain `ContainerRef` cell. Its content is the
+itemized word over the aggregate source's inner cell. Reading through both
+cells still sees the aggregate, with the final word's itemization. Writing a
+plain value through the outer cell replaces that itemized word, leaving the
+source cell intact. When the target already has a container cell, assignment
+reuses it so existing aliases observe the new share. A chained scalar share
+extracts the inner aggregate cell and leaves the source scalar's outer cell
+alone, so later scalar reassignment does not redirect the chain.
+
+ADR-0097's binding cells use a similar two-level shape with a *plain* inner
+word. `binding_cell_of` and `value_cell_of` therefore descend only through
+plain inner references. The itemized inner word marks the scalar value
+boundary for writes and RMW. The existing dereference operations already
+collapse the chain for value reads; the JIT's Tier B local read remains gated
+by the existing container-cell counter. The shape is pinned by
+`t/vm/writeback/scalar-share-holder-cell.t` against Rakudo.
+
+Indexed `++` and `--` are different from whole-scalar RMW: they must descend
+through the outer holder to the aggregate cell before mutating an element.
+`t/collections/element-incr-shared-container.t` and
+`t/collections/subscript/incdec-index-name-symbol.t` pin that distinction.

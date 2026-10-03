@@ -581,7 +581,7 @@ impl Interpreter {
             // `remove_method_wrap`), which `refresh_method_caches_for_generation`
             // (just above) already clears `fast_method_cache` on — evicting any
             // entry cached before a method it names got wrapped.
-            if let Some(entry) = self.fast_method_cache.get(&cache_key)
+            if let Some(entry) = self.caches.fast_method_cache.get(&cache_key)
                 && args.len() <= entry.positional_count
             {
                 let needs_default_eval =
@@ -702,10 +702,11 @@ impl Interpreter {
                 {
                     // Refresh the resolve caches so future calls take the
                     // already-compiled fast path without re-resolving.
-                    self.method_resolve_cache
+                    self.caches
+                        .method_resolve_cache
                         .insert(cache_key, Some((owner, def.clone())));
                     if !def.is_multi {
-                        self.last_method_resolve =
+                        self.caches.last_method_resolve =
                             Some((class_sym, method_sym, owner, def.clone()));
                     }
                     Some((owner, def))

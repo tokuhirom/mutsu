@@ -30,20 +30,20 @@ impl Interpreter {
         // and the change being announced would then be undone for the caches
         // but not for the interpreter -- a wrapped routine answering with its
         // pre-wrap resolution. Emptying them has no such failure mode.
-        self.fn_resolve_cache.clear();
-        self.plain_fn_resolve_memo.clear();
-        self.multi_compiled_key_cache.clear();
-        self.multi_candidates_cache.clear();
-        self.declared_fn_cache.clear();
-        self.multi_fn_cache.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.func_multi_argkey_cacheable.clear();
-        self.bare_multi_plan_cache.clear();
-        self.core_infix_wins_cache.clear();
-        self.light_call_cache.clear();
-        self.pos_light_call_cache.clear();
-        self.otf_call_cache.clear();
+        self.caches.fn_resolve_cache.clear();
+        self.caches.plain_fn_resolve_memo.clear();
+        self.caches.multi_compiled_key_cache.clear();
+        self.caches.multi_candidates_cache.clear();
+        self.caches.declared_fn_cache.clear();
+        self.caches.multi_fn_cache.clear();
+        self.caches.func_multi_resolve_cache.clear();
+        self.caches.func_multi_type_cacheable.clear();
+        self.caches.func_multi_argkey_cacheable.clear();
+        self.caches.bare_multi_plan_cache.clear();
+        self.caches.core_infix_wins_cache.clear();
+        self.caches.light_call_cache.clear();
+        self.caches.pos_light_call_cache.clear();
+        self.caches.otf_call_cache.clear();
         crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
         self.clear_fn_keys_index();
         // ...and give the map a version it has never had, so that the caches
@@ -112,10 +112,10 @@ impl Interpreter {
     #[track_caller]
     fn sync_fn_resolve_gen(&mut self) {
         let version = self.registry().functions_version();
-        if self.fn_resolve_gen == version {
+        if self.caches.fn_resolve_gen == version {
             return;
         }
-        self.fn_resolve_gen = version;
+        self.caches.fn_resolve_gen = version;
         crate::vm::vm_stats::record_fn_resolve_gen_bump(std::panic::Location::caller());
     }
 
@@ -1008,7 +1008,7 @@ impl Interpreter {
     }
 
     /// [`Self::bare_name_packages`] as interned symbols, memoized on the only
-    /// two inputs it reads (see [`Interpreter::bare_name_packages_memo`]).
+    /// two inputs it reads (see [`ResolutionCaches::bare_name_packages_memo`](crate::runtime::resolution_caches::ResolutionCaches::bare_name_packages_memo)).
     ///
     /// This is the form every hot caller should use: the answer is an `Arc`
     /// clone rather than a fresh `Vec<String>` with a `String` per enclosing
@@ -1022,6 +1022,7 @@ impl Interpreter {
             .last()
             .and_then(|frame| frame.lexical_package);
         if let Some(hit) = self
+            .caches
             .bare_name_packages_memo
             .borrow()
             .get(&(cur_sym, lexical_sym))
@@ -1030,7 +1031,8 @@ impl Interpreter {
         }
         let computed: crate::runtime::BareNamePackages =
             Self::compute_bare_name_packages(cur_sym, lexical_sym);
-        self.bare_name_packages_memo
+        self.caches
+            .bare_name_packages_memo
             .borrow_mut()
             .insert((cur_sym, lexical_sym), computed.clone());
         computed

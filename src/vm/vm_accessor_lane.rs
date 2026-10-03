@@ -40,7 +40,7 @@ impl Interpreter {
     // Cost: O(1): a generation compare, one probe of the lane, and one slot
     // read under the instance's read guard.
     pub(super) fn try_accessor_lane(&mut self, method_sym: crate::symbol::Symbol) -> Option<Value> {
-        if self.accessor_lane.is_empty() {
+        if self.caches.accessor_lane.is_empty() {
             return None;
         }
         self.refresh_method_caches_for_generation();
@@ -52,7 +52,7 @@ impl Interpreter {
             return None;
         }
         let layout_id = map.layout()?.id();
-        let slot = *self.accessor_lane.get(&(layout_id, method_sym))?;
+        let slot = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
         let value = map.slot_vivify(slot as usize)?.deref_container();
         if matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             return None;
@@ -114,6 +114,8 @@ impl Interpreter {
             return;
         }
         self.refresh_method_caches_for_generation();
-        self.accessor_lane.insert((layout_id, method_sym), slot);
+        self.caches
+            .accessor_lane
+            .insert((layout_id, method_sym), slot);
     }
 }

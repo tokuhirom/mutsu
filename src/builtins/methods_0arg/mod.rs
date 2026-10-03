@@ -1432,39 +1432,19 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("value")
                         .cloned()
                         .unwrap_or(Value::num(0.0));
-                    // Delegate narrow to the inner numeric value
-                    match val.view() {
+                    // Rakudo's Duration always holds a Rat (`Duration.new`
+                    // coerces with `.Rat`), so a Num-valued Duration narrows
+                    // through the same Num -> Rat conversion `.Rat` uses.
+                    // TODO: the Instant arithmetic in `arith::temporal`
+                    // still builds Num-valued Durations (#11273); once it
+                    // stores the Rat, this arm only sees Rat/Int.
+                    let val = match val.view() {
                         ValueView::Num(f) if f.is_finite() => {
-                            let rounded = f.round();
-                            if (f - rounded).abs() <= f.abs().max(rounded.abs()) * 1e-15
-                                || (f == 0.0 && rounded == 0.0)
-                            {
-                                return Some(Ok(Value::int(rounded as i64)));
-                            }
-                            // Convert Num to Rat for narrow
-                            let s = format!("{}", f);
-                            if let Some(dot) = s.find('.') {
-                                let dec = s.len() - dot - 1;
-                                let mut den = 1i64;
-                                for _ in 0..dec {
-                                    den *= 10;
-                                }
-                                let num_s: String = s.chars().filter(|c| *c != '.').collect();
-                                if let Ok(num) = num_s.parse::<i64>() {
-                                    let g = {
-                                        let (mut a, mut b) = (num.abs(), den);
-                                        while b != 0 {
-                                            let t = b;
-                                            b = a % b;
-                                            a = t;
-                                        }
-                                        a.max(1)
-                                    };
-                                    return Some(Ok(Value::rat_raw(num / g, den / g)));
-                                }
-                            }
-                            return Some(Ok(Value::num(f)));
+                            crate::builtins::arith::real_to_rat(&val)
                         }
+                        _ => val.clone(),
+                    };
+                    match val.view() {
                         ValueView::Num(f) => return Some(Ok(Value::num(f))),
                         ValueView::Rat(n, d) if d != 0 && n % d == 0 => {
                             return Some(Ok(Value::int(n / d)));

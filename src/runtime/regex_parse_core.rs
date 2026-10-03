@@ -3561,9 +3561,14 @@ impl Interpreter {
                                         {
                                             // <!same> — zero-width assertion: next two chars are different
                                             RegexAtom::SameAssertion { negated: true }
-                                        } else if negated_name == "wb" || negated_name == ".wb" {
-                                            // <!wb> — zero-width assertion: NOT at a word boundary
+                                        } else if matches!(negated_name, "wb" | ".wb" | "|w") {
+                                            // <!wb> / <!|w> — zero-width assertion: NOT at a word
+                                            // boundary
                                             RegexAtom::WordBoundary { negated: true }
+                                        } else if matches!(negated_name, "|b" | "|c" | "|g") {
+                                            // Every position is such a boundary, so the
+                                            // negation never holds: the `<!>` always-fail.
+                                            RegexAtom::Named("!".into())
                                         } else if negated_name == "ww" || negated_name == ".ww" {
                                             // <!ww> — zero-width assertion: NOT within a word
                                             RegexAtom::WithinWord { negated: true }
@@ -4201,6 +4206,11 @@ impl Interpreter {
                                         // word (`\w`) character class, i.e. `\b`. (YAMLish's
                                         // `Schema::JSON` uses it to terminate a numeric token.)
                                         RegexAtom::WordBoundary { negated: false }
+                                    } else if matches!(trimmed, "|b" | "|c" | "|g") {
+                                        // <|b> / <|c> / <|g> — at a (byte / codepoint /
+                                        // grapheme) boundary, which every match
+                                        // position is (Badger's `<.qualified-name> <|b>`).
+                                        RegexAtom::ZeroWidth
                                     } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
                                         // <at(N)> — zero-width assertion: match at position N
                                         let inner = &trimmed[3..trimmed.len() - 1];

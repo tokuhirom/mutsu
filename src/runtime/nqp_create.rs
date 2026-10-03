@@ -172,8 +172,8 @@ impl Interpreter {
     // Cost: O(1) on a hit; a miss is O(n), n = chars of the name.
     fn create_kind_memo(&mut self, sym: Symbol) -> CreateKind {
         let generation = self.registry_write_generation();
-        self.create_memo.sync(generation);
-        if let Some(kind) = self.create_memo.kinds.get(&sym) {
+        self.caches.create_memo.sync(generation);
+        if let Some(kind) = self.caches.create_memo.kinds.get(&sym) {
             return *kind;
         }
         let short = crate::qualified::unqualified_part(sym);
@@ -181,7 +181,7 @@ impl Interpreter {
         // Reading the registry writes nothing, but keep the rule every memo
         // here follows: an answer computed across a write is not recorded.
         if self.registry_write_generation() == generation {
-            self.create_memo.kinds.insert(sym, kind);
+            self.caches.create_memo.kinds.insert(sym, kind);
         }
         kind
     }
@@ -198,8 +198,8 @@ impl Interpreter {
     // MRO depth.
     pub(crate) fn create_instance(&mut self, class: Symbol) -> Value {
         let generation = self.registry_write_generation();
-        self.create_memo.sync(generation);
-        let shape = match self.create_memo.shapes.get(&class) {
+        self.caches.create_memo.sync(generation);
+        let shape = match self.caches.create_memo.shapes.get(&class) {
             Some(shape) => shape.clone(),
             None => {
                 let template = self.native_ctor_plan(class).create_slots.clone();
@@ -219,7 +219,7 @@ impl Interpreter {
                 // Building the plan or the MRO may cache into the registry;
                 // an answer computed across that write is not recorded.
                 if self.registry_write_generation() == generation {
-                    self.create_memo.shapes.insert(class, shape.clone());
+                    self.caches.create_memo.shapes.insert(class, shape.clone());
                 }
                 shape
             }
