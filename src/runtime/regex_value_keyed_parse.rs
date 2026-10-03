@@ -131,10 +131,15 @@ impl Interpreter {
     /// Read through `get_env_with_main_alias`, the by-name chokepoint a
     /// plain `$name` read also reaches: a file-scope lexical of the running
     /// routine's own compunit (a module's `our $RE`) is not in `env` when the
-    /// routine is called from a scope that did not import it directly.
-    // Cost: O(1) expected, two by-name probes.
+    /// routine is called from a scope that did not import it directly. Like
+    /// the bare-`$name` path, a `<$re>` re-resolving `$re`'s own pattern text
+    /// sees `$re`'s defining scope first (`REGEX_INTERP_CLOSURE_SCOPE`):
+    /// `rx/$base$p/` built in a routine still finds its `$base` when spliced
+    /// into another regex.
+    // Cost: O(1) expected, three by-name probes.
     pub(super) fn regex_value_var(&self, var_name: &str) -> Option<Value> {
-        self.get_env_with_main_alias(var_name)
+        super::regex::regex_helpers::interp_closure_scope_get(var_name)
+            .or_else(|| self.get_env_with_main_alias(var_name))
             .or_else(|| self.get_env_with_main_alias(&format!("${var_name}")))
             .map(Value::into_deref)
     }

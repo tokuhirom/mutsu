@@ -91,6 +91,11 @@ pub(crate) struct PatternDerived {
     pub(crate) name_mult: std::sync::OnceLock<
         Arc<HashMap<crate::symbol::Symbol, crate::runtime::regex::regex_helpers::NameMult>>,
     >,
+    /// The names `name_mult` marks `Many`, sorted: the capture names this
+    /// pattern's own Match renders as lists however many times they bind
+    /// (`<e>? ':' <e>?` matching ":" leaves `$<e>` = `[]`), marked at the
+    /// start of every walk of the pattern.
+    pub(crate) many_names: std::sync::OnceLock<Arc<[crate::symbol::Symbol]>>,
     /// The declarative-prefix NFA of this pattern as a `|` branch (ADR-0125),
     /// one entry per package it was ranked from. Building one resolves rule
     /// names, so, like `prefilter_in_pkg`, the entries are keyed by package

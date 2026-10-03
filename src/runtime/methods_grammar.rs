@@ -1425,7 +1425,7 @@ impl Interpreter {
         };
         let mut called_action = false;
         let method_result = if let Some(sym_name) = sym_method_name {
-            let sym_exists = actions_class_name.is_none_or(|cn| self.has_user_method(cn, sym_name));
+            let sym_exists = actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, sym_name));
             if sym_exists {
                 called_action = true;
                 let result = self.call_method_with_values(
@@ -1435,7 +1435,7 @@ impl Interpreter {
                 );
                 match result {
                     Err(e) if e.is_method_not_found_for(sym_name) => {
-                        if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                        if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
                             self.call_method_with_values(
                                 actions.clone(),
                                 rule_name,
@@ -1447,13 +1447,13 @@ impl Interpreter {
                     }
                     other => other,
                 }
-            } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+            } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
                 called_action = true;
                 self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
             } else {
                 Ok(match_obj.clone())
             }
-        } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+        } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
             called_action = true;
             self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
         } else {
@@ -1686,8 +1686,8 @@ impl Interpreter {
             if let Some(cn) = actions_cn.clone() {
                 let sym_hit = leaf_sym_method
                     .as_deref()
-                    .is_some_and(|s| self.has_user_method(&cn, s));
-                let rule_hit = !rule_name.is_empty() && self.has_user_method(&cn, rule_name);
+                    .is_some_and(|s| self.actions_answer_method(&cn, s));
+                let rule_hit = !rule_name.is_empty() && self.actions_answer_method(&cn, rule_name);
                 if !sym_hit && !rule_hit {
                     return Ok(match_obj);
                 }
@@ -1968,11 +1968,11 @@ impl Interpreter {
                             Some(ValueView::Str(sym_val)) => {
                                 let sym_name =
                                     self.variant_action_method_name(Some(&cn), rule_name, &sym_val);
-                                self.has_user_method(&cn, &sym_name)
+                                self.actions_answer_method(&cn, &sym_name)
                             }
                             _ => false,
                         };
-                        !sym_hit && !self.has_user_method(&cn, rule_name)
+                        !sym_hit && !self.actions_answer_method(&cn, rule_name)
                     }
                 }
             };
@@ -2044,7 +2044,7 @@ impl Interpreter {
         };
         let mut called_action = false;
         let method_result = if let Some(ref sym_name) = sym_method_name {
-            let sym_exists = actions_class_name.is_none_or(|cn| self.has_user_method(cn, sym_name));
+            let sym_exists = actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, sym_name));
             if sym_exists {
                 called_action = true;
                 let result = self.call_method_with_values(
@@ -2055,7 +2055,7 @@ impl Interpreter {
                 match result {
                     Err(e) if e.is_method_not_found_for(sym_name) => {
                         // Fall back to plain rule name.
-                        if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+                        if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
                             self.call_method_with_values(
                                 actions.clone(),
                                 rule_name,
@@ -2067,13 +2067,13 @@ impl Interpreter {
                     }
                     other => other,
                 }
-            } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+            } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
                 called_action = true;
                 self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
             } else {
                 Ok(match_obj.clone())
             }
-        } else if actions_class_name.is_none_or(|cn| self.has_user_method(cn, rule_name)) {
+        } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
             called_action = true;
             self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
         } else {
