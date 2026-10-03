@@ -224,8 +224,7 @@ impl Interpreter {
 
     /// After the store [`Self::mainline_capture_at`] saw coming: when it
     /// replaced the captured cell (a `:=` binds the name to a container of
-    /// its own), the capture follows the new binding, the way an in-sequence
-    /// registration would have captured it.
+    /// its own), the capture follows the new binding.
     // Cost: O(1).
     pub(super) fn follow_mainline_redeclaration(
         &mut self,
@@ -243,16 +242,11 @@ impl Interpreter {
         {
             return;
         }
-        let entry = if new.is_container_ref() {
-            Some(new)
-        } else if new.is_nil() || self.type_constrained_unboxable(&name) {
-            None
-        } else {
-            let boxed = new.into_container_ref();
-            self.locals[slot] = boxed.clone();
-            self.env_mut().insert(name.clone(), boxed.clone());
-            Some(boxed)
-        };
+        // A binding to a bare value (an Array, a Proxy) is not boxed here: a
+        // cell around it would change what the name holds (a Proxy would stop
+        // running STORE). The capture is dropped instead, and the subs resolve
+        // the name the way they did before they captured it.
+        let entry = new.is_container_ref().then_some(new);
         if let Some(bucket) = self
             .unit_lexicals_cow_mut()
             .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
