@@ -502,20 +502,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // Consume bareword traits such as `is export` / `is rw` / custom
     // `is Foo(...)` before the terminating semicolon, e.g.
     // `unit module App::Racoco::ConfigFile is export;`.
-    let mut rest = rest;
-    let mut export_tags: Option<Vec<String>> = None;
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, trait_name) = crate::parser::stmt::ident(r)?;
-        if trait_name == "export" {
-            let mut tags = Vec::new();
-            super::class_decl::push_export_tags(r, &mut tags);
-            export_tags = Some(tags);
-        }
-        let r = skip_balanced_parens(r);
-        let (r, _) = ws(r)?;
-        rest = r;
-    }
+    let (rest, export_tags) = parse_package_is_traits(rest)?;
     let (rest, _) = opt_char(rest, ';');
     let package = Stmt::Package {
         name: Symbol::intern(&name),
@@ -538,6 +525,26 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
     Ok((rest, package))
+}
+
+/// Consume a package declarator's bareword traits (`is export`, `is rw`, a
+/// custom `is Foo(...)`), returning the `is export` tags when present.
+pub(crate) fn parse_package_is_traits(input: &str) -> PResult<'_, Option<Vec<String>>> {
+    let mut rest = input;
+    let mut export_tags: Option<Vec<String>> = None;
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, trait_name) = crate::parser::stmt::ident(r)?;
+        if trait_name == "export" {
+            let mut tags = Vec::new();
+            super::class_decl::push_export_tags(r, &mut tags);
+            export_tags = Some(tags);
+        }
+        let r = skip_balanced_parens(r);
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
+    Ok((rest, export_tags))
 }
 
 /// Parse `package` declaration.

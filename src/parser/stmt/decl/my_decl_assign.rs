@@ -689,6 +689,15 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             c.is_alphanumeric() || c == '_' || c == '-'
         })?;
         (r, Some(Expr::Var(var.to_string())), String::new())
+    } else if let Some(after_amp) = rest.strip_prefix('&')
+        && after_amp.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        // `my %opts .= &get-opts` calls a routine as a method on the fresh
+        // variable (`%opts = %opts.&get-opts`), as the statement form does.
+        let (r, var) = super::take_while1(after_amp, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        (r, Some(Expr::CodeVar(var.to_string())), String::new())
     } else {
         let (r, name) =
             super::take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
