@@ -273,6 +273,33 @@ impl Interpreter {
         None
     }
 
+    /// The wrapped routine a call spelled `name` runs, if it is wrapped: the
+    /// one recorded under `name` itself, or, for a package-qualified call
+    /// (`GLOBAL::a()`, `Pkg::a()`), the one recorded under the bare name when
+    /// that routine is declared in the named package. The wrap is recorded
+    /// under the routine's bare name, but the lexical and the package entry
+    /// are one `Routine`, so every path to it runs the wrapper (#11350).
+    // Cost: O(w), w = wrapped routines.
+    pub(crate) fn wrapped_sub_for_call(&self, name: &str) -> Option<Value> {
+        if !self.any_routine_wrapped() {
+            return None;
+        }
+        if self.wrap_sub_id_for_name(name).is_some() {
+            return self.get_wrapped_sub(name);
+        }
+        let name = Symbol::intern(name);
+        if !crate::qualified::is_qualified(name) {
+            return None;
+        }
+        let bare = crate::qualified::unqualified_part(name);
+        self.wrap_sub_id_for_name(bare.as_str())?;
+        let sub = self.get_wrapped_sub(bare.as_str())?;
+        let ValueView::Sub(data) = sub.view() else {
+            return None;
+        };
+        (crate::qualified::qualified(data.package, bare) == name).then(|| sub.clone())
+    }
+
     /// Whether ANY routine has been `.wrap`ped in this program.
     ///
     /// ADR-0110 §3.3's run-time guard: a statically linked TRIR call site must
