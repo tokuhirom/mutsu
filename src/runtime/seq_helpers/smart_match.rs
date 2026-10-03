@@ -1625,15 +1625,19 @@ impl Interpreter {
                     if mixins.keys().any(|k| k.strip_prefix("__mutsu_role__")
                         .is_some_and(|role| role != name.resolve().as_str()))) =>
             {
-                let roles: Vec<String> = mixins
-                    .keys()
-                    .filter_map(|k| k.strip_prefix("__mutsu_role__"))
-                    .map(str::to_string)
+                // A parameterized role is matched with its arguments:
+                // `C.^mixin(R[Str]).new` is not a `C.^mixin(R[Int])`.
+                let roles: Vec<Value> = Self::mixin_role_applications(mixins)
+                    .into_iter()
+                    .map(|(role, args)| match args {
+                        Some(args) if !args.is_empty() => {
+                            Value::parametric_role(Symbol::intern(&role), args)
+                        }
+                        _ => Value::package(Symbol::intern(&role)),
+                    })
                     .collect();
                 self.smart_match_inner(left, base.as_ref())
-                    && roles.iter().all(|role| {
-                        self.smart_match_inner(left, &Value::package(Symbol::intern(role)))
-                    })
+                    && roles.iter().all(|role| self.smart_match_inner(left, role))
             }
             (_, ValueView::Mixin(pun_inner, pun_mixins))
                 if pun_mixins.keys().any(|k| k.starts_with("__mutsu_role__"))

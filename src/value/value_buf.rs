@@ -294,6 +294,25 @@ fn storage_value(bytes: Vec<u8>, width: u8, kind: ElemKind) -> Value {
     ))))
 }
 
+/// A detached block of `bytes` (no instance around it), for a container that
+/// must own memory C is handed an address into: a reference-element `CArray`
+/// keeps each `Str` element's NUL-terminated copy in one (#11209). The block
+/// is never resized, so the address [`byte_block_address`] answers is stable
+/// for as long as the returned value is alive.
+// Cost: O(1) (takes ownership of `bytes`).
+pub(crate) fn byte_block(bytes: Vec<u8>) -> Value {
+    storage_value(bytes, 1, ElemKind::Uint)
+}
+
+/// The address of a [`byte_block`]'s first byte; `None` for any other value.
+// Cost: O(1).
+pub(crate) fn byte_block_address(v: &Value) -> Option<usize> {
+    match v.view() {
+        ValueView::BufStorage(data) => Some(data.bytes.as_ptr() as usize),
+        _ => None,
+    }
+}
+
 /// The node behind a buffer instance's storage attribute, if it has one.
 fn node_in(map: &AttrMap) -> Option<super::GcRef<'_, BufData>> {
     match map.get(elems_key())?.view() {

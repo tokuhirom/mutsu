@@ -308,6 +308,19 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let instance = self.dispatch_new_unallocated(target.clone(), args)?;
+        // `.new` allocates through the REPR (#11209): see
+        // `install_carray_storage`.
+        self.install_carray_storage(&target, &instance)?;
+        Ok(instance)
+    }
+
+    /// [`Self::dispatch_new`] without the REPR storage step.
+    fn dispatch_new_unallocated(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         // A role with defaulted type parameters materialises to its default
         // parameterisation before constructing — but not while it is already
         // constructing through its own pun, where re-materialising would send

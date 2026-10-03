@@ -788,6 +788,7 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
         },
         ValueView::Array(data, _) => data.native_storage_address().unwrap_or(0),
         ValueView::Scalar(inner) => value_c_address(inner),
+        ValueView::Mixin(inner, _) => value_c_address(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| value_c_address(&g)).unwrap_or(0),
         ValueView::VarRef { value, .. } => value_c_address(value),
         _ => 0,
@@ -1195,6 +1196,10 @@ fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
             crate::value::value_buf::buf_storage_node(&attributes)
         }
         ValueView::Scalar(inner) => buf_storage_node(inner),
+        // An object with roles mixed in -- upstream NativeCall's `CArray[T]`
+        // is an instance of a `.^mixin` type -- keeps its storage on the
+        // instance it wraps.
+        ValueView::Mixin(inner, _) => buf_storage_node(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| buf_storage_node(&g)),
         ValueView::VarRef { value, .. } => buf_storage_node(value),
         _ => None,

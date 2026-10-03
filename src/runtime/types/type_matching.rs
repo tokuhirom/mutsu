@@ -551,6 +551,11 @@ impl Interpreter {
         if self.type_matches_value_resolved(constraint, value) {
             return true;
         }
+        if constraint.ends_with(']')
+            && let Some(matched) = self.meta_parameterized_match(constraint, value)
+        {
+            return matched;
+        }
         // `%?RESOURCES{...}` entries are `Distribution::Resource` objects in
         // raku; mutsu models them as `IO::Path` instances carrying a hidden
         // `resource` marker (`make_resource_instance`).

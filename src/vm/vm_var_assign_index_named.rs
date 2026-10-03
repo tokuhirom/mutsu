@@ -564,6 +564,43 @@ impl Interpreter {
         // so `class MyHash is Hash {}` keeps the container-subclass path.
         // A variable captured by a closure holds its shared `ContainerRef`
         // cell; the protocol dispatch is on the object inside it.
+        //
+        // An object with roles mixed in (`C.new but R`, or an instance of a
+        // `.^mixin` type such as upstream NativeCall's `CArray[Str]`) is a
+        // `Mixin`, not an `Instance`: when one of its roles supplies the
+        // ASSIGN-POS/ASSIGN-KEY, dispatch it the same way, instead of
+        // replacing the object with a fresh Array/Hash below.
+        let assign_method = if is_positional {
+            "ASSIGN-POS"
+        } else {
+            "ASSIGN-KEY"
+        };
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.env().get(&var_name).cloned())
+            .map(|t| t.deref_container())
+            && matches!(target.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&target, assign_method)
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            )
+        {
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let val_arg = match val.view() {
+                ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                _ => val.clone(),
+            };
+            let result =
+                self.call_method_with_values(target, assign_method, vec![idx_arg, val_arg])?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())

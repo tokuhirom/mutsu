@@ -389,6 +389,20 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let instance = self.dispatch_bless_unallocated(target, args)?;
+        // `bless` allocates through the REPR, as `nqp::create` does: an
+        // `is repr('CArray')` instance gets its element storage, typed by the
+        // blessed type -- a mixin's roles included (#11209).
+        self.install_carray_storage(target, &instance)?;
+        Ok(instance)
+    }
+
+    /// [`Self::dispatch_bless`] without the REPR storage step.
+    fn dispatch_bless_unallocated(
+        &mut self,
+        target: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         crate::alloc_scope!("bless");
         // self.bless(:attr1($val1), :attr2($val2), ...)
         // Creates a new instance of the invocant's class with attributes from named args
@@ -399,7 +413,7 @@ impl Interpreter {
             // object (`(Color but CSS::Units[...]).new(...)`): bless the base
             // class, then compose the mixed-in roles, as `.new` does.
             ValueView::Mixin(inner, mixins) if matches!(inner.view(), ValueView::Package(_)) => {
-                let base_instance = self.dispatch_bless(inner.as_ref(), args)?;
+                let base_instance = self.dispatch_bless_unallocated(inner.as_ref(), args)?;
                 return self.compose_mixin_type_roles(base_instance, mixins);
             }
             _ => {

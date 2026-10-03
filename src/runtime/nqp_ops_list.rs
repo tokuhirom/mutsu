@@ -415,6 +415,9 @@ impl Interpreter {
             "bindpos" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(2).cloned().unwrap_or(Value::NIL);
+                if let Some(attrs) = crate::runtime::carray_ref::ref_attrs(&target) {
+                    return Some(self.carray_ref_bind(&attrs, iarg(args, 1), val));
+                }
                 crate::runtime::nqp_backing::bind_elem(op, &target, iarg(args, 1), val, Value::NIL)
             }
             // nqp::chr($codepoint): the one-character string for a codepoint.
