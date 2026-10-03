@@ -21,7 +21,7 @@ is Int((1, 2).Seq), 2, 'Int of a Seq is its element count';
 is Num((1, 2, 3)), 3e0, 'Num of a List is its element count';
 is-deeply Int(True), True, 'Int of a Bool returns the Bool (already an Int)';
 is-deeply Int(3.7), 3, 'Int of a Rat truncates';
-is Num(0.7777777777777777777771), Num(0.777777777777777777777),
+cmp-ok Num(0.7777777777777777777771), '==', Num(0.777777777777777777777),
     'Num of a big Rat is correctly rounded';
 isa-ok Int("x"), Failure, 'Int of a non-numeric Str is a Failure';
 throws-like { Int(1+2i) }, X::Numeric::Real, 'Int of a non-real Complex throws';
