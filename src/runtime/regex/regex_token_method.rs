@@ -575,7 +575,7 @@ impl Interpreter {
         // an isolated copy of the env (mirrors `try_regex_subrule_as_method`).
         // Shared-cell values (module `our` vars) keep mutations visible.
         let typeobj = Value::package(pkg);
-        let found = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+        let found = self.run_regex_sub_call_here(Some(pkg), |interp| {
             interp.call_method_with_values(
                 how,
                 "find_method",
@@ -605,7 +605,7 @@ impl Interpreter {
         let mut call_args = vec![cursor];
         call_args.extend(arg_values.iter().cloned());
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+        let called = self.run_regex_sub_call_here(Some(pkg), |interp| {
             interp.call_sub_value(meth, call_args, false)
         });
         let result = match called {

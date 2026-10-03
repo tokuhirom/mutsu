@@ -63,6 +63,51 @@ impl Interpreter {
         result
     }
 
+    /// [`Self::run_regex_sub_eval_here`] for a ROUTINE CALL the engine makes on
+    /// the user's behalf (a grammar method reached as a subrule, a custom-HOW
+    /// `find_method` and the wrapper it returns): the call keeps the env
+    /// isolation, except that an assignment to a dynamic variable the caller
+    /// already has reaches the caller, as it does from any method call
+    /// (`method ws { $*HIGHWATER = self.pos; ... }`, #11326). A `my $*X`
+    /// declared inside the call stays local: it is gone from the env once the
+    /// routine returns, and a name the caller does not bind is never written.
+    ///
+    /// The call runs over a block tier ([`Self::open_block_env_tier`]), so the
+    /// writes to replay are read back from the tier's own overlay rather than
+    /// diffed against the whole visible env.
+    ///
+    /// Cost: O(w), w = names the call wrote by name (O(v) over the visible env
+    /// when the call replaced the env wholesale), plus `f`.
+    pub(in crate::runtime) fn run_regex_sub_call_here<R>(
+        &mut self,
+        pkg: Option<Symbol>,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let _pkg_guard = pkg.map(|p| self.enter_package_guarded_sym(p));
+        let save = self.open_block_env_tier();
+        let saved_pending = std::mem::take(&mut self.pending_local_updates);
+        let saved_in_code_block =
+            std::mem::replace(&mut self.regex_state.in_regex_code_block, false);
+        let saved_readonly = self.take_readonly_state();
+        let result = f(self);
+        self.restore_readonly_state(saved_readonly);
+        self.regex_state.in_regex_code_block = saved_in_code_block;
+        self.pending_local_updates = saved_pending;
+        let closed = self.close_block_env_tier(save);
+        let mut base = closed.base;
+        for (key, value) in closed.writes.iter() {
+            if key.is_dynamic_var_env_key()
+                && base
+                    .get_sym(*key)
+                    .is_some_and(|old| !old.same_binding(value))
+            {
+                base.insert_sym(*key, value.clone());
+            }
+        }
+        self.env = base;
+        result
+    }
+
     /// [`Self::run_regex_sub_eval`] over a copy of the current env.
     ///
     /// Cost: O(1), plus `f`.

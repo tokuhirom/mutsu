@@ -754,7 +754,8 @@ impl Interpreter {
         // Else the walked rule invocation this call is in the body of.
         let published = published.or_else(|| self.walk_rule_cursor(chars, pos, pkg));
         // Run the method in the grammar's package over an isolated copy of the
-        // env (`run_regex_sub_eval_here`).
+        // env (`run_regex_sub_call_here`: only dynamic-variable writes reach
+        // the caller).
         //
         // The invocant is an INSTANCE of the grammar carrying the cursor state
         // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
@@ -781,7 +782,7 @@ impl Interpreter {
             }
             None => self.new_grammar_cursor(chars, pos, pkg),
         };
-        let called = self.run_regex_sub_eval_here(Some(pkg), |interp| {
+        let called = self.run_regex_sub_call_here(Some(pkg), |interp| {
             interp.call_method_with_values(invocant, &spec.lookup_name, args.to_vec())
         });
         match called {
