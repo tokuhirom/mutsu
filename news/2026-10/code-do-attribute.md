@@ -15,7 +15,10 @@ say a();    # b
 ```
 
 Upstream NativeCall's backend-neutral path needs this. It replaces an `is native` routine's body
-with a closure that calls `nqp::nativecall` (ADR-11203, #11207).
+with a closure that calls `nqp::nativecall` (ADR-11203, #11207). Together with the FFI ops from
+#11211, the vendored upstream module, loaded by `scripts/nativecall-upstream-trial.sh`, now calls
+`strlen` through `sub strlen(Str --> size_t) is native {*}` and round-trips a `CStruct`. Only the
+`CArray` steps (#11209) still fail.
 
 A bound body is the innermost entry of the routine's `.wrap` chain, under a reserved handle.
 Rakudo's `.wrap` is itself a `$!do` rebind, and that chain is already what every call path of a

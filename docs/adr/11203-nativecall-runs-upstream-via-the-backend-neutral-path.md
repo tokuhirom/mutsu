@@ -118,7 +118,7 @@ Each is a general compatibility gap; none is NativeCall-specific.
 | #11310 user `trait_mod:<is>` candidates leak across compunits; `is array_type` is core | Done; `load UNC` now stops at `nqp::nativecallsizeof` (#11211) |
 | #11209 REPRs selected by `is repr<...>` | Open (next) |
 | #11211 the six VM FFI ops | Done (`src/runtime/nativecall_nqp.rs`, `nativecall_info.rs`); `load UNC` and `nativesizeof` now pass. A routine callsite is rebuilt per call until #11209 gives `is box_target` its delegation |
-| #11207 `Code.$!do` readable and rebindable | Done: a bound body is the innermost entry of the routine's `.wrap` chain (`src/runtime/code_do_attr.rs`) |
+| #11207 `Code.$!do` readable and rebindable | Done: a bound body is the innermost entry of the routine's `.wrap` chain (`src/runtime/code_do_attr.rs`). The trial's `is native strlen` and `CStruct` steps now pass through upstream's backend-neutral replacement body; only the `CArray` steps (#11209) fail |
 | Vendored module is what `use NativeCall` loads | Not started |
 | Native provider deleted | Not started |
 
