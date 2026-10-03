@@ -1148,6 +1148,45 @@ What still walks a whole match: `declined` 410, from the 31 patterns still decli
 common decline is `seqalt-nullable-ratchet` ([#11162](https://github.com/tokuhirom/mutsu/issues/11162)).
 Context declines add 78 more.
 
+### Slice E, fifteenth part: a ratcheted `||` commits; sigspace whitespace un-ratchets the term before it ([#11162](https://github.com/tokuhirom/mutsu/issues/11162))
+
+`seqalt-nullable-ratchet` is gone. The walk treated a zero-width first branch of a ratcheted `||` as
+provisional: it moved on to the next branch while the rest of the pattern had not matched. The
+compiled engine could not express that, so it declined such patterns. Rakudo has no such rule.
+Its `altseq` commits to the first branch that matches, zero-width or not.
+
+What the heuristic stood in for is where rakudo puts the ratchet. RakuAST (`src/Raku/ast/regex.rakumod`,
+rakudo 2026.09) ratchets each term of a sequence on the term's outermost compiled node. A term
+that sigspace whitespace follows is a `WithWhitespace`, which compiles to `concat(term, <.ws>)`.
+The ratchet lands on that concat, which ignores it, so the term itself stays backtrackable. This
+holds for every term, not only `[ … || … ]`. A subrule call, a quantifier, a `|`, a `||` and a
+capture group followed by significant whitespace can all give back their match. The same term
+without whitespace after it commits. Three details follow from the same code:
+
+- a sigil alias (`$<x>=…`) ratchets the atom it binds itself (`NamedCapture` applies the ratchet
+  to its target), so `$<x>=<b> '!'` commits where `<x=b> '!'` does not;
+- a `[ … ]` group compiles to its body, so a backtrack decision made for `[<b>]` is made for `<b>`;
+- an explicit `<.ws>` is an ordinary ratcheted term and changes nothing.
+
+Before this part, mutsu followed the rule for quantifiers only (`<id>? <v>`, #10569). It now
+applies it to every term that can backtrack, in both places sigspace is lowered: the `rule` text
+pass (`rule_ws_quantified::mark_backtracking_before_ws`, which writes `:!` after the term) and
+the `:s` parser (`sigspace_term_backtracks`). With that, a ratcheted `||` commits in both engines,
+and the walk's heuristic and the decline are deleted. `t/grammar/grammar-sigspace-term-ratchet.t`
+pins rakudo's values. `t/grammar/grammar-optional-ordered-alternative.t` (a `rule` with whitespace
+after `]`) passes unchanged.
+
+Rakudo's legacy QRegex frontend lowers sigspace the same way (`quantified_atom` wraps the atom in
+`concat(atom, sigfinal)` before it applies the ratchet). One rakudo behaviour is not followed. A
+non-capturing `<.b>` followed by whitespace sometimes commits in rakudo (`rule { <.b> '!' }` with
+`regex b { <[x!]>+ }`). The same call to a callee with a different body backtracks
+(`regex b { <[x!]> <[x!]>? }`). No rule in the source explains the difference, so mutsu treats
+`<.b>` like `<b>`.
+
+Un-ratcheting the calls exposed a bug in the grammar-method bridge. When a user
+`method ws { nextsame }` deferred to a built-in that failed, it returned a cursor with a negative
+`pos`. The bridge read that cursor as a zero-width success.
+
 ### Reproducing §2
 
 ```raku
