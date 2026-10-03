@@ -3222,7 +3222,17 @@ impl Interpreter {
         // path even with no user-written `state`) must resolve its own
         // `RegisterDecl` keys, not the caller's unrelated table.
         let fns = shared.compiled_fns.as_deref().unwrap_or(compiled_fns);
+        // Every other full call path pushes the samewith context; this one
+        // (taken by any routine with a `state` variable) did not, so `samewith`
+        // in such a body died "outside of a dispatch context".
+        let pushed_samewith = shared.code.uses_samewith;
+        if pushed_samewith {
+            self.push_samewith_context(&name.resolve(), None, None);
+        }
         let result = self.call_compiled_function_named(shared, args, fns, pkg, name);
+        if pushed_samewith {
+            self.pop_samewith_context();
+        }
         self.state_scope_id.set(saved_scope);
         result
     }
