@@ -277,7 +277,6 @@ impl Interpreter {
         result
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Method names a branch between the top of `exec_call_method_mut_op_impl`
     /// and its env-pure gate inspects by name for receivers of every kind (or
     /// whose receiver test is not obviously closed to a plain scalar), so the
@@ -327,6 +326,7 @@ impl Interpreter {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn exec_call_method_mut_op_impl(
         &mut self,
         code: &CompiledCode,
