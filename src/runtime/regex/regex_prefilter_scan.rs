@@ -99,15 +99,13 @@ impl Iterator for ScanPositions<'_> {
                 last,
             } => {
                 let set = prefilter.first.as_ref()?;
-                while *pos <= *last {
-                    let candidate = *pos;
-                    *pos += 1;
-                    if set.admits_at(chars, candidate) {
-                        crate::vm::vm_stats::record_regex_prefilter_position_hit();
-                        return Some(candidate);
-                    }
-                }
-                None
+                let Some(candidate) = set.find_admitted(chars, *pos, *last) else {
+                    *pos = *last + 1;
+                    return None;
+                };
+                *pos = candidate + 1;
+                crate::vm::vm_stats::record_regex_prefilter_position_hit();
+                Some(candidate)
             }
             ScanPositions::Inner {
                 chars,
@@ -122,16 +120,18 @@ impl Iterator for ScanPositions<'_> {
                 let set = prefilter.first.as_ref();
                 loop {
                     if let Some(end) = *window_end {
-                        while *pos <= end {
-                            if *pos > *last {
-                                return None;
-                            }
-                            let candidate = *pos;
-                            *pos += 1;
-                            if set.is_none_or(|s| s.admits_at(chars, candidate)) {
+                        let stop = end.min(*last);
+                        if *pos <= stop {
+                            let found = match set {
+                                None => Some(*pos),
+                                Some(s) => s.find_admitted(chars, *pos, stop),
+                            };
+                            if let Some(candidate) = found {
+                                *pos = candidate + 1;
                                 crate::vm::vm_stats::record_regex_prefilter_position_hit();
                                 return Some(candidate);
                             }
+                            *pos = stop + 1;
                         }
                         *window_end = None;
                         if *pos > *last {
