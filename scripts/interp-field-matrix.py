@@ -24,14 +24,15 @@ Usage:
   scripts/interp-field-matrix.py                 # markdown report to stdout
   scripts/interp-field-matrix.py --json OUT.json # also dump the raw matrix
   scripts/interp-field-matrix.py --check         # the `make checks` ratchet
-  scripts/interp-field-matrix.py --update        # re-cut it after a drop
   scripts/interp-field-matrix.py --self-test
 
-`--check` is ADR-10779 D4: the number of direct `Interpreter` fields may only
-go down (it is recorded in scripts/interp-fields-baseline.txt), and every field
-must match a `SUBSYSTEMS` rule. New state goes into the subsystem type it
-belongs to instead of onto `Interpreter`. `--check` only parses the struct, so
-it needs no build and takes milliseconds.
+`--check` is ADR-10779 D4: every direct `Interpreter` field must be allowed --
+listed in the frozen scripts/interp-fields-baseline.txt or in a file under
+scripts/interp-fields.d/ -- so none can be added unnoticed, and every field
+must match a `SUBSYSTEMS` rule. Allowed names that are no longer fields are
+ignored. Neither list is ever rewritten: a PR that extracts a subsystem adds a
+new file naming its holder field, so parallel PRs never conflict. `--check`
+only parses the struct, so it needs no build and takes milliseconds.
 """
 
 import argparse
@@ -138,49 +139,52 @@ ACCESSOR_MAX_LINES = 6
 
 
 BASELINE = ROOT / "scripts" / "interp-fields-baseline.txt"
-BASELINE_HEADER = """\
-# Direct fields of `struct Interpreter` (src/runtime/mod.rs). ADR-10779 D4:
-# this number may only go down -- new state goes into the subsystem type it
-# belongs to. Checked by `make check-interp-fields`; re-cut after extracting
-# fields with
-#   scripts/interp-field-matrix.py --update
-"""
+ALLOWED_DIR = ROOT / "scripts" / "interp-fields.d"
+
+
+def read_names(path):
+    return {line.strip() for line in path.read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")}
 
 
 def read_baseline():
-    for line in BASELINE.read_text().splitlines():
-        if line.strip() and not line.startswith("#"):
-            return int(line.strip())
-    sys.exit(f"interp-field-matrix: no count in {BASELINE}")
+    """The allowed field names: the frozen baseline plus every file in
+    `scripts/interp-fields.d/`. Nothing here is ever rewritten -- a PR that
+    needs a new field (the holder of a subsystem it extracts) adds a new file
+    -- so parallel PRs cannot conflict on it."""
+    allowed = read_names(BASELINE)
+    if ALLOWED_DIR.is_dir():
+        for f in sorted(ALLOWED_DIR.glob("*.txt")):
+            allowed |= read_names(f)
+    return allowed
 
 
-def check(update):
+def compare_to_baseline(current, allowed):
+    """(new fields, stale names): fields not allowed, and allowed names that
+    are no longer fields."""
+    return sorted(set(current) - allowed), sorted(allowed - set(current))
+
+
+def check():
     fields = parse_fields()
-    count = len(fields)
     unclassified = sorted(f for f in fields if subsystem_of(f) == "unclassified")
-    allowed = read_baseline()
+    new, stale = compare_to_baseline(fields, read_baseline())
     ok = True
     if unclassified:
         ok = False
         print("check-interp-fields: these Interpreter fields match no SUBSYSTEMS rule in "
               "scripts/interp-field-matrix.py; put each one in the subsystem it belongs "
               "to (ADR-10779 D2):\n  " + "\n  ".join(unclassified), file=sys.stderr)
-    if count > allowed:
+    if new:
         ok = False
-        print(f"check-interp-fields: Interpreter has {count} direct fields, the baseline "
-              f"allows {allowed}. Add the new state to its subsystem's type instead of to "
-              f"Interpreter (ADR-10779 D4).", file=sys.stderr)
-    elif count < allowed:
-        if update:
-            BASELINE.write_text(BASELINE_HEADER + f"{count}\n")
-            print(f"interp-fields baseline re-cut: {count} fields")
-            return 0 if ok else 1
-        ok = False
-        print(f"check-interp-fields: Interpreter fell from {allowed} to {count} direct "
-              f"fields -- re-cut:\n  scripts/interp-field-matrix.py --update", file=sys.stderr)
+        print("check-interp-fields: new direct fields on Interpreter:\n  "
+              + "\n  ".join(new)
+              + "\nPut the new state in its subsystem's type instead (ADR-10779 D4). The "
+              "holder field of an extracted subsystem is allowed by a new file "
+              "scripts/interp-fields.d/<subsystem>.txt naming it.", file=sys.stderr)
     if ok:
-        print(f"check-interp-fields: {count} Interpreter fields (baseline {allowed}), "
-              f"all classified")
+        print(f"check-interp-fields: {len(fields)} Interpreter fields, none new, "
+              f"all classified ({len(stale)} allowed names are no longer fields)")
     return 0 if ok else 1
 
 
@@ -202,6 +206,10 @@ pub struct Interpreter {
     errors = []
     if got != want:
         errors.append(f"parse_fields: expected {want}, got {got}")
+    new, stale = compare_to_baseline({"env": "", "fresh": ""}, {"env", "moved_out"})
+    if (new, stale) != (["fresh"], ["moved_out"]):
+        errors.append(f"compare_to_baseline: expected (['fresh'], ['moved_out']), "
+                      f"got ({new}, {stale})")
     for field, sub in [("env", "frame"), ("pending_call_arg_sources", "handoff"),
                        ("fn_resolve_cache", "caches"), ("raku_cycle_guards", "guards"),
                        ("no_such_field_xyz", "unclassified")]:
@@ -219,13 +227,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", help="also write the raw matrix here")
     ap.add_argument("--check", action="store_true", help="run the field-count ratchet")
-    ap.add_argument("--update", action="store_true", help="re-cut the ratchet baseline")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         return self_test()
-    if args.check or args.update:
-        return check(args.update)
+    if args.check:
+        return check()
 
     fields = parse_fields()
     accessors = trivial_accessors(fields)
@@ -362,7 +369,26 @@ def cluster(rows):
     return [[rows[i] for i in m] for m in members.values()]
 
 
+def holder_subsystems():
+    """`scripts/interp-fields.d/<subsystem>.txt` names the holder fields of an
+    extracted subsystem; the file's stem is the subsystem it belongs to, so an
+    extraction PR needs no edit to the `SUBSYSTEMS` rules either."""
+    out = {}
+    keys = {k for k, _, _ in SUBSYSTEMS}
+    if ALLOWED_DIR.is_dir():
+        for f in sorted(ALLOWED_DIR.glob("*.txt")):
+            if f.stem not in keys:
+                sys.exit(f"interp-field-matrix: {f.relative_to(ROOT)}: '{f.stem}' is not a "
+                         f"SUBSYSTEMS key ({', '.join(sorted(keys))})")
+            for name in read_names(f):
+                out[name] = f.stem
+    return out
+
+
 def subsystem_of(field):
+    held = holder_subsystems().get(field)
+    if held:
+        return held
     for key, _, rx in SUBSYSTEMS:
         if re.search(rx, field):
             return key
