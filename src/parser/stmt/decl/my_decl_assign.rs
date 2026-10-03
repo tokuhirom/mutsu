@@ -303,6 +303,15 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
     }
     let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
     if s.apply_modifier {
+        // A bare declaration followed by a loose word-logical (`my %h andthen
+        // do { ... }`, `my $x orelse fail`): the word-logicals are looser than
+        // the declarator, so this is `(my %h) andthen ...`. Re-attach the tail
+        // seeded by a re-read of the fresh variable, exactly as the `=`
+        // initializer path does (Net::HTTP's Transport.rakumod). Expression
+        // context leaves the tail to the enclosing expression parser.
+        let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&s.name);
+        let (rest, stmt) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(rest, stmt, seed)?;
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))

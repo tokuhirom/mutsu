@@ -80,10 +80,9 @@ impl Interpreter {
         if self.name_is_readonly_binding(&source) {
             return value;
         }
-        let existing = self.env.get(&source).cloned();
-        let cell = match existing {
-            Some(held) if matches!(held.view(), ValueView::ContainerRef(_)) => held,
-            Some(held) if matches!(held.view(), ValueView::Proxy { .. }) => return value,
+        let cell = match self.env.get(&source).cloned() {
+            Some(existing) if matches!(existing.view(), ValueView::ContainerRef(_)) => existing,
+            Some(existing) if matches!(existing.view(), ValueView::Proxy { .. }) => return value,
             _ => {
                 let cell = Value::container_ref(crate::gc::Gc::new(
                     crate::value::ContainerCell::new(value),
