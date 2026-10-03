@@ -374,6 +374,7 @@ impl Interpreter {
                 self.registry_mut()
                     .sync_accessor_entries(Symbol::intern(cx.name));
             }
+            self.queue_role_attribute_composes(&mut cx, own_attribute_names);
             self.run_pending_attr_composes(&mut cx)?;
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
             self.persist_class_body_statics(&cx, declared_static_names);

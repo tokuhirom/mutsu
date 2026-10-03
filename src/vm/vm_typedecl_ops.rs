@@ -1106,6 +1106,15 @@ impl Interpreter {
                     self.box_decl_local_cell(code, *slot as usize);
                 }
             }
+            // `use` is BEGIN-time: the body's imports are in scope for the
+            // declaration itself (its parents, attribute traits, nested types).
+            self.run_role_body_uses_at_declaration(&qualified_name, deferred_body_ops)?;
+            self.register_role_body_parent_types(
+                &qualified_name,
+                deferred_body_ops,
+                type_params,
+                parent_ops,
+            )?;
             loan_env!(
                 self,
                 register_role_decl(
