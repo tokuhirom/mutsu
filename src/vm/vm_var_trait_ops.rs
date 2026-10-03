@@ -266,10 +266,21 @@ impl Interpreter {
                 // variable readonly; otherwise `.^name`/`.raku` still report
                 // Array even though List's immutability is enforced.
                 let name_str = name.to_string();
+                // `List.STORE` keeps the initializer's elements as they are:
+                // `my @l is List = 1, @a, %h` holds `@a` and `%h` themselves,
+                // not the Scalar-wrapped copies the Array assignment in
+                // `SetLocal` made of them. Build from the raw RHS that
+                // `StashVarDeclInit` captured when it is a list.
+                let raw_list = stashed_init.as_ref().and_then(|raw| match raw.view() {
+                    ValueView::Array(items, _) => Some(Value::array(items.to_vec())),
+                    _ => None,
+                });
                 if let Some(current) = self.read_var_trait_target(code, eff_slot, &name_str)
                     && let ValueView::Array(items, _) = current.view()
                 {
-                    let list = Value::array_with_kind(items.clone(), crate::value::ArrayKind::List);
+                    let list = raw_list.unwrap_or_else(|| {
+                        Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
+                    });
                     if !self.write_var_trait_target(code, eff_slot, &name_str, list.clone()) {
                         self.set_env_with_main_alias(&name_str, list);
                     }
