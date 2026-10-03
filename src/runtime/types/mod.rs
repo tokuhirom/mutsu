@@ -1275,7 +1275,7 @@ impl Interpreter {
         Ok(value)
     }
 
-    pub(super) fn materialize_default_parametric_role(
+    pub(crate) fn materialize_default_parametric_role(
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
