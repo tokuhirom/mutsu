@@ -121,6 +121,15 @@ and its deletion criterion.
       - every entry of `scripts/layer-deps-baseline.txt`, so `check-layer-deps` reads 0.
 
       Progress is recorded in ADR-10779 §Implementation status, not here.
+- [ ] **Qualified names are built once, not by run-time string surgery** —
+      [#11507](https://github.com/tokuhirom/mutsu/issues/11507) (ratchet:
+      [#8899](https://github.com/tokuhirom/mutsu/issues/8899)). The work replaces the
+      run-time `format!("{pkg}::{name}")`, `== "GLOBAL"` and `"::"`
+      splitting/classification outside the parser and compiler with `src/qualified.rs`'s
+      memoizing constructors. `make check-name-scans` counts these sites: 577 on 2026-10-03
+      (qualify 158, global-cmp 86, scan 333). The completion criterion is that all three counts
+      reach 0, `scripts/name-scans-baseline.txt` is deleted, and the check becomes a plain ban,
+      as `check-magic-keys` did.
 
 RakuAST and the regex project meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
 a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so neither
