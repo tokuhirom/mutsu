@@ -379,10 +379,9 @@ impl Interpreter {
     pub(super) fn default_repo_dir(&self, kind: &str) -> Option<std::path::PathBuf> {
         let base = if let Some(xdg) = self.env_var_or_process("XDG_DATA_HOME") {
             std::path::PathBuf::from(xdg)
-        } else if let Some(home) = self.env_var_or_process("HOME") {
-            std::path::PathBuf::from(home).join(".local").join("share")
         } else {
-            return None;
+            let home = self.env_var_or_process("HOME")?;
+            std::path::PathBuf::from(home).join(".local").join("share")
         };
         Some(base.join("mutsu").join("repo").join(kind))
     }
