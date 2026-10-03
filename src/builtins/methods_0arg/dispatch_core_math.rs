@@ -171,7 +171,10 @@ pub(super) fn dispatch(
         // Cost: O(n), n = chars of the invocant's string form.
         "tclc" => Some(Some(crate::builtins::method_table::str::tclc(target, &[]))),
         // Cost: O(n), n = chars of the invocant's string form.
-        "wordcase" => Some(Some(crate::builtins::method_table::str::wordcase(target, &[]))),
+        "wordcase" => Some(Some(crate::builtins::method_table::str::wordcase(
+            target,
+            &[],
+        ))),
         // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
         // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {

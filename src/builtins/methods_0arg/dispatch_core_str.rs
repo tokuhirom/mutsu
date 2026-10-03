@@ -70,9 +70,15 @@ pub(super) fn dispatch(
         // Cost: O(n), n = chars of the invocant's string form.
         "trim" => Some(Some(crate::builtins::method_table::str::trim(target, &[]))),
         // Cost: O(n), n = chars of the invocant's string form.
-        "trim-leading" => Some(Some(crate::builtins::method_table::str::trim_leading(target, &[]))),
+        "trim-leading" => Some(Some(crate::builtins::method_table::str::trim_leading(
+            target,
+            &[],
+        ))),
         // Cost: O(n), n = chars of the invocant's string form.
-        "trim-trailing" => Some(Some(crate::builtins::method_table::str::trim_trailing(target, &[]))),
+        "trim-trailing" => Some(Some(crate::builtins::method_table::str::trim_trailing(
+            target,
+            &[],
+        ))),
         // Cost: O(n), n = chars of the invocant's string form.
         "flip" => Some(Some(crate::builtins::method_table::str::flip(target, &[]))),
         "so" => {
