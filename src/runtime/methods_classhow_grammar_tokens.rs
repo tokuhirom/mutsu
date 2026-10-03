@@ -9,6 +9,14 @@
 
 use super::*;
 
+/// A token's name, declaration line/file and parameters.
+type TokenEntry = (
+    String,
+    Option<i64>,
+    Option<String>,
+    Vec<crate::ast::ParamDef>,
+);
+
 impl Interpreter {
     /// Append a `Regex` method object for each token/rule/regex `owner`
     /// declares (its `:sym<..>` candidates and bare `proto token`s included),
@@ -18,12 +26,7 @@ impl Interpreter {
     pub(super) fn collect_grammar_token_methods(&self, owner: &str, result: &mut Vec<Value>) {
         let owner_sym = Symbol::intern(owner);
         let registry = self.registry();
-        let mut entries: Vec<(
-            String,
-            Option<i64>,
-            Option<String>,
-            Vec<crate::ast::ParamDef>,
-        )> = Vec::new();
+        let mut entries: Vec<TokenEntry> = Vec::new();
         for (key, defs) in registry.token_defs.iter() {
             let Some(name) = Self::grammar_token_member(*key, owner_sym) else {
                 continue;
