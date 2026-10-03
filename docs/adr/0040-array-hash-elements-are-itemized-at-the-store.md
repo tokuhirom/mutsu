@@ -1246,6 +1246,30 @@ the copy boundary intact even after a prior read has promoted an element.
 cases; their remaining failures are separate positional/error and ordering
 gaps recorded in `docs/batteries/toml.md`.
 
+## 11. Amendment (2026-10-03): the staging temp keeps its source's itemization
+
+Slice 2's exemption (above, "One desugar the slice made visibly wrong", item 1) was implemented as
+an active *strip*. `coerce_to_array` itemizes every element on its tail, and
+`deitemize_real_array_elements` then removed every element's itemization again for
+`@__destructure_tmp__`. That is right for a `List` RHS, whose elements are values. It is wrong
+for an `Array` RHS, whose elements are `Scalar` holders. Raku keeps those holders, so a `%` target
+reads one item and dies (#9898, ADR-0079 §6 rows 5-6):
+
+| Program | rakudo | mutsu before |
+| --- | --- | --- |
+| `my @a = 1, %h; my ($y, %r) = @a` | dies "Odd number of elements ... Only saw: ${...}" | `%r` is `%h` |
+| `my ($y, %r) = 1, %h` | `%r` is `%h` | `%r` is `%h` |
+
+**Amended rule: the staging temp neither adds nor removes element itemization.** It is built by
+`coerce_to_staging_array` (`runtime/utils/coerce_containers.rs`), which is `coerce_to_array`
+without the itemizing tail (`array_coerce::coerce_finite_to_array_unitemized`).
+`itemize_elements_for_var_assign` passes the temp through unchanged. `deitemize_real_array_elements`
+is deleted. A `List` literal's bare `%h` still arrives plain and flattens into a `%` target. An
+`Array`'s element arrives as the itemized holder it already was, in the source's own storage, so
+nothing allocates.
+
+Pinned by `t/routines/signature/destructure-keeps-source-itemization.t`.
+
 ---
 
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*

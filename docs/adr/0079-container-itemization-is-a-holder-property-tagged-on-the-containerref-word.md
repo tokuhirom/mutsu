@@ -263,7 +263,9 @@ unconditional and delete it.
 
 ## 6. Follow-ups, explicitly out of scope
 
-- **Rows 5–6** (`my ($y, %r) = @a` should die) have a different cause: ADR-0040 slice 2's
+- **Rows 5–6** (`my ($y, %r) = @a` should die) — **resolved 2026-10-03** (#9898, ADR-0040 §11:
+  the staging temp is now built without itemization instead of being stripped). Original note:
+  they have a different cause: ADR-0040 slice 2's
   `deitemize_real_array_elements` strips element itemization from the staging temp *unconditionally*,
   where the correct rule is that the temp neither **adds** itemization nor **removes** what its
   source produced (raku: a `List` literal's bare `%h` flattens, but an `Array`'s element does not).

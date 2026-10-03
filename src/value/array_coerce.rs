@@ -64,39 +64,22 @@ pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
     value
 }
 
-/// The mirror of [`itemize_real_array_elements`], for the one container that
-/// must NOT carry the property: the list-destructuring desugar's synthetic
-/// staging temp, which models the RHS `List` rather than a user `Array`. A
-/// `List`'s elements are values, not containers, so this temp must not carry
-/// Array element itemization (see `Interpreter::itemize_elements_for_var_assign`
-/// and ADR-0079 §1.1). Same scan-then-rebuild-only-if-needed shape.
-pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
-    let needs = match value.view() {
-        ValueView::Array(items, ArrayKind::Array | ArrayKind::Shaped | ArrayKind::ItemArray) => {
-            items.iter().any(|v| {
-                matches!(v.view(), ValueView::Array(_, k) if k.is_itemized())
-                    || matches!(v.view(), ValueView::Scalar(_))
-                    || (matches!(v.view(), ValueView::Hash(_)) && v.hash_is_itemized())
-            })
-        }
-        _ => false,
-    };
-    if !needs {
-        return value;
-    }
-    value.with_array_mut(|items, _kind| {
-        let data = crate::gc::Gc::make_mut(items);
-        for item in data.live_mut() {
-            *item = item.clone().deitemize_element();
-        }
-    });
-    value
-}
 /// [`coerce_to_array`](crate::runtime::utils::coerce_to_array) for a value
 /// that is not an unbounded range: build the real `Array` and itemize its
 /// elements.
 pub(crate) fn coerce_finite_to_array(value: Value) -> Value {
     itemize_real_array_elements(coerce_to_array_inner(value))
+}
+
+/// [`coerce_finite_to_array`] without the element itemization, for the
+/// list-destructuring staging temp (`my ($a, %h) = RHS`). That temp IS the
+/// RHS list rather than a user `Array`, so it must neither add element
+/// itemization nor remove the itemization its source produced (ADR-0079 §6,
+/// ADR-0040 amendment 2026-10-03): a `List` literal's bare `%h` stays a plain
+/// hash and flattens into a `%` target, while an `Array`'s element is a
+/// `Scalar` holder and stays itemized, so `my ($y, %r) = @a` dies as in Rakudo.
+pub(crate) fn coerce_finite_to_array_unitemized(value: Value) -> Value {
+    coerce_to_array_inner(value)
 }
 
 fn coerce_to_array_inner(value: Value) -> Value {

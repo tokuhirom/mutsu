@@ -475,6 +475,16 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
     crate::value::array_coerce::coerce_finite_to_array(value)
 }
 
+/// [`coerce_to_array`] for the list-destructuring staging temp: each element
+/// keeps the itemization its source gave it
+/// ([`crate::value::array_coerce::coerce_finite_to_array_unitemized`]).
+pub(crate) fn coerce_to_staging_array(value: Value) -> Value {
+    if let Some(lazy) = crate::runtime::utils::infinite_range_to_lazy_array(&value) {
+        return lazy;
+    }
+    crate::value::array_coerce::coerce_finite_to_array_unitemized(value)
+}
+
 pub(crate) fn coerce_to_str(value: &Value) -> String {
     value.to_str_context()
 }

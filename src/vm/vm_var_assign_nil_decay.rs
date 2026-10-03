@@ -142,9 +142,10 @@ impl Interpreter {
     /// ADR-0040 §1.7 files as its own ticket.
     pub(crate) fn itemize_elements_for_var_assign(name: &str, value: Value) -> Value {
         if Self::is_destructure_staging_temp(name) {
-            // `coerce_to_array`'s own tail already itemized on the way here, so
-            // this actively strips it back off rather than merely skipping.
-            return crate::runtime::utils::deitemize_real_array_elements(value);
+            // The temp was built by `coerce_to_staging_array`, which keeps each
+            // element's itemization exactly as the RHS produced it: neither
+            // added here nor stripped (ADR-0079 §6).
+            return value;
         }
         crate::runtime::utils::itemize_real_array_elements(value)
     }

@@ -410,9 +410,7 @@ pub(crate) use set_ops::*;
 // The name-marker byte scans live below the runtime (issue #10779); the
 // glob re-export keeps them reachable as `runtime::utils::*`.
 pub(crate) use crate::str_scan::*;
-pub(crate) use crate::value::array_coerce::{
-    deitemize_real_array_elements, itemize_real_array_elements,
-};
+pub(crate) use crate::value::array_coerce::itemize_real_array_elements;
 pub(crate) use crate::value::buf_class_names::*;
 pub(crate) use crate::value::compare::*;
 pub(crate) use crate::value::identity::*;

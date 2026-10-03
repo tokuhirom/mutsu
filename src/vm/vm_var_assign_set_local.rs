@@ -1976,7 +1976,11 @@ impl Interpreter {
                         // array.  Assignment (not binding) creates new
                         // containers, so bound refs must be snapshotted.
                         let other = self.resolve_bound_array_elements(raw_popped.clone());
-                        runtime::coerce_to_array(other)
+                        if Self::is_destructure_staging_temp(name) {
+                            runtime::utils::coerce_to_staging_array(other)
+                        } else {
+                            runtime::coerce_to_array(other)
+                        }
                     }
                 }
             };
