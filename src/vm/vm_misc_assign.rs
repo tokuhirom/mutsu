@@ -506,6 +506,9 @@ impl Interpreter {
         let attr_constraint = (!val.is_nil())
             .then(|| self.scalar_attr_type_constraint(&name))
             .flatten();
+        // A Proxy's STORE gets an assigned `Nil` as written (see the Proxy arm
+        // below); the Nil resets that follow are for containers.
+        let assigned_nil = val.is_nil();
         let mut val = if !name.starts_with('@')
             && !name.starts_with('%')
             && let Some(constraint) =
@@ -602,7 +605,10 @@ impl Interpreter {
                 && !storer.is_nil()
             {
                 let proxy_val = current_proxy.unwrap();
-                loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
+                let stored = if assigned_nil { Value::NIL } else { val.clone() };
+                // The expression's value is the Proxy container, read through
+                // FETCH, not the right-hand side.
+                let fetched = loan_env!(self, assign_proxy_lvalue(proxy_val, stored))?;
                 // A Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = v`) mutates
                 // the referent caller lexical (`$str`) by name in env. The STORE
                 // records the referent on the retain-on-miss writeback list
@@ -610,7 +616,7 @@ impl Interpreter {
                 // is refreshed precisely without the blanket env→locals pull
                 // (substrate step toward env_dirty removal; byte-identical under ON).
                 self.apply_pending_rw_writeback(code);
-                self.stack.push(val);
+                self.stack.push(fetched);
                 return Ok(());
             }
         }

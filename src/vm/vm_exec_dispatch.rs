@@ -2073,6 +2073,9 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
+                // A Proxy's STORE gets an assigned `Nil` as written (see the
+                // Proxy arm below); the decays that follow are for containers.
+                let assigned_nil = val.is_nil();
                 // A Nil ASSIGNED to an `is default(...)` scalar stores the
                 // default, as `exec_set_local_op`'s STORE does. A write from a
                 // closure (or named sub) that captured the variable lands here
@@ -2551,6 +2554,7 @@ impl Interpreter {
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
                     {
+                        let val = if assigned_nil { Value::NIL } else { val };
                         loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
                         *ip += 1;
                         return Ok(());
