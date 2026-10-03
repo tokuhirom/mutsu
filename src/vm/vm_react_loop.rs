@@ -257,11 +257,13 @@ impl Interpreter {
                             continue;
                         }
                         // A `Channel.Supply` carries the channel itself. Drain
-                        // it here rather than through the send-time supplier
-                        // bridge: rakudo's `Channel.Supply` is pumped, so values
-                        // sent BEFORE the tap existed are still on the queue and
-                        // must be delivered, and a value sent after the tap does
-                        // not count as emitted until the loop actually runs.
+                        // it here, as one more consumer of the queue, rather
+                        // than tapping its on-demand producer
+                        // (`native_methods::channel_supply`): rakudo's
+                        // `Channel.Supply` is pumped, so values sent BEFORE the
+                        // tap existed are still on the queue and must be
+                        // delivered, and a value sent after the tap does not
+                        // count as emitted until the loop actually runs.
                         if let Some(ValueView::Channel(ch)) =
                             attributes.as_map().get("channel").map(Value::view)
                         {

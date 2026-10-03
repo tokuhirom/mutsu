@@ -83,7 +83,7 @@ impl Interpreter {
                 {
                     return res.map(|_| Value::NIL);
                 }
-                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                if let Some(buf) = self.supply_emit_frame_for(supplier_id_from_attrs(attributes)) {
                     buf.push(value.clone());
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
@@ -358,7 +358,7 @@ impl Interpreter {
                     return res.map(|_| (Value::NIL, attrs));
                 }
                 // Push to supply_emit_buffer if active
-                if let Some(buf) = self.supply_emit_buffer.last_mut() {
+                if let Some(buf) = self.supply_emit_frame_for(supplier_id_from_attrs(&attrs)) {
                     buf.push(value.clone());
                 }
                 if let Some(buf) = self.supply_emit_timed_buffer.last_mut() {

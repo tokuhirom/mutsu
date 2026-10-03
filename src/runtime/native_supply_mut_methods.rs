@@ -6,7 +6,7 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    pub(super) fn native_supply_mut(
+    pub(super) fn native_supply_mut_unpumped(
         &mut self,
         mut attrs: AttrMap,
         method: &str,

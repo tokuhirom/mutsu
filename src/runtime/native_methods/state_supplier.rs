@@ -1169,10 +1169,8 @@ pub(in crate::runtime) enum SupplierEmitAction {
 /// skip conditions [`supplier_emit_callbacks_inner`]'s loop applies, so an index
 /// this returns is one that loop will act on.
 ///
-/// A `Channel`-backed Supply's taps are *competing* consumers rather than a
-/// broadcast audience (a `Channel` is a queue: rakudo's `Channel.Supply` is a
-/// view onto a `.receive` loop), so `Channel.send` enumerates them and hands the
-/// value to exactly one.
+/// A `Channel.Supply` tap counts as ready to take values from the channel
+/// queue once its emitter has such a tap (`native_methods::channel_supply`).
 pub(in crate::runtime) fn supplier_live_tap_indices(supplier_id: u64) -> Vec<usize> {
     let Ok(map) = supplier_subscriptions_map().lock() else {
         return Vec::new();
@@ -1192,35 +1190,11 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
     supplier_id: u64,
     emitted_value: &Value,
 ) -> Vec<SupplierEmitAction> {
-    supplier_emit_callbacks_inner(supplier_id, None, emitted_value)
-}
-
-/// [`supplier_emit_callbacks`] restricted to a SINGLE tap of the supplier —
-/// the competing-consumer delivery a `Channel`-backed Supply needs, where a
-/// value one tap takes is gone for the others. `tap_index` comes from
-/// [`supplier_live_tap_indices`]; a stale index (the tap closed in between)
-/// simply produces no actions.
-pub(in crate::runtime) fn supplier_emit_callbacks_for_tap(
-    supplier_id: u64,
-    tap_index: usize,
-    emitted_value: &Value,
-) -> Vec<SupplierEmitAction> {
-    supplier_emit_callbacks_inner(supplier_id, Some(tap_index), emitted_value)
-}
-
-fn supplier_emit_callbacks_inner(
-    supplier_id: u64,
-    only_tap: Option<usize>,
-    emitted_value: &Value,
-) -> Vec<SupplierEmitAction> {
     let mut actions = Vec::new();
     if let Ok(mut map) = supplier_subscriptions_map().lock()
         && let Some(subs) = map.get_mut(&supplier_id)
     {
         for (idx, tap) in subs.taps.iter_mut().enumerate() {
-            if only_tap.is_some_and(|only| only != idx) {
-                continue;
-            }
             if tap.closed {
                 continue;
             }

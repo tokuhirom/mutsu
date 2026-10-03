@@ -542,6 +542,30 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__ChannelSupply".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The per-tap producer of a `Channel.Supply`, and the closer
+                // that detaches the tap -- see `native_methods::channel_supply`.
+                native_methods: [
+                    "__mutsu_channel_supply_start",
+                    "__mutsu_channel_supply_close",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__ChannelSupply"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        classes.insert(
             "__SupplyDerive".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -3337,6 +3361,8 @@ impl Interpreter {
             start_invocant: Default::default(),
             grammar_dynvar_decls_cache: HashMap::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_owners: Vec::new(),
+            pending_channel_taps: Vec::new(),
             pending_react_subscriptions: Vec::new(),
             nested_react_callbacks: std::collections::HashSet::new(),
             active_supply_emitters: Vec::new(),

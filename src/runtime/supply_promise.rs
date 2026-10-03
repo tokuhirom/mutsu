@@ -184,6 +184,10 @@ impl Interpreter {
             a
         });
         self.supply_emit_buffer.push(Vec::new());
+        if let Some(sid) = emitter_supplier_id {
+            self.supply_emit_owners
+                .push((self.supply_emit_buffer.len(), sid));
+        }
         // "Did the body complete *this* supply?" must be asked of this emitter,
         // not of the process. With an id, count `done`s on the emitter itself;
         // without one (`done` cannot reach a supplier), fall back to this
@@ -213,6 +217,9 @@ impl Interpreter {
             None => thread_supplier_done_count(),
         };
         let body_ran_done = done_after > done_before;
+        if emitter_supplier_id.is_some() {
+            self.supply_emit_owners.pop();
+        }
         let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
         (result, emitted, body_ran_done)
     }

@@ -918,6 +918,8 @@ impl Interpreter {
             start_invocant: Default::default(),
             grammar_dynvar_decls_cache: HashMap::new(),
             supply_emit_buffer: Vec::new(),
+            supply_emit_owners: Vec::new(),
+            pending_channel_taps: Vec::new(),
             pending_react_subscriptions: Vec::new(),
             nested_react_callbacks: std::collections::HashSet::new(),
             active_supply_emitters: Vec::new(),

@@ -621,7 +621,9 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
+mod value_channel_taps;
 pub(crate) use buf_bytes::BufBytes;
+pub(crate) use value_channel_taps::ChannelEnd;
 pub(crate) mod value_buf;
 pub(crate) mod value_buf_repr;
 pub(crate) mod value_carray;
@@ -3703,15 +3705,30 @@ struct ChannelState {
     drained_closed: bool,
     failure: Option<Value>,
     closed_promise: SharedPromise,
-    supplier_ids: Vec<u64>,
-    /// Round-robin cursor over the live taps of this channel's Supplies. A
-    /// `Channel` is a queue, not a broadcast point, so each sent value goes to
-    /// exactly one of them; this is what picks which. Bumped once per `send`
-    /// that has a live tap to hand the value to.
-    supply_turn: usize,
+    /// The taps of this channel's `Supply` views, each a competing consumer of
+    /// `queue` (see `SharedChannel::attach_tap`). A value leaves the queue for
+    /// exactly one consumer -- a tap, a `receive`/`poll`, or a react `whenever`
+    /// draining the queue -- never for several.
+    taps: Vec<ChannelTap>,
+    /// Round-robin cursor over `taps`: which tap the next value pumped out of
+    /// the queue goes to.
+    tap_turn: usize,
+    next_tap_id: u64,
     /// Drive-loop wakers to poke on every send/close/fail, so a react
     /// polling this channel wakes immediately instead of on its poll cap.
     wakers: Vec<crate::value::waker::ReactWaker>,
+}
+
+/// One tap of a `Channel.Supply`: the emitter of the on-demand supply that
+/// tap started. Values pumped out of the channel queue for this tap are
+/// emitted on it.
+#[derive(Debug, Clone)]
+struct ChannelTap {
+    id: u64,
+    emitter: Value,
+    /// Set once the `.tap` call that started this tap has registered its
+    /// callback (`SharedChannel::mark_tap_ready`).
+    ready: bool,
 }
 
 #[derive(Debug, Clone)]

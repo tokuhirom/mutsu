@@ -998,6 +998,7 @@ pub(crate) mod stack_budget;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
+mod supply_emit_frame;
 mod supply_promise;
 mod supply_transform;
 mod system;
@@ -3877,6 +3878,18 @@ pub struct Interpreter {
     /// registration is rare and global.
     grammar_dynvar_decls_cache: HashMap<String, (u64, HashMap<String, Vec<String>>)>,
     pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    /// Which emitter owns a `supply_emit_buffer` frame: `(frame depth,
+    /// emitter supplier id)`, pushed by `run_on_demand_body` for the frame it
+    /// opens. An on-demand body's frame collects only what is emitted on its
+    /// *own* emitter; an emission on any other `Supplier` made while the body
+    /// runs (`supply { $other.emit(1) }`, or a `Channel.send` handing a value to
+    /// a `Channel.Supply` tap) belongs to that supplier's taps alone. See
+    /// `Interpreter::supply_emit_frame_for`.
+    pub(super) supply_emit_owners: Vec<(usize, u64)>,
+    /// `Channel.Supply` taps attached by a producer whose `.tap` call has not
+    /// finished registering yet; that call marks them ready
+    /// (`native_methods::channel_supply`).
+    pub(super) pending_channel_taps: Vec<(crate::value::SharedChannel, u64)>,
     /// `whenever` subscription markers registered while a react drive loop is
     /// already running (a `whenever` nested inside another `whenever`'s body).
     /// The loop adopts them on its next round; see
