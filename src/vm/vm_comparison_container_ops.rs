@@ -193,6 +193,24 @@ impl Interpreter {
         crate::runtime::scalar_bind_no_container_key(name)
     }
 
+    /// The by-name store's half of `bind_marks_no_container` (the SetLocal
+    /// path keys it by a precomputed slot symbol): a slot-less `$` declaration
+    /// records whether it was `:=`-bound straight to a value, and clears a
+    /// stale mark otherwise so a redeclaration owns a Scalar again.
+    // Cost: O(1).
+    pub(crate) fn record_scalar_decl_container_by_name(&mut self, name: &str, marks: bool) {
+        if name.starts_with(['@', '%', '&']) {
+            return;
+        }
+        if marks {
+            let sym = crate::symbol::Symbol::intern(&Self::scalar_bind_no_container_key(name));
+            self.env_mut().insert_sym_noting(sym, Value::TRUE);
+        } else if crate::env::scalar_bind_no_container_possible() {
+            let sym = crate::symbol::Symbol::intern(&Self::scalar_bind_no_container_key(name));
+            self.env_mut().remove_sym(sym);
+        }
+    }
+
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
     /// binding root for a variable name.
     pub(crate) fn resolve_alias_root(&self, name: &str) -> String {

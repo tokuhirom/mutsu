@@ -210,6 +210,11 @@ impl UndeclaredName<'_> {
         {
             return self.is_known(&name[..open]);
         }
+        // A module's own declaration resolves only where that module is
+        // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
+        if interp.module_name_hidden_here(name) {
+            return self.declared.contains(name);
+        }
         is_core_term(name)
             // Package-qualified names are looked up elsewhere.
             || name.contains("::")

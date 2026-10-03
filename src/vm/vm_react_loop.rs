@@ -135,7 +135,11 @@ impl Interpreter {
 
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
-        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default().values;
+        let frame = self.supply_emit_buffer.pop().unwrap_or_default();
+        let subscriptions = frame.values;
+        // Dropped on every exit: releases the producers the body's `whenever`s
+        // held (see `runtime/react_setup.rs`).
+        let mut setup = frame.react_setup;
         if subscriptions.is_empty() {
             return Ok(());
         }
@@ -167,7 +171,29 @@ impl Interpreter {
             return Ok(());
         }
 
-        let result = self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React);
+        let result = match setup.as_mut() {
+            // Register the sinks on the waker the held producers wait on: the
+            // registration replays what they emitted during the body into it,
+            // and the drive loop's synchronous delivery then releases each
+            // producer once its event is handled.
+            Some(setup) => {
+                let waker = setup.finish_body();
+                let regs: Vec<(u64, usize)> = react_subs
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
+                    .collect();
+                let sink_regs =
+                    crate::runtime::native_methods::supplier_sinks_register_batch(&regs, &waker);
+                self.drive_react_subscriptions_nested_prewired(
+                    react_subs,
+                    SupplyDrivePolicy::React,
+                    Some((waker, sink_regs)),
+                )
+            }
+            None => self.drive_react_subscriptions_nested(react_subs, SupplyDrivePolicy::React),
+        };
+        drop(setup);
         if let Some(base) = stream_base {
             self.supply_stream_consumers.truncate(base);
         }
