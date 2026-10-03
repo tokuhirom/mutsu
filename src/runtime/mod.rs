@@ -955,6 +955,7 @@ mod resolution_method;
 mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
+pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;

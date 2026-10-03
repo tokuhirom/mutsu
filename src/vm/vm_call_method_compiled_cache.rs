@@ -7,7 +7,7 @@ use super::*;
 const CALLSITE_LINE_MARKER_KEY: &str = "__mutsu_test_callsite_line";
 
 /// Cache-key marker appended after an argument's type key when that argument is
-/// *undefined* (`value_is_defined` is false). A `:D`/`:U` smiley candidate set
+/// not concrete (`value_is_concrete` is false -- the bit a smiley tests). A `:D`/`:U` smiley candidate set
 /// dispatches on exactly that bit on top of the type, so a key that carries it
 /// stays a function of the winner — which is what lets
 /// `multi_dispatch_type_cacheable` / `func_multi_dispatch_type_cacheable` admit
@@ -251,10 +251,10 @@ impl Interpreter {
             // alone does not carry it: a type object `Int` and the instance `42`
             // both key as `Int`, and an empty `Slip` keys the same as a full one.
             // Append the marker so those land in different buckets. Cheap and
-            // side-effect free -- `value_is_defined` is a pure view match, and
+            // side-effect free -- `value_is_concrete` is a pure view match, and
             // the views it would have to lock through were unwrapped
             // (`ContainerRef`) or already returned `None` (`Mixin`) above.
-            if !crate::runtime::types::value_is_defined(a) {
+            if !crate::runtime::types::value_is_concrete(a) {
                 keys.push(key_syms::undefined_arg());
             }
         }
@@ -269,7 +269,7 @@ impl Interpreter {
     /// they gate the same kind of cache over the same key shape.
     ///
     /// A trailing `:D`/`:U`/`:_` smiley is **not** value-dependent: the smiley
-    /// tests exactly `value_is_defined`, and [`Self::multi_arg_type_keys`]
+    /// tests exactly `value_is_concrete`, and [`Self::multi_arg_type_keys`]
     /// carries that bit in the key ([`UNDEFINED_ARG_KEY`]). This is what lets
     /// the vendored upstream `Test`'s smiley-split assertions
     /// (`multi sub is(Mu $got, Mu:U $expected, …)` /
@@ -546,7 +546,7 @@ impl Interpreter {
             // Without it, `Cook.gist` and `Cook.new.gist` share one bucket and
             // the second is served the first's candidate
             // (`t/multi-method-invocant-definedness.t`).
-            if !crate::runtime::types::value_is_defined(target) {
+            if !crate::runtime::types::value_is_concrete(target) {
                 arg_keys.insert(0, key_syms::undefined_arg());
             }
             let mkey = (class_sym, method_sym, arg_keys);

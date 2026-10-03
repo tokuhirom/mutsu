@@ -1307,8 +1307,11 @@ impl Interpreter {
                 return false;
             }
             return match smiley {
-                ":U" => !value_is_defined(value),
-                ":D" => value_is_defined(value),
+                // A smiley tests concreteness (`nqp::isconcrete`), not
+                // `.defined`: `Empty` and a `Failure` are concrete instances
+                // even though `.defined` is False for them.
+                ":U" => !crate::runtime::types::value_is_concrete(value),
+                ":D" => crate::runtime::types::value_is_concrete(value),
                 ":_" => true,
                 _ => true,
             };
