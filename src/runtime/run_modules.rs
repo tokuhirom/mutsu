@@ -1607,7 +1607,7 @@ impl Interpreter {
         // this code, and the packages a module declares are not derivable
         // from its name -- `Acme/Cow.rakumod` declares `unit module Cow;`.
         // See `Interpreter::module_granted_packages`.
-        crate::runtime::cow_table_mut(&mut self.module_granted_packages)
+        crate::runtime::cow_table_mut(&mut self.module_visibility.module_granted_packages)
             .entry(module.to_string())
             .or_default()
             .extend(grant);

@@ -294,7 +294,7 @@ impl Interpreter {
                     // its name resolves here is the ADR-11136 gate's call, not
                     // the registry's.
                     || crate::symbol::Symbol::lookup(key)
-                        .is_some_and(|sym| self.module_name_providers.contains_key(&sym))
+                        .is_some_and(|sym| self.module_visibility.module_name_providers.contains_key(&sym))
             })
             .cloned()
             .collect();

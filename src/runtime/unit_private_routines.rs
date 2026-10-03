@@ -489,7 +489,9 @@ impl Interpreter {
     /// the name-keyed resolution caches, which are not keyed by unit.
     #[inline]
     pub(crate) fn is_unit_scoped_routine_name(&self, name: &str) -> bool {
-        if self.unit_private_names.is_empty() && self.module_routine_providers.is_empty() {
+        if self.unit_private_names.is_empty()
+            && self.module_visibility.module_routine_providers.is_empty()
+        {
             return false;
         }
         Symbol::lookup(name).is_some_and(|s| self.is_unit_scoped_routine_sym(s))
@@ -501,7 +503,10 @@ impl Interpreter {
     #[inline]
     pub(crate) fn is_unit_scoped_routine_sym(&self, name: Symbol) -> bool {
         (!self.unit_private_names.is_empty() && self.unit_private_names.contains(&name))
-            || (!self.module_routine_providers.is_empty()
-                && self.module_routine_providers.contains_key(&name))
+            || (!self.module_visibility.module_routine_providers.is_empty()
+                && self
+                    .module_visibility
+                    .module_routine_providers
+                    .contains_key(&name))
     }
 }

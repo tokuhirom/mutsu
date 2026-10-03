@@ -691,7 +691,7 @@ impl Interpreter {
         // allocation — for the overwhelmingly common case of a program that
         // spliced no prelude at all.
         let gate = !self.prelude_registered_functions.is_empty()
-            || !self.module_routine_providers.is_empty();
+            || !self.module_visibility.module_routine_providers.is_empty();
         self.bare_name_packages_syms().iter().any(|pkg| {
             self.registry().has_declared_function(pkg.as_str(), name)
                 && (!gate || {

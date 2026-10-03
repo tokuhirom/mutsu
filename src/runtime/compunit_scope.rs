@@ -293,7 +293,7 @@ impl Interpreter {
         // module `RT123276` publishes) -- never by the permissive fallback
         // below (ADR-11136).
         if let Some(sym) = Symbol::lookup(top)
-            && let Some(&module) = self.module_name_providers.get(&sym)
+            && let Some(&module) = self.module_visibility.module_name_providers.get(&sym)
         {
             return granted || self.module_merged_here(module);
         }
@@ -359,6 +359,7 @@ impl Interpreter {
         for _ in 0..64 {
             let Some(sym) = unit else { return false };
             if self
+                .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(top))
@@ -430,6 +431,7 @@ impl Interpreter {
                 return true;
             }
             if self
+                .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(prefix))
@@ -498,6 +500,7 @@ impl Interpreter {
         // the first importer an `EVAL` unit routinely, so the script's own
         // `use` was the one that lost.
         let mut grant: HashSet<String> = self
+            .module_visibility
             .module_granted_packages
             .get(module)
             .cloned()

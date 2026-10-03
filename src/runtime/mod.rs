@@ -789,7 +789,7 @@ mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
-mod module_merge;
+pub(crate) mod module_merge;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
@@ -2371,50 +2371,10 @@ pub struct Interpreter {
     /// blocks, and a script's own top-level `unit module`, never populate
     /// this table, so they are never mistakenly gated).
     pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
-    /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
-    /// module, the top-level package names (same first-segment granularity
-    /// as `package_declaring_units`) it is therefore entitled to reference
-    /// package-qualified — e.g. `use OuterConst;` grants `"OuterConst"`, but
-    /// NOT `"InnerConst"` even though `OuterConst.rakumod` itself `use`d
-    /// `InnerConst`: rakudo installs a `use`d package into the *importing*
-    /// compunit's `MY::` only, so visibility does not transit through a
-    /// second `use`. `Interpreter::qualified_name_visible_here` walks the
-    /// `EVAL` parent chain (`eval_unit_parent`) from the executing unit
-    /// consulting this table, exactly as `prelude_visible_here` does for
-    /// prelude splices.
-    pub(crate) compunit_visible_packages: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
-    /// The package names one module's FIRST load granted to its importer
-    /// (`compunit_visible_packages`), keyed by the module name — its own
-    /// name, the `unit module`/`unit class` package it declares, every type
-    /// it registered under that prefix, and each of their top-level
-    /// `::`-segments.
-    ///
-    /// A re-`use` of an already-loaded module never re-runs that load, so it
-    /// cannot recompute the set; without replaying it, the second importer
-    /// only ever learns the module's own name. That is invisible while the
-    /// declared package matches the file name, and fatal when it does not:
-    /// `Acme/Cow.rakumod` says `unit module Cow;`, so a script whose first
-    /// load came from an `EVAL` (`Test`'s `use-ok`) reached `Cow::cow` only
-    /// through a grant its own `use Acme::Cow;` never made.
-    pub(crate) module_granted_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
-    /// ADR-11136: the module whose load published each bare package-scope
-    /// name (a class, role, enum, subset, package, `our` sub or term) its own
-    /// body declared. A name the program or a module had published before
-    /// is never attributed, so only a module's own GLOBAL merge is gated.
-    pub(crate) module_name_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
-    /// ADR-11136: the module whose load published each package-less
-    /// `our sub` (`GLOBAL::name`), by bare name.
-    pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
-    /// ADR-11136: the compunit each loaded module's source is.
-    pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
-    /// ADR-11136: the modules a compunit merged at its top level. A
-    /// block-level merge lives in the block's env tier instead
-    /// (`MetaNs::ModuleMerge`).
-    pub(crate) unit_merged_modules: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
-    /// ADR-11136: the modules whose load granted each package
-    /// (`module_granted_packages` inverted), so the #7797 qualified gate
-    /// can honour a block-level merge.
-    pub(crate) package_granting_modules: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    /// Which module declarations resolve where: the #7797 package grants and
+    /// ADR-11136's GLOBAL-merge provenance and merges
+    /// (`runtime::module_merge::ModuleVisibility`).
+    pub(crate) module_visibility: module_merge::ModuleVisibility,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
