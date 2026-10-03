@@ -757,6 +757,19 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        if let Some(captured) = self.mainline_capture_at(code, idx as usize) {
+            self.exec_set_local_op_hoisted(code, idx)?;
+            self.follow_mainline_redeclaration(code, idx as usize, captured);
+            return Ok(());
+        }
+        self.exec_set_local_op_hoisted(code, idx)
+    }
+
+    fn exec_set_local_op_hoisted(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
         // A declaration whose slot holds the cell a hoisted sub seeded for it
         // (#9911, `vm_hoist_capture_cells.rs`): the store replaces the slot,
         // then the value moves into that cell.

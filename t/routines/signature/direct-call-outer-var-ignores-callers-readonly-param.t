@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 8;
+plan 9;
 
 # A sub called directly by name writes an outer `my` variable. The variable's
 # own binding decides whether that is allowed, not a same-named readonly
@@ -47,9 +47,15 @@ throws-like { outer-param(5) }, Exception,
     message => 'Cannot assign to a readonly variable or a value',
     'a nested sub still refuses to assign its enclosing routine\'s readonly param';
 
-# (An immutable `:=` outer binding is pinned by
-# routine-code-value-outer-var-ignores-callers-readonly-param.t; it cannot live
-# in this file next to the `constant` below until #11263 is fixed.)
+# An immutable `:=` outer binding answers for itself even though this file
+# declares a `constant` below, which puts the subs in the BEGIN prologue
+# (#11263).
+my $imm := 42;
+sub write-imm { $imm = 1 }
+sub shadow-imm($imm) { write-imm() }
+throws-like { shadow-imm(1) }, Exception,
+    message => 'Cannot assign to an immutable value',
+    'an immutable binding refuses the write from a caller with a same-named param';
 
 constant $c = 5;
 sub write-c { $c = 1 }
