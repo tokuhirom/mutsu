@@ -50,7 +50,7 @@ impl Interpreter {
     /// have no VM callframes. Both backtraces are captured now and rendered only
     /// when read.
     // Cost: O(1) amortized (see `capture_backtrace`); rendering is deferred.
-    pub(super) fn attach_lazy_backtrace_to_error(
+    pub(crate) fn attach_lazy_backtrace_to_error(
         &self,
         err: &mut crate::value::RuntimeError,
         leading: &[&'static str],

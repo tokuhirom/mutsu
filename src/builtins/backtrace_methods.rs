@@ -122,7 +122,7 @@ pub(crate) fn frames_of(attributes: &Gc<InstanceAttrs>) -> Vec<Value> {
         .collect()
 }
 
-fn frame_field(frame: &Value, key: &str) -> String {
+pub(crate) fn frame_field(frame: &Value, key: &str) -> String {
     match frame.view() {
         ValueView::Instance { attributes, .. } => attributes
             .as_map()

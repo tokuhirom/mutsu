@@ -411,7 +411,7 @@ impl Interpreter {
             .then(|| self.enter_installing_env(installing_base, installing_call_depth));
         let handler_env = handler_env.flatten();
         self.env_mut().insert("!".to_string(), Value::NIL);
-        self.env_mut().insert("_".to_string(), err_val);
+        self.env_mut().insert("_".to_string(), err_val.clone());
         let saved_when = self.when_matched();
         self.set_when_matched(false);
 
@@ -421,7 +421,7 @@ impl Interpreter {
         // The handler runs on the throw site's operand stack; isolate its effects
         // so the suspended computation's stack is left exactly as it was.
         let saved_stack = self.stack.len();
-        let result = self.run_range(code, catch_begin, control_begin, fns);
+        let result = self.run_handler_range(code, catch_begin, control_begin, fns, Some(err_val));
         self.stack.truncate(saved_stack);
         let handled = self.when_matched();
         if let Some(frame) = frame {

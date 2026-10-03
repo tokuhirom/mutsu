@@ -91,6 +91,12 @@ pub(crate) struct ControlState {
     pub(crate) catch_handlers: Vec<crate::vm::CatchHandlerEntry>,
     /// Monotonic id source for `CatchHandlerEntry::token`.
     pub(crate) catch_handler_seq: u64,
+    /// The exception each CATCH/CONTROL handler currently executing on the
+    /// dynamic call stack is handling, innermost last: what `nqp::exception()`
+    /// answers. MoarVM keeps the same thing as the thread's active-handler
+    /// chain, so a routine called from a handler sees it too. Pushed and
+    /// popped around every handler run by [`Interpreter::run_handler_range`].
+    pub(crate) handled_exceptions: Vec<Value>,
     pub(crate) check_phaser_depth: u32,
     /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
     /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.

@@ -148,7 +148,7 @@ impl Interpreter {
         let warn_signal = RuntimeError::warn_signal(message.to_string());
         let topic = Self::control_signal_topic_value(&warn_signal);
         let saved_topic = self.env().get("_").cloned();
-        if let Some(t) = topic {
+        if let Some(t) = topic.clone() {
             self.env_mut().insert("_".to_string(), t);
         }
         let saved_when = self.when_matched();
@@ -164,7 +164,7 @@ impl Interpreter {
         // The handler runs on the raise site's operand stack; isolate its
         // effects so the suspended computation's stack is left untouched.
         let saved_stack = self.stack.len();
-        let result = self.run_range(code, control_begin, end, fns);
+        let result = self.run_handler_range(code, control_begin, end, fns, topic);
         self.stack.truncate(saved_stack);
         let matched = self.when_matched();
         self.leave_installing_frame(code, frame);

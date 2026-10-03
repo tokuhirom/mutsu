@@ -139,6 +139,11 @@ impl Interpreter {
             err.exception = Some(Box::new(exception));
             err
         };
+        // Capture the backtrace here, at the throw site, as the `Die` opcode
+        // does: a CATCH run inline below sees the exception before the
+        // dispatch loop's generic attach would add one.
+        let mut err = err;
+        self.attach_lazy_backtrace_to_error(&mut err, &["throw", "die"]);
         // ADR-0072: `die` in *expression* position (`my $x = die "..."`) compiles
         // to a call, so this is the resumable throw site for that form. A
         // resume-capable CATCH several frames up runs INLINE here; on `.resume`
@@ -173,6 +178,19 @@ impl Interpreter {
         let mut err = RuntimeError::new("Failed");
         err.control = Some(crate::value::Control::Fail);
         Err(err)
+    }
+
+    /// `take $value`: hand `value` to the innermost `gather` collecting on
+    /// this thread, or raise the `CX::Take` control signal for a lazily
+    /// driven one (or a CONTROL handler) further out.
+    // Cost: O(1) amortized (one push onto the gather's buffer).
+    pub(super) fn builtin_take_value(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if self.gather_items_len() > 0 {
+            self.take_value(value.clone())?;
+            Ok(value)
+        } else {
+            Err(RuntimeError::take_signal(value))
+        }
     }
 
     pub(super) fn builtin_succeed(&self, args: &[Value]) -> Result<Value, RuntimeError> {

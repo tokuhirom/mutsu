@@ -281,12 +281,19 @@ impl Interpreter {
                 if control_begin < end {
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
-                    if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
-                        self.env_mut().insert("_".to_string(), signal_topic);
+                    let signal_topic = Self::control_signal_topic_value(&e);
+                    if let Some(topic) = signal_topic.clone() {
+                        self.env_mut().insert("_".to_string(), topic);
                     }
                     let saved_when = self.when_matched();
                     loan_env!(self, set_when_matched(false));
-                    let control_result = self.run_range(code, control_begin, end, compiled_fns);
+                    let control_result = self.run_handler_range(
+                        code,
+                        control_begin,
+                        end,
+                        compiled_fns,
+                        signal_topic,
+                    );
                     // A CONTROL block always *runs*, but — exactly like the
                     // last/next/warn/etc. arm below — it only **handles** the
                     // return when a `when`/`default` inside it matched.
@@ -475,11 +482,18 @@ impl Interpreter {
                         }
                         break;
                     }
-                    if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
-                        self.env_mut().insert("_".to_string(), signal_topic);
+                    let signal_topic = Self::control_signal_topic_value(&pending_err);
+                    if let Some(topic) = signal_topic.clone() {
+                        self.env_mut().insert("_".to_string(), topic);
                     }
                     loan_env!(self, set_when_matched(false));
-                    let control_result = self.run_range(code, control_begin, end, compiled_fns);
+                    let control_result = self.run_handler_range(
+                        code,
+                        control_begin,
+                        end,
+                        compiled_fns,
+                        signal_topic,
+                    );
                     let next_resume = match control_result {
                         Ok(()) => {
                             handled = self.when_matched();
