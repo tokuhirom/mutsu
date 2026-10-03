@@ -72,6 +72,16 @@ fn declared_kind(name: &str) -> Option<DeclaredKind> {
     DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
 }
 
+/// Whether `name` names a type at parse time: a builtin type or one the unit
+/// declares. Rakudo's `is NAME` trait takes this test to choose between a
+/// container type (`Trait::Is(type => …)`) and a named trait.
+// Cost: O(k), k = length of `name`.
+pub(super) fn names_type(name: &str) -> bool {
+    is_known_type_constraint(name)
+        || core_type_names::contains(name)
+        || declared_kind(name) == Some(DeclaredKind::Type)
+}
+
 /// Whether a `::`-qualified package name resolves at parse time: a run of
 /// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
 /// declares (including the stub `A` a `class A::B { }` creates).
