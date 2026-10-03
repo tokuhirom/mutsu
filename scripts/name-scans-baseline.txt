@@ -87,7 +87,7 @@ src/runtime/registration_role.rs                            0    0    5
 src/runtime/registration_role_body.rs                       1    0    4
 src/runtime/registration_role_decl.rs                       0    0    1
 src/runtime/registration_role_method.rs                     2    0    5
-src/runtime/registration_sub.rs                            18    5    0
+src/runtime/registration_sub.rs                            17    5    0
 src/runtime/registration_subset.rs                          1    2    1
 src/runtime/registry.rs                                     0    0    1
 src/runtime/resolution.rs                                   6    1    7
