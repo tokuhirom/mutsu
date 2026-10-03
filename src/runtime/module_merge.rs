@@ -33,6 +33,11 @@ use crate::symbol::Symbol;
 /// them until one side writes.
 #[derive(Default, Clone)]
 pub(crate) struct ModuleVisibility {
+    /// Every class/role registry key a module's own body registered, under
+    /// any module. An import scope's class rollback keeps them: escaped
+    /// instances and the module's own code need them, and whether their name
+    /// resolves somewhere is the ADR-11136 gate's call, not the registry's.
+    pub(crate) module_declared_types: std::sync::Arc<HashSet<String>>,
     /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
     /// module, the top-level package names (same first-segment granularity
     /// as `package_declaring_units`) it is therefore entitled to reference

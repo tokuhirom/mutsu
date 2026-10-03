@@ -9,6 +9,8 @@ impl Interpreter {
         let Some(module) = self.module_load_stack.last().cloned() else {
             return;
         };
+        crate::runtime::cow_table_mut(&mut self.module_visibility.module_declared_types)
+            .insert(name.to_string());
         crate::runtime::cow_table_mut(&mut self.module_owned_types)
             .entry(module)
             .or_default()
@@ -264,8 +266,8 @@ impl Interpreter {
     /// removing any entries added since the push.
     /// The class registry keys an import scope's rollback keeps: everything
     /// registered before the scope, every `A::B`-qualified class (a loaded
-    /// module's own, see below), every class a module load published
-    /// (`module_name_providers`, ADR-11136), every type minted at run time by
+    /// module's own, see below), every class a module's body declared
+    /// (`module_declared_types`, ADR-11136), every type minted at run time by
     /// `new_type` (`persistent_classes`), and -- transitively -- every class
     /// one of those names as a parent. The last rule is what keeps
     /// `sub f { use Base; my $c := ....new_type(...); $c.^add_parent(Base); $c }`
@@ -289,12 +291,11 @@ impl Interpreter {
                     // module closed: a later `use` re-ran the module's
                     // EXPORT, whose `P.new` then found no class.
                     || key.contains('\u{0}')
-                    // A class a module load published stays registered: escaped
-                    // instances and the module's own code need it, and whether
-                    // its name resolves here is the ADR-11136 gate's call, not
-                    // the registry's.
-                    || crate::symbol::Symbol::lookup(key)
-                        .is_some_and(|sym| self.module_visibility.module_name_providers.contains_key(&sym))
+                    // A class a module's body declared stays registered:
+                    // escaped instances and the module's own code need it, and
+                    // whether its name resolves here is the ADR-11136 gate's
+                    // call, not the registry's.
+                    || self.module_visibility.module_declared_types.contains(*key)
             })
             .cloned()
             .collect();
