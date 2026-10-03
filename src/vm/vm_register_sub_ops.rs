@@ -1101,6 +1101,13 @@ impl Interpreter {
                     // A CStruct return (opaque native handle): wrap the returned
                     // pointer in an instance of the declared class so it round-trips
                     // as that handle type (`ret_struct` carries the class name).
+                    // The class a `constant` alias names (`my constant
+                    // PwStruct = PwStructLinux`, P5getpwnam's per-OS pick) is
+                    // the one the handle is an instance of, not the alias.
+                    None if self.is_native_struct_type(&resolved) => {
+                        ret_struct = Some(self.registered_native_class_name(&resolved));
+                        CType::Pointer
+                    }
                     None if self.is_native_struct_type(rt) => {
                         ret_struct = Some(self.registered_native_class_name(rt));
                         CType::Pointer
