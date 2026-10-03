@@ -53,7 +53,7 @@ use std::sync::{Arc, Mutex, RwLock};
 pub(crate) fn next_role_id() -> u64 {
     crate::ast::next_global_decl_id()
 }
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
@@ -309,7 +309,7 @@ pub(crate) fn split_balanced_comma_list(input: &str) -> Vec<String> {
 }
 
 /// Get the current process ID (returns 0 on WASM where process IDs don't exist).
-fn current_process_id() -> i64 {
+pub(crate) fn current_process_id() -> i64 {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::process::id() as i64
@@ -323,24 +323,7 @@ fn current_process_id() -> i64 {
 /// Get the local timezone offset in seconds (west-negative, east-positive).
 /// Returns 0 (UTC) on WASM or if the offset cannot be determined.
 pub(crate) fn local_timezone_offset_secs() -> i64 {
-    // Miri cannot call a foreign function, so it takes the documented
-    // "offset could not be determined" arm below rather than aborting the
-    // interpreter it is trying to check.
-    #[cfg(all(not(target_arch = "wasm32"), not(miri), feature = "native"))]
-    {
-        // Use libc::localtime_r to retrieve the tm_gmtoff field which gives
-        // the UTC offset in seconds for the current local timezone.
-        unsafe {
-            let now = libc::time(std::ptr::null_mut());
-            let mut tm: libc::tm = std::mem::zeroed();
-            libc::localtime_r(&now, &mut tm);
-            tm.tm_gmtoff
-        }
-    }
-    #[cfg(not(all(not(target_arch = "wasm32"), not(miri), feature = "native")))]
-    {
-        0
-    }
+    sys_resources::local_offset_at(crate::builtins::epoch_nanos() / 1_000_000_000).0
 }
 
 type ProtectBlockCacheEntry = (
@@ -681,6 +664,7 @@ mod nqp_ops_coerce;
 mod nqp_ops_compare;
 mod nqp_ops_exception;
 pub(crate) use nqp_ops_exception::control_const_value as nqp_control_const_value;
+mod nqp_ops_fs;
 pub(crate) mod nqp_ops_list;
 mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;
@@ -689,6 +673,7 @@ pub(crate) mod nqp_ops_p6;
 mod nqp_ops_process;
 mod nqp_ops_str;
 mod nqp_ops_string;
+pub(crate) mod nqp_ops_sys;
 pub(crate) mod nqp_ops_text;
 mod nqp_ops_unicode;
 pub(crate) mod nqp_pure;
@@ -763,7 +748,7 @@ mod io_sysinfo;
 pub(crate) mod io_sysinfo_host;
 mod io_sysinfo_kernel;
 mod io_sysinfo_user;
-mod io_sysinfo_vm_config;
+pub(crate) mod io_sysinfo_vm_config;
 pub(crate) mod iterator_map_grep_stream;
 mod iterator_protocol;
 mod list_element_stringify;
@@ -1012,7 +997,9 @@ mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_qualified_enclosing;
 mod resolution_sequence;
+pub(crate) mod signal_table;
 mod signature_type_canon;
+pub(crate) mod sys_resources;
 pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod control_state;
 pub(crate) mod dispatch_state;
@@ -1037,7 +1024,7 @@ mod runtime_caller_env;
 mod runtime_class_query;
 mod runtime_container;
 mod runtime_encoding;
-mod runtime_init;
+pub(crate) mod runtime_init;
 mod runtime_module;
 mod runtime_module_export_sub;
 mod runtime_module_exports;

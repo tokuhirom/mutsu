@@ -20,6 +20,9 @@ pub(crate) struct ControlState {
     /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
     /// exits 42. See `Interpreter::finish` and `builtin_exit`.
     pub(crate) exit_status_locked: bool,
+    /// Set by `nqp::exit`, which ends the process without running the END
+    /// phasers (MoarVM's `exit` op; Rakudo's `exit` runs them first).
+    pub(crate) skip_end_phasers: bool,
     /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
     /// still running: `run` raises it before the mainline starts and the
     /// `EndBeginPrologue` opcode lowers it once the prologue and its
