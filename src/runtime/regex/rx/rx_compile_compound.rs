@@ -163,14 +163,19 @@ impl Compiler {
         goal: &RegexPattern,
         inner: &RegexPattern,
     ) -> Result<(), Decline> {
-        // Each side is a regex of its own: code and backreferences there read
-        // that side's captures, not the enclosing level's.
-        if [goal, inner]
+        // Both sides are part of the enclosing regex: code, a `$x` lexical
+        // and a backreference in one see the enclosing level's captures (the
+        // walk's outer-captures seed; rakudo's one cursor). A side matched in
+        // place sees them as they are; a side with a level of its own gets an
+        // inline one, which carries that view.
+        let shares_scope = [goal, inner]
             .iter()
-            .any(|p| pattern_contains_backref(p) || pattern_reads_enclosing_state(p))
-        {
-            return Err("goal-match-code");
-        }
+            .any(|p| pattern_contains_backref(p) || pattern_reads_enclosing_state(p));
+        let open_side = if shares_scope {
+            RxOp::OpenInline
+        } else {
+            RxOp::OpenIsolated
+        };
         // `GoalEnd` merges the two sides with the goal's positional slots
         // first and every name in match order (`merge_goal_captures`). When
         // the goal files only names (`'[' ~ ']' <list>`, the grammar case,
@@ -185,7 +190,7 @@ impl Compiler {
         let base = (!in_place).then(|| self.reg());
         if let Some(base) = base {
             self.ops.push(RxOp::SepBase(base));
-            self.ops.push(RxOp::OpenIsolated);
+            self.ops.push(open_side.clone());
         }
         self.pattern(inner)?;
         if base.is_some() {
@@ -198,7 +203,7 @@ impl Compiler {
         let split = self.pc();
         self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
         if base.is_some() {
-            self.ops.push(RxOp::OpenIsolated);
+            self.ops.push(open_side);
         }
         self.pattern(goal)?;
         if let Some(base) = base {
@@ -241,29 +246,27 @@ impl Compiler {
             // An empty conjunction matches zero-width.
             return Ok(());
         };
-        if branches.iter().any(pattern_contains_backref) {
-            // A branch shares the enclosing capture scope, which the first
-            // branch's own level and the other branches' nested runs hide.
-            return Err("conjunction-backref");
-        }
         if rest
             .iter()
             .any(|b| super::rx_entry::program_for(b).is_none())
         {
             return Err("conjunction-branch");
         }
-        // Every branch shares the enclosing regex's scope, so code and a `$x`
-        // lexical in one see the enclosing level's captures and match start
-        // (the walk's outer-captures seed): the first branch's level is an
-        // inline one, and the others' nested runs are seeded with the same view.
-        let seeded = rest.iter().any(pattern_reads_enclosing_state);
+        // Every branch shares the enclosing regex's scope, so code, a `$x`
+        // lexical and a backreference in one see the enclosing level's
+        // captures and match start (the walk's outer-captures seed): the first
+        // branch's level is an inline one, and the others' nested runs are
+        // seeded with the same view.
+        let shares_scope =
+            |p: &RegexPattern| pattern_reads_enclosing_state(p) || pattern_contains_backref(p);
+        let seeded = rest.iter().any(shares_scope);
         let start = self.reg();
         self.ops.push(RxOp::Mark(start));
         let height = token.ratchet.then(|| self.reg());
         if let Some(h) = height {
             self.ops.push(RxOp::Height(h));
         }
-        self.ops.push(if pattern_reads_enclosing_state(first) {
+        self.ops.push(if shares_scope(first) {
             RxOp::OpenInline
         } else {
             RxOp::OpenCapture

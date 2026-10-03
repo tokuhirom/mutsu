@@ -755,6 +755,22 @@ impl Interpreter {
                             )
                     }
                     // Cost: O(1).
+                    RxOp::ZeroIterDyn {
+                        ctr,
+                        start,
+                        min,
+                        max,
+                    } => {
+                        pc += 1;
+                        let max = reg!(max);
+                        pos != reg!(start)
+                            || zero_width_iter_counts(
+                                reg!(ctr),
+                                reg!(min),
+                                (max != usize::MAX).then_some(max),
+                            )
+                    }
+                    // Cost: O(1).
                     RxOp::GoalOk { height } => {
                         let at = reg!(height);
                         if let Some(entry) = stack.get_mut(at) {

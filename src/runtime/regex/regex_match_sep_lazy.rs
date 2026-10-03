@@ -99,7 +99,7 @@ impl Interpreter {
         }
         let sep = token.separator.as_ref().expect("separator present");
         let current_caps = store.caps().clone();
-        let Some((min, max)) = self.separated_quantifier_bounds(token, &current_caps) else {
+        let Some((min, max)) = self.separated_quantifier_bounds(token, start, &current_caps) else {
             return false;
         };
         let sep_stride = super::regex_match_sep::separator_stride(&sep.pattern);

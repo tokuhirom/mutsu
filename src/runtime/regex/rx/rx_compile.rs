@@ -696,12 +696,9 @@ impl Compiler {
 
     /// `x ** { code }`: the walk evaluates the count where the quantifier is
     /// reached, before it marks the names under it, so `RepeatCount` comes first
-    /// and the loop reads its bounds from registers. A body that can match empty
-    /// declines: its `ZeroIter` guard is built from static bounds.
+    /// and the loop reads its bounds from registers, as does the `ZeroIterDyn`
+    /// guard of a body that can match empty.
     fn repeat_code(&mut self, token: &RegexToken) -> Result<(), Decline> {
-        if atom_min_len(&token.atom) == 0 {
-            return Err("repeat-code-nullable");
-        }
         let (min, max) = (self.reg(), self.reg());
         let tok = self.toks.len() as u32;
         self.toks.push(token.clone());
@@ -806,12 +803,20 @@ impl Compiler {
                 pos_base,
             });
         }
-        if let (Some(start), Bounds::Fixed(min, max)) = (iter_start.filter(|_| nullable), bounds) {
-            self.ops.push(RxOp::ZeroIter {
-                ctr,
-                start,
-                min,
-                max,
+        if let Some(start) = iter_start.filter(|_| nullable) {
+            self.ops.push(match bounds {
+                Bounds::Fixed(min, max) => RxOp::ZeroIter {
+                    ctr,
+                    start,
+                    min,
+                    max,
+                },
+                Bounds::Dyn(min, max) => RxOp::ZeroIterDyn {
+                    ctr,
+                    start,
+                    min,
+                    max,
+                },
             });
         }
         // The walk runs a committed `*` / `+` iteration's subrule action here

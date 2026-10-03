@@ -125,6 +125,14 @@ pub(super) enum RxOp {
         min: u32,
         max: u32,
     },
+    /// [`RxOp::ZeroIter`] with its bounds read from registers (`usize::MAX`:
+    /// no maximum), for a nullable `** { … }` body.
+    ZeroIterDyn {
+        ctr: u16,
+        start: u16,
+        min: u16,
+        max: u16,
+    },
     /// `pos` has moved past `regs[start]` (a separated quantifier's step).
     Advanced {
         start: u16,
