@@ -28,23 +28,22 @@
   "dist": "DSL::Entity::Foods",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "chocolate chip cookie ice creams",
-        "nok": 4,
-        "ok": 0,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.72,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/Food-names-parsing.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 63.86,
+        "secs": 82.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,11 +62,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -77,13 +76,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENTITY_FOODS/075df2c20d18c7b0cd8d09efb079ed555efff24b.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }

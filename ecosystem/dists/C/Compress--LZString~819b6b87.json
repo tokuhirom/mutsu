@@ -9,17 +9,84 @@
     "unresolved": []
   },
   "dist": "Compress::LZString",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 117,
+        "plan": 117,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 117,
+        "plan": 117,
+        "secs": 3.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-fragment.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 101,
+        "plan": 101,
+        "secs": 30.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-canonical-data.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 101,
+        "plan": 101,
+        "secs": 13.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Compress::LZString": "Failed to parse module 'Compress::LZString': Confused. Two terms in a row [at lib/Compress/LZString.rakumod:318]"
+    "Compress::LZString": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -29,12 +96,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OM/COMPRESS_LZSTRING/6a3d010126d456e88c52bf5fc61058e029a653ae.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 227,
+    "baseline_files": 3,
+    "mutsu_assertions": 227,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "0.0.1"

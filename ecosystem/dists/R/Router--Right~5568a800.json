@@ -18,30 +18,29 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 6.29,
+        "secs": 7.9,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Prohibited regex interpolation",
         "nok": 0,
-        "ok": 1,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.3,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +52,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.42,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +62,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.31,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,11 +75,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -90,13 +89,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/OU/ROUTER_RIGHT/abb59e3a4f4bf5918869a8e62cf22efd93bcff72.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 6,
     "baseline_files": 2,
-    "mutsu_assertions": 5,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 6,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.64"
 }

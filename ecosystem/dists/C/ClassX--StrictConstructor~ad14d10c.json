@@ -9,41 +9,61 @@
   "dist": "ClassX::StrictConstructor",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can create an instance of a Class that does StrictClass",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.68,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can create an instace of a Class that does StrictClass",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-roles.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
         "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
-      "path": "t/02-roles.rakutest",
+      "path": "t/03-required.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
@@ -55,22 +75,21 @@
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can create an instace of a Class that does StrictClass",
-        "nok": 1,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.15,
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
-      "path": "t/03-required.rakutest",
+      "path": "t/04-isa.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
+        "ok": 3,
+        "plan": 3,
         "secs": 0.7,
         "skip": 0,
         "todo": 0,
@@ -78,46 +97,22 @@
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can create an instace of a Class that does StrictClass",
-        "nok": 1,
-        "ok": 1,
-        "plan": 3,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/04-isa.rakutest",
-      "raku": {
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.69,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "subclass constructor handles known attributes correctly",
-        "nok": 4,
-        "ok": 6,
-        "plan": 10,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
       },
       "path": "t/t-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.78,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,11 +124,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -143,13 +138,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/LA/CLASSX_STRICTCONSTRUCTOR/cb6b9f27728bc284e8c3b15ccd65caedc5039fb9.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 19,
     "baseline_files": 5,
-    "mutsu_assertions": 10,
-    "parity_files": 0,
-    "regressed_files": 5
+    "mutsu_assertions": 19,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.2"
 }

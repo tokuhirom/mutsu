@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.55,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 0.24,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 10.64,
+        "secs": 6.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.27,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.47,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.3,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.49,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.32,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,30 +114,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.85,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: regex declaration without a source tree",
         "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 0.23,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/14-routine.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 5.74,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -149,7 +148,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.26,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -159,7 +158,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 7.58,
+        "secs": 4.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,7 +170,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.22,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -181,7 +180,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.7,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +192,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.37,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,7 +202,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.12,
+        "secs": 5.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -215,7 +214,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.24,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +224,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.43,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,11 +237,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -256,9 +255,9 @@
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 10,
-    "mutsu_assertions": 44,
-    "parity_files": 7,
-    "regressed_files": 3
+    "mutsu_assertions": 46,
+    "parity_files": 8,
+    "regressed_files": 2
   },
   "version": "0.0.4"
 }

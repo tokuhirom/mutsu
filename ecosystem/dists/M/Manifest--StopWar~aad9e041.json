@@ -7,17 +7,40 @@
     "unresolved": []
   },
   "dist": "Manifest::StopWar",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Manifest::StopWar": "Failed to parse module 'Manifest::StopWar': Confused. Two terms in a row [at lib/Manifest/StopWar.rakumod:40]"
+    "Manifest::StopWar": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -27,12 +50,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AN/MANIFEST_STOPWAR/2ccdfc21879a8f631afc38a0af834e26e2abf5c5.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 2,
+    "baseline_files": 1,
+    "mutsu_assertions": 2,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.9"

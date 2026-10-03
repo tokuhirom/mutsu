@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.09,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 24.14,
+        "secs": 19.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.82,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,30 +49,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.13,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 12 -",
-        "nok": 1,
-        "ok": 11,
+        "nok": 0,
+        "ok": 12,
         "plan": 12,
-        "secs": 0.93,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-CSR-access.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.18,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +83,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.86,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.13,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +105,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.85,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +115,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.98,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,7 +137,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.63,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,7 +149,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.79,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,7 +159,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.24,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -173,7 +172,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.95,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +182,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.41,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -195,7 +194,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.79,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -205,7 +204,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.02,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -217,7 +216,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.78,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -227,7 +226,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.26,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -239,7 +238,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.79,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -249,76 +248,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'round' for invocant of type 'Hash'",
-        "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/17-DOK-values-operations.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.02,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<-->(...); the parameter requires mutable arguments",
-        "nok": 0,
-        "ok": 14,
-        "plan": null,
-        "secs": 0.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/21-creation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "not ok 12 -",
-        "nok": 2,
-        "ok": 11,
-        "plan": 13,
-        "secs": 0.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/22-access.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 1.36,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -328,12 +258,79 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.78,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
+      },
+      "path": "t/17-DOK-values-operations.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/21-creation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/22-access.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 0.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The attribute '$!nrow' is required, but you did not provide a value for it.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
       },
       "path": "t/26-dot-product.rakutest",
       "raku": {
@@ -347,46 +344,44 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<-->(...); the parameter requires mutable arguments",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.79,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/27-basic-usage.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.12,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<-->(...); the parameter requires mutable arguments",
         "nok": 0,
-        "ok": 3,
-        "plan": null,
-        "secs": 1.0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/28-operators.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.69,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -400,30 +395,30 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.93,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
-        "first_failure": "Cannot resolve caller postfix:<-->(...); the parameter requires mutable arguments",
-        "nok": 1,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.89,
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/30-row-and-column-sums-and-maxes.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.67,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -435,7 +430,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.16,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -445,7 +440,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -463,11 +458,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -479,11 +474,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 127,
-    "baseline_files": 18,
-    "mutsu_assertions": 108,
-    "parity_files": 11,
-    "regressed_files": 7
+    "baseline_assertions": 123,
+    "baseline_files": 17,
+    "mutsu_assertions": 121,
+    "parity_files": 16,
+    "regressed_files": 1
   },
   "version": "0.0.15"
 }

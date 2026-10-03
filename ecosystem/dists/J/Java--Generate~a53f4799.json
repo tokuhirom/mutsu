@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.46,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 11.23,
+        "secs": 14.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 0.23,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 0.75,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.26,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.03,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.25,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.02,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.25,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.75,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.92,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +146,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.32,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +156,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.82,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -168,7 +168,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.3,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,29 +178,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.63,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in assignment to $!type; expected CompUnit::Unit but got Class (Class.new(access => ...)",
         "nok": 0,
-        "ok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/09-comp-unit.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.39,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -224,11 +225,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -238,13 +239,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/AV/JAVA_GENERATE/6f5ed549a536fa547c894f64fb3bfb5cce18b2ae.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 81,
     "baseline_files": 9,
-    "mutsu_assertions": 81,
-    "parity_files": 9,
-    "regressed_files": 0
+    "mutsu_assertions": 80,
+    "parity_files": 8,
+    "regressed_files": 1
   },
   "version": "1.0.0"
 }

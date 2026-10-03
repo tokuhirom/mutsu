@@ -13,23 +13,22 @@
   "dist": "Raylib::Bindings",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Parsing define macro rule",
-        "nok": 3,
-        "ok": 13,
+        "nok": 0,
+        "ok": 16,
         "plan": 16,
-        "secs": 0.3,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.26,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +40,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.15,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,30 +50,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Parsing extern rule",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/02-extern.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.71,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +62,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.34,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-extern.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +94,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.08,
+        "secs": 4.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +106,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.71,
+        "secs": 4.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +116,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 115.11,
+        "secs": 111.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +128,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.35,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +138,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.76,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,11 +150,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -166,13 +164,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AY/RAYLIB_BINDINGS/14e7558b1555c559afc6c0ce955c6dd2b5b9adaa.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 6,
-    "mutsu_assertions": 17,
-    "parity_files": 4,
-    "regressed_files": 2
+    "mutsu_assertions": 21,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.0.20"
 }

@@ -20,67 +20,689 @@
     "unresolved": []
   },
   "dist": "SBOM::CycloneDX",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Ok object with minimal",
+        "nok": 10,
+        "ok": 1,
+        "plan": 11,
+        "secs": 6.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 63.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Contact: bom-ref, email, name, phone",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 6.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-contact.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 8.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Address: bom-ref, country, locality, postOfficeBoxNumber, postalCode, region, streetAddress",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-address.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Organization: address, bom-ref, contact, name, url",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-organization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Property: name, value",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 7.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-property.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::EnergyCost: unit, value",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 6.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-energycost.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Analysis: detail, firstIssued, justification, lastUpdated, response, state",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-analysis.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Affects: ref, versions",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-affects.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Annotation: annotator, bom-ref, subjects, text, timestamp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-annotation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Licensing: altIds, expiration, lastRenewal, licenseTypes, licensee, licensor, purchaseOrder, purchaser",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 7.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-licensing.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::License: license",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 7.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/11-license.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::SPDXLicense: acknowledgement, bom-ref, expression",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 7.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-spdxlicense.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::PublicKey: crv, kty, x, y",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/14-publickey.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Signature: algorithm, certificatePath, value",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 7.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/15-signature.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::SignatureChain: chain",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 6.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-chain.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::SignatureSigners: signers",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 7.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/17-signers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Composition: aggregate, assemblies, dependencies",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/18-composition.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::ServiceDataset: classification, description, destination, flow, name, source",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/19-servicedataset.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Governor: contact",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 5.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/20-governor.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Governance: custodians, owners, stewards",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 6.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/21-governance.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Metadata: manufacture, timestamp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 6.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/22-metadata.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Tool: components, services",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 6.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/23-tool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::LegacyTool: hashes, name, vendor, version",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 6.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/24-legacytool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Identity: confidence, field, methods, tools",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 6.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/25-identity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "The object is-a 'SBOM::CycloneDX'",
+        "nok": 6,
+        "ok": 0,
+        "plan": 6,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/26-all-methods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::CycloneDX: annotations, bomFormat, components, serialNumber, specVersion, version",
+        "nok": 0,
+        "ok": 0,
+        "plan": 45,
+        "secs": 5.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/90-valid.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 45,
+        "plan": 45,
+        "secs": 29.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Testing /home/runner/.cache/mutsu-ecosystem/run/ecosweep-b1dyj41r/dist/SBOM-CycloneDX-0.0.18/t/invalid/invalid-bomformat-1.6.json",
+        "nok": 24,
+        "ok": 0,
+        "plan": 24,
+        "secs": 6.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/91-invalid.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "SBOM": "ok",
     "SBOM::AlgorithmProperties": "ok",
-    "SBOM::Annotation": "raku_also_fails",
+    "SBOM::Annotation": "ok",
     "SBOM::Attachment": "ok",
-    "SBOM::Attestation": "Cannot modify an immutable Array (bom-ref conformanceValue)",
-    "SBOM::Claim": "Cannot modify an immutable Array (CryptoKey ECCurve EdDSA SignatureAlgorithm)",
-    "SBOM::Component": "Cannot modify an immutable Array (CryptoAsset)",
-    "SBOM::ComponentDataset": "Cannot modify an immutable Array (Encoding)",
-    "SBOM::ComponentEvidence": "Cannot modify an immutable Array (Acknowledgement LicenseGranted LicenseId LicenseName)",
+    "SBOM::Attestation": "ok",
+    "SBOM::Claim": "ok",
+    "SBOM::Component": "ok",
+    "SBOM::ComponentDataset": "ok",
+    "SBOM::ComponentEvidence": "ok",
     "SBOM::Composition": "ok",
     "SBOM::Confidence": "ok",
-    "SBOM::Considerations": "Cannot modify an immutable Array (ReferenceSource)",
+    "SBOM::Considerations": "ok",
     "SBOM::CryptoMaterialProperties": "ok",
-    "SBOM::CryptoProperties": "Cannot modify an immutable Array (Crypto CryptoState)",
+    "SBOM::CryptoProperties": "ok",
     "SBOM::CryptoProtocolProperties": "ok",
-    "SBOM::CycloneDX": "Cannot modify an immutable Array (CryptoAsset)",
-    "SBOM::DataContents": "Cannot modify an immutable Array (Encoding)",
-    "SBOM::Declarations": "Cannot modify an immutable Array (CryptoKey ECCurve EdDSA SignatureAlgorithm)",
-    "SBOM::Definition": "Cannot modify an immutable Array (bom-ref CRE)",
+    "SBOM::CycloneDX": "ok",
+    "SBOM::DataContents": "ok",
+    "SBOM::Declarations": "ok",
+    "SBOM::Definition": "ok",
     "SBOM::Dependency": "ok",
     "SBOM::ExecutionStep": "ok",
-    "SBOM::Formulation": "Cannot modify an immutable Array (CryptoAsset)",
+    "SBOM::Formulation": "ok",
     "SBOM::Governance": "ok",
     "SBOM::Graphics": "ok",
     "SBOM::HashedString": "ok",
     "SBOM::Identity": "ok",
-    "SBOM::Input": "Cannot modify an immutable Array (ReferenceSource)",
-    "SBOM::License": "Cannot modify an immutable Array (Encoding)",
-    "SBOM::Metadata": "Cannot modify an immutable Array (CryptoAsset)",
-    "SBOM::ModelCard": "Cannot modify an immutable Array (ReferenceSource)",
-    "SBOM::ModelParameters": "Cannot modify an immutable Array (Encoding)",
+    "SBOM::Input": "ok",
+    "SBOM::License": "ok",
+    "SBOM::Metadata": "ok",
+    "SBOM::ModelCard": "ok",
+    "SBOM::ModelParameters": "ok",
     "SBOM::Organization": "ok",
-    "SBOM::Output": "Cannot modify an immutable Array (ReferenceSource)",
+    "SBOM::Output": "ok",
     "SBOM::Property": "ok",
     "SBOM::Reference": "ok",
-    "SBOM::ReleaseNotes": "Cannot modify an immutable Array (ResolveType)",
-    "SBOM::Requirement": "Cannot modify an immutable Array (ReferenceSource)",
+    "SBOM::ReleaseNotes": "ok",
+    "SBOM::Requirement": "ok",
     "SBOM::RequirementGrouping": "ok",
     "SBOM::Resolve": "ok",
     "SBOM::RuntimeTopology": "ok",
-    "SBOM::Service": "Cannot modify an immutable Array (Acknowledgement LicenseGranted LicenseId LicenseName)",
+    "SBOM::Service": "ok",
     "SBOM::Signature": "ok",
     "SBOM::Source": "ok",
-    "SBOM::Task": "Cannot modify an immutable Array (ReferenceSource)",
-    "SBOM::Tool": "Cannot modify an immutable Array (CryptoAsset)",
-    "SBOM::Trigger": "Cannot modify an immutable Array (ReferenceSource)",
-    "SBOM::Vulnerability": "Cannot modify an immutable Array (bom-ref email URL)",
-    "SBOM::Workflow": "Cannot modify an immutable Array (ReferenceSource)",
-    "SBOM::Workspace": "Cannot modify an immutable Array (ReferenceSource)",
+    "SBOM::Task": "ok",
+    "SBOM::Tool": "ok",
+    "SBOM::Trigger": "ok",
+    "SBOM::Vulnerability": "ok",
+    "SBOM::Workflow": "ok",
+    "SBOM::Workspace": "ok",
     "SBOM::enums": "ok",
     "SBOM::subsets": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -90,13 +712,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/BO/SBOM_CYCLONEDX/33aae9f01355a468fdc409dc8a4e4404ace26c2c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 167,
+    "baseline_files": 27,
+    "mutsu_assertions": 1,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 27
   },
   "version": "0.0.18"
 }

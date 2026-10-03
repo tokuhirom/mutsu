@@ -48,124 +48,18 @@
     "unresolved": []
   },
   "dist": "LLM::RetrievalAugmentedGeneration",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "The argument $num-type is expected to be one of the strings \"num32\" or \"num64\" or one of the types num32 or num64.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.72,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-ingest-vector-database.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 83.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "The argument $num-type is expected to be one of the strings \"num32\" or \"num64\" or one of the types num32 or num64.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-vector-database-join.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 5.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
-        "nok": 1,
-        "ok": 5,
-        "plan": null,
-        "secs": 3.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-vector-database-objects-usage.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 6.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-import-export-round-trips.rakutest",
-      "raku": {
-        "first_failure": "Error trying to export to file ⎡/tmp/SemSe-49a66108-8357-4614-82df-dbc6abb51df2.cbor⎦:X::AdHoc",
-        "nok": 0,
-        "ok": 3,
-        "plan": null,
-        "secs": 5.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 4.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-partition-words.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 7.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "LLM::RetrievalAugmentedGeneration": "ok",
-    "LLM::RetrievalAugmentedGeneration::VectorDatabase": "ok"
+    "LLM::RetrievalAugmentedGeneration": "raku_also_fails",
+    "LLM::RetrievalAugmentedGeneration::VectorDatabase": "expected statement: expected expected statement: expected expression statement or ')' [at lib/Math/DistanceFunctionish.rakumod:64]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -175,13 +69,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_RETRIEVALAUGMENTEDGENERATION/83cd30b7e25ddcb25b23bc7d81ebbd16a8db63db.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 30,
-    "baseline_files": 4,
-    "mutsu_assertions": 6,
-    "parity_files": 1,
-    "regressed_files": 3
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.0.8"
 }

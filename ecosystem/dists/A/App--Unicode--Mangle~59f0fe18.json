@@ -9,44 +9,46 @@
   "dist": "App::Unicode::Mangle",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/bold.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.65,
+        "secs": 5.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.25,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/circle.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.54,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +60,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.29,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,154 +77,161 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 6,
+        "first_failure": "UPPERCASE",
+        "nok": 6,
+        "ok": 0,
         "plan": 6,
-        "secs": 0.45,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/invert.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.53,
+        "secs": 7.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/italic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.56,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/outline.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.45,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/paren.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.75,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "passthrough accents",
+        "nok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/passthrough.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.44,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "all caps",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.25,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/square.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.41,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 2,
+        "first_failure": "UPPERCASE",
+        "nok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/strike.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.67,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -234,11 +243,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -248,13 +257,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/PP/APP_UNICODE_MANGLE/2382d8c458dcd46ac9b9419afb45d00235770b33.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 22,
     "baseline_files": 10,
-    "mutsu_assertions": 22,
-    "parity_files": 10,
-    "regressed_files": 0
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 9
   },
   "version": "1.0.7"
 }

@@ -89,7 +89,7 @@
     "MUGS::App::TUI::A11yMenu": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
     "MUGS::App::TUI::AvailableGames": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
     "MUGS::App::TUI::Icons": "ok",
-    "MUGS::App::TUI::MainMenu": "raku_also_fails",
+    "MUGS::App::TUI::MainMenu": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
     "MUGS::App::TUI::OptionalUI": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
     "MUGS::App::TUI::SettingsMenu": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
     "MUGS::App::TUI::TerminalMenu": "Inconsistent class hierarchy for Terminal::Widgets::Simple::TopLevel",
@@ -103,11 +103,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

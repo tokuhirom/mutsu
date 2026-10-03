@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 0.34,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 13.02,
+        "secs": 12.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.3,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.59,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.36,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.75,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.29,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,53 +90,51 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.36,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": ".to-string()",
-        "nok": 1,
-        "ok": 5,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.34,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-methods.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.8,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "operator tests with rgb nums and alpha-math turned off [default]",
-        "nok": 4,
-        "ok": 1,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.81,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/06-operators.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.21,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +146,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.27,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +156,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.13,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +168,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.27,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +178,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.42,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -196,11 +194,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -210,13 +208,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OL/COLOR/40bec61c1b0fcfa94590bd370299dcc0b46b5fba.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 67,
     "baseline_files": 8,
-    "mutsu_assertions": 62,
-    "parity_files": 6,
-    "regressed_files": 2
+    "mutsu_assertions": 67,
+    "parity_files": 8,
+    "regressed_files": 0
   },
   "version": "1.004001"
 }

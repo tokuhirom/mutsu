@@ -27,132 +27,138 @@
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 29.79,
+        "ok": 0,
+        "plan": null,
+        "secs": 44.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/02-layout-structure.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 10.21,
+        "secs": 26.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 33.15,
+        "ok": 0,
+        "plan": null,
+        "secs": 46.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-text-stream-collection.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.31,
+        "secs": 5.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 30.53,
+        "ok": 0,
+        "plan": null,
+        "secs": 47.72,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-data-visualization.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.21,
+        "secs": 5.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 34.48,
+        "ok": 2,
+        "plan": null,
+        "secs": 47.63,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/05-system-helpers.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.8,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 34.15,
+        "ok": 1,
+        "plan": null,
+        "secs": 40.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/06-reactive-state.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.16,
+        "secs": 4.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 32.1,
+        "ok": 0,
+        "plan": null,
+        "secs": 44.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/08-builder-extensions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.25,
+        "secs": 4.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -208,11 +214,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -222,13 +228,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EL/SELKIE_UI/94159aef61f1935117c1575b39a04d8ed5ee8674.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 50,
     "baseline_files": 6,
-    "mutsu_assertions": 50,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 3,
+    "parity_files": 0,
+    "regressed_files": 6
   },
   "version": "0.0.4"
 }

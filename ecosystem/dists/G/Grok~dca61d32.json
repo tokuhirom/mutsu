@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.11,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.6,
+        "secs": 7.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Undeclared name:",
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.09,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/10-moppet-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.3,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +60,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.25,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +74,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -90,11 +89,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -104,13 +103,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RO/GROK/776569d102aa5fbcbca5cbc748f681dea8f31989.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 2,
     "mutsu_assertions": 4,
-    "parity_files": 1,
-    "regressed_files": 1
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

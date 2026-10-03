@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.77,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -30,30 +30,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 22.13,
+        "secs": 24.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "height 2",
-        "nok": 2,
-        "ok": 35,
+        "nok": 0,
+        "ok": 41,
         "plan": 41,
-        "secs": 2.02,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-sizes.rakutest",
       "raku": {
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 1.2,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +64,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.55,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,53 +74,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.69,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "two lines",
-        "nok": 2,
-        "ok": 6,
+        "nok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.54,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-pane.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "full",
-        "nok": 2,
-        "ok": 0,
-        "plan": 2,
-        "secs": 0.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/04-frame.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.75,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +108,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.09,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-frame.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -143,30 +140,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.54,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such private method 'trap-errors' for invocant of type 'Terminal::UI'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.61,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-ui.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.92,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -175,11 +171,10 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such private method 'trap-errors' for invocant of type 'Terminal::UI'",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": null,
-        "secs": 0.62,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -189,7 +184,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.04,
+        "secs": 2.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,11 +193,10 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such private method 'trap-errors' for invocant of type 'Terminal::UI'",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 2,
-        "secs": 0.83,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -212,7 +206,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.95,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +219,7 @@
         "nok": 1,
         "ok": 20,
         "plan": 21,
-        "secs": 1.18,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -235,7 +229,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.52,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -254,11 +248,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -272,9 +266,9 @@
   "totals": {
     "baseline_assertions": 92,
     "baseline_files": 10,
-    "mutsu_assertions": 71,
-    "parity_files": 3,
-    "regressed_files": 7
+    "mutsu_assertions": 88,
+    "parity_files": 7,
+    "regressed_files": 3
   },
   "version": "0.1.14"
 }

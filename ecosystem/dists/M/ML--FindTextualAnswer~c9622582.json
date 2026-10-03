@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.36,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 104.73,
+        "secs": 71.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,11 +63,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

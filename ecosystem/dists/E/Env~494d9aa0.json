@@ -9,46 +9,44 @@
   "dist": "Env",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we actually reset $USER",
-        "nok": 2,
-        "ok": 122,
-        "plan": 124,
-        "secs": 0.23,
+        "nok": 0,
+        "ok": 121,
+        "plan": 121,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-all.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 124,
-        "plan": 124,
-        "secs": 1.6,
+        "ok": 121,
+        "plan": 121,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did the change to Nil propagate",
-        "nok": 3,
-        "ok": 12,
+        "nok": 0,
+        "ok": 15,
         "plan": 15,
-        "secs": 0.15,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-specific.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.07,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +58,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -74,13 +72,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/NV/ENV/960669e9769c391ba07f1d933a058af881b22c90.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 139,
+    "baseline_assertions": 136,
     "baseline_files": 2,
-    "mutsu_assertions": 134,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 136,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.99"
 }

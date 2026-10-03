@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 29,
-        "secs": 64.76,
+        "secs": 64.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -39,29 +39,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 79.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-tags.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.37,
+        "secs": 81.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,12 +56,34 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/02-tags.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/03-in.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.51,
+        "secs": 2.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.15,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.89,
+        "secs": 6.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 10.53,
+        "secs": 11.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,11 +139,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

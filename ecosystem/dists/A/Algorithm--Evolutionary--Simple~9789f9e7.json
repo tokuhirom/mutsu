@@ -20,46 +20,44 @@
   "dist": "Algorithm::Evolutionary::Simple",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot modify an immutable Bool (True)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.28,
+        "ok": 43,
+        "plan": 43,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-functions.t",
       "raku": {
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.54,
+        "secs": 4.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Constraint type check failed in binding to parameter '$length'; expected UInt but got IntStr (IntStr.new(32, \"32\"))",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "ok": 286,
+        "plan": 286,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 286,
         "plan": 286,
-        "secs": 1.83,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +69,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 137.45,
+        "secs": 107.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +79,7 @@
         "nok": 0,
         "ok": 4058,
         "plan": 4058,
-        "secs": 11.24,
+        "secs": 13.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +93,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.85,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -107,7 +105,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.23,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +115,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.68,
+        "secs": 2.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,7 +127,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.26,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,7 +137,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,11 +150,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -166,13 +164,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/LG/ALGORITHM_EVOLUTIONARY_SIMPLE/5150a3a64161fcea6b01b5dc4e7980ec2768125c.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4395,
     "baseline_files": 5,
-    "mutsu_assertions": 4066,
-    "parity_files": 3,
-    "regressed_files": 2
+    "mutsu_assertions": 4395,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.0.8"
 }

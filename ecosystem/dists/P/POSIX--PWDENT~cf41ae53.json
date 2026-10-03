@@ -9,23 +9,23 @@
   "dist": "POSIX::PWDENT",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "User 'root' exists",
-        "nok": 2,
-        "ok": 4,
+        "first_failure": "Unknown function: IO",
+        "nok": 0,
+        "ok": 12,
         "plan": 31,
-        "secs": 0.2,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/00-pwdent.t",
       "raku": {
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 2.94,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Current pwddb has 1 entries",
-        "nok": 1,
-        "ok": 24,
+        "first_failure": "members is a List",
+        "nok": 2,
+        "ok": 23,
         "plan": 27,
-        "secs": 0.18,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 3.03,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,11 +61,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -79,7 +79,7 @@
   "totals": {
     "baseline_assertions": 58,
     "baseline_files": 2,
-    "mutsu_assertions": 28,
+    "mutsu_assertions": 35,
     "parity_files": 0,
     "regressed_files": 2
   },

@@ -29,24 +29,265 @@
     "unresolved": []
   },
   "dist": "App::Racoco::Report::ReporterCoveralls",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-tiny-http.rakutest",
+      "raku": {
+        "first_failure": "success post",
+        "nok": 1,
+        "ok": 3,
+        "plan": 4,
+        "secs": 67.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-make-source-files-json.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 16.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-git.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller trim(Nil:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 1,
+        "plan": 2,
+        "secs": 6.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-md5.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-ci-empty.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 4.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-ci-default.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 2.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-ci-native-git.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 2.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-ci-chain.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-ci-github.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 2.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/09-ci-gitlab.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-send-json.rakutest",
+      "raku": {
+        "first_failure": "Cannot resolve caller trim(Nil:U: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 3.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-properties.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "App::Racoco::Report::ReporterCoveralls": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::CI": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::Executor": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::Externals": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::Factory": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::Git": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::MD5": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait",
-    "App::Racoco::Report::ReporterCoveralls::Transport": "Runtime error: Failed to parse module 'App::Racoco::Configuration': X::Syntax::Malformed: Malformed trait"
+    "App::Racoco::Report::ReporterCoveralls": "ok",
+    "App::Racoco::Report::ReporterCoveralls::CI": "ok",
+    "App::Racoco::Report::ReporterCoveralls::Executor": "ok",
+    "App::Racoco::Report::ReporterCoveralls::Externals": "ok",
+    "App::Racoco::Report::ReporterCoveralls::Factory": "ok",
+    "App::Racoco::Report::ReporterCoveralls::Git": "ok",
+    "App::Racoco::Report::ReporterCoveralls::MD5": "ok",
+    "App::Racoco::Report::ReporterCoveralls::Transport": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -56,12 +297,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/PP/APP_RACOCO_REPORT_REPORTERCOVERALLS/4a0f89f232154e652870f1e0ec729c63f8374fdf.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 124,
+    "baseline_files": 9,
+    "mutsu_assertions": 124,
+    "parity_files": 9,
     "regressed_files": 0
   },
   "version": "2.0.2"

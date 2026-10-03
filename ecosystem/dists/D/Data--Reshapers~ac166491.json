@@ -29,92 +29,88 @@
   "dist": "Data::Reshapers",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 2 -",
-        "nok": 8,
-        "ok": 17,
+        "nok": 0,
+        "ok": 25,
         "plan": 25,
-        "secs": 12.92,
+        "secs": 14.69,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-cross-tabulate-over-arrays.rakutest",
       "raku": {
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 36.81,
+        "secs": 49.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 2 -",
-        "nok": 2,
-        "ok": 10,
+        "nok": 0,
+        "ok": 12,
         "plan": 12,
-        "secs": 12.13,
+        "secs": 14.82,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-to-long-format-over-arrays.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 6.01,
+        "secs": 7.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 4,
-        "secs": 16.3,
+        "secs": 21.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-to-wide-format-over-arrays.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.34,
+        "secs": 6.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
-        "ok": 3,
+        "ok": 4,
         "plan": 4,
-        "secs": 15.8,
+        "secs": 17.68,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-data-reshape.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.2,
+        "secs": 4.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +122,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 11.43,
+        "secs": 13.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +132,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.65,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +144,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.79,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +154,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.26,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +166,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.81,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,30 +176,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.94,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "join across left, with fill",
-        "nok": 3,
-        "ok": 6,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.91,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/08-join-across.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.52,
+        "secs": 3.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -215,7 +210,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.82,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +220,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.36,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -237,7 +232,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.85,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -247,7 +242,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.71,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -259,7 +254,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.89,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -269,30 +264,29 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.42,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 4,
-        "ok": 7,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 6.58,
+        "secs": 6.59,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/12-type-system.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.14,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -304,7 +298,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.9,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -314,30 +308,29 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.5,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 4 -",
-        "nok": 1,
-        "ok": 3,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 1.03,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/14-separate-column.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.19,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -349,7 +342,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.8,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -359,7 +352,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.34,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -378,11 +371,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -392,13 +385,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_RESHAPERS/7756bc390da1e9404be1450c7a677a57abae8108.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 161,
     "baseline_files": 15,
-    "mutsu_assertions": 139,
-    "parity_files": 8,
-    "regressed_files": 7
+    "mutsu_assertions": 161,
+    "parity_files": 15,
+    "regressed_files": 0
   },
   "version": "0.3.8"
 }

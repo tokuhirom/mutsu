@@ -9,22 +9,23 @@
   "dist": "Native::Overflow",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 30,
+        "first_failure": "did we get the correct exception for Int $x",
+        "nok": 1,
+        "ok": 0,
         "plan": 30,
-        "secs": 0.07,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.88,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,11 +37,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -50,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/AT/NATIVE_OVERFLOW/3f2694b4f439f7ac2d00ed7af5819079fa1e2f6b.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 30,
     "baseline_files": 1,
-    "mutsu_assertions": 30,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }

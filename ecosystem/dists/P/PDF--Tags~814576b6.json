@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.92,
+        "secs": 8.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.36,
+        "secs": 18.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.64,
+        "secs": 16.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.3,
+        "secs": 10.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 106.35,
+        "secs": 113.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.69,
+        "secs": 16.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.13,
+        "secs": 15.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.54,
+        "secs": 13.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.15,
+        "secs": 16.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.15,
+        "secs": 14.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -180,7 +180,7 @@
     "PDF::Tags::Mark": "raku_also_fails",
     "PDF::Tags::Node": "raku_also_fails",
     "PDF::Tags::Node::Parent": "raku_also_fails",
-    "PDF::Tags::Node::Root": "ok",
+    "PDF::Tags::Node::Root": "raku_also_fails",
     "PDF::Tags::ObjRef": "raku_also_fails",
     "PDF::Tags::Tag": "raku_also_fails",
     "PDF::Tags::Text": "raku_also_fails",
@@ -192,11 +192,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

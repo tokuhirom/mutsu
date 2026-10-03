@@ -7,17 +7,63 @@
     "unresolved": []
   },
   "dist": "SeqSplitter",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 21,
+        "ok": 0,
+        "plan": 21,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/02-all.t",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "SeqSplitter": "Package 'SeqSplitter' already has a method 'pull-while' (did you mean to declare a multi method?)"
+    "SeqSplitter": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -27,13 +73,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EQ/SEQSPLITTER/1d2587967560c3a2c1fc8706600e9bd4d9665a27.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 22,
+    "baseline_files": 2,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }

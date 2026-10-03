@@ -11,20 +11,65 @@
     "unresolved": []
   },
   "dist": "Math::GameTheory",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 14.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-matrix-game-construction.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Math::GameTheory": "Failed to parse module 'Math::GameTheory::Creators': Confused. Two terms in a row [at Math/GameTheory/Creators.rakumod:474]",
-    "Math::GameTheory::Creators": "Failed to parse module 'Math::GameTheory::Creators': Confused. Two terms in a row [at Math/GameTheory/Creators.rakumod:474]",
+    "Math::GameTheory": "ok",
+    "Math::GameTheory::Creators": "ok",
     "Math::GameTheory::MatrixGame": "ok",
     "Math::GameTheory::MatrixGame::Formatish": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -34,12 +79,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_GAMETHEORY/23ed442a69948983a77f85804e888f5afc62b1be.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 12,
+    "baseline_files": 2,
+    "mutsu_assertions": 12,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.1"

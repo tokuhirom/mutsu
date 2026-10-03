@@ -12,92 +12,88 @@
   "dist": "Needle::Compile",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did Type get exported",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 36,
         "plan": 36,
-        "secs": 0.24,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 36,
         "plan": 36,
-        "secs": 3.79,
+        "secs": 6.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'Failure' for invocant of type 'X::AdHoc'",
         "nok": 0,
-        "ok": 0,
+        "ok": 10,
         "plan": 10,
-        "secs": 1.59,
+        "secs": 6.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-single.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 11.51,
+        "secs": 16.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No matching candidate found for the parametric role",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.24,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-file.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.6,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No matching candidate found for the parametric role",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.23,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-multiple.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.07,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,11 +105,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -123,13 +119,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/EE/NEEDLE_COMPILE/ed93e7e1b61e79e5901ff96f8e80ee2c51adecaf.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 71,
     "baseline_files": 4,
-    "mutsu_assertions": 2,
-    "parity_files": 0,
-    "regressed_files": 4
+    "mutsu_assertions": 71,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.0.13"
 }

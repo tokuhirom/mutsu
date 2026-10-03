@@ -17,46 +17,44 @@
   "dist": "PURL",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "is the subpath not present",
-        "nok": 2,
-        "ok": 31,
+        "nok": 0,
+        "ok": 33,
         "plan": 33,
-        "secs": 1.3,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 22.07,
+        "secs": 22.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7o__w75d/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
-        "nok": 32,
-        "ok": 2,
+        "nok": 0,
+        "ok": 34,
         "plan": 34,
-        "secs": 55.8,
+        "secs": 4.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-test-suite.rakutest",
       "raku": {
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.69,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +66,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.65,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +76,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.16,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,11 +89,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -105,13 +103,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/UR/PURL/19b68b9221e44a98780a056a5b8e116e869e02c6.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 100,
     "baseline_files": 3,
-    "mutsu_assertions": 66,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 100,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.17"
 }

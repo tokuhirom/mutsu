@@ -7,18 +7,77 @@
     "unresolved": []
   },
   "dist": "Intl::LanguageTaggish",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-composition.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-error.rakutest",
+      "raku": {
+        "first_failure": "Could not find X::Intl in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Intl::LanguageTaggish": "Unimplemented multi method from role",
+    "Intl::LanguageTaggish": "ok",
     "X::Intl::LanguageTag": "raku_also_fails"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -28,12 +87,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/I/NT/INTL_LANGUAGETAGGISH/05fd31d2ee41cad7f691813d68219b761a1dbd31.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 5,
+    "baseline_files": 2,
+    "mutsu_assertions": 5,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.2"

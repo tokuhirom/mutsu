@@ -3,7 +3,6 @@
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
-      "Data::Dump::Tree",
       "Digest::SHA1::Native",
       "File::Directory::Tree",
       "File::Find",
@@ -23,15 +22,12 @@
       "MIME::Base64",
       "Method::Protected",
       "NativeLibs",
-      "OO::Monitors",
       "PrettyDump",
       "Rainbow",
       "RakuConfig",
       "Rakuast::RakuDoc::Render",
       "Shell::Command",
-      "Terminal-API",
       "Terminal::ANSIColor",
-      "Terminal::Print",
       "Test::Deeply::Relaxed",
       "Test::META",
       "Test::Output",
@@ -51,11 +47,11 @@
   "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -63,7 +59,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/E/LU/ELUCID8_BUILD/47db78de6c57458eeceaf7c833cffb72201f8424.tar.gz"
+    "url": "https://360.zef.pm/E/LU/ELUCID8_BUILD/619189d19f14b2dabb42b82d53e95c04d050d03c.tar.gz"
   },
   "status": "blocked_dep",
   "totals": {
@@ -73,5 +69,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.12.11"
+  "version": "0.12.13"
 }

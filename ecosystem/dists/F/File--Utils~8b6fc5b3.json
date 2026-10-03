@@ -27,23 +27,22 @@
   "dist": "File::Utils",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "uid: 1001 not found",
         "nok": 0,
-        "ok": 8,
+        "ok": 10,
         "plan": 10,
-        "secs": 1.41,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/000-File::Utils.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 23.16,
+        "secs": 34.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,7 +54,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.15,
+        "secs": 0.32,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +64,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 0.91,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -77,11 +76,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -91,13 +90,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/IL/FILE_UTILS/bd7f398a19d3672638644acebf3904ea91843073.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 11,
     "baseline_files": 2,
-    "mutsu_assertions": 9,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 11,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.1.2"
 }

@@ -21,16 +21,16 @@
   "dist": "RPi::Device::ST7036",
   "files": [],
   "load": {
-    "RPi::Device::ST7036": "Failed to parse module 'RPi::Device::ST7036::Setup': Confused. Two terms in a row [at Device/ST7036/Setup.rakumod:23]",
-    "RPi::Device::ST7036::Setup": "Failed to parse module 'RPi::Device::ST7036::Setup': Confused. Two terms in a row [at Device/ST7036/Setup.rakumod:23]"
+    "RPi::Device::ST7036": "The attribute '$!v33' is required, but you did not provide a value for it.",
+    "RPi::Device::ST7036::Setup": "The attribute '$!v33' is required, but you did not provide a value for it."
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

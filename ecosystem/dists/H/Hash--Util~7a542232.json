@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.16,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 2.97,
+        "secs": 3.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 70,
         "plan": 70,
-        "secs": 1.09,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,10 +56,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "does lock_hash return %hash",
-        "nok": 12,
-        "ok": 7,
+        "nok": 7,
+        "ok": 12,
         "plan": 19,
-        "secs": 0.59,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.87,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,10 +79,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "does lock_hash_recurse return %hash",
-        "nok": 7,
-        "ok": 0,
+        "nok": 6,
+        "ok": 16,
         "plan": 22,
-        "secs": 0.57,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.96,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +105,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 0.18,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.01,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +128,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.21,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.74,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,11 +150,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -168,7 +168,7 @@
   "totals": {
     "baseline_assertions": 218,
     "baseline_files": 6,
-    "mutsu_assertions": 133,
+    "mutsu_assertions": 154,
     "parity_files": 2,
     "regressed_files": 4
   },

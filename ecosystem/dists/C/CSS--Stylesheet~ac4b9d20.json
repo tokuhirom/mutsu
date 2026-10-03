@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 107.22,
+        "secs": 49.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,11 +55,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at CSS-Stylesheet-0.1.5/t/at-page.t:15]",
+        "first_failure": "Cannot resolve caller xpath(CSS::Selector::To::XPath:D: Array:D); none of these signatures matches:",
         "nok": 0,
         "ok": 0,
-        "plan": null,
-        "secs": 0.71,
+        "plan": 8,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.63,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 2.84,
+        "secs": 2.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 9,
         "ok": 13,
         "plan": 22,
-        "secs": 5.13,
+        "secs": 4.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.28,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,7 +119,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 3.78,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.18,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -142,7 +142,7 @@
         "nok": 9,
         "ok": 0,
         "plan": 9,
-        "secs": 1.44,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.39,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +165,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 6.0,
+        "secs": 4.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,53 +175,52 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.62,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: punctuate",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 4.2,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/stylesheet-create.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.38,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unknown function: punctuate",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "no media selection",
+        "nok": 2,
+        "ok": 2,
         "plan": 4,
         "secs": 4.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/stylesheet-media-query.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.23,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,11 +237,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -252,13 +251,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_STYLESHEET/d8748e8af89b419fc6af376ff4088458089fa149.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 53,
     "baseline_files": 7,
-    "mutsu_assertions": 14,
-    "parity_files": 0,
-    "regressed_files": 7
+    "mutsu_assertions": 16,
+    "parity_files": 1,
+    "regressed_files": 6
   },
   "version": "0.1.5"
 }

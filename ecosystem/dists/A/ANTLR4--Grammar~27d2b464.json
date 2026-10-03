@@ -21,176 +21,184 @@
   "dist": "ANTLR4::Grammar",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-parse.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.38,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 54,
+        "first_failure": "ANTLRv4Lexer.g4",
+        "nok": 53,
+        "ok": 1,
         "plan": 54,
-        "secs": 5.07,
+        "secs": 2.92,
         "skip": 1,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/02-corpus.t",
       "raku": {
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 14.27,
+        "secs": 14.67,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 48,
+        "ok": 0,
         "plan": 48,
-        "secs": 58.52,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-corpus-compile.t",
       "raku": {
         "nok": 0,
         "ok": 48,
         "plan": 48,
-        "secs": 84.73,
+        "secs": 96.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.88,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-use-parser.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.37,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 4,
+        "ok": 1,
         "plan": 4,
-        "secs": 0.89,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/10-basic-grammar.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.84,
+        "secs": 3.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 9,
+        "ok": 0,
         "plan": 9,
-        "secs": 0.38,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/11-concatenation.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.24,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 6,
+        "ok": 0,
         "plan": 6,
-        "secs": 0.38,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/12-alternation.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.81,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 9,
+        "ok": 0,
         "plan": 9,
-        "secs": 0.43,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/13-grouping.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.23,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +210,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.3,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,73 +220,76 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.82,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 5,
+        "ok": 0,
         "plan": 5,
-        "secs": 0.27,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/15-rule-modifiers.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.99,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 1,
+        "ok": 0,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/16-term-modifiers.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.95,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown type, this should not get triggred",
         "nok": 0,
-        "ok": 2,
+        "ok": 0,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/17-modes.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.85,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -290,7 +301,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 14.74,
+        "secs": 13.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -300,7 +311,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 26.36,
+        "secs": 30.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -314,11 +325,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -328,13 +339,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/NT/ANTLR4_GRAMMAR/8f4e3953f8d3b314ca92fec7395c3a72c8301c76.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 146,
     "baseline_files": 13,
-    "mutsu_assertions": 146,
-    "parity_files": 13,
-    "regressed_files": 0
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 11
   },
   "version": "0.6.3"
 }

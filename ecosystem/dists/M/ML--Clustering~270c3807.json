@@ -16,63 +16,18 @@
     "unresolved": []
   },
   "dist": "ML::Clustering",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 13.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-K-means-signatures.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 16.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 11.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-K-means-correctness.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 28.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "ML::Clustering": "ok",
-    "ML::Clustering::KMeans": "ok"
+    "ML::Clustering": "expected statement: expected expected statement: expected expression statement or ')' [at lib/Math/DistanceFunctionish.rakumod:64]",
+    "ML::Clustering::KMeans": "expected statement: expected expected statement: expected expression statement or ')' [at lib/Math/DistanceFunctionish.rakumod:64]"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -82,12 +37,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_CLUSTERING/dcc81a4884eb1b641f9a9ff29d086a76194fcc44.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 9,
-    "baseline_files": 2,
-    "mutsu_assertions": 9,
-    "parity_files": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.2.0"

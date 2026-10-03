@@ -11,23 +11,22 @@
   "dist": "Timezone::Simple",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Failed to parse module 'Timezones::ZoneInfo::Routines': Confused. Two terms in a row [at Timezones/ZoneInfo/Routines.rakumod:262]",
         "nok": 0,
-        "ok": 1,
+        "ok": 32,
         "plan": 32,
-        "secs": 1.49,
+        "secs": 4.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 13.53,
+        "secs": 12.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.28,
+        "secs": 0.32,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.07,
+        "secs": 1.06,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -61,11 +60,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -75,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/IM/TIMEZONE_SIMPLE/be0eca46c4e5fb915ec370e115925c49089b0973.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 2,
-    "mutsu_assertions": 2,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 33,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

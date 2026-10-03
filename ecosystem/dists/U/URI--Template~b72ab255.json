@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.16,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.64,
+        "secs": 0.75,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.2,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.28,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,76 +70,73 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.29,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Level 4 Examples",
-        "nok": 1,
-        "ok": 3,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 1.37,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/030-spec-examples.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.28,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "3.2.2 Simple String Expansion",
-        "nok": 5,
-        "ok": 4,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 2.15,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/040-spec-examples-by-section.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.34,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Additional Examples 1",
-        "nok": 2,
-        "ok": 2,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.68,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/050-extended-tests.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -151,7 +148,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +158,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -173,7 +170,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.18,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +180,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.64,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -195,11 +192,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -209,13 +206,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/RI/URI_TEMPLATE/4cc01b6a3404c6b41ee2c2366012702680ab9544.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 8,
-    "mutsu_assertions": 48,
-    "parity_files": 5,
-    "regressed_files": 3
+    "mutsu_assertions": 56,
+    "parity_files": 8,
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }

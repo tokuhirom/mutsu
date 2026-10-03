@@ -9,17 +9,17 @@
   "dist": "SQL::Abstract",
   "files": [],
   "load": {
-    "SQL::Abstract": "Failed to parse module 'SQL::Abstract': Confused. Two terms in a row [at lib/SQL/Abstract.rakumod:1967]",
+    "SQL::Abstract": "Unknown role: Op::HasLeft",
     "SQL::Placeholders": "ok",
     "SQL::Query": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"

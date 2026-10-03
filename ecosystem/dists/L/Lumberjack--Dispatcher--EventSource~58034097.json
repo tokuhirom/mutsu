@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.08,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,29 +36,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 0.39,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.47,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "timeout"
       },
       "path": "t/010-basic.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 17.88,
+        "secs": 11.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,11 +71,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -84,13 +85,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/UM/LUMBERJACK_DISPATCHER_EVENTSOURCE/6a8ef215a479a5ff757d816a834ba010ba931b59.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 2,
-    "mutsu_assertions": 7,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.4"
 }

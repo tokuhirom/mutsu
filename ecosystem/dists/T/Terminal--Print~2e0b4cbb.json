@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 9.45,
+        "secs": 11.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.75,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,23 +55,22 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Bad escape sequence: \\e[1057m",
-        "nok": 1,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.28,
+        "nok": 0,
+        "ok": 35,
+        "plan": 35,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/20-boxdrawing.t",
       "raku": {
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.73,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,11 +93,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -108,13 +107,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ER/TERMINAL_PRINT/692e36c295c7868f0d2afcd1454fde631f1a1cb5.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 35,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 35,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.978"
 }

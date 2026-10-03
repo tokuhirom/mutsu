@@ -7,24 +7,224 @@
     "unresolved": []
   },
   "dist": "Grammar::Modelica",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 121,
+        "plan": 121,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ClassDefinition.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 121,
+        "plan": 121,
+        "secs": 8.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ComponentClause.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 1.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 116 -",
+        "nok": 14,
+        "ok": 156,
+        "plan": 170,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/Equations.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 170,
+        "plan": 170,
+        "secs": 2.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Expression_regression.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 168,
+        "plan": 168,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Expressions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 168,
+        "plan": 168,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Extends.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 90,
+        "plan": 90,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/LexicalConventions.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 90,
+        "plan": 90,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Modelica.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Modification.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 49,
+        "plan": 49,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Grammar::Modelica": "Failed to parse module 'Grammar::Modelica::LexicalConventions': Confused. Two terms in a row [at Grammar/Modelica/LexicalConventions.rakumod:13]",
+    "Grammar::Modelica": "ok",
     "Grammar::Modelica::ClassDefinition": "ok",
     "Grammar::Modelica::ComponentClause": "ok",
     "Grammar::Modelica::Equations": "ok",
     "Grammar::Modelica::Expressions": "ok",
     "Grammar::Modelica::Extends": "ok",
-    "Grammar::Modelica::LexicalConventions": "Failed to parse module 'Grammar::Modelica::LexicalConventions': Confused. Two terms in a row [at Grammar/Modelica/LexicalConventions.rakumod:13]",
+    "Grammar::Modelica::LexicalConventions": "ok",
     "Grammar::Modelica::Modification": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -34,13 +234,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAMMAR_MODELICA/189c6f33e4d7d163f3d71082c7b285fb91d5add2.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 671,
+    "baseline_files": 9,
+    "mutsu_assertions": 657,
+    "parity_files": 8,
+    "regressed_files": 1
   },
   "version": "0.1.4"
 }

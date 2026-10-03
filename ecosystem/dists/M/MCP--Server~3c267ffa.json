@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.62,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 4.45,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,11 +54,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\thello world",
+        "first_failure": "Unknown function: tool-result",
         "nok": 0,
-        "ok": 2,
+        "ok": 5,
         "plan": 7,
-        "secs": 1.06,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 18.52,
+        "secs": 10.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.8,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,30 +90,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.14,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, World!",
         "nok": 0,
-        "ok": 3,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.74,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-integration.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.0,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +124,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.92,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,7 +134,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.37,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -145,10 +144,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "mcp-type overrides Int to number",
-        "nok": 2,
-        "ok": 7,
+        "nok": 3,
+        "ok": 8,
         "plan": 18,
-        "secs": 0.98,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -158,7 +157,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 7.32,
+        "secs": 3.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,7 +170,7 @@
         "nok": 1,
         "ok": 12,
         "plan": 13,
-        "secs": 0.96,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -181,7 +180,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 2.86,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -190,11 +189,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tUnknown function: method",
+        "first_failure": "No such method 'server' for invocant of type 'Versioned'",
         "nok": 0,
-        "ok": 10,
+        "ok": 21,
         "plan": 37,
-        "secs": 1.19,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -204,7 +203,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 3.62,
+        "secs": 2.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,11 +212,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tUnknown function: method",
+        "first_failure": "Cannot look up attributes in a Complex type object. Did you forget a '.new'?",
         "nok": 0,
-        "ok": 4,
+        "ok": 12,
         "plan": 25,
-        "secs": 1.03,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -227,53 +226,51 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 4.43,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, Ada",
         "nok": 0,
-        "ok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.87,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/10-toolkit.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.44,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tHello, Ada",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.74,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/11-one-shot.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.78,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -287,7 +284,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.81,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -301,99 +298,97 @@
         "nok": 0,
         "ok": 5,
         "plan": 10,
-        "secs": 6.02,
+        "secs": 2.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "MCP::Server::DSL does not accept positional parameters (label -> Parameter.new).",
-        "nok": 0,
+        "first_failure": "An mcp class is a toolkit",
+        "nok": 1,
         "ok": 0,
         "plan": 6,
-        "secs": 0.76,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/14-dsl-toolkit.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.47,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (supportedVersions\t2026-07-28 capabilities\tprompts",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Modern tools/call",
+        "nok": 1,
+        "ok": 8,
         "plan": 9,
-        "secs": 0.61,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/15-modern-era.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.82,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tdone",
         "nok": 0,
-        "ok": 1,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.71,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/16-logging.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.96,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (supportedVersions\t2026-07-28 capabilities\tresources",
         "nok": 0,
-        "ok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.65,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/17-modern-interface.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.6,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -405,7 +400,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.34,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -415,7 +410,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.81,
+        "secs": 3.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -429,7 +424,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.94,
+        "secs": 10.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -441,7 +436,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.77,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -451,21 +446,20 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.41,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "The retry finishes the call",
+        "first_failure": "Each round's notifications go to that round's channel",
         "nok": 1,
-        "ok": 1,
+        "ok": 11,
         "plan": 12,
-        "secs": 0.87,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -475,30 +469,30 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.86,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\thello Ada",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "A malformed question fails in the handler that wrote it",
+        "nok": 1,
+        "ok": 5,
         "plan": 6,
-        "secs": 0.64,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/22-elicitation-local.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.02,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -512,30 +506,29 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 7.79,
+        "secs": 5.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tdone",
         "nok": 0,
-        "ok": 7,
+        "ok": 8,
         "plan": 8,
-        "secs": 1.01,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/24-notify.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.89,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -549,30 +542,30 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.64,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tType check failed for return value; expected Hash but got List (content\ttext\tsent 3 of 3",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Mid-elicitation, progress belongs to the round in flight",
+        "nok": 1,
+        "ok": 7,
         "plan": 8,
-        "secs": 0.72,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/26-progress.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.15,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -584,7 +577,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.7,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -594,29 +587,30 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.72,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 13,
+        "first_failure": "tool-concurrency 1 is the old behaviour, exactly",
+        "nok": 2,
+        "ok": 11,
         "plan": 13,
-        "secs": 3.37,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/28-batch-concurrency.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 4.39,
+        "secs": 3.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -628,7 +622,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.6,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -638,7 +632,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.7,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -667,11 +661,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -683,11 +677,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 251,
-    "baseline_files": 23,
-    "mutsu_assertions": 122,
-    "parity_files": 8,
-    "regressed_files": 15
+    "baseline_assertions": 263,
+    "baseline_files": 24,
+    "mutsu_assertions": 209,
+    "parity_files": 13,
+    "regressed_files": 11
   },
   "version": "0.7.0"
 }

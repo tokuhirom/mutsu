@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.05,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.26,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,53 +49,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.17,
+        "secs": 2.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "and the smart match works",
-        "nok": 1,
-        "ok": 12,
+        "nok": 0,
+        "ok": 13,
         "plan": 13,
-        "secs": 0.15,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/020-class.t",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.73,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::Assignment::RO: rw method 'log-level' does not expose an assignable attribute",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.23,
+        "ok": 113,
+        "plan": 113,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/030-simple.t",
       "raku": {
         "nok": 0,
         "ok": 113,
         "plan": 113,
-        "secs": 1.05,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +105,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.27,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +115,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.15,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,53 +129,51 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 0.69,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::Assignment::RO: cannot assign through .dispatchers on non-instance",
-        "nok": 6,
-        "ok": 6,
-        "plan": null,
-        "secs": 0.31,
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/060-dispatcher-console.t",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 1.9,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "got expected text for trace",
-        "nok": 6,
-        "ok": 6,
+        "nok": 0,
+        "ok": 12,
         "plan": 12,
-        "secs": 0.3,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/070-dispatcher-file.t",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.87,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -189,11 +185,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-02",
+    "date": "2026-10-03",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "387bd201",
-    "mutsu_version": "0.24.0",
+    "mutsu_commit": "abb202cd",
+    "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
@@ -203,13 +199,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/UM/LUMBERJACK/3b2a138d6fa3086f5df653c0eb9070d01ba6fc91.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 167,
     "baseline_files": 7,
-    "mutsu_assertions": 30,
-    "parity_files": 3,
-    "regressed_files": 4
+    "mutsu_assertions": 167,
+    "parity_files": 7,
+    "regressed_files": 0
   },
   "version": "0.1.5"
 }
