@@ -1362,6 +1362,9 @@ impl Compiler {
                     }
                     self.constant_vars.insert(spelled.clone());
                     self.constant_vars_in_scope.insert(spelled.clone());
+                    // An inner constant shadows an enclosing `my class` of the
+                    // same spelling in turn.
+                    self.lexical_type_shadows.remove(spelled.as_str());
                     // A `constant` with a compile-time-constant scalar value is
                     // inlined at its read sites (ADR-0006 §2.2).
                     self.note_constant_decl(spelled, expr);
@@ -4727,6 +4730,9 @@ impl Compiler {
                 // `unit module`/`unit class` body so that the runtime
                 // registers it under the correct nested package
                 // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
+                if *is_lexical {
+                    self.shadow_constant_with_lexical_type(&name.resolve());
+                }
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_class_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
@@ -4754,7 +4760,14 @@ impl Compiler {
             // `is_mainline` placeholder check from firing on them. See
             // role-body-placeholder-mu-supply (#7550).
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
-            Stmt::RoleDecl { .. } => {
+            Stmt::RoleDecl {
+                name,
+                custom_traits,
+                ..
+            } => {
+                if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
+                    self.shadow_constant_with_lexical_type(&name.resolve());
+                }
                 // Same as RegisterClass above: a role method has no creation op,
                 // and `add_role_decl_plan`'s method-body compile pass harvests
                 // the lexicals its methods write.

@@ -99,6 +99,9 @@ impl Compiler {
         self.inherit_outer_code_var_names(&mut method_compiler);
         method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
+        // A `my class NAME` shadowing an outer `constant NAME` is what a bare
+        // `NAME` in its own methods means too (#11517).
+        method_compiler.lexical_type_shadows = self.lexical_type_shadows.clone();
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
         if let Some(frame) = &self.role_param_scope {

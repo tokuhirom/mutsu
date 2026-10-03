@@ -37,6 +37,7 @@ pub(super) struct LexicalScopeSnapshot {
     /// shadowing declaration inside the block cannot leak out.
     provably_bare_receiver_vars: std::collections::HashSet<String>,
     constant_vars_in_scope: std::collections::HashSet<String>,
+    lexical_type_shadows: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
     constant_values: ValueMap,
     my_vars_current_scope: std::collections::HashSet<String>,
@@ -86,6 +87,7 @@ impl Compiler {
             trir_routines: self.trir_routines.clone(),
             provably_bare_receiver_vars: self.provably_bare_receiver_vars.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
+            lexical_type_shadows: self.lexical_type_shadows.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
             // Inlinable constant values follow the same lifecycle: one declared
             // inside the entered block stops being inlined once it exits (it is
@@ -144,6 +146,7 @@ impl Compiler {
         // valid, so drop them from the in-scope set. Subsequent bare-word access
         // then resolves them via GetBareWord (package/global lookup).
         self.constant_vars_in_scope = saved.constant_vars_in_scope;
+        self.lexical_type_shadows = saved.lexical_type_shadows;
         self.constant_vars_current_scope = saved.constant_vars_current_scope;
         self.constant_values = saved.constant_values;
         self.my_vars_current_scope = saved.my_vars_current_scope;

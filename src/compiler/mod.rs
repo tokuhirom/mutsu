@@ -1643,6 +1643,14 @@ pub(crate) struct Compiler {
     /// declaring block has exited, their stale local slot must not be reused —
     /// such bare-word accesses fall back to GetBareWord (package/global lookup).
     constant_vars_in_scope: std::collections::HashSet<String>,
+    /// Bare names whose innermost visible declaration is a lexical type
+    /// (`my class`/`my role`/`my grammar`) that shadows a same-named
+    /// sigil-less constant of an enclosing scope (#11517). A bareword in this
+    /// set reads the type's lexical binding by name: `GetBareWord` would
+    /// answer the outer constant's live term key first. Snapshotted per
+    /// lexical block like `constant_vars_in_scope`, and handed to nested
+    /// closure compilers by `inherit_enclosing_scopes`.
+    lexical_type_shadows: std::collections::HashSet<String>,
     /// Constants declared in the *current* lexical block only (reset on block
     /// entry). Declaring the same constant twice in one block is an
     /// X::Redeclaration; a shadowing declaration in an inner block is allowed.
@@ -1976,6 +1984,7 @@ impl Compiler {
             decont_scalar_params: std::collections::HashSet::new(),
             readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
+            lexical_type_shadows: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
             class_names_current_scope: std::collections::HashSet::new(),
@@ -2542,6 +2551,8 @@ impl Compiler {
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
+        sub.lexical_type_shadows
+            .extend(self.lexical_type_shadows.iter().cloned());
     }
 
     /// Record a named sub declared in this scope in
