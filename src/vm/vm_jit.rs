@@ -375,6 +375,7 @@ pub(crate) fn try_enter_range(
             start as u32,
             code,
             interp,
+            entry_poll,
         );
     }
     interp.current_code = code as *const CompiledCode as usize;

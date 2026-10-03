@@ -69,7 +69,7 @@ pub(crate) struct LineRegion {
     pub(crate) region: region::Region,
 }
 
-pub(crate) use counts::{record_line_at, record_routine_frame};
+pub(crate) use counts::{end_line_visit, record_line_at, record_routine_frame};
 pub(crate) use options::configure;
 pub(crate) use region::{Region, enter};
 pub(crate) use report::flush_at_exit;

@@ -413,7 +413,8 @@ impl Interpreter {
     /// outward walk over `routine_stack` to reconstruct it (#8743).
     pub(crate) fn record_profile_routine_frame(&self, frame: &super::RoutineFrame) {
         if crate::vm::vm_poll::profiler_armed() {
-            crate::profile::record_routine_frame(frame);
+            // Every caller records the frame just before pushing it.
+            crate::profile::record_routine_frame(frame, self.routine_stack.len() + 1);
         }
     }
 

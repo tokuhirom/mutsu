@@ -83,7 +83,19 @@ pub(super) unsafe extern "C" fn profile_safepoint(
     // interpreter the JIT entry wrapper received. The sampler only reads its
     // Raku frame stack.
     let (interp, code) = unsafe { (&*interp, &*code) };
-    crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, site, code, interp);
+    crate::vm::vm_poll::poll_code(
+        crate::gc::SafepointKind::Backedge,
+        site,
+        code,
+        interp,
+        false,
+    );
+    // `site` is the jump's own ip, not its target: the target block's
+    // `profile_line` hook records the line control arrives at, so end the
+    // current visit here and let that hook count it even on the same line
+    // (#8737; the interpreter passes `arrival` at the target instead). This
+    // shim is only emitted while the profiler is armed.
+    crate::profile::end_line_visit(interp.routine_stack().len());
 }
 
 /// Exact line-entry hook emitted at native basic-block boundaries while the
