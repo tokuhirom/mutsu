@@ -5407,6 +5407,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
+    /// The compilation unit whose code opened this scope (`current_unit` at
+    /// the push). An import made here shadows that unit's own top-level
+    /// routines, but not another unit's (#11103).
+    pub(crate) unit: Symbol,
 }
 
 impl Default for Interpreter {

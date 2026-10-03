@@ -89,6 +89,7 @@ impl Interpreter {
                 scope_classes,
                 imported_env_aliases: self.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
+                unit: self.current_unit,
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -322,6 +323,7 @@ impl Interpreter {
                 monkey_typing,
                 scope_classes,
                 leave_phasers: _,
+                unit: _,
             } = snapshot;
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,

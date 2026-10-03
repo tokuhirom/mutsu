@@ -93,9 +93,16 @@ impl Interpreter {
         self.invalidate_fn_resolution_for_keys([key]);
     }
 
-    /// Move the package-less top-level routines the compunit at `source_path`
-    /// just declared, but did not export, out of the shared registry and into
-    /// that compunit's private table.
+    /// Move the package-less top-level `my`-scoped routines the compunit at
+    /// `source_path` just declared out of the shared registry and into that
+    /// compunit's private table.
+    ///
+    /// An exported one is moved too when `module` is known (#11103): a plain
+    /// `sub f is export` is as lexical to its compunit as any other `sub`, and
+    /// reaches another scope only through an import. Its definition is also
+    /// kept under `MOD::name`, the key `import_module` aliases it from, so
+    /// `need M` alone exposes nothing and `{ use M }` exposes it only inside
+    /// the block.
     ///
     /// Call it while the loaded compunit's registrations are still the only
     /// occupants of the package-less namespace -- i.e. after its `run_block`
@@ -103,10 +110,10 @@ impl Interpreter {
     /// scope's own entries back.
     ///
     /// `module` names the loaded module when known: only *its own* exports
-    /// then stay shared. Another module's export of the same name (one this
+    /// then get the import-source treatment. Another module's export of the same name (one this
     /// compunit perhaps also imported) does not make this compunit's own
     /// `sub name` public (#9587). A `require` of a path has no module name and
-    /// keeps the conservative every-module union.
+    /// keeps the conservative every-module union, leaving every export shared.
     pub(crate) fn seclude_private_toplevel_routines(
         &mut self,
         source_path: &str,
@@ -131,7 +138,14 @@ impl Interpreter {
         };
         let mut secluded: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
         for (key, name) in candidates {
-            if name == "MAIN" || exported.contains(&name) {
+            if name == "MAIN" {
+                continue;
+            }
+            // The module's own export is lexical to it too: only an import
+            // aliases it into a scope (#11103). Keep it where `import_module`
+            // sources it, `MOD::name`, and in the module's private table.
+            let own_export = exported.contains(&name);
+            if own_export && module.is_none() {
                 continue;
             }
             // An export an earlier module load installed stays visible through
@@ -156,6 +170,13 @@ impl Interpreter {
             let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
                 continue;
             };
+            if own_export && let Some(module) = module {
+                self.registry_mut().our_scoped_functions.remove(&key);
+                self.registry_mut()
+                    .functions_mut()
+                    .entry(Symbol::intern(&format!("{module}::{name}")))
+                    .or_insert_with(|| def.clone());
+            }
             secluded.push((name_sym, def));
         }
         if secluded.is_empty() {
@@ -330,7 +351,9 @@ impl Interpreter {
             return None;
         }
         let name_sym = Symbol::lookup(name)?;
-        if !self.unit_private_names.contains(&name_sym) {
+        if !self.unit_private_names.contains(&name_sym)
+            || self.imported_in_open_unit_scope(name_sym)
+        {
             return None;
         }
         if let Some(def) = self.unit_private_routine_from(self.current_unit, name_sym) {
@@ -396,6 +419,31 @@ impl Interpreter {
             }
         }
         Vec::new()
+    }
+
+    /// Whether a scope the running unit opened -- an enclosing block or
+    /// routine body of its own -- imported a routine named `name_sym`. That
+    /// import is lexically inner to the unit's top-level routines, so it
+    /// shadows a private one of the same name (a module's exported wrapper
+    /// whose body `use`s a dependency exporting the same name, #8798). An
+    /// import scope a *calling* unit opened does not count.
+    // Cost: O(s * p), s = open import scopes, p = enclosing packages; O(1)
+    // when no import scope is open.
+    pub(crate) fn imported_in_open_unit_scope(&self, name_sym: Symbol) -> bool {
+        if self.import_scope_stack.is_empty() {
+            return false;
+        }
+        let unit = self.current_unit;
+        let packages = self.bare_name_packages_syms();
+        self.import_scope_stack.iter().any(|scope| {
+            scope.unit == unit
+                && !scope.own_routine_imports.is_empty()
+                && packages.iter().any(|&package| {
+                    scope
+                        .own_routine_imports
+                        .contains(&crate::qualified::qualified(package, name_sym))
+                })
+        })
     }
 
     /// A private routine named `name_sym` declared by `unit`, or by a unit
