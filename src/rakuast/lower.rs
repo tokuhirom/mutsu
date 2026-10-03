@@ -1670,7 +1670,7 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
         None => None,
     };
-    let mut custom_traits = super::decl_traits::lower(node)?;
+    let (mut custom_traits, dynamic_trait) = super::decl_traits::lower(node)?;
     let sigil = leaf_str(node, "sigil")?;
     let desigil_node = named_child(node, "desigilname")?;
     let desigil = match positional_leaf(desigil_node)?.view() {
@@ -1678,6 +1678,7 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => return Err(unsupported(node)),
     };
     let twigil = if is_dynamic { "*" } else { "" };
+    let is_dynamic = is_dynamic || dynamic_trait;
     let name = if sigil == "$" {
         format!("{twigil}{desigil}")
     } else {

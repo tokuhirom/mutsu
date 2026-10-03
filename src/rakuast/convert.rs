@@ -1347,15 +1347,26 @@ fn var_decl_statement(
     };
     // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
     // front); raku renders the `*` as the declaration's `twigil`.
+    // `my $x is dynamic` keeps its plain name and renders the trait instead.
+    let twigil_dynamic = is_dynamic && name.trim_start_matches(['@', '%', '&']).starts_with('*');
     let dynamic_name;
-    let (name, twigil) = if is_dynamic {
+    let (name, twigil) = if twigil_dynamic {
         dynamic_name = name.replacen('*', "", 1);
         (dynamic_name.as_str(), Some("*"))
     } else {
         (name, None)
     };
     let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
-    decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
+    let mut traits = decl_traits::convert(custom_traits)?;
+    if is_dynamic && !twigil_dynamic {
+        // The parser keeps `is dynamic` as a flag, not in source order among
+        // the other traits, so only a lone one renders faithfully.
+        if !traits.is_empty() {
+            return Err(unsupported("`is dynamic` beside other traits"));
+        }
+        traits.push(decl_traits::dynamic_trait());
+    }
+    decl_traits::insert(&mut decl, traits);
     Ok(Some(statement_expression(decl)))
 }
 
