@@ -1170,7 +1170,19 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     if name != "__mutsu_assign_method_lvalue" {
         return None;
     }
-    let [target, method, Expr::ArrayLiteral(method_args), value, ..] = args else {
+    // Only the five-argument record `parser::assign_to_target_expr` builds for
+    // `CALL = value` renders: lowering the `ApplyInfix` hands the method call
+    // back to that function, so a record it would not rebuild (the compound
+    // forms' six-argument writeback, a topic write-back name) stays the
+    // boundary.
+    let [
+        target,
+        method,
+        Expr::ArrayLiteral(method_args),
+        value,
+        write_back,
+    ] = args
+    else {
         return None;
     };
     let (Expr::Literal(method) | Expr::LiteralSrc(method, _)) = method else {
@@ -1179,6 +1191,27 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     let ValueView::Str(method) = method.view() else {
         return None;
     };
+    let expected_write_back = crate::parser::method_lvalue_target_name(target);
+    let write_back = match write_back {
+        Expr::Literal(v) => match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ if v.is_nil() => None,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if write_back != expected_write_back {
+        return None;
+    }
+    // `$(EXPR) = v` and `$o.AT-POS(i) = v` are assignments the parser routes
+    // elsewhere; a record of them did not come from that function.
+    let is_rerouted = (method.as_str() == "item" && method_args.is_empty())
+        || (method.as_str() == "AT-POS"
+            && method_args.len() == 1
+            && !matches!(target, Expr::Var(n) | Expr::BareWord(n) if n == "self"));
+    if is_rerouted {
+        return None;
+    }
     let (modifier, method) = match method.strip_prefix('!') {
         Some(private) => (Some('!'), private),
         None => (None, &method[..]),

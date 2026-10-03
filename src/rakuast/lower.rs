@@ -303,10 +303,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
-        RakuAstClass::ApplyInfix if infix_is_assignment(node) => match subscript_assign(node)? {
-            Some(assign) => Ok(Stmt::Expr(assign)),
-            None => lower_assign(node),
-        },
+        RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
+            match subscript_assign(node)?
+                .map_or_else(|| method_call_assign(node), |a| Ok(Some(a)))?
+            {
+                Some(assign) => Ok(Stmt::Expr(assign)),
+                None => lower_assign(node),
+            }
+        }
         // `$x := EXPR` is an `ApplyInfix` with a plain `:=` infix -- the
         // parser's `Stmt::Assign` with a `Bind` op.
         RakuAstClass::ApplyInfix if infix_is_bind_to_variable(node) => {
@@ -1553,6 +1557,25 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         value: Box::new(lower_expr(named_child(node, "right")?)?),
         is_positional,
     }))
+}
+
+/// `ApplyInfix(left => <method call>, Assignment, right)` -- an rw-accessor
+/// or other method-call lvalue (`$o.x = v`) -- through the parser's own
+/// `assign_to_target_expr`, or `None` when the left side is not a method call.
+// Cost: O(n), n = size of the node.
+fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    if left.class != RakuAstClass::ApplyPostfix
+        || !named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallMethod)
+    {
+        return Ok(None);
+    }
+    let target = lower_expr(left)?;
+    if !matches!(target, Expr::MethodCall { .. }) {
+        return Ok(None);
+    }
+    let value = lower_expr(named_child(node, "right")?)?;
+    Ok(Some(crate::parser::assign_to_target_expr(target, value)))
 }
 
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -3150,6 +3173,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `($x = EXPR)` in expression position -> an assignment expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
             if let Some(assign) = subscript_assign(node)? {
+                return Ok(assign);
+            }
+            if let Some(assign) = method_call_assign(node)? {
                 return Ok(assign);
             }
             let (name, expr) = lower_assign_parts(node)?;
