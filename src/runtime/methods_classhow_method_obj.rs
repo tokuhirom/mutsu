@@ -498,6 +498,12 @@ impl Interpreter {
         // `z`, verified against `raku`); the `!` is call syntax, not part of
         // the name.
         attrs.insert("name".to_string(), Value::str(name.to_string()));
+        // Privacy is recorded separately, since the name no longer says it:
+        // `CALL-ME` on a `.^private_method_table` entry re-dispatches as a
+        // private call (`self!name`) only when this is set.
+        if method_def.is_private {
+            attrs.insert("__mutsu_private_method".to_string(), Value::TRUE);
+        }
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
         attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
         attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));

@@ -3261,8 +3261,8 @@ impl Interpreter {
                         let mut args = args;
                         let invocant = args.remove(0);
                         let is_private = matches!(
-                            am.get("name").map(Value::view),
-                            Some(ValueView::Str(name)) if name.starts_with('!')
+                            am.get("__mutsu_private_method").map(Value::view),
+                            Some(ValueView::Bool(true))
                         );
                         let method_name = if is_private {
                             format!("!{}", method_name.as_str())
