@@ -190,7 +190,7 @@ impl Compiler {
         let base = (!in_place).then(|| self.reg());
         if let Some(base) = base {
             self.ops.push(RxOp::SepBase(base));
-            self.ops.push(open_side.clone());
+            self.ops.push(open_side);
         }
         self.pattern(inner)?;
         if base.is_some() {
