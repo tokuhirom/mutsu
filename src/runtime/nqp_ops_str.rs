@@ -178,6 +178,11 @@ impl Interpreter {
                 })
             }
 
+            // The ordered-string / unsigned / ignore-mark comparisons and the
+            // string bit ops live in their own module (#11491).
+            // Cost: O(n1 + n2) at worst (each op states its own).
+            _ if let Some(result) = super::nqp_ops_compare::call_nqp_compare_op(op, args) => result,
+
             _ => return self.call_nqp_op_list(op, args),
         })
     }
