@@ -1246,6 +1246,24 @@ impl Interpreter {
         Self::itemize_scalar_store_value(val)
     }
 
+    /// True when the topic's current alias target is anything but a bare
+    /// (non-itemized) Array/Hash, i.e. it aliases a `Scalar` rather than a whole
+    /// `@`/`%` container. Elements and `$` variables hold scalars or itemized
+    /// aggregates; `given @a` aliases the bare container itself.
+    // Cost: O(1).
+    pub(crate) fn topic_holds_scalar(cur: &Value) -> bool {
+        let cur = if let ValueView::ContainerRef(cell) = cur.view() {
+            cell.lock().unwrap().clone()
+        } else {
+            cur.clone()
+        };
+        match cur.view() {
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Hash(_) => cur.hash_is_itemized(),
+            _ => true,
+        }
+    }
+
     /// True when a name is exempt from scalar-store itemization: the topic, a
     /// `&`-sigiled Callable binding, and the internal `__mutsu*` keys. Purely a
     /// property of the name, so a caller binding the same name repeatedly (a
