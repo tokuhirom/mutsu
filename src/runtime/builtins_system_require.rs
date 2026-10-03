@@ -609,6 +609,7 @@ impl Interpreter {
             for source in candidates {
                 if let Some(value) = self.env.get(&source).cloned() {
                     self.env.insert(symbol.to_string(), value);
+                    self.record_import_env_key(symbol);
                     return true;
                 }
             }
@@ -623,6 +624,7 @@ impl Interpreter {
             );
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
+            self.record_import_env_key(symbol);
             return true;
         }
         if self.has_class(symbol) || self.is_role(symbol) {
@@ -630,6 +632,7 @@ impl Interpreter {
                 .insert(symbol.to_string(), Value::package(Symbol::intern(symbol)));
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
+            self.record_import_env_key(symbol);
             return true;
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
@@ -644,6 +647,7 @@ impl Interpreter {
             self.env.insert(symbol.to_string(), value);
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
+            self.record_import_env_key(symbol);
             return true;
         }
         // A sigil-less constant the module declared is a term (#9962): it is
@@ -651,6 +655,7 @@ impl Interpreter {
         let term = crate::runtime::term_names::term_key(symbol);
         if let Some(value) = self.env.get(&term).cloned() {
             let is_nil = value.is_nil();
+            self.record_import_env_key(&term);
             self.env.insert(term, value);
             return !is_nil;
         }
@@ -659,6 +664,7 @@ impl Interpreter {
             self.env.insert(symbol.to_string(), value);
             self.env
                 .insert_sym_noting(crate::runtime::sigilless_readonly_key(symbol), Value::TRUE);
+            self.record_import_env_key(symbol);
             return !is_nil;
         }
         false

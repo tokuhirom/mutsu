@@ -42,6 +42,46 @@ impl Interpreter {
     // module load.
     pub(crate) fn scope_unit_multi_families(&mut self, source_path: &str) {
         let decl_unit = self.unit_of_source(Some(source_path));
+        self.scope_multi_families_of_unit(decl_unit, |_| true);
+    }
+
+    /// Scope the families the importing compunit `importer` has declared so
+    /// far, right before it loads a module (#11310).
+    ///
+    /// A `multi` is hoisted to the start of its block, so a compunit's
+    /// candidates are registered before the `use` statements in its body run.
+    /// [`Self::scope_unit_multi_families`] only runs once a module's load
+    /// finishes, so without this the loading module's candidates were visible
+    /// to every module it loads in turn: a `multi trait_mod:<is>(Routine $r,
+    /// :$symbol!)` in one module captured the `is array_type(...)` and
+    /// `is export` traits of a module it merely `use`d (upstream
+    /// `NativeCall.rakumod` over `NativeCall::Types`). In Raku the candidate is
+    /// lexical to its compunit, and the loaded module never sees it.
+    ///
+    /// A module importer gets every family scoped, which is what its own load
+    /// would do at its end anyway. The main script's families are left
+    /// unscoped by default, since a scoped name bypasses the unit-blind
+    /// dispatch caches (see [`Self::scope_main_family_if_contested`]); a
+    /// valid module cannot call a script routine it never declared, so the
+    /// leak only matters for a name the module uses *without* declaring it.
+    /// Its traits are that name: a module applies `trait_mod:<is>` and kin to
+    /// its own declarations while it loads, and the core candidates are what
+    /// it means. So the script's `trait_mod:<...>` families are scoped here.
+    // Cost: O(r + p), r = registered functions, p = registered protos; once per
+    // module load.
+    pub(crate) fn scope_importer_families_for_nested_load(&mut self, importer: Symbol) {
+        if importer == crate::runtime::main_unit() {
+            self.scope_multi_families_of_unit(importer, |name| name.starts_with("trait_mod:<"));
+        } else {
+            self.scope_multi_families_of_unit(importer, |_| true);
+        }
+    }
+
+    /// The shared body of [`Self::scope_unit_multi_families`] and
+    /// [`Self::scope_importer_families_for_nested_load`]: scope the
+    /// package-less families `decl_unit` declared whose name passes `wanted`.
+    // Cost: O(r + p), r = registered functions, p = registered protos.
+    fn scope_multi_families_of_unit(&mut self, decl_unit: Symbol, wanted: impl Fn(&str) -> bool) {
         let mut names: HashSet<Symbol> = HashSet::new();
         // Names this unit declared inside a package (`module M { ... }`, a
         // namespaced `unit module`). Their `GLOBAL::` entries are export
@@ -111,7 +151,8 @@ impl Interpreter {
         }
         names.retain(|name| {
             let name_str = name.as_str();
-            name_str != "MAIN"
+            wanted(name_str)
+                && name_str != "MAIN"
                 && name_str != "EXPORT"
                 && !self.prelude_sub_names.contains(name)
                 && !self
