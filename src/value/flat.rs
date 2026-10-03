@@ -94,6 +94,17 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 out.push(Value::array_with_kind(items.clone(), ArrayKind::ItemList));
             }
         }
+        // A `$`-held Seq (`my $t = (1, 2).Seq`) is itemized (its view is
+        // `ItemSeq`/`ItemList`) and stays one element, like an itemized List:
+        // `join("-", $t)` is `1 2`, `(1, $t).flat.elems` is 2.
+        ValueView::Seq(body)
+            if matches!(
+                body.view(),
+                crate::value::SeqView::ItemSeq | crate::value::SeqView::ItemList
+            ) =>
+        {
+            out.push(v.clone())
+        }
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             if flatten_arrays {
                 for item in items.iter() {
