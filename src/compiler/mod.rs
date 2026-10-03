@@ -1109,6 +1109,7 @@ pub(crate) mod frame_lexical_routines;
 mod helpers;
 mod helpers_ast_utils;
 mod helpers_block_inline;
+mod bind_ternary;
 mod helpers_call_args;
 mod helpers_control_flow;
 mod helpers_do_expr;
@@ -1328,6 +1329,11 @@ pub(crate) struct Compiler {
     /// it bare, so it resolves through the package's static store
     /// (`package_lexicals`) as it does from the body's methods.
     pub(crate) package_body_lexicals: HashSet<String>,
+    /// The class whose body lexically encloses this code, for a `$?CLASS`
+    /// outside a method (a class-body `sub`). It is known at compile time, so
+    /// it does not depend on whichever class body ran last. `None` in a role
+    /// body, where `$?CLASS` is the consuming class.
+    pub(crate) static_class: Option<String>,
     /// Compile-time aliases from a constant type object to its target spelling.
     /// Native storage and arithmetic need the target (`int64`), while runtime
     /// diagnostics retain the source alias (`time`).
@@ -1911,6 +1917,7 @@ impl Compiler {
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
             package_body_lexicals: HashSet::new(),
+            static_class: None,
             type_aliases: HashMap::new(),
             outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),

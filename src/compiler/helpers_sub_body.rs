@@ -283,6 +283,7 @@ impl Compiler {
         sub_compiler.last_source_line = self.last_source_line;
         // Propagate distribution context so $?DISTRIBUTION works inside subs
         sub_compiler.current_distribution = self.current_distribution.clone();
+        sub_compiler.static_class = self.static_class.clone();
         let arity = param_defs
             .iter()
             .filter(|p| !p.named && (!p.slurpy || p.name == "_capture"))
@@ -1289,6 +1290,7 @@ impl Compiler {
         // owning module's distribution inside a routine/method body (which is
         // compiled through this closure-body path), not Nil.
         sub_compiler.current_distribution = self.current_distribution.clone();
+        sub_compiler.static_class = self.static_class.clone();
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
         // enclosing statement, and seed the body chunk's ip -> line table with it.

@@ -2034,8 +2034,12 @@ impl Interpreter {
                 // mutations write through the shared backing node (container
                 // identity §3), so an undetached copy would leak `@a.push`
                 // back to the caller's array.
-                if pd.is_some_and(|pd| pd.traits.iter().any(|t| t == "copy")) {
-                    val = val.detach_shared_container();
+                if let Some(pd) = pd.filter(|pd| pd.traits.iter().any(|t| t == "copy")) {
+                    val = if pd.name.starts_with('@') {
+                        val.into_param_copy('@')
+                    } else {
+                        val.detach_shared_container()
+                    };
                 }
                 // An untyped parameter is implicitly `Any` (#10878): a
                 // `Mu`-only argument takes the typed check below, which fails.

@@ -99,13 +99,27 @@ pub(crate) fn expand(decl: Stmt) -> Stmt {
     // the same `MarkBind` route: the compiler then emits `MultiDimIndexBindRef`
     // (via `compile_call_arg`) instead of a plain read, and a later `$x = v`
     // writes through to the real nested slot.
-    if matches!(
-        expr,
-        Expr::Var(_) | Expr::Index { .. } | Expr::MultiDimIndex { .. }
-    ) {
+    // A conditional whose every branch is such a container binds the branch
+    // it selects (`my $x := $c ?? @a[0] !! @a[1]`).
+    if binds_a_container(expr) {
         return Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl]);
     }
     decl
+}
+
+/// Whether binding to `expr` aliases an existing container: a variable, an
+/// element, or a conditional choosing between such.
+// Cost: O(d), d = conditional nesting depth.
+fn binds_a_container(expr: &Expr) -> bool {
+    match expr {
+        Expr::Var(_) | Expr::Index { .. } | Expr::MultiDimIndex { .. } => true,
+        Expr::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => binds_a_container(then_expr) && binds_a_container(else_expr),
+        _ => false,
+    }
 }
 
 /// The binding declaration `stmt` is the [`expand`]ed form of, if it is one:

@@ -615,6 +615,11 @@ impl Compiler {
         let suppress_multidim_bind_ref = self.suppress_multidim_bind_ref_arg;
         self.suppress_multidim_bind_ref_arg = false;
         if is_bind_target
+            && self.compile_bind_through_ternary(arg, escaping, suppress_multidim_bind_ref)
+        {
+            return;
+        }
+        if is_bind_target
             && let Expr::Var(name) = arg
             && name.starts_with("__mutsu_bind_index_assign_src_")
         {

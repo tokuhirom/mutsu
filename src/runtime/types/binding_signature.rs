@@ -2469,19 +2469,8 @@ impl Interpreter {
                                 ValueView::Array(..) | ValueView::Hash(..)
                             )
                         {
-                            bound_value = bound_value.copy_for_list_assignment();
-                            if pd.name.starts_with('@')
-                                && let ValueView::Array(
-                                    gc,
-                                    crate::value::ArrayKind::List
-                                    | crate::value::ArrayKind::ItemList,
-                                ) = bound_value.view()
-                            {
-                                bound_value = Value::array_with_kind(
-                                    crate::gc::Gc::new((*gc).as_ref().clone()),
-                                    crate::value::ArrayKind::Array,
-                                );
-                            }
+                            bound_value =
+                                bound_value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
                             bound_value.stamp_descriptor_name("element");
                         }
                         if self.named_scalar_container_share_eligible(pd)
@@ -2687,18 +2676,7 @@ impl Interpreter {
                         && pd.traits.iter().any(|trait_name| trait_name == "copy")
                         && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
                     {
-                        value = value.copy_for_list_assignment();
-                        if pd.name.starts_with('@')
-                            && let ValueView::Array(
-                                gc,
-                                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
-                            ) = value.view()
-                        {
-                            value = Value::array_with_kind(
-                                crate::gc::Gc::new((*gc).as_ref().clone()),
-                                crate::value::ArrayKind::Array,
-                            );
-                        }
+                        value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
                         value.stamp_descriptor_name("element");
                     }
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
@@ -3271,7 +3249,9 @@ impl Interpreter {
                         if pd.name.starts_with('@') && !pd.slurpy {
                             value = value.deitemize_for_sigil_bind();
                         }
-                        value = value.copy_for_list_assignment();
+                        // A `@`-sigil copy is a fresh, mutable, untyped Array
+                        // whatever the argument was (`Value::into_param_copy`).
+                        value = value.into_param_copy(pd.name.chars().next().unwrap_or('$'));
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
                         // detach clone inherited (`sub f(:@kh is copy)` bound to
@@ -3279,23 +3259,7 @@ impl Interpreter {
                         if pd.name.starts_with('@') || pd.name.starts_with('%') {
                             value.stamp_descriptor_name("element");
                         }
-                        // A `@`-sigil `is copy` param is a *mutable Array* copy of
-                        // its argument, even when the argument is an (immutable)
-                        // List (`f(<x y>)`, `f((1,2))`): `@d[0] = …`, `.push`, and
-                        // `.=reverse` must work. `detach_shared_container` preserves
-                        // the `List` kind, so element assignment was still rejected
-                        // as "Cannot modify an immutable List". Reify any list-kind
-                        // value into a fresh real Array (keeping its element data /
-                        // type metadata). A real-Array argument already detached above.
                         if pd.name.starts_with('@')
-                            && let ValueView::Array(gc, ArrayKind::List | ArrayKind::ItemList) =
-                                value.view()
-                        {
-                            value = Value::array_with_kind(
-                                crate::gc::Gc::new((**gc).clone()),
-                                ArrayKind::Array,
-                            );
-                        } else if pd.name.starts_with('@')
                             && let ValueView::Seq(body) = value.view()
                             && !body.is_lazy()
                         {

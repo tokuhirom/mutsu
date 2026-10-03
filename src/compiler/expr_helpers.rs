@@ -822,6 +822,14 @@ impl Compiler {
                 .code
                 .add_constant(Value::package(crate::symbol::Symbol::intern(pkg)));
             self.code.emit(OpCode::LoadConst(idx));
+        } else if name == "?CLASS"
+            && !self.local_map.contains_key(name)
+            && let Some(class) = self.static_class.as_deref()
+        {
+            let idx = self
+                .code
+                .add_constant(Value::package(crate::symbol::Symbol::intern(class)));
+            self.code.emit(OpCode::LoadConst(idx));
         } else if (name == "?CLASS" || name == "?ROLE") && !self.local_map.contains_key(name) {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
             self.code.emit(OpCode::GetGlobal(name_idx));
