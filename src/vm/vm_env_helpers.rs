@@ -1725,21 +1725,21 @@ impl Interpreter {
             return;
         }
         // `$PROCESS::OUT` maps to the sigilless `*OUT`: a write to the process
-        // stash, never to a frame's env (ADR-11318). Every reader of `$*OUT`
-        // (`print`/`say`'s `write_to_named_handle` included) resolves the
-        // process binding through the stash, so both spellings, and every
-        // thread — including one already running (#11318) — see the new value.
+        // stash, which every thread reads — including one already running
+        // (ADR-11318, #11318). It is mirrored into this env below (the pseudo-
+        // package branch) only when the binding here is the process one: a
+        // `my $*OUT` in scope keeps its own value.
         if Self::is_process_qualified(name)
             && let Some(key) = Self::pseudo_package_unqualified_name(name)
+            && !self.publish_process_dynamic(&key, value.clone())
         {
-            self.publish_process_dynamic(&key, value);
             return;
         }
         // Likewise a write to a dynamic whose binding is the process one (no
-        // `my $*X` in scope). A declaration (`fresh_binding`) is a new lexical
-        // binding, never the process one.
-        if !fresh_binding && self.publish_process_dynamic_write(name, &value) {
-            return;
+        // `my $*X` in scope) is published. A declaration (`fresh_binding`) is
+        // a new lexical binding, never the process one.
+        if !fresh_binding {
+            self.publish_process_dynamic_write(name, &value);
         }
         // Write through an existing ContainerRef in env, mirroring the generic
         // check in the `SetGlobal` opcode handler (`vm_exec_dispatch.rs`) —
@@ -1822,8 +1822,8 @@ impl Interpreter {
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
         // bare variable name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
-            // (`$PROCESS::X` never gets here: it is published to the process
-            // stash at the top of this function.)
+            // (`$PROCESS::X` was published to the process stash at the top
+            // of this function; this is the env mirror.)
             if let Some(alias) = Self::twigil_dynamic_alias(&bare) {
                 self.env_mut().insert(alias, value.clone());
             }

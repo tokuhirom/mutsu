@@ -436,12 +436,10 @@ impl Interpreter {
     /// cell) is preserved, rather than rebinding the name to a detached copy.
     fn restore_let_value(&mut self, name: String, restored: Value, slot: Option<u32>) {
         // `temp $*OUT = ...` over the process binding temporized the process
-        // stash (ADR-11318): restore it there. No frame holds the binding, so
-        // there is no slot to refresh and nothing to write back to a caller —
-        // a writeback would copy the value into the caller's own storage,
-        // where it would read as a lexical binding.
-        if name.starts_with('*') && self.publish_process_dynamic_write(&name, &restored) {
-            return;
+        // stash (ADR-11318): restore it there too. Ahead of the `ContainerRef`
+        // branch below, which returns without reaching the by-name writer.
+        if name.starts_with('*') {
+            self.publish_process_dynamic_write(&name, &restored);
         }
         // A boxed (shared-cell) binding: write the restored value THROUGH the live
         // cell so the owner's local slot (which holds the same Arc) sees the

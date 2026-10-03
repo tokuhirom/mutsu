@@ -2549,20 +2549,17 @@ impl Interpreter {
                     }
                 }
                 // A `$*name = ...` whose binding is the process one (no `my
-                // $*name` in scope) writes the process stash, which every
-                // thread reads (ADR-11318) — before the `ContainerRef`
-                // write-through below, which would otherwise store into a
-                // captured cell that still holds the process seed and turn it
-                // into a lexical-looking binding.
+                // $*name` in scope) is published to the process stash, which
+                // every thread reads (ADR-11318). Done here, ahead of the
+                // `ContainerRef` write-through below, which returns without
+                // reaching `set_env_with_main_alias`'s own publish.
                 if !is_rebind
                     && !raw_mode
                     && !is_bind_ctx
                     && !fresh_binding_decl
                     && name.starts_with('*')
-                    && self.publish_process_dynamic_write(&name, &val)
                 {
-                    *ip += 1;
-                    return Ok(());
+                    self.publish_process_dynamic_write(&name, &val);
                 }
                 // ADR-0024: a mainline named sub's write to one of its OWN
                 // captured lexicals must route through the shared cell in

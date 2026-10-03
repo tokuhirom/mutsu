@@ -3303,14 +3303,16 @@ impl Interpreter {
             // todo/tickets/process-dynamic-write-nil-not-decayed-to-any.md.
             self.reset_nil_untyped_scalar(&env_key, stored)
         };
-        // The process stash is the value's only home (ADR-11318): it outlives
-        // every frame (a nested block/module/sub overlay is dropped on exit,
-        // #8682) and every thread of the lineage reads it, including one that
-        // was already running (#11318). No frame's env gets a copy, which would
-        // only shadow a later write from another thread. Publishing also
-        // declares the name dynamic, so a later `$*name = ...` from any frame
-        // passes `CheckDynamicVarDeclared`.
-        self.publish_process_dynamic(&env_key, val.clone());
+        // The process stash is the durable home (ADR-11318): it outlives every
+        // frame (a nested block/module/sub overlay is dropped on exit, #8682)
+        // and every thread of the lineage reads it, including one that was
+        // already running (#11318). Publishing also declares the name dynamic,
+        // so a later `$*name = ...` from any frame passes
+        // `CheckDynamicVarDeclared`. The env mirror serves the native readers
+        // that consult it directly; a `my $*name` in scope keeps its value.
+        if self.publish_process_dynamic(&env_key, val.clone()) {
+            self.env_mut().insert(env_key, val.clone());
+        }
         Ok(val)
     }
 

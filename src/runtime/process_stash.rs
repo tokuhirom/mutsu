@@ -10,14 +10,16 @@
 //!
 //! [`ProcessStash`] is that one store. Every interpreter of a lineage shares it
 //! (`clone_for_thread` hands the child an `Arc` clone), a process-level write
-//! goes ONLY to it (never into a frame's env, so no env ever holds a stale
-//! copy of a published value), and a read that resolves to the process binding
-//! is redirected to it. "Resolves to the process binding" is decided by
-//! identity: the env still holds the process value as it was before the first
-//! write — the base-tier seed — so a binding whose value is that very object,
-//! with no `my $*X` declared in the dynamic scope, is the process binding.
-//! Anything else (a `my $*X`, a dynamic parameter bound to another object, a
-//! `start` block's inherited redirection) is a lexical binding and wins.
+//! is published to it (and still mirrored into the writer's env, which the
+//! many native readers of `$*SPEC`/`$*CWD`/... consult directly), and a read
+//! that resolves to the process binding is redirected to it. "Resolves to the
+//! process binding" is decided by identity: an env copy of the process binding
+//! holds either the process value as it was before the first write (the
+//! base-tier seed) or a value that was published since, so a binding whose
+//! value is one of those very objects, with no `my $*X` declared in the dynamic
+//! scope, is the process binding. Anything else (a `my $*X`, a dynamic
+//! parameter bound to another object, a `start` block's inherited redirection)
+//! is a lexical binding and wins.
 
 use super::*;
 use crate::meta_ns::MetaNs;
@@ -25,6 +27,9 @@ use crate::symbol::Symbol;
 use crate::value::identity::values_same_object;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
+
+/// How many superseded values an entry remembers (see [`Entry::superseded`]).
+const SUPERSEDED_CAP: usize = 16;
 
 /// One published process-level dynamic.
 struct Entry {
@@ -34,6 +39,27 @@ struct Entry {
     /// interpreter's base-tier seed), if it had one. An env entry that is
     /// still this object is a stale copy of the process binding.
     initial: Option<Value>,
+    /// The most recent values this one superseded, newest last. A writer
+    /// mirrors what it publishes into its own env, so after another thread
+    /// publishes, that mirror is a stale copy of one of these. Bounded so a
+    /// program that swaps handles in a loop does not keep every one alive; a
+    /// copy older than the window reads as a lexical binding.
+    superseded: std::collections::VecDeque<Value>,
+}
+
+impl Entry {
+    /// Whether `found` is (a stale copy of) this process binding.
+    fn holds(&self, found: &Value) -> bool {
+        values_same_object(found, &self.value)
+            || self
+                .initial
+                .as_ref()
+                .is_some_and(|initial| values_same_object(found, initial))
+            || self
+                .superseded
+                .iter()
+                .any(|old| values_same_object(found, old))
+    }
 }
 
 #[derive(Default)]
@@ -70,12 +96,15 @@ impl ProcessStash {
         self.read().get(key).map(|e| e.value.clone())
     }
 
-    /// The current value of `key` and the value it held before the first write.
-    // Cost: O(|key|), one hash probe under the read lock.
-    fn get_with_initial(&self, key: &str) -> Option<(Value, Option<Value>)> {
-        self.read()
-            .get(key)
-            .map(|e| (e.value.clone(), e.initial.clone()))
+    /// The current value of `key` if `found` (an env binding) is that process
+    /// binding — the value itself, its pre-write seed, or a recently
+    /// superseded value (see [`Entry::superseded`]). The outer `None` means
+    /// nothing was published under `key`.
+    // Cost: O(|key| + SUPERSEDED_CAP), one hash probe under the read lock.
+    fn current_if_holds(&self, key: &str, found: &Value) -> Option<Option<Value>> {
+        let entries = self.read();
+        let entry = entries.get(key)?;
+        Some(entry.holds(found).then(|| entry.value.clone()))
     }
 
     // Cost: O(|key|), one hash probe under the read lock.
@@ -89,10 +118,27 @@ impl ProcessStash {
     pub(crate) fn set(&self, key: &str, value: Value, initial: impl FnOnce() -> Option<Value>) {
         let mut entries = self.0.entries.write().unwrap_or_else(|e| e.into_inner());
         match entries.get_mut(key) {
-            Some(entry) => entry.value = value,
+            Some(entry) => {
+                if values_same_object(&entry.value, &value) {
+                    entry.value = value;
+                } else {
+                    let old = std::mem::replace(&mut entry.value, value);
+                    if entry.superseded.len() == SUPERSEDED_CAP {
+                        entry.superseded.pop_front();
+                    }
+                    entry.superseded.push_back(old);
+                }
+            }
             None => {
                 let initial = initial();
-                entries.insert(key.to_string(), Entry { value, initial });
+                entries.insert(
+                    key.to_string(),
+                    Entry {
+                        value,
+                        initial,
+                        superseded: std::collections::VecDeque::new(),
+                    },
+                );
             }
         }
         self.0.populated.store(true, Ordering::Relaxed);
@@ -144,7 +190,7 @@ impl Interpreter {
     /// unchanged for a lexical binding, a non-dynamic name, or a name nobody
     /// published; a miss (`None`) on a published name yields the stash value.
     // Cost: O(1) when nothing was ever published; else O(|name|), a stash probe
-    // plus, for a stale-looking binding, one env probe for a `my $*X` marker.
+    // plus, for a process-looking binding, one env probe for a `my $*X` marker.
     #[inline]
     pub(crate) fn resolve_process_dynamic(
         &self,
@@ -154,22 +200,12 @@ impl Interpreter {
         if !self.process_dynamics.is_populated() {
             return found;
         }
-        self.resolve_process_dynamic_slow(name, found)
-    }
-
-    fn resolve_process_dynamic_slow(&self, name: &str, found: Option<Value>) -> Option<Value> {
         let Some(key) = stash_key(name) else {
             return found;
         };
-        let Some((current, initial)) = self.process_dynamics.get_with_initial(key) else {
-            return found;
-        };
         match found {
-            None => Some(current),
-            Some(v) if self.binding_is_process_level(key, &v, &current, initial.as_ref()) => {
-                Some(current)
-            }
-            found => found,
+            None => self.process_dynamics.get(key),
+            Some(v) => self.process_value_for_binding(key, &v).unwrap_or(Some(v)),
         }
     }
 
@@ -178,7 +214,7 @@ impl Interpreter {
     /// reads the stash; a dynamic (`$*X`, `*X`, `@*X`, `%*X`) reads it when
     /// its binding is the process one (see [`Self::resolve_process_dynamic`]).
     // Cost: O(1) when nothing was ever published; else O(|name|), a stash
-    // probe, an env probe and, for a stale-looking binding, a marker probe.
+    // probe, an env probe and, for a process-looking binding, a marker probe.
     #[inline]
     pub(crate) fn process_dynamic_read(&self, name: &str) -> Option<Value> {
         if !self.process_dynamics.is_populated() {
@@ -192,16 +228,20 @@ impl Interpreter {
             return self.process_dynamics.get(&key);
         }
         let key = stash_key(name)?;
-        let (current, initial) = self.process_dynamics.get_with_initial(key)?;
         match self.env_dynamic_binding(name) {
-            None => Some(current),
-            Some(found)
-                if self.binding_is_process_level(key, &found, &current, initial.as_ref()) =>
-            {
-                Some(current)
-            }
-            Some(_) => None,
+            None => self.process_dynamics.get(key),
+            Some(found) => self.process_value_for_binding(key, &found).flatten(),
         }
+    }
+
+    /// For an env binding `found` of the published dynamic `key`: `Some(Some(
+    /// current))` when it is the process binding, `Some(None)` when it is a
+    /// lexical one, `None` when nothing is published under `key`.
+    fn process_value_for_binding(&self, key: &str, found: &Value) -> Option<Option<Value>> {
+        let current = self
+            .process_dynamics
+            .current_if_holds(key, &found.clone().into_deref())?;
+        Some(current.filter(|_| !self.dynamic_declared_lexically(key)))
     }
 
     /// The env's binding of the dynamic `name`, looked up in the same order
@@ -219,24 +259,6 @@ impl Interpreter {
             .cloned()
     }
 
-    /// Whether `found`, the value the env resolved for the dynamic `key`, is
-    /// the process binding rather than a lexical one: it is the process value
-    /// as it was before any write (`initial`) or the current one (`current` —
-    /// a frame-exit writeback can copy the process value into a caller's env),
-    /// and no `my $*X` is in scope.
-    fn binding_is_process_level(
-        &self,
-        key: &str,
-        found: &Value,
-        current: &Value,
-        initial: Option<&Value>,
-    ) -> bool {
-        let found = found.clone().into_deref();
-        (values_same_object(&found, current)
-            || initial.is_some_and(|initial| values_same_object(&found, initial)))
-            && !self.dynamic_declared_lexically(key)
-    }
-
     /// Whether a `my $*X` for `key` is visible from the current frame.
     fn dynamic_declared_lexically(&self, key: &str) -> bool {
         self.env()
@@ -250,54 +272,54 @@ impl Interpreter {
             .and_then(|base| base.get(&Symbol::intern(key)).cloned())
     }
 
-    /// Publish a write to `$PROCESS::X` / `PROCESS::<$X>` (env spelling `key`).
-    /// It never touches the env: every reader of a process binding consults
-    /// the stash, so an env copy would only be a stale one later.
-    // Cost: O(|key|), one stash write plus a base-tier probe on the first write.
-    pub(crate) fn publish_process_dynamic(&mut self, key: &str, value: Value) {
+    /// Whether the env's binding of the dynamic `name` (stash key `key`) is
+    /// the process binding — or there is none, which only a published name
+    /// (or a fresh `PROCESS::` install) can reach.
+    fn binding_is_process_level(&self, name: &str, key: &str) -> bool {
+        let Some(found) = self.env_dynamic_binding(name) else {
+            return true;
+        };
+        match self.process_value_for_binding(key, &found) {
+            Some(current) => current.is_some(),
+            // Never written: the process binding is the base-tier seed.
+            None => {
+                self.process_dynamic_seed(key)
+                    .is_some_and(|seed| values_same_object(&found.into_deref(), &seed))
+                    && !self.dynamic_declared_lexically(key)
+            }
+        }
+    }
+
+    /// Publish a write to `$PROCESS::X` / `PROCESS::<$X>` (env spelling
+    /// `key`). Returns whether the writer's env binding is the process one, in
+    /// which case the caller mirrors the value into the env too (the native
+    /// readers of `$*SPEC`, `$*CWD`, ... read the env directly); a `my $*X`
+    /// in scope keeps its own value.
+    // Cost: O(|key|), one stash write plus an env probe and, on the first
+    // write, a base-tier probe.
+    pub(crate) fn publish_process_dynamic(&mut self, key: &str, value: Value) -> bool {
         let key = stash_key(key).unwrap_or(key);
-        let seed = || self.process_dynamic_seed(key);
-        self.process_dynamics.set(key, value, seed);
+        let mirror = self.binding_is_process_level(key, key);
+        self.process_dynamics
+            .set(key, value, || self.process_dynamic_seed(key));
         // A later `$*X = ...` from any frame must pass `CheckDynamicVarDeclared`
         // — installing a process-level default declares it.
         self.set_var_dynamic(key, true);
+        mirror
     }
 
-    /// A by-name write to the dynamic `name` (`$*X = ...`, a `temp` restore):
-    /// when the binding it would update is the process binding, publish it to
-    /// the stash and report `true` so the caller skips the env write. A write
-    /// to a lexical binding (`my $*X`, a dynamic parameter) returns `false`.
+    /// A by-name write to the dynamic `name` (`$*X = ...`, a `temp` save or
+    /// restore): when the binding it updates is the process binding, publish
+    /// the value to the stash as well. The caller still performs its env write.
     // Cost: O(1) for a non-dynamic name; else O(|name|), one env probe, one
-    // stash probe and, for a process binding, one marker probe and a write.
-    pub(crate) fn publish_process_dynamic_write(&mut self, name: &str, value: &Value) -> bool {
+    // stash probe, a marker probe and, for a process binding, a stash write.
+    pub(crate) fn publish_process_dynamic_write(&mut self, name: &str, value: &Value) {
         let Some(key) = stash_key(name) else {
-            return false;
+            return;
         };
-        let process_level = match self.env_dynamic_binding(name) {
-            // No binding at all: only a published name can be written here
-            // (`CheckDynamicVarDeclared` rejects the rest).
-            None => self.process_dynamics.contains(key),
-            Some(found) => {
-                match self.process_dynamics.get_with_initial(key) {
-                    Some((current, initial)) => {
-                        self.binding_is_process_level(key, &found, &current, initial.as_ref())
-                    }
-                    // Never written: the process binding is the base-tier seed.
-                    None => match self.process_dynamic_seed(key) {
-                        Some(seed) => {
-                            values_same_object(&found.into_deref(), &seed)
-                                && !self.dynamic_declared_lexically(key)
-                        }
-                        None => false,
-                    },
-                }
-            }
-        };
-        if !process_level {
-            return false;
+        if self.binding_is_process_level(name, key) {
+            self.process_dynamics
+                .set(key, value.clone(), || self.process_dynamic_seed(key));
         }
-        self.process_dynamics
-            .set(key, value.clone(), || self.process_dynamic_seed(key));
-        true
     }
 }
