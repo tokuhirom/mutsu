@@ -1467,24 +1467,10 @@ impl Interpreter {
             self.invalidate_fn_resolution();
             // The module's own package-less `our sub`s are part of its GLOBAL
             // merge (ADR-11136).
-            let our_routines: Vec<Symbol> = {
-                let registry = self.registry();
-                registry
-                    .functions
-                    .keys()
-                    .filter(|key| {
-                        !before_function_keys.contains(key)
-                            && registry.our_scoped_functions.contains_key(key)
-                            // A prelude splice is ambient compunit machinery
-                            // with its own gate (`prelude_visible_here`).
-                            && !self.prelude_registered_functions.contains(key)
-                    })
-                    .filter_map(|key| {
-                        Self::toplevel_global_routine_name(&key.resolve()).map(Symbol::intern)
-                    })
-                    .collect()
-            };
-            self.record_module_routine_provenance(module, our_routines);
+            if unit_name.is_none() {
+                let our_routines = Self::module_our_routine_names(&stmts);
+                self.record_module_routine_provenance(module, our_routines);
+            }
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of

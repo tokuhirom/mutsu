@@ -235,6 +235,33 @@ impl Interpreter {
         names
     }
 
+    /// The package-less, non-exported `our sub`s a module declares at its own
+    /// top level -- the routine half of its GLOBAL merge (ADR-11136). Read
+    /// from the source rather than from the registry delta, which also holds
+    /// the `GLOBAL::` import aliases the module's own `use`s installed. An
+    /// exported one reaches its importers through their import alias, so it
+    /// is left to that.
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(crate) fn module_our_routine_names(stmts: &[crate::ast::Stmt]) -> Vec<Symbol> {
+        use crate::ast::Stmt;
+        crate::ast::scope_members(stmts)
+            .filter_map(|stmt| match stmt {
+                Stmt::SubDecl {
+                    name,
+                    is_export: false,
+                    multi: false,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                    && !crate::qualified::is_qualified(*name) =>
+                {
+                    Some(*name)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Record the modules `unit` merges at its top level before its body runs.
     ///
     /// A top-level `need`/`use` is a compile-time merge in Rakudo: the whole
