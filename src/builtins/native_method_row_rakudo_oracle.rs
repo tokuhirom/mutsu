@@ -123,6 +123,63 @@ fn rakudo_snapshot_parses() {
     assert!(tables["declared"].contains_key("Str"));
     assert!(tables["declared"]["Rat"].contains("numerator"));
     assert!(tables["methods"]["Int"].contains("FatRat"));
+    assert!(tables["only"]["Str"].contains("Int"));
+    assert!(!tables["only"]["Str"].contains("uc"));
+}
+
+/// #10234: `ONLY_METHOD` makes an `augment` that redeclares the name a
+/// compile-time error, so a false claim rejects a legal program. This
+/// direction stays on the gate; it can only fail on a row that sets the bit.
+#[test]
+fn only_method_bits_are_never_false_claims() {
+    let tables = rakudo_tables();
+    let mut wrong = Vec::new();
+    for &(owner, name, _, flags) in RAW_ROWS {
+        let flags = NativeRowFlags(flags);
+        if flags.contains(NativeRowFlags::ONLY_METHOD)
+            && (!flags.contains(NativeRowFlags::DECLARED)
+                || !tables["only"]
+                    .get(owner)
+                    .is_some_and(|only| only.contains(name)))
+        {
+            wrong.push(format!("{owner}.{name}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "ONLY_METHOD set on a name Rakudo does not declare as an only method:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// The other direction: a `DECLARED` row whose Rakudo method is an `only`
+/// one but lacks `ONLY_METHOD` lets an `augment` silently replace it. Off the
+/// gate for the same reason as the checks below (#11405).
+#[test]
+#[ignore = "off the CI gate until the check is rebuilt: #11405"]
+fn only_methods_are_never_unmarked() {
+    let tables = rakudo_tables();
+    let mut missing = Vec::new();
+    for &(owner, name, arity, flags) in RAW_ROWS {
+        let have = NativeRowFlags(flags);
+        if have.contains(NativeRowFlags::DECLARED)
+            && !have.contains(NativeRowFlags::ONLY_METHOD)
+            && tables["only"]
+                .get(owner)
+                .is_some_and(|only| only.contains(name))
+        {
+            missing.push(format!(
+                "    (\"{owner}\", \"{name}\", {arity}, {}),",
+                flags | NativeRowFlags::ONLY_METHOD.0
+            ));
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "{} DECLARED row(s) lack ONLY_METHOD:\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
 }
 
 /// `DECLARED` only: `INTROSPECTABLE` deliberately also marks names an owner

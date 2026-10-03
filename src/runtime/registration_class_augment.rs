@@ -296,6 +296,19 @@ impl Interpreter {
                     // `is_my=true` from the parser.
                     let is_lexical_only = decl.is_my && !decl.is_submethod;
                     let is_our_only = decl.is_our && !decl.our_variable_form;
+                    // #10234: the core type itself declares `only` this method.
+                    if !is_lexical_only
+                        && !is_our_only
+                        && !decl.is_private
+                        && let Some(message) =
+                            crate::builtins::native_method_row::augment_core_method_conflict(
+                                name,
+                                &resolved_method_name,
+                                decl.multi,
+                            )
+                    {
+                        return Err(RuntimeError::new(message));
+                    }
                     // ADR-0019 F4c-9b: single write through the registry
                     // mutator API -- augment mutates the already-registered
                     // `ClassDef`, but there is no `ClassDef::methods` left to
