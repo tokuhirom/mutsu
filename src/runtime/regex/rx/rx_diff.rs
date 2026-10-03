@@ -16,12 +16,13 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{CapNode, PosSlot, RegexCaptures};
 
 /// What a code atom's invocation answered: a match (`{ … }`, `<?{ … }>`,
-/// `:my`, `<{ … }>`), the list of candidate ends of `$( … )` / `@( … )`, or the
-/// bounds of a `** { … }` count.
+/// `:my`, `<{ … }>`), the list of candidate ends of a call-out, the pattern
+/// source a `$( … )` / `@( … )` yields, or the bounds of a `** { … }` count.
 #[derive(Clone)]
 pub(in crate::runtime::regex) enum CodeResult {
     Match(Option<(usize, RegexCaptures)>),
     Ends(Vec<(usize, RegexCaptures)>),
+    Source(Option<String>),
     Count(Option<(usize, Option<usize>)>),
 }
 
@@ -61,6 +62,21 @@ impl CodeValue for Vec<(usize, RegexCaptures)> {
     }
     fn failed() -> Self {
         Vec::new()
+    }
+}
+
+impl CodeValue for Option<String> {
+    fn record(&self) -> CodeResult {
+        CodeResult::Source(self.clone())
+    }
+    fn replay(result: &CodeResult) -> Option<Self> {
+        match result {
+            CodeResult::Source(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+    fn failed() -> Self {
+        None
     }
 }
 

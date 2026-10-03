@@ -207,15 +207,59 @@ impl Interpreter {
         }
     }
 
-    /// Every end at which the [`RegexAtom::CodeInterp`] atom matches at
-    /// `pos`, lowest priority first, each with its capture delta — the shape
-    /// the backtracking engine expects of a `Group` (a list element that is a
-    /// `Regex` keeps its captures, as it did when it was spliced in as text).
-    /// The match engines call this one: under `MUTSU_RX_DIFF` it is recorded
-    /// and replayed like every other call-out (ADR-0135 D6).
+    /// The pattern a [`RegexAtom::CodeInterp`] atom matches at `pos`: its code
+    /// run once, where the cursor reaches it ([`Self::regex_code_interp_pattern`]),
+    /// and the result parsed. Under `MUTSU_RX_DIFF` the run is recorded and
+    /// replayed like every other call-out (ADR-0135 D6). `None` when the code
+    /// throws (the error is parked for the match entry point) or the result
+    /// does not parse.
     ///
-    /// Cost: O(n + r) plus the code's run and the result's match, n = the
-    /// subject's length, r = the result's rendered length.
+    /// Cost: O(n + r) plus the code's run, n = the subject's length, r = the
+    /// result's rendered length (the parse is cached by source).
+    pub(in crate::runtime) fn regex_code_interp_parsed(
+        &mut self,
+        code: &str,
+        list: bool,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        ignore_case: bool,
+    ) -> Option<std::sync::Arc<RegexPattern>> {
+        let source: Option<String> = self.rx_code_call(code, pos, current_caps, |interp| {
+            interp.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)
+        });
+        self.parse_regex(&source?)
+    }
+
+    /// Every end of an interpolated pattern `parsed` at `pos`, lowest priority
+    /// first, each with its capture delta: the shape the backtracking engine
+    /// expects of a `Group` (a list element that is a `Regex` keeps its
+    /// captures, as it did when it was spliced in as text). Every end is
+    /// computed up front; the compiled engine runs the pattern as a frame
+    /// instead, resumed on demand, and comes here only for one that declines.
+    ///
+    /// Cost: the pattern's all-ends match at `pos`, plus O(e) for the e ends.
+    pub(in crate::runtime) fn regex_code_interp_pattern_ends(
+        &mut self,
+        parsed: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let mut out: Vec<(usize, RegexCaptures)> = self
+            .regex_match_ends_from_caps_in_pkg(parsed, chars, pos, pkg)
+            .into_iter()
+            .map(|(end, inner_caps)| (end, super::regex_match_delta::group_merge_delta(inner_caps)))
+            .collect();
+        out.reverse();
+        out
+    }
+
+    /// Every end at which the [`RegexAtom::CodeInterp`] atom matches at
+    /// `pos` (the walk's arm): [`Self::regex_code_interp_parsed`], then
+    /// [`Self::regex_code_interp_pattern_ends`].
+    ///
+    /// Cost: as those two.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn regex_code_interp_ends(
         &mut self,
@@ -227,17 +271,10 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
-        self.rx_code_call(code, pos, current_caps, |interp| {
-            interp.regex_code_interp_ends_unrecorded(
-                code,
-                list,
-                chars,
-                pos,
-                current_caps,
-                pkg,
-                ignore_case,
-            )
-        })
+        match self.regex_code_interp_parsed(code, list, chars, pos, current_caps, ignore_case) {
+            Some(parsed) => self.regex_code_interp_pattern_ends(&parsed, chars, pos, pkg),
+            None => Vec::new(),
+        }
     }
 
     /// [`Self::regex_code_interp_ends`] without the D6 record, for the
@@ -263,12 +300,6 @@ impl Interpreter {
         let Some(parsed) = self.parse_regex(&source) else {
             return Vec::new();
         };
-        let mut out: Vec<(usize, RegexCaptures)> = self
-            .regex_match_ends_from_caps_in_pkg(&parsed, chars, pos, pkg)
-            .into_iter()
-            .map(|(end, inner_caps)| (end, super::regex_match_delta::group_merge_delta(inner_caps)))
-            .collect();
-        out.reverse();
-        out
+        self.regex_code_interp_pattern_ends(&parsed, chars, pos, pkg)
     }
 }
