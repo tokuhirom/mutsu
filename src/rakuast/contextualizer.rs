@@ -16,7 +16,7 @@
 //! renders as a call. A `%(...)` of literal pairs is an [`Expr::Hash`] instead
 //! (see `hash_literal`).
 
-use super::convert::{node_field, parenthesized_statement};
+use super::convert::{convert_expr, node_field, statement_expression};
 use super::lower::{lower_expr, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{ContextKind, Expr};
@@ -33,15 +33,18 @@ fn class_of(kind: ContextKind) -> RakuAstClass {
 /// An [`Expr::Contextualizer`] as its `Contextualizer::*` node.
 // Cost: O(n), n = nodes of the contents.
 pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let target = match inner {
-        // `$@(...)` / `$%(...)`: the inner contextualizer is the child itself.
-        Expr::Contextualizer { kind, inner } => convert(*kind, inner)?,
-        // `(...)` written inside the sigil's own parentheses.
-        Expr::Grouped(contents) => sequence(match contents.as_ref() {
-            Expr::ArrayLiteral(items) if items.is_empty() => None,
-            other => Some(parenthesized_statement(other)?),
-        }),
-        other => sequence(Some(parenthesized_statement(other)?)),
+    // `$@(...)` / `$%(...)`: the inner contextualizer is the child itself;
+    // otherwise the child is a `StatementSequence` of the parenthesized contents.
+    let contents = match inner {
+        Expr::Grouped(contents) => contents.as_ref(),
+        other => other,
+    };
+    let target = match contents {
+        Expr::Contextualizer { .. } if matches!(inner, Expr::Contextualizer { .. }) => {
+            convert_expr(contents)?
+        }
+        Expr::ArrayLiteral(items) if items.is_empty() => sequence(None),
+        other => sequence(Some(statement_expression(convert_expr(other)?))),
     };
     Ok(RakuAstNode {
         class: class_of(kind),
