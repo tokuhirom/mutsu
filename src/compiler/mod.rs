@@ -2902,6 +2902,12 @@ impl Compiler {
     }
 
     fn emit_set_named_var(&mut self, name: &str) {
+        // `&!attr` (a callable private attribute) is stored under the
+        // attribute's own `!attr` key, as the statement-form assignment does.
+        let name = match name.strip_prefix('&') {
+            Some(attr) if attr.starts_with('!') => attr,
+            _ => name,
+        };
         let name = self.resolve_self_lexical(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
