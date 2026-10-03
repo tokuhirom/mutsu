@@ -355,6 +355,25 @@ decision changes. GC (cycle collector), NaN-boxing and the JIT are **shipped and
 `main` only accepts PRs that passed CI. **Do not check whether a failure also happens on `main`** —
 a failure on your branch is your change's.
 
+The exception is a failure your diff cannot have caused — a test or guard over files your branch
+does not touch, failing the same way on several PRs at once. Sibling PRs merged in parallel can
+break `main` without either being wrong on its own (2026-10-03: three PRs added the same
+`native_method_row_table.rs` row, the dedupes then removed every copy, and ~20 PRs each pushed
+their own fix, saturating the Actions runners and re-creating the duplicate). When you see one:
+
+1. **Search before fixing.** Look for an open issue titled `main is red: …` and for open PRs
+   touching the failing file. If a fix exists, do not push your own copy: comment on that
+   issue/PR, wait for it to merge, then merge `origin/main` once. Porting the fix "so it no-ops
+   later" is what turned one breakage into twenty.
+2. **No fix yet → one issue, one fixer.** File an issue titled `main is red: <check>` naming the
+   failing check, the merge that broke it and the failure output, and claim it
+   (`Claiming: <branch>`, lowest comment id wins, as for any issue). Only the claimant opens the
+   fix PR; everyone else waits on it.
+3. **The fix is a standalone PR from `origin/main`**, touching only what the breakage needs, with
+   auto-merge on and `Closes #NNNN`. It never rides inside a feature PR.
+4. **While `main` is red, do not push to your other PRs** just to re-run CI; every push queues a
+   full CI run against a base that is known to fail.
+
 ## Roast
 
 - The goal is to pass all of roast. Task selection is **PLAN.md → `TODO_roast/BLOCKERS.md` →
