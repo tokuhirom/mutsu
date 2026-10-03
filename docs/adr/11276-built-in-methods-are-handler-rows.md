@@ -205,13 +205,18 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
   are `List.elems/end/Bool`, `Map.elems/Bool`, `Str.chars/Bool`, `Num.isNaN` and
   `Rat.numerator/denominator`; the cascade arms that answer the same methods for other receivers
   call the same handlers. The lookup sits at the top of `try_native_method`. Debug builds
-  re-answer every hit through the full pure path. `make check-method-arms` is the ratchet:
-  pure 487, slow 718.
+  re-answer every hit through the full pure path.
   - Baseline (§5), callgrind on the profiling build, 200,000 calls per benchmark, against the
     same `main`: `@a.elems` -15.3%, `%h.elems` -15.3%, `$s.chars` -11.6%, `$n.isNaN` -41.4%,
     `$r.numerator` -36.3%. A benchmark whose calls miss the table (`@a.map(*+1).elems`) moved
     +0.19%: about 50 Ir per iteration for two misses (a bit test on the symbol id), plus a
     `memcmp` shift with identical call counts.
+  - No arm-count ratchet in CI. A first draft added one (`check-method-arms`, a global count of
+    the cascades' quoted-name arms every PR had to keep equal to a committed baseline). It was
+    dropped before merging: on 2026-10-03 the #11271 Rakudo oracle test, which had the same shape
+    (one shared table that every parallel PR touching a native method had to edit), kept `main`
+    red and made every concurrent agent's CI fail (#11405, #11407). A migration progress count
+    belongs in a report, not in a gate that couples unrelated PRs.
   - Finding for the next slices: a `.elems` call on a variable spends ~6,300 Ir, of which only
     ~1,600 are in `try_native_method`. The rest is the `CallMethodMut` path's per-call probes
     before it (`native_lever_a_user_override_sym` ~500, `cool_type_object_string_method` ~450,

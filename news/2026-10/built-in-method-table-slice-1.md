@@ -33,7 +33,3 @@ Measured with callgrind on the profiling build, over 200,000 calls each
 
 The late arms gain the most, as the ADR expected. A method with no row pays
 only a bit test on its symbol id before the cascades.
-
-`scripts/check-method-arms.sh` (`make check-method-arms`) is a shrinking
-ratchet on the name-matching arms that remain: 487 in the pure cascades and
-718 in the slow path.
