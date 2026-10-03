@@ -25,8 +25,10 @@ impl Interpreter {
         {
             self.registry_mut().monkey_eval_units.insert(unit);
         }
-        self.env_mut()
-            .insert_sym(MetaNs::Pragma.key_for_str(PRAGMA), if on { Value::TRUE } else { Value::FALSE });
+        self.env_mut().insert_sym(
+            MetaNs::Pragma.key_for_str(PRAGMA),
+            if on { Value::TRUE } else { Value::FALSE },
+        );
     }
 
     /// Whether the scope running now has `MONKEY-SEE-NO-EVAL` in effect: the

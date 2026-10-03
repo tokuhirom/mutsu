@@ -502,7 +502,9 @@ impl Interpreter {
         // its own `$!name`.
         if let Some(attr) = name.strip_prefix('!')
             && !attr.is_empty()
-            && attr.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            && attr
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
             && let Some(cell) = self.try_promote_attr_container_named(code, attr)
         {
             return (cell, true);
