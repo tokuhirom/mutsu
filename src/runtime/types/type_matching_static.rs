@@ -289,7 +289,8 @@ impl Interpreter {
         // is neither a List nor Positional -- it binds to an `@` parameter
         // through PositionalBindFailover instead (`(1,2).Seq ~~ List` is
         // False in rakudo, and a `--> List(Seq)` return must coerce it).
-        if constraint == "List" && matches!(value_type, "Array" | "List" | "Slip" | "array") {
+        // The native `array` is not a List: its MRO is `array, Cool, Any, Mu`.
+        if constraint == "List" && matches!(value_type, "Array" | "List" | "Slip") {
             return true;
         }
         if constraint == "Associative"

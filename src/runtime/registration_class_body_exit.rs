@@ -248,7 +248,31 @@ impl Interpreter {
                     .then(|| bare.to_string())
             })
             .collect();
-        for bare in nested_short_names {
+        // An enum declared in the body is a nested type too, and so are its
+        // keys: their bare spellings (`enum F <array>` in `class C`) belong to
+        // the body, not the enclosing scope, where `array` must stay the
+        // native array type (PDF::Grammar's `enum AST-Types <array ...>`). The
+        // owner's own methods reach a key through the package-qualified probe
+        // (`C::array`) the declaration also binds.
+        let owned_enum_prefix = format!("{name}::");
+        let nested_enum_keys: Vec<String> = self
+            .env
+            .iter()
+            .filter_map(|(k, v)| {
+                let key = k.resolve();
+                if !key.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX) {
+                    return None;
+                }
+                let ValueView::Enum { enum_type, .. } = v.view() else {
+                    return None;
+                };
+                enum_type
+                    .resolve()
+                    .starts_with(&owned_enum_prefix)
+                    .then(|| key.to_string())
+            })
+            .collect();
+        for bare in nested_short_names.into_iter().chain(nested_enum_keys) {
             match saved_env.get(&bare) {
                 Some(previous) => {
                     let previous = previous.clone();
