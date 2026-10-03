@@ -7,8 +7,10 @@
 //! their own tree nodes are implemented.
 
 mod char_class;
+mod quantifier;
 
 pub(crate) use char_class::{BackslashClass, CharClassAtom};
+pub(crate) use quantifier::{QuantifierKind, RegexBacktrack, RegexQuantifier, RegexSeparator};
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct RegexTree {
@@ -206,6 +208,10 @@ pub(crate) enum RegexNode {
     AnchorBeginningOfLine,
     AnchorEndOfString,
     AnchorEndOfLine,
+    /// `<<` / `«`
+    AnchorLeftWordBoundary,
+    /// `>>` / `»`
+    AnchorRightWordBoundary,
     CharClass(CharClassAtom),
     WithWhitespace(Box<RegexNode>),
     /// An internal modifier (`:i`, `:ignorecase`, `:!m`) that switches a
@@ -223,6 +229,8 @@ pub(crate) enum RegexNode {
 pub(crate) enum RegexModifierKind {
     IgnoreCase,
     IgnoreMark,
+    Sigspace,
+    Ratchet,
 }
 
 impl RegexModifierKind {
@@ -232,15 +240,10 @@ impl RegexModifierKind {
         match self {
             Self::IgnoreCase => ("i", "ignorecase"),
             Self::IgnoreMark => ("m", "ignoremark"),
+            Self::Sigspace => ("s", "sigspace"),
+            Self::Ratchet => ("r", "ratchet"),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) enum RegexQuantifier {
-    ZeroOrMore,
-    OneOrMore,
-    ZeroOrOne,
 }
 
 impl RegexTree {
@@ -508,6 +511,8 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
+                // Word boundaries keep the runtime parser's plan.
+                RegexNode::AnchorLeftWordBoundary | RegexNode::AnchorRightWordBoundary => None,
                 RegexNode::AnchorEndOfLine => Some(vec![token(
                     crate::runtime::RegexAtom::EndOfLine,
                     crate::runtime::RegexQuant::One,
@@ -826,10 +831,16 @@ impl RegexTree {
                     )])
                 }
                 RegexNode::Quantified { atom, quantifier } => {
-                    let quant = match quantifier {
-                        RegexQuantifier::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
-                        RegexQuantifier::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
-                        RegexQuantifier::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
+                    // A range, a backtracking modifier or a separator keeps
+                    // the runtime parser's plan.
+                    if quantifier.backtrack.is_some() || quantifier.separator.is_some() {
+                        return None;
+                    }
+                    let quant = match quantifier.kind {
+                        QuantifierKind::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
+                        QuantifierKind::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
+                        QuantifierKind::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
+                        QuantifierKind::Range { .. } => return None,
                     };
                     let mut tokens = lower_node(
                         atom,
@@ -892,10 +903,15 @@ impl RegexNode {
                     node.collect_interpolation_names(names);
                 }
             }
-            Self::Group(child)
-            | Self::CapturingGroup(child)
-            | Self::Quantified { atom: child, .. }
-            | Self::WithWhitespace(child) => child.collect_interpolation_names(names),
+            Self::Quantified { atom, quantifier } => {
+                atom.collect_interpolation_names(names);
+                if let Some(separator) = &quantifier.separator {
+                    separator.node.collect_interpolation_names(names);
+                }
+            }
+            Self::Group(child) | Self::CapturingGroup(child) | Self::WithWhitespace(child) => {
+                child.collect_interpolation_names(names)
+            }
             Self::NamedCapture { regex, .. } => regex.collect_interpolation_names(names),
             Self::Lookaround { assertion, .. } => assertion.collect_interpolation_names(names),
             Self::NamedLookaround { assertion, .. } => assertion.collect_interpolation_names(names),
@@ -914,6 +930,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
+            | Self::AnchorLeftWordBoundary
+            | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
             | Self::InternalModifier { .. } => {}
         }
@@ -933,10 +951,16 @@ impl RegexNode {
             | Self::SequentialAlternation(nodes) => {
                 nodes.iter().any(Self::contains_array_interpolation)
             }
-            Self::Group(child)
-            | Self::CapturingGroup(child)
-            | Self::Quantified { atom: child, .. }
-            | Self::WithWhitespace(child) => child.contains_array_interpolation(),
+            Self::Quantified { atom, quantifier } => {
+                atom.contains_array_interpolation()
+                    || quantifier
+                        .separator
+                        .as_ref()
+                        .is_some_and(|separator| separator.node.contains_array_interpolation())
+            }
+            Self::Group(child) | Self::CapturingGroup(child) | Self::WithWhitespace(child) => {
+                child.contains_array_interpolation()
+            }
             Self::NamedCapture { regex, .. } => regex.contains_array_interpolation(),
             Self::Lookaround { assertion, .. } | Self::NamedLookaround { assertion, .. } => {
                 assertion.contains_array_interpolation()
@@ -949,6 +973,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
+            | Self::AnchorLeftWordBoundary
+            | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
             | Self::InternalModifier { .. } => false,
         }
@@ -962,10 +988,15 @@ impl RegexNode {
             | Self::SequentialAlternation(nodes) => {
                 nodes.iter().any(Self::contains_regex_value_interpolation)
             }
-            Self::Group(child)
-            | Self::CapturingGroup(child)
-            | Self::Quantified { atom: child, .. }
-            | Self::WithWhitespace(child) => child.contains_regex_value_interpolation(),
+            Self::Quantified { atom, quantifier } => {
+                atom.contains_regex_value_interpolation()
+                    || quantifier.separator.as_ref().is_some_and(|separator| {
+                        separator.node.contains_regex_value_interpolation()
+                    })
+            }
+            Self::Group(child) | Self::CapturingGroup(child) | Self::WithWhitespace(child) => {
+                child.contains_regex_value_interpolation()
+            }
             Self::NamedCapture { regex, .. } => regex.contains_regex_value_interpolation(),
             Self::Lookaround { assertion, .. } | Self::NamedLookaround { assertion, .. } => {
                 assertion.contains_regex_value_interpolation()
@@ -985,6 +1016,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
+            | Self::AnchorLeftWordBoundary
+            | Self::AnchorRightWordBoundary
             | Self::CharClass(_)
             | Self::InternalModifier { .. } => false,
         }
@@ -995,14 +1028,22 @@ impl RegexNode {
             Self::AnchorBeginningOfString
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
-            | Self::AnchorEndOfLine => true,
+            | Self::AnchorEndOfLine
+            | Self::AnchorLeftWordBoundary
+            | Self::AnchorRightWordBoundary => true,
             Self::Sequence(nodes)
             | Self::Alternation(nodes)
             | Self::SequentialAlternation(nodes) => nodes.iter().any(Self::contains_anchor),
-            Self::Group(child)
-            | Self::CapturingGroup(child)
-            | Self::Quantified { atom: child, .. }
-            | Self::WithWhitespace(child) => child.contains_anchor(),
+            Self::Quantified { atom, quantifier } => {
+                atom.contains_anchor()
+                    || quantifier
+                        .separator
+                        .as_ref()
+                        .is_some_and(|separator| separator.node.contains_anchor())
+            }
+            Self::Group(child) | Self::CapturingGroup(child) | Self::WithWhitespace(child) => {
+                child.contains_anchor()
+            }
             Self::NamedCapture { regex, .. } => regex.contains_anchor(),
             Self::Lookaround { assertion, .. } => assertion.contains_anchor(),
             Self::NamedLookaround { assertion, .. } => assertion.contains_anchor(),
@@ -1164,17 +1205,14 @@ impl RegexNode {
             Self::CodeBlock { code, .. } => format!("{{{code}}}"),
             Self::InterpolatedBlock { code, .. } => format!("<{{{code}}}>"),
             Self::Quantified { atom, quantifier } => {
-                let suffix = match quantifier {
-                    RegexQuantifier::ZeroOrMore => '*',
-                    RegexQuantifier::OneOrMore => '+',
-                    RegexQuantifier::ZeroOrOne => '?',
-                };
-                format!("{}{}", atom.to_source(), suffix)
+                format!("{}{}", atom.to_source(), quantifier.to_source())
             }
             Self::AnchorBeginningOfString => "^".to_string(),
             Self::AnchorBeginningOfLine => "^^".to_string(),
             Self::AnchorEndOfString => "$".to_string(),
             Self::AnchorEndOfLine => "$$".to_string(),
+            Self::AnchorLeftWordBoundary => "<<".to_string(),
+            Self::AnchorRightWordBoundary => ">>".to_string(),
             Self::CharClass(atom) => atom.to_source(),
             Self::InternalModifier {
                 kind,
@@ -1187,6 +1225,31 @@ impl RegexNode {
             }
             Self::WithWhitespace(child) => child.to_source(),
         }
+    }
+}
+
+/// `atom` under `quantifier`; `spaced` when whitespace was written between
+/// them (`a ** 2`).
+// Cost: O(1).
+fn quantified(atom: RegexNode, quantifier: RegexQuantifier, spaced: bool) -> RegexNode {
+    let atom = if spaced {
+        RegexNode::WithWhitespace(Box::new(atom))
+    } else {
+        atom
+    };
+    RegexNode::Quantified {
+        atom: Box::new(atom),
+        quantifier,
+    }
+}
+
+/// `node`, wrapped in `WithWhitespace` when `spaced`.
+// Cost: O(1).
+fn spaced(node: RegexNode, spaced: bool) -> RegexNode {
+    if spaced {
+        RegexNode::WithWhitespace(Box::new(node))
+    } else {
+        node
     }
 }
 
@@ -1544,7 +1607,26 @@ impl Parser {
             // groups and later atoms retain their ordinary non-sequential
             // interpolation shape.
             sequential_interpolation = false;
-            if let Some(quantifier) = self.parse_quantifier() {
+            // `a ** 2` may put whitespace before the `**`; rakudo then wraps the
+            // atom in `WithWhitespace`.
+            let before_quantifier = self.pos;
+            self.skip_whitespace();
+            let spaced_range = self.pos != before_quantifier
+                && self.chars.get(self.pos) == Some(&'*')
+                && self.chars.get(self.pos + 1) == Some(&'*');
+            if !spaced_range {
+                self.pos = before_quantifier;
+            }
+            let quantifier = self.parse_quantifier();
+            if spaced_range && quantifier.is_none() {
+                return None;
+            }
+            if let Some(mut quantifier) = quantifier {
+                let mut spaced_separator = false;
+                if let Some((separator, whitespace_before)) = self.parse_separator() {
+                    quantifier.separator = Some(Box::new(separator));
+                    spaced_separator = whitespace_before;
+                }
                 // A quantifier binds to the final atom, not to a run of
                 // adjacent literal characters (`ab+` means `a` then `b+`).
                 // Keep the measured RakuAST shape and let execution lowering
@@ -1555,18 +1637,16 @@ impl Parser {
                     let last = text.pop().expect("literal has more than one character");
                     let prefix = std::mem::take(text);
                     self.push_term(&mut nodes, RegexNode::Literal(prefix), saw_whitespace);
-                    atom = RegexNode::Quantified {
-                        atom: Box::new(RegexNode::Literal(last.to_string())),
+                    let quantified = quantified(
+                        RegexNode::Literal(last.to_string()),
                         quantifier,
-                    };
+                        spaced_range,
+                    );
                     // The prefix took the whitespace written before it.
-                    nodes.push(atom);
+                    nodes.push(spaced(quantified, spaced_separator));
                     continue;
                 }
-                atom = RegexNode::Quantified {
-                    atom: Box::new(atom),
-                    quantifier,
-                };
+                atom = spaced(quantified(atom, quantifier, spaced_range), spaced_separator);
             }
             self.push_term(&mut nodes, atom, saw_whitespace);
         }
@@ -1674,6 +1754,22 @@ impl Parser {
                 self.pos += 1;
                 Some(RegexNode::CharClass(CharClassAtom::Any))
             }
+            '«' => {
+                self.pos += 1;
+                Some(RegexNode::AnchorLeftWordBoundary)
+            }
+            '»' => {
+                self.pos += 1;
+                Some(RegexNode::AnchorRightWordBoundary)
+            }
+            '<' if self.chars.get(self.pos + 1) == Some(&'<') => {
+                self.pos += 2;
+                Some(RegexNode::AnchorLeftWordBoundary)
+            }
+            '>' if self.chars.get(self.pos + 1) == Some(&'>') => {
+                self.pos += 2;
+                Some(RegexNode::AnchorRightWordBoundary)
+            }
             '|' | '+' | '*' | '?' | '^' | '>' => None,
             '<' => self
                 .parse_lookaround(sequential_interpolation)
@@ -1709,6 +1805,10 @@ impl Parser {
             "ignorecase" => (RegexModifierKind::IgnoreCase, true),
             "m" => (RegexModifierKind::IgnoreMark, false),
             "ignoremark" => (RegexModifierKind::IgnoreMark, true),
+            "s" => (RegexModifierKind::Sigspace, false),
+            "sigspace" => (RegexModifierKind::Sigspace, true),
+            "r" => (RegexModifierKind::Ratchet, false),
+            "ratchet" => (RegexModifierKind::Ratchet, true),
             _ => {
                 self.pos = start;
                 return None;
@@ -2392,29 +2492,6 @@ impl Parser {
         Some(self.chars[start..self.pos].iter().collect())
     }
 
-    fn parse_quantifier(&mut self) -> Option<RegexQuantifier> {
-        let quantifier = match self.chars.get(self.pos).copied()? {
-            '*' => RegexQuantifier::ZeroOrMore,
-            '+' => RegexQuantifier::OneOrMore,
-            '?' => RegexQuantifier::ZeroOrOne,
-            _ => return None,
-        };
-        // `**N`, frugal `*?`/`+?`, and the `!`/`:` modifiers are two-character
-        // quantifier spellings the tree has no node for. Leave them unconsumed
-        // so the next `parse_atom` declines the whole tree: taking only the
-        // first `*` let an aliased atom's `$<a>=x**2` become `(x*)*` then a
-        // literal `2` (#9198).
-        if self
-            .chars
-            .get(self.pos + 1)
-            .is_some_and(|next| matches!(next, '*' | '+' | '?' | '!' | ':'))
-        {
-            return None;
-        }
-        self.pos += 1;
-        Some(quantifier)
-    }
-
     fn skip_whitespace(&mut self) {
         while self
             .chars
@@ -2936,9 +3013,15 @@ fn contains_subrule(node: &RegexNode) -> bool {
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
         | RegexNode::SequentialAlternation(nodes) => nodes.iter().any(contains_subrule),
+        RegexNode::Quantified { atom, quantifier } => {
+            contains_subrule(atom)
+                || quantifier
+                    .separator
+                    .as_ref()
+                    .is_some_and(|separator| contains_subrule(&separator.node))
+        }
         RegexNode::Group(child)
         | RegexNode::CapturingGroup(child)
-        | RegexNode::Quantified { atom: child, .. }
         | RegexNode::WithWhitespace(child) => contains_subrule(child),
         RegexNode::NamedCapture { regex, .. } => contains_subrule(regex),
         RegexNode::Lookaround { assertion, .. } => contains_subrule(assertion),
@@ -2957,6 +3040,8 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
         | RegexNode::CharClass(_)
         | RegexNode::InternalModifier { .. } => false,
     }
@@ -2968,9 +3053,16 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
         | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_supported_lookaround_body),
-        RegexNode::Group(child)
-        | RegexNode::Quantified { atom: child, .. }
-        | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
+        RegexNode::Quantified { atom, quantifier } => {
+            is_supported_lookaround_body(atom)
+                && quantifier
+                    .separator
+                    .as_ref()
+                    .is_none_or(|separator| is_supported_lookaround_body(&separator.node))
+        }
+        RegexNode::Group(child) | RegexNode::WithWhitespace(child) => {
+            is_supported_lookaround_body(child)
+        }
         RegexNode::Interpolation { .. }
         | RegexNode::RegexValueInterpolation { .. }
         | RegexNode::ArrayInterpolation { .. }
@@ -2987,6 +3079,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
         | RegexNode::InternalModifier { .. } => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
             is_supported_lookaround_body(assertion)

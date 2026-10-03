@@ -11,7 +11,7 @@ use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{
     ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
-use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
+use crate::regex_tree::{RegexNode, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
 
@@ -2511,13 +2511,16 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         ))),
         RakuAstClass::RegexQuantifiedAtom => {
             let atom = lower_regex_node(named_child(node, "atom")?)?;
-            let quantifier = named_child(node, "quantifier")?;
-            let quantifier = match quantifier.class {
-                RakuAstClass::RegexQuantifierZeroOrMore => RegexQuantifier::ZeroOrMore,
-                RakuAstClass::RegexQuantifierOneOrMore => RegexQuantifier::OneOrMore,
-                RakuAstClass::RegexQuantifierZeroOrOne => RegexQuantifier::ZeroOrOne,
-                _ => return Err(unsupported(node)),
-            };
+            let mut quantifier =
+                super::regex_quantifier::lower_quantifier(named_child(node, "quantifier")?)
+                    .ok_or_else(|| unsupported(node))?;
+            if node.fields.iter().any(|f| f.name == Some("separator")) {
+                let separator = lower_regex_node(named_child(node, "separator")?)?;
+                quantifier.separator = super::regex_quantifier::separator(
+                    separator,
+                    super::regex_quantifier::trailing_separator(node),
+                );
+            }
             Ok(RegexNode::Quantified {
                 atom: Box::new(atom),
                 quantifier,
@@ -2527,11 +2530,15 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             .map(RegexNode::CharClass)
             .ok_or_else(|| unsupported(node)),
         RakuAstClass::RegexInternalModifierIgnoreCase
-        | RakuAstClass::RegexInternalModifierIgnoreMark => {
-            let kind = if node.class == RakuAstClass::RegexInternalModifierIgnoreCase {
-                crate::regex_tree::RegexModifierKind::IgnoreCase
-            } else {
-                crate::regex_tree::RegexModifierKind::IgnoreMark
+        | RakuAstClass::RegexInternalModifierIgnoreMark
+        | RakuAstClass::RegexInternalModifierSigspace
+        | RakuAstClass::RegexInternalModifierRatchet => {
+            use crate::regex_tree::RegexModifierKind;
+            let kind = match node.class {
+                RakuAstClass::RegexInternalModifierIgnoreCase => RegexModifierKind::IgnoreCase,
+                RakuAstClass::RegexInternalModifierIgnoreMark => RegexModifierKind::IgnoreMark,
+                RakuAstClass::RegexInternalModifierSigspace => RegexModifierKind::Sigspace,
+                _ => RegexModifierKind::Ratchet,
             };
             let (short, long_name) = kind.spellings();
             let long = match node.fields.iter().find(|f| f.name == Some("modifier")) {
@@ -2556,6 +2563,8 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexAnchorBeginningOfLine => Ok(RegexNode::AnchorBeginningOfLine),
         RakuAstClass::RegexAnchorEndOfString => Ok(RegexNode::AnchorEndOfString),
         RakuAstClass::RegexAnchorEndOfLine => Ok(RegexNode::AnchorEndOfLine),
+        RakuAstClass::RegexAnchorLeftWordBoundary => Ok(RegexNode::AnchorLeftWordBoundary),
+        RakuAstClass::RegexAnchorRightWordBoundary => Ok(RegexNode::AnchorRightWordBoundary),
         _ => Err(unsupported(node)),
     }
 }

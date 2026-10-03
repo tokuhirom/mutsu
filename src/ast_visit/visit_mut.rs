@@ -227,14 +227,18 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
             body,
             sequential: _,
         } => v.visit_stmts_mut(body),
-        RegexNode::Quantified {
-            atom,
-            quantifier: _,
-        } => v.visit_regex_node_mut(atom),
+        RegexNode::Quantified { atom, quantifier } => {
+            v.visit_regex_node_mut(atom);
+            if let Some(separator) = &mut quantifier.separator {
+                v.visit_regex_node_mut(&mut separator.node);
+            }
+        }
         RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
         | RegexNode::CharClass(_)
         | RegexNode::InternalModifier { .. } => {}
     }

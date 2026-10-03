@@ -25,6 +25,7 @@ mod lower;
 mod name_parts;
 mod named_param;
 mod regex_char_class;
+mod regex_quantifier;
 mod render;
 mod routine_traits;
 mod signature_decl;
@@ -105,9 +106,17 @@ pub enum RakuAstClass {
     RegexAnchorBeginningOfLine,
     RegexAnchorEndOfString,
     RegexAnchorEndOfLine,
+    RegexAnchorLeftWordBoundary,
+    RegexAnchorRightWordBoundary,
+    RegexQuantifierRange,
+    RegexBacktrackFrugal,
+    RegexBacktrackGreedy,
+    RegexBacktrackRatchet,
     RegexCharClass(regex_char_class::RegexCharClassKind),
     RegexInternalModifierIgnoreCase,
     RegexInternalModifierIgnoreMark,
+    RegexInternalModifierSigspace,
+    RegexInternalModifierRatchet,
     ColonPairTrue,
     ColonPairFalse,
     ColonPairVariable,
@@ -369,9 +378,17 @@ impl RakuAstClass {
             RegexAnchorBeginningOfLine => "RakuAST::Regex::Anchor::BeginningOfLine",
             RegexAnchorEndOfString => "RakuAST::Regex::Anchor::EndOfString",
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
+            RegexAnchorLeftWordBoundary => "RakuAST::Regex::Anchor::LeftWordBoundary",
+            RegexAnchorRightWordBoundary => "RakuAST::Regex::Anchor::RightWordBoundary",
+            RegexQuantifierRange => "RakuAST::Regex::Quantifier::Range",
+            RegexBacktrackFrugal => "RakuAST::Regex::Backtrack::Frugal",
+            RegexBacktrackGreedy => "RakuAST::Regex::Backtrack::Greedy",
+            RegexBacktrackRatchet => "RakuAST::Regex::Backtrack::Ratchet",
             RegexCharClass(kind) => kind.printed_name(),
             RegexInternalModifierIgnoreCase => "RakuAST::Regex::InternalModifier::IgnoreCase",
             RegexInternalModifierIgnoreMark => "RakuAST::Regex::InternalModifier::IgnoreMark",
+            RegexInternalModifierSigspace => "RakuAST::Regex::InternalModifier::Sigspace",
+            RegexInternalModifierRatchet => "RakuAST::Regex::InternalModifier::Ratchet",
             ColonPairTrue => "RakuAST::ColonPair::True",
             ColonPairFalse => "RakuAST::ColonPair::False",
             ColonPairVariable => "RakuAST::ColonPair::Variable",
@@ -539,9 +556,14 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorBeginningOfLine
                 | RakuAstClass::RegexAnchorEndOfString
                 | RakuAstClass::RegexAnchorEndOfLine
+                | RakuAstClass::RegexAnchorLeftWordBoundary
+                | RakuAstClass::RegexAnchorRightWordBoundary
+                | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexCharClass(_)
                 | RakuAstClass::RegexInternalModifierIgnoreCase
                 | RakuAstClass::RegexInternalModifierIgnoreMark
+                | RakuAstClass::RegexInternalModifierSigspace
+                | RakuAstClass::RegexInternalModifierRatchet
                 | RakuAstClass::NamePartEmpty
                 | RakuAstClass::NamePartEmptyEdge
         )
@@ -557,6 +579,9 @@ impl RakuAstClass {
                 | RakuAstClass::ParameterSlurpyUnflattened
                 | RakuAstClass::ParameterSlurpySingleArgument
                 | RakuAstClass::ParameterSlurpyCapture
+                | RakuAstClass::RegexBacktrackFrugal
+                | RakuAstClass::RegexBacktrackGreedy
+                | RakuAstClass::RegexBacktrackRatchet
         )
     }
 
@@ -651,7 +676,10 @@ impl RakuAstClass {
             }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
             RegexCharClass(kind) => regex_char_class::ancestors(kind),
-            RegexInternalModifierIgnoreCase | RegexInternalModifierIgnoreMark => &[
+            RegexInternalModifierIgnoreCase
+            | RegexInternalModifierIgnoreMark
+            | RegexInternalModifierSigspace
+            | RegexInternalModifierRatchet => &[
                 "RakuAST::Regex::InternalModifier",
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
@@ -660,7 +688,9 @@ impl RakuAstClass {
             RegexAnchorBeginningOfString
             | RegexAnchorBeginningOfLine
             | RegexAnchorEndOfString
-            | RegexAnchorEndOfLine => &[
+            | RegexAnchorEndOfLine
+            | RegexAnchorLeftWordBoundary
+            | RegexAnchorRightWordBoundary => &[
                 "RakuAST::Regex::Anchor",
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
@@ -676,6 +706,13 @@ impl RakuAstClass {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
             Pragma | StatementUse | StatementLanguageVersion => &["RakuAST::Statement"],
+            RegexQuantifierZeroOrMore
+            | RegexQuantifierOneOrMore
+            | RegexQuantifierZeroOrOne
+            | RegexQuantifierRange => &["RakuAST::Regex::Quantifier"],
+            RegexBacktrackFrugal | RegexBacktrackGreedy | RegexBacktrackRatchet => {
+                &["RakuAST::Regex::Backtrack"]
+            }
             _ => &[],
         }
     }
@@ -828,19 +865,6 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         },
         "RakuAST::Regex::QuantifiedAtom" =>
             &["RakuAST::Regex::Term", "RakuAST::Regex"],
-        "RakuAST::Regex::CharClass::Digit" => &[
-            "RakuAST::Regex::CharClass",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
-        "RakuAST::Regex::InternalModifier::IgnoreCase"
-        | "RakuAST::Regex::InternalModifier::IgnoreMark" => &[
-            "RakuAST::Regex::InternalModifier",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-        ],
         "RakuAST::Regex::InternalModifier" => &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
@@ -861,7 +885,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Term",
             "RakuAST::Expression",
         ],
-        _ => &[],
+        // A node class answers what its instances do.
+        _ => class_from_name(class_name).map_or(&[], RakuAstClass::semantic_ancestors),
     }
 }
 
@@ -900,6 +925,9 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Regex::Assertion"
             | "RakuAST::Regex::Quantifier"
             | "RakuAST::Regex::CharClass"
+            | "RakuAST::Regex::CharClass::Negatable"
+            | "RakuAST::Regex::Anchor"
+            | "RakuAST::Regex::Backtrack"
             | "RakuAST::ColonPair"
             | "RakuAST::QuotePair"
             | "RakuAST::Package"
@@ -949,6 +977,12 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorBeginningOfLine,
     RakuAstClass::RegexAnchorEndOfString,
     RakuAstClass::RegexAnchorEndOfLine,
+    RakuAstClass::RegexAnchorLeftWordBoundary,
+    RakuAstClass::RegexAnchorRightWordBoundary,
+    RakuAstClass::RegexQuantifierRange,
+    RakuAstClass::RegexBacktrackFrugal,
+    RakuAstClass::RegexBacktrackGreedy,
+    RakuAstClass::RegexBacktrackRatchet,
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Digit),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Word),
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Space),
@@ -964,6 +998,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexCharClass(regex_char_class::RegexCharClassKind::Specified),
     RakuAstClass::RegexInternalModifierIgnoreCase,
     RakuAstClass::RegexInternalModifierIgnoreMark,
+    RakuAstClass::RegexInternalModifierSigspace,
+    RakuAstClass::RegexInternalModifierRatchet,
     RakuAstClass::ColonPairTrue,
     RakuAstClass::ColonPairFalse,
     RakuAstClass::ColonPairVariable,
@@ -1757,56 +1793,8 @@ pub fn construct(
                 .collect(),
         }))));
     }
-    if class_name == "RakuAST::Regex::QuantifiedAtom" && method == "new" {
-        let atom = named_arg(args, "atom").ok_or_else(|| {
-            RuntimeError::new("RakuAST::Regex::QuantifiedAtom.new requires `atom`")
-        })?;
-        let quantifier = named_arg(args, "quantifier").ok_or_else(|| {
-            RuntimeError::new("RakuAST::Regex::QuantifiedAtom.new requires `quantifier`")
-        })?;
-        require_regex_node(&atom, class_name)?;
-        require_rakuast_class(
-            &quantifier,
-            RakuAstClass::RegexQuantifierZeroOrMore,
-            "RakuAST::Regex::QuantifiedAtom.new",
-        )
-        .or_else(|_| {
-            require_rakuast_class(
-                &quantifier,
-                RakuAstClass::RegexQuantifierOneOrMore,
-                "RakuAST::Regex::QuantifiedAtom.new",
-            )
-        })
-        .or_else(|_| {
-            require_rakuast_class(
-                &quantifier,
-                RakuAstClass::RegexQuantifierZeroOrOne,
-                "RakuAST::Regex::QuantifiedAtom.new",
-            )
-        })?;
-        let mut fields = vec![
-            RakuAstField {
-                name: Some("atom"),
-                value: RakuAstFieldValue::Node(atom),
-            },
-            RakuAstField {
-                name: Some("quantifier"),
-                value: RakuAstFieldValue::Node(quantifier),
-            },
-        ];
-        for name in ["separator", "trailing-separator"] {
-            if let Some(value) = named_arg(args, name) {
-                require_regex_node(&value, class_name)?;
-                fields.push(RakuAstField {
-                    name: Some(name),
-                    value: RakuAstFieldValue::Node(value),
-                });
-            }
-        }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::RegexQuantifiedAtom,
-            fields,
-        }))));
+    if let Some(node) = regex_quantifier::construct(class_name, method, args) {
+        return node.map(Some);
     }
     if class_name == "RakuAST::Regex::Interpolation" && method == "new" {
         let var = named_arg(args, "var")
@@ -2359,6 +2347,12 @@ pub fn construct(
         ("RakuAST::Regex::InternalModifier::IgnoreMark", "new") => {
             Some((RakuAstClass::RegexInternalModifierIgnoreMark, "m"))
         }
+        ("RakuAST::Regex::InternalModifier::Sigspace", "new") => {
+            Some((RakuAstClass::RegexInternalModifierSigspace, "s"))
+        }
+        ("RakuAST::Regex::InternalModifier::Ratchet", "new") => {
+            Some((RakuAstClass::RegexInternalModifierRatchet, "r"))
+        }
         _ => None,
     };
     if let Some((class, short)) = modifier_class {
@@ -2520,9 +2514,13 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorBeginningOfLine
                     | RakuAstClass::RegexAnchorEndOfString
                     | RakuAstClass::RegexAnchorEndOfLine
+                    | RakuAstClass::RegexAnchorLeftWordBoundary
+                    | RakuAstClass::RegexAnchorRightWordBoundary
                     | RakuAstClass::RegexCharClass(_)
                     | RakuAstClass::RegexInternalModifierIgnoreCase
                     | RakuAstClass::RegexInternalModifierIgnoreMark
+                    | RakuAstClass::RegexInternalModifierSigspace
+                    | RakuAstClass::RegexInternalModifierRatchet
             ) =>
         {
             Ok(())
@@ -2691,11 +2689,6 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::VarDeclaration::Placeholder::SlurpyHash", "new") => {
             RakuAstClass::VarDeclarationPlaceholderSlurpyHash
         }
-        ("RakuAST::Regex::Quantifier::ZeroOrMore", "new") => {
-            RakuAstClass::RegexQuantifierZeroOrMore
-        }
-        ("RakuAST::Regex::Quantifier::OneOrMore", "new") => RakuAstClass::RegexQuantifierOneOrMore,
-        ("RakuAST::Regex::Quantifier::ZeroOrOne", "new") => RakuAstClass::RegexQuantifierZeroOrOne,
         ("RakuAST::Regex::Anchor::BeginningOfString", "new") => {
             RakuAstClass::RegexAnchorBeginningOfString
         }
@@ -2704,6 +2697,12 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         }
         ("RakuAST::Regex::Anchor::EndOfString", "new") => RakuAstClass::RegexAnchorEndOfString,
         ("RakuAST::Regex::Anchor::EndOfLine", "new") => RakuAstClass::RegexAnchorEndOfLine,
+        ("RakuAST::Regex::Anchor::LeftWordBoundary", "new") => {
+            RakuAstClass::RegexAnchorLeftWordBoundary
+        }
+        ("RakuAST::Regex::Anchor::RightWordBoundary", "new") => {
+            RakuAstClass::RegexAnchorRightWordBoundary
+        }
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
@@ -2899,6 +2898,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
         RakuAstClass::CompUnit
             | RakuAstClass::RegexInternalModifierIgnoreCase
             | RakuAstClass::RegexInternalModifierIgnoreMark
+            | RakuAstClass::RegexInternalModifierSigspace
+            | RakuAstClass::RegexInternalModifierRatchet
             | RakuAstClass::ArgList
             | RakuAstClass::SemiList
             | RakuAstClass::StatementList
@@ -2970,6 +2971,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorBeginningOfLine
             | RakuAstClass::RegexAnchorEndOfString
             | RakuAstClass::RegexAnchorEndOfLine
+            | RakuAstClass::RegexAnchorLeftWordBoundary
+            | RakuAstClass::RegexAnchorRightWordBoundary
+            | RakuAstClass::RegexQuantifierRange
             | RakuAstClass::RegexCharClass(_)
             | RakuAstClass::ColonPairTrue
             | RakuAstClass::ColonPairFalse
