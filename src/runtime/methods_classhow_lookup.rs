@@ -700,6 +700,7 @@ impl Interpreter {
                 | "language-revision"
                 | "method_table"
                 | "private_method_table"
+                | "private_methods"
                 | "submethod_table"
         ) {
             // A real `Method` object in Rakudo (`Routine`-typed parameters, e.g.
