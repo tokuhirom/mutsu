@@ -3,13 +3,15 @@
 P5chomp exports Perl-style `chomp`/`chop` as multis. Two of their shapes did
 not work under mutsu.
 
-`$_ = "b\n"; .&chomp` calls `multi chomp(\s) { s .= chomp }`. A sigilless
-parameter binds the caller's container, but a code-object call (`.&g`,
-`$x.&g`, `&g($x)`, `$code($x)`) never tagged its variable argument the way
-an ordinary `g($x)` call does. `$x.&g` happened to recover the container by
-name, but the topic had no such route and died with "Cannot modify an
-immutable value". Those calls now tag a plain variable argument with its
-container too.
+`$_ = "b\n"; .&chomp` calls `multi chomp(\s) { s .= chomp }`. A code-object
+call (`.&g`) hands the binder its argument's source only by name. For every
+other name the sigilless parameter then writes back to the caller's variable.
+For `_`, though, the binder marked it readonly: a routine resets its own `$_`
+before binding, so aliasing the name `_` would read the callee's topic rather
+than the caller's. The call died with "Cannot modify an immutable value". Once
+the parameter has a writeback queued to the caller's `$_`, it now stays
+writable without the alias, and the value is copied back to the caller's topic
+when the call returns.
 
 `chomp()` with no arguments must reach `multi chomp() { die ... }`. Instead
 it went to `multi chomp(*@a is raw)`, because the candidate ranking counted

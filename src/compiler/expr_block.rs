@@ -1375,7 +1375,6 @@ impl Compiler {
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
-                self.tag_code_call_var_arg(arg);
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.note_unscoped_amp_read(name);
@@ -1414,7 +1413,6 @@ impl Compiler {
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
-                self.tag_code_call_var_arg(arg);
             }
             self.code.emit(OpCode::CallOnValue {
                 arity: args.len() as u32,
