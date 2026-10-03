@@ -422,7 +422,18 @@ impl Compiler {
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
                 }
-                self.pattern(p)?;
+                if p.ignore_mark {
+                    // `(:m …)`: the body's ends come from the mark-stripped
+                    // subject, as for `[:m …]` (`GroupEnds`), into the
+                    // capture's own level.
+                    if pattern_contains_code(p) || pattern_contains_backref(p) {
+                        return Err("ignoremark-code");
+                    }
+                    let i = self.push_atom(&RegexAtom::Group(p.clone()));
+                    self.ops.push(RxOp::GroupEnds(i));
+                } else {
+                    self.pattern(p)?;
+                }
                 if let Some(h) = height {
                     self.ops.push(RxOp::Cut(h));
                 }

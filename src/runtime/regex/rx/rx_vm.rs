@@ -445,10 +445,10 @@ impl Interpreter {
                                 window,
                             }) => {
                                 // A frame's binding window: rewinding past the
-                                // call uninstalls it (`rx_scope`). An eager `Lr`
+                                // call uninstalls it (`rx_scope`). An eager
                                 // evaluation installs its own around itself.
                                 let (window, lr_window) =
-                                    if matches!(verdict, Ok(CallTarget::Lr(_))) {
+                                    if matches!(verdict, Ok(CallTarget::Eager(..))) {
                                         (None, window)
                                     } else {
                                         let window = window.map(|window| {
@@ -459,8 +459,8 @@ impl Interpreter {
                                         (window, None)
                                     };
                                 match verdict {
-                                    Ok(CallTarget::Lr(cands)) => {
-                                        walk_use(WalkUse::Leaf, "lr-seed");
+                                    Ok(CallTarget::Eager(cands, why)) => {
+                                        walk_use(WalkUse::Leaf, why);
                                         let mut ends = self.rx_lr_call_ends(
                                             &program.atoms[atom as usize],
                                             &cands,
