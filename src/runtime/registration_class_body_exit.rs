@@ -266,10 +266,13 @@ impl Interpreter {
                 let ValueView::Enum { enum_type, .. } = v.view() else {
                     return None;
                 };
-                enum_type
-                    .resolve()
-                    .starts_with(&owned_enum_prefix)
-                    .then(|| key.to_string())
+                let enum_type = enum_type.resolve();
+                let short = enum_type.strip_prefix(&owned_enum_prefix)?;
+                // A `my enum` inside a method (`my enum Expecting <Header ...>`
+                // in Cro::HTTP::RequestParser's `transformer`) is that
+                // routine's lexical; its keys are read where the routine runs,
+                // which this body exit does not scope.
+                (!self.my_scoped_package_items.contains(short)).then(|| key.to_string())
             })
             .collect();
         for bare in nested_short_names.into_iter().chain(nested_enum_keys) {
