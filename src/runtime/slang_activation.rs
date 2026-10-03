@@ -176,8 +176,8 @@ pub(crate) fn run_slang_activation(
                 .use_module(&module)
                 .map_err(|e| e.message.to_string())?;
             Ok(SlangActivation {
-                rules: std::mem::take(&mut interp.defined_slang_rules),
-                declarators: std::mem::take(&mut interp.defined_slang_declarators),
+                rules: std::mem::take(&mut interp.regex_state.defined_slang_rules),
+                declarators: std::mem::take(&mut interp.regex_state.defined_slang_declarators),
             })
         },
     )
@@ -255,7 +255,8 @@ impl Interpreter {
             // declaration of that kind is built with. Record it: a declarator
             // candidate that names no HOW of its own inherits this one.
             (COMP_LANG_CLASS, "set_how") if args.len() >= 2 => {
-                self.slang_declarator_hows
+                self.regex_state
+                    .slang_declarator_hows
                     .insert(args[0].to_string_value(), args[1].clone());
                 Some(Ok(Value::NIL))
             }
@@ -313,14 +314,15 @@ impl Interpreter {
             }
         }
         crate::parser::apply_slang_overrides(&rules).map_err(RuntimeError::new)?;
-        self.defined_slang_rules.extend(rules);
+        self.regex_state.defined_slang_rules.extend(rules);
         // `sub EXPORT` runs once per import, so a module `use`d from several
         // compunits registers its declarators again each time; keep one entry
         // per keyword rather than growing the list without bound.
         for decl in declarators {
-            self.defined_slang_declarators
+            self.regex_state
+                .defined_slang_declarators
                 .retain(|d| d.keyword != decl.keyword);
-            self.defined_slang_declarators.push(decl);
+            self.regex_state.defined_slang_declarators.push(decl);
         }
         Ok(Value::NIL)
     }
@@ -334,7 +336,8 @@ impl Interpreter {
     /// registered from `sub EXPORT`, whose env is restored the moment the call
     /// returns, so the record lives on the interpreter instead.
     pub(crate) fn slang_declarator_how(&self, keyword: &str) -> Option<Value> {
-        self.defined_slang_declarators
+        self.regex_state
+            .defined_slang_declarators
             .iter()
             .find(|d| d.keyword == keyword && !d.how_type.is_empty())
             .map(|d| Value::package(crate::symbol::Symbol::intern(&d.how_type)))

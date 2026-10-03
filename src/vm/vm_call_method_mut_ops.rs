@@ -1495,7 +1495,7 @@ impl Interpreter {
             if let Some(updated) = target.match_with_ast_keeping_id(value.clone()) {
                 self.env_mut().insert(target_name.to_string(), updated);
                 self.env_mut().insert("made".to_string(), value.clone());
-                self.action_made = Some(value.clone());
+                self.regex_state.action_made = Some(value.clone());
             }
             self.stack.push(value);
             return Ok(());

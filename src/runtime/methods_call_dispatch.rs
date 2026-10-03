@@ -3072,7 +3072,7 @@ impl Interpreter {
             let value = args.first().cloned().unwrap_or(Value::NIL);
             self.env.insert("/".to_string(), updated);
             self.env.insert("made".to_string(), value.clone());
-            self.action_made = Some(value.clone());
+            self.regex_state.action_made = Some(value.clone());
             return Ok(value);
         }
 
