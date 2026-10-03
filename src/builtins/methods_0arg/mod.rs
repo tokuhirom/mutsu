@@ -1459,12 +1459,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("value")
                         .cloned()
                         .unwrap_or(Value::num(0.0));
-                    // Rakudo's Duration always holds a Rat (`Duration.new`
-                    // coerces with `.Rat`), so a Num-valued Duration narrows
-                    // through the same Num -> Rat conversion `.Rat` uses.
-                    // TODO: the Instant arithmetic in `arith::temporal`
-                    // still builds Num-valued Durations (#11273); once it
-                    // stores the Rat, this arm only sees Rat/Int.
+                    // Rakudo's Duration always holds a Rat, and every
+                    // constructor here stores one (`arith::tai_rat`, #11273);
+                    // a Num can only come from a hand-built instance, which
+                    // narrows through the same Num -> Rat conversion `.Rat`
+                    // uses.
                     let val = match val.view() {
                         ValueView::Num(f) if f.is_finite() => {
                             crate::builtins::arith::real_to_rat(&val)

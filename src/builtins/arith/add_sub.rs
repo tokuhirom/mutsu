@@ -6,12 +6,22 @@ use super::rat::{
     rat_sub_checked, to_big_rat_parts,
 };
 use super::temporal::{
-    instance_datetime_parts, instance_days, instance_duration_value, instance_instant_raw,
-    instance_instant_value, make_duration, rebuild_date_like, rebuild_datetime_like, value_sub,
+    instance_datetime_parts, instance_days, instance_duration_raw_value, instance_duration_value,
+    instance_instant_raw, instance_instant_value, make_duration, make_duration_real,
+    rebuild_date_like, rebuild_datetime_like, value_add, value_sub,
 };
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
 use num_bigint::BigInt as NumBigInt;
+
+/// An Instant holding `tai` seconds, stored as Rakudo stores them (see
+/// [`super::temporal::tai_rat`]).
+// Cost: O(d), see `tai_rat`.
+fn make_instant(tai: Value) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("value".to_string(), super::temporal::tai_rat(&tai));
+    Value::make_instance(Symbol::intern("Instant"), attrs)
+}
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
@@ -65,50 +75,38 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
             "Cannot add two Instants together".to_string(),
         ));
     }
-    // Instant + Duration => Instant
-    if let Some(tai) = instance_instant_value(&left)
-        && let Some(dur) = instance_duration_value(&right)
+    // Instant + Duration => Instant, exact when both hold Rats.
+    if let Some(tai) = instance_instant_raw(&left)
+        && let Some(dur) = instance_duration_raw_value(&right)
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::num(tai + dur));
-        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+        return Ok(make_instant(value_add(tai, dur)));
     }
-    if let Some(tai) = instance_instant_value(&right)
-        && let Some(dur) = instance_duration_value(&left)
+    if let Some(tai) = instance_instant_raw(&right)
+        && let Some(dur) = instance_duration_raw_value(&left)
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::num(tai + dur));
-        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+        return Ok(make_instant(value_add(dur, tai)));
     }
     // Instant + Numeric => Instant (add to TAI value)
-    if let Some(tai) = instance_instant_value(&left)
+    if let Some(tai) = instance_instant_raw(&left)
         && right.is_numeric()
     {
-        let delta = crate::runtime::to_float_value(&right).unwrap_or(0.0);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::num(tai + delta));
-        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+        return Ok(make_instant(value_add(tai, right)));
     }
-    if let Some(tai) = instance_instant_value(&right)
+    if let Some(tai) = instance_instant_raw(&right)
         && left.is_numeric()
     {
-        let delta = crate::runtime::to_float_value(&left).unwrap_or(0.0);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), Value::num(tai + delta));
-        return Ok(Value::make_instance(Symbol::intern("Instant"), attrs));
+        return Ok(make_instant(value_add(left, tai)));
     }
     // Duration + Numeric => Duration
-    if let Some(dur) = instance_duration_value(&left)
+    if let Some(dur) = instance_duration_raw_value(&left)
         && right.is_numeric()
     {
-        let delta = crate::runtime::to_float_value(&right).unwrap_or(0.0);
-        return Ok(make_duration(dur + delta));
+        return Ok(make_duration_real(&value_add(dur, right)));
     }
-    if let Some(dur) = instance_duration_value(&right)
+    if let Some(dur) = instance_duration_raw_value(&right)
         && left.is_numeric()
     {
-        let delta = crate::runtime::to_float_value(&left).unwrap_or(0.0);
-        return Ok(make_duration(dur + delta));
+        return Ok(make_duration_real(&value_add(left, dur)));
     }
     // DateTime + Duration => DateTime
     if let Some((y, m, d, h, mi, s, tz)) = instance_datetime_parts(&left)
@@ -230,35 +228,30 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         return diff;
     }
     if let (Some(a), Some(b)) = (instance_instant_raw(&left), instance_instant_raw(&right)) {
-        return make_duration(crate::runtime::to_float_value(&value_sub(a, b)).unwrap_or(0.0));
+        return make_duration_real(&value_sub(a, b));
     }
     if let Some(a) = instance_instant_raw(&left)
-        && let Some(dur) = instance_duration_value(&right)
+        && let Some(dur) = instance_duration_raw_value(&right)
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), value_sub(a, Value::num(dur)));
-        return Value::make_instance(Symbol::intern("Instant"), attrs);
+        return make_instant(value_sub(a, dur));
     }
     if let Some(a) = instance_instant_raw(&left)
         && right.is_numeric()
     {
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("value".to_string(), value_sub(a, right));
-        return Value::make_instance(Symbol::intern("Instant"), attrs);
+        return make_instant(value_sub(a, right));
     }
     // Duration - Duration returns Duration
     if let (Some(a), Some(b)) = (
-        instance_duration_value(&left),
-        instance_duration_value(&right),
+        instance_duration_raw_value(&left),
+        instance_duration_raw_value(&right),
     ) {
-        return make_duration(a - b);
+        return make_duration_real(&value_sub(a, b));
     }
     // Duration - Numeric returns Duration
-    if let Some(a) = instance_duration_value(&left)
+    if let Some(a) = instance_duration_raw_value(&left)
         && right.is_numeric()
     {
-        let delta = crate::runtime::to_float_value(&right).unwrap_or(0.0);
-        return make_duration(a - delta);
+        return make_duration_real(&value_sub(a, right));
     }
     // DateTime - DateTime => Duration
     if let (Some((ly, lm, ld, lh, lmin, ls, ltz)), Some((ry, rm, rd, rh, rmin, rs, rtz))) = (

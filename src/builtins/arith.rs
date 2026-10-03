@@ -56,4 +56,6 @@ pub(crate) fn sqrt_numeric(value: &Value) -> Option<Value> {
 pub(crate) use rat::{
     big_int_add, big_int_mul, big_int_sub, bigint_ratio_to_f64, exact_round_scaled, real_to_rat,
 };
-pub(crate) use temporal::{instance_instant_value, is_temporal_operand, make_duration_value};
+pub(crate) use temporal::{
+    instance_instant_value, is_temporal_operand, make_duration_value, posix_to_tai, tai_rat,
+};
