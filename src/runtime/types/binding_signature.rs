@@ -371,7 +371,7 @@ impl Interpreter {
         let exception =
             Value::make_instance(Symbol::intern("X::TypeCheck::Binding::Parameter"), ex_attrs);
         err.exception = Some(Box::new(exception));
-        err.with_parameter_object(pd, interp)
+        err.with_parameter_object(pd, interp.map(|i| i as _))
     }
 
     /// Build the runtime error used when an anonymous `where` predicate does
@@ -390,7 +390,7 @@ impl Interpreter {
             &param_display_name(pd),
             value,
         )
-        .with_parameter_object(pd, interp);
+        .with_parameter_object(pd, interp.map(|i| i as _));
         if omitted {
             err.with_omitted_optional_note()
         } else {

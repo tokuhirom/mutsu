@@ -1746,7 +1746,7 @@ impl Interpreter {
                         let msg = payload.to_string_value();
                         return Ok(with_backtrace(&target, msg));
                     } else if let Some(formatted) =
-                        crate::builtins::exception_message::format_exception_message(
+                        crate::value::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )

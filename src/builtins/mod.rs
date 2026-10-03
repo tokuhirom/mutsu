@@ -13,7 +13,6 @@ pub(crate) mod cross_product;
 #[path = "emoji_name_gen.rs"]
 mod emoji_name_gen;
 pub(crate) mod emoji_name_table;
-pub(crate) mod exception_message;
 pub(crate) mod fast_0arg;
 mod functions;
 pub(crate) mod grapheme_index;
@@ -70,58 +69,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
-fn split_lines_impl(input: &str, chomp: bool) -> Vec<String> {
-    split_lines_limited(input, chomp, None)
-}
-
-/// The first `limit` lines of `input` (all of them for `None`). The scan stops
-/// as soon as the limit is reached, so `.lines(3)` reads only the prefix that
-/// holds those lines.
-///
-/// Cost: O(p + k), p = bytes up to the end of the last line returned, k = lines.
-pub(crate) fn split_lines_limited(input: &str, chomp: bool, limit: Option<usize>) -> Vec<String> {
-    let bytes = input.as_bytes();
-    let mut lines = Vec::new();
-    let mut start = 0usize;
-    let mut i = 0usize;
-    let limit = limit.unwrap_or(usize::MAX);
-    if limit == 0 {
-        return lines;
-    }
-
-    while i < bytes.len() {
-        let sep_len = if bytes[i] == b'\n' {
-            1
-        } else if bytes[i] == b'\r' {
-            if i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
-                2
-            } else {
-                1
-            }
-        } else {
-            i += 1;
-            continue;
-        };
-
-        let end = if chomp { i } else { i + sep_len };
-        lines.push(input[start..end].to_string());
-        i += sep_len;
-        start = i;
-        if lines.len() == limit {
-            return lines;
-        }
-    }
-
-    if start < input.len() {
-        lines.push(input[start..].to_string());
-    }
-
-    lines
-}
-
-pub(crate) fn split_lines_with_chomp(input: &str, chomp: bool) -> Vec<String> {
-    split_lines_impl(input, chomp)
-}
+pub(crate) use crate::value::split_lines::split_lines_with_chomp;
 
 /// Remove exactly one trailing newline sequence (\r\n, \n, or \r).
 pub(crate) fn chomp_one(s: &str) -> String {

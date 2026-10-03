@@ -188,7 +188,7 @@ fn send_chunk(mut text: String, sinks: &ChunkSinks, collected: &mut String, tran
 ///
 /// The exception instance carries only its genuine Raku attributes (`method` /
 /// `handle` / `use`); the human-readable text is produced by
-/// [`crate::builtins::exception_message::format_exception_message`] — the very
+/// [`crate::value::exception_message::format_exception_message`] — the very
 /// table `.message` / `.Str` / `.gist` consult when an exception has no
 /// `message` attribute. Deliberately NOT storing a `message` attribute is what
 /// makes the thrown value and a user-constructed
@@ -200,9 +200,8 @@ pub(in crate::runtime) fn proc_async_error(
     attrs: &[(&str, Value)],
 ) -> RuntimeError {
     let ex_attrs: AttrMap = attrs.iter().map(|(k, v)| (*k, v.clone())).collect();
-    let message =
-        crate::builtins::exception_message::format_exception_message(class_name, &ex_attrs)
-            .unwrap_or_else(|| class_name.to_string());
+    let message = crate::value::exception_message::format_exception_message(class_name, &ex_attrs)
+        .unwrap_or_else(|| class_name.to_string());
     let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
     RuntimeError {
         exception: Some(Box::new(ex)),

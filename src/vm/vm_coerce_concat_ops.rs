@@ -664,7 +664,7 @@ impl Interpreter {
         probe.insert("method", Value::str(method.to_string()));
         probe.insert("object", val.clone());
         let message =
-            crate::builtins::exception_message::format_exception_message("X::Buf::AsStr", &probe)
+            crate::value::exception_message::format_exception_message("X::Buf::AsStr", &probe)
                 .unwrap_or_default();
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("method".to_string(), Value::str(method.to_string()));

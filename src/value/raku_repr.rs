@@ -1,8 +1,6 @@
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_traits::{Signed, Zero};
 
-use super::range_endpoint_display;
-
 /// Escape a string the way Rakudo's `Str.raku` does: wrap in double quotes,
 /// backslash the sigil/interpolation metacharacters, map the named control
 /// escapes (`\0 \b \t \n \r`), and render every other control character
@@ -607,7 +605,7 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
     let already_in_shaped = IN_SHAPED_RAKU.with(|f| f.get());
     if !already_in_shaped
         && kind == crate::value::ArrayKind::Shaped
-        && let Some(shape) = crate::runtime::utils::shaped_array_shape(v)
+        && let Some(shape) = crate::value::shaped_array::shaped_array_shape(v)
         && !shape.is_empty()
     {
         IN_SHAPED_RAKU.with(|f| f.set(true));
@@ -1204,7 +1202,7 @@ pub fn raku_value(v: &Value) -> String {
             "IterationEnd".to_string()
         }
         ValueView::Instance { attributes, .. } if v.is_match_instance() => {
-            super::match_helpers::match_raku_repr(&attributes.as_map())
+            crate::value::match_helpers::match_raku_repr(&attributes.as_map())
         }
         ValueView::Instance {
             class_name,
@@ -1354,7 +1352,7 @@ pub(crate) fn setbagmix_raku_named(v: &Value, type_override: Option<&str>) -> Op
 
 /// Coerce a value to a native integer type (e.g. `.byte()`, `.int8()`, `.uint32()`).
 /// Wraps out-of-range values using modular arithmetic.
-pub(super) fn native_int_coerce_method(
+pub(crate) fn native_int_coerce_method(
     target: &Value,
     type_name: &str,
 ) -> Result<Value, RuntimeError> {
@@ -1403,12 +1401,23 @@ pub(super) fn native_int_coerce_method(
         }
     };
 
-    let wrapped = crate::runtime::native_types::wrap_native_int(type_name, &big_val);
+    let wrapped = crate::native_types::wrap_native_int(type_name, &big_val);
 
     // Convert back to Value
     if let Some(i) = wrapped.to_i64() {
         Ok(Value::int(i))
     } else {
         Ok(Value::bigint(wrapped))
+    }
+}
+
+/// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
+fn range_endpoint_display(v: i64) -> String {
+    if v == i64::MAX {
+        "Inf".to_string()
+    } else if v == i64::MIN {
+        "-Inf".to_string()
+    } else {
+        v.to_string()
     }
 }
