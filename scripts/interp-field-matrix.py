@@ -26,13 +26,11 @@ Usage:
   scripts/interp-field-matrix.py --check         # the `make checks` ratchet
   scripts/interp-field-matrix.py --self-test
 
-`--check` is ADR-10779 D4: every direct `Interpreter` field must be allowed --
-listed in the frozen scripts/interp-fields-baseline.txt or in a file under
-scripts/interp-fields.d/ -- so none can be added unnoticed, and every field
-must match a `SUBSYSTEMS` rule. Allowed names that are no longer fields are
-ignored. Neither list is ever rewritten: a PR that extracts a subsystem adds a
-new file naming its holder field, so parallel PRs never conflict. `--check`
-only parses the struct, so it needs no build and takes milliseconds.
+`--check` is ADR-10779 D4: every direct `Interpreter` field must be allowed
+by a file under scripts/interp-fields.d/ and match a `SUBSYSTEMS` rule. Names
+of fields already extracted are ignored, so extraction PRs only need to add
+their new holder field to the owning subsystem's file. `--check` only parses
+the struct, so it needs no build and takes milliseconds.
 """
 
 import argparse
@@ -138,7 +136,6 @@ def trivial_accessors(fields):
 ACCESSOR_MAX_LINES = 6
 
 
-BASELINE = ROOT / "scripts" / "interp-fields-baseline.txt"
 ALLOWED_DIR = ROOT / "scripts" / "interp-fields.d"
 
 
@@ -147,41 +144,54 @@ def read_names(path):
             if line.strip() and not line.lstrip().startswith("#")}
 
 
-def read_baseline():
-    """The allowed field names: the frozen baseline plus every file in
-    `scripts/interp-fields.d/`. Nothing here is ever rewritten -- a PR that
-    needs a new field (the holder of a subsystem it extracts) adds a new file
-    -- so parallel PRs cannot conflict on it."""
-    allowed = read_names(BASELINE)
+def read_allowed_fields():
+    """Read the direct fields allowed by each subsystem's file."""
+    allowed = set()
     if ALLOWED_DIR.is_dir():
         for f in sorted(ALLOWED_DIR.glob("*.txt")):
             allowed |= read_names(f)
     return allowed
 
 
-def compare_to_baseline(current, allowed):
+def compare_to_allowed(current, allowed):
     """(new fields, stale names): fields not allowed, and allowed names that
     are no longer fields."""
     return sorted(set(current) - allowed), sorted(allowed - set(current))
 
 
+def misplaced_fields(fields, holders):
+    """Find entries whose file conflicts with an existing subsystem rule."""
+    return sorted(
+        f"{field}: {holders[field]} (rule: {rule_subsystem_of(field)})"
+        for field in fields
+        if field in holders
+        and rule_subsystem_of(field) != "unclassified"
+        and holders[field] != rule_subsystem_of(field)
+    )
+
+
 def check():
     fields = parse_fields()
     unclassified = sorted(f for f in fields if subsystem_of(f) == "unclassified")
-    new, stale = compare_to_baseline(fields, read_baseline())
+    misplaced = misplaced_fields(fields, holder_subsystems())
+    new, stale = compare_to_allowed(fields, read_allowed_fields())
     ok = True
     if unclassified:
         ok = False
         print("check-interp-fields: these Interpreter fields match no SUBSYSTEMS rule in "
               "scripts/interp-field-matrix.py; put each one in the subsystem it belongs "
               "to (ADR-10779 D2):\n  " + "\n  ".join(unclassified), file=sys.stderr)
+    if misplaced:
+        ok = False
+        print("check-interp-fields: fields listed under the wrong subsystem:\n  "
+              + "\n  ".join(misplaced), file=sys.stderr)
     if new:
         ok = False
         print("check-interp-fields: new direct fields on Interpreter:\n  "
               + "\n  ".join(new)
               + "\nPut the new state in its subsystem's type instead (ADR-10779 D4). The "
-              "holder field of an extracted subsystem is allowed by a new file "
-              "scripts/interp-fields.d/<subsystem>.txt naming it.", file=sys.stderr)
+              "holder field of an extracted subsystem is allowed by adding it "
+              "to scripts/interp-fields.d/<subsystem>.txt.", file=sys.stderr)
     if ok:
         print(f"check-interp-fields: {len(fields)} Interpreter fields, none new, "
               f"all classified ({len(stale)} allowed names are no longer fields)")
@@ -206,10 +216,13 @@ pub struct Interpreter {
     errors = []
     if got != want:
         errors.append(f"parse_fields: expected {want}, got {got}")
-    new, stale = compare_to_baseline({"env": "", "fresh": ""}, {"env", "moved_out"})
+    new, stale = compare_to_allowed({"env": "", "fresh": ""}, {"env", "moved_out"})
     if (new, stale) != (["fresh"], ["moved_out"]):
-        errors.append(f"compare_to_baseline: expected (['fresh'], ['moved_out']), "
+        errors.append(f"compare_to_allowed: expected (['fresh'], ['moved_out']), "
                       f"got ({new}, {stale})")
+    wrong = misplaced_fields({"env": ""}, {"env": "module"})
+    if wrong != ["env: module (rule: frame)"]:
+        errors.append(f"misplaced_fields: expected env under frame, got {wrong}")
     for field, sub in [("env", "frame"), ("pending_call_arg_sources", "handoff"),
                        ("fn_resolve_cache", "caches"), ("raku_cycle_guards", "guards"),
                        ("no_such_field_xyz", "unclassified")]:
@@ -385,14 +398,15 @@ def holder_subsystems():
     return out
 
 
-def subsystem_of(field):
-    held = holder_subsystems().get(field)
-    if held:
-        return held
+def rule_subsystem_of(field):
     for key, _, rx in SUBSYSTEMS:
         if re.search(rx, field):
             return key
     return "unclassified"
+
+
+def subsystem_of(field):
+    return holder_subsystems().get(field) or rule_subsystem_of(field)
 
 
 def subsystem_report(rows, p):

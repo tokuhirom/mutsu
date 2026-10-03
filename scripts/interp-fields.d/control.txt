@@ -1,2 +1,2 @@
-# ADR-10779 control subsystem: ControlState (src/runtime/control_state.rs).
+# Existing Interpreter fields classified as control by ADR-10779 D2.
 control

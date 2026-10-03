@@ -1,2 +1,2 @@
-# ADR-10779 topic subsystem: TopicState (src/runtime/topic_state.rs).
+# Existing Interpreter fields classified as topic by ADR-10779 D2.
 topic_state

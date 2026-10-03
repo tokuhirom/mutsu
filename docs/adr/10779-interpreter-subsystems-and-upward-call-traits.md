@@ -105,6 +105,14 @@ A field allowed by neither fails the check, with its name; an allowed name that 
 field is ignored. No shared file is edited, so parallel PRs cannot conflict. The decision — no
 new direct fields — is unchanged.
 
+*Amendment (2026-10-04).* The frozen baseline has been retired (#11337).
+Every direct field now appears in `scripts/interp-fields.d/<subsystem>.txt`,
+including fields of subsystems not yet extracted. A future extraction adds its
+holder name to that subsystem's file; removed field names may remain until a
+later cleanup. This replaces the single shared baseline with subsystem-owned
+lists while preserving the no-new-direct-fields rule. The `handoff` list
+records existing side channels pending their removal under D3.
+
 ### D5. Upward calls go through traits defined below and implemented above
 
 A lower layer that needs a service from the runtime declares a narrow trait for it. The runtime

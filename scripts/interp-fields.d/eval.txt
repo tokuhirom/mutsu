@@ -1,0 +1,15 @@
+# Existing Interpreter fields classified as eval by ADR-10779 D2.
+explicit_run_main
+last_block_my_declared
+last_value
+main_hidden_from_usage
+nested_mode
+pending_eval_context_routine
+pending_eval_placeholder_params
+pending_eval_rw_tail
+pending_eval_sigilless
+pending_supply_authoritative_free_vars
+pending_supply_block_body
+pending_supply_emitter_sym
+pending_whenever_inherited_owned
+repl_compiler

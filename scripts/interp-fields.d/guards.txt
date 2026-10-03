@@ -1,0 +1,2 @@
+# Existing Interpreter fields classified as guards by ADR-10779 D2.
+raku_cycle_guards

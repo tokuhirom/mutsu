@@ -1,2 +1,33 @@
 # ADR-10779 dispatch subsystem: DispatchState (src/runtime/dispatch_state.rs).
 dispatch
+# Existing Interpreter fields classified as dispatch by ADR-10779 D2.
+dispatch_ambiguous
+dispatch_token_counter
+dispatcher_wrap_bypass
+empty_sig_proto_names
+fn_keys_by_base
+fn_keys_index
+metamodel_dispatch_stack
+method_call_depth
+method_dispatch_pure
+method_dispatch_stack
+multi_dispatch_stack
+native_base_bypass
+operator_assoc
+pending_method_dispatch
+prepared_fn_defs
+proto_dispatch_stack
+registered_fn_fingerprints
+registered_stub_decl_sites
+samewith_context_stack
+skip_postcircumfix_overload
+skip_pseudo_method_native
+suppress_binding_error_enhance
+user_declared_infix_ops
+wrap_callable_ids
+wrap_chains
+wrap_dispatch_stack
+wrap_handle_counter
+wrap_name_to_sub
+wrap_skip_once
+wrap_sub_names
