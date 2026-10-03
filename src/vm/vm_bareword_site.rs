@@ -91,7 +91,7 @@ impl Interpreter {
     /// (`my`) type registered under its ADR-0047 storage name
     /// (`RIS\u{0}<decl-id>`, possibly package-qualified). A `$`-scalar of the
     /// same spelling holding some other type object does not count.
-    // Cost: O(|p|), p = the bound package name.
+    // Cost: O(|p|), p = the bound package name (the unqualified part is memoized).
     pub(crate) fn env_binds_declared_type(&self, name: &str) -> bool {
         let Some(v) = self.env().get(name) else {
             return false;
@@ -99,10 +99,8 @@ impl Interpreter {
         let ValueView::Package(p) = v.view() else {
             return false;
         };
-        p.with_str(|p| {
-            let base = p.split('\u{0}').next().unwrap_or(p);
-            base.rsplit("::").next() == Some(name)
-        })
+        crate::qualified::unqualified_part(p)
+            .with_str(|short| short.split('\u{0}').next() == Some(name))
     }
 }
 
