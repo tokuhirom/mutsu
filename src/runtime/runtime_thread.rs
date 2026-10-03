@@ -333,9 +333,7 @@ impl Interpreter {
             let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
-                if let Some(id) = Self::handle_id_from_value(val) {
-                    referenced_handle_ids.insert(id);
-                }
+                Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
                 // Skip internal variables and topic variables.
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
                 // are thread-local; mutations inside `start` blocks must not
