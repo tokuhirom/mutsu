@@ -274,14 +274,7 @@ impl Interpreter {
         if constraint == "Positional"
             && matches!(
                 value_type,
-                "Array"
-                    | "List"
-                    | "Slip"
-                    | "Range"
-                    | "Buf"
-                    | "Blob"
-                    | "array"
-                    | "IO::Path::Parts"
+                "Array" | "List" | "Slip" | "Range" | "Buf" | "Blob" | "array" | "IO::Path::Parts"
             )
         {
             // The bare native `array` type (and its parameterized form
@@ -296,8 +289,7 @@ impl Interpreter {
         // is neither a List nor Positional -- it binds to an `@` parameter
         // through PositionalBindFailover instead (`(1,2).Seq ~~ List` is
         // False in rakudo, and a `--> List(Seq)` return must coerce it).
-        if constraint == "List" && matches!(value_type, "Array" | "List" | "Slip" | "array")
-        {
+        if constraint == "List" && matches!(value_type, "Array" | "List" | "Slip" | "array") {
             return true;
         }
         if constraint == "Associative"

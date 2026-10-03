@@ -2996,12 +2996,8 @@ impl Interpreter {
                         // Autovivify typed containers: MixHash, BagHash, SetHash
                         // (the store key is the `.WHICH` string; record the key
                         // object so `.keys` reports it).
-                        *container = Self::autoviv_quanthash_with_key(
-                            &sym.resolve(),
-                            &key,
-                            &idx,
-                            &val,
-                        )?;
+                        *container =
+                            Self::autoviv_quanthash_with_key(&sym.resolve(), &key, &idx, &val)?;
                     } else if let Some(res) = {
                         let container_snapshot = container.clone();
                         container.with_set_mut(|set, is_mutable| {

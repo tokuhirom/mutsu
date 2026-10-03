@@ -3112,7 +3112,15 @@ impl Interpreter {
                         && (pd.name.starts_with('@') || pd.name.starts_with('%'))
                         // Exclude attribute-binding twigil params (@!x, %.y, ...).
                         && !pd.name[1..].starts_with(['!', '.']);
-                    if alias_plain_container && let Some(source_name) = &source_name {
+                    // Only a `@`/`%` source variable needs the writeback: a
+                    // `$` source (`my $q = (1,2); f($q)`) holds its List/Array
+                    // by reference already, and writing the param back would
+                    // replace the caller's itemized value with the bare one
+                    // (`$q` then flattened as a hash-slice key afterwards).
+                    if alias_plain_container
+                        && let Some(source_name) = &source_name
+                        && source_name.starts_with(['@', '%'])
+                    {
                         rw_bindings.push((pd.name.clone(), source_name.clone()));
                     }
                     // Slice 2d: a readonly scalar `$` param receiving an array/hash
@@ -3252,6 +3260,13 @@ impl Interpreter {
                                 .remove_sym(crate::runtime::sigilless_alias_key(&pd.name));
                             self.env
                                 .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
+                        }
+                        // An itemized holder (`$(1,2)` read from a `$`-variable
+                        // or an Array element) copies its Positional, not the
+                        // Scalar wrapper -- the List reification below must
+                        // see the List.
+                        if pd.name.starts_with('@') && !pd.slurpy {
+                            value = value.deitemize_for_sigil_bind();
                         }
                         value = value.copy_for_list_assignment();
                         // The copy is a fresh container: its descriptor name is
