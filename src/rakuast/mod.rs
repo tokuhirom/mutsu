@@ -26,6 +26,7 @@ mod name_parts;
 mod render;
 mod routine_traits;
 mod signature_decl;
+mod subscript_adverb;
 mod use_stmt;
 
 pub use formatter::formatter_ast;
@@ -1125,6 +1126,11 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if method == "new"
+        && let Some(node) = subscript_adverb::construct(class_name, args)
+    {
+        return node.map(Some);
+    }
     if class_name == "RakuAST::QuotedString" && method == "new" {
         let segments = named_arg(args, "segments")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedString.new requires `segments`"))?
@@ -2747,6 +2753,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
             | RakuAstClass::PostcircumfixLiteralHashIndex
+            | RakuAstClass::PostcircumfixArrayIndex
+            | RakuAstClass::PostcircumfixHashIndex
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign

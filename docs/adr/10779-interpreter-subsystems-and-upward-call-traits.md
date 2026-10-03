@@ -183,4 +183,6 @@ these preconditions:
   - `caches`: done. `ResolutionCaches` (`src/runtime/resolution_caches.rs`) holds the 51
     cache fields, all started fresh in a spawned thread; 436 → 386 fields. A single
     invalidation entry point is a follow-up: this step only moved the fields.
-  - Next: `regex`, `eval`, `threads`, `async`.
+  - `regex`: done. `RegexGrammarState` (`src/runtime/regex_grammar_state.rs`) holds the 10
+    regex/grammar/slang fields, all started fresh in a spawned thread; 386 → 377 fields.
+  - Next: `eval`, `threads`, `async`.

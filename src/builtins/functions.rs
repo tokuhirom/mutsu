@@ -94,6 +94,13 @@ pub(crate) fn native_function(
             control, args,
         )));
     }
+    // `pick($n, +values)` / `roll($n, +values)`: past the count, every
+    // argument is one element (`pick(*, 1, 2, 3)`); the single-argument form
+    // (`pick(2, @list)`) keeps the one-arg rule in the 2-arg arm.
+    // Cost: O(k), k = number of value arguments.
+    if matches!(name, "pick" | "roll") && args.len() > 2 {
+        return native_function_2arg(name, &args[0], &Value::array(args[1..].to_vec()));
+    }
     if name == "split" {
         return crate::builtins::split::native_split_function(args);
     }

@@ -52,11 +52,12 @@ impl Interpreter {
         let _pkg_guard = pkg.map(|p| self.enter_package_guarded_sym(p));
         let saved_env = std::mem::replace(&mut self.env, env);
         let saved_pending = std::mem::take(&mut self.pending_local_updates);
-        let saved_in_code_block = std::mem::replace(&mut self.in_regex_code_block, false);
+        let saved_in_code_block =
+            std::mem::replace(&mut self.regex_state.in_regex_code_block, false);
         let saved_readonly = self.take_readonly_state();
         let result = f(self);
         self.restore_readonly_state(saved_readonly);
-        self.in_regex_code_block = saved_in_code_block;
+        self.regex_state.in_regex_code_block = saved_in_code_block;
         self.pending_local_updates = saved_pending;
         self.env = saved_env;
         result

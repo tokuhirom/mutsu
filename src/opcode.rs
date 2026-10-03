@@ -7298,6 +7298,11 @@ pub(crate) struct CompiledCode {
     /// (a per-call `free_at_entry` cost), so only names matching a declared
     /// `&`-lexical count.
     pub(crate) outer_code_var_names: std::collections::HashSet<String>,
+    /// Bare words naming an ENCLOSING sigilless binding (`\attr`) that this
+    /// code also declares as a same-keyed `$` local (`my $attr = attr`). The
+    /// shared local key would hide the capture from `compute_free_vars`, so the
+    /// compiler lists them here and they stay free variables.
+    pub(crate) shadowed_sigilless_reads: Vec<String>,
     /// `&name` reads (`GetCodeVar`, `CallOnCodeVar`) whose read site the
     /// compiler proved has NO `&name` lexical binding in scope -- no `my &name`,
     /// `&name` parameter or role `&name` type parameter in any scope it can
@@ -8044,6 +8049,7 @@ impl CompiledCode {
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
+            shadowed_sigilless_reads: Vec::new(),
             unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
@@ -9949,6 +9955,9 @@ impl CompiledCode {
         let mut captured_in_decl_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut self_capture_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut pending_decl = false;
+        for name in &self.shadowed_sigilless_reads {
+            free.insert(Symbol::intern(name));
+        }
         for op in &self.ops {
             // `S///` / `s///` / `tr///` work on the implicit topic without
             // naming it, so they reference `$_` exactly as an explicit `$_`

@@ -1468,6 +1468,11 @@ impl Interpreter {
         // above can never hold one of these names because they are only
         // populated further down, past this gate.
         if Self::name_is_core_type_coercer(&name) && !args.is_empty() {
+            // The coercers read their argument's elements directly, so a
+            // still-deferred `.map`/`.grep` Seq must be pulled first (the
+            // same ADR-0058 guard `try_native_function` applies); otherwise
+            // `Bag(@rows.map({ ... }))` sees the empty seed.
+            self.reify_map_grep_seq_args(&args)?;
             let result = self.vm_call_function(&name, args)?;
             self.stack.push(result);
             return Ok(());
@@ -1525,6 +1530,36 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
+        // lvalue-method writeback builtins (`$p.value = X` / `.value--`,
+        // `@a.head = v`, `%h.AT-KEY(k) = v`, `@a.first(...) = v`, ...) mutate
+        // their target variable in `env` *by name* (`self.env.insert(var, ...)`)
+        // and rely on the reverse pull to refresh the caller's local slot. The
+        // target variable name is the 5th argument. Capture it so we can write
+        // the new env value straight through to the local slot after dispatch,
+        // keeping locals coherent without depending on the `env_dirty` backstop.
+        let lvalue_writeback_target = match name.as_str() {
+            "__mutsu_assign_method_lvalue" => args
+                .get(4)
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            "__mutsu_index_assign_method_lvalue" => args
+                .get(if args.len() >= 6 { 5 } else { 4 })
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            "__mutsu_index_delete_method_lvalue" => args
+                .get(3)
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            _ => None,
+        };
+        // #11275: a target that is a compunit lexical this routine captured
+        // must be written back through that cell, not into whatever the
+        // caller-rooted env holds under the same name. Bound before the raw-invocant
+        // box below, which resolves the invocant's container by the same name.
+        let unit_redirect = lvalue_writeback_target
+            .as_deref()
+            .and_then(|t| self.begin_lvalue_unit_redirect(code, t));
         // ADR-0067 slice 3a: a routine hands back the container it was given,
         // and the invocant is parameter zero. When the callee binds its invocant
         // raw (`.snitch`, `method m(\S:) is raw`), box the caller's location into
@@ -1550,29 +1585,6 @@ impl Interpreter {
         } else {
             None
         };
-        // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
-        // lvalue-method writeback builtins (`$p.value = X` / `.value--`,
-        // `@a.head = v`, `%h.AT-KEY(k) = v`, `@a.first(...) = v`, ...) mutate
-        // their target variable in `env` *by name* (`self.env.insert(var, ...)`)
-        // and rely on the reverse pull to refresh the caller's local slot. The
-        // target variable name is the 5th argument. Capture it so we can write
-        // the new env value straight through to the local slot after dispatch,
-        // keeping locals coherent without depending on the `env_dirty` backstop.
-        let lvalue_writeback_target = match name.as_str() {
-            "__mutsu_assign_method_lvalue" => args
-                .get(4)
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            "__mutsu_index_assign_method_lvalue" => args
-                .get(if args.len() >= 6 { 5 } else { 4 })
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            "__mutsu_index_delete_method_lvalue" => args
-                .get(3)
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            _ => None,
-        };
         let package_index_lvalue = name == "__mutsu_index_assign_method_lvalue"
             && args
                 .first()
@@ -1588,7 +1600,7 @@ impl Interpreter {
         let lvalue_writeback_pre = lvalue_writeback_target
             .as_ref()
             .map(|t| self.env().get(t).cloned());
-        let result = match self.dispatch_func_call_inner(
+        let dispatched = self.dispatch_func_call_inner(
             code,
             &name,
             name_sym,
@@ -1598,7 +1610,9 @@ impl Interpreter {
             call_me_override,
             compiled_fns,
             trir_args.as_deref(),
-        ) {
+        );
+        self.end_lvalue_unit_redirect(unit_redirect);
+        let result = match dispatched {
             Ok(v) => {
                 if let Some((source, share_args)) = attr_share {
                     self.share_scalar_attr_store_with_source(

@@ -1,9 +1,9 @@
 # ADR-11276: Built-in methods are handler rows in the one method table
 
-- **Status**: Proposed (2026-10-03). Draft for discussion; nothing implemented. Supersedes, once
-  accepted, [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) design decision 1
-  of its E2 design ("rows are recognition metadata, not function pointers; invocation stays in the
-  arity cascades").
+- **Status**: Accepted (user decision 2026-10-03). Slice 1 in progress; see §9. Supersedes
+  [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) design decision 1 of its E2
+  design ("rows are recognition metadata, not function pointers; invocation stays in the arity
+  cascades").
 - **Date**: 2026-10-03
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11276](https://github.com/tokuhirom/mutsu/issues/11276)
@@ -194,3 +194,7 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
   only an arity mask, with the handler raising the error.
 - Where folded owners (`Buf`/`Blob`/`utf8` to `Blob`, `Sub`/`Method`/`Block` to `Code`) belong
   once owners are real `TypeId`s, versus Rakudo's MRO, where `Buf.^mro` does not contain `Blob`.
+
+## 9. Implementation status
+
+- 2026-10-03: accepted. Slice 1 (the mechanism) started.

@@ -175,7 +175,7 @@ impl Interpreter {
         if self.atomic_container_incdec(arc, name, k.increment, !k.prefix)? {
             return Ok(());
         }
-        let inner = arc.lock().unwrap().clone();
+        let inner = arc.lock().unwrap().clone().deref_container();
         let old = self.normalize_incdec_source_with_type_for(name, Some(name_sym), inner);
         let new = self.incdec_step(k, &old)?;
         let new = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new);

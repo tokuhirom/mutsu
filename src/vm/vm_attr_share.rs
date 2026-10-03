@@ -15,6 +15,7 @@
 //! `assign_method_lvalue_with_values`).
 
 use super::*;
+use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// After `__mutsu_assign_method_lvalue` stored `value` (argument 3 of the
@@ -86,13 +87,16 @@ impl Interpreter {
     }
 
     /// Does the `$` scalar `name` (whose current slot is `slot`) hold an
-    /// array/hash by `=` VALUE share, so a whole reassignment REPLACES the slot
-    /// instead of writing through the shared cell into the source? That is a
-    /// Slice 2a local (`$n = @z`, marked by name) or a Slice 2e attribute
-    /// (`$!w` inside a method, whose slot carries the itemized share cell).
+    /// array/hash by `=` VALUE share directly in the slot, so a whole
+    /// reassignment REPLACES the slot instead of writing through the shared
+    /// cell into the source? Scalar locals with their own holder cell write
+    /// into that outer cell; bare share slots and Slice 2e attributes still
+    /// need replacement here.
     // Cost: O(1) (one env symbol probe).
     pub(super) fn is_value_share_slot(&self, name: &str, slot: Option<&Value>) -> bool {
-        (self.array_share_active && self.is_array_share_scalar(name))
+        (self.array_share_active
+            && self.is_array_share_scalar(name)
+            && slot.is_some_and(Value::container_ref_is_itemized))
             || (name.starts_with('!') && slot.is_some_and(Value::container_ref_is_itemized))
     }
 
@@ -122,39 +126,79 @@ impl Interpreter {
         resolved_source: &str,
         val: &Value,
     ) -> crate::gc::Gc<crate::value::ContainerCell> {
+        // A scalar source already has its own holder cell. A chained share
+        // takes the aggregate cell *inside* that holder; promoting the holder
+        // itself would make the new scalar follow later assignments to the
+        // source scalar rather than mutations of the aggregate.
+        if !resolved_source.starts_with('@')
+            && !resolved_source.starts_with('%')
+            && let Some(source) = self.env().get(resolved_source)
+            && let ValueView::ContainerRef(holder) = source.view()
+        {
+            let held = holder.lock().unwrap().clone();
+            if held.container_ref_is_itemized()
+                && let ValueView::ContainerRef(shared) = held.view()
+            {
+                return shared.clone();
+            }
+        }
+        let source_is_scalar = !resolved_source.starts_with('@')
+            && !resolved_source.starts_with('%')
+            && !resolved_source.starts_with('&')
+            && self
+                .env()
+                .get_sym(MetaNs::BoundDecont.key_for_str(resolved_source))
+                .is_none();
         // Build (or reuse) the shared cell: reuse an existing cell carried by the
         // value or already held by the source variable, else wrap the snapshot.
-        let cell = match val.view() {
-            ValueView::ContainerRef(arc) => arc.clone(),
-            // A scalar holding an array share is represented as
-            // `Scalar(ContainerRef(cell))` so its `.raku` keeps the `$`
-            // marker without changing the source array's own rendering.
-            // Chained `$r = $q` must nevertheless reuse that same cell.
-            ValueView::Scalar(inner) if inner.is_container_ref() => {
-                if let ValueView::ContainerRef(arc) = inner.view() {
-                    arc.clone()
-                } else {
-                    unreachable!("ContainerRef tag changed while extracting share cell")
+        let cell = if source_is_scalar {
+            // A scalar that held an aggregate directly needs its own holder
+            // before the aggregate can be shared with another scalar.
+            crate::gc::Gc::new(crate::value::ContainerCell::new(val.deref_container()))
+        } else {
+            match val.view() {
+                ValueView::ContainerRef(arc) => arc.clone(),
+                // A scalar holding an array share is represented as
+                // `Scalar(ContainerRef(cell))` so its `.raku` keeps the `$`
+                // marker without changing the source array's own rendering.
+                // Chained `$r = $q` must nevertheless reuse that same cell.
+                ValueView::Scalar(inner) if inner.is_container_ref() => {
+                    if let ValueView::ContainerRef(arc) = inner.view() {
+                        arc.clone()
+                    } else {
+                        unreachable!("ContainerRef tag changed while extracting share cell")
+                    }
                 }
+                _ => match self.env().get(resolved_source).map(Value::view) {
+                    Some(ValueView::ContainerRef(arc)) => arc.clone(),
+                    _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                },
             }
-            _ => match self.env().get(resolved_source).map(Value::view) {
-                Some(ValueView::ContainerRef(arc)) => arc.clone(),
-                _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
-            },
         };
-        // The source and target own different holder words over this one cell:
-        // the aggregate source remains plain, while the scalar target is an
-        // itemized holder. Keeping the flavour on the word is what preserves
-        // `%h.raku` while making `$hi.raku` render `${...}`. A chained share
-        // (`$r = $q`) re-installs the source `$q`'s own word, so it keeps the
-        // flavour `$q` already had instead of being demoted to plain.
+        // An aggregate source holds a plain word over this cell. A scalar
+        // source holds the itemized word inside its own outer cell. In either
+        // case the target takes its own itemized holder over the aggregate.
         let source_idx = code.locals.iter().rposition(|n| n == resolved_source);
         let source_itemized = val.container_ref_is_itemized()
             || self
                 .env()
                 .get(resolved_source)
                 .is_some_and(Value::container_ref_is_itemized);
-        let container = if source_itemized {
+        let container = if source_is_scalar {
+            let itemized = Value::container_ref_itemized(cell.clone());
+            let source = source_idx
+                .map(|idx| &self.locals[idx])
+                .or_else(|| self.env().get(resolved_source));
+            if let Some(ValueView::ContainerRef(holder)) = source.map(Value::view) {
+                let value_cell = Self::value_cell_of(&holder);
+                Value::store_through_cell(&value_cell, &itemized);
+                Value::container_ref(holder.clone())
+            } else {
+                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                    itemized,
+                )))
+            }
+        } else if source_itemized {
             Value::container_ref_itemized(cell.clone())
         } else {
             Value::container_ref(cell.clone())

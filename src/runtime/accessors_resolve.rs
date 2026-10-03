@@ -742,7 +742,10 @@ impl Interpreter {
             }
         } else if let Some(def) = def {
             self.sub_value_from_function_def(def)
-        } else if core_visible && Self::is_builtin_function(lookup_name) {
+        } else if core_visible
+            && (Self::is_builtin_function(lookup_name)
+                || Self::is_core_code_ref_function(lookup_name))
+        {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if Self::is_mop_macro_function(lookup_name) {
             // The MOP pseudo-methods `WHAT`/`HOW`/`VAR` are also first-class
