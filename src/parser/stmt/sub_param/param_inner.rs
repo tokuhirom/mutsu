@@ -1,5 +1,4 @@
 use crate::ast::ParamDef;
-use crate::parser::expr::expression;
 use crate::parser::helpers::{ws, ws1};
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::value::ValueView;
@@ -927,7 +926,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     {
                         let rest = &rest_ws[1..];
                         let (rest, _) = ws(rest)?;
-                        let (rest, expr) = expression(rest)?;
+                        let (rest, expr) = super::helpers::parse_param_default_expr(rest)?;
                         (rest, Some(expr))
                     } else {
                         (rest_ws, None)
@@ -972,7 +971,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
                     let rest = &rest_ws[1..];
                     let (rest, _) = ws(rest)?;
-                    let (rest, expr) = expression(rest)?;
+                    let (rest, expr) = super::helpers::parse_param_default_expr(rest)?;
                     (rest, Some(expr))
                 } else {
                     (rest_ws, None)
@@ -1026,7 +1025,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (rest, default) = if rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
                 let rest = &rest_ws[1..];
                 let (rest, _) = ws(rest)?;
-                let (rest, expr) = expression(rest)?;
+                let (rest, expr) = super::helpers::parse_param_default_expr(rest)?;
                 (rest, Some(expr))
             } else {
                 (rest_ws, None)
@@ -1372,7 +1371,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     let (rest, mut default) = if rest.starts_with('=') && !rest.starts_with("==") {
         let after_eq = &rest[1..];
         let (expr_start, _) = ws(after_eq)?;
-        let (rest, expr) = expression(expr_start)?;
+        let (rest, expr) = super::helpers::parse_param_default_expr(expr_start)?;
         default_src = expr_start[..expr_start.len() - rest.len()]
             .trim()
             .to_string();
@@ -1439,7 +1438,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         if default.is_none() && rest_ws.starts_with('=') && !rest_ws.starts_with("==") {
             let rest = &rest_ws[1..];
             let (rest, _) = ws(rest)?;
-            let (rest, expr) = expression(rest)?;
+            let (rest, expr) = super::helpers::parse_param_default_expr(rest)?;
             (rest, Some(expr))
         } else {
             (rest_ws, None)

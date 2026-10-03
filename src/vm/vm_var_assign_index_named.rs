@@ -5735,8 +5735,13 @@ impl Interpreter {
                 self.stack.push(result);
             }
             ValueView::HashEntryRef { .. } => {
-                // Resolve the HashEntryRef and assign into the resolved container.
-                let resolved = target.hash_entry_read();
+                // Resolve the HashEntryRef and assign into the resolved
+                // container, vivifying a missing entry into the container the
+                // subscript asks for: an `is rw` routine handing back an
+                // absent element (`sub f() is rw { %h<k> }; f()[0] = 1`)
+                // creates `%h<k>` as an Array, as in rakudo.
+                let resolved = Self::lvalue_object_step_container(&target, is_positional)
+                    .unwrap_or_else(|| target.hash_entry_read());
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);

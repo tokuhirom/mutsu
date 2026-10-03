@@ -702,6 +702,7 @@ impl Interpreter {
             "__mutsu_anon_index_var_meta" => self.builtin_anon_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
             "RUN-MAIN" => self.builtin_run_main(&args),
+            "__mutsu_default_args_to_capture" => self.builtin_default_args_to_capture(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),

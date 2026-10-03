@@ -486,6 +486,28 @@ impl Interpreter {
     /// `terminal` is the chain's final `DeferralEntry::Accessor`; its
     /// `want_container` asks for the attribute's container rather than its
     /// value.
+    /// Whether a `.wrap` wrapper hands its result back as a container (`is
+    /// rw` / `is raw`). A `Method` object found with `.^find_method` (a role's
+    /// `method w($self: |c) is rw`, Staticish's wrappers) carries the callable
+    /// that runs it; its traits are that callable's.
+    // Cost: O(1).
+    fn wrapper_declares_container_return(wrapper: &Value) -> bool {
+        match wrapper.view() {
+            ValueView::Sub(data) => data.declares_container_return(),
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.as_str(), "Method" | "Submethod") => attributes
+                .as_map()
+                .get("__mutsu_method_callable")
+                .is_some_and(|callable| {
+                    matches!(callable.view(), ValueView::Sub(data) if data.declares_container_return())
+                }),
+            _ => false,
+        }
+    }
+
     pub(crate) fn dispatch_wrapped_attribute_accessor(
         &mut self,
         target: Value,
@@ -512,7 +534,7 @@ impl Interpreter {
         *want_container = *want_container
             && chain
                 .iter()
-                .all(|(_, w)| matches!(w.view(), ValueView::Sub(data) if data.declares_container_return()));
+                .all(|(_, w)| Self::wrapper_declares_container_return(w));
         self.push_method_samewith_context(receiver_class, method, &args, Some(target.clone()));
         self.push_wrapped_accessor_dispatch_frame(
             receiver_class,

@@ -97,22 +97,35 @@ pub(crate) fn hash_coercion_odd_error(value: &Value) -> Option<RuntimeError> {
     }
 }
 
+/// Whether a hash initializer's items end with a key that has no value. The
+/// items are consumed in order, as `items_to_hash` does: a Pair or a Hash/Map
+/// in key position stands alone, any other item is a key that takes the next
+/// item as its value *whatever that is* (`'c', {x => 1}` is `c => {x => 1}`).
+// Cost: O(n), n = number of items.
+fn has_dangling_key(items: &[Value]) -> bool {
+    let mut i = 0;
+    while i < items.len() {
+        if matches!(
+            items[i].view(),
+            ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(_)
+        ) {
+            i += 1;
+        } else if i + 1 == items.len() {
+            return true;
+        } else {
+            i += 2;
+        }
+    }
+    false
+}
+
 fn list_odd_error(items: &[Value]) -> Option<RuntimeError> {
     let items: Vec<Value> = items
         .iter()
         .map(unwrap_contained_pair)
         .map(|v| stash_symbols(&v).unwrap_or(v))
         .collect();
-    let singles = items
-        .iter()
-        .filter(|v| {
-            !matches!(
-                v.view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(_)
-            )
-        })
-        .count();
-    (singles % 2 != 0).then(|| make_odd_number_error(&items))
+    has_dangling_key(&items).then(|| make_odd_number_error(&items))
 }
 
 /// The value a hash initializer sees for one list item: an itemized Pair
@@ -166,19 +179,8 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
         .map(unwrap_contained_pair)
         .map(|v| stash_symbols(&v).unwrap_or(v))
         .collect();
-    if check_odd {
-        let non_pair_count = items
-            .iter()
-            .filter(|v| {
-                !matches!(
-                    v.view(),
-                    ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(_)
-                )
-            })
-            .count();
-        if non_pair_count % 2 != 0 {
-            return Err(make_odd_number_error(&items));
-        }
+    if check_odd && has_dangling_key(&items) {
+        return Err(make_odd_number_error(&items));
     }
     let mut map = ValueMap::default();
     let mut iter = items.iter();

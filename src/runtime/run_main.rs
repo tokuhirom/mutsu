@@ -204,11 +204,19 @@ impl Interpreter {
     }
 
     /// Install default `&*ARGS-TO-CAPTURE` / `&*GENERATE-USAGE` dynamics as
-    /// `Sub` values, unless the caller already provided them.
+    /// callables, unless the caller already provided them.
+    ///
+    /// `&*ARGS-TO-CAPTURE` is the real default parser, so a user
+    /// `ARGS-TO-CAPTURE` can rewrite `@args` and delegate to it
+    /// (`&*ARGS-TO-CAPTURE(&main, @new)`, as CSS::Minifier's CLI does).
     fn install_default_main_dynamics(&mut self) {
         if self.env.get("&*ARGS-TO-CAPTURE").is_none() {
-            let sub = self.make_stub_sub("ARGS-TO-CAPTURE");
-            self.env.insert("&*ARGS-TO-CAPTURE".to_string(), sub);
+            let default = Value::routine_parts(
+                crate::symbol::Symbol::intern("GLOBAL"),
+                crate::symbol::Symbol::intern("__mutsu_default_args_to_capture"),
+                false,
+            );
+            self.env.insert("&*ARGS-TO-CAPTURE".to_string(), default);
         }
         if self.env.get("&*GENERATE-USAGE").is_none() {
             let sub = self.make_stub_sub("GENERATE-USAGE");
@@ -216,11 +224,23 @@ impl Interpreter {
         }
     }
 
+    /// The default `&*ARGS-TO-CAPTURE(&main, @args)`: parse `@args` the way
+    /// the implicit MAIN dispatch does, against `&main`'s candidates.
+    // Cost: O(a + c), a = arguments, c = MAIN candidates.
+    pub(crate) fn builtin_default_args_to_capture(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let main = args.first().cloned().unwrap_or(Value::NIL);
+        let raw_values = args.get(1).map(Self::value_to_list).unwrap_or_default();
+        let (_, main_name) = self.run_main_routine_name(&main);
+        Ok(self.default_args_to_capture(&raw_values, &main_name))
+    }
+
     /// Build a minimal named `Sub` value. Used for the default main dynamics so
     /// they satisfy `~~ Sub` and can be introspected.
-    // TODO: give these bodies that delegate to the real default arg parser /
-    // usage generator so a user hook can call `&*ARGS-TO-CAPTURE(...)` to reuse
-    // the default; not yet exercised by any test.
+    // TODO: give `&*GENERATE-USAGE` a body that delegates to the default
+    // usage generator, as `&*ARGS-TO-CAPTURE` now does for the arg parser.
     fn make_stub_sub(&self, name: &str) -> Value {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: crate::symbol::Symbol::intern("GLOBAL"),
