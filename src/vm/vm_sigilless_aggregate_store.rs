@@ -84,14 +84,13 @@ impl Interpreter {
         } else {
             self.locals.get(slot as usize).cloned()
         };
-        if self.stack.last().is_some_and(Value::is_nil) {
-            if let Some(reset) =
+        if self.stack.last().is_some_and(Value::is_nil)
+            && let Some(reset) =
                 self.sigilless_nil_reset_value(code.const_sym(name_idx), bound.as_ref())
-            {
-                self.stack.pop();
-                self.stack.push(reset);
-                return;
-            }
+        {
+            self.stack.pop();
+            self.stack.push(reset);
+            return;
         }
         let Some(aggregate) = bound.map(|v| v.deref_container()) else {
             return;
