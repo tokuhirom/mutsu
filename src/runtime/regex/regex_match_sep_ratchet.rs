@@ -27,7 +27,7 @@ impl Interpreter {
         current_caps: &RegexCaptures,
     ) -> Vec<(usize, RegexCaptures)> {
         let sep = token.separator.as_ref().expect("separator present");
-        let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
+        let Some((min, max)) = self.separated_quantifier_bounds(token, start, current_caps) else {
             return Vec::new();
         };
         // The chain is scanned possessively up to `max` (or as far as the input

@@ -125,6 +125,14 @@ pub(super) enum RxOp {
         min: u32,
         max: u32,
     },
+    /// [`RxOp::ZeroIter`] with its bounds read from registers (`usize::MAX`:
+    /// no maximum), for a nullable `** { … }` body.
+    ZeroIterDyn {
+        ctr: u16,
+        start: u16,
+        min: u16,
+        max: u16,
+    },
     /// `pos` has moved past `regs[start]` (a separated quantifier's step).
     Advanced {
         start: u16,
@@ -133,6 +141,17 @@ pub(super) enum RxOp {
     AtLeast {
         ctr: u16,
         min: u32,
+    },
+    /// `regs[ctr] >= regs[min]` (a `** { … } % sep` quantifier's minimum).
+    AtLeastReg {
+        ctr: u16,
+        min: u16,
+    },
+    /// `regs[ctr] <= regs[max]` (`usize::MAX`: no bound), for the first atom
+    /// of a `** { … } % sep` quantifier, which is not under its loop head.
+    AtMostReg {
+        ctr: u16,
+        max: u16,
     },
     /// Open a capture level for a `( … )` whose body captures (`rx_levels`).
     OpenCapture,

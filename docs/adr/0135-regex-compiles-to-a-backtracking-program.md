@@ -1199,6 +1199,35 @@ Release builds, best of five, against `main`: `bench-grammar-parse{,-big,-deep}`
 `bench-grammar-json-tiny` and `bench-yaml-parse{,-big}` are unchanged within noise. These grammars
 use `rule`s, so their calls are now uncommitted wherever whitespace follows them.
 
+### Slice E, sixteenth part: the last whole-pattern declines
+
+Five decline reasons go:
+
+- **`separator-alias`.** A name on a separated quantifier's own token (`<alpha>+ % ','`,
+  `<x=alpha>+ % ','`) is applied over each atom's span with a `Named` op. The walk's chain applies
+  it per iteration in the same way. The iterations file it in place or in their own levels, like
+  any other name under the quantifier.
+- **`repeat-code` with a separator.** `atom ** { code } % sep` evaluates its count where the
+  quantifier is reached (`RepeatCount`), as `x ** { code }` does. The bounds are then checked
+  against registers: the loop head runs as `RepeatDyn` over a zero minimum, the first atom (outside
+  the loop) is checked against the maximum (`AtMostReg`), and the exits against the minimum
+  (`AtLeastReg`). The walk's separated quantifier now evaluates the count through
+  `regex_repeat_count`, the recorded call `RepeatCount` uses, so D6 compares the two.
+- **`repeat-code-nullable`.** A body that can match empty under `** { code }` gets a `ZeroIterDyn`
+  guard, which reads the bounds from the `RepeatCount` registers.
+- **`conjunction-backref`.** A backreference in a `&` branch reads the enclosing level, as code
+  there does. The first branch opens an inline level, and the other branches' nested runs are
+  seeded with the same view.
+- **`goal-match-code`.** Both sides of `~` belong to the enclosing regex, in the walk (the
+  outer-captures seed) and in rakudo (one cursor). A side that reads enclosing state or holds a
+  backreference gets an inline level instead of an isolated one. A side matched in place sees the
+  enclosing captures as they are.
+
+Survey (`t/grammar`, `t/regex`, `t/modules`): the only decline left is `seqalt-nullable-ratchet`,
+which the fifteenth part removes. With both parts, `declined` is 0 over these directories.
+`t/regex/regex-last-declines-compiled.t` pins rakudo's values. The patterns run with no walk
+under `MUTSU_RX_DIFF=1` too.
+
 ### Reproducing §2
 
 ```raku
