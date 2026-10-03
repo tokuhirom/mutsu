@@ -191,7 +191,7 @@ impl Interpreter {
     /// iteration still restores the value from before the loop, matching how the
     /// surrounding shadow-restore records a name once per scope.
     fn save_type_meta_for_scope_exit(&mut self, name: &str) {
-        if self.loop_local_saved_env.is_empty() {
+        if self.topic_state.loop_local_saved_env.is_empty() {
             return;
         }
         let name_sym = crate::symbol::Symbol::intern(name);
@@ -206,6 +206,7 @@ impl Interpreter {
             // re-declares on every iteration takes this exit on all but the
             // first, which is the shape the save exists for (#8898).
             if self
+                .topic_state
                 .loop_local_saved_env
                 .last()
                 .is_some_and(|scope| scope.contains_key(key.as_str()))
@@ -213,7 +214,7 @@ impl Interpreter {
                 continue;
             }
             let prev = self.env().get_sym(key).cloned();
-            if let Some(scope) = self.loop_local_saved_env.last_mut() {
+            if let Some(scope) = self.topic_state.loop_local_saved_env.last_mut() {
                 scope.insert(key.as_str().to_string(), prev);
             }
         }

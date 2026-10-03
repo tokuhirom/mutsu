@@ -34,7 +34,7 @@ impl Interpreter {
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let chunk_mode = !spec.multi_param_names.is_empty();
-        let saved_topic_source = self.topic_source_var.take();
+        let saved_topic_source = self.topic_state.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
         // ADR-0052 Slice 1: this fast path only ever runs in sink position
         // (`!spec.collect`, see `vm_for_loop_dispatch.rs`), so it used to
@@ -167,7 +167,7 @@ impl Interpreter {
         'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
             crate::alloc_scope_named!(_sc_for_bind, "op:ForLoop:iter-bind");
             let item = Value::int(i);
-            self.topic_source_var = None;
+            self.topic_state.topic_source_var = None;
 
             // `rebind_sym`: from the second iteration on, the key is already
             // in the overlay, so this is an overwrite rather than an insert.
@@ -305,7 +305,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        self.topic_source_var = saved_topic_source;
+                        self.topic_state.topic_source_var = saved_topic_source;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         // Gather suspend: pop (body resumes and re-pushes).
                         self.pop_loop_local_scope(code);
@@ -344,7 +344,7 @@ impl Interpreter {
         if !was_topic_readonly {
             self.unmark_readonly("_");
         }
-        self.topic_source_var = saved_topic_source;
+        self.topic_state.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         // Defer restoring the named loop param's prior binding to the paired
         // `RestoreForParam` opcode (after the post/LAST phasers), matching
@@ -352,7 +352,7 @@ impl Interpreter {
         // `leave` (the early `return Err(...)` paths above skip this, so the
         // push/pop stay balanced as the frame unwinds past `RestoreForParam`).
         if let Some(entry) = saved_param {
-            self.for_param_restore_stack.push(entry);
+            self.topic_state.for_param_restore_stack.push(entry);
         }
         self.pop_loop_local_scope(code);
         Ok(())

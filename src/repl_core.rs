@@ -91,7 +91,7 @@ pub(crate) fn process_line(
     // returned it. Only the REPL re-enters `run` on one interpreter, so this
     // reset belongs here rather than in `run` itself.
     interpreter.last_value.take();
-    interpreter.last_topic_value.take();
+    interpreter.topic_state.last_topic_value.take();
     // The line's final statement is what the prompt displays, so it is a value
     // position rather than sink context — the same rule EVAL follows. Without
     // this, typing `1 + 2 * 3` answers 7 *and* warns "Useless use of ... in

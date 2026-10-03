@@ -412,7 +412,12 @@ impl Interpreter {
         // passes through unchanged; any other value (e.g. a Seq of pairs from a
         // `%a = %reset.pairs` reset) is coerced to the binding's *current*
         // QuantHash type rather than collapsing to a plain Hash.
-        if self.quanthash_bind_params.iter().any(|n| n == name) {
+        if self
+            .topic_state
+            .quanthash_bind_params
+            .iter()
+            .any(|n| n == name)
+        {
             if matches!(
                 value.view(),
                 ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)

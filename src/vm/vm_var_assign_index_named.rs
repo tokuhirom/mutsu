@@ -3161,7 +3161,7 @@ impl Interpreter {
             // back at the correct index; replacing the whole container with the
             // single topic value here would corrupt the source.
             if var_name == "_"
-                && let Some(ref source_var) = self.topic_source_var
+                && let Some(ref source_var) = self.topic_state.topic_source_var
                 && !source_var.starts_with('@')
                 && !source_var.starts_with('%')
             {

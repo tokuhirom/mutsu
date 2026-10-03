@@ -285,7 +285,7 @@ impl Interpreter {
 
     /// Override the source variable used when mutating `$_` in Interpreter execution.
     pub(crate) fn set_topic_source_var(&mut self, name: Option<String>) {
-        self.topic_source_var = name;
+        self.topic_state.topic_source_var = name;
     }
 
     /// A `with LITERAL { ... }` block desugars to `$_ = (literal marked

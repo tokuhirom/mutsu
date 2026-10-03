@@ -84,7 +84,7 @@ impl Interpreter {
         if Self::is_topic_ro_assignment(val) {
             return;
         }
-        let Some(source_name) = self.topic_source_var.clone() else {
+        let Some(source_name) = self.topic_state.topic_source_var.clone() else {
             return;
         };
         // A sigiled "$h" tag is the deref'd-container source (`for @$h`): the

@@ -855,7 +855,7 @@ impl Interpreter {
             self.env_mut().insert(format!(".{}", attr), val.clone());
         }
         if name == "_"
-            && let Some(ref source_var) = self.topic_source_var
+            && let Some(ref source_var) = self.topic_state.topic_source_var
             && !source_var.starts_with('@')
             && !source_var.starts_with('%')
             // Sigiled "$h" = deref'd-container tag (`for @$h`); the loop's

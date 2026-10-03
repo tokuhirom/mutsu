@@ -174,18 +174,22 @@ impl Interpreter {
     /// `rw_param_names` are the bare names this loop binds as genuinely **rw**
     /// parameters — the ones that alias the source element rather than copying
     /// it. Consulted by `freeze_readonly_owned_captures`; see
-    /// [`Interpreter::active_loop_rw_param_names`].
+    /// [`TopicState::active_loop_rw_param_names`](crate::runtime::topic_state::TopicState::active_loop_rw_param_names).
     pub(super) fn push_loop_local_scope(
         &mut self,
         param_names: rustc_hash::FxHashSet<String>,
         rw_param_names: rustc_hash::FxHashSet<String>,
     ) {
-        self.loop_local_vars
+        self.topic_state
+            .loop_local_vars
             .push(crate::runtime::NameSet::default());
-        self.loop_local_saved_env
+        self.topic_state
+            .loop_local_saved_env
             .push(std::collections::HashMap::new());
-        self.active_loop_param_names.push(param_names);
-        self.active_loop_rw_param_names.push(rw_param_names);
+        self.topic_state.active_loop_param_names.push(param_names);
+        self.topic_state
+            .active_loop_rw_param_names
+            .push(rw_param_names);
     }
 
     /// Pop the loop-body declaration scope pushed by `push_loop_local_scope` and
@@ -197,10 +201,10 @@ impl Interpreter {
     /// gave a shadowing declaration a fresh slot, so the slot half is isolated;
     /// any outer slot sharing the name re-syncs from the restored env on next read.
     pub(super) fn pop_loop_local_scope(&mut self, code: &CompiledCode) {
-        self.loop_local_vars.pop();
-        self.active_loop_param_names.pop();
-        self.active_loop_rw_param_names.pop();
-        if let Some(saved) = self.loop_local_saved_env.pop() {
+        self.topic_state.loop_local_vars.pop();
+        self.topic_state.active_loop_param_names.pop();
+        self.topic_state.active_loop_rw_param_names.pop();
+        if let Some(saved) = self.topic_state.loop_local_saved_env.pop() {
             for (name, val) in saved {
                 // A `None` entry is a body-local `my` that shadowed NOTHING: the
                 // name did not exist before the loop, so the block's exit must
@@ -358,13 +362,14 @@ impl Interpreter {
         // (not gated on `block_declared`/`env_had_before`/`state_slots`
         // below, which decide RESET behavior, not whether a read is safe) and
         // keyed by exact slot rather than by name.
-        if !self.given_pointy_capture_slots.is_empty() {
+        if !self.topic_state.given_pointy_capture_slots.is_empty() {
             for &slot in owned_slots {
                 if let Some(pos) = self
+                    .topic_state
                     .given_pointy_capture_slots
                     .iter()
                     .position(|&s| s == slot)
-                    && let Some(entry) = self.given_pointy_captured.get_mut(pos)
+                    && let Some(entry) = self.topic_state.given_pointy_captured.get_mut(pos)
                 {
                     *entry = Some(self.locals[slot].clone().into_deref());
                 }
@@ -534,9 +539,9 @@ impl Interpreter {
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
                 ));
             }
-            self.loop_cond_active = true;
+            self.topic_state.loop_cond_active = true;
             let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
-            self.loop_cond_active = false;
+            self.topic_state.loop_cond_active = false;
             if let Err(e) = cond_res {
                 self.pop_loop_local_scope(code);
                 return Err(e);

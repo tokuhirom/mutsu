@@ -56,15 +56,15 @@ impl Interpreter {
             })
         });
         if let Some(slot) = pointy_capture_slot {
-            self.given_pointy_capture_slots.push(slot);
-            self.given_pointy_captured.push(None);
+            self.topic_state.given_pointy_capture_slots.push(slot);
+            self.topic_state.given_pointy_captured.push(None);
         }
 
         let saved_topic = self.env().get("_").cloned();
         let saved_when = self.when_matched();
-        let saved_topic_source = self.topic_source_var.take();
-        let saved_container_source = self.topic_container_source.take();
-        let saved_element_source = self.element_source.take();
+        let saved_topic_source = self.topic_state.topic_source_var.take();
+        let saved_container_source = self.topic_state.topic_container_source.take();
+        let saved_element_source = self.topic_state.element_source.take();
         // A writable `given`/`with` topic must override an inherited readonly
         // mark on `$_`. An outer `for 1..N` marks its bare-value topic
         // immutable, but `with $x { $_ = ... }` aliases the mutable `$x` and
@@ -85,7 +85,7 @@ impl Interpreter {
         // `topic_source_var` (that is for whole-variable writeback).
         let element_source = saved_element_source;
         if element_source.is_none() {
-            self.topic_source_var = container_binding.clone();
+            self.topic_state.topic_source_var = container_binding.clone();
         }
         // A whole-container topic (`given @a` / `with %h`): `$_` aliases the whole
         // container, so a `.=` metaop on the topic (TopicDotAssign) writes the
@@ -95,7 +95,7 @@ impl Interpreter {
             && let Some(src) = &container_binding
             && (src.starts_with('@') || src.starts_with('%'))
         {
-            self.topic_container_source = Some(src.clone());
+            self.topic_state.topic_container_source = Some(src.clone());
         }
         // The value the topic was bound to on entry. For an element-source topic
         // (`given $x<k>` / `given @a[i]`), the writeback below re-stores `$_` into
@@ -163,7 +163,7 @@ impl Interpreter {
         // element writeback below would flush THAT (not the real topic) back to the
         // source. Drain any such leftover scopes here, restoring `$_` and
         // `topic_source_var` to the given's own topic before the writeback reads it.
-        let saved_pointy_depth = self.topic_source_save_stack.len();
+        let saved_pointy_depth = self.topic_state.topic_source_save_stack.len();
         let restore = move |this: &mut Self, write_back: bool| {
             // Body execution (including any nested `BlockLocalScope`) has
             // finished, so both stacks are safe to pop — pushed above in
@@ -172,15 +172,16 @@ impl Interpreter {
             // filled in by `exec_block_local_scope_op` right before it
             // Nil-reset the param's own slot.
             let captured = if pointy_capture_slot.is_some() {
-                this.given_pointy_capture_slots.pop();
-                this.given_pointy_captured.pop().flatten()
+                this.topic_state.given_pointy_capture_slots.pop();
+                this.topic_state.given_pointy_captured.pop().flatten()
             } else {
                 None
             };
-            while this.topic_source_save_stack.len() > saved_pointy_depth {
-                let (saved_topic, saved_source) = this.topic_source_save_stack.pop().unwrap();
+            while this.topic_state.topic_source_save_stack.len() > saved_pointy_depth {
+                let (saved_topic, saved_source) =
+                    this.topic_state.topic_source_save_stack.pop().unwrap();
                 this.env_mut().insert("_".to_string(), saved_topic);
-                this.topic_source_var = saved_source;
+                this.topic_state.topic_source_var = saved_source;
             }
             if mark_ro {
                 this.unmark_readonly("_");
@@ -254,8 +255,8 @@ impl Interpreter {
                     this.update_local_if_exists(code, p, &Value::NIL);
                 }
             }
-            this.topic_source_var = saved_topic_source.clone();
-            this.topic_container_source = saved_container_source.clone();
+            this.topic_state.topic_source_var = saved_topic_source.clone();
+            this.topic_state.topic_container_source = saved_container_source.clone();
             // `element_source` is a one-shot signal set by `TagElementSource`
             // immediately before this `Given`, so consuming it must clear it (not
             // restore the just-set value). Re-setting `saved_element_source` here
@@ -263,7 +264,7 @@ impl Interpreter {
             // whole-container writeback through `write_back_element_source` and
             // dropped the mutation (a non-element `given @a -> @p` after a
             // `given %h<k>` would not propagate `@p.push`).
-            this.element_source = None;
+            this.topic_state.element_source = None;
         };
 
         let mut inner_ip = body_start;
@@ -328,7 +329,7 @@ impl Interpreter {
         // statement-position `Given`'s handling (`exec_given_op`). This is a
         // one-shot signal set by `TagElementSource` immediately before this op,
         // so it is cleared (not restored) once consumed.
-        let element_source = self.element_source.take();
+        let element_source = self.topic_state.element_source.take();
         let element_orig = element_source.is_some().then(|| topic.clone());
         // Consume the topic's `TagContainerRef` signal (emitted right before this
         // op by `do given @c`). It must NOT survive into the body: a nested
@@ -341,14 +342,14 @@ impl Interpreter {
         // dropping the signal is sufficient; it only scopes topic-source tags to
         // the body and is restored afterwards.
         let saved_container_ref = self.take_container_ref_for(code);
-        let saved_topic_source = self.topic_source_var.take();
-        let saved_container_source = self.topic_container_source.take();
+        let saved_topic_source = self.topic_state.topic_source_var.take();
+        let saved_container_source = self.topic_state.topic_container_source.take();
         if let Some((src, _)) = &saved_container_ref
             && element_source.is_none()
         {
-            self.topic_source_var = Some(src.clone());
+            self.topic_state.topic_source_var = Some(src.clone());
             if src.starts_with('@') || src.starts_with('%') {
-                self.topic_container_source = Some(src.clone());
+                self.topic_state.topic_container_source = Some(src.clone());
             }
         }
         if let Some(slot) = topic_local_slot {
@@ -372,7 +373,7 @@ impl Interpreter {
                 // method borrow of `e` cannot coexist with a partial move).
                 // The slot was resolved in the frame that raised the signal;
                 // keep it only where it names the same variable here.
-                self.container_ref_var = e.take_container_ref().map(|(n, slot)| {
+                self.topic_state.container_ref_var = e.take_container_ref().map(|(n, slot)| {
                     let slot = slot.filter(|&s| code.locals.get(s as usize) == Some(&n));
                     (n, slot, Self::resume_code_fp(code))
                 });
@@ -392,9 +393,9 @@ impl Interpreter {
                 if let Some(slot) = topic_local_slot {
                     self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
                 }
-                self.topic_source_var = saved_topic_source;
-                self.topic_container_source = saved_container_source;
-                self.element_source = None;
+                self.topic_state.topic_source_var = saved_topic_source;
+                self.topic_state.topic_container_source = saved_container_source;
+                self.topic_state.element_source = None;
                 return Err(e);
             }
         }
@@ -418,9 +419,9 @@ impl Interpreter {
         if let Some(slot) = topic_local_slot {
             self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
         }
-        self.topic_source_var = saved_topic_source;
-        self.topic_container_source = saved_container_source;
-        self.element_source = None;
+        self.topic_state.topic_source_var = saved_topic_source;
+        self.topic_state.topic_container_source = saved_container_source;
+        self.topic_state.element_source = None;
         self.stack.push(last);
         *ip = end;
         Ok(())

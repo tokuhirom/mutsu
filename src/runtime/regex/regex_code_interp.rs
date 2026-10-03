@@ -133,7 +133,7 @@ impl Interpreter {
                 env.insert(name, value);
             }
         }
-        if self.regex_topic_pinned == 0 {
+        if self.topic_state.regex_topic_pinned == 0 {
             env.insert("_".to_string(), Value::str(target.to_string()));
         } else if let Some(topic) = self.env.get("_") {
             env.insert("_".to_string(), topic.clone());

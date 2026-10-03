@@ -68,13 +68,17 @@ impl Interpreter {
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
-            saved_loop_local_vars: Some(self.loop_local_vars.push_frame()),
-            saved_loop_local_saved_env: Some(self.loop_local_saved_env.push_frame()),
+            saved_loop_local_vars: Some(self.topic_state.loop_local_vars.push_frame()),
+            saved_loop_local_saved_env: Some(self.topic_state.loop_local_saved_env.push_frame()),
             saved_block_declared_vars: Some(self.block_declared_vars.push_frame()),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
-            saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
-            saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
+            saved_active_loop_param_names: Some(
+                self.topic_state.active_loop_param_names.push_frame(),
+            ),
+            saved_active_loop_rw_param_names: Some(
+                self.topic_state.active_loop_rw_param_names.push_frame(),
+            ),
             saved_pending_caller_var_writeback: std::mem::take(
                 &mut self.pending_caller_var_writeback,
             ),
@@ -105,13 +109,17 @@ impl Interpreter {
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
-            saved_loop_local_vars: Some(self.loop_local_vars.push_frame()),
-            saved_loop_local_saved_env: Some(self.loop_local_saved_env.push_frame()),
+            saved_loop_local_vars: Some(self.topic_state.loop_local_vars.push_frame()),
+            saved_loop_local_saved_env: Some(self.topic_state.loop_local_saved_env.push_frame()),
             saved_block_declared_vars: Some(self.block_declared_vars.push_frame()),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
-            saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
-            saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
+            saved_active_loop_param_names: Some(
+                self.topic_state.active_loop_param_names.push_frame(),
+            ),
+            saved_active_loop_rw_param_names: Some(
+                self.topic_state.active_loop_rw_param_names.push_frame(),
+            ),
             saved_pending_caller_var_writeback: std::mem::take(
                 &mut self.pending_caller_var_writeback,
             ),
@@ -137,10 +145,10 @@ impl Interpreter {
         self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(caller) = frame.saved_loop_local_vars.take() {
-            self.loop_local_vars.pop_frame(caller);
+            self.topic_state.loop_local_vars.pop_frame(caller);
         }
         if let Some(caller) = frame.saved_loop_local_saved_env.take() {
-            self.loop_local_saved_env.pop_frame(caller);
+            self.topic_state.loop_local_saved_env.pop_frame(caller);
         }
         if let Some(caller) = frame.saved_block_declared_vars.take() {
             self.block_declared_vars.pop_frame(caller);
@@ -148,10 +156,12 @@ impl Interpreter {
         self.frame_authoritative = std::mem::take(&mut frame.saved_frame_authoritative);
         self.frame_owned = std::mem::take(&mut frame.saved_frame_owned);
         if let Some(caller) = frame.saved_active_loop_param_names.take() {
-            self.active_loop_param_names.pop_frame(caller);
+            self.topic_state.active_loop_param_names.pop_frame(caller);
         }
         if let Some(caller) = frame.saved_active_loop_rw_param_names.take() {
-            self.active_loop_rw_param_names.pop_frame(caller);
+            self.topic_state
+                .active_loop_rw_param_names
+                .pop_frame(caller);
         }
         self.exit_readonly_frame(frame.readonly_mark);
         self.rw_param_rebinds = std::mem::take(&mut frame.saved_rw_param_rebinds);

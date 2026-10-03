@@ -3045,7 +3045,7 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
-                self.last_topic_value = Some(val.clone());
+                self.topic_state.last_topic_value = Some(val.clone());
                 // Pre-interned: `insert("_".to_string(), ..)` allocated and
                 // re-interned the key on every block value.
                 self.env_mut().insert_sym(crate::symbol::wk::topic(), val);
@@ -3066,12 +3066,12 @@ impl Interpreter {
             // Cost: O(1) (one env probe of `_`).
             OpCode::SaveTopic => {
                 let current = self.env().get("_").cloned().unwrap_or(Value::NIL);
-                self.topic_save_stack.push(current);
+                self.topic_state.topic_save_stack.push(current);
                 *ip += 1;
             }
             // Cost: O(1).
             OpCode::RestoreTopic => {
-                if let Some(saved) = self.topic_save_stack.pop() {
+                if let Some(saved) = self.topic_state.topic_save_stack.pop() {
                     self.env_mut().insert("_".to_string(), saved);
                 }
                 *ip += 1;
@@ -3079,16 +3079,19 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::EnterPointyTopic => {
                 let saved_topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
-                let saved_source = self.topic_source_var.take();
-                self.topic_source_save_stack
+                let saved_source = self.topic_state.topic_source_var.take();
+                self.topic_state
+                    .topic_source_save_stack
                     .push((saved_topic, saved_source));
                 *ip += 1;
             }
             // Cost: O(1).
             OpCode::ExitPointyTopic => {
-                if let Some((saved_topic, saved_source)) = self.topic_source_save_stack.pop() {
+                if let Some((saved_topic, saved_source)) =
+                    self.topic_state.topic_source_save_stack.pop()
+                {
                     self.env_mut().insert("_".to_string(), saved_topic);
-                    self.topic_source_var = saved_source;
+                    self.topic_state.topic_source_var = saved_source;
                 }
                 *ip += 1;
             }
@@ -5243,15 +5246,17 @@ impl Interpreter {
             // Cost: O(m), m = bytes of the variable name (copied).
             OpCode::TagContainerRef(name_idx, slot) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.container_ref_var = Some((name, *slot, Self::resume_code_fp(code)));
-                self.container_ref_reversed = false;
+                self.topic_state.container_ref_var =
+                    Some((name, *slot, Self::resume_code_fp(code)));
+                self.topic_state.container_ref_reversed = false;
                 *ip += 1;
             }
             // Cost: O(m), m = bytes of the variable name (copied).
             OpCode::TagContainerRefReversed(name_idx, slot) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.container_ref_var = Some((name, *slot, Self::resume_code_fp(code)));
-                self.container_ref_reversed = true;
+                self.topic_state.container_ref_var =
+                    Some((name, *slot, Self::resume_code_fp(code)));
+                self.topic_state.container_ref_reversed = true;
                 *ip += 1;
             }
             // Cost: O(1) plus the Index read (name copy O(m), m = name bytes).
@@ -5271,7 +5276,7 @@ impl Interpreter {
                 // (Array/Hash/ContainerRef/typed) are handled uniformly.
                 self.stack.push(index.clone());
                 self.exec_index_op_with_positional(positional)?;
-                self.element_source = Some((container, vec![(index, positional)]));
+                self.topic_state.element_source = Some((container, vec![(index, positional)]));
                 *ip += 1;
             }
             // Cost: O(k + d), k = path length (one index op per level, each its own cost),
@@ -5297,7 +5302,7 @@ impl Interpreter {
                     current = self.stack.pop().unwrap_or(Value::NIL);
                 }
                 self.stack.push(current);
-                self.element_source = Some((
+                self.topic_state.element_source = Some((
                     container,
                     indices
                         .into_iter()
@@ -5308,7 +5313,7 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::ClearElementSource => {
-                self.element_source = None;
+                self.topic_state.element_source = None;
                 *ip += 1;
             }
 
@@ -5684,7 +5689,8 @@ impl Interpreter {
                 // that the loop's LAST/post phasers (which needed the param at
                 // its final value) have run. Paired with the push the ForLoop
                 // opcode performs on normal completion.
-                if let Some((name, saved_val, colliding_slot)) = self.for_param_restore_stack.pop()
+                if let Some((name, saved_val, colliding_slot)) =
+                    self.topic_state.for_param_restore_stack.pop()
                 {
                     // A loop param that shares a compile-time local slot with an
                     // enclosing binding of the same bare name overwrote that slot
@@ -5740,7 +5746,7 @@ impl Interpreter {
                 // assignment expression: drop it so the body's writeback
                 // cannot target that unrelated variable.
                 if !*tagged_source {
-                    self.container_ref_var = None;
+                    self.topic_state.container_ref_var = None;
                 }
                 self.exec_given_op(
                     code,

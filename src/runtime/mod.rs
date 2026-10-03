@@ -1026,6 +1026,7 @@ mod sprintf_validate;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
 pub(crate) mod thread_sharing;
+pub(crate) mod topic_state;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
@@ -2720,15 +2721,6 @@ pub struct Interpreter {
     /// name key would collide for multis and same-named parameters.
     why_object_cache: HashMap<u64, Value>,
     type_metadata: std::sync::Arc<HashMap<String, ValueMap>>,
-    /// `Box<Cell<bool>>`-backed (not a plain `bool`, and not a bare `Cell`):
-    /// read/written through the `when_matched()`/`set_when_matched()`
-    /// accessors below AND directly by `vm_call_state_guard::WhenMatchedGuard`,
-    /// whose `Drop` impl restores it via a raw pointer into this separate heap
-    /// allocation -- immune to Stacked Borrows retags of `Interpreter`'s own
-    /// memory from `&mut self` calls made after the guard was constructed
-    /// (see that module's doc comment for why a bare `Cell` field is not
-    /// enough).
-    pub(crate) when_matched: Box<Cell<bool>>,
     block_scope_depth: usize,
     /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
@@ -3961,56 +3953,6 @@ pub struct Interpreter {
     /// call frames like `frame_authoritative`, emptied on every other frame
     /// push.
     pub(crate) frame_owned: Vec<crate::symbol::Symbol>,
-    pub(crate) in_smartmatch_rhs: bool,
-    pub(crate) transliterate_in_smartmatch: bool,
-    pub(crate) substitution_in_smartmatch: bool,
-    /// How many regexes with a captured `$_` are being matched right now
-    /// (`install_regex_closure_scope`). While non-zero, `$_` inside the regex
-    /// is that captured topic, not the match subject.
-    pub(crate) regex_topic_pinned: u32,
-    pub(crate) last_topic_value: Option<Value>,
-    pub(crate) topic_save_stack: Vec<Value>,
-    /// Saved `$_` + `topic_source_var` for a pointy-topic scope (`if COND -> $_`,
-    /// `with COND -> $_`). The pointy binding introduces a FRESH lexical `$_`
-    /// that shadows an enclosing `given`'s topic, so its writes must NOT flow
-    /// back to the given's source variable — `EnterPointyTopic` saves + clears
-    /// `topic_source_var` for the block, `ExitPointyTopic` restores it.
-    pub(crate) topic_source_save_stack: Vec<(Value, Option<String>)>,
-    /// The named container the current topic/loop source came from
-    /// (`TagContainerRef`), paired with its compile-time-baked local slot
-    /// (§1.5; `None` = non-local or runtime-derived) and the fingerprint of
-    /// the `CompiledCode` that set it (`resume_code_fp`). The slot lets the
-    /// for/given container writeback target the exact `locals` slot when
-    /// shadow slots are active, instead of the by-name `position` search.
-    /// The fingerprint scopes the signal to its own frame: the tag is always
-    /// emitted immediately before the for/given op that consumes it, in the
-    /// SAME code object, so consumers (`take_container_ref_for`) discard a
-    /// tag whose fingerprint does not match — a leftover from a callee frame
-    /// (e.g. a module method's own `for @x` loop) would otherwise be mistaken
-    /// for the caller's loop source and its slot would index the WRONG frame's
-    /// locals (Text::CSV t/90_csv.t 507-508: `method CSV`'s `@in` tag, slot 28
-    /// in the method frame, made the caller's untagged `for in () -> $in` loop
-    /// write its items over the mainline's slot 28).
-    pub(crate) container_ref_var: Option<(String, Option<u32>, usize)>,
-    pub(crate) container_ref_reversed: bool,
-    pub(crate) topic_source_var: Option<String>,
-    /// The `@`/`%` source variable when `$_` is a whole-container topic
-    /// (`given @a` / `with %h`), where `$_` aliases the entire container. A `.=`
-    /// metaop on the topic (`TopicDotAssign`) writes the reassigned `$_` straight
-    /// through to this source with container-assignment coercion. Distinct from
-    /// `topic_source_var`, which a `for @a` element loop also sets but where `$_`
-    /// is a single element (handled by the per-element writeback, not this).
-    pub(crate) topic_container_source: Option<String>,
-    pub(crate) element_source: Option<(String, Vec<(Value, bool)>)>,
-    pub(crate) quanthash_bind_params: Vec<String>,
-    /// Deferred restore of a single named for-loop param's prior binding, applied
-    /// by `RestoreForParam` after the loop's LAST/post phasers. Tuple is
-    /// `(name, saved_env_value, colliding_local_slot)`: the slot is `Some` when
-    /// the loop param shares a compile-time local slot with an enclosing binding
-    /// of the same bare name (`my \x = 10; for ... -> \x { }`), so the restore
-    /// must write the saved value back through that slot too — otherwise a later
-    /// `GetLocal` read of the outer name sees the loop's last iteration value.
-    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>, Option<u32>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
     /// Calls left before the next ADR-0100 native-stack headroom check.
     ///
@@ -4369,68 +4311,6 @@ pub struct Interpreter {
     /// reads them.
     pub(crate) user_declared_classes: std::sync::Arc<std::collections::HashSet<String>>,
     pub(crate) block_declared_vars: ScopeStack<NameSet>,
-    /// Local-frame slot indices of `given`/`with` pointy-topic parameters
-    /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
-    /// `Given`/`With` op still needs the slot's final value after its body
-    /// finishes. The pointy param's own `VarDecl` makes
-    /// `exec_block_local_scope_op` treat it as an ordinary vanishing
-    /// block-local `my`, Nil-ing its slot on block exit (and, when the name
-    /// shadows an outer variable, `pop_loop_local_scope` may instead
-    /// overwrite the slot with the outer binding's restored value) — both of
-    /// which run BEFORE the enclosing op's writeback can read it, and a
-    /// scalar pointy param's live value has NO other home by then (a plain
-    /// scalar lexical skips its env mirror under the `(B)` per-store
-    /// env-write gate, see `docs/lexical-scope-slot-campaign.md`). So
-    /// `exec_block_local_scope_op` captures each protected slot's live value
-    /// into `given_pointy_captured` unconditionally, right after body
-    /// execution finishes and before either of those two exit paths can
-    /// touch it.
-    ///
-    /// Keyed by exact SLOT index, not by name/symbol: two nested `given`s can
-    /// bind the SAME name (`given $a -> $v { given $b -> $v {...} }`), each
-    /// getting its own distinct compiled slot under shadow slots, and a
-    /// pointy param can also shadow an outer variable of the same name
-    /// (`given 5 -> $x {...}` inside `my $x = 1`) — slot identity is the only
-    /// thing that disambiguates either case; name-based matching captured
-    /// from (or reset) the wrong declaration's slot in both. `exec_given_op`
-    /// determines its own pointy param's slot by peeking the compiled body
-    /// for the first `SetLocalDecl`, which is always that param's own
-    /// synthetic declaration (`pointy_topic_bind` always inserts it as the
-    /// body's first statement) — found before any nested construct's own
-    /// declarations, so it is unambiguous even under same-name nesting.
-    pub(crate) given_pointy_capture_slots: Vec<usize>,
-    /// Parallel stack to `given_pointy_capture_slots`: the captured final value for
-    /// each active `given`/`with` pointy param's slot, filled in by
-    /// `exec_block_local_scope_op` (`None` until then) and consumed by
-    /// `exec_given_op`'s writeback.
-    pub(crate) given_pointy_captured: Vec<Option<Value>>,
-    pub(crate) loop_local_vars: ScopeStack<NameSet>,
-    /// Names currently bound as for-loop parameters in this frame chain, one
-    /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
-    /// env keys. Consulted by `block_captured_scalars` only; never persisted.
-    pub(crate) active_loop_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
-    /// Parallel to [`Self::active_loop_param_names`], for the parameters that
-    /// **alias** rather than copy: the bare names the enclosing `for` loops
-    /// currently bind as genuinely rw parameters (`is rw`, a `<->` block, a
-    /// sigilless `\v`, a `.kv` value slot).
-    ///
-    /// An rw parameter is the source element's own container, so a closure over
-    /// it reads *through* it and a later write to the element is visible
-    /// (`for @a -> $x is rw, $y is rw { $c = -> { $x } }; @a[0] = 99; $c()` is
-    /// `99`). `freeze_readonly_owned_captures` consults this to leave such a
-    /// name alone: a MULTI-parameter loop binds through
-    /// `build_for_bind_stmts`' declaration prefix, which registers the name as
-    /// loop-local, and the freeze would otherwise deep-deref the element cell
-    /// into a per-iteration snapshot. A single-parameter rw loop binds natively
-    /// and never registers, so it was always right -- this is what makes the two
-    /// forms agree.
-    ///
-    /// Runtime-scoped, not a per-`CompiledCode` name set: names are reused
-    /// across the loops of one compilation unit, so a compile-time set would let
-    /// one loop's `is rw` exempt an unrelated later loop's same-named *non-rw*
-    /// parameter (measured: `t/for-loop-element-alias.t`'s per-iteration
-    /// identity rows).
-    pub(crate) active_loop_rw_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
     /// Names of every `constant $name = ...` scalar ever declared in this run
     /// (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
     /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
@@ -4446,15 +4326,6 @@ pub struct Interpreter {
     /// pays the removal) or "was once a constant" (pays it — still correct,
     /// just no longer free to skip for THAT name).
     pub(crate) constant_var_names_seen: rustc_hash::FxHashSet<String>,
-    /// Per loop-body scope: what each body-local `my` name must be restored to
-    /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
-    /// binding's value); `None` means the name did not exist before the loop, so
-    /// the entry must be REMOVED — otherwise a body-local `my` outlives its block
-    /// as an env key, which is how `HTTP::HPACK`'s Huffman-table `my int $i`
-    /// stayed visible process-wide and was later merged over an unrelated frame's
-    /// loop variable.
-    pub(crate) loop_local_saved_env: ScopeStack<HashMap<String, Option<Value>>>,
-    pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
     /// Stack of captured ENTER-phaser values for blocks whose textually-last
     /// statement is an ENTER phaser (its entry-time value becomes the block
@@ -4508,6 +4379,9 @@ pub struct Interpreter {
     /// Cross-thread variable sharing and lock bookkeeping (the `threads`
     /// subsystem, ADR-10779).
     pub(crate) threads: thread_sharing::ThreadSharing,
+    /// Topic, given/when and for/loop bookkeeping (the `topic` subsystem,
+    /// ADR-10779).
+    pub(crate) topic_state: topic_state::TopicState,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
