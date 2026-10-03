@@ -647,33 +647,24 @@ impl Interpreter {
                 // nominal check, so skip the arms below as they always have.
             } else if let Some((target, source)) = parse_coercion_type(&resolved_constraint) {
                 // Coercion type: check source type if specified, then coerce.
-                // A `T(S)` parameter accepts a value that is already a `T`
-                // (no coercion needed) as well as an `S` (coerced via `.T`),
-                // so only reject a value that matches neither.
-                if let Some(src) = source
-                    && !self.type_matches_value(src, &value)
-                    && !self.type_matches_value(target, &value)
-                {
-                    return Err(self
-                        .typecheck_binding_parameter_failure(
-                            &param_display_name(pd),
-                            &resolved_constraint,
-                            &value,
-                        )
-                        .with_parameter_object(pd, Some(&*self)));
-                }
-                let original = value.clone();
+                let display = param_display_name(pd);
                 value = self
-                    .try_coerce_value_for_constraint(&resolved_constraint, value)
-                    .map_err(|e| Self::normalize_coercion_binding_error(e, pd, Some(&*self)))?;
-                // A Failure from coercion is passed through as-is
-                // (it will throw when sunk or used). Only check
-                // type match for non-Failure results.
-                if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
-                    && !self.type_matches_value(target, &value)
-                {
-                    return Err(coerce_impossible_error(&resolved_constraint, &original));
-                }
+                    .bind_coercion_param_value(
+                        &display,
+                        &resolved_constraint,
+                        target,
+                        source,
+                        value,
+                    )
+                    .map_err(|e| match e {
+                        CoercionBindError::TypeCheck(e) => {
+                            e.with_parameter_object(pd, Some(&*self))
+                        }
+                        CoercionBindError::Coerce(e) => {
+                            Self::normalize_coercion_binding_error(e, pd, Some(&*self))
+                        }
+                        CoercionBindError::Impossible(e) => e,
+                    })?;
             } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
                 let expected = self
                     .typed_container_param_expected(&pd.name, &resolved_constraint)
@@ -2531,6 +2522,7 @@ impl Interpreter {
                                 });
                             if let Some(src) = source_name {
                                 rw_bindings.push((pd.name.clone(), src.clone()));
+                                let descriptor = src.clone();
                                 let existing = self
                                     .env
                                     .get(&src)
@@ -2553,6 +2545,9 @@ impl Interpreter {
                                         cell
                                     }
                                 };
+                                // As in the positional arm: the parameter is
+                                // the caller's container (#11196).
+                                crate::value::name_container_cell(&bound_value, &descriptor);
                             } else if matches!(bound_value.view(), ValueView::ContainerRef(_)) {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
@@ -3018,6 +3013,17 @@ impl Interpreter {
                                 && !raw_readonly_source
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
+                            }
+                            // A dynamic variable (`f(my $*OUT)`) is not boxed
+                            // into a shared cell here, but the parameter still
+                            // aliases its container, whose descriptor names it:
+                            // record the name for `.VAR.name` (#11196; Tee's
+                            // `Tee($file, my $*OUT)` keys on it).
+                            if param_is_plain_scalar && source_name.starts_with('*') {
+                                self.env.insert(
+                                    MetaNs::VarSourceName.owned_key_for_str(&pd.name),
+                                    Value::str(format!("${source_name}")),
+                                );
                             }
                             // Set up a sigilless alias so that subsequent `:=`
                             // bindings (e.g. `$a := $arg`) can transitively
@@ -3551,6 +3557,7 @@ impl Interpreter {
                         // one write (the wrap-chain relay no longer depends on
                         // same-name env-merge coincidence).
                         if let Some(cell_key) = rw_shared_cell_key.take() {
+                            let descriptor = cell_key.clone();
                             // ADR-0040 §9 states the `Proxy` boundary from the
                             // store side: a `Proxy` is FETCHed when it lands
                             // INSIDE a container. An `is rw`/`is raw` parameter
@@ -3596,6 +3603,10 @@ impl Interpreter {
                                         cell
                                     }
                                 };
+                                // The parameter IS the caller's container,
+                                // whose descriptor names the caller's variable
+                                // (`$x.VAR.name` is `$a`, #11196).
+                                crate::value::name_container_cell(&value, &descriptor);
                             }
                         }
                         // Plain `$` params are item bindings (raku: `f([1,2])`

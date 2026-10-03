@@ -910,7 +910,11 @@ impl Interpreter {
         // The outer variables the body writes take the readonly state of the
         // frame the method was declared in, not of the caller (#11054).
         // Inside this call's readonly frame, so the caller's marks return.
-        self.reconcile_captured_readonly(method_def.captured_readonly.as_ref(), cc);
+        self.reconcile_captured_readonly_ex(
+            method_def.captured_readonly.as_ref(),
+            cc,
+            method_def.is_rw,
+        );
 
         // Push routine_stack so &?ROUTINE can find the current method
         self.push_method_routine_with_location(
@@ -2389,7 +2393,11 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_loc);
         crate::alloc_scope_named!(_sc_body, "mfast:body");
         // See the sibling path (#11054).
-        self.reconcile_captured_readonly(method_def.captured_readonly.as_ref(), cc);
+        self.reconcile_captured_readonly_ex(
+            method_def.captured_readonly.as_ref(),
+            cc,
+            method_def.is_rw,
+        );
         self.push_method_routine_with_location(
             owner_sym,
             method_def.lexical_package,

@@ -168,7 +168,7 @@ impl Interpreter {
         if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
             class_def.mro = mro;
         }
-        self.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_cache.clear();
         Ok(())
     }
 

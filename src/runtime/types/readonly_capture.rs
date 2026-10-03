@@ -155,13 +155,39 @@ impl Interpreter {
         record: Option<&CapturedReadonly>,
         code: &CompiledCode,
     ) {
+        self.reconcile_captured_readonly_ex(record, code, false);
+    }
+
+    /// [`Self::reconcile_captured_readonly`] for an `is rw` routine: every
+    /// free variable it READS is reconciled too, since its return value may be
+    /// that variable's container, written by the caller after the call
+    /// (`method level() is rw { $level }` then `$o.level = 5` from a frame
+    /// with its own readonly `$level` parameter — Lumberjack's
+    /// `for ... -> $level { $foo.log-level = $level }`).
+    // Cost: O(v * r), v = scalar free variables `code` names, r = record size.
+    pub(crate) fn reconcile_captured_readonly_ex(
+        &mut self,
+        record: Option<&CapturedReadonly>,
+        code: &CompiledCode,
+        include_reads: bool,
+    ) {
         let Some(record) = record else {
             return;
         };
         if record.marks.is_empty() && self.no_readonly_vars() {
             return;
         }
-        for sym in written_free_vars(code) {
+        let reads = include_reads
+            .then(|| {
+                code.free_var_syms
+                    .iter()
+                    .copied()
+                    .filter(|s| is_reconcilable(*s))
+            })
+            .into_iter()
+            .flatten();
+        let syms: Vec<Symbol> = written_free_vars(code).chain(reads).collect();
+        for sym in syms {
             let wanted = record
                 .marks
                 .iter()

@@ -209,6 +209,39 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
             left,
             right,
         } if meta == "Z" => {
+            // Case 2 (checked first, on the operands as written): left is
+            // itself a Z MetaOp with the same op, e.g. (A Z B Z C Z D) where
+            // left = Z(Z(A, B), C). Collect the whole chain into one multi-way
+            // zip call. Normalizing `left` first would already have turned its
+            // own chain into a `zip(A, B, C)` call, and the outer level then
+            // nested it: `(1 Z 2 Z 3 Z 4)` came out `((1, 2, 3), 4)`.
+            if let Expr::MetaOp {
+                meta: ref inner_meta,
+                op: ref inner_op,
+                ..
+            } = *left
+                && inner_meta == "Z"
+                && *inner_op == op
+            {
+                let mut args: Vec<Expr> = left
+                    .flatten_meta_chain("Z", &op)
+                    .into_iter()
+                    .cloned()
+                    .map(normalize_chained_zip_meta)
+                    .collect();
+                args.push(normalize_chained_zip_meta(*right));
+                if !op.is_empty() {
+                    args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("with"))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                    });
+                }
+                return Expr::Call {
+                    name: Symbol::intern("zip"),
+                    args,
+                };
+            }
             let left = normalize_chained_zip_meta(*left);
             let right = normalize_chained_zip_meta(*right);
 
@@ -244,36 +277,6 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                 // `with` adverb -- `infix:<>` names nothing. (Case 2 below has
                 // always had this guard; this arm and the paren-list lift did
                 // not, which is what made `(1, 2 Z <a b> Z <c d>)` fail.)
-                if !op.is_empty() {
-                    args.push(Expr::Binary {
-                        left: Box::new(Expr::Literal(Value::str_from("with"))),
-                        op: TokenKind::FatArrow,
-                        right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
-                    });
-                }
-                return Expr::Call {
-                    name: Symbol::intern("zip"),
-                    args,
-                };
-            }
-
-            // Case 2: left is itself a Z MetaOp with the same op.
-            // e.g. (A Z B Z C) where left = Z(A, B), right = C
-            // Collect all operands into a multi-way zip call.
-            if let Expr::MetaOp {
-                meta: ref inner_meta,
-                op: ref inner_op,
-                ..
-            } = left
-                && inner_meta == "Z"
-                && *inner_op == op
-            {
-                let mut args: Vec<Expr> = left
-                    .flatten_meta_chain("Z", &op)
-                    .into_iter()
-                    .cloned()
-                    .collect();
-                args.push(right);
                 if !op.is_empty() {
                     args.push(Expr::Binary {
                         left: Box::new(Expr::Literal(Value::str_from("with"))),

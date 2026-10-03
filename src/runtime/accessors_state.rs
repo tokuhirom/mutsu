@@ -935,7 +935,11 @@ impl Interpreter {
         self.refresh_method_caches_for_generation();
         let class_sym = crate::symbol::Symbol::intern(class_name);
         let method_sym = crate::symbol::Symbol::intern(method_name);
-        if let Some(&c) = self.dispatch_multi_candidate.get(&(class_sym, method_sym)) {
+        if let Some(&c) = self
+            .caches
+            .dispatch_multi_candidate
+            .get(&(class_sym, method_sym))
+        {
             return c;
         }
         let mro = self.class_mro(class_name);
@@ -962,7 +966,8 @@ impl Interpreter {
             }
         }
         let multi = count >= 2;
-        self.dispatch_multi_candidate
+        self.caches
+            .dispatch_multi_candidate
             .insert((class_sym, method_sym), multi);
         multi
     }
@@ -975,11 +980,12 @@ impl Interpreter {
     /// samewith-tight loop showed dominating the redispatch cost.
     pub(crate) fn method_def_fingerprint(&mut self, def: &MethodDef) -> u64 {
         let key = Arc::as_ptr(&def.body) as usize;
-        if let Some((_, fp)) = self.method_body_fp_cache.get(&key) {
+        if let Some((_, fp)) = self.caches.method_body_fp_cache.get(&key) {
             return *fp;
         }
         let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
-        self.method_body_fp_cache
+        self.caches
+            .method_body_fp_cache
             .insert(key, (def.body.clone(), fp));
         fp
     }
@@ -1001,8 +1007,9 @@ impl Interpreter {
         if self.is_unit_scoped_routine_name(name) {
             return false;
         }
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         if let Some(&c) = self
+            .caches
             .func_multi_type_cacheable
             .get(generation, &(pkg_sym, name_sym))
         {
@@ -1027,7 +1034,8 @@ impl Interpreter {
         // above is what makes a cached winner sound, and it does not care how
         // many candidates there are.
         let cacheable = !candidates.is_empty() && !value_dependent;
-        self.func_multi_type_cacheable
+        self.caches
+            .func_multi_type_cacheable
             .insert(generation, (pkg_sym, name_sym), cacheable);
         cacheable
     }
@@ -1095,8 +1103,8 @@ impl Interpreter {
             return self.resolve_function_with_types(name, args);
         }
         let key = (pkg_sym, name_sym, arg_keys);
-        let generation = self.fn_resolve_gen;
-        if let Some(hit) = self.func_multi_resolve_cache.get(generation, &key) {
+        let generation = self.caches.fn_resolve_gen;
+        if let Some(hit) = self.caches.func_multi_resolve_cache.get(generation, &key) {
             return hit.clone();
         }
         let resolved = self.resolve_function_with_types(name, args);
@@ -1107,8 +1115,9 @@ impl Interpreter {
             // Tagged with the generation the resolution ran under: the resolve
             // itself cannot write the functions map, but assert that rather
             // than assume it, since a stale tag would be served as fresh.
-            debug_assert_eq!(generation, self.fn_resolve_gen);
-            self.func_multi_resolve_cache
+            debug_assert_eq!(generation, self.caches.fn_resolve_gen);
+            self.caches
+                .func_multi_resolve_cache
                 .insert(generation, key, resolved.clone());
         }
         resolved
@@ -1664,30 +1673,40 @@ mod func_multi_cache_generation_tests {
         let pkg = Symbol::intern("GLOBAL");
         let name = Symbol::intern("f");
         let key = (pkg, name, vec![Symbol::intern("Int")]);
-        let base = i.fn_resolve_gen;
-        i.func_multi_type_cacheable.insert(base, (pkg, name), true);
-        i.func_multi_resolve_cache.insert(base, key.clone(), None);
+        let base = i.caches.fn_resolve_gen;
+        i.caches
+            .func_multi_type_cacheable
+            .insert(base, (pkg, name), true);
+        i.caches
+            .func_multi_resolve_cache
+            .insert(base, key.clone(), None);
         assert_eq!(
-            i.func_multi_type_cacheable.get(base, &(pkg, name)),
+            i.caches.func_multi_type_cacheable.get(base, &(pkg, name)),
             Some(&true)
         );
-        assert!(i.func_multi_resolve_cache.get(base, &key).is_some());
+        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_some());
 
         // A registration site that moves `fn_resolve_gen` without going through
         // `invalidate_method_dispatch_caches` (e.g. `require`/`EVAL`).
-        i.fn_resolve_gen += 1;
-        let moved = i.fn_resolve_gen;
-        assert_eq!(i.func_multi_type_cacheable.get(moved, &(pkg, name)), None);
-        assert!(i.func_multi_resolve_cache.get(moved, &key).is_none());
+        i.caches.fn_resolve_gen += 1;
+        let moved = i.caches.fn_resolve_gen;
+        assert_eq!(
+            i.caches.func_multi_type_cacheable.get(moved, &(pkg, name)),
+            None
+        );
+        assert!(i.caches.func_multi_resolve_cache.get(moved, &key).is_none());
 
         // The map coming back to the version the entries name (a scope restore
         // after a routine-local `my sub`) makes them live again.
-        assert!(i.func_multi_resolve_cache.get(base, &key).is_some());
+        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_some());
 
         // The wholesale invalidation drops them for every generation.
         i.invalidate_fn_resolution();
-        assert!(i.func_multi_resolve_cache.get(base, &key).is_none());
-        assert_eq!(i.func_multi_type_cacheable.get(base, &(pkg, name)), None);
+        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_none());
+        assert_eq!(
+            i.caches.func_multi_type_cacheable.get(base, &(pkg, name)),
+            None
+        );
     }
 
     #[test]
@@ -1697,9 +1716,11 @@ mod func_multi_cache_generation_tests {
         let name = Symbol::intern("f");
         // Seed a wrong verdict directly (bypassing the real scan) to prove the
         // read path clears it on a generation mismatch rather than trusting it.
-        let base = i.fn_resolve_gen;
-        i.func_multi_type_cacheable.insert(base, (pkg, name), true);
-        i.fn_resolve_gen += 1;
+        let base = i.caches.fn_resolve_gen;
+        i.caches
+            .func_multi_type_cacheable
+            .insert(base, (pkg, name), true);
+        i.caches.fn_resolve_gen += 1;
         // `f` has no registered candidates at all, so a fresh scan answers `false`
         // (not multi). If the stale `true` entry survived, this would wrongly
         // return `true` instead.

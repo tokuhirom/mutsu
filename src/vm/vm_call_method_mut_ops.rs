@@ -273,7 +273,7 @@ impl Interpreter {
         // The constructor-lane candidate is scoped to this dispatch too: one a
         // probe claimed must not be installed by a later, unrelated arrival at
         // the native constructor.
-        self.ctor_lane_candidate = None;
+        self.caches.ctor_lane_candidate = None;
         result
     }
 
@@ -389,6 +389,29 @@ impl Interpreter {
         } else {
             target
         };
+        // `.VAR` reflects the variable's container. When the slot holds a
+        // shared cell (an `is rw` / `is raw` parameter aliasing the caller's
+        // variable), the reflector must see that cell -- it carries the
+        // container's descriptor name (#11196) and identity -- so publish the
+        // slot to the by-name mirror the reflector reads.
+        if method == "VAR" && arity == 0 && !target_name.is_empty() {
+            self.seed_env_from_scalar_slot(code, None, target_name);
+            // A slot that holds a plain value is authoritative over a shared
+            // cell the by-name mirror still holds from an earlier binding of
+            // the same name (a light call reuses its caller's env), so the
+            // reflector must not read that cell's descriptor.
+            if !target_name.starts_with(['@', '%'])
+                && let Some(slot) = self.resolve_local_slot(code, None, target_name)
+                && !self.locals[slot].is_container_ref()
+                && self
+                    .env()
+                    .get(target_name)
+                    .is_some_and(|v| v.is_container_ref())
+            {
+                let current = self.locals[slot].clone();
+                self.set_env_with_main_alias(target_name, current);
+            }
+        }
         // A user `method ^find_method` answers every call on its type
         // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
         // A raw invocant (`multi method handler(Object::Trampoline:D \SELF:
@@ -740,18 +763,18 @@ impl Interpreter {
         // `Class.new(named...)` on a class whose `.new` has been observed to
         // walk the whole chain into the native default constructor goes
         // straight there. See `vm_ctor_lane`.
-        self.ctor_lane_candidate =
+        self.caches.ctor_lane_candidate =
             Self::ctor_lane_key(&target, &args, modifier, quoted, want_ref, method_sym);
-        if let Some(class_sym) = self.ctor_lane_candidate
+        if let Some(class_sym) = self.caches.ctor_lane_candidate
             && let Some(result) = self.try_ctor_lane(class_sym, &args)
         {
-            self.ctor_lane_candidate = None;
+            self.caches.ctor_lane_candidate = None;
             self.stack.push(result?);
             return Ok(());
         }
         match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
-                self.plain_method_lane_candidate = None;
+                self.caches.plain_method_lane_candidate = None;
                 return self.run_plain_method_lane(
                     code,
                     target_name,
@@ -761,7 +784,7 @@ impl Interpreter {
                     args,
                 );
             }
-            other => self.plain_method_lane_candidate = other,
+            other => self.caches.plain_method_lane_candidate = other,
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
@@ -1472,7 +1495,7 @@ impl Interpreter {
             if let Some(updated) = target.match_with_ast_keeping_id(value.clone()) {
                 self.env_mut().insert(target_name.to_string(), updated);
                 self.env_mut().insert("made".to_string(), value.clone());
-                self.action_made = Some(value.clone());
+                self.regex_state.action_made = Some(value.clone());
             }
             self.stack.push(value);
             return Ok(());

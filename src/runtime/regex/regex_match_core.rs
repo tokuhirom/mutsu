@@ -809,7 +809,7 @@ impl Interpreter {
                     store,
                     ctx.pkg,
                     ctx.pattern.ignore_case,
-                    token.ratchet && self.grammar_rule_dynvar_decls.is_empty(),
+                    token.ratchet && self.regex_state.grammar_rule_dynvar_decls.is_empty(),
                     &mut descend,
                 )
             }

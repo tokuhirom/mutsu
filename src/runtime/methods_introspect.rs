@@ -1,6 +1,46 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// The parameterized type an Array or Hash with element-type metadata
+/// answers to `.WHAT` (`Array[Int]`, `Hash[Int,Str]`), from metadata that
+/// carries no explicit `declared_type`. `None` for any other value.
+// Cost: O(1) plus the length of the type names.
+fn parameterized_container_name(target: &Value, info: &ContainerTypeInfo) -> Option<String> {
+    match target.view() {
+        ValueView::Array(_, _) => Some(format!("Array[{}]", info.value_type)),
+        ValueView::Hash(_) => Some(match &info.key_type {
+            // The `:{...}` / classify shape (of = Mu, no declared value
+            // type): rakudo parameterizes it as Hash[Mu,Mu,Any] -- the third
+            // argument is the (Any) default that differs from the Mu of-type.
+            Some(key_type) if info.value_type.is_empty() => format!("Hash[Mu,{},Any]", key_type),
+            Some(key_type) => format!("Hash[{},{}]", info.value_type, key_type),
+            None => format!("Hash[{}]", info.value_type),
+        }),
+        _ => None,
+    }
+}
+
+/// The parameterized type name of a typed Array or Hash (`my Int @a` ->
+/// `Array[Int]`), read from the metadata the container carries itself, or
+/// `None` for an untyped container or any other value. Shared by `.WHAT`
+/// and `.isa(Array[Int])`.
+// Cost: O(1) plus the length of the type names.
+pub(crate) fn embedded_container_type_name(target: &Value) -> Option<String> {
+    let info = match target.view() {
+        ValueView::Array(items, ..) if items.has_type_meta() => ContainerTypeInfo {
+            value_type: items.value_type.clone().unwrap_or_default(),
+            key_type: items.key_type.clone(),
+            declared_type: items.declared_type.clone(),
+        },
+        ValueView::Hash(items) => Interpreter::hashdata_type_info(&items)?,
+        _ => return None,
+    };
+    match info.declared_type.clone() {
+        Some(declared) => Some(declared),
+        None => parameterized_container_name(target, &info),
+    }
+}
+
 impl Interpreter {
     /// Dispatch .WHAT method
     pub(super) fn dispatch_what(
@@ -18,30 +58,8 @@ impl Interpreter {
             if let Some(declared) = info.declared_type {
                 return Ok(Value::package(Symbol::intern(&declared)));
             }
-            match target.view() {
-                ValueView::Array(_, _) => {
-                    return Ok(Value::package(Symbol::intern(&format!(
-                        "Array[{}]",
-                        info.value_type
-                    ))));
-                }
-                ValueView::Hash(_) => {
-                    let name = if let Some(key_type) = info.key_type {
-                        if info.value_type.is_empty() {
-                            // The `:{...}` / classify shape (of = Mu, no
-                            // declared value type): rakudo parameterizes it as
-                            // Hash[Mu,Mu,Any] — the third argument is the
-                            // (Any) default that differs from the Mu of-type.
-                            format!("Hash[Mu,{},Any]", key_type)
-                        } else {
-                            format!("Hash[{},{}]", info.value_type, key_type)
-                        }
-                    } else {
-                        format!("Hash[{}]", info.value_type)
-                    };
-                    return Ok(Value::package(Symbol::intern(&name)));
-                }
-                _ => {}
+            if let Some(name) = parameterized_container_name(target, &info) {
+                return Ok(Value::package(Symbol::intern(&name)));
             }
         }
         let type_name: &str = match target.view() {

@@ -116,6 +116,12 @@ impl Interpreter {
         // helper cannot do. `"@a[]"` interpolation compiles to this very
         // `join(" ", @a)` call, so this is where that spelling gets its FETCH —
         // the three method-dispatch guards never see it.
+        // `join` flattens nested lists, so a deferred inner `.map` Seq (an
+        // outer map's block returned `(1,).map({ ... })`) must run its
+        // callback first: the pure `join_flat` would read its empty seed.
+        for v in &rest {
+            self.reify_nested_deferred_seqs(v, 0)?;
+        }
         let mut rendered = Vec::with_capacity(rest.len());
         for v in &rest {
             let v = if Self::holds_nested_proxy(v) {
@@ -168,6 +174,32 @@ impl Interpreter {
             Some(joined) => Ok(Value::str(joined?)),
             None => Ok(Value::str(String::new())),
         }
+    }
+
+    /// Reify every deferred Seq `join`'s flattening would descend into
+    /// (non-itemized Arrays/Seqs, recursively), in place, so their elements are
+    /// visible to the pure `join_flat`.
+    // Cost: O(n), n = elements reached; each deferred Seq is pulled once.
+    fn reify_nested_deferred_seqs(&mut self, v: &Value, depth: usize) -> Result<(), RuntimeError> {
+        const MAX_DEPTH: usize = 64;
+        if depth > MAX_DEPTH {
+            return Ok(());
+        }
+        let children: Vec<Value> = match v.view() {
+            ValueView::Seq(body) => {
+                if body.awaits_vm_reify() {
+                    self.reify_seq_body(&body)?
+                } else {
+                    body.to_vec()
+                }
+            }
+            ValueView::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
+            _ => return Ok(()),
+        };
+        for child in &children {
+            self.reify_nested_deferred_seqs(child, depth + 1)?;
+        }
+        Ok(())
     }
 
     /// Replace every element `join` will stringify that carries a *user*

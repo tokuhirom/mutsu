@@ -618,6 +618,18 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         // a new `$_.keys` statement. `postfix_expr_continue` is a no-op when no
         // postfix follows, so a bare `{a => 1}` statement is unchanged.
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, hash_expr)?;
+        // A comma or an infix operator on the same line makes the hash the
+        // first operand of a longer expression (`{a => 1}, {b => 2}` as a
+        // routine's last statement is a two-element list), so leave the whole
+        // statement to `simple::expr_stmt`, which parses the hash as a term.
+        // Stopping here split it into two statements and dropped the first.
+        let (r_ws, _) = ws(rest)?;
+        let ws_before_next = &rest[..rest.len() - r_ws.len()];
+        if !ws_before_next.contains('\n')
+            && (r_ws.starts_with(',') || starts_with_infix_operand_marker(r_ws))
+        {
+            return Err(PError::expected("statement (hash is an operand)"));
+        }
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
     let (rest, body) = block(input)?;

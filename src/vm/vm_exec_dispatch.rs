@@ -1410,7 +1410,7 @@ impl Interpreter {
                 // (`nested_capture_owners`) so a routine's explicit `$Pkg::x`
                 // store is never redirected.
                 if !is_rebind
-                    && (self.in_regex_code_block
+                    && (self.regex_state.in_regex_code_block
                         || (!self.nested_capture_owners.is_empty()
                             && !is_bind_ctx
                             && !raw_mode
@@ -1439,7 +1439,7 @@ impl Interpreter {
                             && qualifier == cur
                             && self.get_our_var(&name).is_none()
                             && !self.env().contains_key(&name)
-                            && (if self.in_regex_code_block {
+                            && (if self.regex_state.in_regex_code_block {
                                 self.env().contains_key(&bare)
                             } else {
                                 matches!(
@@ -1980,7 +1980,17 @@ impl Interpreter {
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
-                    val = self.coerce_typed_container_assignment(&name, val, false)?;
+                    val = if is_attr_twigil {
+                        self.coerce_typed_container_assignment(&name, val, false)?
+                    } else {
+                        // `%h = ...` reached by name (a closure writing a
+                        // captured typed hash): coerce AND keep the container's
+                        // `Hash[T]` identity, the `%` twin of the `@` branch
+                        // below (Data::Reshapers' `my Hash %r; lives-ok { %r =
+                        // f() }`).
+                        let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
+                        self.hash_container_writethrough_value(&name, val, &old)?
+                    };
                 } else if name.starts_with('@')
                     && name.len() > 1
                     && !name.contains("__")
@@ -4570,7 +4580,7 @@ impl Interpreter {
                             // without `use fatal` in effect (`t/failure-fatal-mode-
                             // creation-time.t`) — Raku decides a Failure's fate at
                             // *construction* time, not at every later mention.
-                            if !self.in_regex_code_block
+                            if !self.regex_state.in_regex_code_block
                                 && may_explode_failure
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {

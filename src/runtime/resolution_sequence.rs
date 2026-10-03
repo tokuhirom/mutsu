@@ -214,11 +214,11 @@ pub(crate) struct ResolvedSequence {
 /// implements, needed here to decide whether a `Native` candidate's row
 /// requires [`crate::builtins::native_method_row::NativeRowFlags::TYPE_OBJECT_OK`].
 pub(crate) fn value_is_definite(value: &Value) -> bool {
-    match value.view() {
-        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
-        ValueView::Slip(items) if items.is_empty() => false,
-        _ => true,
-    }
+    // `Empty` is a concrete Slip too (`.defined` is False for it).
+    !matches!(
+        value.view(),
+        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..)
+    )
 }
 
 /// ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
@@ -287,7 +287,11 @@ impl Interpreter {
         let shape = CallShape::for_args(args);
         let mro_arc = self.class_mro(cn);
         let mro: Vec<Symbol> = mro_arc.iter().copied().collect();
-        let seq = match self.resolved_seq_cache.get(&(owner, method_sym, shape)) {
+        let seq = match self
+            .caches
+            .resolved_seq_cache
+            .get(&(owner, method_sym, shape))
+        {
             Some(cached) => cached.clone(),
             None => {
                 let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
@@ -302,7 +306,8 @@ impl Interpreter {
                     MethodVisibility::Public,
                     RoleFallback::Disabled,
                 ));
-                self.resolved_seq_cache
+                self.caches
+                    .resolved_seq_cache
                     .insert((owner, method_sym, shape), built.clone());
                 built
             }

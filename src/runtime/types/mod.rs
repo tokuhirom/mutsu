@@ -8,6 +8,8 @@ pub(crate) use args_matching_simple::unwrap_varref_value_for_dispatch;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
+mod coercion_bind;
+pub(crate) use coercion_bind::CoercionBindError;
 mod native_backed_class;
 mod omitted_optional;
 mod param_exprs;
@@ -1265,7 +1267,7 @@ impl Interpreter {
         Ok(value)
     }
 
-    pub(super) fn materialize_default_parametric_role(
+    pub(crate) fn materialize_default_parametric_role(
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {

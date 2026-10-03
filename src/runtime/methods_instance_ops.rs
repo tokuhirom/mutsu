@@ -965,7 +965,7 @@ impl Interpreter {
                             .insert((owner, attr_name), build);
                         // A build override disqualifies the class from the native
                         // default constructor — drop any cached plan for it.
-                        self.native_ctor_plan_cache.clear();
+                        self.caches.native_ctor_plan_cache.clear();
                         return Ok(target.clone());
                     }
                     "name" => {
@@ -3710,7 +3710,14 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let values = Self::value_to_list(&target);
+        // `.are` walks the invocant's `iterator`, so a class with its own
+        // (a `does Positional` linked list) is judged by the elements it
+        // yields, not as one item (Functional::LinkedList via ValueClass's
+        // `data.are !~~ $attr.type.of`).
+        let values = match self.try_user_iterator_items(&target)? {
+            Some(items) => items,
+            None => Self::value_to_list(&target),
+        };
         match args {
             [] => {
                 if values.is_empty() {

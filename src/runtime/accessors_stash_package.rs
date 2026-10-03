@@ -24,20 +24,7 @@ impl Interpreter {
         // `DYNAMIC::`) instead of only scanning `self.env`, which silently
         // dropped every outer-frame dynamic once called from a sub.
         if package_name == "PROCESS" {
-            let mut symbols: ValueMap = ValueMap::default();
-            for (key, val) in self.dynamic_pseudo_stash_entries() {
-                // `dynamic_pseudo_stash_entries` spells entries with the `*`
-                // twigil (`$*NAME`/`@*NAME`/`%*NAME`); PROCESS::'s stash keys
-                // drop it (`$NAME`/`@NAME`/`%NAME`), since the twigil is
-                // implicit in the PROCESS:: package itself.
-                if let Some(name) = key.strip_prefix("$*") {
-                    symbols.insert(format!("${name}"), val);
-                } else if let Some(name) = key.strip_prefix("@*") {
-                    symbols.insert(format!("@{name}"), val);
-                } else if let Some(name) = key.strip_prefix("%*") {
-                    symbols.insert(format!("%{name}"), val);
-                }
-            }
+            let symbols = self.process_stash_entries();
             return Self::make_stash_instance(package, symbols);
         }
 

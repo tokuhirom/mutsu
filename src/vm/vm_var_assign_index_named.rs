@@ -695,7 +695,11 @@ impl Interpreter {
                     ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
                     _ => val.clone(),
                 };
-                self.call_method_with_values(target, method, vec![idx_arg, val_arg])?;
+                // The assignment's value is what the protocol method returns,
+                // as in rakudo: `my ($node, $v) = $list[0] = 9` gets
+                // Functional::LinkedList's `ASSIGN-POS` pair.
+                let result =
+                    self.call_method_with_values(target, method, vec![idx_arg, val_arg])?;
                 // Drain the writes the callee made into the CALLER's lexicals —
                 // an `is rw` parameter, a `$CALLER::x` write, or (the case that
                 // exposed the gap) a resumed `CATCH` handler that ran inline at
@@ -704,7 +708,7 @@ impl Interpreter {
                 // subscript-assign site dispatches a method without one, so it
                 // owes the same drain.
                 self.apply_pending_rw_writeback(code);
-                self.stack.push(val);
+                self.stack.push(result);
                 return Ok(());
             }
             // The class declares no subscript-assign method and is not a

@@ -256,6 +256,16 @@ pub(super) fn dispatch(
                 ValueView::Int(n) => n as f64,
                 ValueView::Num(n) => n,
                 ValueView::Rat(n, d) => n as f64 / d as f64,
+                // `Duration`/`Instant` `does Real`, whose `rand` is
+                // `self.Bridge.rand`: a `Num` below the stored seconds.
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                    let inner = attributes.as_map().get("value")?.clone();
+                    return dispatch(&inner, "rand");
+                }
                 ValueView::Range(start, end) => {
                     let from = start as f64;
                     let to = end as f64;

@@ -84,8 +84,9 @@ impl Interpreter {
         &self,
         key: &PlainFnResolveKey,
     ) -> Option<Arc<FunctionDef>> {
-        self.plain_fn_resolve_memo
-            .get(self.fn_resolve_gen, key)
+        self.caches
+            .plain_fn_resolve_memo
+            .get(self.caches.fn_resolve_gen, key)
             .cloned()
     }
 
@@ -94,8 +95,9 @@ impl Interpreter {
         key: PlainFnResolveKey,
         def: &Arc<FunctionDef>,
     ) {
-        let generation = self.fn_resolve_gen;
-        self.plain_fn_resolve_memo
+        let generation = self.caches.fn_resolve_gen;
+        self.caches
+            .plain_fn_resolve_memo
             .insert(generation, key, def.clone());
     }
 
@@ -137,11 +139,11 @@ mod tests {
         let memo = i.plain_fn_resolve_memo_get(&key).expect("memoized");
         assert!(Arc::ptr_eq(&first, &memo));
 
-        let before = i.fn_resolve_gen;
+        let before = i.caches.fn_resolve_gen;
         i.run("sub another-one() { 2 }\n")
             .expect("second registration runs");
         assert_ne!(
-            i.fn_resolve_gen, before,
+            i.caches.fn_resolve_gen, before,
             "a registration moves the generation"
         );
         assert!(

@@ -944,6 +944,18 @@ impl SeqBody {
     /// a `seq_method_consumes` method, since rakudo's `Seq` is single-use by
     /// default even when its data was fully known at birth (see
     /// `SeqBody::take`'s doc comment).
+    /// Whether reading this body now would see the empty seed because its
+    /// elements still need the VM to produce them: a deferred `.map`/`.grep`,
+    /// a `Seq.new($iterator)` or an `IO::Handle.lines` source. A `Pure`
+    /// source is cut on first read and needs no VM.
+    // Cost: O(1).
+    pub(crate) fn awaits_vm_reify(&self) -> bool {
+        matches!(
+            self.core.state.lock().unwrap().source,
+            SeqSource::MapGrep { .. } | SeqSource::Iterator(_) | SeqSource::IoLines { .. }
+        )
+    }
+
     pub(crate) fn needs_touch(&self) -> bool {
         let state = self.core.state.lock().unwrap();
         !(matches!(state.source, SeqSource::Reified) && (state.retained || state.cache_requested))

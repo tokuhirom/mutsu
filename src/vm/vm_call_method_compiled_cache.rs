@@ -7,7 +7,7 @@ use super::*;
 const CALLSITE_LINE_MARKER_KEY: &str = "__mutsu_test_callsite_line";
 
 /// Cache-key marker appended after an argument's type key when that argument is
-/// *undefined* (`value_is_defined` is false). A `:D`/`:U` smiley candidate set
+/// not concrete (`value_is_concrete` is false -- the bit a smiley tests). A `:D`/`:U` smiley candidate set
 /// dispatches on exactly that bit on top of the type, so a key that carries it
 /// stays a function of the winner — which is what lets
 /// `multi_dispatch_type_cacheable` / `func_multi_dispatch_type_cacheable` admit
@@ -71,25 +71,25 @@ mod key_syms {
 impl Interpreter {
     pub(crate) fn refresh_method_caches_for_generation(&mut self) {
         let generation = self.registry().method_generation;
-        if self.method_cache_generation == generation {
+        if self.caches.method_cache_generation == generation {
             return;
         }
-        self.method_cache_generation = generation;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.plain_method_lane.clear();
-        self.plain_method_lane_candidate = None;
-        self.accessor_lane.clear();
-        self.ctor_lane.clear();
-        self.ctor_lane_candidate = None;
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.native_lever_a_override_cache.clear();
-        self.resolved_seq_cache.clear();
-        self.dispatch_multi_candidate.clear();
-        self.deferral_build_context_free.clear();
+        self.caches.method_cache_generation = generation;
+        self.caches.method_resolve_cache.clear();
+        self.caches.last_method_resolve = None;
+        self.caches.fast_method_cache.clear();
+        self.caches.plain_method_lane.clear();
+        self.caches.plain_method_lane_candidate = None;
+        self.caches.accessor_lane.clear();
+        self.caches.ctor_lane.clear();
+        self.caches.ctor_lane_candidate = None;
+        self.caches.native_ctor_plan_cache.clear();
+        self.caches.multi_resolve_cache.clear();
+        self.caches.multi_type_cacheable.clear();
+        self.caches.native_lever_a_override_cache.clear();
+        self.caches.resolved_seq_cache.clear();
+        self.caches.dispatch_multi_candidate.clear();
+        self.caches.deferral_build_context_free.clear();
         self.clear_private_zeroarg_method_cache();
     }
 
@@ -251,10 +251,10 @@ impl Interpreter {
             // alone does not carry it: a type object `Int` and the instance `42`
             // both key as `Int`, and an empty `Slip` keys the same as a full one.
             // Append the marker so those land in different buckets. Cheap and
-            // side-effect free -- `value_is_defined` is a pure view match, and
+            // side-effect free -- `value_is_concrete` is a pure view match, and
             // the views it would have to lock through were unwrapped
             // (`ContainerRef`) or already returned `None` (`Mixin`) above.
-            if !crate::runtime::types::value_is_defined(a) {
+            if !crate::runtime::types::value_is_concrete(a) {
                 keys.push(key_syms::undefined_arg());
             }
         }
@@ -269,7 +269,7 @@ impl Interpreter {
     /// they gate the same kind of cache over the same key shape.
     ///
     /// A trailing `:D`/`:U`/`:_` smiley is **not** value-dependent: the smiley
-    /// tests exactly `value_is_defined`, and [`Self::multi_arg_type_keys`]
+    /// tests exactly `value_is_concrete`, and [`Self::multi_arg_type_keys`]
     /// carries that bit in the key ([`UNDEFINED_ARG_KEY`]). This is what lets
     /// the vendored upstream `Test`'s smiley-split assertions
     /// (`multi sub is(Mu $got, Mu:U $expected, …)` /
@@ -332,7 +332,11 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> bool {
-        if let Some(&c) = self.multi_type_cacheable.get(&(class_sym, method_sym)) {
+        if let Some(&c) = self
+            .caches
+            .multi_type_cacheable
+            .get(&(class_sym, method_sym))
+        {
             return c;
         }
         let mro = self.class_mro(class_name);
@@ -402,7 +406,8 @@ impl Interpreter {
             }
         }
         let cacheable = any_multi && !value_dependent;
-        self.multi_type_cacheable
+        self.caches
+            .multi_type_cacheable
             .insert((class_sym, method_sym), cacheable);
         cacheable
     }
@@ -478,11 +483,13 @@ impl Interpreter {
         if self.native_base_bypass_hit(target, method_sym) {
             return false;
         }
-        if let Some(&hit) = self.native_lever_a_override_cache.get(&key) {
+        if let Some(&hit) = self.caches.native_lever_a_override_cache.get(&key) {
             return hit;
         }
         let answer = self.has_user_method(type_name, method_sym.as_str());
-        self.native_lever_a_override_cache.insert(key, answer);
+        self.caches
+            .native_lever_a_override_cache
+            .insert(key, answer);
         answer
     }
 
@@ -515,7 +522,7 @@ impl Interpreter {
         // / `last_method_resolve = None`).
 
         // 1. Monomorphic inline cache: single-entry check before any HashMap.
-        if let Some((cc, cm, co, ref cd)) = self.last_method_resolve
+        if let Some((cc, cm, co, ref cd)) = self.caches.last_method_resolve
             && cc == class_sym
             && cm == method_sym
             && !cd.is_multi
@@ -524,13 +531,14 @@ impl Interpreter {
         }
         // 2. Non-multi HashMap cache.
         if let Some(hit) = self
+            .caches
             .method_resolve_cache
             .get(&(class_sym, method_sym))
             .cloned()
             && let Some((owner, ref def)) = hit
             && !def.is_multi
         {
-            self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
+            self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
@@ -546,11 +554,11 @@ impl Interpreter {
             // Without it, `Cook.gist` and `Cook.new.gist` share one bucket and
             // the second is served the first's candidate
             // (`t/multi-method-invocant-definedness.t`).
-            if !crate::runtime::types::value_is_defined(target) {
+            if !crate::runtime::types::value_is_concrete(target) {
                 arg_keys.insert(0, key_syms::undefined_arg());
             }
             let mkey = (class_sym, method_sym, arg_keys);
-            if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
+            if let Some(hit) = self.caches.multi_resolve_cache.get(&mkey) {
                 return hit.clone();
             }
             // ADR-0019 E3: resolve via the cached candidate sequence instead
@@ -559,7 +567,9 @@ impl Interpreter {
             let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
             if !self.dispatch_ambiguous {
-                self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
+                self.caches
+                    .multi_resolve_cache
+                    .insert(mkey, resolved_arc.clone());
             }
             return resolved_arc;
         }
@@ -570,10 +580,11 @@ impl Interpreter {
         let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
         let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
-            self.method_resolve_cache
+            self.caches
+                .method_resolve_cache
                 .insert((class_sym, method_sym), resolved_arc.clone());
             if let Some((owner, ref def)) = resolved_arc {
-                self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
+                self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             }
         }
         resolved_arc
@@ -878,7 +889,7 @@ impl Interpreter {
         let has_defaults = method_def.param_defs.iter().any(|pd| {
             !pd.is_invocant && !pd.traits.iter().any(|t| t == "invocant") && pd.default.is_some()
         });
-        self.fast_method_cache.insert(
+        self.caches.fast_method_cache.insert(
             cache_key,
             super::FastMethodCacheEntry {
                 owner_class,
