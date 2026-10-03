@@ -161,6 +161,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("type", Absent::TypeObject("RakuAST::Type")),
             ("names", Absent::EmptyList),
             ("type-captures", Absent::EmptyList),
+            ("invocant", Absent::False),
             ("target", Absent::TypeObject("RakuAST::ParameterTarget")),
             // Tri-state on rakudo: `False` on a plain positional, but left
             // UNSET (an undefined `Bool`) when optionality follows from
