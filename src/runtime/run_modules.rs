@@ -1055,6 +1055,10 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
+            // The importer's hoisted `multi`s are already registered; they are
+            // lexical to it and must not take part in this module's dispatch
+            // (#11310).
+            self.scope_importer_families_for_nested_load(importer_unit);
             // `sub EXPORT` is per-compunit: hide whatever hook an enclosing
             // compunit already registered so this module's own (hoisted)
             // declaration lands on a clean `GLOBAL::EXPORT` instead of tripping

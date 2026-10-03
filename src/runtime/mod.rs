@@ -649,6 +649,7 @@ mod class_dispatch;
 mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
+pub(crate) mod array_type_trait;
 mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
