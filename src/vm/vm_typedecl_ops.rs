@@ -1045,6 +1045,7 @@ impl Interpreter {
             parent_ops,
             body_plan,
             deferred_body_ops,
+            body_bind_source_slots,
             role_id,
             decl_id,
         }) = code.role_decl_plans.get(idx as usize)
@@ -1088,6 +1089,22 @@ impl Interpreter {
             // the same name, re-enable it before registering the new role.
             self.unsuppress_name(&name_str);
             self.note_amp_param_shadowed_names(type_param_defs);
+            let is_hoisted_shell = custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__hoisted");
+            // A body `my $w := $z` aliases the declaring frame's `$z`, but the
+            // body is deferred to composition, which runs it as a separate
+            // chunk -- possibly in another frame -- that reaches `$z` by name
+            // only. Box each such source into a shared cell (slot and env
+            // alike) now, while this frame owns it, so the composition-time
+            // bind adopts that cell and the frame's later writes and the
+            // composed methods that capture `$w` stay on one container
+            // (#11087; ADR-0018's shared-cell rule for captured lexicals).
+            if !is_hoisted_shell {
+                for slot in body_bind_source_slots {
+                    self.box_decl_local_cell(code, *slot as usize);
+                }
+            }
             loan_env!(
                 self,
                 register_role_decl(
@@ -1179,10 +1196,7 @@ impl Interpreter {
             // pass would compile every body from scratch only for the real,
             // source-position declaration to replace the whole `MethodDef` set
             // moments later.
-            if !custom_traits
-                .iter()
-                .any(|(trait_name, _)| trait_name == "__hoisted")
-            {
+            if !is_hoisted_shell {
                 self.compile_role_methods(&qualified_name);
             }
             // See `exec_register_class_op`: a declaration does not set the topic.

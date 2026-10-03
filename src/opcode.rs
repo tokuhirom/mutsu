@@ -5727,22 +5727,20 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
         .collect()
 }
 
-/// The outer-lexical slots a class body's `:=` declarations bind: for each
-/// bind group `class_body_plan` kept whole (`[MarkBind, VarDecl, ...]`), the
-/// slot of a `VarDecl` whose right-hand side is a plain variable of the
-/// declaring frame. See [`CompiledClassDeclPlan::body_bind_source_slots`].
+/// The outer-lexical slots a type body's `:=` declarations bind: for each
+/// bind group kept whole by [`synthetic_block_needs_atomic_compile`]
+/// (`[MarkBind, VarDecl, ...]`), the slot of a `VarDecl` whose right-hand
+/// side is a plain variable of the declaring frame. Shared by the class and
+/// role plans: see [`CompiledClassDeclPlan::body_bind_source_slots`] and
+/// [`CompiledRoleDeclPlan::body_bind_source_slots`].
 // Cost: O(b * s), b = the body's bind declarations, s = the frame's lexical slots.
-fn class_body_bind_source_slots(
-    body_plan: &[ClassBodyOp],
+fn body_bind_source_slots<'a>(
+    body_stmts: impl Iterator<Item = &'a Stmt>,
     outer_lexical_slots: &[(Symbol, u32)],
 ) -> Vec<u32> {
     let mut slots = Vec::new();
-    for op in body_plan {
-        let ClassBodyOp::Other {
-            raw: Stmt::SyntheticBlock(inner),
-            ..
-        } = op
-        else {
+    for stmt in body_stmts {
+        let Stmt::SyntheticBlock(inner) = stmt else {
             continue;
         };
         if !inner.iter().any(|s| matches!(s, Stmt::MarkBind)) {
@@ -6221,6 +6219,14 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// execution path every composition entry point runs (ADR-0019 D8-2).
     /// See [`DeferredBodyOp`].
     pub(crate) deferred_body_ops: Vec<DeferredBodyOp>,
+    /// The declaring frame's local slots a role-body `:=` declaration binds
+    /// (`role R { my $w := $z }`, `my \x := $z`), a subset of
+    /// `method_outer_lexical_slots`. The deferred body runs only at
+    /// composition, as a separate chunk that reaches `$z` by name, so the
+    /// role registration boxes each of these into a shared cell (slot and
+    /// env alike) at declaration time; the composition-time bind then adopts
+    /// that cell instead of snapshotting the value (#11087).
+    pub(crate) body_bind_source_slots: Vec<u32>,
     /// This role declaration's identity, minted once here at plan-lowering
     /// (compile) time rather than freshly on every runtime execution of the
     /// registration op. A role body inside a repeatedly-invoked sub/block
@@ -11860,8 +11866,13 @@ impl CompiledCode {
         let declared_static_names = class_declared_static_names(body);
         let method_outer_lexical_slots =
             outer_lexical_slots_unshadowed(method_outer_lexical_slots, &declared_static_names);
-        let body_bind_source_slots =
-            class_body_bind_source_slots(&body_plan, &method_outer_lexical_slots);
+        let body_bind_source_slots = body_bind_source_slots(
+            body_plan.iter().filter_map(|op| match op {
+                ClassBodyOp::Other { raw, .. } => Some(raw),
+                _ => None,
+            }),
+            &method_outer_lexical_slots,
+        );
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk
@@ -11943,6 +11954,13 @@ impl CompiledCode {
         let is_stub = role_body_is_stub(body);
         let our_scope_violation = role_body_our_scope_violation(body);
         let body_plan = role_body_plan(body);
+        let body_bind_source_slots = body_bind_source_slots(
+            body_plan.iter().filter_map(|op| match op {
+                RoleBodyOp::Deferred { raw, .. } => Some(raw.as_ref()),
+                _ => None,
+            }),
+            &method_outer_lexical_slots,
+        );
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
@@ -11965,6 +11983,7 @@ impl CompiledCode {
             parent_ops,
             body_plan,
             deferred_body_ops,
+            body_bind_source_slots,
             role_id: crate::runtime::next_role_id(),
             decl_id: *decl_id,
         });
