@@ -13,3 +13,7 @@ gaps, all now fixed:
   slice assignment stored `Nil` instead of resetting the slot to its default.
 
 Under mutsu 8 of the 10 `Terminal::UI` test files now pass (was 3).
+
+Also fixed: postfix/prefix `++`/`--` on a subscripted element (`@$h[@i[$++]]++`) evaluated a
+non-trivial subscript twice (once for the read, once for the write-back). Terminal::UI now passes
+9 of 10 files; `t/09-print` needs #11275.

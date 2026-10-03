@@ -407,6 +407,33 @@ impl Compiler {
             ..
         } = expr
         {
+            // The read and the write-back both subscript with `index`; evaluate
+            // it once when it is anything but a literal or a variable
+            // (`@$a[$++]++` must advance the state variable once).
+            if !matches!(index.as_ref(), Expr::Literal(_) | Expr::Var(_)) {
+                let tmp_key = format!("__mutsu_nested_incdec_key_{}", self.code.constants.len());
+                let tmp_key_idx = self.code.add_constant(Value::str(tmp_key.clone()));
+                self.compile_expr(index);
+                self.code.emit(OpCode::SetGlobal(tmp_key_idx));
+                let hoisted = Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(Expr::Var(tmp_key)),
+                    is_positional: *is_positional,
+                };
+                return self.compile_nested_postfix_incdec_hoisted(&hoisted, increment);
+            }
+            self.compile_nested_postfix_incdec_hoisted(expr, increment);
+        }
+    }
+
+    fn compile_nested_postfix_incdec_hoisted(&mut self, expr: &Expr, increment: bool) {
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             let tmp_val = format!("__mutsu_nested_incdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
             let tmp_old = format!("__mutsu_nested_incdec_old_{}", self.code.constants.len());
