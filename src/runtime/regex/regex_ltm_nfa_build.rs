@@ -241,19 +241,19 @@ impl<'a> NfaBuilder<'a> {
         if max.is_some_and(|max| min > max) {
             return self.fate();
         }
-        self.build_counted(token, pkg, ic, min, max, capped, next)
+        self.build_counted(token, pkg, ic, (min, max, capped), next)
     }
 
     /// `min..max` iterations of `token`'s atom, with its separator between
     /// iterations and, for `%%`, optionally after the last one.
+    /// `(min, max, capped)`: `capped` marks a `max` cut short by
+    /// `bounded_declarative_max`.
     fn build_counted(
         &mut self,
         token: &RegexToken,
         pkg: Symbol,
         ic: bool,
-        min: usize,
-        max: Option<usize>,
-        capped: bool,
+        (min, max, capped): (usize, Option<usize>, bool),
         next: u32,
     ) -> u32 {
         let (min, max, cut_short) =
