@@ -90,6 +90,28 @@ impl Interpreter {
         }
     }
 
+    /// A declaration of `name` by some other code than the module it is
+    /// attributed to -- the program's own `package Foo { }` after a preloaded
+    /// module published a `class Foo` -- makes the name that code's too, so it
+    /// is no longer one module's private merge.
+    // Cost: O(1) when `name` is unattributed or declared by its own module;
+    // otherwise a copy-on-write removal from the provenance table.
+    pub(crate) fn release_foreign_provenance(&mut self, name: &str) {
+        if self.module_name_providers.is_empty() {
+            return;
+        }
+        let Some(sym) = Symbol::lookup(name) else {
+            return;
+        };
+        let Some(&provider) = self.module_name_providers.get(&sym) else {
+            return;
+        };
+        let declaring_module = self.module_load_stack.last().map(|m| Symbol::intern(m));
+        if declaring_module != Some(provider) {
+            crate::runtime::cow_table_mut(&mut self.module_name_providers).remove(&sym);
+        }
+    }
+
     /// The package-scope names a package-less module declares at its own top
     /// level that are not types -- `constant`s, `package`/`module` blocks,
     /// enums and subsets -- and that nothing in scope already answers to, so
@@ -102,9 +124,12 @@ impl Interpreter {
         let mut names: Vec<Symbol> = Vec::new();
         for stmt in crate::ast::scope_members(stmts) {
             let name = match stmt {
+                // Only an `our` constant (the `constant` default) is part of the
+                // merge; a `my constant` is lexical to the module.
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    is_our: true,
                     ..
                 } if custom_traits.iter().any(|(t, _)| t == "__constant")
                     && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
@@ -288,7 +313,12 @@ impl Interpreter {
         }
         match self.module_name_providers.get(&name) {
             None => true,
-            Some(&module) => self.module_merged_here(module),
+            // A name imported explicitly into a live scope (an `is export`ed
+            // type, `require M <Name>`) is visible however the module was
+            // reached.
+            Some(&module) => {
+                self.module_merged_here(module) || self.imported_env_aliases.contains_key(&name)
+            }
         }
     }
 

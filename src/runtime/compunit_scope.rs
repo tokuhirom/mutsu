@@ -283,18 +283,21 @@ impl Interpreter {
         if Self::top_segment_is_setting_package(top) {
             return true;
         }
+        let granted = self.package_granted_in_unit_chain(executing, top)
+            || self.package_granted_in_unit_chain(self.current_unit, top)
+            || self.package_merged_here(top);
         // A package a module published bare (`package OuterPkg { }` in a
-        // package-less module) is the module's own declaration: visible only
-        // where the module is merged (ADR-11136).
+        // package-less module) is the module's own declaration: visible where
+        // the module is merged, or where another merged module granted the
+        // same namespace (`class RT123276::B::C1` nests under the class
+        // module `RT123276` publishes) -- never by the permissive fallback
+        // below (ADR-11136).
         if let Some(sym) = Symbol::lookup(top)
             && let Some(&module) = self.module_name_providers.get(&sym)
         {
-            return self.module_merged_here(module);
+            return granted || self.module_merged_here(module);
         }
-        if self.package_granted_in_unit_chain(executing, top)
-            || self.package_granted_in_unit_chain(self.current_unit, top)
-            || self.package_merged_here(top)
-        {
+        if granted {
             return true;
         }
         // Exact-prefix fallback: a compunit always sees a package it

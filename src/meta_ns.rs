@@ -619,6 +619,7 @@ mod tests {
             (MetaNs::BoundArraySlice, "__mutsu_bound_array_slice::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
+            (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
             (MetaNs::DeletedIndex, "__mutsu_deleted_index::@a"),
             (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),

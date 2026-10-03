@@ -5,6 +5,7 @@ impl Interpreter {
     /// running. Nested module loads push their own name, so the outer module
     /// does not accidentally claim a dependency's declarations.
     pub(crate) fn record_module_owned_type(&mut self, name: &str) {
+        self.release_foreign_provenance(name);
         let Some(module) = self.module_load_stack.last().cloned() else {
             return;
         };

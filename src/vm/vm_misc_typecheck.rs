@@ -401,7 +401,11 @@ impl Interpreter {
                     });
                 }
             }
-        } else if !self.has_type(declared_constraint)
+        } else if (!self.has_type(declared_constraint)
+            // A module's own type is a declared type only where that module
+            // is merged (ADR-11136).
+            || crate::symbol::Symbol::lookup(declared_constraint)
+                .is_some_and(|sym| !self.bare_name_visible_here(sym)))
             && !is_core_raku_type(declared_constraint)
             && !loan_env!(self, has_type_capture_binding(declared_constraint))
             // A role body statement runs under the composing class's package,
