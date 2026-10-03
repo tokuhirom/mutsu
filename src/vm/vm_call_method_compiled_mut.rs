@@ -14,6 +14,7 @@ impl Interpreter {
         // claiming the call, so go straight to the dispatch tail. Consumed here
         // (rather than read) so the flag can never outlive one dispatch.
         let target = self.new_on_builtin_instance_target(target, method_sym);
+        let target = self.resource_split_target(target, method_sym.as_str())?;
         if std::mem::take(&mut self.caches.plain_method_lane_active) {
             return self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args);
         }
