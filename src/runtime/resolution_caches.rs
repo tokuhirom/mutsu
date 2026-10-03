@@ -5,6 +5,11 @@
 
 use super::*;
 
+/// `private_resolve_cache`'s key: (receiver class, `!name`, argument type keys).
+pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
+/// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
+pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     /// One-entry memo of the last closure-capture env, so a closure literal
@@ -289,6 +294,15 @@ pub(crate) struct ResolutionCaches {
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
     pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// The private-method twin of `multi_resolve_cache`: `$obj!name(args)`
+    /// resolved against `(receiver class, "!name", arg-type-keys)`. Filled only
+    /// when no candidate of that name is value-dependent
+    /// (`private_type_cacheable`), so the winner is a function of the key.
+    /// Cleared with the other method caches (generation bump) and by
+    /// `clear_private_zeroarg_method_cache`.
+    pub(crate) private_resolve_cache: rustc_hash::FxHashMap<PrivateResolveKey, PrivateResolved>,
+    /// Memoized `(class, "!name") -> may private_resolve_cache serve it`.
+    pub(crate) private_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized `(native type name, method) -> does a user `augment` declare this
     /// method on that type or an MRO ancestor` — the `native_lever_a_user_override`
     /// gate every native method call passes through. The answer is a pure function

@@ -277,6 +277,55 @@ impl Interpreter {
         result
     }
 
+    /// Method names a branch between the top of `exec_call_method_mut_op_impl`
+    /// and its env-pure gate inspects by name for receivers of every kind (or
+    /// whose receiver test is not obviously closed to a plain scalar), so the
+    /// early scalar lane leaves them to the full path. Over-listing only costs
+    /// a missed shortcut.
+    // Cost: O(1).
+    fn scalar_early_lane_skips(method: &str) -> bool {
+        matches!(
+            method,
+            "raku"
+                | "perl"
+                | "gist"
+                | "say"
+                | "note"
+                | "put"
+                | "print"
+                | "VAR"
+                | "WHAT"
+                | "^name"
+                | "substr-rw"
+                | "subbuf-rw"
+                | "BIND-KEY"
+                | "value"
+                | "ACCEPTS"
+                | "combinations"
+                | "int-bounds"
+                | "message"
+                | "freeze"
+                | "so"
+                | "not"
+                | "Bool"
+                | "pairs"
+                | "antipairs"
+                | "kv"
+                | "cache"
+                | "List"
+                | "list"
+                | "values"
+                | "skip"
+                | "rotor"
+                | "batch"
+                | "unique"
+                | "repeated"
+                | "squish"
+                | "produce"
+                | "flat"
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn exec_call_method_mut_op_impl(
         &mut self,
@@ -303,6 +352,48 @@ impl Interpreter {
             self.stack.pop();
             self.stack.push(val);
             return Ok(());
+        }
+        // A no-argument pure native method on an immutable scalar receiver
+        // (`$chunk.chars`, `$s.defined`, `$n.Int`): the gate further down
+        // (`try_env_pure_mut_dispatch`) answers exactly this shape, and every
+        // branch between here and there is keyed on an argument, a modifier, a
+        // `^find_method` override, a method name the gate itself refuses or
+        // `scalar_early_lane_skips` lists, or a receiver kind (`Instance`,
+        // `Package`, a lazy list, a Seq, a container view, ...) that a plain
+        // `Str`/`Int`/`Num`/`Bool` is not. So the same verdict is reached here,
+        // without the ~700 lines of probes in between, which cost more than
+        // the native method itself (#9494: ~100 such calls per parsed CSV row).
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && !Self::scalar_early_lane_skips(name.raw)
+            && !crate::runtime::find_method_intercept::any_user_find_method()
+            && let Some(target) = self.stack.last()
+            && matches!(
+                target.view(),
+                ValueView::Str(_) | ValueView::Int(_) | ValueView::Num(_) | ValueView::Bool(_)
+            )
+        {
+            let target = target.clone();
+            if let Some(result) = self.try_env_pure_scalar_native_dispatch(
+                "callmethodmut",
+                &target,
+                name.raw,
+                name.sym,
+                &[],
+                None,
+                false,
+            ) {
+                // The bookkeeping the full path's argument decode performs for
+                // a call without argument sources.
+                self.pending_call_arg_source_slots.clear();
+                self.set_pending_call_arg_sources(None);
+                self.stack.pop();
+                self.stack.push(result?);
+                return Ok(());
+            }
         }
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
@@ -1013,6 +1104,25 @@ impl Interpreter {
         if let Some(result) =
             self.try_env_pure_mut_dispatch(&target, method, method_sym, &args, modifier, quoted)
         {
+            self.stack.push(result?);
+            return Ok(());
+        }
+        // The plain-array mutators (`@a.push(...)`, `@!fields.push: $f`) mutate
+        // the array's shared backing node in place and reach the env only by
+        // name, through `env_root_descended_mut` -- whose `get_mut` promotes a
+        // parent-tier entry into the overlay, so a scoped env serves it as well
+        // as a flat one. Between the flatten below and this helper's usual call
+        // site the only branches a plain `Array` receiver with a `push`-family
+        // name can meet are the junction-argument autothreading (excluded here)
+        // and the shared-array lane, which bails on exactly the condition the
+        // helper itself bails on. So answer it before the flatten: one push per
+        // parsed CSV field paid a whole-scope env clone for nothing (#9494).
+        if modifier.is_none()
+            && !args.iter().any(Value::is_junction_value)
+            && let Some(result) = self.try_native_array_mut(target_name, &target, method, &args)
+        {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+            self.shadow_check_native_row_candidate(&target, method, method_sym, args.len(), true);
             self.stack.push(result?);
             return Ok(());
         }

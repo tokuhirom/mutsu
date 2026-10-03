@@ -99,6 +99,11 @@ impl Interpreter {
         ) {
             return Some(result);
         }
+        if let Some(result) =
+            self.try_env_pure_type_object_defined(target, method, method_sym, args)
+        {
+            return Some(result);
+        }
         if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "IO::Handle"
             && matches!(method, "print" | "put" | "say" | "printf" | "print-nl")
@@ -114,6 +119,47 @@ impl Interpreter {
             return Some(result);
         }
         None
+    }
+
+    /// Case 3 of [`Self::try_env_pure_mut_dispatch`]: `.defined` on a type
+    /// object -- an uninitialized typed variable or attribute
+    /// (`has Str $.text; ... !$!text.defined`), the commonest shape a
+    /// definedness test takes in OO code (#9494, Text::CSV's
+    /// `CSV::Field.undefined`, once per parsed field).
+    ///
+    /// A type object is an immutable value, so the native answer cannot write
+    /// anything back. The general path decides this receiver exactly so: it
+    /// sets `skip_native` when the class (or, for a type object, an applicable
+    /// candidate) declares its own `defined`, consults the lever-A augment
+    /// gate, and otherwise lets `try_native_method` answer -- every other
+    /// branch between its flatten guard and that probe is keyed on a method
+    /// name other than `defined` or on a receiver kind other than `Package`.
+    /// The `Nil` type object is left alone: the pre-dispatch Nil arm owns it.
+    // Cost: O(1) on the memoized user-method probes.
+    fn try_env_pure_type_object_defined(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Package(class_sym) = target.view() else {
+            return None;
+        };
+        if method != "defined"
+            || !args.is_empty()
+            || target.is_nil()
+            || class_sym == "Nil"
+            || self.grammar_has_user_method_memo(class_sym, method_sym)
+            || self.package_has_applicable_user_method(target, method, args)
+            || self.native_lever_a_user_override_sym(target, method_sym)
+        {
+            return None;
+        }
+        let native_result = self.try_native_method(target, method_sym, args)?;
+        self.method_dispatch_pure = true;
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+        Some(native_result)
     }
 
     /// Case 1 of [`Self::try_env_pure_mut_dispatch`], shared with the plain

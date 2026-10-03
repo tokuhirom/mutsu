@@ -3502,6 +3502,14 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// `v = rhs` where `v` is a source-level sigilless name (`my \v`,
+    /// `-> \v`): when `v` is bound to a mutable `Array`/`Hash`, pop the RHS,
+    /// store it into that aggregate in place (`Array.STORE` / `Hash.STORE`)
+    /// and push the aggregate, so the store that follows re-seats the same
+    /// object. Anything else leaves the stack untouched. Stack: `[rhs] →
+    /// [rhs']`. `slot` is the name's local slot (`u32::MAX` when it is not a
+    /// local of this code and lives in `env`).
+    SigillessAggregateStore { name_idx: u32, slot: u32 },
     /// Settle a just-declared sigilless term's mutability from what it was
     /// actually bound to, marking it readonly when that is a plain VALUE.
     ///
@@ -8395,6 +8403,18 @@ impl CompiledCode {
                 self.may_capture_outer_vars = true;
                 return;
             }
+        }
+    }
+
+    /// Every local's interned name, or an empty slice for a hand-built chunk
+    /// that never ran `compute_locals_sym`. Only for a caller that treats the
+    /// slice as a fast-path subset of a by-name test it still runs.
+    // Cost: O(1).
+    pub(crate) fn locals_syms(&self) -> &[Symbol] {
+        if self.locals_sym.len() == self.locals.len() {
+            &self.locals_sym
+        } else {
+            &[]
         }
     }
 

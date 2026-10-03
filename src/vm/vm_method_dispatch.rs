@@ -1202,9 +1202,14 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
+            let frame_syms = MethodFrameSyms {
+                params: method_def.param_syms(),
+                locals: cc.locals_syms(),
+            };
             let (mut merged_env, wrote_caller, changed_caller_locals) = merge_method_env(
                 frame.saved_env,
                 current_env,
+                &frame_syms,
                 &is_method_local,
                 &is_unwritten_capture,
             );
@@ -2658,9 +2663,14 @@ impl Interpreter {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
+                let frame_syms = MethodFrameSyms {
+                    params: method_def.param_syms(),
+                    locals: cc.locals_syms(),
+                };
                 let (merged, wrote_caller, changed_caller_locals) = merge_method_env(
                     frame.saved_env,
                     current_env,
+                    &frame_syms,
                     &is_method_local,
                     &is_unwritten_capture,
                 );
@@ -2866,6 +2876,29 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
     )
 }
 
+/// The env keys every method frame writes for itself -- see the fixture
+/// inserts in `call_compiled_method` / `call_compiled_method_fast` -- plus the
+/// method's parameters and compiled locals, all as symbols, for
+/// [`merge_method_env`]'s cheap first test.
+pub(super) struct MethodFrameSyms<'a> {
+    pub(super) params: &'a [Symbol],
+    pub(super) locals: &'a [Symbol],
+}
+
+impl MethodFrameSyms<'_> {
+    // Cost: O(p + l), p = parameters, l = compiled locals.
+    fn contains(&self, k: Symbol) -> bool {
+        use crate::symbol::wk;
+        k == wk::self_()
+            || k == wk::anon_state()
+            || k == wk::class_decl()
+            || k == wk::role_decl()
+            || k == wk::topic()
+            || self.params.contains(&k)
+            || self.locals.contains(&k)
+    }
+}
+
 /// Merge the callee method frame's caller-visible overlay writes back into the
 /// saved caller env. Returns the merged env and a flag that is `true` iff the
 /// merge changed a value that could alias a caller compiled-local slot — the
@@ -2885,6 +2918,7 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
 fn merge_method_env(
     mut saved: Env,
     current: Env,
+    frame_syms: &MethodFrameSyms<'_>,
     is_method_local: &dyn Fn(&str) -> bool,
     is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
 ) -> (Env, bool, Vec<Symbol>) {
@@ -2906,6 +2940,14 @@ fn merge_method_env(
     };
     let writes: Vec<(Symbol, Value)> = entries
         .filter_map(|(k, v)| {
+            // The frame's own fixtures, parameters and compiled locals, by
+            // symbol: a subset of what `is_method_local` drops below (both
+            // callers' predicates name all three), decided by integer compares
+            // before any of the per-key string work. They are most of what a
+            // method frame writes (#9494).
+            if frame_syms.contains(*k) {
+                return None;
+            }
             // A key the frame received from `method_def.captured_env` (the
             // method's own DEFINING lexical scope) and never wrote is frame
             // setup, not a caller-visible write. An authoritative capture

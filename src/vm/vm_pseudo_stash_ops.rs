@@ -127,6 +127,12 @@ impl Interpreter {
         {
             return None;
         }
+        // `CALLER::OUR::` is the package stash of the caller frame's package
+        // (P5reset's `reset` walks `CALLER::OUR::.kv` to clear the caller's
+        // `our` variables), not a package literally named `CALLER::OUR`.
+        if let Some(depth) = Self::caller_our_stash_depth(name) {
+            return Some(self.caller_frame_package_at(depth));
+        }
         if let Some(package) = name.strip_suffix("::")
             && !matches!(package, "OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
             && package != "MY"
