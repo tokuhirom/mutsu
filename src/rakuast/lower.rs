@@ -12,6 +12,7 @@ use crate::ast::{
     ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
 use crate::regex_tree::{RegexNode, RegexTree};
+use crate::symbol::Symbol;
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
 
@@ -1870,6 +1871,10 @@ fn term_identifier_expr(name: &str) -> Expr {
     match name {
         "True" => Expr::Literal(Value::truth(true)),
         "False" => Expr::Literal(Value::truth(false)),
+        // The math constants are the numeric literals the parser folds them to.
+        "pi" | "π" => Expr::Literal(Value::num(std::f64::consts::PI)),
+        "tau" | "τ" => Expr::Literal(Value::num(std::f64::consts::TAU)),
+        "e" | "\u{1D452}" => Expr::Literal(Value::num(std::f64::consts::E)),
         _ => Expr::BareWord(name.to_string()),
     }
 }
@@ -3062,6 +3067,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::TypeSimple => match simple_type_name(node, node)?.as_str() {
             "Nil" => Ok(Expr::Literal(Value::NIL)),
             name => Ok(Expr::BareWord(name.to_string())),
+        },
+        // `Term::Named.new("now")` -> the argument-less `now` call the parser
+        // produces for the term.
+        RakuAstClass::TermNamed => match positional_leaf(node)?.view() {
+            ValueView::Str(s) if s.as_str() == "now" => Ok(Expr::Call {
+                name: Symbol::intern("now"),
+                args: vec![],
+            }),
+            _ => Err(unsupported(node)),
         },
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),

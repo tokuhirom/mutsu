@@ -301,6 +301,8 @@ pub enum RakuAstClass {
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
+    // A named setting term (`now`): `Term::Named.new("now")`, one positional string.
+    TermNamed,
     // `.method` on the topic: a positional `Call::Method`. Write direction
     // only -- the parser does not yet tell `.uc` from `$_.uc`.
     TermTopicCall,
@@ -536,6 +538,7 @@ impl RakuAstClass {
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
             TermName => "RakuAST::Term::Name",
+            TermNamed => "RakuAST::Term::Named",
             TermTopicCall => "RakuAST::Term::TopicCall",
             CallMetaMethod => "RakuAST::Call::MetaMethod",
             StatementLoopUntil => "RakuAST::Statement::Loop::Until",
@@ -1194,6 +1197,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
     RakuAstClass::TermName,
+    RakuAstClass::TermNamed,
     RakuAstClass::TermTopicCall,
     RakuAstClass::CallMetaMethod,
     RakuAstClass::StatementLoopUntil,
@@ -2702,6 +2706,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
+        ("RakuAST::Term::Named", "new") => RakuAstClass::TermNamed,
         ("RakuAST::Term::TopicCall", "new") => RakuAstClass::TermTopicCall,
         ("RakuAST::ParameterTarget::Term", "new") => RakuAstClass::ParameterTargetTerm,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
@@ -3099,6 +3104,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge
             | RakuAstClass::TermName
+            | RakuAstClass::TermNamed
             | RakuAstClass::TermTopicCall
             | RakuAstClass::TermWhatever
             | RakuAstClass::CallName

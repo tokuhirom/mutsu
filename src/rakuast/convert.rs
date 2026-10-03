@@ -1605,11 +1605,25 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return node;
     }
     match expr {
+        // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
+        // numeric literals, so recover the term from the source spelling kept
+        // for a statement-level literal, or from the exact constant otherwise.
+        Expr::LiteralSrc(v, src) if math_constant_spelling(v, Some(&**src)).is_some() => Ok(
+            term_name_node(math_constant_spelling(v, Some(&**src)).unwrap_or_default()),
+        ),
+        Expr::Literal(v) if math_constant_spelling(v, None).is_some() => Ok(term_name_node(
+            math_constant_spelling(v, None).unwrap_or_default(),
+        )),
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
             fields: Vec::new(),
+        }),
+        // `now` is `Term::Named`, not a call.
+        Expr::Call { name, args } if args.is_empty() && name.as_str() == "now" => Ok(RakuAstNode {
+            class: RakuAstClass::TermNamed,
+            fields: vec![leaf_field(None, Value::str("now".to_string()))],
         }),
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
@@ -3947,6 +3961,36 @@ fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
             Some("operator"),
             Value::str(token_kind_to_op_name(op)),
         )],
+    }
+}
+
+/// The `Term::Name` spelling of a math constant (`pi`, `π`, `tau`, `τ`, `e`,
+/// `𝑒`) the parser folded into a literal. `src` is the source a statement-level
+/// literal kept; without it only the exact constant value identifies the term,
+/// and the ASCII spelling is used.
+// Cost: O(1).
+fn math_constant_spelling(v: &Value, src: Option<&str>) -> Option<&'static str> {
+    const NAMES: [&str; 6] = ["pi", "\u{3c0}", "tau", "\u{3c4}", "e", "\u{1D452}"];
+    if let Some(src) = src {
+        return NAMES.iter().copied().find(|n| *n == src);
+    }
+    let ValueView::Num(n) = v.view() else {
+        return None;
+    };
+    [
+        (std::f64::consts::PI, "pi"),
+        (std::f64::consts::TAU, "tau"),
+        (std::f64::consts::E, "e"),
+    ]
+    .into_iter()
+    .find(|(c, _)| c.to_bits() == n.to_bits())
+    .map(|(_, name)| name)
+}
+
+fn term_name_node(name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::TermName,
+        fields: vec![node_field(None, name_from_identifier(name))],
     }
 }
 
