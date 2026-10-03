@@ -1797,14 +1797,16 @@ impl Interpreter {
             if name.contains("__ANON") {
                 continue;
             }
-            // A scalar `my $x` is stored sigil-less (env key `x`); `@`/`%`
-            // keep their sigil (`@a`/`%h`). Twigils and compiler-internal
-            // keys never start with a letter, `@`, or `%`.
-            if !name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '@' || c == '%')
-            {
+            // A scalar `my $x` is stored sigil-less (env key `x`); `@`/`%`/`&`
+            // keep their sigil (`@a`/`%h`/`&f`). Twigils and compiler-internal
+            // keys never start with a letter, `@`, `%` or `&`.
+            if !name.chars().next().is_some_and(|c| {
+                c.is_ascii_alphabetic()
+                    || c == '_'
+                    || c == '@'
+                    || c == '%'
+                    || (c == '&' && crate::env::is_user_variable_key(name))
+            }) {
                 continue;
             }
             if !names.iter().any(|n| n == name) {

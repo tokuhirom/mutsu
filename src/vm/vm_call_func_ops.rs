@@ -241,22 +241,14 @@ impl Interpreter {
         code: Option<&CompiledCode>,
         name: &str,
     ) -> Option<Value> {
-        let imported_alias = self
-            .imported_env_aliases
-            .contains_key(&Symbol::intern(&format!("&{name}")));
-        if Self::is_control_flow_function_name(name)
-            || Self::is_interpreter_carrier_function(name)
-            || self.is_interpreter_handled_function(name)
-            || (!imported_alias
-                && (crate::runtime::Interpreter::is_builtin_function(name)
-                    || self.has_function(name)
-                    || self.has_proto_cached(name)
-                    || self.has_multi_candidates_cached(name)))
-        {
+        if !self.lexical_amp_call_eligible(name) {
             return None;
         }
         let candidate = dispatch_key::with_amp_name(name, |ampname| {
             code.and_then(|c| self.locals_get_by_name(c, ampname))
+                // The declaration-scoped binding beats a caller's same-named
+                // `my &name` in env, as for a `&name` read.
+                .or_else(|| code.and_then(|c| self.declared_scope_amp_var_for(c, name)))
                 .or_else(|| self.env().get(ampname).cloned())
                 // An imported CODE variable (`our &f is export`, or a sub
                 // generated into a module's `EXPORT::` stash) is a lexical of
@@ -283,15 +275,39 @@ impl Interpreter {
         // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
         // filter below must classify the CALLABLE, not the cell.
         .map(|v| v.into_deref());
-        candidate.filter(|v| {
-            matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
-                || matches!(v.view(), ValueView::Routine { .. })
-                || matches!(
-                    v.view(),
-                    ValueView::Instance { class_name, .. }
-                        if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
-                )
-        })
+        candidate.filter(Self::is_lexical_amp_call_target)
+    }
+
+    /// Whether a bare call `name(...)` may dispatch to a lexical `&name`
+    /// callable: not a builtin / interpreter-handled / carrier / control-flow
+    /// name, and (unless `&name` is an imported alias) no same-named package
+    /// sub / proto / multi, whose shadow case is handled separately.
+    ///
+    /// Cost: O(1) hashed probes.
+    pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
+        let imported_alias = self
+            .imported_env_aliases
+            .contains_key(&Symbol::intern(&format!("&{name}")));
+        !(Self::is_control_flow_function_name(name)
+            || Self::is_interpreter_carrier_function(name)
+            || self.is_interpreter_handled_function(name)
+            || (!imported_alias
+                && (crate::runtime::Interpreter::is_builtin_function(name)
+                    || self.has_function(name)
+                    || self.has_proto_cached(name)
+                    || self.has_multi_candidates_cached(name))))
+    }
+
+    /// The value shapes [`Self::lexical_amp_var_callable`] dispatches
+    /// directly; anything else keeps the interpreter terminal.
+    pub(crate) fn is_lexical_amp_call_target(v: &Value) -> bool {
+        matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+            || matches!(v.view(), ValueView::Routine { .. })
+            || matches!(
+                v.view(),
+                ValueView::Instance { class_name, .. }
+                    if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+            )
     }
 
     /// Resolve a lexical `&infix:<op>` override (a `&infix:<op>` parameter or a
@@ -1752,15 +1768,12 @@ impl Interpreter {
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // resolve_code_var handles pseudo-package stripping internally
-        // A named routine's free `&name` is the binding visible at its
-        // declaration (the unit-lexical cell), not a same-named `my &name`
-        // in the CALLER's env (#10483).
-        let mut target = dispatch_key::with_amp_name(&name, |amp| self.unit_scope_lexical(amp))
-            .map(Value::into_deref)
-            .unwrap_or(Value::NIL);
-        if target.is_nil() {
-            target = self.resolve_amp_var_for(code, &name);
-        }
+        // A routine's free `&name` is the binding visible at its declaration,
+        // not a same-named `my &name` in the CALLER's env (#10483).
+        let mut target = match self.declared_scope_amp_var_for(code, &name) {
+            Some(v) => v,
+            None => self.resolve_amp_var_for(code, &name),
+        };
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
         // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,
         // see `news/2026-08/named-callable-parameter-binds.md`). `&cb()` in such
