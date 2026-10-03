@@ -2553,6 +2553,12 @@ impl Expr {
         }
     }
 
+    /// Whether this is the onlystar dispatch [`Expr::onlystar_dispatch`] builds.
+    // Cost: O(1).
+    pub(crate) fn is_onlystar_dispatch(&self) -> bool {
+        matches!(self, Expr::Call { name, args } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
+    }
+
     /// Whether this expression is one of the syntactic empty import lists
     /// accepted by `use Module Empty` and `use Module ()`.
     ///

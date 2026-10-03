@@ -225,6 +225,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
         RakuAstClass::Role => super::role::lower(node),
+        RakuAstClass::Method if super::proto::is_proto(node) => super::proto::lower(node),
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
         RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
         RakuAstClass::TypeEnum => lower_enum(node),
@@ -256,6 +257,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.
+        RakuAstClass::Sub
+            if node.fields.iter().any(|f| f.name == Some("name"))
+                && super::proto::is_proto(node) =>
+        {
+            super::proto::lower(node)
+        }
         RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => lower_sub(node),
         // `given`/`when`/`default` — a `when`/`default` sits directly (not
         // Statement::Expression-wrapped) in the enclosing `given` block, so it
@@ -1010,7 +1017,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// `Trait::Is(name => rw|raw)` sets `is_traits` when the caller takes one
 /// (a method) and is refused otherwise.
 #[allow(clippy::type_complexity)]
-fn routine_return_type(
+pub(super) fn routine_return_type(
     node: &RakuAstNode,
     mut is_traits: Option<&mut super::routine_traits::IsTraits>,
 ) -> Result<(Option<String>, Vec<(String, Option<Expr>)>), RuntimeError> {
@@ -1072,7 +1079,7 @@ fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<Strin
 /// `$` sigil stripped. Nested `sub-signature` nodes are lowered recursively
 /// into `ParamDef.sub_signature`.
 #[allow(clippy::type_complexity)]
-fn signature_positional_params(
+pub(super) fn signature_positional_params(
     node: &RakuAstNode,
 ) -> Result<(Vec<String>, Vec<ParamDef>), RuntimeError> {
     let Ok(sig) = named_child(node, "signature") else {
@@ -2691,6 +2698,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
+        RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.
         RakuAstClass::VarDeclarationSignature => {
