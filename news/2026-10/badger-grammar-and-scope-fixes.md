@@ -9,7 +9,7 @@ now pass under mutsu, through these general fixes:
 - **`R.^parameterize($value)`** parameterizes a role by the value, exactly as
   `R[$value]` does, instead of spelling the value into a package name.
 - **`my class T { ... }.new(...)`** as a statement is a postfix on the type
-  object (and keeps the class lexical), also when its body uses `$!attr`.
+  object, also when its body uses `$!attr`.
 - **`<|b>`, `<|c>`, `<|g>` and `<!|w>`** regex boundary assertions.
 - **A statement starting with a hash composer and a comma**
   (`method hashes { {result => 1}, {result => 2} }`) is one list, not two
