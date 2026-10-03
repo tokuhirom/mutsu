@@ -1410,7 +1410,7 @@ impl Interpreter {
                 // (`nested_capture_owners`) so a routine's explicit `$Pkg::x`
                 // store is never redirected.
                 if !is_rebind
-                    && (self.in_regex_code_block
+                    && (self.regex_state.in_regex_code_block
                         || (!self.nested_capture_owners.is_empty()
                             && !is_bind_ctx
                             && !raw_mode
@@ -1439,7 +1439,7 @@ impl Interpreter {
                             && qualifier == cur
                             && self.get_our_var(&name).is_none()
                             && !self.env().contains_key(&name)
-                            && (if self.in_regex_code_block {
+                            && (if self.regex_state.in_regex_code_block {
                                 self.env().contains_key(&bare)
                             } else {
                                 matches!(
@@ -4580,7 +4580,7 @@ impl Interpreter {
                             // without `use fatal` in effect (`t/failure-fatal-mode-
                             // creation-time.t`) — Raku decides a Failure's fate at
                             // *construction* time, not at every later mention.
-                            if !self.in_regex_code_block
+                            if !self.regex_state.in_regex_code_block
                                 && may_explode_failure
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {

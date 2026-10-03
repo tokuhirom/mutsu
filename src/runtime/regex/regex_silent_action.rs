@@ -25,7 +25,7 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         sym: Option<&str>,
     ) -> bool {
-        let Some(actions) = self.current_grammar_actions.as_ref() else {
+        let Some(actions) = self.regex_state.current_grammar_actions.as_ref() else {
             return false;
         };
         let class_sym: Symbol = match actions.view() {

@@ -41,7 +41,7 @@ impl Interpreter {
                 computed
             }
         };
-        std::mem::replace(&mut self.grammar_rule_dynvar_decls, per_rule)
+        std::mem::replace(&mut self.regex_state.grammar_rule_dynvar_decls, per_rule)
     }
 
     /// The actual per-package MRO+registry scan `establish_grammar_dynamic_vars`
@@ -126,7 +126,11 @@ impl Interpreter {
         {
             return None;
         }
-        let decls = self.grammar_rule_dynvar_decls.get(rule_name)?.clone();
+        let decls = self
+            .regex_state
+            .grammar_rule_dynvar_decls
+            .get(rule_name)?
+            .clone();
         let mut keys = Vec::new();
         let mut saved = Vec::new();
         for decl in &decls {
@@ -703,8 +707,10 @@ impl Interpreter {
         // incrementally at reduce time; mutsu otherwise only runs them post-parse.
         // See `eval_regex_code_assertion`. Saved/restored so nested/re-entrant
         // parses stay balanced.
-        let saved_grammar_actions =
-            std::mem::replace(&mut self.current_grammar_actions, actions_obj.clone());
+        let saved_grammar_actions = std::mem::replace(
+            &mut self.regex_state.current_grammar_actions,
+            actions_obj.clone(),
+        );
         // Activate the reduce-time dyn-var overlay for action-driven parses so an
         // action that writes a `$*` dynamic var mid-parse (e.g. a delimiter
         // finalizer) affects subsequent subrule matching. No-op overlay cost
@@ -1119,7 +1125,7 @@ impl Interpreter {
         // Restore the enclosing parse's declaration table. Rule frames own the
         // actual environment bindings, so there is no parse-wide dynamic env
         // restore here anymore.
-        self.grammar_rule_dynvar_decls = saved_grammar_dynvars;
+        self.regex_state.grammar_rule_dynvar_decls = saved_grammar_dynvars;
         // Restore whatever `establish_grammar_body_statics` overwrote.
         for (key, prev) in saved_grammar_body_statics {
             match prev {
@@ -1142,7 +1148,7 @@ impl Interpreter {
         } else {
             self.env.remove("made");
         }
-        self.current_grammar_actions = saved_grammar_actions;
+        self.regex_state.current_grammar_actions = saved_grammar_actions;
         // In Raku 6.c/6.d, Grammar.parse/parsefile returns Nil on failure.
         // In 6.e+, it returns a Failure object. The decision is keyed on the
         // grammar's *declaration* revision (captured as type metadata), not the
@@ -1386,7 +1392,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.env.insert("/".to_string(), match_obj.clone());
         self.env.remove("made");
-        self.action_made = None;
+        self.regex_state.action_made = None;
         // Hide the parent's named/positional captures from the leaf's action.
         let saved_named_captures = self.take_action_named_captures();
         let saved_positional = self.take_action_positional_captures();
@@ -1509,7 +1515,7 @@ impl Interpreter {
             Err(e) => return Err(e),
         }
 
-        Ok(match self.action_made.take() {
+        Ok(match self.regex_state.action_made.take() {
             Some(ast) => match match_obj.match_with_ast_lazy(ast.clone()) {
                 Some(v) => v,
                 // The action itself observed `$/` (materializing it) — fall
@@ -1979,7 +1985,7 @@ impl Interpreter {
         // Set $/ to this match and try calling actions.{rule_name}(match)
         self.env.insert("/".to_string(), match_obj.clone());
         self.env.remove("made");
-        self.action_made = None;
+        self.regex_state.action_made = None;
         // Save old named capture env vars so parent captures don't leak into child actions
         let saved_named_captures = self.take_action_named_captures();
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
@@ -2127,7 +2133,7 @@ impl Interpreter {
 
         // If make() was called (via action_made which persists across env restore),
         // update .ast on match
-        let final_obj = if let Some(ast) = self.action_made.take() {
+        let final_obj = if let Some(ast) = self.regex_state.action_made.take() {
             let attrs = updated_attrs;
             attrs.insert("ast".to_string(), ast);
             // Preserve actions attribute if present
