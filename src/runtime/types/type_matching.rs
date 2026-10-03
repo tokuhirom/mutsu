@@ -126,7 +126,7 @@ impl Interpreter {
         // could only miss -- and it ran on every `Int:D` check in a program
         // that loaded a module (#9494). The aliased base with a smiley
         // (`MyInt:D`) is resolved where the smiley is stripped.
-        if name.contains(':') && !crate::runtime::utils::has_double_colon(name) {
+        if crate::runtime::types::strip_type_smiley(name).1.is_some() {
             return None;
         }
         if name.is_empty()

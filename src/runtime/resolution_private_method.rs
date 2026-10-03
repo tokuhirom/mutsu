@@ -239,7 +239,7 @@ impl Interpreter {
         let private_rest = method.strip_prefix('!')?;
         // The owner-qualified form (`$obj!Owner::m`) is rare and keeps the
         // uncached walk.
-        let keys = if crate::runtime::utils::has_double_colon(private_rest) {
+        let keys = if crate::qualified::is_qualified(method_sym) {
             None
         } else {
             self.multi_arg_type_keys(arg_values)
