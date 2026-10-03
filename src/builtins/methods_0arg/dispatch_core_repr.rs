@@ -623,6 +623,9 @@ pub(super) fn dispatch(
                     ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
                         crate::value::lazy_list_placeholder("gist", ll.in_array_context())
                     }
+                    // A pulled finite lazy list (a `gather` element) is a Seq:
+                    // the shared gist renders it parenthesised.
+                    ValueView::LazyList(_) => crate::value::gist::gist_value(v),
                     ValueView::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, kind)
@@ -778,6 +781,9 @@ pub(super) fn dispatch(
                     ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
                         crate::value::lazy_list_placeholder("gist", ll.in_array_context())
                     }
+                    // A pulled finite lazy list (a `gather` element) is a Seq:
+                    // the shared gist renders it parenthesised.
+                    ValueView::LazyList(_) => crate::value::gist::gist_value(v),
                     ValueView::Array(inner, kind) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, kind)

@@ -20,6 +20,15 @@ impl Interpreter {
         match value.view() {
             ValueView::Seq(body) => {
                 if seen.insert((0, body.identity())) {
+                    // A deferred, non-lazy Seq nested in what is being read
+                    // (a `gather` held in a variable or returned per element
+                    // by a hyper: `@nodes>>.all`) is pulled once here, as
+                    // its `.gist`/`.Str`/`.flat` would; reading it through
+                    // pure code rendered it as empty.
+                    if !body.is_lazy() {
+                        let body = std::sync::Arc::clone(&body);
+                        self.reify_seq_body(&body)?;
+                    }
                     for item in body.iter() {
                         self.reify_nested_map_grep_for_read_inner(item, seen)?;
                     }
@@ -34,6 +43,18 @@ impl Interpreter {
             }
             ValueView::Scalar(inner) => {
                 self.reify_nested_map_grep_for_read_inner(inner, seen)?;
+            }
+            // A finite `gather` is a LazyList until pulled: fill its cache so
+            // pure readers see its elements (see the Seq arm above).
+            ValueView::LazyList(list) => {
+                if !list.is_genuinely_lazy()
+                    && seen.insert((3, crate::gc::Gc::as_ptr(&list) as *const () as usize))
+                {
+                    let list = crate::gc::Gc::clone(&list);
+                    for item in self.force_lazy_list_vm(&list)? {
+                        self.reify_nested_map_grep_for_read_inner(&item, seen)?;
+                    }
+                }
             }
             // A Pair's value is an item container, so `$k => @seq.map(...)`
             // built from a variable (or by a `for` loop body) holds the

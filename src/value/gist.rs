@@ -444,6 +444,17 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // `[...]` held in `@` array context, `(...)` for a bare Seq.
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
         }
+        // A finite lazy list whose cache is filled (a pulled `gather`) is a Seq:
+        // it renders as one, parenthesised, as an element of an outer list too
+        // (`[(5) (5)]` for `@nodes>>.all`).
+        // Cost: O(t), t = rendered size of at most the first 100 elements.
+        ValueView::LazyList(ll) if ll.cache.lock().unwrap().is_some() => {
+            let cache = ll.cache.lock().unwrap();
+            let items = cache.as_deref().unwrap_or(&[]);
+            let open = if ll.in_array_context() { "[" } else { "(" };
+            let close = if ll.in_array_context() { "]" } else { ")" };
+            format!("{open}{}{close}", gist_elements(items.iter(), " "))
+        }
         // Cost: O(t), t = rendered size of at most the first 100 elements (the
         // gist head, as in Rakudo).
         ValueView::Array(items, kind) => {
