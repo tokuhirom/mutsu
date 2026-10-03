@@ -203,6 +203,15 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
 ///   `Stmt::Expr(AssignExpr)`, so `(1, 2, 3).map({ $x = 9 })` yields the assigned
 ///   value, not the topic. Using the assignment *expression* keeps the normal
 ///   store (readonly / type-constraint checks) intact.
+/// Append one map-block result to `result`, flattening a `Slip`.
+// Cost: O(1) (O(k) for a Slip, k = its elements).
+fn push_map_value(result: &mut Vec<Value>, val: Value) {
+    match val.view() {
+        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+        _ => result.push(val),
+    }
+}
+
 pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
     use crate::ast::{AssignOp, Expr, Stmt};
     let Some(last_idx) = crate::ast::last_value_stmt_index(body, crate::ast::TailSkip::Markers)
@@ -757,10 +766,19 @@ impl Interpreter {
                                 _ => result.push(val),
                             }
                         }
-                        Err(e) if e.is_next() => {}
+                        // v6.e `next VALUE` / `last VALUE`: the value is the
+                        // item's contribution to the map's result.
+                        Err(e) if e.is_next() => {
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut result, val);
+                            }
+                        }
                         Err(e) if e.is_last() => {
                             vm.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut result, val);
+                            }
                             break;
                         }
                         Err(e) if e.is_succeed() => {

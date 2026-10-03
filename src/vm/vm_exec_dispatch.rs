@@ -5086,6 +5086,38 @@ impl Interpreter {
                     label.clone(),
                 ));
             }
+            // Cost: O(1) (raises a control signal carrying the popped value).
+            OpCode::LastValue => {
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                return Err(crate::builtins::label::loop_control_value_signal(
+                    crate::value::Control::Last,
+                    value,
+                ));
+            }
+            // Cost: O(1) (raises a control signal carrying the popped value).
+            OpCode::NextValue => {
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                return Err(crate::builtins::label::loop_control_value_signal(
+                    crate::value::Control::Next,
+                    value,
+                ));
+            }
+            // Cost: O(1).
+            OpCode::LoopControlLabelArg(is_last) => {
+                if let Some(name) = self.stack.last().and_then(crate::value::label::label_name) {
+                    self.stack.pop();
+                    let control = if *is_last {
+                        crate::value::Control::Last
+                    } else {
+                        crate::value::Control::Next
+                    };
+                    return Err(crate::runtime::loop_handler_depth::loop_control_signal(
+                        control,
+                        Some(name),
+                    ));
+                }
+                *ip += 1;
+            }
             // Cost: O(1) (raises a control signal).
             OpCode::Redo(label) => {
                 return Err(crate::runtime::loop_handler_depth::loop_control_signal(

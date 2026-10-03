@@ -342,7 +342,17 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             super::walk_stmts(v, body);
         }
         Expr::DoStmt(stmt) => v.visit_stmt(stmt),
-        Expr::ControlFlow { kind: _, label } => names(v, label.iter(), NameKind::Label),
+        Expr::ControlFlow {
+            kind: _,
+            label,
+            value,
+            take_value: _,
+        } => {
+            names(v, label.iter(), NameKind::Label);
+            if let Some(value) = value {
+                v.visit_expr(value);
+            }
+        }
         Expr::IndirectCodeLookup { package, name } => {
             v.visit_expr(package);
             v.visit_name(name, NameKind::Symbolic);

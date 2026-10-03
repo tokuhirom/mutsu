@@ -299,7 +299,16 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             origin: _,
         } => v.visit_stmts_mut(body),
         Expr::DoStmt(stmt) => v.visit_stmt_mut(stmt),
-        Expr::ControlFlow { kind: _, label: _ } => {}
+        Expr::ControlFlow {
+            kind: _,
+            label: _,
+            value,
+            take_value: _,
+        } => {
+            if let Some(value) = value {
+                v.visit_expr_mut(value);
+            }
+        }
         Expr::IndirectCodeLookup { package, name: _ } => v.visit_expr_mut(package),
         Expr::SymbolicDeref { sigil: _, expr } => v.visit_expr_mut(expr),
         Expr::SymbolicDerefAssign {

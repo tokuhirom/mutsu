@@ -29,6 +29,20 @@ impl Interpreter {
         }
     }
 
+    /// The value a caught `last` / `next` signal carries (v6.e's
+    /// `last VALUE` / `next VALUE`, `return_value`): the iteration's
+    /// contribution to a collecting loop's result. A plain `last` / `next`
+    /// carries none and contributes nothing.
+    // Cost: O(1) (O(k) for a Slip value, k = its elements).
+    pub(super) fn collect_loop_control_value(
+        collected: &mut Option<Vec<Value>>,
+        value: Option<Value>,
+    ) {
+        if let (Some(coll), Some(value)) = (collected.as_mut(), value) {
+            Self::collect_loop_value(coll, value);
+        }
+    }
+
     /// `for` over a non-itemized Blob/Buf iterates its bytes (raku: a `Blob`
     /// value, a `Blob:D`-typed param, or a `:=`-bound Blob yields its bytes).
     /// Returns the byte items when `iterable` is such a Blob, else `None` (so
@@ -626,10 +640,12 @@ impl Interpreter {
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         break 'while_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
