@@ -2281,10 +2281,15 @@ impl Interpreter {
             // `keys` guard in step with the `[*]` arm above: a minimal class that
             // only supplies AT-POS/elems is still a scalar-like object under
             // Raku's subscript protocol.
+            // A `WhateverCode` position (`$o[*-1]`) on a user Positional is
+            // computed against its `.elems`, whether the class lists its keys or
+            // only answers AT-POS (Trie's `$t[*-1]`).
             (ValueView::Instance { class_name, .. }, ValueView::Sub(_))
                 if is_positional
                     && self.type_matches_value("Positional", &target)
-                    && self.has_user_method_including_role(&class_name.resolve(), "keys") =>
+                    && (self.has_user_method_including_role(&class_name.resolve(), "keys")
+                        || self
+                            .has_user_method_including_role(&class_name.resolve(), "AT-POS")) =>
             {
                 let len = self
                     .try_compiled_method_or_interpret(target.clone(), "elems", vec![])

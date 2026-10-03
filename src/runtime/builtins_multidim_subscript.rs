@@ -331,11 +331,11 @@ impl Interpreter {
         };
         // A blessed Associative object (`my %h is Foo`, Foo `does Associative`)
         // has no native Hash storage, so the `:v`/`:k`/`:kv`/`:p` slice adverbs
-        // must dispatch through its subscript protocol. Snapshot its current
-        // contents (keys + AT-KEY) into a plain Hash and run the ordinary Hash
-        // path on that; a companion `:delete` is routed back through DELETE-KEY on
-        // the instance (the snapshot is a copy). `:exists` is handled on the
-        // instance elsewhere and never reaches here.
+        // dispatch through its subscript protocol (`assoc_instance_adverb_view`)
+        // and the ordinary Hash path reports from that view; a companion
+        // `:delete` is routed back through DELETE-KEY on the instance (the view
+        // is a copy). `:exists` is handled on the instance elsewhere and never
+        // reaches here.
         let assoc_instance: Option<Value> = if matches!(target.view(), ValueView::Instance { class_name, .. }
             if self.has_user_method(&class_name.resolve(), "AT-KEY"))
         {
@@ -351,18 +351,9 @@ impl Interpreter {
         // the equivalent explicit key slice.
         let mut assoc_keys: Option<Vec<Value>> = None;
         let target = if let Some(inst) = assoc_instance.as_ref() {
-            let keys_val = self.call_method_with_values(inst.clone(), "keys", vec![])?;
-            let mut map = ValueMap::default();
-            let mut ordered = Vec::new();
-            for key in crate::runtime::utils::value_to_list(&keys_val) {
-                let value =
-                    self.call_method_with_values(inst.clone(), "AT-KEY", vec![key.clone()])?;
-                let key_str = key.to_string_value();
-                map.insert(key_str.clone(), value);
-                ordered.push(Value::str(key_str));
-            }
-            assoc_keys = Some(ordered);
-            Value::hash(map)
+            let (view, ordered) = self.assoc_instance_adverb_view(inst, &index)?;
+            assoc_keys = ordered;
+            view
         } else {
             target
         };

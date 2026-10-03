@@ -60,4 +60,18 @@ impl Interpreter {
         }
         rank
     }
+
+    /// The nominal distance of an argument from the implicit constraint of an
+    /// unconstrained `@`/`%` parameter (`Positional`/`Associative`), shared by
+    /// multi-sub and multi-method dispatch. A `Seq` binds to `@` through
+    /// `PositionalBindFailover` (it is cached into a `List`), so it ranks as
+    /// that List: `(@arr)` stays narrower than `(Str() $k)` or `(Any $x)` for
+    /// `"abc".comb`, as in rakudo (Trie's `delete(@arr)` / `delete(Str() $key)`).
+    /// `None` when the Seq rule does not apply.
+    // Cost: O(d), d = depth of `List`'s type hierarchy.
+    pub(super) fn seq_as_positional_distance(&self, implicit: &str, arg: &Value) -> Option<usize> {
+        (implicit == "Positional" && arg.is_seq_value()).then(|| {
+            self.type_hierarchy_distance(implicit, &Value::package(Symbol::intern("List")))
+        })
+    }
 }
