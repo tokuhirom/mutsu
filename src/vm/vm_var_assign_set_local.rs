@@ -2984,7 +2984,9 @@ impl Interpreter {
                     // The topic aliasing a `Scalar` (an element, a `$` variable)
                     // itemizes like any scalar store; aliasing a whole bare
                     // `@`/`%` container (`given @a { .=reverse }`) writes back raw.
-                    val = if name == "_" && Self::topic_holds_scalar(&Value::container_ref(arc.clone())) {
+                    val = if name == "_"
+                        && Self::topic_holds_scalar(&Value::container_ref(arc.clone()))
+                    {
                         Self::itemize_scalar_store_value(normalized)
                     } else {
                         Self::itemize_scalar_store(name, normalized)
