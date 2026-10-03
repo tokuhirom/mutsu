@@ -234,7 +234,7 @@ impl Interpreter {
     /// signal. Control signals — `return`, `last`, `next`, `warn`, `take`, `fail`,
     /// `succeed` — have their own routing and must never be diverted into a CATCH
     /// handler here.
-    fn is_inline_catchable(err: &RuntimeError) -> bool {
+    pub(crate) fn is_inline_catchable(err: &RuntimeError) -> bool {
         err.control.is_none() && err.return_value.is_none() && !err.is_leave
     }
 
