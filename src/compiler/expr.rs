@@ -404,6 +404,13 @@ impl Compiler {
                     }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.sigilless_locals.contains(name.as_str()) {
+                    // A sigilless binding with no slot of its own -- a `for`
+                    // loop's `-> \i` parameter, bound by name -- is still the
+                    // variable: read it by name. GetBareWord would resolve the
+                    // term first, so `-> \i` read back the imaginary unit `i`.
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));

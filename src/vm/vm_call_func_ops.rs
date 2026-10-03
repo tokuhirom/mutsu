@@ -1822,12 +1822,9 @@ impl Interpreter {
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
         if target.is_nil()
-            && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
-            && let Some(ValueView::Instance { attributes, .. }) =
-                self.get_env_self().as_ref().map(Value::view)
-            && let Some(attr_val) = attributes.as_map().get(attr_name)
+            && let Some(attr_val) = self.self_private_code_attr(&name)
         {
-            target = attr_val.clone();
+            target = attr_val;
         }
         let result = if !target.is_nil() {
             let sub_is_rw = if let ValueView::Sub(data) = target.view() {

@@ -416,6 +416,25 @@ impl Interpreter {
                 let base_instance = self.dispatch_bless_unallocated(inner.as_ref(), args)?;
                 return self.compose_mixin_type_roles(base_instance, mixins);
             }
+            // `self.bless` inside a role's own `method new`, called on a
+            // parameterised role (`Heap[-*].new(...)`): the role puns to the
+            // class composed from `R[args]`, and that class is what is blessed.
+            ValueView::ParametricRole {
+                base_name,
+                type_args,
+            } => {
+                let base = base_name.resolve();
+                let type_args = type_args.clone();
+                if let Some(punned) = self.ensure_parametric_role_pun_class(&base, &type_args)? {
+                    return self.dispatch_bless_unallocated(
+                        &Value::package(Symbol::intern(&punned)),
+                        args,
+                    );
+                }
+                return Err(RuntimeError::new(
+                    "bless can only be called on a class or instance",
+                ));
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "bless can only be called on a class or instance",
@@ -440,7 +459,20 @@ impl Interpreter {
             if !self.registry().classes.contains_key(cn.as_str())
                 && self.registry().roles.contains_key(cn.as_str())
             {
+                // The pun is withdrawn after the bless and the instance marked
+                // as the role's, exactly as `.new`'s pun does: a class left
+                // registered under the role's name is what a later `R[...]`
+                // pun then composed from -- a role-declared `method new`
+                // calling `self.bless` on `Heap` made every later
+                // `Heap[-*].new` run with the default comparator.
                 self.ensure_role_punned_to_class(&cn)?;
+                let constructed = self.dispatch_bless_unallocated(target, args);
+                self.withdraw_role_pun(&cn);
+                return Ok(self.mark_punned_role_instance(
+                    class_name,
+                    constructed?,
+                    crate::value::ValueMap::default(),
+                ));
             }
         }
         // Initialize with default attribute values. The attribute defs and the
