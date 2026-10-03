@@ -1,0 +1,2 @@
+# ADR-10779 control subsystem: ControlState (src/runtime/control_state.rs).
+control

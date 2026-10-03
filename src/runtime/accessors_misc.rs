@@ -386,7 +386,7 @@ impl Interpreter {
         } else {
             value.into_temp_snapshot()
         };
-        self.let_saves.push(super::LetSaveEntry {
+        self.control.let_saves.push(super::LetSaveEntry {
             name,
             value,
             is_temp,
@@ -404,7 +404,7 @@ impl Interpreter {
         value: Value,
         is_temp: bool,
     ) {
-        self.let_saves.push(super::LetSaveEntry {
+        self.control.let_saves.push(super::LetSaveEntry {
             name: String::new(),
             value: value.into_temp_snapshot(),
             is_temp,
@@ -524,7 +524,7 @@ impl Interpreter {
 
     /// Current length of let_saves stack (used as a mark).
     pub(crate) fn let_saves_len(&self) -> usize {
-        self.let_saves.len()
+        self.control.let_saves.len()
     }
 
     /// Discard `let_saves` entries pushed since `mark`, for panic-unwind
@@ -540,7 +540,9 @@ impl Interpreter {
     /// restore no longer exists. See
     /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
     pub(crate) fn truncate_let_saves(&mut self, mark: usize) {
-        self.let_saves.truncate(mark.min(self.let_saves.len()));
+        self.control
+            .let_saves
+            .truncate(mark.min(self.control.let_saves.len()));
     }
 
     /// Resolve the value to restore, applying `is default(...)` when restoring Nil.
@@ -555,11 +557,11 @@ impl Interpreter {
 
     /// Restore all variables from let_saves starting at `mark`, then truncate.
     pub(crate) fn restore_let_saves(&mut self, mark: usize) {
-        for i in (mark..self.let_saves.len()).rev() {
-            let save = self.let_saves[i].clone();
+        for i in (mark..self.control.let_saves.len()).rev() {
+            let save = self.control.let_saves[i].clone();
             self.restore_let_entry(save);
         }
-        self.let_saves.truncate(mark);
+        self.control.let_saves.truncate(mark);
     }
 
     /// On successful block exit: restore `temp` saves, discard `let` saves.
@@ -570,8 +572,8 @@ impl Interpreter {
     /// nothing to restore (1.3% of `bench-fib`'s self time).
     #[inline]
     pub(crate) fn resolve_let_saves_on_success(&mut self, mark: usize, success: bool) {
-        if mark >= self.let_saves.len() {
-            self.let_saves.truncate(mark);
+        if mark >= self.control.let_saves.len() {
+            self.control.let_saves.truncate(mark);
             return;
         }
         self.resolve_let_saves_on_success_slow(mark, success);
@@ -580,19 +582,19 @@ impl Interpreter {
     #[inline(never)]
     fn resolve_let_saves_on_success_slow(&mut self, mark: usize, success: bool) {
         // Collect restore actions first to avoid borrow conflicts.
-        let restores: Vec<super::LetSaveEntry> = (mark..self.let_saves.len())
+        let restores: Vec<super::LetSaveEntry> = (mark..self.control.let_saves.len())
             .rev()
-            .filter(|&i| self.let_saves[i].is_temp || !success)
-            .map(|i| self.let_saves[i].clone())
+            .filter(|&i| self.control.let_saves[i].is_temp || !success)
+            .map(|i| self.control.let_saves[i].clone())
             .collect();
         for save in restores {
             self.restore_let_entry(save);
         }
-        self.let_saves.truncate(mark);
+        self.control.let_saves.truncate(mark);
     }
 
     /// Discard let_saves from `mark` without restoring (block succeeded).
     pub(crate) fn discard_let_saves(&mut self, mark: usize) {
-        self.let_saves.truncate(mark);
+        self.control.let_saves.truncate(mark);
     }
 }

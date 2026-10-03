@@ -656,8 +656,8 @@ impl Interpreter {
                     }
                 }
                 // If the callback called exit, terminate the process
-                if interp.halted {
-                    std::process::exit(interp.exit_code as i32);
+                if interp.control.halted {
+                    std::process::exit(interp.control.exit_code as i32);
                 }
                 // If the callback threw an unhandled exception, terminate — but a
                 // `done`/`last` is a control signal the supply machinery owns, not a

@@ -54,19 +54,21 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) {
         let (control_begin, end) = range;
-        self.control_handler_depth += 1;
+        self.control.control_handler_depth += 1;
         let handler = crate::vm::ControlHandlerCode {
             code: code.shared_snapshot(),
             control_begin,
             end,
             compiled_fns: self.shared_fns_snapshot(compiled_fns),
         };
-        self.control_handlers.push(crate::vm::ControlHandlerEntry {
-            resume_safe,
-            handler,
-            handles_take,
-            token,
-        });
+        self.control
+            .control_handlers
+            .push(crate::vm::ControlHandlerEntry {
+                resume_safe,
+                handler,
+                handles_take,
+                token,
+            });
     }
 
     /// Offer a warning to the active CONTROL handlers at its raise site.
@@ -83,10 +85,10 @@ impl Interpreter {
         // declared *inside* the region is still above this floor and gets
         // first look, matching rakudo's nesting order.
         let floor = self.warn_control_handler_floor();
-        let mut idx = self.control_handlers.len();
+        let mut idx = self.control.control_handlers.len();
         while idx > floor {
             idx -= 1;
-            let entry = &self.control_handlers[idx];
+            let entry = &self.control.control_handlers[idx];
             let resume_safe = entry.resume_safe;
             let token = entry.token;
             let code = entry.handler.code.clone();
@@ -101,7 +103,7 @@ impl Interpreter {
             // letting it reach the outcome below. A `warn` raised in the handler
             // with no outer handler registered reaches the default handler at
             // the end of this function.
-            let inner = self.control_handlers.split_off(idx);
+            let inner = self.control.control_handlers.split_off(idx);
             let outcome = self.run_control_handler_inline(
                 &code,
                 control_begin,
@@ -110,7 +112,7 @@ impl Interpreter {
                 message,
                 resume_safe,
             );
-            self.control_handlers.extend(inner);
+            self.control.control_handlers.extend(inner);
             match outcome {
                 ControlInlineOutcome::Resumed => return Ok(Value::NIL),
                 ControlInlineOutcome::Handled => {

@@ -732,14 +732,14 @@ impl Interpreter {
     /// a nested load inherits its loader's class, since a module reached from
     /// an EVAL'd `use` is just as runtime-installed as the outer one.
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let order = match self.module_load_order.last() {
+        let order = match self.control.module_load_order.last() {
             Some(&inherited) => inherited,
             None if self.env.get("__mutsu_in_eval").is_some() => super::end_order::RUNTIME,
             None => super::end_order::MODULE,
         };
-        self.module_load_order.push(order);
+        self.control.module_load_order.push(order);
         let result = self.load_module_inner(module, None);
-        self.module_load_order.pop();
+        self.control.module_load_order.pop();
         result.map(|_precompiled| ())
     }
 
@@ -762,15 +762,16 @@ impl Interpreter {
         source_path: std::path::PathBuf,
     ) -> Result<bool, RuntimeError> {
         let order = self
+            .control
             .module_load_order
             .last()
             .copied()
             .unwrap_or(super::end_order::RUNTIME);
-        self.module_load_order.push(order);
+        self.control.module_load_order.push(order);
         let saved_suppress = std::mem::replace(&mut self.suppress_exports, true);
         let result = self.load_module_inner(module, Some((source_path, None)));
         self.suppress_exports = saved_suppress;
-        self.module_load_order.pop();
+        self.control.module_load_order.pop();
         result
     }
 

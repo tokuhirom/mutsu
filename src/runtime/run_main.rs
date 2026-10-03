@@ -287,7 +287,7 @@ impl Interpreter {
             self.call_sub_value(exit_fn, vec![Value::int(code)], false)?;
             return Ok(());
         }
-        self.exit_code = code;
+        self.control.exit_code = code;
         Ok(())
     }
 }

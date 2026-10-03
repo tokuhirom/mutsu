@@ -153,8 +153,8 @@ impl Interpreter {
     /// this hides every hoisted-but-not-yet-reached declaration; a nested
     /// region only keeps the depth aligned.
     pub(crate) fn begin_time_enter(&mut self) {
-        if !self.begin_time_hidden.is_empty() || self.hoisted_unreached_decls.is_empty() {
-            self.begin_time_hidden.push(Vec::new());
+        if !self.control.begin_time_hidden.is_empty() || self.hoisted_unreached_decls.is_empty() {
+            self.control.begin_time_hidden.push(Vec::new());
             return;
         }
         let records: Vec<HoistedDeclRecord> =
@@ -177,13 +177,13 @@ impl Interpreter {
         if !undo.is_empty() {
             self.invalidate_fn_resolution();
         }
-        self.begin_time_hidden.push(undo);
+        self.control.begin_time_hidden.push(undo);
     }
 
     /// Leave a BEGIN-time region (`CheckPhaserEnd`), putting back everything
     /// [`Self::begin_time_enter`] hid.
     pub(crate) fn begin_time_leave(&mut self) {
-        let Some(undo) = self.begin_time_hidden.pop() else {
+        let Some(undo) = self.control.begin_time_hidden.pop() else {
             return;
         };
         if undo.is_empty() {
@@ -211,7 +211,7 @@ impl Interpreter {
     /// region whose closing opcode is skipped must not leave declarations
     /// rolled out of the registry for the rest of the program.
     pub(crate) fn begin_time_unwind_to(&mut self, depth: u32) {
-        while self.begin_time_hidden.len() as u32 > depth {
+        while self.control.begin_time_hidden.len() as u32 > depth {
             self.begin_time_leave();
         }
     }

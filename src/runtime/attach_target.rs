@@ -89,7 +89,7 @@ impl Interpreter {
         attrs.insert("depth".to_string(), Value::int(depth));
         attrs.insert(
             "compunit".to_string(),
-            Value::int(self.compunit_leave_frames.len() as i64),
+            Value::int(self.control.compunit_leave_frames.len() as i64),
         );
         self.env.insert(
             "*R".to_string(),
@@ -122,12 +122,13 @@ impl Interpreter {
         &mut self,
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
-        self.compunit_leave_frames.push(CompunitLeaveFrame {
+        self.control.compunit_leave_frames.push(CompunitLeaveFrame {
             import_base: self.import_scope_stack.len(),
             phasers: Vec::new(),
         });
         let result = body(self);
         let frame = self
+            .control
             .compunit_leave_frames
             .pop()
             .expect("compunit leave frame pushed above");
@@ -138,7 +139,7 @@ impl Interpreter {
 
     /// The main program's attached LEAVE phasers, run once its mainline is done.
     pub(crate) fn run_mainline_leave_phasers(&mut self) -> Result<(), RuntimeError> {
-        let phasers = std::mem::take(&mut self.mainline_leave_phasers);
+        let phasers = std::mem::take(&mut self.control.mainline_leave_phasers);
         self.run_attached_leave_phasers(phasers)
     }
 
@@ -211,7 +212,7 @@ impl Interpreter {
             "block" => {
                 let base = compunit
                     .checked_sub(1)
-                    .and_then(|i| self.compunit_leave_frames.get(i))
+                    .and_then(|i| self.control.compunit_leave_frames.get(i))
                     .map_or(0, |frame| frame.import_base);
                 if depth > base {
                     target_handle("block", depth)
@@ -262,8 +263,8 @@ impl Interpreter {
                     ));
                 }
             },
-            Target::Compunit(0) => self.mainline_leave_phasers.push(code),
-            Target::Compunit(n) => match self.compunit_leave_frames.get_mut(n - 1) {
+            Target::Compunit(0) => self.control.mainline_leave_phasers.push(code),
+            Target::Compunit(n) => match self.control.compunit_leave_frames.get_mut(n - 1) {
                 Some(frame) => frame.phasers.push(code),
                 None => {
                     return Err(RuntimeError::new(
@@ -282,10 +283,11 @@ impl Interpreter {
             .iter()
             .flat_map(|scope| scope.leave_phasers.iter())
             .chain(
-                self.compunit_leave_frames
+                self.control
+                    .compunit_leave_frames
                     .iter()
                     .flat_map(|frame| frame.phasers.iter()),
             )
-            .chain(self.mainline_leave_phasers.iter())
+            .chain(self.control.mainline_leave_phasers.iter())
     }
 }
