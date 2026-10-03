@@ -37,32 +37,6 @@ fn make_no_match_error(method_name: &str) -> RuntimeError {
     err
 }
 
-///// Raku-style rounding: round half toward positive infinity (ceiling).
-fn raku_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
-
-/// Raku-style rounding that returns a Value, using BigInt for large values.
-fn raku_round_to_value(f: f64) -> Value {
-    let rounded = raku_round(f);
-    if rounded >= i64::MIN as f64 && rounded <= i64::MAX as f64 {
-        Value::int(rounded as i64)
-    } else {
-        use num_bigint::BigInt;
-        use num_traits::ToPrimitive;
-        let s = format!("{:.0}", rounded);
-        if let Ok(bi) = s.parse::<BigInt>() {
-            if let Some(i) = bi.to_i64() {
-                Value::int(i)
-            } else {
-                Value::bigint(bi)
-            }
-        } else {
-            Value::num(rounded)
-        }
-    }
-}
-
 fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<Value> {
     let mut total = 0.0;
     for weight in items.values() {

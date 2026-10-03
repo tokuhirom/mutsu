@@ -2,9 +2,8 @@
 /// ceiling, round, truncate, narrow, sqrt
 use crate::value::value_buf::{buf_elems_or_empty, buf_len_or_zero, make_buf};
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::{Signed, Zero};
 
-use super::{is_infinite_range, raku_round, raku_round_to_value};
+use super::is_infinite_range;
 
 /// `unique` and `repeated` share one pass over the input, keeping the values
 /// already seen in a [`crate::runtime::IdentityIndex`] so the duplicate test does not rescan
@@ -259,154 +258,17 @@ pub(super) fn dispatch(
             ValueView::LazyList(_) => None,
             _ => Some(Ok(Value::seq(Vec::new()))),
         }),
-        "floor" => Some(match target.view() {
-            ValueView::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::num(f))),
-            ValueView::Num(f) => Some(Ok(Value::int(f.floor() as i64))),
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::BigInt(_) => Some(Ok(target.clone())),
-            ValueView::Rat(n, d) if d != 0 => {
-                let q = n / d;
-                let r = n % d;
-                if r != 0 && (n < 0) != (d < 0) {
-                    Some(Ok(Value::int(q - 1)))
-                } else {
-                    Some(Ok(Value::int(q)))
-                }
-            }
-            ValueView::BigRat(n, d) if !d.is_zero() => {
-                use num_integer::Integer;
-                let (q, r) = n.div_rem(d);
-                if !r.is_zero() && n.is_negative() != d.is_negative() {
-                    Some(Ok(Value::bigint(q - 1)))
-                } else {
-                    Some(Ok(Value::bigint(q)))
-                }
-            }
-            ValueView::FatRat(n, d) if d != 0 => {
-                let q = n / d;
-                let r = n % d;
-                if r != 0 && (n < 0) != (d < 0) {
-                    Some(Ok(Value::int(q - 1)))
-                } else {
-                    Some(Ok(Value::int(q)))
-                }
-            }
-            ValueView::Complex(re, im) => Some(Ok(Value::complex(re.floor(), im.floor()))),
-            ValueView::Rat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "floor", "Rational",
-            ))),
-            ValueView::FatRat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "floor", "Rational",
-            ))),
-            ValueView::BigRat(_, d) if d.is_zero() => Some(Ok(
-                RuntimeError::divide_by_zero_failure_for_method("floor", "Rational"),
-            )),
-            _ => None,
-        }),
-        "ceiling" | "ceil" => Some(match target.view() {
-            ValueView::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::num(f))),
-            ValueView::Num(f) => Some(Ok(Value::int(f.ceil() as i64))),
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::BigInt(_) => Some(Ok(target.clone())),
-            ValueView::Rat(n, d) if d != 0 => {
-                let q = n / d;
-                let r = n % d;
-                if r != 0 && (n < 0) == (d < 0) {
-                    Some(Ok(Value::int(q + 1)))
-                } else {
-                    Some(Ok(Value::int(q)))
-                }
-            }
-            ValueView::BigRat(n, d) if !d.is_zero() => {
-                use num_integer::Integer;
-                let (q, r) = n.div_rem(d);
-                if !r.is_zero() && n.is_negative() == d.is_negative() {
-                    Some(Ok(Value::bigint(q + 1)))
-                } else {
-                    Some(Ok(Value::bigint(q)))
-                }
-            }
-            ValueView::FatRat(n, d) if d != 0 => {
-                let q = n / d;
-                let r = n % d;
-                if r != 0 && (n < 0) == (d < 0) {
-                    Some(Ok(Value::int(q + 1)))
-                } else {
-                    Some(Ok(Value::int(q)))
-                }
-            }
-            ValueView::Complex(re, im) => Some(Ok(Value::complex(re.ceil(), im.ceil()))),
-            ValueView::Rat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "ceiling", "Rational",
-            ))),
-            ValueView::FatRat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "ceiling", "Rational",
-            ))),
-            ValueView::BigRat(_, d) if d.is_zero() => Some(Ok(
-                RuntimeError::divide_by_zero_failure_for_method("ceiling", "Rational"),
-            )),
-            _ => None,
-        }),
-        "round" => Some(match target.view() {
-            ValueView::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::num(f))),
-            ValueView::Num(f) => Some(Ok(raku_round_to_value(f))),
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::BigInt(_) => Some(Ok(target.clone())),
-            ValueView::Rat(n, d) if d != 0 => {
-                let f = crate::value::rat_to_f64(n, d);
-                Some(Ok(raku_round_to_value(f)))
-            }
-            ValueView::BigRat(n, d) if !d.is_zero() => {
-                use num_bigint::BigInt;
-                use num_integer::Integer;
-                // round = floor(x + 0.5) for Raku semantics
-                // For BigRat: floor((2n + d) / 2d)
-                let two_n: BigInt = n * 2;
-                let two_d: BigInt = d * 2;
-                let sum: BigInt = &two_n + d;
-                let (q, r) = sum.div_rem(&two_d);
-                if !r.is_zero() && sum.is_negative() != two_d.is_negative() {
-                    Some(Ok(Value::bigint(q - 1)))
-                } else {
-                    Some(Ok(Value::bigint(q)))
-                }
-            }
-            ValueView::FatRat(n, d) if d != 0 => {
-                let f = crate::value::rat_to_f64(n, d);
-                Some(Ok(raku_round_to_value(f)))
-            }
-            ValueView::Complex(re, im) => Some(Ok(Value::complex(raku_round(re), raku_round(im)))),
-            ValueView::Rat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "round", "Rational",
-            ))),
-            ValueView::FatRat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "round", "Rational",
-            ))),
-            ValueView::BigRat(_, d) if d.is_zero() => Some(Ok(
-                RuntimeError::divide_by_zero_failure_for_method("round", "Rational"),
-            )),
-            _ => None,
-        }),
-        "truncate" => Some(match target.view() {
-            ValueView::Num(f) if f.is_nan() || f.is_infinite() => Some(Ok(Value::num(f))),
-            ValueView::Num(f) => Some(Ok(Value::int(f.trunc() as i64))),
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::BigInt(_) => Some(Ok(target.clone())),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::int(n / d))),
-            ValueView::BigRat(n, d) if !d.is_zero() => Some(Ok(Value::bigint(n / d))),
-            ValueView::FatRat(n, d) if d != 0 => Some(Ok(Value::int(n / d))),
-            ValueView::Complex(re, im) => Some(Ok(Value::complex(re.trunc(), im.trunc()))),
-            ValueView::Rat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "truncate", "Rational",
-            ))),
-            ValueView::FatRat(_, 0) => Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                "truncate", "Rational",
-            ))),
-            ValueView::BigRat(_, d) if d.is_zero() => Some(Ok(
-                RuntimeError::divide_by_zero_failure_for_method("truncate", "Rational"),
-            )),
-            _ => None,
-        }),
+        // The numeric types' rows' implementations (ADR-11276,
+        // `method_table::real`); the cascade still reaches them for receivers
+        // the table has no shape for.
+        // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
+        "floor" => Some(crate::builtins::method_table::real::floor_of(target)),
+        // Cost: as `floor`.
+        "ceiling" | "ceil" => Some(crate::builtins::method_table::real::ceiling_of(target)),
+        // Cost: as `floor`.
+        "round" => Some(crate::builtins::method_table::real::round_of(target)),
+        // Cost: as `floor`.
+        "truncate" => Some(crate::builtins::method_table::real::truncate_of(target)),
         "narrow" => Some(match target.view() {
             ValueView::Int(i) => Some(Ok(Value::int(i))),
             ValueView::Rat(n, d) if d != 0 && n % d == 0 => Some(Ok(Value::int(n / d))),

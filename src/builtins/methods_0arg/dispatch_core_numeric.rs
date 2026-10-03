@@ -6,7 +6,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::Signed;
 
 /// Check if a Package type object is calling a :D-requiring numeric method.
 /// Returns X::Parameter::InvalidConcreteness error if so.
@@ -210,29 +209,14 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
+        // Numeric receivers: the numeric types' rows' implementation
+        // (ADR-11276, `method_table::real`).
+        // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
         "abs" => {
+            if let Some(result) = crate::builtins::method_table::real::abs_of(target) {
+                return Some(Some(result));
+            }
             let result = match target.view() {
-                ValueView::Int(i) => crate::builtins::int_abs(i),
-                ValueView::BigInt(n) => Value::bigint(n.as_ref().abs()),
-                ValueView::Num(f) => Value::num(f.abs()),
-                // `-$x` for a negative rational; `arith_negate` promotes an
-                // i64::MIN numerator instead of overflowing.
-                ValueView::Rat(n, _) | ValueView::FatRat(n, _) if n < 0 => {
-                    match crate::builtins::arith_negate(target.clone()) {
-                        Ok(v) => v,
-                        Err(e) => return Some(Some(Err(e))),
-                    }
-                }
-                ValueView::Rat(..) | ValueView::FatRat(..) => target.clone(),
-                // A rational whose numerator outgrew `i64` is a `BigRat`, not a
-                // `Rat`; without this arm every numeric method below declines
-                // and the call reports "No such method 'abs'".
-                // `.abs` keeps the Rational type: a big `FatRat` stays a FatRat.
-                ValueView::BigRat(n, d) if target.is_bigfatrat() => {
-                    Value::bigfatrat(n.magnitude().clone().into(), d.clone())
-                }
-                ValueView::BigRat(n, d) => Value::bigrat(n.magnitude().clone().into(), d.clone()),
-                ValueView::Complex(r, i) => Value::num((r * r + i * i).sqrt()),
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
                 // `Instant`/`Duration` `does Real`, so `Real.abs` applies — and
                 // it keeps the type (`Instant.abs` is an `Instant`,
@@ -400,111 +384,14 @@ pub(super) fn dispatch(
         "fc" => Some(Some(crate::builtins::method_table::str::fc(target, &[]))),
         // Cost: O(n), n = chars of the invocant's string form.
         "tc" => Some(Some(crate::builtins::method_table::str::tc(target, &[]))),
+        // Numeric receivers: the numeric types' rows' implementation
+        // (ADR-11276, `method_table::real`).
+        // Cost: O(1).
         "sign" => {
+            if let Some(result) = crate::builtins::method_table::real::sign_of(target) {
+                return Some(Some(result));
+            }
             let result = match target.view() {
-                ValueView::Int(i) => Value::int(i.signum()),
-                ValueView::Num(f) => {
-                    if f.is_nan() {
-                        Value::num(f64::NAN)
-                    } else {
-                        Value::int(if f > 0.0 {
-                            1
-                        } else if f < 0.0 {
-                            -1
-                        } else {
-                            0
-                        })
-                    }
-                }
-                ValueView::Rat(n, d) => {
-                    if d == 0 {
-                        if n > 0 {
-                            Value::int(1)
-                        } else if n < 0 {
-                            Value::int(-1)
-                        } else {
-                            Value::num(f64::NAN)
-                        }
-                    } else {
-                        // sign is determined by n/d
-                        let sign = n.signum() * d.signum();
-                        Value::int(sign)
-                    }
-                }
-                ValueView::FatRat(n, d) => {
-                    if d == 0 {
-                        if n > 0 {
-                            Value::int(1)
-                        } else if n < 0 {
-                            Value::int(-1)
-                        } else {
-                            Value::num(f64::NAN)
-                        }
-                    } else {
-                        let sign = n.signum() * d.signum();
-                        Value::int(sign)
-                    }
-                }
-                ValueView::BigRat(n, d) => {
-                    use num_bigint::Sign;
-                    let sign_of = |b: &num_bigint::BigInt| match b.sign() {
-                        Sign::Plus => 1i64,
-                        Sign::Minus => -1,
-                        Sign::NoSign => 0,
-                    };
-                    if d.sign() == Sign::NoSign {
-                        match n.sign() {
-                            Sign::Plus => Value::int(1),
-                            Sign::Minus => Value::int(-1),
-                            Sign::NoSign => Value::num(f64::NAN),
-                        }
-                    } else {
-                        Value::int(sign_of(n) * sign_of(d))
-                    }
-                }
-                ValueView::BigInt(n) => {
-                    use num_bigint::Sign;
-                    Value::int(match n.sign() {
-                        Sign::Plus => 1,
-                        Sign::Minus => -1,
-                        Sign::NoSign => 0,
-                    })
-                }
-                ValueView::Complex(re, im) => {
-                    // `sign` requires a Real. A Complex with a non-zero imaginary
-                    // part cannot be coerced to Real, so it throws X::Numeric::Real
-                    // (matching `.Int`/`.Real` coercion). A purely real Complex
-                    // yields the Int sign of its real part.
-                    if im != 0.0 {
-                        let mut attrs = std::collections::HashMap::new();
-                        let rendered = if im >= 0.0 {
-                            format!("{re}+{im}i")
-                        } else {
-                            format!("{re}{im}i")
-                        };
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str(format!(
-                                "Cannot convert {rendered} to Real: imaginary part not zero"
-                            )),
-                        );
-                        attrs.insert("target".to_string(), Value::package(Symbol::intern("Real")));
-                        attrs.insert("source".to_string(), target.clone());
-                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
-                        let mut err = RuntimeError::new(
-                            "Cannot convert Complex to Real: imaginary part not zero",
-                        );
-                        err.exception = Some(Box::new(ex));
-                        return Some(Some(Err(err)));
-                    }
-                    Value::int(if re > 0.0 {
-                        1
-                    } else if re < 0.0 {
-                        -1
-                    } else {
-                        0
-                    })
-                }
                 ValueView::Enum { value, .. } => Value::int(value.as_i64().signum()),
                 _ => return Some(None),
             };

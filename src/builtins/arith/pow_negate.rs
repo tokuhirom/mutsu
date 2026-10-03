@@ -369,18 +369,26 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
         // fast paths reading it as a plain Int silently saw 0 instead.
         ValueView::BigInt(i) => Ok(Value::from_bigint(-(**i).clone())),
         ValueView::Num(f) => Ok(Value::num(-f)),
+        // An `i64::MIN` numerator negates past a word: the result keeps the
+        // Rational type with a big numerator, as `prefix:<->` does in rakudo.
         ValueView::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {
                 Ok(Value::rat_raw(neg, d))
             } else {
-                Ok(Value::num(-(n as f64) / d as f64))
+                Ok(Value::bigrat(
+                    -num_bigint::BigInt::from(n),
+                    num_bigint::BigInt::from(d),
+                ))
             }
         }
         ValueView::FatRat(n, d) => {
             if let Some(neg) = n.checked_neg() {
                 Ok(make_fat_rat(neg, d))
             } else {
-                Ok(Value::num(-(n as f64) / d as f64))
+                Ok(Value::bigfatrat(
+                    -num_bigint::BigInt::from(n),
+                    num_bigint::BigInt::from(d),
+                ))
             }
         }
         ValueView::BigRat(n, d) => {
