@@ -84,14 +84,13 @@ impl BlockRangeFacts {
                 | OpCode::DoGivenExpr { .. }
                 | OpCode::When { .. } => facts.binds_own_topic = true,
                 OpCode::MarkRebindContext => rebind_context = true,
-                OpCode::SetGlobal(idx) => {
+                OpCode::SetGlobal(idx)
                     if code
                         .constants
                         .get(*idx as usize)
-                        .is_some_and(|c| c.as_str() == Some("_"))
-                    {
-                        stores_topic = true;
-                    }
+                        .is_some_and(|c| c.as_str() == Some("_")) =>
+                {
+                    stores_topic = true;
                 }
                 _ => {}
             }
