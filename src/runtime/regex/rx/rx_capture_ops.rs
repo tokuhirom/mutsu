@@ -125,10 +125,13 @@ impl Interpreter {
                     is_behind,
                 } = &program.atoms[i as usize]
                 else {
-                    unreachable!("a Look op names a lookaround");
+                    debug_assert!(false, "a Look op names a lookaround");
+                    return None;
                 };
-                let body = super::rx_entry::program_for(pattern)
-                    .expect("a compiled lookaround's body compiles");
+                let Some(body) = super::rx_entry::program_for(pattern) else {
+                    debug_assert!(false, "a compiled lookaround's body compiles");
+                    return None;
+                };
                 let vars = levels.top().caps().regex_vars_shared().cloned();
                 // The body is a cursor of its own (rakudo): its `$/` starts
                 // where it does and holds none of the enclosing captures, but
