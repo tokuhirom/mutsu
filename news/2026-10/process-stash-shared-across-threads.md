@@ -6,8 +6,9 @@ is now seen by every thread, including one that was already running. This is how
 in each interpreter's own env, and a thread clone copied them only at spawn time (#11318).
 
 The process stash (`src/runtime/process_stash.rs`) is shared through `clone_for_thread`. A
-process-level write goes only to the stash. A read reaches the stash when the env's binding is still
-the original seeded value (an identity check), so `my $*OUT`, dynamic parameters and a `start`
+process-level write is published to it, and the writer's env keeps a copy as before. A read reaches
+the stash when the env's binding is one of the process values (the original seed or a value
+published since, checked by identity), so `my $*OUT`, dynamic parameters and a `start`
 block's inherited redirection still win. The design is
 [ADR-11318](../../docs/adr/11318-process-stash-is-one-store-per-process.md).
 
