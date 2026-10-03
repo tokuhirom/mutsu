@@ -1048,6 +1048,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("RakuAST::StatementList", "gist", 1, 0),
     ("RakuAST::StatementList", "statements", 1, 0),
     ("RakuAST::StatementList", "add-statement", 2, 0),
+    ("RakuAST::StatementList", "unshift-statement", 2, 0),
+    ("RakuAST::CompUnit", "replace-statement-list", 2, 0),
+    ("RakuAST::Statement::Expression", "set-expression", 2, 0),
+    ("RakuAST::ArgList", "push", 2, 0),
     ("RakuAST::StatementList", "raku", 1, 16),
     ("RakuAST::StatementList", "Str", 3, 16),
     ("RakuAST::StatementList", "WHICH", 1, 0),
@@ -1321,6 +1325,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `Any` (`Any.^can("lazy")` is 0).
     ("Instant", "succ", 1, 16),
     ("Instant", "pred", 1, 16),
+    ("Instant", "rand", 1, 16),
     ("Instant", "base", 6, 16),
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),

@@ -1,10 +1,12 @@
 use super::named_adverb::has_subscript_named_adverb;
-use crate::ast::{ExistsAdverb, Expr, SUBSCRIPT_ASSOCIATIVE_MARKER, SUBSCRIPT_POSITIONAL_MARKER};
+pub(crate) use crate::ast::subscript_adverb::{
+    build_adverb_error_call, multidim_target_var_name, subscript_adverb_expr_with_cond,
+};
+use crate::ast::subscript_adverb::{conditional_delete, deleting, exists_node};
+use crate::ast::{ExistsAdverb, Expr};
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_ident_char, ws};
 use crate::parser::parse_result::parse_char;
-use crate::symbol::Symbol;
-use crate::value::Value;
 
 /// Try to parse a secondary adverb after :exists/:!exists.
 /// Returns (remaining_input, adverb).
@@ -278,29 +280,6 @@ pub(crate) fn normalize_adverb_name(s: &str) -> String {
     s.strip_suffix('0').unwrap_or(s).to_string()
 }
 
-/// Build a `__mutsu_subscript_adverb_error` call for X::Adverb.
-pub(crate) fn build_adverb_error_call(
-    what: &str,
-    source: &str,
-    nogo: &[String],
-    unexpected: &[String],
-) -> Expr {
-    let mut args = vec![
-        Expr::Literal(Value::str(what.to_string())),
-        Expr::Literal(Value::str(source.to_string())),
-    ];
-    for a in nogo {
-        args.push(Expr::Literal(Value::str(format!("__nogo__{}", a))));
-    }
-    for u in unexpected {
-        args.push(Expr::Literal(Value::str(format!("__unexpected__{}", u))));
-    }
-    Expr::Call {
-        name: Symbol::intern("__mutsu_subscript_adverb_error"),
-        args,
-    }
-}
-
 /// Consume all remaining built-in adverbs after a subscript. (A chain with a
 /// non-built-in adverb never gets here: it is lowered whole by
 /// `named_adverb::lower_subscript_named_adverbs`.)
@@ -318,7 +297,6 @@ pub(crate) fn collect_remaining_adverbs<'a>(start: &'a str, known: &mut Vec<Stri
     r
 }
 
-/// Extract the variable name from a MultiDimIndex target expression.
 /// The `:delete` lowering target for a multi-dim subscript.
 ///
 /// `postcircumfix:<{; }>` has exactly two candidates -- `(\SELF, @indices)` and
@@ -349,75 +327,25 @@ pub(crate) fn multidim_delete_fn(is_positional: bool, ndims: usize) -> &'static 
     }
 }
 
-pub(crate) fn multidim_target_var_name(target: &Expr) -> String {
-    target.container_var_key().unwrap_or_default()
-}
-
 pub(crate) enum DeleteAdverb {
     NoDelete,
     Delete(Option<Expr>),
 }
 
-/// Apply a `:delete` adverb to an already-parsed `:exists` node, whichever
-/// order the two were written in (`@a[0]:exists:delete` / `@a[0]:delete:exists`).
-///
-/// A single-dimension subscript just records the flag on the node; the compiler
-/// emits the read and the delete together. A **multi**-dimensional subscript
-/// (`@a[0;1;2]`) cannot: its `:exists` is lowered to a by-value builtin call,
-/// and only the by-name `_dyn` builtin can mutate the variable — so lower to
-/// that here, the same form the dynamic `:$delete` produces with a runtime-true
-/// flag. `:!exists:delete` has no candidate at all there and is an X::Adverb.
-pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
-    let Expr::Exists {
-        target,
-        negated,
-        arg,
-        adverb,
-        ..
-    } = expr
-    else {
-        return expr;
-    };
-    let Expr::MultiDimIndex {
-        target: mdt,
-        dimensions,
-        ..
-    } = target.as_ref()
-    else {
-        return Expr::Exists {
-            target,
-            negated,
-            delete: true,
-            arg,
-            adverb,
-        };
-    };
-    let var_name = multidim_target_var_name(mdt);
-    if negated {
-        return build_adverb_error_call(
-            "slice",
-            &var_name,
-            &["!exists".to_string(), "delete".to_string()],
-            &[],
-        );
-    }
-    let adverb_str = match adverb {
-        ExistsAdverb::Kv => "kv",
-        ExistsAdverb::P => "p",
-        ExistsAdverb::InvalidK => "k",
-        ExistsAdverb::InvalidV => "v",
-        _ => "none",
-    };
-    let mut args = vec![
-        Expr::Literal(Value::str(var_name)),
-        Expr::Literal(Value::truth(negated)),
-        Expr::Literal(Value::TRUE),
-        Expr::Literal(Value::str(adverb_str.to_string())),
-    ];
-    args.extend(dimensions.iter().cloned());
-    Expr::Call {
-        name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
-        args,
+/// A `:delete` written next to `:exists`, in either order, applied to the
+/// `:exists` node: `:delete(COND)` deletes only when `COND` holds.
+pub(crate) fn delete_with_exists(delete_adv: DeleteAdverb, exists_expr: Expr) -> Expr {
+    apply_delete_adverb(delete_adv, exists_expr)
+}
+
+/// A `:delete` applied to a single-dimension subscript's read (the subscript,
+/// its `:exists` node or its value-adverb call): `:delete(COND)` deletes only
+/// when `COND` holds, `:!delete` leaves the read alone.
+pub(crate) fn apply_delete_adverb(delete_adv: DeleteAdverb, read: Expr) -> Expr {
+    match delete_adv {
+        DeleteAdverb::NoDelete => read,
+        DeleteAdverb::Delete(None) => deleting(&read),
+        DeleteAdverb::Delete(Some(cond)) => conditional_delete(cond, deleting(&read), read),
     }
 }
 
@@ -468,96 +396,6 @@ pub(crate) fn parse_delete_adverb(input: &str) -> Option<(&str, DeleteAdverb)> {
     None
 }
 
-pub(crate) fn subscript_adverb_expr_with_cond(
-    expr: Expr,
-    adverb: &'static str,
-    cond: Option<Expr>,
-) -> Expr {
-    // `@a[...]:delete:k` (delete adverb BEFORE the value adverb): the leading
-    // `:delete` already lowered the multislice to a `__mutsu_multidim_delete`
-    // call `(var, dims...)`. Combine it with this value adverb (`:k`/`:kv`/`:p`/
-    // `:v`) into the same delete+adverb `_dyn` form the reverse `:k:delete`
-    // order produces, so both orders read the removed elements as
-    // keys/kv-pairs/pairs/values. Args become [var, adverb, True(delete), dims...].
-    if let Expr::Call { name, args } = &expr
-        && *name == Symbol::intern("__mutsu_multidim_delete")
-        && !args.is_empty()
-    {
-        let mut new_args = vec![
-            args[0].clone(),
-            Expr::Literal(Value::str(adverb.to_string())),
-            Expr::Literal(Value::TRUE),
-        ];
-        new_args.extend(args[1..].iter().cloned());
-        if let Some(cond_expr) = cond {
-            new_args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
-            new_args.push(cond_expr);
-        }
-        return Expr::Call {
-            name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
-            args: new_args,
-        };
-    }
-    // Handle MultiDimIndex: @a[0;0;0]:kv etc.
-    if let Expr::MultiDimIndex {
-        target, dimensions, ..
-    } = expr
-    {
-        let mut args = vec![*target, Expr::Literal(Value::str(adverb.to_string()))];
-        args.extend(dimensions);
-        if let Some(cond_expr) = cond {
-            args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
-            args.push(cond_expr);
-        }
-        return Expr::Call {
-            name: Symbol::intern("__mutsu_multidim_subscript_adverb"),
-            args,
-        };
-    }
-    let Expr::Index {
-        target,
-        index,
-        is_positional,
-    } = expr
-    else {
-        return expr;
-    };
-    let var_name = match target.as_ref() {
-        Expr::ArrayVar(name) => Expr::Literal(Value::str(format!("@{}", name))),
-        Expr::HashVar(name) => Expr::Literal(Value::str(format!("%{}", name))),
-        _ => Expr::Literal(Value::NIL),
-    };
-    let mut args = vec![
-        *target,
-        *index,
-        Expr::Literal(Value::str(adverb.to_string())),
-        var_name,
-    ];
-    // Record which bracket the subscript was written with, alongside the other
-    // marker-tagged extras (`__adverb_cond__`, the `:delete` pair). The runtime
-    // needs it to read `$c[0]:v` positionally — a value that is not Positional
-    // is a one-element list holding itself — while leaving `$c<a>:v` a key
-    // lookup.
-    args.push(Expr::Literal(Value::str(
-        if is_positional {
-            SUBSCRIPT_POSITIONAL_MARKER
-        } else {
-            SUBSCRIPT_ASSOCIATIVE_MARKER
-        }
-        .to_string(),
-    )));
-    // When a dynamic condition is provided (e.g., `:k($ok)`), pass it as
-    // a named Pair so the runtime can decide keep_missing at evaluation time.
-    if let Some(cond_expr) = cond {
-        args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
-        args.push(cond_expr);
-    }
-    Expr::Call {
-        name: Symbol::intern("__mutsu_subscript_adverb"),
-        args,
-    }
-}
-
 /// Try to parse :exists or :!exists adverb on a subscript expression.
 /// Returns (remaining_input, exists_expr) or None if no adverb found.
 pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str, Expr)> {
@@ -602,16 +440,7 @@ pub(crate) fn try_parse_exists_adverb(input: &str, target: Expr) -> Option<(&str
     };
     // Check for secondary adverb
     let (r, adverb) = parse_exists_secondary_adverb(r);
-    Some((
-        r,
-        Expr::Exists {
-            target: Box::new(target),
-            negated,
-            delete: false,
-            arg,
-            adverb,
-        },
-    ))
+    Some((r, exists_node(target, negated, arg, adverb)))
 }
 
 pub(crate) fn supports_postfix_call_adverbs(expr: &Expr) -> bool {

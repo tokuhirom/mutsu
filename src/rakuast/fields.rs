@@ -46,6 +46,9 @@ pub(super) enum Absent {
     /// `signature`, yet `.signature` answers a defined, parameterless
     /// `RakuAST::Signature`.
     EmptyNode(RakuAstClass),
+    /// A string the field holds unless given (`InternalModifier.modifier` is
+    /// the short spelling `"i"` when the source wrote `:i`).
+    Str(&'static str),
     /// Structurally required: a well-formed node always carries it, so there is
     /// no absent value to invent. Asking for it on a malformed node falls
     /// through to ordinary "no such method" dispatch rather than answering with
@@ -61,6 +64,7 @@ impl Absent {
             Absent::EmptyList => Value::array(Vec::new()),
             Absent::False => Value::truth(false),
             Absent::Zero => Value::int(0),
+            Absent::Str(s) => Value::str(s.to_string()),
             Absent::EmptyNode(class) => Value::rakuast(Box::new(super::RakuAstNode {
                 class,
                 fields: Vec::new(),
@@ -78,6 +82,16 @@ const BLOCK: Absent = Absent::TypeObject("RakuAST::Block");
 pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Absent)] {
     use RakuAstClass::*;
     match class {
+        CompUnit => &[
+            ("statement-list", Absent::Required),
+            ("comp-unit-name", Absent::Required),
+        ],
+        RegexInternalModifierIgnoreCase => {
+            &[("modifier", Absent::Str("i")), ("negated", Absent::False)]
+        }
+        RegexInternalModifierIgnoreMark => {
+            &[("modifier", Absent::Str("m")), ("negated", Absent::False)]
+        }
         StatementList => &[("statements", Absent::EmptyList)],
         StatementExpression => &[
             ("expression", Absent::Required),
@@ -110,9 +124,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         FunctionInfix => &[("function", Absent::Required)],
         ApplyPrefix => &[("prefix", Absent::Required), ("operand", Absent::Required)],
         ApplyPostfix => &[("operand", Absent::Required), ("postfix", Absent::Required)],
-        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex | PostcircumfixHashIndex => {
-            &[("index", Absent::Required), ("assignee", EXPRESSION)]
-        }
+        PostcircumfixLiteralHashIndex | PostcircumfixArrayIndex | PostcircumfixHashIndex => &[
+            ("index", Absent::Required),
+            ("colonpairs", Absent::EmptyList),
+            ("assignee", EXPRESSION),
+        ],
         Postfix => &[("operator", Absent::Required)],
         Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
         PointyBlock => &[
