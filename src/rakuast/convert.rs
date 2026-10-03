@@ -1617,6 +1617,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = subscript_adverb::convert(expr) {
         return node;
     }
+    // `supply { … }`: the parser's on-demand expansion opens its emitter
+    // lambda with the written body.
+    if let Expr::MethodCall { args, .. } = expr
+        && let Some(body) = super::react::supply_record(args)
+    {
+        return super::react::convert_supply(body);
+    }
     match expr {
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -1628,11 +1635,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             math_constant_spelling(v, None).unwrap_or_default(),
         )),
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
-        // `supply { … }`: the parser's on-demand expansion opens its emitter
-        // lambda with the written body.
-        Expr::MethodCall { args, .. } if super::react::supply_record(args).is_some() => {
-            super::react::convert_supply(super::react::supply_record(args).expect("just checked"))
-        }
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
