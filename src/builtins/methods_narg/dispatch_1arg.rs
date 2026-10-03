@@ -641,7 +641,10 @@ pub(crate) fn native_method_1arg(
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         "indent" => {
             let s = target.to_string_value();
-            let (result, warning) = str_indent(&s, arg);
+            let (result, warning) = match str_indent(&s, arg) {
+                Ok(r) => r,
+                Err(e) => return Some(Err(e)),
+            };
             if let Some(warn_msg) = warning {
                 return Some(Err(crate::value::RuntimeError::warn_signal_with_resume(
                     warn_msg,
