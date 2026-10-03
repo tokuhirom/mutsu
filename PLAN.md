@@ -107,8 +107,8 @@ and its deletion criterion.
       - [x] Phase 2 — the field × file map (`scripts/interp-field-matrix.py`).
       - [ ] Phase 3 — extract the subsystems, one per PR. `make check-interp-fields` blocks new
             direct fields; an extraction adds `scripts/interp-fields.d/<subsystem>.txt`. Done:
-            guards, caches, regex, async, threads (and `ModuleVisibility`); 439 → 340 fields. Next:
-            io, control, topic, dispatch, lexicals, then module and types. `eval` waits on its
+            guards, caches, regex, async, threads, topic, control (and `ModuleVisibility`);
+            439 → 295 fields. Next: io, dispatch, lexicals, then module and types. `eval` waits on its
             `pending_*` fields becoming parameters.
       - [ ] Phase 4 — the crate split, a separate measured decision (ADR D7).
       The completion criterion is reached when these are deleted:
@@ -126,8 +126,8 @@ and its deletion criterion.
       [#8899](https://github.com/tokuhirom/mutsu/issues/8899)). The work replaces the
       run-time `format!("{pkg}::{name}")`, `== "GLOBAL"` and `"::"`
       splitting/classification outside the parser and compiler with `src/qualified.rs`'s
-      memoizing constructors. `make check-name-scans` counts these sites: 577 on 2026-10-03
-      (qualify 158, global-cmp 86, scan 333). The completion criterion is that all three counts
+      memoizing constructors. `make check-name-scans` counts these sites: 549 on 2026-10-03
+      (qualify 155, global-cmp 78, scan 316), down from 577. The completion criterion is that all three counts
       reach 0, `scripts/name-scans-baseline.txt` is deleted, and the check becomes a plain ban,
       as `check-magic-keys` did.
 
