@@ -5,6 +5,9 @@ pub(super) enum ReductionAssoc {
     Left,
     Right,
     Chain,
+    /// A user infix declared `is assoc<list>`: `[op] a, b, c` is ONE call,
+    /// `op(a, b, c)`, not a pairwise fold.
+    List,
 }
 
 /// Check if a type name is a core Raku type that should always be accepted.
@@ -164,6 +167,7 @@ impl Interpreter {
             return match assoc.as_str() {
                 "right" => ReductionAssoc::Right,
                 "chain" => ReductionAssoc::Chain,
+                "list" => ReductionAssoc::List,
                 _ => ReductionAssoc::Left,
             };
         }

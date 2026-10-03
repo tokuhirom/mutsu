@@ -355,4 +355,53 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// Type-check `value` against a constraint naming a `constant` bound to a
+    /// mixin type object (`constant StrType = Str but Type; sub f(StrType:D $x)`).
+    /// The constant names the type `Str+{Type}`, so a value matches when it
+    /// matches the base type and does every mixed-in role; a `:D`/`:U` smiley
+    /// constrains definiteness as usual. `None` when `constraint` names no such
+    /// constant.
+    // Cost: O(r), r = roles mixed into the constant's type object (one env
+    // lookup for the name, then one role check each).
+    pub(crate) fn mixin_type_constant_matches(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+    ) -> Option<bool> {
+        let (name, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+        if crate::runtime::utils::is_known_type_constraint(name) {
+            return None;
+        }
+        let bound = self.type_name_binding(name)?;
+        let ValueView::Mixin(inner, overrides) = bound.view() else {
+            return None;
+        };
+        let ValueView::Package(base) = inner.view() else {
+            return None;
+        };
+        let roles: Vec<String> = overrides
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+            .map(str::to_string)
+            .collect();
+        let is_type_object = match value.view() {
+            ValueView::Package(_) => true,
+            ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Package(_)),
+            _ => false,
+        };
+        match smiley {
+            Some(":D") if is_type_object => return Some(false),
+            Some(":U") if !is_type_object => return Some(false),
+            _ => {}
+        }
+        if !self.type_matches_value(&base.resolve(), value) {
+            return Some(false);
+        }
+        Some(
+            roles
+                .iter()
+                .all(|role| self.type_matches_value(role, value)),
+        )
+    }
 }
