@@ -12,3 +12,9 @@ at its first assertion.
 In the same test, `$key.address` then failed to dispatch: `UInt` rejected a
 mixed-in Int even when the number it wraps is non-negative. Both a smartmatch
 and a `UInt` parameter now accept it.
+
+Finally, `P2PKH::address self` inside `role Bitcoin::PrivateKey` names the
+module's own `our package P2PKH`. A qualified call from a method (or a closure
+or lexical sub inside one) of a class or role declared in a module now finds
+`Q::f` under the enclosing package too, as Rakudo finds it through the lexical
+scope. It used to work only from the module's own subs.

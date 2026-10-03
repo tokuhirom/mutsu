@@ -908,6 +908,14 @@ impl Interpreter {
         {
             return self.eval_call_on_value(callable, args.to_vec());
         }
+        // A qualified call to a multi declared in a package nested in an
+        // enclosing package of the running code (`Q::k` in a method of `M::C`
+        // names `M::Q::k`) has no candidates under the name as written.
+        if crate::qualified::is_qualified(Symbol::intern(name))
+            && let Some(real) = self.enclosing_qualified_routine_name(name)
+        {
+            return self.call_function(&real, args.to_vec());
+        }
         if self.has_proto(name) {
             return Err(self.multi_no_match_error(name, args));
         }
@@ -1243,6 +1251,11 @@ impl Interpreter {
             if let Some(real) = self.resolve_package_alias_prefix(name) {
                 return self.call_function(&real, args.to_vec());
             }
+            // A package declared inside an enclosing package of the running
+            // code (`Q::k` in a method of `M::C` names `M::Q::k`).
+            if let Some(real) = self.enclosing_qualified_routine_name(name) {
+                return self.call_function(&real, args.to_vec());
+            }
             let short_name = &name[pos + 2..];
             let package = &name[..pos];
             return Err(self.no_such_qualified_symbol(package, short_name));
@@ -1312,7 +1325,7 @@ impl Interpreter {
     /// or a declared stub)? An unknown one is what raku reports as
     /// `GLOBAL::Foo::Bar`, and it is the only case in which a qualified call
     /// may retry under its short name.
-    pub(super) fn is_known_package(&self, package: &str) -> bool {
+    pub(crate) fn is_known_package(&self, package: &str) -> bool {
         !package.is_empty()
             && (self.has_class(package)
                 || self.has_role(package)
