@@ -6693,6 +6693,14 @@ pub(crate) struct CompiledCode {
     /// only at routine boundaries, allowing pointy-block returns to propagate
     /// up to the enclosing routine.
     pub(crate) is_routine: bool,
+    /// Whether `use fatal` was lexically active where this METHOD body was
+    /// declared (`Compiler::fatal_pragma_active`, set by
+    /// `compile_method_body`). A method's `CompiledFunction` is not kept past
+    /// registration, only its `code`, so this carries the
+    /// `CompiledFunction::captured_fatal_mode` value to method dispatch,
+    /// which resets `Interpreter::lexical_fatal_mode` from it at entry
+    /// (#11391). False for every other chunk.
+    pub(crate) method_fatal_pragma: bool,
     /// Whether a `CX::Succeed` raised inside this code (an explicit `succeed`,
     /// directly or from a routine it calls) unwinds PAST its call boundary.
     ///
@@ -7993,6 +8001,7 @@ impl CompiledCode {
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            method_fatal_pragma: false,
             succeed_passes_through: false,
             reads_topic: false,
             mentions_native_scalar_type_name: false,

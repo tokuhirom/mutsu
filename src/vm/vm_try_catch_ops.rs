@@ -47,9 +47,19 @@ impl Interpreter {
         // TryCatch wrapper the compiler adds around any block that merely
         // *contains* a CATCH/CONTROL phaser (that wrapper is not `try` itself
         // and must not turn on fatal).
+        //
+        // Both channels are set (#11391). `lexical_fatal_mode` is what the
+        // store/sink explosion checks read; it is reset at every routine entry
+        // to the callee's own compile-time state, so a Failure a routine
+        // *called* from the try stores or sinks stays soft, as in rakudo,
+        // where `try` fatalizes only the calls written in its own body.
+        // `fatal_mode` stays dynamic: a `.map`/`.grep` Seq built by a called
+        // routine still captures it (`SeqSource::MapGrep::fatal`).
         let saved_fatal_mode = self.fatal_mode;
+        let saved_lexical_fatal_mode = self.lexical_fatal_mode;
         if traps {
             self.fatal_mode = true;
+            self.lexical_fatal_mode = true;
         }
         // ADR-0041 §9: a BEGIN-time region opened inside the protected body
         // (`constant X = die ...`, `BEGIN { die }`) never reaches its closing
@@ -81,6 +91,7 @@ impl Interpreter {
         self.restore_warn_suppression(warn_suppression_base);
         if traps {
             self.fatal_mode = saved_fatal_mode;
+            self.lexical_fatal_mode = saved_lexical_fatal_mode;
         }
         if is_bare_block {
             self.truncate_routine_stack(routine_base);

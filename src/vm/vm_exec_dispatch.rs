@@ -1351,7 +1351,7 @@ impl Interpreter {
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
-                    && !self.fatal_mode
+                    && !self.lexical_fatal_mode
                     && {
                         let anon_state_val =
                             self.env().get(name_str).cloned().unwrap_or(Value::NIL);
@@ -2219,7 +2219,7 @@ impl Interpreter {
                     // raw parameter stores and declarations keep their value.
                     val = self.reset_nil_untyped_scalar(&name, val);
                 }
-                if self.fatal_mode
+                if self.lexical_fatal_mode
                     && !name.contains("__mutsu_")
                     && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                 {
@@ -4481,7 +4481,7 @@ impl Interpreter {
                             // An assignment statement is wanted, not sunk: the
                             // assigned Failure stays soft — unless `use fatal`
                             // is in effect.
-                            if self.fatal_mode
+                            if self.lexical_fatal_mode
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);

@@ -510,7 +510,7 @@ impl Interpreter {
             // is what the Nil decays to (#9831).
             val = def;
         }
-        if self.fatal_mode
+        if self.lexical_fatal_mode
             && !name.contains("__mutsu_")
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
         {

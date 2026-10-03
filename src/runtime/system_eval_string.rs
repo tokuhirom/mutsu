@@ -348,6 +348,7 @@ impl Interpreter {
         // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
         // common assertion shape, so one of them poisoned the rest of the file.)
         let saved_fatal_mode = self.fatal_mode;
+        let saved_lexical_fatal_mode = self.lexical_fatal_mode;
         // ... and the EVAL'd unit does not INHERIT one either. `fatal` is
         // lexical to a compilation unit and EVAL compiles a fresh one, so a
         // caller's `use fatal` — or `try`'s implicit one — must not fatalize the
@@ -359,6 +360,7 @@ impl Interpreter {
         // nothing: an out-of-range subscript throws there with or without
         // `fatal`.)
         self.fatal_mode = false;
+        self.lexical_fatal_mode = false;
         // Unlike `fatal` (a runtime dynamic-scope check the EVAL'd unit
         // legitimately inherits from its caller -- `raku -e 'use
         // MONKEY-SEE-NO-EVAL; use fatal; try { EVAL q["bar"[5]] }; say
@@ -483,6 +485,7 @@ impl Interpreter {
             self.env.remove("__mutsu_in_eval");
         }
         self.fatal_mode = saved_fatal_mode;
+        self.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
         let eval_main_keys: Vec<Symbol> = self

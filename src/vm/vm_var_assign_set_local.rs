@@ -565,7 +565,7 @@ impl Interpreter {
             || self.slot_has_sigilless_readonly_marker(code, idx)
             || Self::atomic_var_seen_anywhere()
             || self.slot_has_sigilless_meta(code, idx, desc)
-            || self.fatal_mode
+            || self.lexical_fatal_mode
             || !self.thread_decl_in_flight.is_empty()
             || !code.our_locals.is_empty())
     }
@@ -3044,7 +3044,7 @@ impl Interpreter {
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs
         // so they can reference the Proxy by its binding variable name (simulating capture-by-ref).
         let val = Self::update_proxy_closure_envs(val, name);
-        if self.fatal_mode
+        if self.lexical_fatal_mode
             && !name.contains("__mutsu_")
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
         {
