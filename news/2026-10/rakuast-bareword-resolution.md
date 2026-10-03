@@ -44,6 +44,6 @@ silent miscompiles in lowering:
 - A typed `my Foo $u .= new(...)` did not mark its call as an initializer.
   The converter therefore rendered a bare `my Foo $u` and dropped the call.
 
-The round-trip ratchet grows from 1910 to 2425 of 5919 `t/` files. Pinned by
+The round-trip ratchet grows from 1910 to 2438 of 5968 `t/` files. Pinned by
 `t/rakuast/rakuast-bareword-resolution.t`, which passes under both
 mutsu and raku.

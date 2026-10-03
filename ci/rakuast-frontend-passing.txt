@@ -80,6 +80,7 @@ t/collections/hash/hash-push-bound.t
 t/collections/hash/hash-push-seq-of-pairs.t
 t/collections/hash/hash-raku-itemization.t
 t/collections/hash/hash-set-membership-truthy.t
+t/collections/hash/hash-set-numeric-equality.t
 t/collections/hash/hash-spread-slip.t
 t/collections/hash/hash-subclass-computed-target-assign.t
 t/collections/hash/hash-subclass-mutator-return-self.t
@@ -155,6 +156,7 @@ t/collections/lazy-seq/lazy-generator-scan-strict-force.t
 t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
 t/collections/lazy-seq/lazy-list-eqv-and-list-view.t
 t/collections/lazy-seq/lazy-list-gist-context.t
+t/collections/lazy-seq/lazy-list-join.t
 t/collections/lazy-seq/lazy-list-say-display.t
 t/collections/lazy-seq/lazy-marked-finite-pipe-coercion.t
 t/collections/lazy-seq/lazy-rat-index.t
@@ -609,6 +611,7 @@ t/exceptions/exception-computed-message.t
 t/exceptions/exception-concreteness.t
 t/exceptions/exception-die-method.t
 t/exceptions/exception-fail-method.t
+t/exceptions/exception-failure-method.t
 t/exceptions/exception-message-fidelity.t
 t/exceptions/exception-messages.t
 t/exceptions/exception-methods.t
@@ -865,6 +868,7 @@ t/lang/parsing/bare-perl5-unary-obsolete.t
 t/lang/parsing/bare-return-expression.t
 t/lang/parsing/bare-return-with-parens.t
 t/lang/parsing/bareword-array-not-reduction.t
+t/lang/parsing/bareword-core-type-objects.t
 t/lang/parsing/bom-stripping.t
 t/lang/parsing/paren-adjacent-colonpairs.t
 t/lang/parsing/paren-decl-compound-assign.t
@@ -1098,11 +1102,13 @@ t/modules/package-stash-sigiled-entry-not-itemized.t
 t/modules/package-sub-lexical-mutation.t
 t/modules/package-type-short-name-vs-same-named-lexical.t
 t/modules/package-undeclared-container-item-assign.t
+t/modules/package-var-write-in-closure.t
 t/modules/panic-recovery-package-state.t
 t/modules/proto-package-qualified-visibility.t
 t/modules/resources-second-use-module.t
 t/modules/role-body-use-imports-into-role-package.t
 t/modules/role-body-use-module-imports-own-operator.t
+t/modules/scalar-trailing-package-separator.t
 t/modules/strict-module-scope.t
 t/modules/test-assertion-module-otf.t
 t/modules/typed-decl-package-qualified-constraint.t
@@ -1465,6 +1471,7 @@ t/oo/role/role-param-qualified-type-cross-file-import.t
 t/oo/role/role-param-qualified-type-reuse-across-roles.t
 t/oo/role/role-param-qualified-type-reuse.t
 t/oo/role/role-pun-metamethod-identity.t
+t/oo/role/role-pun-method-call-runs-body-once.t
 t/oo/role/role-pun-private-attribute.t
 t/oo/role/role-shadowed-method-in-defer-chain.t
 t/oo/role/role-submethod-array-hash-attr.t
@@ -1513,6 +1520,7 @@ t/rakuast/rakuast-construct-sub.t
 t/rakuast/rakuast-construct-vardecl.t
 t/rakuast/rakuast-construct-where.t
 t/rakuast/rakuast-construct.t
+t/rakuast/rakuast-contextualizer.t
 t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-declared-name-nested.t
@@ -1604,6 +1612,7 @@ t/rakuast/rakuast-subclass-node-class.t
 t/rakuast/rakuast-subscript.t
 t/rakuast/rakuast-subsig.t
 t/rakuast/rakuast-ternary.t
+t/rakuast/rakuast-topic-call.t
 t/rakuast/rakuast-type-attributes.t
 t/rakuast/rakuast-type-can.t
 t/rakuast/rakuast-type-capture.t
@@ -1696,6 +1705,7 @@ t/routines/amp-what-callable.t
 t/routines/block-local-routine-scope.t
 t/routines/builtin-routine-type-identity.t
 t/routines/call/bind-rebound-capture-rmw-writes-through.t
+t/routines/call/call-arg-slip-prefix-binds-tight.t
 t/routines/call/call-inline-cache.t
 t/routines/call/call-me-not-found.t
 t/routines/call/call-on-vm.t
@@ -2144,6 +2154,7 @@ t/types/string/split-regressions.t
 t/types/string/split-separator-list.t
 t/types/string/sprintf-6e.t
 t/types/string/sprintf-c-flags.t
+t/types/string/sprintf-container-args.t
 t/types/string/sprintf-e-exact-rounding.t
 t/types/string/sprintf-g-small-exponent-threshold.t
 t/types/string/sprintf-hexfloat.t
@@ -2255,6 +2266,7 @@ t/vm/binding/rw-arg-residue.t
 t/vm/binding/rw-shared-cell.t
 t/vm/binding/rw-sub-proxy-fetch-otf.t
 t/vm/binding/var-name-bind.t
+t/vm/binding/var-name-of-bound-itemized-aggregate.t
 t/vm/binding/var-name-of-bound-scalar-holder.t
 t/vm/binding/var-name.t
 t/vm/binding/var-on-literal-index.t
@@ -2371,6 +2383,7 @@ t/vm/scope/sibling-block-code-var-name-leak.t
 t/vm/scope/stash-bind-key.t
 t/vm/scope/stash-exists-key.t
 t/vm/scope/stash-literal-key-assign.t
+t/vm/scope/stash-slip-pairs.t
 t/vm/scope/state-aggregate-shared-cell.t
 t/vm/scope/state-array-nil-decay.t
 t/vm/scope/state-in-loop-body-accumulates.t
