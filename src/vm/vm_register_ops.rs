@@ -1192,6 +1192,17 @@ impl Interpreter {
                 env.insert_sym(*sym, val.clone());
             }
         }
+        // An enum key the closure reads is lexical to its declaring scope: carry
+        // that scope's binding (kept under the enum-key namespace, which the
+        // free-variable filter does not name) so the closure still sees it once
+        // the declaring routine has returned.
+        if crate::runtime::enum_bare_names::enum_bare_keys_in_use() {
+            for key in cc.free_enum_bare_keys() {
+                if let Some(val) = self.env().get_sym(*key) {
+                    env.insert_sym(*key, val.clone());
+                }
+            }
+        }
         // ADR-0024 §4: see the identical override in the reflective path above.
         self.inject_mainline_lexical_captures(cc, env);
         // A bare call records only its sigilless callee in bytecode, so it is

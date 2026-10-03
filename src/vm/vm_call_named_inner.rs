@@ -833,7 +833,7 @@ impl Interpreter {
                     // gets no local slot, so `is_callee_local_sym` misses it and
                     // the binding overwrote a same-named caller symbol for the
                     // rest of the program.
-                    && !cf.code.my_declared_enum_sym.contains(k)
+                    && !cf.is_own_enum_key_sym(*k)
                     // The rw-source names are a per-call `HashSet<String>`, so
                     // only resolve the key to a `&str` when there is one to
                     // compare against -- the overwhelmingly common case is a

@@ -38,7 +38,7 @@ use crate::value::Value;
 /// entries (they are excluded from `package_lexicals` snapshots and from the
 /// "plain user variable" predicates), so an enum key parked here cannot be reached
 /// by any spelling of a user variable.
-pub(crate) const ENUM_BARE_PREFIX: &str = "__mutsu_enum_bare_";
+pub(crate) const ENUM_BARE_PREFIX: &str = crate::meta_ns::ENUM_BARE_PREFIX;
 
 /// The `env` key an enum key `name` is stored under.
 pub(crate) fn enum_bare_key(name: &str) -> String {
@@ -60,6 +60,11 @@ static ENUM_BARE_KEY_SEEN: std::sync::atomic::AtomicBool =
 pub(crate) fn enum_bare_key_for_insert(name: &str) -> String {
     ENUM_BARE_KEY_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     enum_bare_key(name)
+}
+
+/// True once any enum key has been installed in this process.
+pub(crate) fn enum_bare_keys_in_use() -> bool {
+    ENUM_BARE_KEY_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Interpreter {

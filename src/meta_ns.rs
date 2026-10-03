@@ -84,6 +84,10 @@
 
 use crate::symbol::Symbol;
 
+/// Env-key prefix under which an enum key's value is stored (see
+/// `runtime::enum_bare_names`). Lives here so the lower layers can name it.
+pub(crate) const ENUM_BARE_PREFIX: &str = "__mutsu_enum_bare_";
+
 /// A `__mutsu_*` per-binding metadata namespace.
 ///
 /// Every namespace is listed, and each one is migrated *completely*: no

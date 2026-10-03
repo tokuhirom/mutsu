@@ -7576,6 +7576,9 @@ pub(crate) struct CompiledCode {
     /// instead of finding them by walking a tier -- see
     /// [`Self::capture_probe_keys`].
     pub(crate) capture_probe_keys: std::sync::OnceLock<Box<[Symbol]>>,
+    /// Lazily-built enum-bare env keys (`enum_bare_key`) of
+    /// [`free_var_syms`](Self::free_var_syms) -- see [`Self::free_enum_bare_keys`].
+    pub(crate) free_enum_bare_keys: std::sync::OnceLock<Box<[Symbol]>>,
     /// Lazily-built name indexes over [`locals`](Self::locals) (see
     /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
     /// of names it has to reset without scanning every local of the frame
@@ -8118,6 +8121,7 @@ impl CompiledCode {
             local_sym_set: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
+            free_enum_bare_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -8320,15 +8324,43 @@ impl CompiledCode {
             .get_or_init(|| self.free_var_syms.iter().copied().collect())
     }
 
-    /// The env keys a closure capture of this chunk looks up by name rather
-    /// than finding by walking a wide tier: every free variable that is a
-    /// plain user lexical, plus its `__mutsu_type::` shadow metadata. A tier's
-    /// capture-candidate memo leaves plain user lexicals out (see
-    /// [`crate::env_tier::capture_walk_skips`]), because the capture filter
-    /// keeps one exactly when it is a free variable -- so probing this list is
-    /// what makes the walk cost O(f) in them instead of O(every declaration in
-    /// the creating scope) (#9170). A superset is harmless: each probed key
-    /// still goes through the filter.
+    /// The enum-bare env keys (`enum_bare_key`) of this chunk's free variables.
+    // Cost: O(f) once per chunk (f = free variables), O(1) afterwards.
+    pub(crate) fn free_enum_bare_keys(&self) -> &[Symbol] {
+        self.free_enum_bare_keys.get_or_init(|| {
+            // A bareword term is not a free variable, so the names this chunk
+            // (or a closure nested in it) reads as `GetBareWord` count too.
+            let mut names: std::collections::HashSet<Symbol> =
+                self.free_var_syms.iter().copied().collect();
+            self.collect_bareword_names(&mut names);
+            names
+                .into_iter()
+                .map(|sym| {
+                    sym.with_str(|s| {
+                        Symbol::intern(&format!("{}{s}", crate::meta_ns::ENUM_BARE_PREFIX))
+                    })
+                })
+                .collect()
+        })
+    }
+
+    fn collect_bareword_names(&self, names: &mut std::collections::HashSet<Symbol>) {
+        for op in &self.ops {
+            if let OpCode::GetBareWord(idx) = op
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(*idx as usize).map(Value::view)
+            {
+                let sym = Symbol::intern(&name);
+                if !crate::qualified::is_qualified(sym) {
+                    names.insert(sym);
+                }
+            }
+        }
+        for nested in &self.closure_compiled_codes {
+            nested.collect_bareword_names(names);
+        }
+    }
+
     pub(crate) fn capture_probe_keys(&self) -> &[Symbol] {
         self.capture_probe_keys.get_or_init(|| {
             let mut keys = Vec::new();
@@ -13306,6 +13338,30 @@ impl CompiledFunction {
                 self.code.locals.iter().any(|n| n == name)
             }
         }
+    }
+
+    /// True if `sym` is an env key this body's own `my enum` declared: the enum's
+    /// type name, or a variant, which `RegisterEnum` stores under the reserved
+    /// bare-name prefix (`enum_bare_key`) rather than under its plain name. Those
+    /// are lexicals of the body and must not be merged back into the caller on
+    /// return.
+    // Cost: O(1) hash probe; keys without the enum prefix cost one string-prefix test.
+    #[inline]
+    pub(crate) fn is_own_enum_key_sym(&self, sym: Symbol) -> bool {
+        if self.code.my_declared_enum_sym.is_empty() {
+            return false;
+        }
+        if self.code.my_declared_enum_sym.contains(&sym) {
+            return true;
+        }
+        sym.with_str(|s| {
+            s.strip_prefix(crate::meta_ns::ENUM_BARE_PREFIX)
+                .is_some_and(|base| {
+                    self.code
+                        .my_declared_enum_sym
+                        .contains(&Symbol::intern(base))
+                })
+        })
     }
 
     /// Recursively collect parameter names from param_defs, including
