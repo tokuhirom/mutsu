@@ -1119,6 +1119,7 @@ mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod hoist_nested_types;
 mod lazy_body_env_sync;
+mod lazy_body_reads;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
@@ -1268,6 +1269,12 @@ pub(crate) struct Compiler {
     /// therefore back-fills its keys into the matching hoisted plan (same name
     /// and same `sub_registration_fingerprint`, i.e. the same declaration).
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
+    /// `__hoisted` class/role shell registrations emitted by
+    /// `hoist_type_decl_shells`, as `(decl_id, decl plan index)`. The shell
+    /// carries a subset of the source-order declaration's body, so when that
+    /// declaration's env-sync reads are bounded the shell's are too, and the
+    /// source-order site marks it bounded with its own plan (#11116).
+    hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     /// Names of `@`/`$` variables whose CURRENT declaration provably denotes a
@@ -1875,6 +1882,7 @@ impl Compiler {
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),
             hoisted_sub_plans: Vec::new(),
+            hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),

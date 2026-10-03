@@ -7011,13 +7011,20 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
     /// Declaration plans (`decl_plans` indices — the `RegisterDecl` operand)
-    /// of a named sub (#10960) or a class (#10999) whose by-name reads are all
-    /// folded into [`Self::lazy_body_env_sync_slots`], so their `RegisterDecl`
-    /// does not force `compute_needs_env_sync`'s every-local fold (see
-    /// `compiler/lazy_body_env_sync.rs`).
+    /// of a named sub (#10960), a class (#10999) or a role (#11078) whose
+    /// by-name reads are all folded into [`Self::lazy_body_env_sync_slots`],
+    /// so their `RegisterDecl` does not force `compute_needs_env_sync`'s
+    /// every-local fold (see `compiler/lazy_body_env_sync.rs`).
     pub(crate) bounded_lazy_decl_plans: Vec<u32>,
     /// This frame's local slots a bounded declaration reads by name.
     pub(crate) lazy_body_env_sync_slots: Vec<u32>,
+    /// Every name a bounded class/role declaration of this code reads by
+    /// name, whether or not it is one of this frame's locals: a declaration
+    /// nested in a routine body can reach the ENCLOSING frame's lexicals, and
+    /// unlike a nested sub its reads are not part of this code's
+    /// `free_var_syms`, so the enclosing declaration's bound folds these in
+    /// (#11116).
+    pub(crate) lazy_decl_reads: Vec<Symbol>,
     /// The variables each lexically visible nested sub called (or fetched as
     /// `&name`) from this code WRITES, one entry per call site. Kept apart from
     /// `nested_routine_free_reads` (reads and writes together) and from
@@ -7999,6 +8006,7 @@ impl CompiledCode {
             nested_routine_free_reads: Vec::new(),
             bounded_lazy_decl_plans: Vec::new(),
             lazy_body_env_sync_slots: Vec::new(),
+            lazy_decl_reads: Vec::new(),
             nested_routine_free_writes: Vec::new(),
             nested_sub_written_free: Vec::new(),
             needs_cell_named_sub: Vec::new(),
