@@ -1002,7 +1002,10 @@ impl Compiler {
                 // `OpCode::GetCodeVarLocal`).
                 match self.local_map.get(format!("&{name}").as_str()) {
                     Some(&slot) => self.code.emit(OpCode::GetCodeVarLocal { name_idx, slot }),
-                    None => self.code.emit(OpCode::GetCodeVar(name_idx)),
+                    None => {
+                        self.note_unscoped_amp_read(name);
+                        self.code.emit(OpCode::GetCodeVar(name_idx))
+                    }
                 };
             }
             // Hash literal

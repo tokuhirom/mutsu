@@ -7265,6 +7265,15 @@ pub(crate) struct CompiledCode {
     /// (a per-call `free_at_entry` cost), so only names matching a declared
     /// `&`-lexical count.
     pub(crate) outer_code_var_names: std::collections::HashSet<String>,
+    /// `&name` reads (`GetCodeVar`, `CallOnCodeVar`) whose read site the
+    /// compiler proved has NO `&name` lexical binding in scope -- no `my &name`,
+    /// `&name` parameter or role `&name` type parameter in any scope it can
+    /// see -- so the name denotes the routine declared for it, never an env
+    /// `&name` entry that only a CALLER's frame bound (#10997). Recorded only
+    /// when the compiler saw the read site's whole scope chain
+    /// (`Compiler::lexical_scope_known`); empty otherwise, which keeps the
+    /// by-name resolution. Read by `Interpreter::imported_amp_over_inherited`.
+    pub(crate) unscoped_amp_reads: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -8019,6 +8028,7 @@ impl CompiledCode {
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
+            unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             upvalue_syms: Vec::new(),
