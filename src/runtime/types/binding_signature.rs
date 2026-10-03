@@ -2466,7 +2466,7 @@ impl Interpreter {
                                 ValueView::Array(..) | ValueView::Hash(..)
                             )
                         {
-                            bound_value = bound_value.detach_shared_container();
+                            bound_value = bound_value.copy_for_list_assignment();
                             if pd.name.starts_with('@')
                                 && let ValueView::Array(
                                     gc,
@@ -2684,7 +2684,7 @@ impl Interpreter {
                         && pd.traits.iter().any(|trait_name| trait_name == "copy")
                         && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
                     {
-                        value = value.detach_shared_container();
+                        value = value.copy_for_list_assignment();
                         if pd.name.starts_with('@')
                             && let ValueView::Array(
                                 gc,
@@ -3253,7 +3253,7 @@ impl Interpreter {
                             self.env
                                 .remove_sym(crate::runtime::sigilless_readonly_key(&pd.name));
                         }
-                        value = value.detach_shared_container();
+                        value = value.copy_for_list_assignment();
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
                         // detach clone inherited (`sub f(:@kh is copy)` bound to

@@ -1039,6 +1039,23 @@ impl Value {
         fresh.unwrap_or(self)
     }
 
+    /// [`Value::detach_shared_container`] for a list assignment's copy (`my @b
+    /// = @a`, an `@a is copy` parameter): an array copy also settles its holes
+    /// and drops the source's `is default(...)`
+    /// ([`ArrayData::settle_for_list_assignment`], #10360). A hash or any
+    /// other value is only detached.
+    // Cost: O(1) for an unshared container without holes or default; O(e),
+    // e = elements, otherwise.
+    pub(crate) fn copy_for_list_assignment(self) -> Value {
+        let mut detached = self.detach_shared_container();
+        detached.with_array_mut(|items, _| {
+            if items.initialized.is_some() || items.default.is_some() {
+                Gc::make_mut(items).settle_for_list_assignment();
+            }
+        });
+        detached
+    }
+
     /// Run `f` on the hash payload if this is exactly a `Hash`.
     /// Returns `None` (without calling `f`) otherwise.
     #[inline]

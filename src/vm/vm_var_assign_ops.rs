@@ -451,11 +451,8 @@ impl Interpreter {
                 };
                 if let Some(res) = container.with_array_mut(|items, _| {
                     let arr = crate::value::gc_data_mut(items);
-                    Self::autoviv_resize(
-                        arr.items_mut(),
-                        i + 1,
-                        Value::package(crate::symbol::wk::any()),
-                    )?;
+                    let fill = arr.gap_fill(Value::package(crate::symbol::wk::any()));
+                    Self::autoviv_resize(arr.items_mut(), i + 1, fill)?;
                     arr[i] = value.take().unwrap_or(Value::NIL);
                     Ok(())
                 }) {
@@ -485,11 +482,8 @@ impl Interpreter {
             };
             let Some(res) = container.with_array_mut(|items, _| {
                 let arr = crate::value::gc_data_mut(items);
-                Self::autoviv_resize(
-                    arr.items_mut(),
-                    i + 1,
-                    Value::package(crate::symbol::wk::any()),
-                )?;
+                let fill = arr.gap_fill(Value::package(crate::symbol::wk::any()));
+                Self::autoviv_resize(arr.items_mut(), i + 1, fill)?;
                 arr[i] = value;
                 Ok(())
             }) else {
@@ -963,6 +957,13 @@ impl Interpreter {
             new_data.default = new_data.default.or_else(|| old_gc.default.clone());
             new_data.shape = new_data.shape.or_else(|| old_gc.shape.clone());
             new_data.initialized = new_data.initialized.or_else(|| old_gc.initialized.clone());
+        } else {
+            // A whole-container `@a = RHS` is a list assignment (#10360): the
+            // container keeps its own `is default(...)`, and every element of
+            // the new contents is a present one -- iterating the RHS yields a
+            // hole as its default (or `Any`), never as an absence.
+            new_data.settle_for_list_assignment();
+            new_data.default = old_gc.default.clone();
         }
         let mut seen = Vec::new();
         for item in new_data.live_mut().iter_mut() {

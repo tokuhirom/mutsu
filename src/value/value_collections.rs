@@ -321,18 +321,59 @@ impl ArrayData {
     /// ran clean under the full local `t/` suite and a broad roast sweep
     /// before this arm was removed -- see ADR-0049 §5 open question 1 and
     /// §8's slice 5 entry.
+    ///
+    /// An array with an `is default(...)` value stores that value in its holes
+    /// ([`Self::gap_fill`], #10360), so a slot holding the very default object
+    /// is a gap candidate as well; `initialized` then decides, exactly as for
+    /// the type-object marker.
     pub fn hole_at(&self, i: usize) -> bool {
-        match self.items[self.head..].get(i).map(Value::view) {
-            None => true,
-            Some(crate::value::ValueView::Package(name)) => {
-                // `Mu` is the marker a Match's `.list` view leaves in an
-                // unbound positional capture slot (`match_list_view`).
-                let is_gap_marker = name == "Any"
+        let Some(slot) = self.items[self.head..].get(i) else {
+            return true;
+        };
+        // A slot `for @a` / `.values` aliased into an element cell is still a
+        // hole until something is written through the cell (#10360): look at
+        // what the cell holds.
+        let deref;
+        let slot = if slot.is_container_ref() {
+            deref = slot.deref_container();
+            &deref
+        } else {
+            slot
+        };
+        let is_gap_marker = match slot.view() {
+            // `Mu` is the marker a Match's `.list` view leaves in an
+            // unbound positional capture slot (`match_list_view`).
+            crate::value::ValueView::Package(name) => {
+                name == "Any"
                     || name == "Mu"
-                    || self.value_type.as_deref().is_some_and(|t| name == t);
-                is_gap_marker && self.initialized.as_ref().is_some_and(|s| !s.contains(&i))
+                    || self.value_type.as_deref().is_some_and(|t| name == t)
             }
-            Some(_) => false,
+            _ => self.stored_default().is_some_and(|d| {
+                crate::value::identity::values_same_object(slot, d)
+            }),
+        };
+        is_gap_marker && self.initialized.as_ref().is_some_and(|s| !s.contains(&i))
+    }
+
+    /// The `is default(...)` value a hole of this array stores, if any. A
+    /// `Nil` default is not stored (a `Scalar` element never holds `Nil`), so
+    /// such an array keeps the type-object marker.
+    // Cost: O(1).
+    pub(crate) fn stored_default(&self) -> Option<&Value> {
+        self.default.as_deref().filter(|d| !d.is_nil())
+    }
+
+    /// The value a newly made hole of this array holds -- a slot `:delete`
+    /// emptied, or a gap an out-of-range store grew: the `is default(...)`
+    /// value when the array has one (#10360), so every whole-array view and
+    /// iteration that reads the slots directly sees the default, as `@a[$i]`
+    /// does; otherwise `marker`, the type-object hole marker the caller uses.
+    /// Hole-ness itself is recorded by `initialized` ([`Self::hole_at`]).
+    // Cost: O(1).
+    pub(crate) fn gap_fill(&self, marker: Value) -> Value {
+        match self.stored_default() {
+            Some(d) => d.clone(),
+            None => marker,
         }
     }
 
@@ -379,6 +420,23 @@ impl ArrayData {
         )
     }
 
+    /// Turn a copy of an array's state into the contents a list assignment
+    /// (`@b = @a`, `my @b = @a`) stores (#10360): iterating the source yields
+    /// each hole as its `is default(...)` value (or the type-object marker),
+    /// and the target holds a real container for every one of them, so none
+    /// is a hole any more. The source's `is default` is not the target's: it
+    /// is dropped here, and a target with its own default sets it again.
+    // Cost: O(1) for an array without tracked holes; O(e), e = elements,
+    // otherwise.
+    pub(crate) fn settle_for_list_assignment(&mut self) {
+        if self.initialized.is_some() {
+            let resolved = self.items_with_default().into_owned();
+            *self.items_mut() = resolved;
+            self.initialized = None;
+        }
+        self.default = None;
+    }
+
     /// Record an explicit assignment to index `i` while preserving the
     /// all-present meaning of `initialized == None` for bulk-constructed
     /// arrays. Once a bulk array receives an element-wise write, materialize
@@ -408,7 +466,8 @@ impl ArrayData {
         // materialized as present.
         self.mark_initialized(i);
         if i >= len {
-            self.resize(i + 1, Value::package(crate::symbol::wk::any()));
+            let fill = self.gap_fill(Value::package(crate::symbol::wk::any()));
+            self.resize(i + 1, fill);
         }
         self.live_mut()[i] = value;
     }
