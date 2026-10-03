@@ -90,6 +90,7 @@ impl Interpreter {
         // candidate set; this streamed path would otherwise keep the frame
         // alive while `on` explores the caller, so decline it.
         if self
+            .regex_state
             .grammar_rule_dynvar_decls
             .contains_key(&spec.lookup_name)
         {
@@ -145,7 +146,7 @@ impl Interpreter {
              -> bool {
                 // The grammar instance a method this invocation called wrote to
                 // is its Match's own (#9803).
-                if let Some(Some(cursor)) = interp.walk_cursors.last() {
+                if let Some(Some(cursor)) = interp.regex_state.walk_cursors.last() {
                     inner.set_cursor(cursor.clone());
                 }
                 let wrapped =
@@ -173,9 +174,9 @@ impl Interpreter {
                 // The continuation is the CALLER's remaining pattern: this
                 // invocation's cursor scope must not be open while it runs, or a
                 // method the caller calls would write to the callee's cursor.
-                let scope = interp.walk_cursors.pop();
+                let scope = interp.regex_state.walk_cursors.pop();
                 let stop = on(interp, store, end, delta);
-                interp.walk_cursors.extend(scope);
+                interp.regex_state.walk_cursors.extend(scope);
                 if let Some(lr_key) = &lr_key {
                     super::regex_lr_state::lr_begin_activation(lr_key);
                 }

@@ -205,8 +205,9 @@ impl Interpreter {
         pkg: Symbol,
         params: Option<SavedDynParams>,
     ) -> Option<CallWindow> {
-        let rule_frame = if self.grammar_rule_dynvar_decls.is_empty()
+        let rule_frame = if self.regex_state.grammar_rule_dynvar_decls.is_empty()
             || !self
+                .regex_state
                 .grammar_rule_dynvar_decls
                 .contains_key(&name.spec().lookup_name)
         {
