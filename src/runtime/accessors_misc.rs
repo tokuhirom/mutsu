@@ -376,9 +376,19 @@ impl Interpreter {
         // Take an independent snapshot: an instance value must be deep-copied so
         // a later in-place mutation through its shared cell does not corrupt the
         // saved-for-restore value (Phase 3, Stage 1).
+        //
+        // Not for a dynamic scalar (`temp $*OUT = $fh`): what it temporizes is
+        // the binding, and the restore must put back the very handle object
+        // that was bound — a copy would detach it from every other holder (the
+        // `$orig` a capture helper restores later, the process stash).
+        let value = if name.starts_with('*') {
+            value
+        } else {
+            value.into_temp_snapshot()
+        };
         self.let_saves.push(super::LetSaveEntry {
             name,
-            value: value.into_temp_snapshot(),
+            value,
             is_temp,
             slot,
             elem: None,
@@ -425,6 +435,14 @@ impl Interpreter {
     /// binding so every alias sees the restoration and object identity (id +
     /// cell) is preserved, rather than rebinding the name to a detached copy.
     fn restore_let_value(&mut self, name: String, restored: Value, slot: Option<u32>) {
+        // `temp $*OUT = ...` over the process binding temporized the process
+        // stash (ADR-11318): restore it there. No frame holds the binding, so
+        // there is no slot to refresh and nothing to write back to a caller —
+        // a writeback would copy the value into the caller's own storage,
+        // where it would read as a lexical binding.
+        if name.starts_with('*') && self.publish_process_dynamic_write(&name, &restored) {
+            return;
+        }
         // A boxed (shared-cell) binding: write the restored value THROUGH the live
         // cell so the owner's local slot (which holds the same Arc) sees the
         // restoration, rather than replacing the env entry with a detached plain
