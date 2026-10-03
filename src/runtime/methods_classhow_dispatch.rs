@@ -2064,6 +2064,9 @@ impl Interpreter {
             }
             "nativesize" if args.len() == 1 => {
                 let type_name = self.mop_receiver_owner(&args[0]);
+                if let Some(decl) = self.native_decl(&type_name) {
+                    return Ok(decl.nativesize.map_or(Value::NIL, Value::int));
+                }
                 match native_types::native_type_bits(&type_name) {
                     Some(bits) => Ok(Value::int(i64::from(bits))),
                     None => Err(RuntimeError::meta_method_not_found(
@@ -2074,6 +2077,9 @@ impl Interpreter {
             }
             "unsigned" if args.len() == 1 => {
                 let type_name = self.mop_receiver_owner(&args[0]);
+                if let Some(decl) = self.native_decl(&type_name) {
+                    return Ok(Value::int(i64::from(decl.unsigned)));
+                }
                 if native_types::native_type_bits(&type_name).is_some() {
                     Ok(Value::int(i64::from(!native_types::is_signed_native(
                         &type_name,

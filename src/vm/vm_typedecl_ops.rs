@@ -698,6 +698,10 @@ impl Interpreter {
                 }
             }
 
+            // `is ctype` / `is nativesize` / `is unsigned` are core traits
+            // that set NativeHOW metadata; they never reach a user
+            // `trait_mod:<is>` (see `runtime::native_decl`).
+            self.apply_native_type_traits(&storage_name, repr.as_deref(), custom_traits)?;
             // Remember whether the class's HOW already carried a `compose`
             // hook, so one mixed in by the traits below can be told apart.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
@@ -712,7 +716,9 @@ impl Interpreter {
                 for (trait_name, trait_arg) in custom_traits {
                     // Internal markers (`__mutsu_declare_how`, `__hoisted`, ...)
                     // are not user traits; never dispatch them to trait_mod:<is>.
-                    if trait_name.starts_with("__") {
+                    if trait_name.starts_with("__")
+                        || crate::runtime::native_decl::is_native_type_trait(trait_name)
+                    {
                         continue;
                     }
                     let trait_value = match trait_arg {

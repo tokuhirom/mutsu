@@ -216,6 +216,9 @@ pub(crate) struct Registry {
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
+    /// `native`-declared types and the traits they recorded (`is repr`,
+    /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
+    pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
