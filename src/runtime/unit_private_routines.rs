@@ -174,7 +174,10 @@ impl Interpreter {
                 self.registry_mut().our_scoped_functions.remove(&key);
                 self.registry_mut()
                     .functions_mut()
-                    .entry(Symbol::intern(&format!("{module}::{name}")))
+                    .entry(crate::qualified::qualified(
+                        Symbol::intern(module),
+                        Symbol::intern(&name),
+                    ))
                     .or_insert_with(|| def.clone());
             }
             secluded.push((name_sym, def));
