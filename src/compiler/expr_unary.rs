@@ -103,13 +103,22 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreIncrement(name_idx, slot));
-                } else if let Expr::Index { target, index, .. } = expr {
+                } else if let Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                } = expr
+                {
                     if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));
-                        self.code
-                            .emit(OpCode::PreIncrementIndex(name_idx, target_slot));
+                        self.code.emit(OpCode::PreIncrementIndex(
+                            name_idx,
+                            target_slot,
+                            *is_positional,
+                        ));
                     } else {
                         // Nested index (e.g. ++$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, true);
@@ -171,13 +180,22 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreDecrement(name_idx, slot));
-                } else if let Expr::Index { target, index, .. } = expr {
+                } else if let Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                } = expr
+                {
                     if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));
-                        self.code
-                            .emit(OpCode::PreDecrementIndex(name_idx, target_slot));
+                        self.code.emit(OpCode::PreDecrementIndex(
+                            name_idx,
+                            target_slot,
+                            *is_positional,
+                        ));
                     } else {
                         // Nested index (e.g. --$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, false);

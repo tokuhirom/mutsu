@@ -5368,13 +5368,27 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PostIncrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, false)?;
+            OpCode::PostIncrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    true,
+                    false,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PostDecrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, false)?;
+            OpCode::PostDecrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    false,
+                    false,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -5548,13 +5562,27 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PreIncrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, true, true)?;
+            OpCode::PreIncrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    true,
+                    true,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
-            OpCode::PreDecrementIndex(name_idx, slot) => {
-                self.exec_inc_dec_index_dispatch(code, *name_idx, *slot, false, true)?;
+            OpCode::PreDecrementIndex(name_idx, slot, is_positional) => {
+                self.exec_inc_dec_index_dispatch(
+                    code,
+                    *name_idx,
+                    *slot,
+                    false,
+                    true,
+                    *is_positional,
+                )?;
                 *ip += 1;
             }
 
