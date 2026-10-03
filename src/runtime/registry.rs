@@ -494,6 +494,9 @@ pub(crate) struct Registry {
     proto_gen: u64,
     /// `proto token`/`proto rule` declaration markers (existence set).
     pub(crate) proto_tokens: HashSet<String>,
+    /// The signature of a `proto token`/`proto rule` that declares positional
+    /// parameters, keyed like `proto_tokens`.
+    pub(crate) proto_token_params: HashMap<String, Arc<Vec<crate::ast::ParamDef>>>,
     /// Whether ANY `proto method`/`proto submethod` has been declared
     /// anywhere in the program (ADR-0019 E8c). A monotonic flag — proto
     /// bodies are never unregistered — set by [`Registry::set_proto_method`]

@@ -6394,10 +6394,9 @@ pub(crate) enum CompiledDeclPlanRef {
     Class(u32),
     Role(u32),
     Proto(u32),
-    /// A `proto token`/`proto rule` LTM marker (`Stmt::ProtoToken`), which
-    /// carries only a name — no signature, body, or traits — so the name is
-    /// stored inline rather than indexing a pool of its own.
-    ProtoToken(Symbol),
+    /// A `proto token`/`proto rule` LTM marker (`Stmt::ProtoToken`): an index
+    /// into `proto_token_plans` (its name and signature; no body or traits).
+    ProtoToken(u32),
     Token(u32),
 }
 
@@ -6467,6 +6466,8 @@ pub(crate) struct CompiledCode {
     /// `token`/`rule` declaration plans (ADR-0019 F7), mirroring
     /// `proto_decl_plans`'s own shape.
     pub(crate) token_decl_plans: Vec<CompiledTokenDeclPlan>,
+    /// `proto token`/`proto rule` markers: the name and the proto's signature.
+    pub(crate) proto_token_plans: Vec<(Symbol, Vec<ParamDef>)>,
     /// The single declaration-registration operand pool. `RegisterDecl(i)` selects one tagged
     /// typed plan here; declaration-specific metadata stays out of the hot opcode enum.
     pub(crate) decl_plans: Vec<CompiledDeclPlanRef>,
@@ -7909,6 +7910,7 @@ impl CompiledCode {
             role_decl_plans: Vec::new(),
             proto_decl_plans: Vec::new(),
             token_decl_plans: Vec::new(),
+            proto_token_plans: Vec::new(),
             decl_plans: Vec::new(),
             trir_call_sites: Vec::new(),
             reduction_specs: Vec::new(),
@@ -11713,11 +11715,18 @@ impl CompiledCode {
     }
 
     /// Record a `proto token`/`proto rule` LTM marker (ADR-0019 C8). Unlike
-    /// `add_proto_decl_plan`, there is no signature, body, or trait to lower —
-    /// `Stmt::ProtoToken` carries only a name.
-    pub(crate) fn add_proto_token_decl_plan(&mut self, name: Symbol) -> u32 {
+    /// `add_proto_decl_plan`, there is no body or trait to lower — only the
+    /// name and the signature (whose `$*` parameters bind for the candidates).
+    pub(crate) fn add_proto_token_decl_plan(
+        &mut self,
+        name: Symbol,
+        param_defs: &[ParamDef],
+    ) -> u32 {
+        let plan_idx = self.proto_token_plans.len() as u32;
+        self.proto_token_plans.push((name, param_defs.to_vec()));
         let idx = self.decl_plans.len() as u32;
-        self.decl_plans.push(CompiledDeclPlanRef::ProtoToken(name));
+        self.decl_plans
+            .push(CompiledDeclPlanRef::ProtoToken(plan_idx));
         idx
     }
 
