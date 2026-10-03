@@ -1297,11 +1297,12 @@ pub(super) fn rewrite_tilde_tokens(
                 from_runtime_interpolation: false,
                 subrule_call_capture: false,
             });
-            // Skip past the inner token and any trailing ws-like tokens
+            // Resume after the inner token. A sigspace ws-like token written
+            // after it (`rule { '[' ~ ']' <key> <kv>* }`) separates the whole
+            // construct from what follows -- it sits after the closer once the
+            // goal is moved -- so it stays in the stream rather than being
+            // dropped with the construct.
             i = k + 1;
-            while i < tokens.len() && is_ws_like_token(&tokens[i]) {
-                i += 1;
-            }
             continue;
         }
         out.push(tokens[i].clone());
@@ -1528,37 +1529,6 @@ pub(super) fn has_top_level_combine_op(s: &str) -> bool {
         }
     }
     false
-}
-
-/// Whether a combined-class body has at least one top-level set operator and
-/// ALL of them are subtractions (`-`), no top-level `+` union. Used to decide
-/// whether a leading negated property (`<-:C-[:;,"]>`) can fold safely into a
-/// single negated char class: with only subtractions the combined-class parser
-/// leaves the positive-item set empty and returns the correct "full set minus
-/// everything" class. A top-level `+` would introduce a positive item whose
-/// semantics diverge from Raku's full-set base, so those are excluded.
-pub(super) fn top_level_combine_is_subtractive(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let mut depth = 0i32;
-    let mut saw_subtraction = false;
-    for i in 0..bytes.len() {
-        match bytes[i] {
-            b'(' | b'<' => depth += 1,
-            b')' | b'>' => depth -= 1,
-            b'+' if depth == 0 => return false,
-            b'-' if depth == 0 => {
-                let prev_word =
-                    i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
-                let next_word = i + 1 < bytes.len()
-                    && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_');
-                if !(prev_word && next_word) {
-                    saw_subtraction = true;
-                }
-            }
-            _ => {}
-        }
-    }
-    saw_subtraction
 }
 
 /// Skip `<[...]>` character class content where quotes are literal.
