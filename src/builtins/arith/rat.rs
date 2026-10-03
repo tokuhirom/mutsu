@@ -70,15 +70,15 @@ pub(crate) fn needs_bigrat_path(l: &Value, r: &Value) -> bool {
 }
 
 /// Check if a value should be treated as FatRat for arithmetic.
-/// This includes FatRat and BigRat values when the denominator exceeds u64,
-/// since only FatRat operations can produce such values (regular Rat degrades to Num).
+/// This includes FatRat and BigRat values carrying the FatRat flag. The flag
+/// is authoritative: a big-denominator `BigRat` without it is a plain `Rat`
+/// (a long decimal literal such as `0.1234567890123456789012345`, or
+/// `Str.Numeric` of one), and arithmetic on it degrades to `Num` through
+/// `make_big_rat_arith` like any other Rat whose denominator overflows u64.
 pub(crate) fn is_fat_rat_like(v: &Value) -> bool {
     match v.view() {
         ValueView::FatRat(_, _) => true,
-        // The FatRat flag is authoritative; the big-denominator check is a
-        // safety fallback (a plain Rat degrades to Num past u64, so any
-        // big-denominator rational must be a FatRat).
-        ValueView::BigRat(_, d) => v.is_bigfatrat() || d.to_u64().is_none(),
+        ValueView::BigRat(_, _) => v.is_bigfatrat(),
         _ => false,
     }
 }
