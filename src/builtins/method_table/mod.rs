@@ -149,9 +149,13 @@ fn table() -> &'static Table {
             };
             for owner in mro.iter() {
                 for (idx, row) in all.iter().enumerate() {
-                    if row.owner == owner.as_str() {
+                    // A row past `u16::MAX` stays unreachable through the
+                    // table; with a few dozen rows it does not exist.
+                    if row.owner == owner.as_str()
+                        && let Ok(id) = u16::try_from(idx)
+                    {
                         let name = Symbol::intern(row.name);
-                        let id = RowId(u16::try_from(idx).expect("fewer than 65536 rows"));
+                        let id = RowId(id);
                         rows.entry((shape, name)).or_insert(id);
                         let id = name.id() as usize;
                         if names.len() <= id / 64 {
