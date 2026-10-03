@@ -37,7 +37,7 @@ pub(crate) fn sqrt_numeric(value: &Value) -> Option<Value> {
         ValueView::Int(i) => Some(Value::num((i as f64).sqrt())),
         ValueView::Num(f) => Some(Value::num(f.sqrt())),
         ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-            Some(Value::num((n as f64 / d as f64).sqrt()))
+            Some(Value::num((crate::value::rat_to_f64(n, d)).sqrt()))
         }
         ValueView::BigRat(n, d) if !d.is_zero() => {
             Some(Value::num(crate::value::bigrat_to_f64(n, d).sqrt()))

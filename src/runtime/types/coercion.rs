@@ -99,7 +99,7 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
         "Num" => match value.view() {
             ValueView::Num(_) => value,
             ValueView::Int(n) => Value::num(n as f64),
-            ValueView::Rat(n, d) => Value::num(n as f64 / d as f64),
+            ValueView::Rat(n, d) => Value::num(crate::value::rat_to_f64(n, d)),
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
@@ -135,8 +135,10 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             ValueView::Complex(_, _) => value,
             ValueView::Int(n) => Value::complex(n as f64, 0.0),
             ValueView::Num(n) => Value::complex(n, 0.0),
-            ValueView::Rat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
-            ValueView::FatRat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
+            ValueView::Rat(n, d) if d != 0 => Value::complex(crate::value::rat_to_f64(n, d), 0.0),
+            ValueView::FatRat(n, d) if d != 0 => {
+                Value::complex(crate::value::rat_to_f64(n, d), 0.0)
+            }
             ValueView::BigInt(n) => Value::complex(n.to_f64().unwrap_or(0.0), 0.0),
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                 Value::complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)

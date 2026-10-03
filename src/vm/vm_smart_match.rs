@@ -256,14 +256,14 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         }
         (ValueView::Complex(ar, ai), ValueView::Rat(n, d)) => {
             if d != 0 {
-                Some(ar == (n as f64 / d as f64) && ai == 0.0)
+                Some(ar == (crate::value::rat_to_f64(n, d)) && ai == 0.0)
             } else {
                 Some(false)
             }
         }
         (ValueView::Rat(n, d), ValueView::Complex(br, bi)) => {
             if d != 0 {
-                Some((n as f64 / d as f64) == br && bi == 0.0)
+                Some((crate::value::rat_to_f64(n, d)) == br && bi == 0.0)
             } else {
                 Some(false)
             }
@@ -298,7 +298,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 Some(
                     a.trim()
                         .parse::<f64>()
-                        .is_ok_and(|v| v == n as f64 / d as f64),
+                        .is_ok_and(|v| v == crate::value::rat_to_f64(n, d)),
                 )
             } else {
                 Some(false)

@@ -180,7 +180,7 @@ impl Interpreter {
         match v.map(Value::view) {
             Some(ValueView::Int(i)) => i as f64,
             Some(ValueView::Num(f)) => f,
-            Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+            Some(ValueView::Rat(n, d)) if d != 0 => crate::value::rat_to_f64(n, d),
             Some(_) => to_float_value(v.unwrap()).unwrap_or(0.0),
             _ => 0.0,
         }

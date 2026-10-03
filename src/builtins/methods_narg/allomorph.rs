@@ -85,8 +85,8 @@ fn allomorph_value_to_f64(v: &Value) -> Option<f64> {
         ValueView::Int(i) => Some(i as f64),
         ValueView::BigInt(n) => n.to_f64(),
         ValueView::Num(f) => Some(f),
-        ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-        ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
+        ValueView::FatRat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
         ValueView::BigRat(n, d) if !d.is_zero() => {
             Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
         }

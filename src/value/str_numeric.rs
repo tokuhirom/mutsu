@@ -343,8 +343,8 @@ fn value_to_f64(v: &Value) -> f64 {
     match v.view() {
         ValueView::Int(i) => i as f64,
         ValueView::Num(f) => f,
-        ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-        ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+        ValueView::Rat(n, d) if d != 0 => super::rat_to_f64(n, d),
+        ValueView::FatRat(n, d) if d != 0 => super::rat_to_f64(n, d),
         ValueView::BigInt(n) => {
             use num_traits::ToPrimitive;
             n.to_f64().unwrap_or(f64::INFINITY)
@@ -935,7 +935,7 @@ mod tests {
                 n.to_f64().unwrap()
             }
             ValueView::Num(f) => f,
-            ValueView::Rat(n, d) => n as f64 / d as f64,
+            ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
             _ => 0.0,
         };
         assert!(

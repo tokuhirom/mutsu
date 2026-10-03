@@ -1676,13 +1676,13 @@ impl Interpreter {
             (ValueView::Array(items, is_arr), ValueView::Rat(n, d)) if d != 0 => {
                 let default =
                     self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
-                let i = (n as f64 / d as f64) as usize;
+                let i = (crate::value::rat_to_f64(n, d)) as usize;
                 self.resolve_array_entry(&items, is_arr, i, default)
             }
             (ValueView::Array(items, is_arr), ValueView::FatRat(n, d)) if d != 0 => {
                 let default =
                     self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
-                let i = (n as f64 / d as f64) as usize;
+                let i = (crate::value::rat_to_f64(n, d)) as usize;
                 self.resolve_array_entry(&items, is_arr, i, default)
             }
             (ValueView::Array(items, is_arr), ValueView::BigRat(_, d)) if !d.is_zero() => {
@@ -2995,7 +2995,7 @@ impl Interpreter {
                         ValueView::Num(n) => Some(n as i64),
                         ValueView::Rat(n, d) => {
                             if d != 0 {
-                                Some((n as f64 / d as f64).floor() as i64)
+                                Some((crate::value::rat_to_f64(n, d)).floor() as i64)
                             } else {
                                 None
                             }
@@ -3043,7 +3043,7 @@ impl Interpreter {
                     ValueView::Num(n) => Some(n as i64),
                     ValueView::Rat(n, d) => {
                         if d != 0 {
-                            Some((n as f64 / d as f64).floor() as i64)
+                            Some((crate::value::rat_to_f64(n, d)).floor() as i64)
                         } else {
                             None
                         }
@@ -3463,7 +3463,7 @@ impl Interpreter {
                     ValueView::Num(n) => Some(n as i64),
                     ValueView::Rat(n, d) => {
                         if d != 0 {
-                            Some((n as f64 / d as f64).floor() as i64)
+                            Some((crate::value::rat_to_f64(n, d)).floor() as i64)
                         } else {
                             None
                         }
@@ -3606,7 +3606,7 @@ fn generic_range_endpoint_as_f64(val: &Value) -> f64 {
     match val.view() {
         ValueView::Int(i) => i as f64,
         ValueView::Num(f) => f,
-        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
         _ => 0.0,
     }
 }

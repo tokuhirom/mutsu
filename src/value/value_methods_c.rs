@@ -165,7 +165,7 @@ impl Value {
             ValueView::Num(f) => f,
             ValueView::Rat(n, d) => {
                 if d != 0 {
-                    n as f64 / d as f64
+                    super::rat_to_f64(n, d)
                 } else if n == 0 {
                     f64::NAN
                 } else if n > 0 {
@@ -176,7 +176,7 @@ impl Value {
             }
             ValueView::FatRat(n, d) => {
                 if d != 0 {
-                    n as f64 / d as f64
+                    super::rat_to_f64(n, d)
                 } else if n == 0 {
                     f64::NAN
                 } else if n > 0 {

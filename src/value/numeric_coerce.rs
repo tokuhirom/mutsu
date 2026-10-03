@@ -17,7 +17,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         ValueView::BigInt(n) => n.to_f64(),
         ValueView::Rat(n, d) => {
             if d != 0 {
-                Some(n as f64 / d as f64)
+                Some(crate::value::rat_to_f64(n, d))
             } else if n > 0 {
                 Some(f64::INFINITY)
             } else if n < 0 {
@@ -28,7 +28,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
         }
         ValueView::FatRat(n, d) => {
             if d != 0 {
-                Some(n as f64 / d as f64)
+                Some(crate::value::rat_to_f64(n, d))
             } else if n > 0 {
                 Some(f64::INFINITY)
             } else if n < 0 {

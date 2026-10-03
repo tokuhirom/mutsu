@@ -2035,6 +2035,23 @@ pub fn make_big_fat_rat(num: NumBigInt, den: NumBigInt) -> Value {
     }
 }
 
+/// `n / d` as the nearest f64, for a native-int `Rat`/`FatRat` (`d != 0`).
+///
+/// When both parts are exactly representable (|x| <= 2^53) one IEEE division
+/// is already correctly rounded. Past that, converting each part first
+/// rounds it on its own: `-9992370000000001 / 250000000000000` (the literal
+/// `-39.969480000000004`) came out as `-39.96948`, so the exact ratio goes
+/// through [`bigrat_to_f64`] instead.
+// Cost: O(1).
+pub fn rat_to_f64(n: i64, d: i64) -> f64 {
+    const EXACT: u64 = 1 << 53;
+    if n.unsigned_abs() <= EXACT && d.unsigned_abs() <= EXACT {
+        n as f64 / d as f64
+    } else {
+        bigrat_to_f64(&NumBigInt::from(n), &NumBigInt::from(d))
+    }
+}
+
 /// Convert a BigInt ratio n/d to f64 with correct rounding.
 /// Uses bit-level scaling to avoid precision loss from independent to_f64() conversions.
 pub fn bigrat_to_f64(n: &NumBigInt, d: &NumBigInt) -> f64 {

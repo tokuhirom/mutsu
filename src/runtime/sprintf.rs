@@ -277,8 +277,8 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         let float_val = || match arg.map(Value::view) {
             Some(ValueView::Int(i)) => i as f64,
             Some(ValueView::Num(f)) => f,
-            Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
-            Some(ValueView::FatRat(n, d)) if d != 0 => n as f64 / d as f64,
+            Some(ValueView::Rat(n, d)) if d != 0 => crate::value::rat_to_f64(n, d),
+            Some(ValueView::FatRat(n, d)) if d != 0 => crate::value::rat_to_f64(n, d),
             Some(ValueView::BigRat(n, d)) if d != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
                 let result = n * BigInt::from(1_000_000_000i64) / d;
@@ -287,7 +287,7 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             Some(ValueView::Str(s)) => match sprintf_numify_str(&s).as_ref().map(Value::view) {
                 Some(ValueView::Int(i)) => i as f64,
                 Some(ValueView::Num(f)) => f,
-                Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+                Some(ValueView::Rat(n, d)) if d != 0 => crate::value::rat_to_f64(n, d),
                 Some(ValueView::BigInt(bi)) => {
                     num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0)
                 }

@@ -933,8 +933,10 @@ pub(super) fn dispatch(
                             ValueView::Int(i) => Some(i as f64),
                             ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
                             ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
+                            ValueView::FatRat(n, d) if d != 0 => {
+                                Some(crate::value::rat_to_f64(n, d))
+                            }
                             ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
@@ -1140,8 +1142,10 @@ pub(super) fn dispatch(
                             ValueView::Int(i) => Some(i as f64),
                             ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
                             ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
+                            ValueView::FatRat(n, d) if d != 0 => {
+                                Some(crate::value::rat_to_f64(n, d))
+                            }
                             ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
@@ -1157,8 +1161,8 @@ pub(super) fn dispatch(
                 } else {
                     f64::NEG_INFINITY
                 }),
-                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
-                ValueView::FatRat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::Rat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
+                ValueView::FatRat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
                 // Correctly rounded: converting numerator and denominator to
                 // f64 separately loses the last bit (`Num(0.7777777777777777777771)`
                 // must equal `Num(0.777777777777777777777)`).
@@ -1307,8 +1311,10 @@ pub(super) fn dispatch(
                             ValueView::Int(i) => Some(i as f64),
                             ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
                             ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                            ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
+                            ValueView::FatRat(n, d) if d != 0 => {
+                                Some(crate::value::rat_to_f64(n, d))
+                            }
                             ValueView::BigRat(n, d) if !d.is_zero() => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }
@@ -1381,7 +1387,7 @@ pub(super) fn dispatch(
                 ValueView::Int(i) => Value::num(i as f64),
                 ValueView::BigInt(n) => Value::num(n.to_f64().unwrap_or(f64::INFINITY)),
                 ValueView::Num(f) => Value::num(f),
-                ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                ValueView::Rat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
                 ValueView::FatRat(n, d) if d != 0 => {
                     Value::num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                 }
@@ -1397,7 +1403,7 @@ pub(super) fn dispatch(
                             ValueView::Int(i) => Some(i as f64),
                             ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
                             ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
                             ValueView::FatRat(n, d) if d != 0 => {
                                 Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
                             }

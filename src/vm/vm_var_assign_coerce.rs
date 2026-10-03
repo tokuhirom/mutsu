@@ -712,7 +712,7 @@ impl Interpreter {
         match value.view() {
             ValueView::Int(i) => Ok(i as f64),
             ValueView::Num(n) => Ok(n),
-            ValueView::Rat(n, d) if d != 0 => Ok(n as f64 / d as f64),
+            ValueView::Rat(n, d) if d != 0 => Ok(crate::value::rat_to_f64(n, d)),
             ValueView::Bool(flag) => Ok(if flag { 1.0 } else { 0.0 }),
             ValueView::Str(s) => {
                 // Try to parse as numeric; throw X::Str::Numeric on failure

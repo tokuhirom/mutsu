@@ -265,7 +265,7 @@ pub(super) fn dispatch(
             let max = match target.view() {
                 ValueView::Int(n) => n as f64,
                 ValueView::Num(n) => n,
-                ValueView::Rat(n, d) => n as f64 / d as f64,
+                ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
                 // `Duration`/`Instant` `does Real`, whose `rand` is
                 // `self.Bridge.rand`: a `Num` below the stored seconds.
                 ValueView::Instance {

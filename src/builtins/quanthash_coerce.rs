@@ -449,7 +449,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                 Ok(n)
             }
         }
-        ValueView::Rat(n, d) if d != 0 => Ok(n as f64 / d as f64),
+        ValueView::Rat(n, d) if d != 0 => Ok(crate::value::rat_to_f64(n, d)),
         ValueView::Bool(b) => Ok(if b { 1.0 } else { 0.0 }),
         ValueView::Complex(_, _) => {
             let mut err = RuntimeError::new(

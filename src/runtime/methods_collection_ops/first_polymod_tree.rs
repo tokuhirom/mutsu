@@ -244,7 +244,7 @@ impl Interpreter {
             match v.view() {
                 ValueView::Int(n) => n as f64,
                 ValueView::Num(n) => n,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::Bool(b) => {
                     if b {
                         1.0

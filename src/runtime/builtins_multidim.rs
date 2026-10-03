@@ -75,8 +75,8 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
         }
         ValueView::Str(s) => s.parse::<usize>().unwrap_or(0),
         ValueView::Num(f) => f as usize,
-        ValueView::Rat(n, d) => (n as f64 / d as f64) as usize,
-        ValueView::FatRat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::Rat(n, d) => (crate::value::rat_to_f64(n, d)) as usize,
+        ValueView::FatRat(n, d) => (crate::value::rat_to_f64(n, d)) as usize,
         ValueView::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
         _ => return Value::NIL,
     };
@@ -380,8 +380,8 @@ fn multidim_index_step(target: &Value, head: &Value) -> (Value, bool) {
         }
         ValueView::Str(s) => s.parse::<usize>().unwrap_or(0),
         ValueView::Num(f) => f as usize,
-        ValueView::Rat(n, d) => (n as f64 / d as f64) as usize,
-        ValueView::FatRat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::Rat(n, d) => (crate::value::rat_to_f64(n, d)) as usize,
+        ValueView::FatRat(n, d) => (crate::value::rat_to_f64(n, d)) as usize,
         ValueView::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
         _ => return (Value::NIL, false),
     };

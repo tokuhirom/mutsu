@@ -692,7 +692,7 @@ impl Compiler {
                 ValueView::Int(n) => ("Int", format!("{}", n)),
                 ValueView::Num(n) => ("Num", format!("{:?}", n)),
                 ValueView::Rat(n, d) => {
-                    let r = n as f64 / d as f64;
+                    let r = crate::value::rat_to_f64(n, d);
                     ("Rat", format!("{}", r))
                 }
                 ValueView::Complex(re, im) => ("Complex", format!("<{}+{}i>", re, im)),

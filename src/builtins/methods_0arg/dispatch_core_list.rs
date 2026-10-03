@@ -353,7 +353,7 @@ pub(super) fn dispatch(
             ValueView::Int(i) => Some(Ok(Value::int(i))),
             ValueView::BigInt(_) => Some(Ok(target.clone())),
             ValueView::Rat(n, d) if d != 0 => {
-                let f = n as f64 / d as f64;
+                let f = crate::value::rat_to_f64(n, d);
                 Some(Ok(raku_round_to_value(f)))
             }
             ValueView::BigRat(n, d) if !d.is_zero() => {
@@ -372,7 +372,7 @@ pub(super) fn dispatch(
                 }
             }
             ValueView::FatRat(n, d) if d != 0 => {
-                let f = n as f64 / d as f64;
+                let f = crate::value::rat_to_f64(n, d);
                 Some(Ok(raku_round_to_value(f)))
             }
             ValueView::Complex(re, im) => Some(Ok(Value::complex(raku_round(re), raku_round(im)))),

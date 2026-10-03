@@ -73,11 +73,11 @@ impl Interpreter {
             ValueView::Bool(b) => Some(usize::from(b)),
             ValueView::Num(f) if f >= 0.0 && f.is_finite() => Some(f as usize),
             ValueView::Rat(n, d) if d != 0 => {
-                let f = n as f64 / d as f64;
+                let f = crate::value::rat_to_f64(n, d);
                 (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
             ValueView::FatRat(n, d) if d != 0 => {
-                let f = n as f64 / d as f64;
+                let f = crate::value::rat_to_f64(n, d);
                 (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
             ValueView::BigRat(_, d) if !d.is_zero() => {
