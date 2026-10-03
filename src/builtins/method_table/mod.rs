@@ -41,7 +41,7 @@ mod list;
 mod map;
 mod num;
 mod rational;
-mod str;
+pub(crate) mod str;
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};

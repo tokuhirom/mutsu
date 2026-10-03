@@ -167,14 +167,11 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(n), n = chars of the invocant.
-        "tclc" => Some(Some(Ok(Value::str(crate::value::tclc_str(
-            &target.to_string_value(),
-        ))))),
-        // Cost: O(n), n = chars of the invocant (one segmenting pass, tclc per word).
-        "wordcase" => Some(Some(Ok(Value::str(crate::value::wordcase_str(
-            &target.to_string_value(),
-        ))))),
+        // `Cool.tclc` / `Cool.wordcase`: the `Str` rows' handlers (ADR-11276).
+        // Cost: O(n), n = chars of the invocant's string form.
+        "tclc" => Some(Some(crate::builtins::method_table::str::tclc(target, &[]))),
+        // Cost: O(n), n = chars of the invocant's string form.
+        "wordcase" => Some(Some(crate::builtins::method_table::str::wordcase(target, &[]))),
         // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
         // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {
