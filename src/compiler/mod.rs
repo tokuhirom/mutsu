@@ -1075,6 +1075,7 @@ mod declaration_plan_tests {
     }
 }
 mod adverb_interp;
+mod amp_scope;
 mod begin_use;
 mod body_scans;
 mod const_fold;
@@ -1767,6 +1768,13 @@ pub(crate) struct Compiler {
     /// EVAL). Used to detect placeholder variables (`$^x`, `@_`, ...) that appear
     /// outside any sub or block -> X::Placeholder::Mainline.
     pub(crate) is_mainline: bool,
+    /// True when this compiler sees the whole lexical scope chain of the code
+    /// it compiles: the program's own compilation unit and every sub, method
+    /// and closure nested in it (handed down by `inherit_outer_code_var_names`).
+    /// A fresh compiler that re-compiles a body out of context (an EVAL, an
+    /// interpret-path fallback) leaves it false. Only then may a `&name` read
+    /// be recorded as having no lexical binding in scope (`amp_scope`).
+    pub(crate) lexical_scope_known: bool,
     /// When true, a `key => $var` Pair must NOT capture `$var`'s container.
     /// Set while compiling call arguments: a named argument's value is passed
     /// to the callee by the call's binding rules (and decontainerized for plain
@@ -1954,6 +1962,7 @@ impl Compiler {
             dot_twigil_rmw_assign: false,
             compiling_our_sub: false,
             is_mainline: false,
+            lexical_scope_known: false,
             suppress_pair_capture: false,
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,

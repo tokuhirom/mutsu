@@ -16,24 +16,32 @@ impl Interpreter {
     /// other imported names (`module_imported_lexical`). The env entry is
     /// kept when this code captured `&name` (`free_var_syms`), binds it in
     /// its own slot (a `&name` parameter), or the binding was declared in
-    /// this code's own compunit (a role's `&name` type parameter lives only in
-    /// env, so a same-unit binding cannot be told apart from a lexical one).
+    /// this code's own compunit and the compiler could not prove the read
+    /// site has no lexical `&name` in scope (`unscoped_amp_reads`): a role's
+    /// `&name` type parameter lives only in env, so without that proof a
+    /// same-unit binding cannot be told apart from a lexical one. With it, a
+    /// caller's same-unit `my &g` no longer replaces the `sub g` a routine's
+    /// `&g` names (#10997).
     ///
     /// Cost: O(1) when env has no `&name` entry (one hashed probe); otherwise
-    /// as `resolve_code_var` (a set probe, a local-slot probe and an
-    /// import-table probe first).
+    /// O(u) plus `resolve_code_var`, u = this code's `unscoped_amp_reads`
+    /// (a handful at most), after a set probe, a local-slot probe and an
+    /// import-table probe.
     fn imported_amp_over_inherited(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         if name.contains(":<") || name.starts_with(['!', '?', '*', '.']) {
             return None;
         }
         let val =
             crate::runtime::dispatch_key::with_amp_name(name, |amp| self.env().get(amp).cloned())?;
-        if !Self::env_callable_is_lexical_override(&val, name)
-            || Self::callable_declared_in_unit_of(&val, code)
-        {
+        if !Self::env_callable_is_lexical_override(&val, name) {
             return None;
         }
         let name_sym = Symbol::intern(name);
+        if Self::callable_declared_in_unit_of(&val, code)
+            && !code.unscoped_amp_reads.contains(&name_sym)
+        {
+            return None;
+        }
         if crate::qualified::is_qualified(name_sym)
             || self.export_amp_override_names.contains(&name_sym)
         {

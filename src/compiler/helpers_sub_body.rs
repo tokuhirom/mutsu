@@ -199,6 +199,7 @@ impl Compiler {
             .cloned()
             .chain(self.code.outer_code_var_names.iter().cloned())
             .collect();
+        child.lexical_scope_known = self.lexical_scope_known;
     }
 
     /// Compile a SubDecl body to a CompiledFunction and store it.

@@ -767,6 +767,7 @@ impl Interpreter {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
+        compiler.lexical_scope_known = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
         // Seed the escaping-our-sub lexical names from the compiled top-level code
         // (and its nested closures), so a free-variable read inside such an `our`
