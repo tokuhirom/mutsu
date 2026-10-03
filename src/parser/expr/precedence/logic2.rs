@@ -83,6 +83,20 @@ pub(crate) fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> 
     let mut last_list_assoc_op: Option<LogicalOp> = None;
     loop {
         let (r, _) = ws(rest)?;
+        // A user operator declared `is equiv(&infix:<||>)` (or looser/tighter
+        // relative to it) sits at this level.
+        if (!rest[..rest.len() - r.len()].contains('\n') || is_declared_custom_infix_word(r))
+            && let Some(new_rest) = try_custom_infix_word(
+                r,
+                &mut left,
+                crate::parser::stmt::simple::PREC_OR_OR - 1,
+                crate::parser::stmt::simple::PREC_OR_OR,
+                &|s| and_and_expr_mode(s, mode),
+            )?
+        {
+            rest = new_rest;
+            continue;
+        }
         // Check for negated logical ops first: !|| , !^^
         let (negated, op_result) = if let Some((op, len)) = parse_negated_logical_op(r) {
             if matches!(op, LogicalOp::OrOr | LogicalOp::XorXor) {
@@ -192,6 +206,20 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
     let (mut rest, mut left) = comparison_expr_mode(input, mode)?;
     loop {
         let (r, _) = ws(rest)?;
+        // A user operator declared `is equiv(&infix:<&&>)` (or looser/tighter
+        // relative to it) sits at this level.
+        if (!rest[..rest.len() - r.len()].contains('\n') && is_declared_custom_infix_word(r))
+            && let Some(new_rest) = try_custom_infix_word(
+                r,
+                &mut left,
+                crate::parser::stmt::simple::PREC_AND_AND - 1,
+                crate::parser::stmt::simple::PREC_AND_AND,
+                &|s| comparison_expr_mode(s, mode),
+            )?
+        {
+            rest = new_rest;
+            continue;
+        }
         // Check for negated !&&
         let (negated, op, len) = if let Some((op, len)) = parse_negated_logical_op(r) {
             if matches!(op, LogicalOp::AndAnd) {
