@@ -25,12 +25,23 @@
 # enclosing chain without allocating, `is_qualified()` and
 # `is_global_package()` classify once.
 #
-# Counts may go DOWN, never up. When your change lowers one, re-cut with
+# THE BASELINE IS PER FILE AND FROZEN (#11507). scripts/name-scans-baseline.txt
+# holds one row per file: `<path> <qualify> <global-cmp> <scan>`. The check
+# fails only when one counter of one file RISES above its row; a file with no
+# row is allowed zero. A drop needs no re-cut, so the PRs that shrink the
+# counts edit no shared file and cannot conflict with each other here. (A
+# single total per counter could not do that: either every shrinking PR
+# re-cut it, or a drop in one file would silently pay for a new site in
+# another.) A file that has fallen below its row is reported as slack; tighten
+# all rows to the current counts with
 #
 #   scripts/check-name-scans.sh --update
 #
-# and commit the new baseline with it. `--self-test` proves the patterns still
-# match what this prose says they match.
+# whenever it is convenient -- it is optional, and best done alone. Adding a
+# site, or moving sites into a file that has no row (a split), means editing
+# the row by hand, which a reviewer sees. `--self-test` proves the patterns
+# still match what this prose says they match, and that the per-file
+# comparison has the teeth described above.
 #
 # EXEMPT, deliberately:
 #   src/parser/     deciding what a name is from its text is the job
@@ -66,11 +77,71 @@ no_comments() {
     grep -vE '^[^:]+:[0-9]+: *(//|\*|//!)'
 }
 
-sites_for() { # $1 = regex
+sites_for() { # $1 = regex; run from the tree root to scan
     { grep -rEn "$1" src --include='*.rs' | no_comments | exempt; } || true
 }
 
-count_for() { sites_for "$1" | grep -c '' || true; }
+# One line per file with any site: `<path> <qualify> <global-cmp> <scan>`,
+# sorted by path. Run from the tree root to scan.
+current_counts() {
+    {
+        sites_for "$QUALIFY_RE" | sed 's/^\([^:]*\):.*/qualify \1/'
+        sites_for "$GLOBAL_RE" | sed 's/^\([^:]*\):.*/global \1/'
+        sites_for "$SCAN_RE" | sed 's/^\([^:]*\):.*/scan \1/'
+    } | awk '
+        { n[$2, $1]++; files[$2] = 1 }
+        END {
+            for (f in files)
+                printf "%s %d %d %d\n", f, n[f, "qualify"], n[f, "global"], n[f, "scan"]
+        }' | LC_ALL=C sort
+}
+
+# $1 = baseline file, stdin = current_counts output. Prints the report; exits
+# 1 when any counter of any file rose above its row.
+compare() {
+    awk -v baseline="$1" '
+        BEGIN {
+            label[1] = "qualify"; label[2] = "global-cmp"; label[3] = "scan"
+            while ((getline line < baseline) > 0) {
+                sub(/#.*/, "", line)
+                if (split(line, f, " ") == 0) continue
+                if (split(line, f, " ") != 4) {
+                    printf "check-name-scans: malformed baseline row: %s\n", line > "/dev/stderr"
+                    bad = 1
+                    continue
+                }
+                base[f[1]] = 1
+                for (i = 1; i <= 3; i++) {
+                    b[f[1], i] = f[i + 1]
+                    btotal[i] += f[i + 1]
+                }
+            }
+        }
+        {
+            seen[$1] = 1
+            for (i = 1; i <= 3; i++) {
+                cur = $(i + 1); allowed = ($1 in base) ? b[$1, i] : 0
+                total[i] += cur
+                if (cur > allowed) {
+                    printf "check-name-scans: %s: %s rose from %d to %d\n", $1, label[i], allowed, cur > "/dev/stderr"
+                    bad = 1
+                } else if (cur < allowed) {
+                    slack++
+                }
+            }
+        }
+        END {
+            for (p in base)
+                if (!(p in seen))
+                    for (i = 1; i <= 3; i++)
+                        if (b[p, i] > 0) slack++
+            for (i = 1; i <= 3; i++)
+                printf "check-name-scans: %s %d (baseline %d)\n", label[i], total[i], btotal[i]
+            if (slack > 0 && !bad)
+                printf "check-name-scans: %d per-file counter(s) below their row; optional re-cut: scripts/check-name-scans.sh --update\n", slack
+            exit bad
+        }'
+}
 
 self_test() {
     local dir
@@ -93,58 +164,63 @@ RS
 let k = format!("{pkg}::{name}");
 if name.contains("::") { }
 RS
+    cat >"$dir/src/runtime/c.rs" <<'RS'
+if name.contains("::") { }
+RS
     local got want
-    got="$(cd "$dir" && { { grep -rEn "$QUALIFY_RE" src --include='*.rs' || true; } | grep -vE '^[^:]+:[0-9]+: *(//|\*|//!)' | grep -vE '^src/(parser|compiler)/' | grep -c '' || true; })"
-    want=2
-    [ "$got" = "$want" ] || { echo "self-test: qualify expected $want, got $got" >&2; return 1; }
-    got="$(cd "$dir" && { { grep -rEn "$GLOBAL_RE" src --include='*.rs' || true; } | grep -c '' || true; })"
-    [ "$got" = "2" ] || { echo "self-test: global-cmp expected 2, got $got" >&2; return 1; }
-    got="$(cd "$dir" && { { grep -rEn "$SCAN_RE" src --include='*.rs' || true; } | grep -vE '^[^:]+:[0-9]+: *(//|\*|//!)' | grep -vE '^src/(parser|compiler)/' | grep -c '' || true; })"
-    [ "$got" = "3" ] || { echo "self-test: scan expected 3, got $got" >&2; return 1; }
+    got="$(cd "$dir" && current_counts)"
+    want="src/runtime/a.rs 2 2 3
+src/runtime/c.rs 0 0 1"
+    [ "$got" = "$want" ] || { printf 'self-test: counts expected\n%s\ngot\n%s\n' "$want" "$got" >&2; return 1; }
+
+    # Equal to the baseline: passes.
+    printf '# comment\nsrc/runtime/a.rs 2 2 3\nsrc/runtime/c.rs 0 0 1\n' >"$dir/base"
+    (cd "$dir" && current_counts | compare base >/dev/null 2>&1) ||
+        { echo "self-test: an unchanged tree must pass" >&2; return 1; }
+    # A drop passes without a re-cut, including a file whose row is now stale.
+    printf 'src/runtime/a.rs 5 2 3\nsrc/runtime/c.rs 0 0 4\nsrc/runtime/gone.rs 1 0 0\n' >"$dir/base"
+    (cd "$dir" && current_counts | compare base >/dev/null 2>&1) ||
+        { echo "self-test: a drop must pass" >&2; return 1; }
+    # A rise in one file fails even when another file's drop keeps the total down.
+    printf 'src/runtime/a.rs 2 2 9\nsrc/runtime/c.rs 0 0 0\n' >"$dir/base"
+    if (cd "$dir" && current_counts | compare base >/dev/null 2>&1); then
+        echo "self-test: a per-file rise must fail even when the total fell" >&2
+        return 1
+    fi
+    # A file with no row is allowed zero.
+    printf 'src/runtime/a.rs 2 2 3\n' >"$dir/base"
+    if (cd "$dir" && current_counts | compare base >/dev/null 2>&1); then
+        echo "self-test: a file without a row must be allowed zero" >&2
+        return 1
+    fi
     echo "check-name-scans: self-test ok"
 }
 
-if [ "${1:-}" = "--self-test" ]; then
-    self_test
-    exit 0
-fi
-
-qualify=$(count_for "$QUALIFY_RE")
-global_cmp=$(count_for "$GLOBAL_RE")
-scan=$(count_for "$SCAN_RE")
-
-if [ "${1:-}" = "--update" ]; then
-    printf 'qualify %s\nglobal-cmp %s\nscan %s\n' "$qualify" "$global_cmp" "$scan" >"$BASELINE_FILE"
-    echo "name-scans baseline updated: qualify=$qualify global-cmp=$global_cmp scan=$scan"
-    exit 0
-fi
-
-failed=0
-check() { # $1 = label, $2 = current
-    local base
-    base=$(awk -v k="$1" '$1 == k { print $2 }' "$BASELINE_FILE")
-    if [ -z "$base" ]; then
-        echo "check-name-scans: no baseline entry for '$1'" >&2
-        failed=1
-        return
-    fi
-    if [ "$2" -gt "$base" ]; then
-        echo "check-name-scans: $1 rose from $base to $2" >&2
-        failed=1
-    elif [ "$2" -lt "$base" ]; then
-        echo "check-name-scans: $1 fell from $base to $2 -- re-cut the baseline:" >&2
-        echo "  scripts/check-name-scans.sh --update" >&2
-        failed=1
-    else
-        echo "check-name-scans: $1 $2 (baseline $base)"
-    fi
+write_baseline() {
+    {
+        echo "# Run-time package-name string surgery, per file (scripts/check-name-scans.sh,"
+        echo "# #8899, #11507). Columns: <path> <qualify> <global-cmp> <scan>."
+        echo "# A counter may not rise above its row; a file without a row is allowed zero."
+        echo "# A drop needs no re-cut. Tighten every row at once (optional) with"
+        echo "#   scripts/check-name-scans.sh --update"
+        echo
+        current_counts | awk '{ printf "%-56s %4d %4d %4d\n", $1, $2, $3, $4 }'
+    } >"$BASELINE_FILE"
 }
 
-check qualify "$qualify"
-check global-cmp "$global_cmp"
-check scan "$scan"
+case "${1:-}" in
+--self-test)
+    self_test
+    exit 0
+    ;;
+--update)
+    write_baseline
+    echo "name-scans baseline re-cut: $(grep -vc '^#\|^$' "$BASELINE_FILE") files"
+    exit 0
+    ;;
+esac
 
-if [ "$failed" -ne 0 ]; then
+if ! current_counts | compare "$BASELINE_FILE"; then
     cat >&2 <<'MSG'
 
   Build a package-qualified name with src/qualified.rs, not by hand:
@@ -158,7 +234,8 @@ if [ "$failed" -ne 0 ]; then
   src/parser/ and src/compiler/ are exempt: deciding what a name is from its
   text is their job, and doing it there instead of per execution is the point.
 
-  See https://github.com/tokuhirom/mutsu/issues/8899.
+  If the sites only moved (a file split), move their counts to the new file's
+  row by hand. See https://github.com/tokuhirom/mutsu/issues/8899.
 MSG
     exit 1
 fi

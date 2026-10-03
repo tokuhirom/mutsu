@@ -115,8 +115,9 @@ check-panic-surface:
 # {name}")`, `== "GLOBAL"`, and `"::"` splitting/classification outside
 # src/parser/ and src/compiler/. A qualified name is derived from two things
 # the caller already holds, so it belongs in src/qualified.rs's memoizing
-# constructor, built once per pair. All three counts may go down, never up.
-# Re-cut after a change that shifts any of them:
+# constructor, built once per pair. The baseline is per file and frozen
+# (#11507): a counter of a file may not rise above its row, and a drop needs
+# no re-cut, so shrinking PRs touch no shared file. Optional tightening:
 #   scripts/check-name-scans.sh --update
 check-name-scans:
 	scripts/check-name-scans.sh --self-test
