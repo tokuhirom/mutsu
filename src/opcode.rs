@@ -13323,7 +13323,7 @@ impl CompiledFunction {
             return true;
         }
         sym.with_str(|s| {
-            s.strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+            s.strip_prefix(crate::meta_ns::ENUM_BARE_PREFIX)
                 .is_some_and(|base| {
                     self.code
                         .my_declared_enum_sym
