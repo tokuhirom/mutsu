@@ -950,6 +950,7 @@ mod repl_compiler_prelude;
 mod require_stub;
 pub(crate) mod resolution;
 pub(crate) mod resolution_caches;
+mod resolution_call_by_name;
 mod resolution_call_sub;
 mod resolution_deferral;
 mod resolution_eval;
