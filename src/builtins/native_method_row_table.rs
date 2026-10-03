@@ -1323,7 +1323,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "succ", 1, 16),
     ("Instant", "rand", 1, 16),
     ("Instant", "pred", 1, 16),
-    ("Instant", "rand", 1, 16),
     ("Instant", "base", 6, 16),
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),
@@ -1341,9 +1340,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "narrow", 1, 16),
     ("Instant", "raku", 1, 16),
     ("Instant", "tai", 1, 16),
-    // `rand` reaches Duration/Instant through Real (raku: `Duration.^can("rand")`
-    // is 1); #11303 made mutsu dispatch it, which the Rakudo oracle test checks.
-    ("Instant", "rand", 1, 16),
     ("Duration", "succ", 1, 16),
     ("Duration", "pred", 1, 16),
     ("Duration", "base", 6, 16),
@@ -1358,7 +1354,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Duration", "isNaN", 1, 16),
     ("Duration", "narrow", 1, 16),
     ("Duration", "tai", 1, 16),
-    ("Duration", "rand", 1, 16),
     ("Map", "lazy", 1, 24),
     // #9948: `hyper`/`race` are `Iterable` methods in raku (`Seq.^can` and
     // `Map.^can` are 1 for both); `List`/`Array`/`Range` already had rows.
