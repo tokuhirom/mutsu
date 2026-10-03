@@ -166,6 +166,7 @@ pub use stmt::simple::{
     set_parser_program_path, set_parser_source_file,
 };
 
+pub(crate) use expr::precedence::assign_to_target_expr;
 pub(crate) use expr::precedence::lower_feed_node;
 pub(crate) use stmt::simple::{fold_use_lib_path, use_lib_args};
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
