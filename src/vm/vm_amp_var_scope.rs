@@ -85,7 +85,9 @@ impl Interpreter {
         code: &CompiledCode,
         name: &str,
     ) -> Option<Value> {
-        if name.contains("::") || name.starts_with(['!', '?', '*', '.']) {
+        if crate::qualified::is_qualified(Symbol::intern(name))
+            || name.starts_with(['!', '?', '*', '.'])
+        {
             return None;
         }
         crate::runtime::dispatch_key::with_amp_name(name, |amp| {

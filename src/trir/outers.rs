@@ -203,9 +203,10 @@ impl Interpreter {
     pub(crate) fn trir_declared_amp_callable(
         &mut self,
         chunk: &TrChunk,
-        name: &str,
+        sym: crate::symbol::Symbol,
     ) -> Option<Value> {
-        if name.contains("::") || !self.lexical_amp_call_eligible(name) {
+        let name = sym.as_str();
+        if crate::qualified::is_qualified(sym) || !self.lexical_amp_call_eligible(name) {
             return None;
         }
         let amp = format!("&{name}");

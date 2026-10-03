@@ -287,7 +287,7 @@ impl Interpreter {
         // Only an `is rw` parameter was handed a container, so only then do
         // the arguments need keeping for the read-back below.
         let kept = (rw_mask != 0).then(|| args.clone());
-        let result = match self.trir_declared_amp_callable(chunk, &name) {
+        let result = match self.trir_declared_amp_callable(chunk, call.name) {
             Some(callable) => self.vm_call_sub_value(callable, args, false),
             None => self.call_function(&name, args),
         };
