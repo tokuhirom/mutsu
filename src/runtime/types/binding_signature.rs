@@ -3277,6 +3277,25 @@ impl Interpreter {
                                 crate::gc::Gc::new((**gc).clone()),
                                 ArrayKind::Array,
                             );
+                        } else if pd.name.starts_with('@')
+                            && let ValueView::Seq(body) = value.view()
+                            && !body.is_lazy()
+                        {
+                            let body = std::sync::Arc::clone(&body);
+                            // A Seq argument reaches here as its cached `List`
+                            // view (`seq_list_view`, bound like `.cache`); the
+                            // copy is a fresh mutable Array of its elements,
+                            // as `my @c = $seq` makes (`mutation(Bool.pick xx
+                            // $n)` in Algorithm::Evolutionary::Simple).
+                            value = Value::real_array(self.reify_seq_body(&body)?);
+                        } else if pd.name.starts_with('@')
+                            && let ValueView::LazyList(list) = value.view()
+                            && !list.is_genuinely_lazy()
+                        {
+                            // A finite `gather` arrives as a LazyList; the copy
+                            // is its elements in a fresh Array, as above.
+                            let list = crate::gc::Gc::clone(&list);
+                            value = Value::real_array(self.force_lazy_list_vm(&list)?);
                         }
                     }
                     if pd.sigilless {

@@ -277,9 +277,6 @@ impl Interpreter {
                 "Array"
                     | "List"
                     | "Slip"
-                    | "Seq"
-                    | "HyperSeq"
-                    | "RaceSeq"
                     | "Range"
                     | "Buf"
                     | "Blob"
@@ -295,12 +292,11 @@ impl Interpreter {
         if constraint == "Iterable" && value_type == "IO::Path::Parts" {
             return true;
         }
-        // Array is-a List in Raku type hierarchy (and Slip is-a List)
-        if constraint == "List"
-            && matches!(
-                value_type,
-                "Array" | "List" | "Slip" | "Seq" | "HyperSeq" | "RaceSeq" | "array"
-            )
+        // Array is-a List in Raku type hierarchy (and Slip is-a List). A Seq
+        // is neither a List nor Positional -- it binds to an `@` parameter
+        // through PositionalBindFailover instead (`(1,2).Seq ~~ List` is
+        // False in rakudo, and a `--> List(Seq)` return must coerce it).
+        if constraint == "List" && matches!(value_type, "Array" | "List" | "Slip" | "array")
         {
             return true;
         }

@@ -103,7 +103,19 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
-        "Array" | "List" => crate::runtime::utils::coerce_to_array(value),
+        "Array" => crate::runtime::utils::coerce_to_array(value),
+        // `List(...)` makes a List, not an Array (`--> List(Seq)`, `List()
+        // $x`): the same elements, in a fresh immutable list.
+        "List" => {
+            let array = crate::runtime::utils::coerce_to_array(value);
+            let as_list = match array.view() {
+                ValueView::Array(items, crate::value::ArrayKind::Array) => {
+                    Some(Value::array(items.iter().cloned().collect()))
+                }
+                _ => None,
+            };
+            as_list.unwrap_or(array)
+        }
         "Hash" => crate::runtime::utils::coerce_to_hash(value),
         "Rat" => {
             match value.view() {
