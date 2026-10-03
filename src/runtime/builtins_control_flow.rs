@@ -303,6 +303,28 @@ impl Interpreter {
         )
     }
 
+    /// A sunk `start` block died and nothing can observe its promise any more
+    /// (#9767). Rakudo's scheduler reports it ("Unhandled exception in code
+    /// scheduled on thread N", the message, the backtrace) and exits with
+    /// status 1, on whichever thread finds out: the worker when the promise was
+    /// sunk before it broke, the sinking thread when it broke first. The
+    /// worker's buffered output is written first, since it came first.
+    // Cost: O(o + m), o = the buffered output, m = the report's length.
+    pub(crate) fn die_of_unhandled_break(
+        &mut self,
+        unhandled: crate::value::UnhandledBreak,
+    ) -> Result<(), RuntimeError> {
+        if !unhandled.output.is_empty() {
+            self.emit_output(&unhandled.output);
+        }
+        if !unhandled.stderr_output.is_empty() {
+            self.emit_stderr(&unhandled.stderr_output);
+        }
+        let report = crate::value::unhandled_promise_text(&unhandled.result, unhandled.thread_id);
+        self.emit_stderr(&report);
+        self.builtin_exit(&[Value::int(1)]).map(|_| ())
+    }
+
     pub(super) fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code = match args.first().map(Value::view) {
             Some(ValueView::Int(i)) => i,

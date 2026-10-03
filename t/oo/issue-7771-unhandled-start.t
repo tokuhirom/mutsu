@@ -1,17 +1,17 @@
 use Test;
 
-# A sunk `start` owns an implicit unhandled-exception handler. The diagnostic
-# is emitted only when the Broken Promise is destroyed without being observed;
-# retaining it, awaiting it, or inspecting its status leaves the existing
-# Promise behavior in place.
+# A sunk `start` owns an implicit unhandled-exception handler: when its block
+# dies and nothing can observe the Promise, the program reports the exception
+# and exits with status 1, as in Rakudo (#9767). Retaining it, awaiting it, or
+# inspecting its status leaves the existing Promise behavior in place.
 
 plan 11;
 
 {
     my $p = run $*EXECUTABLE, '-e',
         'start { die "boom" }; sleep 0.3; say "hello";', :out, :err;
-    is $p.exitcode, 0, 'an unawaited start does not change the process exit status';
-    is $p.out.slurp(:close), "hello\n", 'the mainline output is preserved';
+    is $p.exitcode, 1, 'an unobserved sunk start that dies ends the program with status 1';
+    is $p.out.slurp(:close), "", 'the mainline does not run on past it';
     my $err = $p.err.slurp(:close);
     like $err, /'Unhandled exception in code scheduled on thread'/,
         'an unobserved sunk start reports its unhandled exception';

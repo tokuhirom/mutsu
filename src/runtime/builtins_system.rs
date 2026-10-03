@@ -447,6 +447,15 @@ impl Interpreter {
                             Value::str(e.message.into_owned())
                         };
                         promise.break_with(error_val.clone(), output, stderr);
+                        // Already sunk and unobserved: the program dies of it now,
+                        // from this worker (#9767). A user `uncaught_handler`
+                        // replaces that default below.
+                        if crate::runtime::native_methods::state_scheduler::get_uncaught_handler()
+                            .is_none()
+                            && let Some(unhandled) = promise.take_unhandled_break()
+                        {
+                            let _ = thread_interp.die_of_unhandled_break(unhandled);
+                        }
                         // Call uncaught_handler if set, running in a helper thread
                         // so we don't block the promise thread.
                         if let Some(handler) =

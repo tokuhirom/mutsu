@@ -4446,8 +4446,18 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::MarkPromiseSink => {
-                if let Some(ValueView::Promise(shared)) = self.stack.last().map(Value::view) {
-                    shared.mark_unhandled();
+                // A promise its worker already broke is fatal right here: it
+                // is being sunk, so nothing can observe it any more (#9767).
+                // A user `uncaught_handler` replaces that default.
+                let unhandled = match self.stack.last().map(Value::view) {
+                    Some(ValueView::Promise(shared)) => shared.mark_unhandled(),
+                    _ => None,
+                };
+                if let Some(unhandled) = unhandled
+                    && crate::runtime::native_methods::state_scheduler::get_uncaught_handler()
+                        .is_none()
+                {
+                    self.die_of_unhandled_break(unhandled)?;
                 }
                 *ip += 1;
             }
