@@ -3331,11 +3331,39 @@ impl Interpreter {
         // own dedicated opcode/fast path, already routed through
         // `assign_store_nil_default`) and real raku store `42`.
         if (self.shared_vars_active && !self.container_name_is_redeclared(target_name))
-            || loan_env!(self, var_type_constraint(target_name)).is_some()
-            || self.container_type_metadata(target).is_some()
             || self.container_default(target).is_some()
         {
             return None;
+        }
+        // A typed container (`has Field @.fields`, `my Int @a`) takes this path
+        // for the growing mutators when no argument is `Nil` (a `Nil` element
+        // decays to the element default, which only the general path
+        // computes): the general path's element check runs here first, so an
+        // ill-typed element raises exactly what it raises there. The mutation
+        // is in place, so the container's pointer-keyed type metadata stays
+        // attached. `pop`/`shift` keep the general path, whose empty-container
+        // Failure names the element type (#9494).
+        let typed = loan_env!(self, var_type_constraint(target_name)).is_some()
+            || self.container_type_metadata(target).is_some();
+        if typed {
+            // Only an `@` variable's constraint is an ELEMENT type; a scalar
+            // bound to an array (`Positional $x`) constrains the variable.
+            if !target_name.starts_with('@')
+                || !matches!(method, "push" | "append" | "prepend" | "unshift")
+            {
+                return None;
+            }
+            let items = if matches!(method, "push" | "unshift") {
+                crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
+            } else {
+                crate::runtime::flatten_append_args(args.to_vec())
+            };
+            if items.iter().any(Value::is_nil) {
+                return None;
+            }
+            if let Err(e) = self.check_container_element_types(target_name, target, &items) {
+                return Some(Err(e));
+            }
         }
         // pop/shift take no positionals; let the interpreter raise the arity error.
         if matches!(method, "pop" | "shift") && !args.is_empty() {
