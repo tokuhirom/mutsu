@@ -437,34 +437,9 @@ impl Interpreter {
                 ltm_fate_frame_close_into(enclosing_fate, |fate| pos + fate);
                 return best_len.map(|len| pos + len);
             }
-            if spec.lookup_name == "wb" && !spec.token_lookup {
-                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
-                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
-                return if before_is_word != after_is_word
-                    || (pos == 0 && after_is_word)
-                    || (pos == chars.len() && before_is_word)
-                {
-                    Some(pos)
-                } else {
-                    None
-                };
-            }
-            if spec.lookup_name == "ww" && !spec.token_lookup {
-                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
-                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
-                return (before_is_word && after_is_word).then_some(pos);
-            }
-            if spec.lookup_name == "ws" && !spec.token_lookup {
-                let mut next = pos;
-                while next < chars.len() && crate::builtins::cclass::is_space(chars[next]) {
-                    next += 1;
-                }
-                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
-                let after_is_word = next < chars.len() && is_word_char(chars[next]);
-                if before_is_word && after_is_word && next == pos {
-                    return None;
-                }
-                return Some(next);
+            if matches!(spec.lookup_name.as_str(), "wb" | "ww" | "ws") && !spec.token_lookup {
+                return super::regex_builtin_rule::builtin_rule_end(&spec.lookup_name, chars, pos)
+                    .flatten();
             }
             // Fallback: check if lookup_name is a builtin character class
             let is_builtin_class = matches!(
