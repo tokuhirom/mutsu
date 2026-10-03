@@ -434,6 +434,10 @@ impl Interpreter {
         // A role-mixed value is NOT an `Instance` view, so it used to fall
         // straight through to the `_` arm below and lose its composed
         // `Stringy`/`Str` (see `mixin_user_stringifier`).
+        // ...except a mixin over a `Str` (`"foo" but R`), which already is one.
+        if let Some(payload) = crate::runtime::str_mixin_payload(&v) {
+            return Ok(payload);
+        }
         if let Some(r) = self.mixin_user_stringifier(&v) {
             return Ok(Value::str(r?.to_string_value()));
         }

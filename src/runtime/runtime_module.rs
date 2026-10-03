@@ -103,7 +103,11 @@ impl Interpreter {
     /// imports are meant to persist anyway.
     pub(crate) fn record_import_env_key(&mut self, key: &str) {
         let key_sym = Symbol::intern(key);
-        let display = if key.starts_with(['$', '@', '%', '&'])
+        let display = if let Some(term) = key.strip_prefix(crate::runtime::term_names::TERM_PREFIX)
+        {
+            // A sigilless term's env key (`\Y`); its pad name is bare.
+            term.to_string()
+        } else if key.starts_with(['$', '@', '%', '&'])
             || key.chars().next().is_some_and(|c| c.is_uppercase())
         {
             key.to_string()
