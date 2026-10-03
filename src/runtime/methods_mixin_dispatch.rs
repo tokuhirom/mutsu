@@ -492,15 +492,7 @@ impl Interpreter {
                 .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
                 .map(Value::view)
             {
-                let punned_name = format!(
-                    "{}[{}]",
-                    role_name,
-                    type_args
-                        .iter()
-                        .map(crate::runtime::registration_class::type_value_name)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                );
+                let (_, punned_name) = Self::parametric_role_pun_name(&role_name, type_args.as_slice());
                 self.inject_class_body_statics(&punned_name);
             }
             // Build the attribute set visible to the role method body.
