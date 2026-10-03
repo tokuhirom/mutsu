@@ -15,3 +15,7 @@ Three gaps surfaced by `Data::Generators`, which picks its sampler with
   "Unknown function: pick". Every argument past the count is now one element.
 - `Duration.rand` / `Instant.rand` (from `Real.rand`, `self.Bridge.rand`)
   were missing; they return a `Num` below the stored seconds.
+- The bareword coercers (`Bag(...)`, `Set(...)`, `Mix(...)`, `Hash(...)`, ...)
+  read a still-deferred `.map`/`.grep` Seq argument as empty, so
+  `Bag(@rows.map({ $_[1] => $_[2] }))` built `Bag()`. The coercer gate now
+  reifies such arguments first, as the native-function path already did.
