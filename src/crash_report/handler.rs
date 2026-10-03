@@ -20,9 +20,10 @@ pub(super) const FATAL: [c_int; 5] = [
 /// symbolized backtrace is stack-hungry.
 const ALT_STACK_SIZE: usize = 256 * 1024;
 
-/// Report directory: absolute, with no trailing slash. Resolved at install
-/// time because a Raku program may `chdir` before it crashes.
-pub(super) static REPORT_DIR: OnceLock<Box<[u8]>> = OnceLock::new();
+/// Report directory: absolute, with no trailing slash, or `None` to report on
+/// stderr only. Resolved at install time because a Raku program may `chdir`
+/// before it crashes.
+pub(super) static REPORT_DIR: OnceLock<Option<Box<[u8]>>> = OnceLock::new();
 /// Pre-rendered `version:`/`cwd:`/`argv:` lines. Reading them needs
 /// allocation, which the handler must not do before the report has landed.
 pub(super) static PREAMBLE: OnceLock<Box<[u8]>> = OnceLock::new();
@@ -156,23 +157,33 @@ pub(super) fn install_thread_alt_stack() -> Option<AltStack> {
     Some(install_alt_stack())
 }
 
-fn report_dir() -> Box<[u8]> {
-    let dir = std::env::var_os("MUTSU_CRASH_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("tmp/crash"));
+/// The report directory: `$MUTSU_CRASH_DIR` made absolute, or `None` when it
+/// is unset or empty, in which case the report goes to stderr only.
+///
+/// There is deliberately no default directory. A default resolved against the
+/// working directory (the old `tmp/crash`) made the shipped binary litter a
+/// `tmp/crash/<pid>.txt` — carrying the argv, so possibly `-e` program text —
+/// into whatever directory a user happened to run it from (#11219). Harnesses
+/// that collect reports (CI, `scripts/report-crash-reports.sh`) export an
+/// absolute `MUTSU_CRASH_DIR`.
+fn report_dir() -> Option<Box<[u8]>> {
+    resolve_report_dir(std::env::var_os("MUTSU_CRASH_DIR"))
+}
+
+fn resolve_report_dir(var: Option<std::ffi::OsString>) -> Option<Box<[u8]>> {
+    let dir = std::path::PathBuf::from(var.filter(|v| !v.is_empty())?);
     let abs = if dir.is_absolute() {
         dir
     } else {
-        match std::env::current_dir() {
-            Ok(cwd) => cwd.join(dir),
-            Err(_) => std::env::temp_dir().join("mutsu-crash"),
-        }
+        // Resolved now, against the startup cwd, because a Raku program may
+        // `chdir` before it crashes. No cwd means no sensible place: stderr.
+        std::env::current_dir().ok()?.join(dir)
     };
     let mut bytes = std::os::unix::ffi::OsStrExt::as_bytes(abs.as_os_str()).to_vec();
     while bytes.len() > 1 && bytes.last() == Some(&b'/') {
         bytes.pop();
     }
-    bytes.into_boxed_slice()
+    Some(bytes.into_boxed_slice())
 }
 
 fn preamble() -> Box<[u8]> {
@@ -276,4 +287,35 @@ pub(super) fn selftest_if_requested() {
 fn crash_segv() {
     // SAFETY: none — deliberately dereferencing null.
     unsafe { std::ptr::null_mut::<u8>().write_volatile(1) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_report_dir;
+    use std::ffi::OsString;
+
+    #[test]
+    fn no_report_dir_by_default() {
+        // Unset or empty: stderr only, never a directory under the cwd.
+        assert_eq!(resolve_report_dir(None), None);
+        assert_eq!(resolve_report_dir(Some(OsString::new())), None);
+    }
+
+    #[test]
+    fn an_absolute_report_dir_is_kept_without_trailing_slashes() {
+        assert_eq!(
+            resolve_report_dir(Some(OsString::from("/var/crash//"))).as_deref(),
+            Some(&b"/var/crash"[..])
+        );
+    }
+
+    #[test]
+    fn a_relative_report_dir_is_resolved_against_the_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let want = cwd.join("reports");
+        assert_eq!(
+            resolve_report_dir(Some(OsString::from("reports"))).as_deref(),
+            Some(std::os::unix::ffi::OsStrExt::as_bytes(want.as_os_str()))
+        );
+    }
 }

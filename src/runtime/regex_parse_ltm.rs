@@ -1247,7 +1247,13 @@ impl Interpreter {
             if let Some((base, count_spec)) = Self::strip_group_quantifier(&atom) {
                 return build_with_rest(expand(&base, &count_spec, sep_mode, sep));
             }
-            return build_with_rest(expand(&atom, "1..*", sep_mode, sep));
+            // Anything else in front of the `%` is not one quantified atom: a
+            // run of tokens ending in one (`b [\d]+ % "-"`, `. [x]+ % ','`).
+            // Expanding that whole run as the repeated atom repeated the
+            // prefix too and dropped the separator between real iterations, so
+            // defer to the per-token parser, which attaches the separator to
+            // the quantified token natively -- as the `**` branch above does.
+            return pattern.to_string();
         }
         pattern.to_string()
     }

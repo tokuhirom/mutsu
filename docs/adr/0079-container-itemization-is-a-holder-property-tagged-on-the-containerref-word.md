@@ -1,6 +1,6 @@
 # ADR-0079: Container itemization is a property of the *holder*, tagged on the `ContainerRef` word
 
-- **Status**: Proposed
+- **Status**: Proposed — implemented (slices 0–4 complete, 2026-10-03)
 - **Date**: 2026-09-09
 - **Deciders**: tokuhirom, Claude
 - **Related**: [#7542](https://github.com/tokuhirom/mutsu/issues/7542) (the originating finding, whose
@@ -279,7 +279,7 @@ unconditional and delete it.
 | 0 — comment justification | Complete (2026-09-09; comments now state the RHS `List` rule) |
 | 1 — `Kind::ContainerRefItemized` | Complete (2026-09-09; the holder flavour is encoded, decoded, probed, projected through the unchanged `ValueView::ContainerRef`, traced by GC, and covered by NanBox round-trip tests) |
 | 2 — `$`-share holder (rows 1, 3, 4) | Complete (2026-09-09; scalar shares and scalar parameter binds now carry itemization on the target word, while source words remain plain; dereference and hash-initializer consumers preserve the distinction) |
-| 3 — audit remaining producers | Partial (2026-10-02; the `=`-element share — `@a[i] = %h`, `%x<k> = @r` — retags the element's own word as `ContainerRefItemized`; `array_slot_ref`/`hash_slot_ref` hand out an already-promoted element's own word instead of rebuilding a plain one; the hash element read chokepoint and the `.raku` element renderer read through `deref_container`. See §7.1) |
+| 3 — audit remaining producers | Complete (2026-10-03; the remaining producers were measured against rakudo and fixed or filed — see §7.2. Earlier, 2026-10-02: the `=`-element share — `@a[i] = %h`, `%x<k> = @r` — retags the element's own word as `ContainerRefItemized`; `array_slot_ref`/`hash_slot_ref` hand out an already-promoted element's own word instead of rebuilding a plain one; the hash element read chokepoint and the `.raku` element renderer read through `deref_container`. See §7.1) |
 | 4 — drop the `unwrap_contained_pair` hedge | Complete (2026-10-02; the hash initializer unwraps every `ContainerRef` unconditionally. See §7.1) |
 
 ### 7.1 Slices 3 (element shares) and 4 (2026-10-02)
@@ -311,5 +311,27 @@ Measured against rakudo and pinned by `t/collections/element-share-holder-itemiz
 | `(@a[0],)` as a hash initializer | dies `X::Hash::Store::OddNumber` |
 | `(@l[1],)` with `@l := 1, %h` | flattens |
 
-The remaining slice-3 producers (other `container_ref` sites) are unaudited.
+### 7.2 Slice 3, the remaining producers (2026-10-03)
+
+The rest of the audit went by behaviour rather than by call site: ~140 probes of every way an
+aggregate reaches a `$` holder or an element, each compared with rakudo. Most `container_ref`
+sites build cells that never hold an aggregate a `Scalar` would itemize (closure boxing, state
+cells for scalars, rw-argument capture), and needed nothing. The ones that diverged:
+
+| Producer | Was | Now (= rakudo) |
+| --- | --- | --- |
+| `($x, $y) = 7, 8` / `($x = 5)` on a share holder | wrote `7` through the shared cell into the source | replaces the holder; source untouched |
+| `$x = 7` (statement) on a share holder | env still named the shared cell (ADR-0097 §15 debug assertion on the next read) | env detached with the slot |
+| `my \x = %h` | `${...}` | `{...}`, flattens in a hash initializer: a sigilless binding is not a `Scalar` |
+| `state $x = %h` | `{...}` | `${...}` |
+| `my $y = $x` (chained share) | demoted `$x`'s word to plain | `$x` keeps its itemized word |
+| `@a[0;1] = %h` (plain and shaped) | `{...}` | `${...}` |
+| `atomic-assign`, `cas` (scalar, element, multi-dim) | stored the bare aggregate | itemized |
+
+Pinned by `t/collections/itemized-share-holder-producers.t`. Found and filed rather than fixed,
+because each needs its own design: a share holder owns no `Scalar`, so a write through an alias
+(closure, `is rw`, `given`/`for`, `++`) clobbers the source and a `:=`-bound target loses the share
+([#11227](https://github.com/tokuhirom/mutsu/issues/11227)); the compile-time sigilless set leaks
+into a later same-named `$x` ([#11228](https://github.com/tokuhirom/mutsu/issues/11228)); `$_ =
+AGGREGATE` is never itemized ([#11229](https://github.com/tokuhirom/mutsu/issues/11229)).
 

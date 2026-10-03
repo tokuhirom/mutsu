@@ -84,6 +84,8 @@ pub struct Symbol {
 /// Never fails: a document that does not parse yields the declarations that
 /// survived recovery, and one that parses to nothing yields an empty list.
 pub fn symbols(source: &str) -> Vec<Symbol> {
+    // Nothing executes -- see `analysis::check`.
+    let _no_execute = crate::parser::no_execute::NoExecuteGuard::enter();
     // Unit-local anonymous-name counters -- see `analysis::check` and
     // `crate::anon_names`.
     let collected = crate::anon_names::with_unit_local_names(|| {

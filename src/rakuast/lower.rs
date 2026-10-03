@@ -1169,19 +1169,39 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     } else {
         None
     };
+    let mut sigilless = false;
     let name = if let Some(target) = parameter.fields.iter().find(|f| f.name == Some("target")) {
         let target = child_node(&target.value)?;
-        if target.class != RakuAstClass::ParameterTargetVar {
-            return Err(unsupported(owner));
+        match target.class {
+            RakuAstClass::ParameterTargetVar => {
+                let raw = leaf_str(target, "name")?;
+                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
+            }
+            // `\x`: the term's name is the parameter's, with no sigil to strip.
+            RakuAstClass::ParameterTargetTerm => {
+                sigilless = true;
+                match name_parts::name_shape(named_child_or_positional(target)?) {
+                    Some(NameShape::Identifier(name)) => name,
+                    _ => return Err(unsupported(owner)),
+                }
+            }
+            _ => return Err(unsupported(owner)),
         }
-        let raw = leaf_str(target, "name")?;
-        raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
+    } else if parameter.fields.iter().any(|f| {
+        f.name == Some("slurpy")
+            && matches!(&f.value, RakuAstFieldValue::Node(v)
+                if super::slurpy_marker_class(v) == Some(RakuAstClass::ParameterSlurpyCapture))
+    }) {
+        // An anonymous capture `|` binds under the parser's placeholder name.
+        sigilless = true;
+        ANONYMOUS_CAPTURE.to_string()
     } else {
         return Err(unsupported(owner));
     };
     let mut def = positional_param(&name);
+    def.sigilless = sigilless;
     // A named parameter `:$x` carries a `names` list; it binds by name and is
     // optional by default.
     if parameter.fields.iter().any(|f| f.name == Some("names")) {
@@ -1234,6 +1254,13 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         match super::slurpy_marker_class(val) {
             Some(RakuAstClass::ParameterSlurpyFlattened) => def.slurpy = true,
             Some(RakuAstClass::ParameterSlurpyUnflattened) => def.double_slurpy = true,
+            // `+a` and `|c` are the parser's sigilless slurpies, told apart
+            // by `onearg`.
+            Some(RakuAstClass::ParameterSlurpySingleArgument) if def.sigilless => {
+                def.slurpy = true;
+                def.onearg = true;
+            }
+            Some(RakuAstClass::ParameterSlurpyCapture) if def.sigilless => def.slurpy = true,
             _ => return Err(unsupported(owner)),
         }
         def.required = false;
@@ -1294,6 +1321,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     }
     Ok(def)
 }
+
+/// The name the parser gives an anonymous capture parameter (`|`).
+pub(super) const ANONYMOUS_CAPTURE: &str = "_capture";
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
 fn positional_param(name: &str) -> ParamDef {
@@ -2695,14 +2725,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
-                // Only a plain parameter fits `Lambda`; an optional (`$p?`) or
-                // trait-carrying one keeps its `ParamDef`, as the parser does.
+                // Only a plain parameter fits `Lambda`; an optional (`$p?`),
+                // trait-carrying or destructuring (`-> [$a, $b]`) one keeps its
+                // `ParamDef`, as the parser does.
                 1 if param_defs.first().is_some_and(|param| {
                     !param.named
                         && param.type_constraint.is_none()
                         && param.default.is_none()
                         && !param.optional_marker
                         && param.traits.is_empty()
+                        && param.sub_signature.is_none()
                 }) =>
                 {
                     Ok(Expr::Lambda {
@@ -2906,10 +2938,12 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         },
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
-        // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
+        // `True`/`False` -> the Bool literal; any other setting enum value
+        // (`Less`, `Kept`) -> the bareword the parser produces for it.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
             ValueView::Str(s) if s.as_str() == "False" => Ok(Expr::Literal(Value::truth(false))),
+            ValueView::Str(s) if !s.is_empty() => Ok(Expr::BareWord(s.to_string())),
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.

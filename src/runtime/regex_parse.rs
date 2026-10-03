@@ -1226,10 +1226,14 @@ pub(super) fn rewrite_tilde_tokens(
             }
             // Remove trailing ws-like token from out (before tilde) — inserted
             // by sigspace between the opener and `~`.
-            let had_pre_ws = out.last().is_some_and(is_ws_like_token);
-            if had_pre_ws {
-                out.pop();
-            }
+            // Keep the token itself: it is whatever sigspace inserted (a
+            // grammar's own `ws` override included), and the inner pattern
+            // below must match whitespace the same way.
+            let pre_ws = if out.last().is_some_and(is_ws_like_token) {
+                out.pop()
+            } else {
+                None
+            };
             // Skip ws-like tokens after the tilde to find the goal (closer)
             let mut j = i + 1;
             while j < tokens.len() && is_ws_like_token(&tokens[j]) {
@@ -1252,20 +1256,7 @@ pub(super) fn rewrite_tilde_tokens(
             // surrounded by WsRule so `rule` sigspace allows whitespace between
             // opener/content and content/closer.
             let mut inner_tokens = Vec::new();
-            if had_pre_ws {
-                let ws_tok = RegexToken {
-                    atom: RegexAtom::WsRule,
-                    quant: RegexQuant::One,
-                    named_capture: None,
-                    hash_capture: None,
-                    secondary_named_capture: None,
-                    force_list_capture: false,
-                    ratchet: false,
-                    frugal: false,
-                    separator: None,
-                    from_runtime_interpolation: false,
-                    subrule_call_capture: false,
-                };
+            if let Some(ws_tok) = pre_ws {
                 inner_tokens.push(ws_tok.clone());
                 inner_tokens.push(inner_token);
                 inner_tokens.push(ws_tok);
@@ -1297,11 +1288,12 @@ pub(super) fn rewrite_tilde_tokens(
                 from_runtime_interpolation: false,
                 subrule_call_capture: false,
             });
-            // Skip past the inner token and any trailing ws-like tokens
+            // Resume after the inner token. A sigspace ws-like token written
+            // after it (`rule { '[' ~ ']' <key> <kv>* }`) separates the whole
+            // construct from what follows -- it sits after the closer once the
+            // goal is moved -- so it stays in the stream rather than being
+            // dropped with the construct.
             i = k + 1;
-            while i < tokens.len() && is_ws_like_token(&tokens[i]) {
-                i += 1;
-            }
             continue;
         }
         out.push(tokens[i].clone());
@@ -1528,37 +1520,6 @@ pub(super) fn has_top_level_combine_op(s: &str) -> bool {
         }
     }
     false
-}
-
-/// Whether a combined-class body has at least one top-level set operator and
-/// ALL of them are subtractions (`-`), no top-level `+` union. Used to decide
-/// whether a leading negated property (`<-:C-[:;,"]>`) can fold safely into a
-/// single negated char class: with only subtractions the combined-class parser
-/// leaves the positive-item set empty and returns the correct "full set minus
-/// everything" class. A top-level `+` would introduce a positive item whose
-/// semantics diverge from Raku's full-set base, so those are excluded.
-pub(super) fn top_level_combine_is_subtractive(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let mut depth = 0i32;
-    let mut saw_subtraction = false;
-    for i in 0..bytes.len() {
-        match bytes[i] {
-            b'(' | b'<' => depth += 1,
-            b')' | b'>' => depth -= 1,
-            b'+' if depth == 0 => return false,
-            b'-' if depth == 0 => {
-                let prev_word =
-                    i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
-                let next_word = i + 1 < bytes.len()
-                    && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_');
-                if !(prev_word && next_word) {
-                    saw_subtraction = true;
-                }
-            }
-            _ => {}
-        }
-    }
-    saw_subtraction
 }
 
 /// Skip `<[...]>` character class content where quotes are literal.

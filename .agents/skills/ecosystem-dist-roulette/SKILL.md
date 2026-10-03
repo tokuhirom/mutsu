@@ -1,6 +1,6 @@
 ---
 name: ecosystem-dist-roulette
-description: Pick ONE random zef distribution out of the ecosystem/ ledger, lock it on the lock board (issue #10045) so no other agent works the same one, then take it from red to green with the ecosystem-dist-fix loop and release the lock. Use when asked to make some/any module work rather than a named one ("ランダムにモジュールを一個選んで動くようにして", "pick a random dist and make its tests pass", "grab an ecosystem module and fix it"), or when running several such agents in parallel and they must not collide.
+description: Pick ONE random zef distribution out of the ecosystem/ ledger, lock it on the lock board (issue #11256) so no other agent works the same one, then take it from red to green with the ecosystem-dist-fix loop and release the lock. Use when asked to make some/any module work rather than a named one ("ランダムにモジュールを一個選んで動くようにして", "pick a random dist and make its tests pass", "grab an ecosystem module and fix it"), or when running several such agents in parallel and they must not collide.
 metadata:
   short-description: Draw a random distribution, lock it, make it green
 ---
@@ -33,7 +33,7 @@ the only thing every agent reads identically.
 The board does not prevent a collision. It makes both sides **agree on who lost**, which is all an
 optimistic protocol can do, and all it needs to do.
 
-**The lock board is [tokuhirom/mutsu#10045](https://github.com/tokuhirom/mutsu/issues/10045)** — the
+**The lock board is [tokuhirom/mutsu#11256](https://github.com/tokuhirom/mutsu/issues/11256)** — the
 single open issue labelled `ecosystem:lock`. If that number is ever wrong, the label is the
 authority: `gh issue list --repo tokuhirom/mutsu --label ecosystem:lock` (remote: `list_issues` with
 `labels: ["ecosystem:lock"]`), and there is exactly one. (The board rotates to a fresh issue once
@@ -43,11 +43,11 @@ its comment log grows too large for a single `get_comments` call to return — t
 ## 1. Read the board first
 
 ```sh
-gh issue view 10045 --repo tokuhirom/mutsu --comments
+gh issue view 11256 --repo tokuhirom/mutsu --comments
 ```
 
 Remote container: `issue_read` with `method: "get_comments"`, `owner: tokuhirom`, `repo: mutsu`,
-`issue_number: 10045`. Page to the end — the log is oldest-first and the live locks are spread
+`issue_number: 11256`. Page to the end — the log is oldest-first and the live locks are spread
 through it, not only at the bottom. If a single `get_comments` call now exceeds the tool's response
 size limit, the board needs rotating again — follow
 [`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) before locking.
@@ -88,7 +88,7 @@ keeps them out unless you asked for them.
 
 ## 3. Lock it
 
-Post one comment to #10045 whose **first line is exactly**:
+Post one comment to #11256 whose **first line is exactly**:
 
 ```
 Locking: String::Utils claude/ecosystem-string-utils-ab12
@@ -99,7 +99,7 @@ push. The branch is what identifies you — every agent posts as the same GitHub
 names no branch names nobody.
 
 ```sh
-gh issue comment 10045 --repo tokuhirom/mutsu --body 'Locking: String::Utils claude/<branch>'
+gh issue comment 11256 --repo tokuhirom/mutsu --body 'Locking: String::Utils claude/<branch>'
 ```
 
 Then **read the comments again** and compare ids. Among the live locks for *that distribution*, the
@@ -146,7 +146,7 @@ Three things that belong to this wrapper rather than that one:
   the distribution's own test files (step 3) and the `t/` pin, and report "file X now passes under
   mutsu" in the PR body in place of a record transition.
 
-- **Mention the lock in the PR body** ("locked on #10045"), so a reviewer can see the run was
+- **Mention the lock in the PR body** ("locked on #11256"), so a reviewer can see the run was
   serialized and can find the release.
 - **Re-read the board at `ecosystem-dist-fix`'s own checkpoints** — before the pre-publication
   `make test` + `make roast` run, and immediately before opening the PR. Steps 1-3 settle only the
@@ -160,7 +160,7 @@ Three things that belong to this wrapper rather than that one:
 The moment the run ends — merged, filed, blocked, `no_baseline`, or you simply stopped:
 
 ```sh
-gh issue comment 10045 --repo tokuhirom/mutsu --body 'Unlocking: String::Utils claude/<branch>
+gh issue comment 11256 --repo tokuhirom/mutsu --body 'Unlocking: String::Utils claude/<branch>
 Merged as #7901. t/03 still needs #7902 (nqp::unipropcode).'
 ```
 

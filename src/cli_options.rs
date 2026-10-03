@@ -59,11 +59,11 @@ fn usage_text(program: &str) -> String {
     println!("                 match the flags above");
     println!("  MUTSU_CRASH_REPORT");
     println!("                 Set to 0 to disable the fatal-signal crash");
-    println!("                 report (tmp/crash/<pid>.txt, written only when");
-    println!("                 the interpreter dies of SIGSEGV and friends)");
+    println!("                 report (written to stderr only when the");
+    println!("                 interpreter dies of SIGSEGV and friends)");
     println!("  MUTSU_CRASH_DIR");
-    println!("                 Directory to write crash reports to");
-    println!("                 (default: tmp/crash)");
+    println!("                 Write crash reports to <dir>/<pid>.txt instead");
+    println!("                 of stderr (default: unset, no file is written)");
     out
 }
 

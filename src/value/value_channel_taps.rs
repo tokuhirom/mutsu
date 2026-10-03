@@ -70,6 +70,14 @@ impl SharedChannel {
         lock.lock().unwrap().taps.retain(|t| t.id != id);
     }
 
+    /// Whether any `Channel.Supply` tap is attached: without one, a value
+    /// only has to be queued.
+    // Cost: O(1).
+    pub(crate) fn has_taps(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        !lock.lock().unwrap().taps.is_empty()
+    }
+
     /// Every attached tap, as `(id, emitter, marked ready)`.
     // Cost: O(t), t = attached taps.
     pub(crate) fn tap_emitters(&self) -> Vec<(u64, Value, bool)> {

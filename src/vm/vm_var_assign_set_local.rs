@@ -1140,7 +1140,7 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-                return self.array_share_assign(code, idx, raw_popped, src);
+                return self.array_share_assign(code, idx, raw_popped, src, is_constant);
             }
         }
         // Plain `=` assignment stores a VALUE. A bare `ContainerRef` reaching an
@@ -2920,6 +2920,11 @@ impl Interpreter {
             let scalar = !name.starts_with('@') && !name.starts_with('%');
             if scalar && self.is_value_share_slot(name, Some(&self.locals[idx])) {
                 self.clear_array_share_marker(name);
+                // The env entry is the SHARED cell too. Detach it now: the
+                // by-name write below would otherwise store through it into
+                // the source, and a skipped one would leave env holding a
+                // container the slot no longer does (ADR-0097 §15).
+                self.env_mut().insert(name.to_string(), val.clone());
             } else {
                 let arc = arc.clone();
                 if scalar {

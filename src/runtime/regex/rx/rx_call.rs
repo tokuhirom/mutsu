@@ -334,6 +334,16 @@ impl Interpreter {
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
             return Err("multi-candidate");
         }
+        // A wrapped proto candidate (`^find_method('p:sym<a>').wrap(..)`) is
+        // user code around that candidate's invocation, like a wrapped rule.
+        if proto
+            && candidates
+                .iter()
+                .filter_map(|(_, _, sym)| sym.as_deref())
+                .any(|k| self.proto_candidate_has_wrap_chain(pkg, &spec.lookup_name, k))
+        {
+            return Err("wrapped");
+        }
         // The walk's eager arm scopes the caller's `:i` over a proto candidate's
         // body (`subrule_candidate_ends`), which needs the body compiled under it:
         // that call bridges. A plain call is the walk's streamed shape, which

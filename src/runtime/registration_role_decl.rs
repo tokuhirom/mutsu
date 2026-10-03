@@ -324,3 +324,87 @@ impl Interpreter {
         }
     }
 }
+
+impl Interpreter {
+    /// Record a role attribute's custom traits (`has $.x is entry(...)`) for
+    /// `apply_pending_role_attribute_traits` to run at the role's first
+    /// composition. Rakudo applies them once to the role's own attribute at
+    /// compile time, with the role body's `use` imports already in scope;
+    /// mutsu runs that `use` only when the role is composed, so the handler
+    /// may not be callable yet at declaration.
+    ///
+    /// A parameterized role is skipped: a trait argument may name a type
+    /// parameter that is only bound per composition.
+    ///
+    /// Cost: O(t), t = traits on the attribute.
+    pub(super) fn record_role_attribute_traits(
+        &mut self,
+        cx: &RoleDeclCx<'_>,
+        decl: &crate::opcode::CompiledAttrDecl,
+        attr_name: &str,
+    ) {
+        if !cx.type_params.is_empty()
+            || decl
+                .unknown_traits
+                .iter()
+                .all(|(kind, _, _)| kind == "does")
+        {
+            return;
+        }
+        let key = (cx.name.to_string(), attr_name.to_string());
+        let mut registry = self.registry_mut();
+        // A re-registration (hoisted shell, then the real declaration) of a
+        // role whose traits already ran must not run them twice.
+        if !registry.class_attribute_trait_objects.contains_key(&key) {
+            registry
+                .role_attribute_pending_traits
+                .insert(key, decl.clone());
+        }
+    }
+}
+
+impl Interpreter {
+    /// Run a role body's `use`/`need` statements when the role is declared.
+    ///
+    /// `use` is a BEGIN-time statement: in `role R { use A::B; also does
+    /// A::B; has $.x is entry }` the module is loaded and its exports (the
+    /// `A::B` role, the `trait_mod:<is>` handler for `is entry`) are in scope
+    /// before the rest of the body is compiled. mutsu defers every
+    /// non-declaration statement of a role body to composition, so without
+    /// this the `also does` parent walk reported `Unknown role: A::B`, a
+    /// nested `my role` doing it failed the same way, and a role that is
+    /// never composed itself (PDF::Destination, whose nested `DestDict` is
+    /// what consumers compose) never imported its trait handler at all.
+    /// The imports land in the role's own package scope exactly as at
+    /// composition (`run_composed_role_deferred_body`), whose re-run of the
+    /// same `use` then finds the module loaded.
+    ///
+    /// Cost: O(u + L), u = statements in the role body, L = the used
+    /// modules' load cost (paid once per process).
+    pub(crate) fn run_role_body_uses_at_declaration(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+    ) -> Result<(), RuntimeError> {
+        for op in deferred_body_ops {
+            if op.kind != crate::opcode::DeferredBodyOpKind::Plain
+                || !matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. })
+            {
+                continue;
+            }
+            let saved_package = self.current_package();
+            self.set_current_package(role_name.to_string());
+            let saved_target = self.import_target_package.replace(role_name.to_string());
+            let mark = self.deferred_body_import_mark();
+            let result = self.run_role_deferred_use_stmt(|this| match &op.chunk {
+                Some(chunk) => this.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                None => this.run_block_raw(std::slice::from_ref(&op.raw)),
+            });
+            self.import_target_package = saved_target;
+            self.set_current_package(saved_package);
+            result?;
+            self.record_deferred_body_imports(role_name, mark);
+        }
+        Ok(())
+    }
+}

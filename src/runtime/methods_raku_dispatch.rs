@@ -349,25 +349,21 @@ impl Interpreter {
     /// Every recursive `.raku` path into an instance funnels through here (the
     /// nested-leaf walker and `collect_public_raku_attrs`), so a cycle is cut
     /// exactly one hop before it would re-render. The top-level render itself
-    /// registers in `raku_leaf_active` inside the native instance renderer
+    /// registers in `raku_cycle_guards.leaf` inside the native instance renderer
     /// (`methods_instance_ops`), which performs the same wrap on exit.
     pub(crate) fn dispatch_raku_leaf(&mut self, value: &Value) -> Result<Value, RuntimeError> {
         let ValueView::Instance { class_name, id, .. } = value.view() else {
             return self.call_method_with_values(value.clone(), "raku", vec![]);
         };
-        if self.raku_leaf_active.contains(&id) {
-            self.raku_leaf_cycle_hit.insert(id);
+        if self.raku_cycle_guards.leaf.revisit(&id) {
             return Ok(Value::str(Self::raku_leaf_backref_name(
                 &class_name.resolve(),
                 id,
             )));
         }
-        self.raku_leaf_active.push(id);
+        self.raku_cycle_guards.leaf.enter(id);
         let result = self.call_method_with_values(value.clone(), "raku", vec![]);
-        if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id) {
-            self.raku_leaf_active.remove(pos);
-        }
-        let hit = self.raku_leaf_cycle_hit.remove(&id);
+        let hit = self.raku_cycle_guards.leaf.leave(&id);
         let rendered = result?;
         if hit {
             return Ok(Value::str(format!(

@@ -322,6 +322,19 @@ impl Interpreter {
                     Some(&first.param_defs),
                 ));
             }
+            // A `proto token p {*}` has no `token_defs` entry of its own (only
+            // its `:sym<..>` candidates do), but it is still a method of the
+            // grammar that `.wrap` can target.
+            if self.registry().proto_tokens.contains(&token_key) {
+                return Some(self.make_native_method_object_ex_loc(
+                    method_name,
+                    owner_str,
+                    true,
+                    None,
+                    None,
+                    None,
+                ));
+            }
         }
         // Check built-in type methods — return a native Method Instance
         // (`__mutsu_method_callable` carries the Routine marker the runtime

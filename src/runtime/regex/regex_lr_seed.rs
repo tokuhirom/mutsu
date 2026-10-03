@@ -164,17 +164,30 @@ impl Interpreter {
                 for idx in ranked {
                     let (parsed, sub_pkg, sym_key) = &candidates[idx];
                     let sym_key = sym_key.clone();
-                    let all_matches = self.subrule_candidate_ends_with_frame(
-                        &spec.lookup_name,
-                        parsed,
-                        chars,
-                        pos,
-                        (*sub_pkg, pkg),
-                        SubruleMatchOptions {
-                            first_only,
-                            ignore_case,
-                        },
-                    );
+                    let all_matches = if let Some(wrapped) = sym_key.as_deref().and_then(|k| {
+                        self.run_wrapped_proto_candidate(
+                            &spec.lookup_name,
+                            k,
+                            chars,
+                            pos,
+                            pkg,
+                            arg_values,
+                        )
+                    }) {
+                        wrapped.into_iter().collect()
+                    } else {
+                        self.subrule_candidate_ends_with_frame(
+                            &spec.lookup_name,
+                            parsed,
+                            chars,
+                            pos,
+                            (*sub_pkg, pkg),
+                            SubruleMatchOptions {
+                                first_only,
+                                ignore_case,
+                            },
+                        )
+                    };
                     if all_matches.is_empty() {
                         continue;
                     }
@@ -195,17 +208,30 @@ impl Interpreter {
                 }
             } else {
                 for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                    let all_matches = self.subrule_candidate_ends_with_frame(
-                        &spec.lookup_name,
-                        parsed,
-                        chars,
-                        pos,
-                        (*sub_pkg, pkg),
-                        SubruleMatchOptions {
-                            first_only,
-                            ignore_case,
-                        },
-                    );
+                    let all_matches = if let Some(wrapped) = sym_key.as_deref().and_then(|k| {
+                        self.run_wrapped_proto_candidate(
+                            &spec.lookup_name,
+                            k,
+                            chars,
+                            pos,
+                            pkg,
+                            arg_values,
+                        )
+                    }) {
+                        wrapped.into_iter().collect()
+                    } else {
+                        self.subrule_candidate_ends_with_frame(
+                            &spec.lookup_name,
+                            parsed,
+                            chars,
+                            pos,
+                            (*sub_pkg, pkg),
+                            SubruleMatchOptions {
+                                first_only,
+                                ignore_case,
+                            },
+                        )
+                    };
                     // all_matches: HIGHEST FIRST.
                     let matches_to_use: Vec<_> = if sym_key.is_some() {
                         all_matches.into_iter().take(1).collect()

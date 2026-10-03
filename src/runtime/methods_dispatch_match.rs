@@ -639,7 +639,13 @@ impl Interpreter {
             return None;
         }
 
-        if matches!(target.view(), ValueView::Instance { .. }) {
+        if let ValueView::Instance { class_name, .. } = target.view() {
+            // A class that declares its own `cos` (a grammar's actions class
+            // with `method cos($/)`, PDF::Grammar) is not asking for the
+            // numeric coercion: leave it to ordinary method dispatch.
+            if self.has_visible_user_method(class_name.as_str(), method) {
+                return None;
+            }
             // An `Int` subclass's `.Numeric` is the instance itself, so it
             // takes its `Int` payload instead of re-entering this dispatch.
             let coerced = if let Some(payload) =

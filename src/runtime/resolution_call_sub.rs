@@ -621,18 +621,27 @@ impl Interpreter {
                         self.current_unit = saved_unit;
                     }
                 }
-                // Candidates are out of scope -- dispatch through captured Subs
+                // Candidates are out of scope -- dispatch through captured Subs.
+                // The applicability probe binds into the CURRENT env, so it runs
+                // on a saved env that is put back afterwards: otherwise a
+                // candidate's parameters leak into the caller's frame
+                // (`multi ok(Mu $cond, $desc = '')` re-exported through a
+                // `sub EXPORT` map overwrote the enclosing `subtest`'s own
+                // `$desc` -- Test::Describe's lost subtest names).
                 for candidate in &candidates {
-                    if let ValueView::Sub(cand_data) = candidate.view()
-                        && self
+                    if let ValueView::Sub(cand_data) = candidate.view() {
+                        let saved_env = self.env.clone();
+                        let applicable = self
                             .bind_function_args_values(
                                 &cand_data.param_defs,
                                 &cand_data.params,
                                 &call_args,
                             )
-                            .is_ok()
-                    {
-                        return self.call_sub_value(candidate.clone(), call_args, false);
+                            .is_ok();
+                        self.env = saved_env;
+                        if applicable {
+                            return self.call_sub_value(candidate.clone(), call_args, false);
+                        }
                     }
                 }
                 // Slurpy catch-all

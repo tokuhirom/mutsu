@@ -360,6 +360,10 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         let (r, _) = parse_char(r, '[')?;
         let (r, _) = ws_inner(r);
         let mut items = Vec::new();
+        // `:body[ {...}, ]`: a trailing comma keeps a lone hash as one element
+        // instead of flattening it into its pairs, as in the expression-level
+        // colonpair (`colonpair.rs`).
+        let mut trailing_comma = false;
         let mut r = r;
         while !r.starts_with(']') {
             let (r2, item) = expression(r)?;
@@ -369,12 +373,14 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
                 let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws_inner(r2);
                 r = r2;
+                trailing_comma = true;
             } else {
                 r = r2;
+                trailing_comma = false;
             }
         }
         let (r, _) = parse_char(r, ']')?;
-        return Ok((r, (name, Some(Expr::BracketArray(items, false)))));
+        return Ok((r, (name, Some(Expr::BracketArray(items, trailing_comma)))));
     }
 
     // :name{...} (block/hash-valued colonpair)

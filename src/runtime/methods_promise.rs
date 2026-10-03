@@ -388,6 +388,23 @@ impl Interpreter {
         }
     }
 
+    /// `Channel.send`'s delivery, shared with a `Supply.Channel` forwarding
+    /// tap (`SupplierEmitAction::ChannelSend`): the value is queued, never
+    /// emitted behind the queue's back, and then the pump hands it to a tap of
+    /// the channel's Supplies if one is ready -- those taps are consumers of the
+    /// queue like `receive` (see `native_methods::channel_supply`). The
+    /// forwarding tap used to queue it only, so
+    /// `$supplier.Supply.Channel.Supply.tap(...)` (Cro's WebSocket handler
+    /// feed) never saw a value emitted after the tap.
+    // Cost: O(v * t), v = values the pump moves, t = the channel's attached taps.
+    pub(crate) fn channel_send_value(&mut self, ch: &SharedChannel, value: Value) {
+        ch.send(value);
+        // A tap callback that dies does not fail the sender (see
+        // `pump_channel_taps`); only completing a tap can error, and that
+        // happens on close, not here.
+        let _ = self.pump_channel_taps(ch);
+    }
+
     pub(super) fn dispatch_channel_method(
         &mut self,
         ch: &SharedChannel,
@@ -401,11 +418,7 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
-                // The value is queued, never emitted behind the queue's back:
-                // the taps of the channel's Supplies are consumers of the queue
-                // like `receive` (see `native_methods::channel_supply`).
-                ch.send(value);
-                self.pump_channel_taps(ch)?;
+                self.channel_send_value(ch, value);
                 Ok(Value::NIL)
             }
             "receive" => match ch.receive_result() {

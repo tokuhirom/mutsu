@@ -25,6 +25,13 @@ pub(crate) fn native_method_2arg(
 
     // Scalar containers are transparent for method dispatch (no .VAR at this arity).
     let target = target.descalarize();
+    // Cost: O(n), n = bytes of the invocant.
+    if method == "naive-word-wrapper" {
+        return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(
+            target,
+            &[arg1, arg2],
+        );
+    }
     // Cost: O(n), n = chars in a string bound/value or the error label.
     if method == "in-range" {
         return super::dispatch_1arg::in_range(target, arg1, &arg2.to_string_value());

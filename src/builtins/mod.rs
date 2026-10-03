@@ -24,6 +24,7 @@ pub(crate) mod math_prim;
 pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;
+pub(crate) mod naive_word_wrapper;
 pub(crate) mod native_method_row;
 mod native_method_row_table;
 pub(crate) mod numeric_subclass;
