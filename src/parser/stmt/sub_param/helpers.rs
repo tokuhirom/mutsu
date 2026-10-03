@@ -77,6 +77,7 @@ pub(crate) fn after_default_error(kind: &str, modifier: &str, default: &str) -> 
 }
 
 pub(crate) fn parse_param_default_expr(input: &str) -> PResult<'_, Expr> {
+    let _guard = ParamDefaultGuard::enter();
     if let Ok((rest, expr)) = crate::parser::expr::expression(input) {
         return Ok((rest, expr));
     }
@@ -86,6 +87,34 @@ pub(crate) fn parse_param_default_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, expr));
     }
     Err(PError::expected("parameter default expression"))
+}
+
+thread_local! {
+    static PARAM_DEFAULT_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks a parameter default expression as being parsed. In a signature,
+/// `-->` is the return-type arrow, so `:$clone = True-->Foo` ends the
+/// default at `True` instead of reading a postfix `--` followed by `>`.
+struct ParamDefaultGuard;
+
+impl ParamDefaultGuard {
+    fn enter() -> Self {
+        PARAM_DEFAULT_DEPTH.with(|d| d.set(d.get() + 1));
+        ParamDefaultGuard
+    }
+}
+
+impl Drop for ParamDefaultGuard {
+    fn drop(&mut self) {
+        PARAM_DEFAULT_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
+
+/// Whether a parameter default expression is being parsed (see
+/// [`ParamDefaultGuard`]).
+pub(crate) fn in_param_default() -> bool {
+    PARAM_DEFAULT_DEPTH.with(|d| d.get() > 0)
 }
 
 pub(crate) fn is_anonymous_sigil_param(param: &ParamDef) -> bool {

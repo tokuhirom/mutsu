@@ -245,7 +245,25 @@ fn skip_regex_decl_clause(chars: &mut std::str::CharIndices<'_>, rest: &str) -> 
 /// close the block early. Returns None if the braces never balance.
 fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
     let mut brace_depth = 1u32;
+    // The last non-whitespace code character, to tell a `/` that opens a
+    // nested regex literal (term position: after `~~`, `(`, `,`, ...) from a
+    // division or the `$/` variable.
+    let mut prev_sig: Option<char> = Some('{');
     while let Some((_, ch)) = chars.next() {
+        if ch == '/' && prev_sig.is_some_and(crate::regex_code_nested::slash_opens_regex_after) {
+            // A nested regex literal (`<!{ $s ~~ / <["']> $/ }>`): its quote
+            // characters are regex text, not string openers. Skip it with the
+            // regex-aware scanner.
+            let rest = chars.as_str();
+            let (_, after) = scan_to_delim_inner(rest, '/', '/', false, false)?;
+            let target = chars.offset() + (rest.len() - after.len());
+            while chars.offset() < target && chars.next().is_some() {}
+            prev_sig = Some('/');
+            continue;
+        }
+        if !ch.is_whitespace() {
+            prev_sig = Some(ch);
+        }
         match ch {
             '{' => brace_depth += 1,
             '}' => {

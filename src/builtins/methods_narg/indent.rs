@@ -1,9 +1,9 @@
-use crate::value::{Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::ToPrimitive;
 
 // Cost: O(n + L * s), n = chars of `s`, L = lines, s = |steps| (each line is
 // rebuilt once; only the leading whitespace is scanned for width).
-pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
+pub(crate) fn str_indent(s: &str, arg: &Value) -> Result<(String, Option<String>), RuntimeError> {
     const TABSTOP: usize = 8;
 
     // Determine the indent amount
@@ -37,7 +37,7 @@ pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
     };
 
     if s.is_empty() {
-        return (String::new(), None);
+        return Ok((String::new(), None));
     }
 
     // Split into lines, preserving trailing newline
@@ -57,7 +57,7 @@ pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
             .min()
             .unwrap_or(0);
         if min_indent == 0 {
-            return (s.to_string(), None);
+            return Ok((s.to_string(), None));
         }
         let result_lines: Vec<String> = lines
             .iter()
@@ -73,11 +73,11 @@ pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
         if has_trailing_newline {
             result.push('\n');
         }
-        return (result, None);
+        return Ok((result, None));
     }
 
     if steps == 0 {
-        return (s.to_string(), None);
+        return Ok((s.to_string(), None));
     }
 
     // Check for excess outdent warning
@@ -105,20 +105,20 @@ pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
         .iter()
         .map(|line| {
             if line.is_empty() {
-                String::new()
+                Ok(String::new())
             } else if steps > 0 {
                 indent_line_positive(line, steps as usize, TABSTOP)
             } else {
-                indent_line_negative(line, -steps, TABSTOP)
+                Ok(indent_line_negative(line, -steps, TABSTOP))
             }
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let mut result = result_lines.join("\n");
     if has_trailing_newline {
         result.push('\n');
     }
-    (result, warning)
+    Ok((result, warning))
 }
 
 /// Calculate the visual width of the leading whitespace of a line.
@@ -142,10 +142,20 @@ fn is_unicode_space(ch: char) -> bool {
     ch != ' ' && ch != '\t' && ch.is_whitespace() && ch != '\n' && ch != '\r'
 }
 
+/// `n` copies of `ch`, built by the shared repeat primitive so the grapheme
+/// cap and its error come from one place.
+fn pad(ch: char, n: usize) -> Result<String, RuntimeError> {
+    let mut buf = [0u8; 4];
+    Ok(
+        crate::builtins::str_prim::repeat(&Value::str(ch.encode_utf8(&mut buf).to_string()), n)?
+            .to_string_value(),
+    )
+}
+
 /// Indent a line by adding `steps` whitespace characters.
 /// Follows Raku's "same space" rule: if the existing leading whitespace
 /// consists of a single type of character, extend with that character type.
-fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> String {
+fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> Result<String, RuntimeError> {
     let leading: Vec<char> = line
         .chars()
         .take_while(|c| *c == ' ' || *c == '\t' || is_unicode_space(*c))
@@ -154,7 +164,7 @@ fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> String {
 
     if leading.is_empty() {
         // No existing indent: just prepend spaces
-        return " ".repeat(steps) + rest;
+        return Ok(pad(' ', steps)? + rest);
     }
 
     // Check if all leading whitespace is the same character
@@ -164,25 +174,24 @@ fn indent_line_positive(line: &str, steps: usize, tabstop: usize) -> String {
     if all_same {
         if first == ' ' {
             // All spaces: add more spaces
-            return " ".repeat(leading.len() + steps) + rest;
+            return Ok(pad(' ', leading.len() + steps)? + rest);
         } else if first == '\t' {
             // All tabs: if steps is a multiple of tabstop, add tabs
             if steps.is_multiple_of(tabstop) {
-                return "\t".repeat(leading.len() + steps / tabstop) + rest;
+                return Ok(pad('\t', leading.len() + steps / tabstop)? + rest);
             }
             // Otherwise add spaces after tabs
             let leading_str: String = leading.iter().collect();
-            return leading_str + &" ".repeat(steps) + rest;
+            return Ok(leading_str + &pad(' ', steps)? + rest);
         } else {
             // All same Unicode space: add more of it
-            let extended: String = std::iter::repeat_n(first, leading.len() + steps).collect();
-            return extended + rest;
+            return Ok(pad(first, leading.len() + steps)? + rest);
         }
     }
 
     // Mixed whitespace: add spaces after existing whitespace
     let leading_str: String = leading.iter().collect();
-    leading_str + &" ".repeat(steps) + rest
+    Ok(leading_str + &pad(' ', steps)? + rest)
 }
 
 /// Outdent a line by removing `de_indent` visual columns of whitespace from the left.

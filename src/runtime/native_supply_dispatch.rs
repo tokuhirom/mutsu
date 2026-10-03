@@ -594,6 +594,15 @@ impl Interpreter {
                     }
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
+                // An on-demand (`supply { ... }`) source has no materialized
+                // values: split its chunks as they are emitted, per tap.
+                if attributes.contains_key("on_demand_callback") {
+                    let attrs_map: ValueMap = attributes.into();
+                    return Ok(Self::make_on_demand_lines_supply(
+                        Value::make_instance(Symbol::intern("Supply"), attrs_map),
+                        chomp,
+                    ));
+                }
                 let source_values = match attributes.get("values").map(Value::view) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),

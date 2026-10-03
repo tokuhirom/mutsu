@@ -517,8 +517,15 @@ impl Interpreter {
                 && let Some(lit_val) = default.as_ref().and_then(|a| a.literal())
             {
                 // Fast path: simple literal defaults (e.g. native type
-                // defaults like Int(0)) don't need interpretation.
-                Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil)
+                // defaults like Int(0)) don't need interpretation. A `Nil`
+                // initializer (`has $.n = Nil`) resets the Scalar to its
+                // default, as `.new` does.
+                let val = Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil);
+                if *sigil == '$' && val.is_nil() {
+                    self.attr_store_nil_default(cn_resolved, attr_name, '$', val)
+                } else {
+                    val
+                }
             } else if !is_deferred && let Some(arg) = default {
                 // Bind `self`/`?CLASS`/the already-set attributes and switch
                 // to the class package for class-scoped sub lookups — the
@@ -544,7 +551,12 @@ impl Interpreter {
                     &attributes,
                     crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                 )?;
-                Self::coerce_attr_value_by_sigil(val, *sigil)
+                let val = Self::coerce_attr_value_by_sigil(val, *sigil);
+                if *sigil == '$' && val.is_nil() {
+                    self.attr_store_nil_default(cn_resolved, attr_name, '$', val)
+                } else {
+                    val
+                }
             } else if *sigil == '@' || *sigil == '%' {
                 // An `is Type` container trait (`has %.h is TypeConverter`)
                 // builds an instance of that type, exactly like `dispatch_new`'s
@@ -1122,6 +1134,8 @@ impl Interpreter {
             if attr.sigil == '@' {
                 let mut arr = Value::real_array(Vec::new());
                 if let Some(tc) = type_constraint {
+                    // With the smiley: `has Str:D @.e` starts as `Array[Str:D]`.
+                    let tc = self.attribute_reported_constraint(class_name, &attr_name, &tc);
                     arr = self.tag_container_metadata(
                         arr,
                         super::ContainerTypeInfo {

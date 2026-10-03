@@ -155,6 +155,11 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     .entry(param.name.clone())
                     .or_insert(DeclaredKind::Term);
             }
+            // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
+            // renders `T` as a `Type::Simple`, measured on 2026.09).
+            if let Some(name) = super::convert::type_capture_name(param) {
+                insert_declared_type(Symbol::intern(name), self.0);
+            }
             walk_param(self, param);
         }
     }

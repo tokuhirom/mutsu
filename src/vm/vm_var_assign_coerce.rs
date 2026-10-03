@@ -357,6 +357,10 @@ impl Interpreter {
         name: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // A method returning an element's container (`%!m = @res.tail`, where
+        // `.tail` hands back the Array element's cell) assigns the value the
+        // cell holds; coercing the cell itself made it one bogus key.
+        let value = value.into_deref();
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.
         // Through the capture cell: a `%h is BagHash` an escaping closure

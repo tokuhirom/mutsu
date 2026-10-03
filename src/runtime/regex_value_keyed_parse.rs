@@ -127,12 +127,15 @@ impl Interpreter {
     /// The value `<$var_name>` interpolates: the `${name}` fallback and the
     /// deref mirror the bare-`$name` interpolation path (a defining-scope
     /// capture may have boxed the scalar into a shared cell).
-    // Cost: O(1) expected, two env probes.
+    ///
+    /// Read through `get_env_with_main_alias`, the by-name chokepoint a
+    /// plain `$name` read also reaches: a file-scope lexical of the running
+    /// routine's own compunit (a module's `our $RE`) is not in `env` when the
+    /// routine is called from a scope that did not import it directly.
+    // Cost: O(1) expected, two by-name probes.
     pub(super) fn regex_value_var(&self, var_name: &str) -> Option<Value> {
-        self.env
-            .get(var_name)
-            .cloned()
-            .or_else(|| self.env.get(&format!("${var_name}")).cloned())
+        self.get_env_with_main_alias(var_name)
+            .or_else(|| self.get_env_with_main_alias(&format!("${var_name}")))
             .map(Value::into_deref)
     }
 

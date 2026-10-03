@@ -240,6 +240,29 @@ impl Interpreter {
                         owned.push(*sym);
                     }
                 }
+                // An enum key's bare spelling lives in its own env namespace
+                // (`enum_bare_key`), so the vouch has to name that key too, or a
+                // same-named key of an enum the dispatching scope sees (TAP's
+                // `supply { enum Mode <Normal …> }` against the file's
+                // `enum Formatter::Volume (:Normal(0))`) wins in the callback.
+                // Inside a package the bareword probe consults the package's
+                // own `Pkg::v` entry first, which the block's registration
+                // rebound as well, so that key is vouched for the same way.
+                let pkg = self.current_package_sym();
+                for sym in &code.my_declared_enum_sym {
+                    let bare = sym.with_str(|s| {
+                        crate::symbol::Symbol::intern(
+                            &crate::runtime::enum_bare_names::enum_bare_key(s),
+                        )
+                    });
+                    let in_pkg = (!self.current_package_is_global())
+                        .then(|| crate::qualified::qualified(pkg, *sym));
+                    for key in std::iter::once(bare).chain(in_pkg) {
+                        if !owned.contains(&key) {
+                            owned.push(key);
+                        }
+                    }
+                }
                 for sym in owned {
                     if !owned_lexicals.contains(&sym) {
                         owned_lexicals.push(sym);

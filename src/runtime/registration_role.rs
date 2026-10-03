@@ -368,6 +368,12 @@ impl Interpreter {
         role_id: u64,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
+        // Like a class, a role remembers the compilation unit that declared
+        // it, so a lexical (`my role R`) one is visible in that unit's own
+        // `UNIT::` and not in an importer's (`my_scoped_type_visible_here`).
+        let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
+        crate::runtime::cow_table_mut(&mut self.class_declaring_units)
+            .insert(name.to_string(), declaring_unit);
 
         if let Some(decl) = our_scope_violation {
             let mut attrs = ValueMap::default();

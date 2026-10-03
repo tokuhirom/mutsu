@@ -184,6 +184,10 @@ impl Interpreter {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }
             ValueView::Scalar(inner) => (*inner).clone(),
+            // An Array element's own container (`@a.head`, `.tail`) hypers as
+            // the value it holds (raku: `(1,2,3) <<*>> @a.head` is
+            // element-wise, not a multiply by the list's `.elems`).
+            ValueView::ContainerRef(_) => Self::deitemize_hyper_operand(&v.deref_container()),
             // An `is Array` subclass instance hypers as its backing array
             // elements (`self »-« @vec` inside a Vector method): unwrap it to
             // the `__mutsu_array_storage` list so both sides line up by length.

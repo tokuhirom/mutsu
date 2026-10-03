@@ -460,13 +460,20 @@ impl Compiler {
                             matches!(elem, Expr::Index { .. }) && !c.suppress_list_var_alias;
                         let saved_autoviv = c.scalar_bind_autovivify;
                         let saved_terminal = c.bind_terminal;
+                        let saved_raw_list_elem = c.raw_list_elem_terminal;
                         if element_ref {
                             c.scalar_bind_autovivify = true;
                             c.bind_terminal = true;
+                            // An element of an immutable List has no container
+                            // of its own, so the list holds the bare value
+                            // (`sub f(@x) { (@x[0], 1) }` with a List `@x`:
+                            // `.head` of `<b c>` flattens into a slurpy).
+                            c.raw_list_elem_terminal = true;
                         }
                         c.compile_expr(elem);
                         c.scalar_bind_autovivify = saved_autoviv;
                         c.bind_terminal = saved_terminal;
+                        c.raw_list_elem_terminal = saved_raw_list_elem;
                         if let Some(callee) = rw_arg_callee.as_deref() {
                             c.maybe_promote_attr_arg_read(elem);
                             c.mark_arg_as_rw_container_candidate(callee, elem_idx as u32, elem);
@@ -968,14 +975,18 @@ impl Compiler {
                 op: TokenKind::PlusPlus,
                 expr,
             } => {
-                self.compile_expr_postfix_inc(expr);
+                if !self.compile_incdec_through_ternary(expr, TokenKind::PlusPlus, true) {
+                    self.compile_expr_postfix_inc(expr);
+                }
             }
             // Postfix -- on variable
             Expr::PostfixOp {
                 op: TokenKind::MinusMinus,
                 expr,
             } => {
-                self.compile_expr_postfix_dec(expr);
+                if !self.compile_incdec_through_ternary(expr, TokenKind::MinusMinus, true) {
+                    self.compile_expr_postfix_dec(expr);
+                }
             }
             // Assignment as expression
             Expr::AssignExpr {
