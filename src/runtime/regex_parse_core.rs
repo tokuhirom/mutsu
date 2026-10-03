@@ -436,6 +436,28 @@ struct SeparatorParse {
     ws_after_quant: bool,
 }
 
+impl Interpreter {
+    /// Whether a quantifier under `:sigspace` is followed by significant
+    /// whitespace (and not by a `%` separator), which leaves it backtrackable
+    /// even in a ratcheted regex -- see the `token_ratchet` computation.
+    // Cost: O(w), w = whitespace characters after the quantifier.
+    fn sigspace_quantifier_backtracks(
+        quant: &RegexQuant,
+        sigspace: bool,
+        chars: &std::iter::Peekable<std::str::Chars>,
+    ) -> bool {
+        if !sigspace || matches!(quant, RegexQuant::One) {
+            return false;
+        }
+        let mut lookahead = chars.clone();
+        if !lookahead.peek().is_some_and(|c| c.is_whitespace()) {
+            return false;
+        }
+        while lookahead.next_if(|c| c.is_whitespace()).is_some() {}
+        lookahead.peek().is_some_and(|c| *c != '%')
+    }
+}
+
 /// The `<.ws>` token `:sigspace` inserts for significant whitespace.
 fn sigspace_ws_token(ratchet: bool) -> RegexToken {
     RegexToken {
@@ -4973,7 +4995,14 @@ impl Interpreter {
             } else if explicit_greedy {
                 false
             } else {
-                ratchet // inherit from pattern-level :ratchet flag
+                // Inherit the pattern-level :ratchet flag -- except for a
+                // quantifier that significant whitespace follows under
+                // :sigspace. Rakudo wraps such an atom with the `<.ws>` and
+                // ratchets that wrapper, not the quantifier, so `rule { 'D'
+                // <id>? <v> }` backtracks out of `<id>` to let `<v>` match
+                // (ASN::Grammar's `'DEFAULT' <id-string>? <value>`). An
+                // explicit `:` still commits (`<id>?: <v>` fails).
+                ratchet && !Self::sigspace_quantifier_backtracks(&quant, sigspace, &chars)
             };
             // Handle `%` / `%%` separator quantifier modifier, e.g.
             // `<thing>+ % ','`. Only meaningful for repeating quantifiers. The
