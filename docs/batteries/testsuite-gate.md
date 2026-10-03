@@ -17,10 +17,9 @@ and the release `mutsu`.
 
 ## Where it runs
 
-**At release — authoritative.** A release is cut by the manual
-`tag-release.yml` workflow (`gh workflow run tag-release.yml -f version=X.Y.Z`;
-see "Cutting a release" in `AGENTS.md`), which bumps the version and pushes the
-tag that fires `release.yml`. The `batteries` job there `needs`-gates the
+**At release — authoritative.** A release is cut by a version-bump pull
+request and a `vX.Y.Z` tag pushed on its merge commit (the `cut-release` skill);
+the tag fires `release.yml`. The `batteries` job there `needs`-gates the
 publish job, so a regression against a shipped library blocks the release.
 
 **Post-merge — early warning.** Release time turned out to be far too late to
