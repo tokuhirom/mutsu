@@ -257,5 +257,34 @@ The non-local `return` test of §3 is unaffected: it reads the plain
 `__mutsu_callable_id` key a call frame sets from the id it resolves, which
 still lands in the callee's own frame.
 
-Groups 2 and 3, and group 1 for the main program's own top-level routines,
-remain.
+### 7.3 Slice 2 — group 2 for a module's top-level declarations
+
+Re-measured on the same program before the slice (2026-10-03, other work had
+landed since §7.2): a deep-copied frame env held ~630 entries, **456** of them
+package-qualified names, and one loop iteration deep-copied **10,057** entries
+(the bare program: 131).
+
+The two kinds in that group are handled differently
+(`runtime/toplevel_package_symbols.rs`), both only for a declaration a module's
+mainline makes directly, by the same depth rule as §7.2:
+
+- A **class, role or subset** bound under its own qualified name whose storage
+  name is that same name is no longer bound in the frame env at all. The
+  binding only repeated what the type registry answers: bareword resolution
+  falls back to `has_type`, `::('…')` to the registry, and both apply the #7797
+  visibility gate first. A `my` type (mangled storage name), a short alias and a
+  `unit module`'s own package binding are unchanged.
+- An **enum value**'s three qualified spellings (`E::K`, `Pkg::E::K`,
+  `Pkg::K`) go to a per-interpreter table, `Interpreter::toplevel_package_symbols`,
+  that frames neither clone nor capture. Bareword lookup, indirect lookup, the
+  package stash and the `need` hiding scans consult it after the env; a thread
+  clone shares it copy-on-write.
+
+Result: a deep-copied frame env falls to ~220 entries, and the per-iteration
+deep-copy volume from **10,057** to **3,401** entries (−66%).
+
+What remains of the env's non-lexical content after this slice: the
+`__mutsu_enum_bare_*` keys of imported enum values (44), group 3's
+`__mutsu_constant_var::` / `__mutsu_type::` markers (45), the qualified names
+of packages a `unit module` declares and of types declared below a module's top
+level (46), and group 1 for the main program's own top-level routines.
