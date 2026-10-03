@@ -2111,8 +2111,17 @@ impl Interpreter {
         if !is_bind && !is_rebind && name.starts_with('%') {
             val = self.fetch_proxy_container_elements(val)?;
         }
-        if val.is_nil()
-            && !is_bind
+        // An assignment into a Proxy hands its STORE the value as written: a
+        // `Nil` is the Proxy's to interpret (`STORE => -> $, \v { … if v ===
+        // Nil }`), not a request to fall back to a default (Env's `$USER =
+        // Nil` deletes the variable).
+        let stores_into_proxy = !is_bind
+            && !is_rebind
+            && !scalar_bind
+            && !is_vardecl
+            && matches!(self.locals[idx].view(), ValueView::Proxy { storer, .. } if !storer.is_nil());
+        if !val.is_nil() || stores_into_proxy {
+        } else if !is_bind
             && !is_rebind
             && !is_vardecl
             && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
@@ -2120,13 +2129,11 @@ impl Interpreter {
             // A sigilless alias of another variable: the Nil decays against
             // that variable's container, not this name (#11110).
             val = decayed;
-        } else if val.is_nil()
-            && !self.locals[idx].is_nil()
+        } else if !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();
-        } else if val.is_nil()
-            && !is_bind
+        } else if !is_bind
             && !is_rebind
             && let Some(def) = Self::container_cell_default(&self.locals[idx])
         {
@@ -2317,6 +2324,7 @@ impl Interpreter {
             && !is_constant
             && !scalar_bind
             && !param_raw_bind
+            && !stores_into_proxy
             && (!is_vardecl || has_explicit_initializer)
         {
             // Untyped scalar: assigning Nil resets it to the default type
