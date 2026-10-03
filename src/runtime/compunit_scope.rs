@@ -294,6 +294,7 @@ impl Interpreter {
         // below (ADR-11136).
         if let Some(sym) = Symbol::lookup(top)
             && let Some(&module) = self.module_visibility.module_name_providers.get(&sym)
+            && !self.module_visibility.unit_package_names.contains(&sym)
         {
             return granted || self.module_merged_here(module);
         }

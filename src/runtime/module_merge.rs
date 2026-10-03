@@ -33,6 +33,11 @@ use crate::symbol::Symbol;
 /// them until one side writes.
 #[derive(Default, Clone)]
 pub(crate) struct ModuleVisibility {
+    /// The attributed names that are a module's own `unit` package (`unit
+    /// class OpenSSL;`). Gated as bare names, but #7797's qualified gate keeps
+    /// its own rules for them: other compunits legitimately nest packages
+    /// under that namespace (`OpenSSL::Version`).
+    pub(crate) unit_package_names: std::sync::Arc<HashSet<Symbol>>,
     /// Every class/role registry key a module's own body registered, under
     /// any module. An import scope's class rollback keeps them: escaped
     /// instances and the module's own code need them, and whether their name

@@ -137,7 +137,14 @@ impl Interpreter {
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
         let alias = Symbol::intern(&format!("{package}::{name}"));
-        if let Some(top) = self.import_scope_stack.last_mut() {
+        // Only the importing compunit's own scope owns the import: a module
+        // loaded while the importer's block is open records its own `use`s on
+        // that block's scope otherwise, and the block then shadows the module's
+        // private copy of the routine (`Cro::Iri`'s `decode-percents`).
+        let importer = self.executing_unit_sym_for_module_load();
+        if let Some(top) = self.import_scope_stack.last_mut()
+            && top.unit == importer
+        {
             top.own_routine_imports.insert(alias);
         }
         std::sync::Arc::make_mut(&mut self.imported_routine_aliases).insert(alias);

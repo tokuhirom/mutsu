@@ -918,10 +918,26 @@ impl Interpreter {
         let unit_name = Self::detect_unit_package_name(&stmts);
         // ADR-11136: the module's own top-level constants, packages, enums and
         // subsets, attributed to it once the load has run.
-        let own_scope_names = if unit_name.is_none() {
-            self.module_scope_declared_names(&stmts)
-        } else {
-            Vec::new()
+        // A `unit class Foo;`/`unit module Foo;` declares its own bare package
+        // name; its other declarations are `Foo::`-qualified and reached through
+        // #7797's qualified gate.
+        let own_scope_names = match unit_name.as_deref() {
+            None => self.module_scope_declared_names(&stmts),
+            Some(name) => {
+                let sym = Symbol::intern(name);
+                let known = self.env.contains_key(name)
+                    || self.has_type(name)
+                    || Self::is_builtin_type(name);
+                if crate::qualified::is_qualified(sym) || known {
+                    Vec::new()
+                } else {
+                    crate::runtime::cow_table_mut(
+                        &mut self.module_visibility.unit_package_names,
+                    )
+                    .insert(sym);
+                    vec![sym]
+                }
+            }
         };
         if let Some(dist) = &module_dist {
             // Also record the distribution under the package this module's OWN

@@ -446,10 +446,14 @@ impl Interpreter {
         if self.import_scope_stack.is_empty() {
             return false;
         }
-        let units = [self.current_unit, self.executing_unit_sym_for_module_load()];
+        // `current_unit` only: the frame-based anchor falls back to the
+        // importer's file for a grammar action or a closure frame, which would
+        // match the importer's own scope -- where a module loaded inside it
+        // recorded its *own* imports (`Cro::Iri`'s `decode-percents`).
+        let unit = self.current_unit;
         let packages = self.bare_name_packages_syms();
         self.import_scope_stack.iter().any(|scope| {
-            units.contains(&scope.unit)
+            scope.unit == unit
                 && !scope.own_routine_imports.is_empty()
                 && packages.iter().any(|&package| {
                     scope
