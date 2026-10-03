@@ -18,4 +18,5 @@ declaration sites, so a wrapped routine stays wrapped on every thread.
 `DispatchState::fork_for_thread` states that policy in one place, together with
 the comment explaining why stub sites travel with the thread.
 
-This step only moves fields; it changes no behaviour.
+`Interpreter` went from 295 to 266 direct fields. This step only moves fields;
+it changes no behaviour.
