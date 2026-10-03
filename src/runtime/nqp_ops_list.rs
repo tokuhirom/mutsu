@@ -498,7 +498,7 @@ impl Interpreter {
                 }
             }
 
-            _ => return None,
+            _ => return self.call_nqp_op_native(op, args),
         })
     }
 }
