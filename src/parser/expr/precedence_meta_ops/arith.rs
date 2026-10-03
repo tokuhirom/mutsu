@@ -555,6 +555,18 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                 continue;
             }
         }
+        // Longest-token rule (#11323): a user-declared symbol infix that starts
+        // with `**` and is longer (`infix:<**+>`) wins over the built-in `**`.
+        // One declared at this level was taken just above; any other is
+        // looser, so stop this layer and let its own level take the token
+        // (as `multiplicative_expr` does), instead of reading `2 ** (+3)`.
+        if r.starts_with("**")
+            && let Some((_, ulen)) =
+                crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)
+            && ulen > 2
+        {
+            break;
+        }
         // Leave the compound-assignment form `**=` for the assignment parser so
         // an indexed lvalue (`@a[0] **= 2`) reaches it as the bare operand
         // instead of the `**` here eating the base op and stranding the `=`.
