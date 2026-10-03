@@ -698,7 +698,6 @@ mod end_phasers;
 mod eval_check;
 mod eval_decl_scans;
 mod eval_import_scope;
-mod module_merge;
 mod eval_name_scans;
 mod eval_routine_magicals;
 mod eval_type_scans;
@@ -790,6 +789,7 @@ mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
+mod module_merge;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
@@ -2402,6 +2402,9 @@ pub struct Interpreter {
     /// body declared. A name the program or a module had published before
     /// is never attributed, so only a module's own GLOBAL merge is gated.
     pub(crate) module_name_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    /// ADR-11136: the module whose load published each package-less
+    /// `our sub` (`GLOBAL::name`), by bare name.
+    pub(crate) module_routine_providers: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
     pub(crate) module_units: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// ADR-11136: the modules a compunit merged at its top level. A

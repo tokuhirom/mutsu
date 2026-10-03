@@ -3146,6 +3146,7 @@ impl Interpreter {
             compunit_visible_packages: Default::default(),
             module_granted_packages: Default::default(),
             module_name_providers: Default::default(),
+            module_routine_providers: Default::default(),
             module_units: Default::default(),
             unit_merged_modules: Default::default(),
             package_granting_modules: Default::default(),

@@ -631,6 +631,7 @@ impl Interpreter {
             compunit_visible_packages: self.compunit_visible_packages.clone(),
             module_granted_packages: self.module_granted_packages.clone(),
             module_name_providers: self.module_name_providers.clone(),
+            module_routine_providers: self.module_routine_providers.clone(),
             module_units: self.module_units.clone(),
             unit_merged_modules: self.unit_merged_modules.clone(),
             package_granting_modules: self.package_granting_modules.clone(),

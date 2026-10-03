@@ -48,6 +48,91 @@ impl Interpreter {
         }
     }
 
+    /// Attribute the package-less `our sub`s a module's own body published
+    /// (their `GLOBAL::name` keys, by bare name) to it. Such a name resolves
+    /// differently depending on where it is asked, so the name-keyed routine
+    /// caches leave it alone (`is_unit_scoped_routine_name`).
+    // Cost: O(n), n = routines published by the load.
+    pub(crate) fn record_module_routine_provenance(
+        &mut self,
+        module: &str,
+        names: impl IntoIterator<Item = Symbol>,
+    ) {
+        let mut names = names.into_iter().peekable();
+        if names.peek().is_none() {
+            return;
+        }
+        let module_sym = Symbol::intern(module);
+        let table = crate::runtime::cow_table_mut(&mut self.module_routine_providers);
+        for name in names {
+            table.entry(name).or_insert(module_sym);
+        }
+        self.invalidate_fn_resolution();
+    }
+
+    /// Whether the registry routine under `key` resolves from the code running
+    /// right now: always, unless it is a module's own package-less `our sub`
+    /// (`GLOBAL::name`) and that module is not merged here (ADR-11136).
+    // Cost: O(1) when no module published an `our sub`; otherwise one
+    // provenance probe plus `module_merged_here` for a published one.
+    pub(crate) fn module_routine_visible_here(&self, key: Symbol) -> bool {
+        if self.module_routine_providers.is_empty() {
+            return true;
+        }
+        let Some(name) =
+            key.with_str(|k| Self::toplevel_global_routine_name(k).and_then(Symbol::lookup))
+        else {
+            return true;
+        };
+        match self.module_routine_providers.get(&name) {
+            None => true,
+            Some(&module) => self.module_merged_here(module),
+        }
+    }
+
+    /// The package-scope names a package-less module declares at its own top
+    /// level that are not types -- `constant`s, `package`/`module` blocks,
+    /// enums and subsets -- and that nothing in scope already answers to, so
+    /// attributing them to the module never hides a name the loading program
+    /// declared itself. Read before the module body runs.
+    // Cost: O(n) over the unit's top-level statements, plus one `env` probe
+    // and one type lookup per declared name.
+    pub(crate) fn module_scope_declared_names(&self, stmts: &[crate::ast::Stmt]) -> Vec<Symbol> {
+        use crate::ast::Stmt;
+        let mut names: Vec<Symbol> = Vec::new();
+        for stmt in crate::ast::scope_members(stmts) {
+            let name = match stmt {
+                Stmt::VarDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                    && name.starts_with(|c: char| c.is_alphabetic() || c == '_') =>
+                {
+                    Symbol::intern(name)
+                }
+                Stmt::Package {
+                    name,
+                    is_unit: false,
+                    ..
+                }
+                | Stmt::EnumDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. } => *name,
+                _ => continue,
+            };
+            if crate::qualified::is_qualified(name) {
+                continue;
+            }
+            let known = name.with_str(|n| {
+                self.env.contains_key(n) || self.has_type(n) || Self::is_builtin_type(n)
+            });
+            if !known {
+                names.push(name);
+            }
+        }
+        names
+    }
+
     /// Merge `module`'s GLOBAL into the scope running its `need`/`use`, and
     /// grant `importer` the packages the module's load granted (#7797).
     ///
@@ -74,6 +159,16 @@ impl Interpreter {
                     .or_default()
                     .insert(module_sym);
             }
+        }
+        // The BEGIN-time preload loads a block's module at the head of the
+        // unit, inside a preload scope that keeps what it installs; the
+        // in-position `need`/`use` replays the merge where it belongs.
+        if self
+            .import_scope_stack
+            .last()
+            .is_some_and(|scope| !scope.scope_classes)
+        {
+            return;
         }
         let block_level = self
             .import_scope_stack

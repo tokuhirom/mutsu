@@ -916,6 +916,13 @@ impl Interpreter {
         // (#7797) so the package-visibility bookkeeping after that branch can
         // read it too, for a use-only module that skips the branch entirely.
         let unit_name = Self::detect_unit_package_name(&stmts);
+        // ADR-11136: the module's own top-level constants, packages, enums and
+        // subsets, attributed to it once the load has run.
+        let own_scope_names = if unit_name.is_none() {
+            self.module_scope_declared_names(&stmts)
+        } else {
+            Vec::new()
+        };
         if let Some(dist) = &module_dist {
             // Also record the distribution under the package this module's OWN
             // top-level subs actually register under: `unit_name` if it declares
@@ -1457,6 +1464,23 @@ impl Interpreter {
                 main_exported,
             );
             self.invalidate_fn_resolution();
+            // The module's own package-less `our sub`s are part of its GLOBAL
+            // merge (ADR-11136).
+            let our_routines: Vec<Symbol> = {
+                let registry = self.registry();
+                registry
+                    .functions
+                    .keys()
+                    .filter(|key| {
+                        !before_function_keys.contains(key)
+                            && registry.our_scoped_functions.contains_key(key)
+                    })
+                    .filter_map(|key| {
+                        Self::toplevel_global_routine_name(&key.resolve()).map(Symbol::intern)
+                    })
+                    .collect()
+            };
+            self.record_module_routine_provenance(module, our_routines);
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of
@@ -1562,6 +1586,7 @@ impl Interpreter {
                     .is_none_or(|owned| owned.contains(name.as_str()))
             })
             .map(|name| Symbol::intern(name))
+            .chain(own_scope_names)
             .collect();
         self.record_module_provenance(module, module_unit, own_names);
         self.merge_module_into_importer(importer_unit, module, &grant);
