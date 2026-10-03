@@ -318,9 +318,8 @@ impl Interpreter {
                 .iter()
                 .any(|n| n == &name.resolve())
         {
-            let materialized = self.materialize_default_parametric_role(target.clone())?;
-            if materialized != target {
-                return self.dispatch_new(materialized, args);
+            if let Some(punned) = self.default_parametric_role_pun(&target)? {
+                return self.dispatch_new(punned, args);
             }
         }
         // Collation.new — create a Collation instance with default settings

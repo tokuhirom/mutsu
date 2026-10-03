@@ -1000,6 +1000,23 @@ impl Interpreter {
         base_name: &str,
         type_args: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
+        self.ensure_parametric_role_pun_class_for(base_name, type_args, false)
+    }
+
+    /// [`Self::ensure_parametric_role_pun_class`]; `from_defaults` says the
+    /// arguments are the role's own defaults, filled in because the bare role
+    /// was punned (`role E[::R = Any] {}; E.new`). Rakudo names that pun after
+    /// the role (`E`), and it is a different class from an explicit `E[Any]`
+    /// pun, so its storage name is `E\u{0}default[Any]`, which
+    /// `user_facing_type_name` displays as `E` (#11281).
+    // Cost: O(a) on a cache hit, a = total length of the argument spellings;
+    // the first pun also composes the role.
+    pub(crate) fn ensure_parametric_role_pun_class_for(
+        &mut self,
+        base_name: &str,
+        type_args: &[Value],
+        from_defaults: bool,
+    ) -> Result<Option<String>, RuntimeError> {
         if type_args.is_empty() {
             return Ok(None);
         }
@@ -1031,6 +1048,11 @@ impl Interpreter {
             role_spelling.clone()
         } else {
             format!("{role_spelling}\u{0}{}", identity_suffix.join(","))
+        };
+        let pun_name = if from_defaults {
+            format!("{base_name}\u{0}default{}", &pun_name[base_name.len()..])
+        } else {
+            pun_name
         };
         if self.registry().classes.contains_key(&pun_name) {
             return Ok(Some(pun_name));

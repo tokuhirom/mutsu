@@ -78,11 +78,10 @@ impl Interpreter {
                 if method != "new"
                     && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
                 {
-                    let materialized = self.materialize_default_parametric_role(target.clone())?;
-                    if materialized != target {
+                    if let Some(punned) = self.default_parametric_role_pun(&target)? {
                         return self.try_compiled_method_mut_or_interpret_sym(
                             target_name,
-                            materialized,
+                            punned,
                             method_sym,
                             args,
                         );

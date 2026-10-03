@@ -1343,6 +1343,30 @@ impl Interpreter {
         ))
     }
 
+    /// The pun class of a role whose type parameters all have defaults,
+    /// bound to those defaults: what `E.new` or `E.method` constructs or
+    /// calls through for `role E[::R = Any] { }`. `None` for anything else.
+    // Cost: binding the defaults, plus `ensure_parametric_role_pun_class_for`.
+    pub(crate) fn default_parametric_role_pun(
+        &mut self,
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let materialized = self.materialize_default_parametric_role(value.clone())?;
+        if &materialized == value {
+            return Ok(None);
+        }
+        if let ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } = materialized.view()
+            && let Some(punned) =
+                self.ensure_parametric_role_pun_class_for(&base_name.resolve(), type_args, true)?
+        {
+            return Ok(Some(Value::package(Symbol::intern(&punned))));
+        }
+        Ok(Some(materialized))
+    }
+
     pub(in crate::runtime) fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {
         // `ends_with` is O(1) and rejects every unparameterized name, so it
         // runs before the `[` scan rather than after it (#7696).
