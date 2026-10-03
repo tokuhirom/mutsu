@@ -845,9 +845,17 @@ impl Interpreter {
                 crate::symbol::Symbol::intern(module),
                 crate::symbol::Symbol::intern(spelled),
             );
-            return self
-                .env
-                .get_sym(qualified)
+            // The qualified env key also binds a same-named nested TYPE
+            // (`Syndicate::Atom`), whose entry is that type object itself. A
+            // constant exported under the short name (`my constant Atom is
+            // export` inside `unit class Syndicate`) is not that binding, so
+            // the type's self-binding is consulted only after every store a
+            // constant can live in.
+            let qualified_binding = self.env.get_sym(qualified);
+            let is_type_self_binding =
+                |v: &&Value| matches!(v.view(), ValueView::Package(p) if p == qualified);
+            return qualified_binding
+                .filter(|v| !is_type_self_binding(v))
                 .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
                 .or_else(|| self.our_vars.get(qualified.as_str()))
                 .or_else(|| {
@@ -856,6 +864,7 @@ impl Interpreter {
                         .and_then(|e| e.get(name))
                 })
                 .or_else(|| self.env.get(name))
+                .or(qualified_binding)
                 .cloned();
         }
         let (sigil, bare) = match name.chars().next() {

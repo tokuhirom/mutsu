@@ -333,16 +333,27 @@ impl Interpreter {
             let caller_code = self.current_code;
             let stringy = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
-            if let Ok(result) = stringy {
-                self.stack.push(result);
-                return Ok(());
+            // Only a missing method falls back to the default rendering; an
+            // exception the user's `Stringy`/`Str` raised is the result of
+            // `~$obj` (Syndicate's `~$feed` dies on a timestamp-less feed).
+            match stringy {
+                Ok(result) => {
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
+                Err(_) => {}
             }
             let caller_code = self.current_code;
             let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
-            if let Ok(result) = str_r {
-                self.stack.push(result);
-                return Ok(());
+            match str_r {
+                Ok(result) => {
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                Err(e) if !e.is_method_not_found_for("Str") => return Err(e),
+                Err(_) => {}
             }
         }
         // A bare type object stringifies to the empty string with Rakudo's

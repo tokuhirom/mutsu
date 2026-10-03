@@ -798,17 +798,24 @@ impl Interpreter {
                     result.push_str(&str_result.to_string_value());
                     continue;
                 }
-                if let Ok(str_result) =
-                    self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new())
-                {
-                    result.push_str(&str_result.to_string_value());
-                    continue;
+                // As for prefix `~`: only a missing method falls back to the
+                // default rendering; a user `Stringy`/`Str` that dies makes
+                // the interpolation die.
+                match self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new()) {
+                    Ok(str_result) => {
+                        result.push_str(&str_result.to_string_value());
+                        continue;
+                    }
+                    Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
+                    Err(_) => {}
                 }
-                if let Ok(str_result) =
-                    self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new())
-                {
-                    result.push_str(&str_result.to_string_value());
-                    continue;
+                match self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new()) {
+                    Ok(str_result) => {
+                        result.push_str(&str_result.to_string_value());
+                        continue;
+                    }
+                    Err(e) if !e.is_method_not_found_for("Str") => return Err(e),
+                    Err(_) => {}
                 }
                 result.push_str(&crate::runtime::utils::coerce_to_str(&v));
                 continue;
