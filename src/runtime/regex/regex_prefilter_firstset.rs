@@ -190,14 +190,24 @@ impl FirstSet {
     /// that cluster although it rejects `x`; see `class_matches_cluster_base`).
     /// A position that starts such a cluster is therefore always admitted
     /// (a mark-skewed set already speaks about the stripped base, see below).
-    /// `grapheme_end` answers that with one comparison on ASCII text.
+    /// When the next codepoint is ASCII (or there is none) nothing can extend
+    /// `chars[i]` — no ASCII codepoint is a mark, ZWJ or other extender — so
+    /// the only multi-codepoint cluster starting there is `\r\n`. That is
+    /// answered inline: this is the per-position reject path of every
+    /// prefiltered scan, where a call into `grapheme_end` is a measurable
+    /// share of the scan (#11145). Anything else asks `grapheme_end`.
     #[inline]
     pub(crate) fn admits_at(&self, chars: &[char], i: usize) -> bool {
-        if self.contains(chars[i]) {
+        let c = chars[i];
+        if self.contains(c) {
             return true;
         }
         if !self.mark_skewed {
-            return super::regex_helpers::grapheme_end(chars, i) > i + 1;
+            return match chars.get(i + 1) {
+                None => false,
+                Some(&next) if next.is_ascii() => c == '\r' && next == '\n',
+                Some(_) => super::regex_helpers::grapheme_end(chars, i) > i + 1,
+            };
         }
         if i == 0 {
             return false;
