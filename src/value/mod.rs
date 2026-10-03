@@ -586,6 +586,7 @@ pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 mod method_site;
+mod type_decl_site;
 pub mod user_key_map;
 pub use hash_key::HashKey;
 pub use user_key_map::ValueMap;
@@ -698,6 +699,7 @@ pub(crate) use seq_body::{
     MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
     seq_method_never_touches,
 };
+pub(crate) use type_decl_site::TypeDeclSiteCaches;
 
 /// A `'static` Nil for call sites that keep a `&Value` beyond one expression:
 /// `&Value::NIL` stopped const-promoting once `Value` gained `Drop` (the

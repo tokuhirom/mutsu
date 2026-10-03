@@ -89,6 +89,13 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MarkSigillessBindSource(_)
             | OpCode::MarkVarReadonly(..)
             | OpCode::CheckDynamicVarDeclared(_)
+            // A declaration's type check. Straight-line like the
+            // `SetVarType*` registration before it: its `exec_one` arm only
+            // ever advances `ip` by one, and a subset `where` it runs is
+            // re-entrant like a call. Without it every loop body holding a
+            // typed `my` ran interpreted (#11467).
+            | OpCode::TypeCheck(..)
+            | OpCode::TypeCheckBind(..)
             // Increment / decrement
             | OpCode::PostIncrement(..)
             | OpCode::PostDecrement(..)

@@ -226,8 +226,15 @@ impl Interpreter {
     /// `Array[CSV::Field].new(...)` (Text::CSV 46_eol_si). The declared
     /// variable's own value is tagged by the assignment/default paths, which
     /// consult the name-keyed constraint registered here.
-    pub(crate) fn set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<&str>) {
-        self.set_var_type_constraint_impl(name, None, constraint, false);
+    ///
+    /// `name_sym` is `name` interned (the declaring op's constant-pool symbol).
+    pub(crate) fn set_var_type_constraint_decl(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        constraint: &str,
+    ) {
+        self.set_var_type_constraint_impl(name, Some(name_sym), Some(constraint), false);
     }
 
     /// [`Self::set_var_type_constraint_decl`] for a scalar `my`/`state`
@@ -246,16 +253,42 @@ impl Interpreter {
     /// [`Self::set_var_type_constraint_decl`] only in NOT tagging a same-named
     /// env value with container metadata; both write the same single
     /// env-scoped lane.
-    pub(crate) fn set_var_type_constraint_routine_scoped(&mut self, name: &str, constraint: &str) {
-        let info = Self::container_constraint_parts(name, constraint);
-        if info.value_type == "atomicint" || constraint.contains("atomicint") {
+    ///
+    /// `plain_meta`, when given, says `constraint` is a plain type name (no
+    /// `{key}` part, no surrounding whitespace — see
+    /// `type_decl_constraint_is_plain_builtin`) and is the metadata value to
+    /// store for it: the declaring op's own constant-pool string, so a
+    /// re-registration stores the very allocation already there and the env
+    /// write is skipped (`Env::insert_sym_noting_unless_same`).
+    ///
+    /// `type_key` is `name_sym`'s `__mutsu_type::` key
+    /// ([`Self::type_meta_key_for_sym`]), which the caller already derived.
+    pub(crate) fn set_var_type_constraint_routine_scoped(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        type_key: Symbol,
+        constraint: &str,
+        plain_meta: Option<Value>,
+    ) {
+        debug_assert_eq!(type_key, Self::type_meta_key_for_sym(name_sym));
+        let (value_type, key_type, meta) = match plain_meta {
+            Some(meta) => (constraint, None, meta),
+            None => {
+                let info = Self::container_constraint_parts(name, constraint);
+                let meta =
+                    crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type);
+                (info.value_type, info.key_type, meta)
+            }
+        };
+        // A spelling shorter than the type's own name cannot contain it, and
+        // that settles every plain constraint without building a searcher.
+        if value_type == "atomicint"
+            || constraint.len() >= "atomicint".len() && constraint.contains("atomicint")
+        {
             self.mark_atomic_var_seen();
         }
-        let name_sym = Symbol::intern(name);
-        self.env.insert_sym_noting(
-            Self::type_meta_key_for_sym(name_sym),
-            crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type),
-        );
+        self.env.insert_sym_noting_unless_same(type_key, meta);
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
         // scoped the same way its value type is. `var_hash_key_constraint`
         // checks this env-scoped key first, so registering it here is what
@@ -264,16 +297,26 @@ impl Interpreter {
         // hash. Without it a key-only object hash declared inside a routine
         // (now scoped since step 3 stopped excluding `%` from the scoped
         // opcode) silently lost key-type enforcement.
-        let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
-        if let Some(key_type) = info.key_type {
+        if let Some(key_type) = key_type {
             self.env.insert_sym(
-                hash_key_meta_key,
+                Self::hash_key_meta_key_for_sym(name_sym),
                 crate::runtime::constraint_meta::constraint_meta_value_str(key_type),
             );
-        } else {
-            self.env.remove_sym(hash_key_meta_key);
+        } else if Self::may_carry_hash_key_meta(name) {
+            self.env
+                .remove_sym(Self::hash_key_meta_key_for_sym(name_sym));
         }
         Self::mark_env_type_constraint_seen_for(name_sym);
+    }
+
+    /// Whether `name` can have a `__mutsu_hash_key_type::` entry at all. Only a
+    /// `%` variable's constraint has a key part (`container_constraint_parts`
+    /// yields `key_type` for nothing else), so for every other name the entry
+    /// is never written and clearing it is a guaranteed-miss env walk — one
+    /// per typed declaration (#11467).
+    #[inline]
+    pub(crate) fn may_carry_hash_key_meta(name: &str) -> bool {
+        name.starts_with('%')
     }
 
     fn set_var_type_constraint_impl(
@@ -297,14 +340,14 @@ impl Interpreter {
                 crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type),
             );
             Self::mark_env_type_constraint_seen_for(name_sym);
-            let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
             if let Some(key_type) = info.key_type {
                 self.env.insert_sym(
-                    hash_key_meta_key,
+                    Self::hash_key_meta_key_for_sym(name_sym),
                     crate::runtime::constraint_meta::constraint_meta_value_str(key_type),
                 );
-            } else {
-                self.env.remove_sym(hash_key_meta_key);
+            } else if Self::may_carry_hash_key_meta(name) {
+                self.env
+                    .remove_sym(Self::hash_key_meta_key_for_sym(name_sym));
             }
             // Only register container type metadata for container-sigil variables
             // (`@a`, `%h`). For scalar parameters (e.g. `Mu $a`) the bound value

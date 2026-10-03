@@ -2433,6 +2433,29 @@ impl Env {
         }
     }
 
+    /// [`Self::insert_sym_noting`] for a re-registration that usually writes
+    /// back what is already there (a typed `my` in a loop body re-registers
+    /// the same shared constraint value every iteration, #11467). The
+    /// bookkeeping runs as for any insert; only the map write — and the
+    /// copy-on-write of a shared tier it may force — is skipped when this
+    /// tier already binds `key` to this very value (same NaN-box bits, so the
+    /// same immediate or the same allocation).
+    // Cost: O(1), one probe of the own tier, plus `insert_sym` on a change.
+    pub(crate) fn insert_sym_noting_unless_same(&mut self, key: Symbol, value: Value) {
+        note_env_key(key.as_str());
+        if self
+            .inner
+            .get(&key)
+            .is_some_and(|cur| cur.nanbox_bits() == value.nanbox_bits())
+        {
+            self.untombstone(key);
+            self.note_frame_write(key);
+            self.note_code_entry(key);
+            return;
+        }
+        self.insert_sym(key, value);
+    }
+
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
         if key == file_key() {
             self.file_sym = file_sym_of(&value);

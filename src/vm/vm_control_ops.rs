@@ -185,7 +185,7 @@ impl Interpreter {
             .push(crate::runtime::NameSet::default());
         self.topic_state
             .loop_local_saved_env
-            .push(std::collections::HashMap::new());
+            .push(rustc_hash::FxHashMap::default());
         self.topic_state.active_loop_param_names.push(param_names);
         self.topic_state
             .active_loop_rw_param_names
