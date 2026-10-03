@@ -1824,6 +1824,14 @@ impl Interpreter {
                     Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
                     None => (raw_val, None),
                 };
+                // `bind_marks_no_container` of the SetLocal path: a slot-less
+                // `(my $l := EXPR)` declaration binds `$l` straight to the value,
+                // so `$l =:= IterationEnd` must hold.
+                let decl_marks_no_container = self.vardecl_context().get().then(|| {
+                    was_scalar_bind
+                        && bind_source.is_none()
+                        && !Self::bind_source_is_itemized_aggregate(&raw_val)
+                });
                 if is_rebind && name_str.starts_with("&OUR::") {
                     self.register_our_code_alias(name_str, &raw_val);
                 }
@@ -2041,6 +2049,9 @@ impl Interpreter {
                 // without the marker `@a = $p` itemized it (#9262).
                 if !is_internal_temp {
                     self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
+                    if let Some(marks) = decl_marks_no_container {
+                        self.record_scalar_decl_container_by_name(&name, marks);
+                    }
                 }
                 // SetGlobal is also used for an attribute assignment inside a
                 // nested `given`/`when` body.  The by-name env mirror can then
@@ -6101,9 +6112,11 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) avg (O(R) copy-on-write when the registry Arc is shared, R = registry
-            // size).
+            // size; O(P) copy-on-write of the provenance table, P = attributed names, when a
+            // module-attributed name is redeclared).
             OpCode::SetPackageKind { name_idx, kind } => {
                 let name = Self::const_str(code, *name_idx).to_string();
+                self.release_foreign_provenance(&name);
                 self.registry_mut().package_kinds.insert(name, *kind);
                 *ip += 1;
             }
