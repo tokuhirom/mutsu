@@ -77,15 +77,14 @@ impl Interpreter {
                 // `.^name` still answers for the role itself.
                 if method != "new"
                     && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
+                    && let Some(punned) = self.default_parametric_role_pun(&target)?
                 {
-                    if let Some(punned) = self.default_parametric_role_pun(&target)? {
-                        return self.try_compiled_method_mut_or_interpret_sym(
-                            target_name,
-                            punned,
-                            method_sym,
-                            args,
-                        );
-                    }
+                    return self.try_compiled_method_mut_or_interpret_sym(
+                        target_name,
+                        punned,
+                        method_sym,
+                        args,
+                    );
                 }
                 self.run_pun_role_bodies(pkg)?;
             }
