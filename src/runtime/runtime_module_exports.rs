@@ -1684,6 +1684,7 @@ impl Interpreter {
     pub(crate) fn no_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         if module == "strict" {
             self.strict_mode = false;
+            self.mark_strict_pragma(false);
         } else if module == "fatal" {
             self.fatal_mode = false;
             self.lexical_fatal_mode = false;
