@@ -1964,7 +1964,16 @@ impl Interpreter {
                     } else {
                         raw_val
                     };
-                    Self::itemize_scalar_store(&name, raw_val)
+                    if &*name == "_"
+                        && self
+                            .get_env_with_main_alias("_")
+                            .is_some_and(|cur| Self::topic_holds_scalar(&cur))
+                    {
+                        // The topic aliasing a `Scalar` itemizes like any `$` store.
+                        Self::itemize_scalar_store_value(raw_val)
+                    } else {
+                        Self::itemize_scalar_store(&name, raw_val)
+                    }
                 } else {
                     raw_val
                 };

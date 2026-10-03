@@ -2980,10 +2980,17 @@ impl Interpreter {
             } else {
                 let arc = arc.clone();
                 if scalar {
-                    val = Self::itemize_scalar_store(
-                        name,
-                        Self::normalize_scalar_assignment_value(val),
-                    );
+                    let normalized = Self::normalize_scalar_assignment_value(val);
+                    // The topic aliasing a `Scalar` (an element, a `$` variable)
+                    // itemizes like any scalar store; aliasing a whole bare
+                    // `@`/`%` container (`given @a { .=reverse }`) writes back raw.
+                    val = if name == "_"
+                        && Self::topic_holds_scalar(&Value::container_ref(arc.clone()))
+                    {
+                        Self::itemize_scalar_store_value(normalized)
+                    } else {
+                        Self::itemize_scalar_store(name, normalized)
+                    };
                     val = self.coerce_container_cell_store(&arc, val)?;
                     Value::store_through_cell(&arc, &val);
                 } else {
