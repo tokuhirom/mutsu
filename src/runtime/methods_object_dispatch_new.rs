@@ -317,11 +317,9 @@ impl Interpreter {
                 .role_pun_construction
                 .iter()
                 .any(|n| n == &name.resolve())
+            && let Some(punned) = self.default_parametric_role_pun(&target)?
         {
-            let materialized = self.materialize_default_parametric_role(target.clone())?;
-            if materialized != target {
-                return self.dispatch_new(materialized, args);
-            }
+            return self.dispatch_new(punned, args);
         }
         // Collation.new — create a Collation instance with default settings
         if let ValueView::Package(name) = target.view()
