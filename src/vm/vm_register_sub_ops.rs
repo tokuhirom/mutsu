@@ -228,6 +228,41 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
+            // A type alias in the signature (`--> size_t` under
+            // `constant size_t = NativeCall::Types::size_t`) names the aliased
+            // type, resolved here in the declaring scope (#11555).
+            // Not in the hoist pass: a `constant` it would read is declared but
+            // not yet assigned (it reads `Any`), so only the in-sequence
+            // registration can tell what the alias names.
+            let hoisting = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let canon_defs = (!hoisting)
+                .then(|| self.canonical_signature_param_types(param_defs))
+                .flatten();
+            let canon_return = return_type
+                .as_deref()
+                .filter(|_| !hoisting)
+                .and_then(|rt| self.declared_type_alias_target(rt));
+            // The rewritten declaration is a different one from what a
+            // registration that saw no alias (the hoist pass, before the
+            // `use` that binds it ran) installed, so it must not take the
+            // idempotent re-registration path keyed on the site fingerprint.
+            let reg_fp = site_fp.map(|fp| {
+                if canon_defs.is_none() && canon_return.is_none() {
+                    return fp;
+                }
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                fp.hash(&mut hasher);
+                canon_defs.hash(&mut hasher);
+                canon_return.hash(&mut hasher);
+                hasher.finish()
+            });
+            let param_defs: &[crate::ast::ParamDef] = canon_defs.as_deref().unwrap_or(param_defs);
+            let return_type: &Option<String> = if canon_return.is_some() {
+                &canon_return
+            } else {
+                return_type
+            };
             // Inline package routines are registered once by the declaration-
             // only prepass so CHECK can import them before the package body
             // executes. The package body still contains its ordinary
@@ -319,7 +354,7 @@ impl Interpreter {
                     *is_test_assertion,
                     *supersede,
                     custom_traits,
-                    *site_fp,
+                    reg_fp,
                     routine_metadata,
                     primary_compiled,
                 )
@@ -837,7 +872,7 @@ impl Interpreter {
                         self.lexical_closure_package_sym(),
                         Symbol::intern(&resolved_name),
                         params.clone(),
-                        param_defs.clone(),
+                        param_defs.to_vec(),
                         body.to_vec(),
                         *is_rw,
                         self.env().clone(),
@@ -1285,6 +1320,15 @@ impl Interpreter {
         for _ in 0..4 {
             if CType::from_type_name(&current).is_some() {
                 return current;
+            }
+            // A `native` declaration (upstream `NativeCall::Types::size_t`, a
+            // signature's resolved alias since #11555) marshals as the core
+            // native with its layout.
+            if let Some(core) = self
+                .native_decl(&current)
+                .and_then(|decl| decl.core_native_name())
+            {
+                return core.to_string();
             }
             // A `constant Foo = int8` alias is a term, stored in the term
             // namespace (#9962) — in the live env and in the owner's module

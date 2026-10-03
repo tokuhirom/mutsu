@@ -1064,9 +1064,18 @@ impl Interpreter {
         // constraints while that declaring package is still current; leaving
         // `Result` in `sub make(--> Result)` makes the later caller-side check
         // look for a global `Result` instead of `Module::Result`.
+        // A `constant` alias of a type (`--> size_t` under upstream
+        // NativeCall's `constant size_t = NativeCall::Types::size_t`) names
+        // the aliased type, also resolved here (#11555).
+        // Not in the hoist pass, whose `constant`s are not assigned yet.
+        let resolve_aliases = !custom_traits.iter().any(|(t, _)| t == "__hoisted");
         let effective_return_type = return_type.map(|rt| {
             let resolved = rt.replace("::?CLASS", &package);
-            self.resolve_method_type_name(&package, &resolved)
+            let resolved = self.resolve_method_type_name(&package, &resolved);
+            resolve_aliases
+                .then(|| self.declared_type_alias_target(&resolved))
+                .flatten()
+                .unwrap_or(resolved)
         });
         if let Some(spec) = return_type
             // Prefer the plan-lowered classification when available: it was
@@ -1187,6 +1196,14 @@ impl Interpreter {
                     pd.type_constraint = Some(resolved);
                 }
             }
+        }
+        // Type aliases, as for the return type above. A multi keeps its
+        // spellings for the reason given in the loop above.
+        if !multi
+            && resolve_aliases
+            && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs)
+        {
+            effective_param_defs = defs;
         }
         self.validate_static_default_typechecks(&effective_param_defs)?;
         let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
@@ -1373,11 +1390,26 @@ impl Interpreter {
         // Clone the existing def out so the guard drops before mutating self.env
         // (registration cold path, so the FunctionDef clone is cheap enough).
         let existing = self.registry().functions.get(&single_key_sym).cloned();
+        let mut redeclares_hoisted_twin = false;
         if let Some(existing) = existing {
-            let same = existing.package == new_def.package
+            let same_decl = existing.package == new_def.package
                 && existing.name == new_def.name
-                && existing.return_type == new_def.return_type
                 && registration_identity(&existing) == registration_identity(&new_def);
+            // The hoist pass installed this same declaration before the
+            // `constant`/`use` binding a type alias in its signature had run;
+            // this in-sequence registration resolved the alias (#11555). It
+            // replaces the hoisted def rather than redeclaring it.
+            let refines_aliases = same_decl
+                && !multi
+                && (existing
+                    .return_type
+                    .as_deref()
+                    .is_some_and(|rt| self.declared_type_alias_target(rt).is_some())
+                    || self
+                        .canonical_signature_param_types(&existing.param_defs)
+                        .is_some());
+            redeclares_hoisted_twin = refines_aliases;
+            let same = same_decl && !refines_aliases && existing.return_type == new_def.return_type;
             // The identical declaration already installed here may have been
             // installed *without* a compiled body (a forward-declaration or
             // prelude pass registers from a source declaration and carries no
@@ -1472,6 +1504,7 @@ impl Interpreter {
             && !allow_lexical_shadow
             && !imported_routine_alias
             && !has_user_custom_traits
+            && !redeclares_hoisted_twin
         {
             if has_multi && !has_proto && !shadows_outer_eval_multi {
                 return Err(RuntimeError::redeclaration_routine(name));

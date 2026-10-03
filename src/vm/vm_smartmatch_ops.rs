@@ -13,7 +13,9 @@ impl Interpreter {
         let type_name = type_name.resolve();
         let (base, smiley) = crate::runtime::types::strip_type_smiley(&type_name);
         let is_native = crate::runtime::native_types::is_native_int_type(base)
-            || matches!(base, "num" | "num32" | "num64" | "str");
+            || matches!(base, "num" | "num32" | "num64" | "str")
+            // A `native` declaration (upstream `NativeCall::Types::size_t`).
+            || self.registry().native_decls.contains_key(base);
         if !is_native {
             return None;
         }
