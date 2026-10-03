@@ -2844,7 +2844,11 @@ impl Interpreter {
                                 .and_then(|names| names.get(positional_idx))
                                 .and_then(|name| name.as_ref())
                                 .cloned()
-                        });
+                        })
+                        // `self` is the caller's invocant, not a writable variable:
+                        // aliasing a raw `\p` to it makes the callee's own `self`
+                        // resolve to the caller's.
+                        .filter(|name| name != "self");
                     let arg_is_container_ref = matches!(
                         args[positional_idx].unwrap_varref().view(),
                         ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }

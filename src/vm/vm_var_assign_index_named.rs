@@ -1726,6 +1726,29 @@ impl Interpreter {
                     keys.len().max(1)
                 };
                 let vals = self.assignment_rhs_values_bounded(&val, needed)?;
+                // A Nil assigned to a slice slot resets it to the container's
+                // default, exactly like the single-element store above
+                // (`@a[0,1] = Nil, 5` stores `Any`, not `Nil`).
+                let vals = if !bind_mode && vals.iter().any(Value::is_nil) {
+                    let container = self.get_env_with_main_alias(&var_name).unwrap_or_else(|| {
+                        if is_positional {
+                            Value::real_array(Vec::new())
+                        } else {
+                            Value::hash(ValueMap::default())
+                        }
+                    });
+                    vals.into_iter()
+                        .map(|v| {
+                            if v.is_nil() {
+                                self.assign_store_nil_default(&var_name, &container)
+                            } else {
+                                v
+                            }
+                        })
+                        .collect()
+                } else {
+                    vals
+                };
                 // The value the slots past the end of the RHS get -- see
                 // `slice_pad_value`. Computed once here, before the `&mut
                 // self.env` borrows below.
@@ -3475,6 +3498,25 @@ impl Interpreter {
         result
     }
 
+    // Cost: O(n), n = range length.
+    pub(super) fn finite_int_range_as_list(idx: &Value) -> Option<Value> {
+        let items: Vec<Value> = match idx.view() {
+            ValueView::Range(a, b) if b != i64::MAX => (a..=b).map(Value::int).collect(),
+            ValueView::RangeExcl(a, b) if b != i64::MAX => (a..b).map(Value::int).collect(),
+            ValueView::RangeExclStart(a, b) if b != i64::MAX => {
+                ((a + 1)..=b).map(Value::int).collect()
+            }
+            ValueView::RangeExclBoth(a, b) if b != i64::MAX => {
+                ((a + 1)..b).map(Value::int).collect()
+            }
+            _ => return None,
+        };
+        Some(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+            crate::value::ArrayKind::List,
+        ))
+    }
+
     fn exec_index_assign_expr_nested_op_body(
         &mut self,
         code: &CompiledCode,
@@ -3499,6 +3541,13 @@ impl Interpreter {
         };
         let inner_idx = self.stack.pop().unwrap_or(Value::NIL);
         let outer_idx = self.stack.pop().unwrap_or(Value::NIL);
+        // A finite integer Range as the outer positional subscript
+        // (`@a[1][1..2] = <A B>`) is a slice over its elements, same as `(1,2)`.
+        let outer_idx = if outer_positional {
+            Self::finite_int_range_as_list(&outer_idx).unwrap_or(outer_idx)
+        } else {
+            outer_idx
+        };
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
         let mut is_bind_value = false;
