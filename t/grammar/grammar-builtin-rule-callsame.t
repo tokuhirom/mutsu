@@ -8,7 +8,8 @@ use Test;
 
 plan 12;
 
-# The `$*HIGHWATER` write itself does not reach `parse` yet: #11326.
+# The `$*HIGHWATER` write reaching `parse` is pinned by
+# t/grammar/grammar-method-subrule-dynvar-write.t (#11326).
 role HighWater {
     method ws() {
         if self.pos > $*HIGHWATER {
