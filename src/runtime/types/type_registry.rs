@@ -81,11 +81,11 @@ impl Interpreter {
     /// [`crate::runtime::Registry::compound_declared_types`]; the enclosing
     /// package is only knowable here, at declaration time.
     pub(crate) fn note_compound_declared_type(&mut self, name: &str) {
-        let Some((parent, _)) = name.rsplit_once("::") else {
+        let Some((parent, _)) = crate::qualified::split_qualified(Symbol::intern(name)) else {
             return;
         };
         let enclosing = self.current_package_sym();
-        if parent == enclosing.as_str() {
+        if parent == enclosing {
             self.registry_mut().compound_declared_types.remove(name);
         } else {
             self.registry_mut()
@@ -505,7 +505,9 @@ impl Interpreter {
         // visible type under its bare short name (raku: "Type 'A' is not declared"
         // after the block). Fully-qualified names (`Foo::Bar`) are never suppressed
         // through this mechanism, and a later re-declaration un-suppresses the name.
-        if !name.contains("::") && self.is_name_suppressed(name) {
+        // The suppression probe first: it is one set lookup and almost always
+        // misses, so the name is interned only for a suppressed short name.
+        if self.is_name_suppressed(name) && !crate::qualified::is_qualified(Symbol::intern(name)) {
             return false;
         }
         if self.has_type_direct(name) {
@@ -574,6 +576,8 @@ impl Interpreter {
         // `contains("::")` builds a `StrSearcher`; `has_double_colon` is the
         // byte scan #7554 introduced for exactly this test, and this guard runs
         // on every type check in the program (`try_resolved_type_capture_name`).
+        // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
+        // (#11507); an intern per type check would cost more than the scan.
         if self.package_type_aliases.is_empty()
             || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
@@ -607,6 +611,8 @@ impl Interpreter {
         // transiently put the topic's backing hash under the plain `_` key
         // while its declarations run, but consulting that entry here would
         // make every imported routine's topic read see the stale module value.
+        // A byte scan: this runs on free-variable reads and only has the
+        // name's text. TODO: take the caller's `Symbol` (#11507).
         if self.module_scope_lexicals.is_empty()
             || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
@@ -623,6 +629,8 @@ impl Interpreter {
     /// the module's own `our $name`, while an imported alias must beat the
     /// caller's same-named env entry.
     pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
+        // A byte scan, as in `module_scope_lexical`. TODO: take the caller's
+        // `Symbol` (#11507).
         if self.module_imported_lexical_names.is_empty()
             || name.is_empty()
             || crate::runtime::utils::has_double_colon(name)
@@ -701,8 +709,9 @@ impl Interpreter {
             self.method_class_stack_top_str(),
             frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
             frame
-                .map(|frame| frame.package.as_str())
-                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
+                .map(|frame| frame.package)
+                .filter(|pkg| !crate::qualified::is_global_package(*pkg))
+                .map(|pkg| pkg.as_str()),
             // The atomic `Symbol` mirror of `current_package`, which yields a
             // `&'static str` instead of cloning the `String` behind the lock.
             Some(self.current_package_sym().as_str()),
@@ -1126,19 +1135,20 @@ impl Interpreter {
         {
             return name.to_string();
         }
-        if name.contains("::") {
-            if name.starts_with("::") || self.has_type_direct(name) {
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
+            // A leading `::` (an empty first segment) is an absolute name.
+            if crate::qualified::segments(name_sym)
+                .first()
+                .is_some_and(|seg| seg.as_str().is_empty())
+                || self.has_type_direct(name)
+            {
                 return name.to_string();
             }
-            let mut pkg = owner;
-            while !pkg.is_empty() {
-                let qualified = format!("{pkg}::{name}");
-                if self.has_type_direct(&qualified) {
-                    return qualified;
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
+            for pkg in crate::qualified::package_ancestors(Symbol::intern(owner)) {
+                let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                if self.has_type_direct(qualified) {
+                    return qualified.to_string();
                 }
             }
             return name.to_string();
@@ -1157,7 +1167,8 @@ impl Interpreter {
         let is_compound_declared = self.compound_name_segment_is_not_a_scope(owner);
         if !is_compound_declared
             && self.has_type_direct(owner)
-            && (owner.rsplit_once("::").map(|(_, last)| last == name) == Some(true)
+            && (crate::qualified::split_qualified(Symbol::intern(owner))
+                .is_some_and(|(_, last)| last.as_str() == name)
                 || owner == name)
         {
             return owner.to_string();
@@ -1355,7 +1366,7 @@ impl Interpreter {
         // A `my`-scoped user type whose enclosing block has exited is suppressed
         // and no longer resolvable under its bare short name (built-in types are
         // never suppressed, so this never hides a core type). Mirrors `has_type`.
-        if !base.contains("::") && self.is_name_suppressed(base) {
+        if self.is_name_suppressed(base) && !crate::qualified::is_qualified(Symbol::intern(base)) {
             return false;
         }
         // Check built-in types

@@ -612,8 +612,8 @@ impl Interpreter {
                 // (a proto/multi token name, or one with no resolvable
                 // literal body) falls back to the legacy by-name lookup.
                 let captured = captured_regex.map(|v| (**v).clone()).or_else(|| {
-                    let qualified = format!("{}::{}", package, name);
-                    self.extract_token_regex_value(&qualified)
+                    let qualified = crate::qualified::qualified(package, name);
+                    self.extract_token_regex_value(qualified.as_str())
                         .or_else(|| self.extract_token_regex_value(&name.resolve()))
                 });
                 if let Some(regex) = captured {

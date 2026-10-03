@@ -224,9 +224,10 @@ impl Value {
             if is_name_part && type_name == "RakuAST::Name" {
                 return false;
             }
-            if let Some(rest) = my_type.strip_prefix(type_name)
-                && rest.starts_with("::")
-            {
+            if crate::qualified::is_inside_package(
+                crate::symbol::Symbol::intern(my_type),
+                crate::symbol::Symbol::intern(type_name),
+            ) {
                 return true;
             }
             if node.class.semantic_ancestors().contains(&type_name) {

@@ -115,7 +115,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         } => {
             if is_regex {
                 "Regex"
-            } else if package.with_str(|p| p == "GLOBAL" || p.is_empty()) {
+            } else if crate::qualified::is_global_package(package) {
                 "Sub"
             } else {
                 "Method"

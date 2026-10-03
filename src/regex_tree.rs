@@ -2654,7 +2654,10 @@ fn is_simple_subrule_name(name: &str) -> bool {
 /// Keep the alias side restricted to `is_simple_subrule_name`: Rakudo rejects
 /// a long name on the alias side, while the called rule may be qualified.
 fn is_subrule_name(name: &str) -> bool {
-    !name.is_empty() && name.split("::").all(is_simple_subrule_name)
+    !name.is_empty()
+        && crate::qualified::segments(crate::symbol::Symbol::intern(name))
+            .iter()
+            .all(|seg| is_simple_subrule_name(seg.as_str()))
 }
 
 fn subrule_alias_inner_source(

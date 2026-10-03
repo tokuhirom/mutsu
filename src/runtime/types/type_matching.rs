@@ -429,9 +429,8 @@ impl Interpreter {
                 return Some(resolved);
             }
         }
-        if let Some(short) = name.rsplit("::").next()
-            && self.is_role_type_name(short)
-        {
+        let short = crate::qualified::last_segment(Symbol::intern(name)).as_str();
+        if self.is_role_type_name(short) {
             return Some(short.to_string());
         }
         None
@@ -481,7 +480,13 @@ impl Interpreter {
     fn resolve_inline_subset_constraint(&mut self, constraint: &str) -> Option<String> {
         let constraint = constraint.trim();
         let rest = constraint.strip_prefix("subset")?.trim_start();
-        let rest = rest.strip_prefix("::")?.trim_start();
+        // The anonymous subset's `::` name marker: syntax, not a package
+        // qualifier.
+        let rest = rest
+            .split_at_checked(2)
+            .filter(|(marker, _)| *marker == "::")?
+            .1
+            .trim_start();
         if rest.is_empty() {
             return None;
         }
@@ -1173,8 +1178,7 @@ impl Interpreter {
                     else {
                         return false;
                     };
-                    let name = class_name.resolve();
-                    if name.rsplit("::").next() != Some("Pointer") {
+                    if crate::qualified::last_segment(class_name).as_str() != "Pointer" {
                         return false;
                     }
                     let Some(of) = attributes.as_map().get("of").map(|v| match v.view() {
@@ -2060,8 +2064,10 @@ impl Interpreter {
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
                     && (role_name == effective_constraint
-                        || role_name.rsplit("::").next()
-                            == effective_constraint.rsplit("::").next()
+                        || crate::qualified::last_segment(Symbol::intern(role_name))
+                            == crate::qualified::last_segment(Symbol::intern(
+                                &effective_constraint,
+                            ))
                         || self.role_is_subtype(role_name, effective_constraint)
                         || self.role_is_subtype(role_name, constraint))
                 {

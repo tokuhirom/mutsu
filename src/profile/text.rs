@@ -264,10 +264,13 @@ fn qualified(row: &RoutineRow) -> String {
     } else {
         row.name.as_str()
     };
-    if row.package == "GLOBAL" || row.package.is_empty() {
+    let package = crate::symbol::Symbol::intern(&row.package);
+    if crate::qualified::is_global_package(package) {
         name.to_string()
     } else {
-        format!("{}::{}", row.package, name)
+        crate::qualified::qualified(package, crate::symbol::Symbol::intern(name))
+            .as_str()
+            .to_string()
     }
 }
 

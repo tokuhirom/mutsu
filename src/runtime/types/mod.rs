@@ -1028,12 +1028,18 @@ impl Interpreter {
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let captured = Self::captured_type_object(value);
         self.env.insert(name.to_string(), captured.clone());
-        if self.current_package() != "GLOBAL"
-            && !name.contains("::")
+        let pkg = self.current_package_sym();
+        if pkg != crate::symbol::wk::global_package()
             && !name.starts_with(['$', '@', '%', '&', '!', '.', '?', '*', '/'])
+            && let name_sym = Symbol::intern(name)
+            && !crate::qualified::is_qualified(name_sym)
         {
-            self.env
-                .insert(format!("{}::{}", self.current_package(), name), captured);
+            self.env.insert(
+                crate::qualified::qualified(pkg, name_sym)
+                    .as_str()
+                    .to_string(),
+                captured,
+            );
         }
         self.env
             .insert(Self::type_capture_marker_key(name), Value::TRUE);
@@ -1145,7 +1151,7 @@ impl Interpreter {
         } else {
             Self::optional_type_object_name(base)
         };
-        if let Some(captured_name) = base_name.strip_prefix("::")
+        if let Some(captured_name) = crate::qualified::type_capture_name(&base_name)
             && let Some(ValueView::Package(bound)) = self.env.get(captured_name).map(Value::view)
         {
             let resolved = bound.resolve();
@@ -1170,7 +1176,7 @@ impl Interpreter {
         // instead of a bare, never-registered `C` with no methods (on which
         // `.new` then fails). Builtin and already-registered names keep their
         // spelling, so a core type is never re-anchored onto a package.
-        if !base_name.contains("::")
+        if !crate::qualified::is_qualified(Symbol::intern(&base_name))
             && !self.has_type_direct(&base_name)
             && !Self::is_builtin_type(&base_name)
             && let Some(qualified) = self
@@ -1203,7 +1209,7 @@ impl Interpreter {
         &self,
         constraint: &'c str,
     ) -> std::borrow::Cow<'c, str> {
-        if let Some(captured) = constraint.strip_prefix("::")
+        if let Some(captured) = crate::qualified::type_capture_name(constraint)
             && let Some(sym) = Symbol::lookup(captured)
             && let Some(ValueView::Package(name)) = self.env.get_sym(sym).map(Value::view)
         {
@@ -1266,7 +1272,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let value = self.materialize_default_parametric_role(value)?;
         if let Some(constraint) = &pd.type_constraint
-            && !constraint.starts_with("::")
+            && !crate::qualified::is_type_capture(constraint)
             && !self.param_value_matches_constraint(&pd.name, constraint, &value)
         {
             return Err(RuntimeError::new(format!(

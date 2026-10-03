@@ -48,7 +48,7 @@ impl Interpreter {
             && !pkg.is_empty()
             && self.grammar_has_user_method_sym(pkg.as_str(), spec.lookup_sym)
             && !spec.lookup_name.is_empty()
-            && !spec.lookup_name.contains("::")
+            && !crate::qualified::is_qualified(spec.lookup_sym)
             && spec
                 .lookup_name
                 .chars()

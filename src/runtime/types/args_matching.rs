@@ -609,7 +609,7 @@ impl Interpreter {
                             )
                         })
                     });
-                    if resolved_constraint.starts_with("::") {
+                    if crate::qualified::is_type_capture(&resolved_constraint) {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, and
                         // never a nominal check.
                     } else if pd.name == "__type_only__"

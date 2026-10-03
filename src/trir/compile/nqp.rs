@@ -395,7 +395,10 @@ impl TrirCompiler<'_> {
             }
             Some(_) => None,
             None => {
-                if n.is_empty() || n.contains("::") || n.starts_with(['$', '@', '%', '&', '*']) {
+                if n.is_empty()
+                    || n.starts_with(['$', '@', '%', '&', '*'])
+                    || crate::qualified::is_qualified(crate::symbol::Symbol::intern(n))
+                {
                     return None;
                 }
                 Some(outer_make(self.outer(n)))

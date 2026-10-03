@@ -79,6 +79,23 @@ pub(crate) fn segments(name: Symbol) -> &'static [Symbol] {
     segs
 }
 
+/// Whether `name`'s trailing `::` segments spell `tail`: `name` is `tail`
+/// itself, or ends in `::tail` (`A::B::C` ends with `C` and `B::C`, not with
+/// `::C`'s lookalike `XC`).
+// Cost: O(|tail|).
+pub(crate) fn ends_with_segments(name: &str, tail: &str) -> bool {
+    name.strip_suffix(tail)
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with("::"))
+}
+
+/// The `::` segments of text that is NOT a symbol and is looked at once --
+/// an exception message's leading `X::Foo` --  where interning (and so
+/// [`segments`]) would leak a table entry per distinct message.
+// Cost: O(n), n = length of `text`.
+pub(crate) fn text_segments(text: &str) -> std::str::Split<'_, &'static str> {
+    text.split("::")
+}
+
 /// Whether a parameter's type-constraint text is a type capture (`::T`,
 /// `::?CLASS`, `::(expr)`) rather than a nominal type name. A capture binds a
 /// type; it never names a package, so it must not be resolved as one.
@@ -86,6 +103,24 @@ pub(crate) fn segments(name: Symbol) -> &'static [Symbol] {
 #[inline]
 pub(crate) fn is_type_capture(constraint: &str) -> bool {
     constraint.as_bytes().starts_with(b"::")
+}
+
+/// The name a type capture binds (`::T` -> `T`), or `None` when `constraint`
+/// is not a capture (see [`is_type_capture`]).
+// Cost: O(1).
+#[inline]
+pub(crate) fn type_capture_name(constraint: &str) -> Option<&str> {
+    // `::` is two ASCII bytes, so index 2 is a char boundary.
+    is_type_capture(constraint).then(|| &constraint[2..])
+}
+
+/// `name` without the trailing `::` of a stash spelling (`Foo::Bar::` ->
+/// `Foo::Bar`, `::` -> ``), or `None` when it does not end in one.
+// Cost: O(1) amortized (the split is memoized per symbol).
+pub(crate) fn stash_stem(name: Symbol) -> Option<Symbol> {
+    split_qualified(name)
+        .filter(|(_, tail)| tail.as_str().is_empty())
+        .map(|(head, _)| head)
 }
 
 #[cfg(test)]
@@ -120,6 +155,26 @@ mod tests {
         assert!(!is_inside_package(s("A::B::c"), s("A::B::c")));
         assert!(!is_inside_package(s("Ax::c"), s("A")));
         assert!(!is_inside_package(s("c"), s("")));
+    }
+
+    #[test]
+    fn capture_and_stash_helpers_agree_with_the_text_forms() {
+        for text in ["::T", "::?CLASS", "T", "", ":T"] {
+            assert_eq!(type_capture_name(text), text.strip_prefix("::"), "{text}");
+        }
+        for text in ["Foo::Bar::", "::", "Foo", "Foo::x"] {
+            let want = text.strip_suffix("::");
+            assert_eq!(stash_stem(s(text)).map(|x| x.as_str()), want, "{text}");
+        }
+    }
+
+    #[test]
+    fn ends_with_segments_respects_the_separator() {
+        assert!(ends_with_segments("A::B::C", "C"));
+        assert!(ends_with_segments("A::B::C", "B::C"));
+        assert!(ends_with_segments("C", "C"));
+        assert!(!ends_with_segments("A::XC", "C"));
+        assert!(!ends_with_segments("C", "A::C"));
     }
 
     #[test]

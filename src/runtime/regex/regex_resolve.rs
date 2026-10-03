@@ -93,7 +93,7 @@ impl Interpreter {
         // Bare-identifier adverb (`token gap:spacer {...}`): the adverb name is
         // itself the candidate identity. Look only inside the last `::` segment
         // so a package-qualified proto name is not mistaken for an adverb.
-        let last_seg = name.rsplit("::").next()?;
+        let last_seg = crate::qualified::last_segment(Symbol::intern(name)).as_str();
         let (_, adverb) = last_seg.split_once(':')?;
         if adverb.is_empty()
             || !adverb
@@ -280,15 +280,15 @@ impl Interpreter {
         name: &str,
         out: &mut Vec<(String, Symbol, Option<String>)>,
     ) {
-        let exact_key = format!("{scope}::{name}");
-        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
+        let exact_key = crate::qualified::qualified(Symbol::intern(scope), Symbol::intern(name));
+        if let Some(defs) = self.registry().token_defs.get(&exact_key) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
                     out.push((p, def.package, None));
                 }
             }
         }
-        for &key in self.proto_variant_keys_sorted(&exact_key).iter() {
+        for &key in self.proto_variant_keys_sorted(exact_key.as_str()).iter() {
             let sym_val = Self::extract_variant_ident(key.as_str());
             if let Some(defs) = self.registry().token_defs.get(&key) {
                 for def in defs {
@@ -305,17 +305,15 @@ impl Interpreter {
     /// `YAMLish::Schema::Core::element`, so the name as written has to be tried
     /// under the matching package and the current package (and their enclosing
     /// scopes) before it counts as unresolvable.
-    pub(super) fn qualified_name_scopes(&self, pkg: Symbol) -> Vec<String> {
-        let mut scopes: Vec<String> = Vec::new();
-        for base in [pkg.to_string(), self.current_package()] {
-            let mut scope = base;
-            while !scope.is_empty() && scope != "GLOBAL" {
-                if !scopes.contains(&scope) {
-                    scopes.push(scope.clone());
+    pub(super) fn qualified_name_scopes(&self, pkg: Symbol) -> Vec<Symbol> {
+        let mut scopes: Vec<Symbol> = Vec::new();
+        for base in [pkg, self.current_package_sym()] {
+            for scope in crate::qualified::package_ancestors(base) {
+                if scope == crate::symbol::wk::global_package() {
+                    break;
                 }
-                match scope.rsplit_once("::") {
-                    Some((head, _)) => scope = head.to_string(),
-                    None => break,
+                if !scopes.contains(&scope) {
+                    scopes.push(scope);
                 }
             }
         }
@@ -327,13 +325,15 @@ impl Interpreter {
         name: &str,
         pkg: Symbol,
     ) -> Vec<(String, Symbol, Option<String>)> {
-        if name.contains("::") {
-            let mut out = self.collect_qualified_token_patterns(name);
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
+            let mut out = self.collect_qualified_token_patterns(name_sym);
             for scope in self.qualified_name_scopes(pkg) {
                 if !out.is_empty() {
                     break;
                 }
-                out = self.collect_qualified_token_patterns(&format!("{scope}::{name}"));
+                out = self
+                    .collect_qualified_token_patterns(crate::qualified::qualified(scope, name_sym));
             }
             return out;
         }
@@ -356,7 +356,7 @@ impl Interpreter {
                 || self.registry().has_proto("", name);
         }
         for scope in self.qualified_name_scopes(pkg) {
-            for owner in self.mro_readonly(&scope) {
+            for owner in self.mro_readonly(scope.as_str()) {
                 let token_marker =
                     crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
                         self.registry().proto_tokens.contains(key)
@@ -374,19 +374,15 @@ impl Interpreter {
     /// The `<Pkg::rule>` half of [`Self::resolve_token_patterns_static_in_pkg`].
     fn collect_qualified_token_patterns(
         &self,
-        name: &str,
+        name: Symbol,
     ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
-        self.collect_token_patterns_for_scope(
-            &name[..name.rfind("::").unwrap()],
-            &name[name.rfind("::").unwrap() + 2..],
-            &mut out,
-        );
-        // Walk the MRO for qualified names, merging proto candidates from
-        // every ancestor (dedup by sym identity, derived-first).
-        if let Some(pos) = name.rfind("::") {
-            let qual_pkg = &name[..pos];
-            let token_name = &name[pos + 2..];
+        // Callers pass a qualified name, so the split always succeeds.
+        if let Some((qual_pkg_sym, token_name)) = crate::qualified::split_qualified(name) {
+            let (qual_pkg, token_name) = (qual_pkg_sym.as_str(), token_name.as_str());
+            self.collect_token_patterns_for_scope(qual_pkg, token_name, &mut out);
+            // Walk the MRO for qualified names, merging proto candidates from
+            // every ancestor (dedup by sym identity, derived-first).
             let mut seen: std::collections::HashSet<Option<String>> =
                 out.iter().map(|e| e.2.clone()).collect();
             let own = out.len();
@@ -402,7 +398,7 @@ impl Interpreter {
             // qualified package so nested subrule lookups dispatch
             // virtually through the receiver's MRO (Liskov substitution).
             for entry in out.iter_mut().skip(own) {
-                entry.1 = Symbol::intern(qual_pkg);
+                entry.1 = qual_pkg_sym;
             }
         }
         out
@@ -439,10 +435,8 @@ impl Interpreter {
             // package. Namespace nesting is lexical visibility, but it is not
             // represented in an MRO: `my regex nr` declared in `X` is stored
             // as `X::nr`, while a role method resolves in `X::RR`.
-            let mut scope = pkg.to_string();
-            while let Some((parent, _)) = scope.rsplit_once("::") {
-                scope = parent.to_string();
-                self.collect_token_patterns_for_scope(&scope, name, &mut out);
+            for scope in crate::qualified::package_ancestors(pkg).skip(1) {
+                self.collect_token_patterns_for_scope(scope.as_str(), name, &mut out);
                 if !out.is_empty() {
                     return out;
                 }

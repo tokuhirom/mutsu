@@ -748,11 +748,7 @@ pub(super) fn dispatch(
                 attributes,
                 ..
             } = target.view()
-                && class_name
-                    .as_str()
-                    .rsplit("::")
-                    .next()
-                    .is_some_and(|short| short == "Pointer")
+                && crate::qualified::last_segment(class_name).as_str() == "Pointer"
             {
                 let addr = attributes
                     .as_map()

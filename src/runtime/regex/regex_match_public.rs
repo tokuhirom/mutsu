@@ -289,7 +289,11 @@ impl Interpreter {
     fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {
         let compact: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
         let inner = compact.strip_prefix("^<")?.strip_suffix(">$")?;
-        if inner.is_empty() || inner.contains('<') || inner.contains('>') || inner.contains("::") {
+        if inner.is_empty()
+            || inner.contains('<')
+            || inner.contains('>')
+            || crate::qualified::is_qualified(crate::symbol::Symbol::intern(inner))
+        {
             return None;
         }
         Some(inner.to_string())

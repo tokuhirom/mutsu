@@ -53,6 +53,9 @@
 #   src/qualified.rs, src/qualified/, src/meta_ns.rs
 #                   the memoizing constructors; their own `format!` is the
 #                   one that is allowed
+#   src/str_scan.rs the byte-scan primitive `has_double_colon` itself and its
+#                   parity tests against `str::contains`/`rsplit_once`; every
+#                   CALL of it elsewhere still counts
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -69,7 +72,7 @@ GLOBAL_RE='== *"GLOBAL"|!= *"GLOBAL"'
 SCAN_RE='\.(contains|split|rsplit|rsplit_once|split_once|splitn|rsplitn|find|rfind|starts_with|ends_with|strip_prefix|strip_suffix|matches)\("::"\)|has_double_colon\('
 
 exempt() {
-    grep -vE '^src/(parser|compiler|qualified)/|^src/(symbol|qualified|qualified_tail_index)\.rs:|^src/meta_ns\.rs:'
+    grep -vE '^src/(parser|compiler|qualified)/|^src/(symbol|qualified|qualified_tail_index|str_scan)\.rs:|^src/meta_ns\.rs:'
 }
 # Whole-line comments only: prose that quotes a pattern is not a call site, but
 # appending a trailing `// ...` to a real one must never silence the gate.

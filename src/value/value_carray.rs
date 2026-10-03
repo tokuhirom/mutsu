@@ -47,7 +47,7 @@ pub(crate) fn is_native_carray_class(class_name: &str) -> bool {
 /// `uint8`), or `None` if this is not a parameterised `CArray` at all.
 pub(crate) fn carray_elem_type_name(class_name: &str) -> Option<&str> {
     let (base, rest) = class_name.split_once('[')?;
-    let base = base.rsplit("::").next().unwrap_or(base);
+    let base = crate::qualified::last_segment(crate::symbol::Symbol::intern(base)).as_str();
     if base != "CArray" {
         return None;
     }

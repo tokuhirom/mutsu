@@ -532,7 +532,8 @@ pub(super) fn dispatch(
             let resolved = name.resolve();
             let full = crate::value::user_facing_type_name(&resolved);
             if method == "gist" {
-                let short = full.rsplit("::").next().unwrap_or(&full);
+                let short =
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(&full)).as_str();
                 Some(Ok(Value::str(format!("({})", short))))
             } else {
                 // .raku returns the full type name

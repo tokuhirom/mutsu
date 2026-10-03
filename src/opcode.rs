@@ -9985,11 +9985,11 @@ impl CompiledCode {
     fn collect_bare_callee_names(&self, names: &mut std::collections::HashSet<Symbol>) {
         for op in &self.ops {
             if let Some(idx) = Self::op_callee_name_const_idx(op)
-                && let Some(ValueView::Str(name)) =
-                    self.constants.get(idx as usize).map(Value::view)
-                && !name.contains("::")
+                && let Some(ValueView::Str(_)) = self.constants.get(idx as usize).map(Value::view)
+                && let name = self.const_sym(idx)
+                && !crate::qualified::is_qualified(name)
             {
-                names.insert(Symbol::intern(&name));
+                names.insert(name);
             }
         }
         for nested in &self.closure_compiled_codes {
@@ -11094,10 +11094,11 @@ impl CompiledCode {
                 OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx) => {
                     if let Some(value) = self.constants.get(*name_idx as usize)
                         && let ValueView::Str(name) = value.view()
-                        && name
-                            .trim_end_matches("::")
-                            .split("::")
-                            .all(|part| part == "CALLER")
+                        && crate::qualified::segments(crate::symbol::Symbol::intern(
+                            name.trim_end_matches("::"),
+                        ))
+                        .iter()
+                        .all(|part| part.as_str() == "CALLER")
                     {
                         self.uses_callframe = true;
                     }

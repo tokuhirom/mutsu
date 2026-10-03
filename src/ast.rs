@@ -355,7 +355,7 @@ impl ParamDef {
         }
         self.type_constraint
             .as_deref()
-            .and_then(|tc| tc.strip_prefix("::"))
+            .and_then(crate::qualified::type_capture_name)
     }
 
     /// True when this parameter is a capture that carries a subsignature, i.e.
