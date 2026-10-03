@@ -1,0 +1,19 @@
+# Existing Interpreter fields classified as io by ADR-10779 D2.
+chroot_root
+doc_comment_list
+doc_comments
+encoding_registry
+io_handles
+newline_mode
+output_sink
+program_path
+program_path_sym
+surfaced_parse_warnings
+tap
+test_assertion_line_stack
+user_io_read_buffers
+warn_output
+warn_suppression_boundaries
+warn_suppression_depth
+why_cache
+why_object_cache

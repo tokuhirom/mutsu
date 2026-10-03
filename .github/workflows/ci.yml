@@ -323,7 +323,7 @@ jobs:
 
       - name: No new direct field on Interpreter
         # ADR-10779 D4: every direct field of struct Interpreter must be
-        # allowed (scripts/interp-fields-baseline.txt or scripts/interp-fields.d/)
+        # allowed by its scripts/interp-fields.d/<subsystem>.txt file
         # and belong to a subsystem. New state goes into its subsystem's type. Self-tests
         # its parser first.
         run: make check-interp-fields

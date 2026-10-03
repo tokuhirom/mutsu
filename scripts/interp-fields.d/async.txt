@@ -1,2 +1,2 @@
-# ADR-10779 async subsystem: AsyncState (src/runtime/async_state.rs).
+# Existing Interpreter fields classified as async by ADR-10779 D2.
 async_state

@@ -106,9 +106,10 @@ and its deletion criterion.
             references).
       - [x] Phase 2 — the field × file map (`scripts/interp-field-matrix.py`).
       - [ ] Phase 3 — extract the subsystems, one per PR. `make check-interp-fields` blocks new
-            direct fields; an extraction adds `scripts/interp-fields.d/<subsystem>.txt`. Done:
-            guards, caches, regex, async, threads, topic, control (and `ModuleVisibility`);
-            439 → 295 fields. Next: io, dispatch, lexicals, then module and types. `eval` waits on its
+            direct fields; an extraction adds its holder name to
+            `scripts/interp-fields.d/<subsystem>.txt`. Done:
+            guards, caches, regex, async, threads, topic, control, dispatch (and `ModuleVisibility`);
+            439 → 266 fields. Next: io, lexicals, then module and types. `eval` waits on its
             `pending_*` fields becoming parameters.
       - [ ] Phase 4 — the crate split, a separate measured decision (ADR D7).
       The completion criterion is reached when these are deleted:
@@ -116,8 +117,6 @@ and its deletion criterion.
       - the `pending_*` handoff fields;
       - the per-field body of `clone_for_thread`, which becomes one `fork_for_thread` call per
         subsystem;
-      - the frozen `scripts/interp-fields-baseline.txt`
-        ([#11337](https://github.com/tokuhirom/mutsu/issues/11337));
       - every entry of `scripts/layer-deps-baseline.txt`, so `check-layer-deps` reads 0.
 
       Progress is recorded in ADR-10779 §Implementation status, not here.

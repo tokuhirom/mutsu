@@ -1,2 +1,2 @@
-# ADR-10779 threads subsystem: ThreadSharing (src/runtime/thread_sharing.rs).
+# Existing Interpreter fields classified as threads by ADR-10779 D2.
 threads
