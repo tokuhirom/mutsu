@@ -1,6 +1,6 @@
 //! The receiver attributes a compiled method call binds from (#8880).
 //!
-//! Only the full binder in [`Interpreter::call_compiled_method`] reads the
+//! Only the full binder in [`crate::runtime::Interpreter::call_compiled_method`] reads the
 //! receiver's attributes as a map; the fast path reads them cell-direct. A
 //! caller holding the receiver's live attribute cell therefore hands over the
 //! cell, and the whole-map clone is paid only when the full binder runs, not
