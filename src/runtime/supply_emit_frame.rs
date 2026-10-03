@@ -26,6 +26,13 @@ pub(crate) struct EmitFrame {
     pub(crate) react_setup: Option<super::react_setup::ReactSetup>,
     /// The tap a tapped on-demand body's plain emits stream to (#11434).
     pub(crate) tap_stream: Option<Box<super::supply_tap_stream::TapStream>>,
+    /// A `quit` the on-demand body called on its own emitter while it was
+    /// still running, held back to be delivered after the values collected
+    /// before it, exactly like a `die` out of the body (#11237).
+    pub(crate) quit: Option<Value>,
+    /// The body quit its emitter (held back in `quit`, or delivered at once
+    /// when the frame streams to a tap): later emits and quits are dropped.
+    pub(crate) quit_seen: bool,
 }
 
 impl EmitFrame {
@@ -73,5 +80,48 @@ impl Interpreter {
             Some(owner) if sid != Some(owner) => None,
             _ => Some(&mut frame.values),
         }
+    }
+
+    /// Handle `$emitter.quit(reason)` made while the on-demand body owning
+    /// the supplier `sid` is still running. When the body's values are
+    /// collected (replayed only once it returns), the quit is held back on
+    /// the frame so it reaches the consumer after them. Returns true when the
+    /// caller must not deliver the quit now: it was held back, or the body
+    /// already quit. Returns false when no such body is running, or when its
+    /// frame streams to a tap (the values before it are delivered already),
+    /// so the quit is delivered immediately.
+    // Cost: O(d), d = depth of the emit-buffer stack (nested supply bodies).
+    pub(super) fn defer_on_demand_quit(&mut self, sid: u64, reason: &Value) -> bool {
+        let Some(frame) = self
+            .async_state
+            .supply_emit_buffer
+            .iter_mut()
+            .rev()
+            .find(|f| f.owner == Some(sid))
+        else {
+            return false;
+        };
+        if frame.quit_seen {
+            return true;
+        }
+        frame.quit_seen = true;
+        if frame.tap_stream.is_some() {
+            return false;
+        }
+        frame.quit = Some(reason.clone());
+        true
+    }
+
+    /// Whether the running on-demand body owning `sid` already quit, so a
+    /// later `emit` on that emitter is dropped.
+    // Cost: O(d), d = depth of the emit-buffer stack (nested supply bodies).
+    pub(super) fn on_demand_quit_pending(&self, sid: Option<u64>) -> bool {
+        let Some(sid) = sid else { return false };
+        self.async_state
+            .supply_emit_buffer
+            .iter()
+            .rev()
+            .find(|f| f.owner == Some(sid))
+            .is_some_and(|f| f.quit_seen)
     }
 }

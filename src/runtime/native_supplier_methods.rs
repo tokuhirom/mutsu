@@ -74,7 +74,9 @@ impl Interpreter {
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
                 let value = args.first().cloned().unwrap_or(Value::NIL);
-                if Self::supply_is_terminated(attributes) {
+                if Self::supply_is_terminated(attributes)
+                    || self.on_demand_quit_pending(supplier_id_from_attrs(attributes))
+                {
                     return Ok(Value::NIL);
                 }
                 // Streaming on-demand react path (see native_supplier_mut emit).
@@ -257,6 +259,11 @@ impl Interpreter {
                 } else {
                     Self::as_exception_value(reason)
                 };
+                if let Some(supplier_id) = supplier_id_from_attrs(attributes)
+                    && self.defer_on_demand_quit(supplier_id, &reason)
+                {
+                    return Ok(Value::NIL);
+                }
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
                     close_supplier_channel_taps(supplier_id, Some(reason.clone()));
@@ -344,7 +351,9 @@ impl Interpreter {
         match method {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);
-                if Self::supply_is_terminated(&attrs) {
+                if Self::supply_is_terminated(&attrs)
+                    || self.on_demand_quit_pending(supplier_id_from_attrs(&attrs))
+                {
                     return Ok((Value::NIL, attrs));
                 }
                 // Streaming on-demand react path: deliver synchronously to the
@@ -572,6 +581,13 @@ impl Interpreter {
                 } else {
                     Self::as_exception_value(reason)
                 };
+                // The on-demand body that owns this emitter is still running:
+                // deliver the quit after the values it emitted so far (#11237).
+                if let Some(supplier_id) = supplier_id_from_attrs(&attrs)
+                    && self.defer_on_demand_quit(supplier_id, &reason)
+                {
+                    return Ok((Value::NIL, attrs));
+                }
                 attrs.insert("done".to_string(), Value::TRUE);
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 // Same as `done` above: the quit propagation below wakes the taps

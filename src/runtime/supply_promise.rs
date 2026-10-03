@@ -269,6 +269,10 @@ impl Interpreter {
             .supply_emit_buffer
             .pop()
             .unwrap_or_default();
+        // A `quit` on the emitter during the body ends it like a `die` would.
+        if let Some(reason) = frame.quit {
+            result = Err(Self::runtime_error_from_supply_reason(reason));
+        }
         (
             result,
             frame.values,
