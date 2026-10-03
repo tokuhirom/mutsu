@@ -177,5 +177,5 @@ these preconditions:
 - Phase 1 (move misplaced helpers down, `check-layer-deps` ratchet): 208 → 71 upward references
   in #10809, #10837, #10871, #10909, #10973, #11120, #11130. Ongoing under D6.
 - Phase 2 (state map): done in #11141.
-- Phase 3 (this ADR): D4 ratchet landed (`make check-interp-fields`, baseline 438). Next:
+- Phase 3 (this ADR): D4 ratchet landed (`make check-interp-fields`, baseline 439). Next:
   `guards`, then `caches`.
