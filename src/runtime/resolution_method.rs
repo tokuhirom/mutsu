@@ -669,7 +669,15 @@ impl Interpreter {
                     base.to_string()
                 };
                 if arg_idx < args.len() {
-                    let value = args[arg_idx];
+                    // A container argument (a hash element, `%h.values[0]`,
+                    // a Pair's value) ranks by its contents, as it type-checks.
+                    let decont;
+                    let value = if args[arg_idx].is_container_ref() {
+                        decont = args[arg_idx].deref_container();
+                        &decont
+                    } else {
+                        args[arg_idx]
+                    };
                     total += if matches!(value.view(), ValueView::Nil) {
                         Self::nil_type_distance(&resolved)
                     } else {
