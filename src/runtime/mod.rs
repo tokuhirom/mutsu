@@ -682,6 +682,7 @@ pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
 pub(crate) use self::decl_types::*;
+mod attribute_core_traits;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
