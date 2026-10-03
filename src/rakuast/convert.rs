@@ -3790,9 +3790,16 @@ fn desugared(name: &str) -> RuntimeError {
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
 /// A variable reference. A package-qualified one (`$Foo::v`, `@A::B::c`) is a
 /// `Var::Package` carrying the segmented `Name` and the sigil, as Rakudo
-/// 2026.09 renders it; anything else is a `Var::Lexical` of the whole
-/// spelling.
+/// 2026.09 renders it; a dynamic one (`$*x`, named `*x` by the parser) is a
+/// `Var::Dynamic` of the whole spelling; anything else is a `Var::Lexical` of
+/// the whole spelling.
 fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    if name.len() > 1 && name.starts_with('*') {
+        return RakuAstNode {
+            class: RakuAstClass::VarDynamic,
+            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
+        };
+    }
     if name_parts::is_qualified_identifier(name) {
         return RakuAstNode {
             class: RakuAstClass::VarPackage,
@@ -4234,7 +4241,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("colonpair variable key"));
     };
     let value = convert_expr(right)?;
-    if value.class != RakuAstClass::VarLexical {
+    if !value.class.is_simple_variable() {
         return Err(unsupported("colonpair variable value"));
     }
     Ok(RakuAstNode {
