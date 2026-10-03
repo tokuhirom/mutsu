@@ -861,6 +861,7 @@ mod methods_temporal;
 mod methods_trans;
 mod methods_type_coerce;
 mod methods_walk;
+mod mixin_role_attrs;
 pub(crate) mod native_increment_dispatch;
 pub(crate) mod native_infix_dispatch;
 mod native_io;

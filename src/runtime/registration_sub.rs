@@ -1861,17 +1861,12 @@ impl Interpreter {
                         name
                     )))
                     .cloned();
+                // Built the way `&name` builds it, so the handler sees the
+                // routine's return type (`$r.returns`, `$r.signature.returns`:
+                // upstream NativeCall's `return_hash_for`), its callable type
+                // and its stable id.
                 let sub_val = if let Some(def) = installed_def {
-                    Value::make_sub_for_routine(
-                        def.package,
-                        def.name,
-                        def.params.clone(),
-                        def.param_defs.clone(),
-                        def.body.clone(),
-                        def.is_rw,
-                        self.env.clone(),
-                        def.compiled.clone(),
-                    )
+                    self.sub_value_from_function_def((*def).clone())
                 } else {
                     Value::make_sub(
                         Symbol::intern(&self.current_package()),

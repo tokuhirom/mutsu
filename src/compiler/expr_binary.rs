@@ -907,6 +907,11 @@ impl Compiler {
                 let var_name = match left {
                     // A sigil-less constant's binding is its term key (#9962).
                     Expr::BareWord(name) => Some(self.sigilless_storage_key(name)),
+                    // `&f does R` rebinds the routine's `&f` the way `$x does R`
+                    // rebinds `$x`, so a later `&f` is the mixed-in routine,
+                    // attribute state included (#11459), rather than a fresh
+                    // rebuild of the declared sub.
+                    Expr::CodeVar(name) => Some(format!("&{name}")),
                     other => other.container_var_key(),
                 };
                 let is_bareword = matches!(left, Expr::BareWord(_));
