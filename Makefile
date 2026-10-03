@@ -152,11 +152,12 @@ check-layer-deps:
 	python3 scripts/check-layer-deps.py --self-test
 	python3 scripts/check-layer-deps.py
 
-# Ratchet on the direct fields of `struct Interpreter` (ADR-10779 D4): their
-# number, in scripts/interp-fields-baseline.txt, may go down, never up, and
-# every field must belong to a subsystem (the SUBSYSTEMS rules in the script).
-# New state goes into its subsystem's type. Re-cut after extracting fields:
-#   scripts/interp-field-matrix.py --update
+# Ratchet on the direct fields of `struct Interpreter` (ADR-10779 D4): every
+# field must be allowed -- listed in the frozen scripts/interp-fields-baseline.txt
+# or in a file under scripts/interp-fields.d/ -- and belong to a subsystem (the
+# SUBSYSTEMS rules in the script). New state goes into its subsystem's type; a
+# PR extracting a subsystem allows its holder field by adding a new file
+# scripts/interp-fields.d/<subsystem>.txt (no shared file is edited).
 check-interp-fields:
 	python3 scripts/interp-field-matrix.py --self-test
 	python3 scripts/interp-field-matrix.py --check

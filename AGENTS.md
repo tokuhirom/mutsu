@@ -281,8 +281,9 @@ scripts/dev stop <id>
 - **No new fields on `Interpreter`.** New state goes into the subsystem type it belongs to
   ([ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md); the subsystems
   are the `SUBSYSTEMS` rules in `scripts/interp-field-matrix.py`), and a value passed from a
-  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` is a
-  shrinking ratchet over `scripts/interp-fields-baseline.txt`.
+  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` fails on a
+  field not allowed by the frozen `scripts/interp-fields-baseline.txt` or `scripts/interp-fields.d/`;
+  extracting a subsystem allows its holder field by adding a new file in that directory.
 - **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
   (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
   closure is called on the interpreter you already have (`call_compiled_closure`,
