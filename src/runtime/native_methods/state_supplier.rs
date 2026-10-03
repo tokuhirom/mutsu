@@ -1166,7 +1166,7 @@ pub(in crate::runtime) enum SupplierEmitAction {
 
 /// The taps of `supplier_id` that would receive an emission right now — not
 /// closed, and not already past their `head_limit`. These are the same two
-/// skip conditions [`supplier_emit_callbacks_inner`]'s loop applies, so an index
+/// skip conditions [`supplier_emit_callbacks`]'s loop applies, so an index
 /// this returns is one that loop will act on.
 ///
 /// A `Channel.Supply` tap counts as ready to take values from the channel
