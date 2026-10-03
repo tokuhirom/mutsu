@@ -447,7 +447,7 @@ impl Interpreter {
                                 // A frame's binding window: rewinding past the
                                 // call uninstalls it (`rx_scope`).
                                 let window = window.map(|window| {
-                                    let k = Self::rx_window_adopt(&mut scopes, window);
+                                    let k = self.rx_window_adopt(&mut scopes, window);
                                     reg_trail.push((UNDO_ENTER, k));
                                     k
                                 });
