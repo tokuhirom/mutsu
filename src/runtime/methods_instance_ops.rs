@@ -92,11 +92,7 @@ impl Interpreter {
     /// class. DBDish's Pg StatementHandle BUILD calls `self!get-meta` inside a
     /// block passed to `$!parent.protect-connection` this way.
     fn lexical_self_allows_private(&mut self, resolved_owner: &str) -> bool {
-        let Some(ValueView::Instance {
-            class_name: self_cls,
-            ..
-        }) = self.env.get("self").map(Value::view)
-        else {
+        let Some(self_cls) = self.lexical_self_class() else {
             return false;
         };
         let self_cls = self_cls.resolve();
@@ -121,14 +117,20 @@ impl Interpreter {
     /// handing a subclass an inheritance-shaped grant the trust check already
     /// denied.
     fn lexical_self_is_private_owner(&mut self, resolved_owner: &str) -> bool {
-        let Some(ValueView::Instance {
-            class_name: self_cls,
-            ..
-        }) = self.env.get("self").map(Value::view)
-        else {
-            return false;
-        };
-        self_cls.resolve() == resolved_owner
+        self.lexical_self_class()
+            .is_some_and(|self_cls| self_cls.resolve() == resolved_owner)
+    }
+
+    /// The class of the env `self`: an instance's class, or the type object
+    /// itself when a method runs on one (`T.all` whose lazy `gather { self!all }`
+    /// is pulled later, outside the method; Trie).
+    // Cost: O(1).
+    fn lexical_self_class(&self) -> Option<Symbol> {
+        match self.env.get("self").map(Value::view) {
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name),
+            Some(ValueView::Package(name)) => Some(name),
+            _ => None,
+        }
     }
 
     /// Mu's default `.gist`/`.raku`/`.perl` rendering for a plain user

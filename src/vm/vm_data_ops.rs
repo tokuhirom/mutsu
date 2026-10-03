@@ -2,6 +2,34 @@ use super::*;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// A finite `gather`/`take` or finite-endpoint closure sequence held as an
+    /// element (of a list literal, or of a slice adverb's result row) is run
+    /// now and stands as the `Seq` of its values, the way an eager list
+    /// literal holds it. `None` for anything else, including an unbounded
+    /// `... *` sequence, a lazy pipeline and a `lazy`-marked list, which stay
+    /// lazy (or a list whose body dies, which is left to its reader).
+    // Cost: O(e), e = elements the sequence produces.
+    pub(crate) fn force_finite_lazy_element(&mut self, val: &Value) -> Option<Value> {
+        let ValueView::LazyList(ll) = val.view() else {
+            return None;
+        };
+        let finite = (ll.coroutine.is_some()
+            && ll.sequence_spec.is_none()
+            && ll.scan_spec.is_none()
+            && ll.lazy_pipe.is_none())
+            || ll.has_finite_closure_endpoint();
+        let preserved = matches!(
+            ll.env
+                .get("__mutsu_preserve_lazy_on_array_assign")
+                .map(Value::view),
+            Some(ValueView::Bool(true))
+        );
+        if !finite || preserved {
+            return None;
+        }
+        self.force_lazy_list_vm(&ll).ok().map(Value::seq)
+    }
+
     /// ADR-0049 (slices 1-2): a real `Array`/`Hash` element is a `Scalar`
     /// container, and a `Scalar` cannot hold `Nil` -- storing `Nil` into one
     /// restores the *owning container's own* default (`is default(...)` ->
@@ -141,27 +169,12 @@ impl Interpreter {
                     Ok(_) => val.clone(),
                     Err(_) => continue,
                 }
-            } else if let ValueView::LazyList(ll) = val.view()
-                && ((ll.coroutine.is_some()
-                    && ll.sequence_spec.is_none()
-                    && ll.scan_spec.is_none()
-                    && ll.lazy_pipe.is_none())
-                    || ll.has_finite_closure_endpoint())
-                && !matches!(
-                    ll.env
-                        .get("__mutsu_preserve_lazy_on_array_assign")
-                        .map(Value::view),
-                    Some(ValueView::Bool(true))
-                )
-            {
+            } else if let Some(forced) = self.force_finite_lazy_element(&val) {
                 // Array literals (`[...]`) are eager: a finite gather/take or
                 // finite-endpoint closure sequence must run now so its elements
                 // materialize. Unbounded `... *` sequences and lazy pipelines
                 // stay lazy; a `lazy`-marked list stays lazy too.
-                match self.force_lazy_list_vm(&ll) {
-                    Ok(items) => Value::seq(items),
-                    Err(_) => val,
-                }
+                forced
             } else {
                 val
             };

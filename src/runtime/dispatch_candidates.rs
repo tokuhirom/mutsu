@@ -918,11 +918,8 @@ impl Interpreter {
                         // List: `multi h(@raw)` stays narrower than
                         // `multi h(Any:D $x)` for `h("a b".words)`, as in rakudo,
                         // instead of scoring as unrelated to `Positional`.
-                        if implicit == "Positional" && arg.is_seq_value() {
-                            total += self.type_hierarchy_distance(
-                                implicit,
-                                &Value::package(Symbol::intern("List")),
-                            );
+                        if let Some(distance) = self.seq_as_positional_distance(implicit, &arg) {
+                            total += distance;
                             continue;
                         }
                         total += self.type_hierarchy_distance_with_var_type(

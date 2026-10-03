@@ -728,7 +728,9 @@ impl Interpreter {
                 } else {
                     "Associative"
                 };
-                total += self.type_hierarchy_distance(implicit, args[arg_idx]);
+                total += self
+                    .seq_as_positional_distance(implicit, args[arg_idx])
+                    .unwrap_or_else(|| self.type_hierarchy_distance(implicit, args[arg_idx]));
             } else if arg_idx < args.len() {
                 // An untyped positional that receives no argument is not
                 // compared at all, like a typed one above (#11173).
