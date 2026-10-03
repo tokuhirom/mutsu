@@ -7,7 +7,7 @@
 //! value only as a per-stack identifier (Log::Dispatch's `:thread-id`).
 //!
 //! The initial thread is stack `0`. A pooled task runs inside
-//! [`run_on_fresh_stack`], which gives it a new id for its duration; any other
+//! `run_on_fresh_stack`, which gives it a new id for its duration; any other
 //! thread draws a new id on its first read and keeps it.
 use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
