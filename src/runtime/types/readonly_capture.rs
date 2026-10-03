@@ -27,17 +27,38 @@
 //! Its compiled body may not exist yet when the declaration registers, so the
 //! declaring frame's marks are snapshotted whole
 //! ([`Interpreter::capture_declaring_readonly_state`]) onto the `MethodDef`,
-//! and method entry ([`Interpreter::reconcile_method_readonly`]) narrows the
-//! snapshot to the variables the body writes.
+//! and method entry narrows the snapshot to the variables the body writes. A
+//! top-level routine's code value (`my $s = &setter; $s($v)`, #11070) takes the
+//! same declaration-time snapshot from its `FunctionDef`: its free variables
+//! belong to no running routine frame, so the frame that mentions `&setter`
+//! says nothing about them.
+//!
+//! Both kinds of record go through one reconcile
+//! ([`Interpreter::reconcile_captured_readonly`]); a declaration-time snapshot
+//! differs only in which absent marks it clears (see
+//! [`crate::value::ReadonlySnapshot::at_declaration`]).
 
 use super::*;
+use crate::ast::ReadonlyKind;
 use crate::opcode::CompiledCode;
-use crate::value::CapturedReadonly;
+use crate::value::{CapturedReadonly, ReadonlySnapshot};
 use std::sync::{Arc, LazyLock};
 
-/// Shared by every code object whose creating frame had nothing readonly to
-/// record, so the common case allocates nothing.
-static NO_READONLY_CAPTURES: LazyLock<CapturedReadonly> = LazyLock::new(|| Arc::from([]));
+/// Shared by every creation-time record whose frame had nothing readonly, so
+/// the common case allocates nothing.
+static NO_READONLY_CAPTURES: LazyLock<CapturedReadonly> =
+    LazyLock::new(|| snapshot(Vec::new(), false));
+
+/// The declaration-time counterpart of [`NO_READONLY_CAPTURES`].
+static NO_READONLY_AT_DECLARATION: LazyLock<CapturedReadonly> =
+    LazyLock::new(|| snapshot(Vec::new(), true));
+
+fn snapshot(marks: Vec<(Symbol, ReadonlyKind)>, at_declaration: bool) -> CapturedReadonly {
+    Arc::new(ReadonlySnapshot {
+        marks: marks.into_boxed_slice(),
+        at_declaration,
+    })
+}
 
 /// Is `sym` a variable whose readonly state is decided by the bare-name
 /// registry and is not one of the names the call machinery manages itself?
@@ -80,7 +101,7 @@ impl Interpreter {
         if self.no_readonly_vars() {
             return Some(Arc::clone(&NO_READONLY_CAPTURES));
         }
-        let mut record: Vec<(Symbol, crate::ast::ReadonlyKind)> = Vec::new();
+        let mut record: Vec<(Symbol, ReadonlyKind)> = Vec::new();
         for sym in written_free_vars(code) {
             if let Some(kind) = self.readonly_kind_sym(sym)
                 && !record.iter().any(|(s, _)| *s == sym)
@@ -91,15 +112,44 @@ impl Interpreter {
         Some(if record.is_empty() {
             Arc::clone(&NO_READONLY_CAPTURES)
         } else {
-            Arc::from(record)
+            snapshot(record, false)
         })
     }
 
-    /// Put the readonly registry in the state a code object's captured
-    /// variables had when it was created (see the module doc). Must run inside
-    /// the call's readonly frame (after `push_call_frame`), so the changes are
-    /// journaled and the caller's marks are restored on return.
-    // Cost: O(w), w = scalar free variables `code` writes; O(1) when nothing is readonly.
+    /// Snapshot the readonly marks of the frame a declaration (a method, a
+    /// routine) registers in. The compiled body -- and so the set of variables
+    /// it writes -- may not exist yet, so every reconcilable mark is kept and
+    /// the call narrows it.
+    // Cost: O(r), r = names currently marked readonly; O(1) when none is.
+    pub(crate) fn capture_declaring_readonly_state(&self) -> CapturedReadonly {
+        if self.no_readonly_vars() {
+            return Arc::clone(&NO_READONLY_AT_DECLARATION);
+        }
+        let record: Vec<(Symbol, ReadonlyKind)> = self
+            .readonly_vars
+            .borrow()
+            .iter()
+            .filter(|(sym, _)| is_reconcilable(*sym))
+            .collect();
+        if record.is_empty() {
+            Arc::clone(&NO_READONLY_AT_DECLARATION)
+        } else {
+            snapshot(record, true)
+        }
+    }
+
+    /// Put the variables `code` writes into the readonly state `record` holds
+    /// (see the module doc). Must run inside the call's readonly frame (after
+    /// `push_call_frame`), so the changes are journaled and the caller's marks
+    /// are restored on return.
+    ///
+    /// A name the record lacks was writable where it was taken. A creation-time
+    /// record clears any mark on it. A declaration-time snapshot only clears a
+    /// [`ReadonlyKind::Alias`] mark (a parameter or loop alias of some running
+    /// frame): an immutable-kind mark describes the binding itself
+    /// (`my $x := 42`), which may be made after the declaration registered.
+    // Cost: O(w * r), w = scalar free variables `code` writes, r = record size
+    // (both tiny); O(1) when nothing is readonly.
     pub(crate) fn reconcile_captured_readonly(
         &mut self,
         record: Option<&CapturedReadonly>,
@@ -108,74 +158,23 @@ impl Interpreter {
         let Some(record) = record else {
             return;
         };
-        if record.is_empty() && self.no_readonly_vars() {
+        if record.marks.is_empty() && self.no_readonly_vars() {
             return;
         }
         for sym in written_free_vars(code) {
-            let wanted = record.iter().find(|(s, _)| *s == sym).map(|(_, k)| *k);
-            if self.readonly_kind_sym(sym) == wanted {
-                continue;
-            }
-            match wanted {
-                Some(kind) => self.mark_readonly_sym_with(sym, kind),
-                None => self.unmark_readonly_sym(sym),
-            }
-        }
-    }
-
-    /// Snapshot the readonly marks of the frame a method declaration registers
-    /// in, for [`Self::reconcile_method_readonly`] to narrow at call time. The
-    /// method's compiled body (and so the set of variables it writes) may not
-    /// exist yet, so every reconcilable mark is kept.
-    // Cost: O(r), r = names currently marked readonly; O(1) when none is.
-    pub(crate) fn capture_declaring_readonly_state(&self) -> CapturedReadonly {
-        if self.no_readonly_vars() {
-            return Arc::clone(&NO_READONLY_CAPTURES);
-        }
-        let record: Vec<(Symbol, crate::ast::ReadonlyKind)> = self
-            .readonly_vars
-            .borrow()
-            .iter()
-            .filter(|(sym, _)| is_reconcilable(*sym))
-            .collect();
-        if record.is_empty() {
-            Arc::clone(&NO_READONLY_CAPTURES)
-        } else {
-            Arc::from(record)
-        }
-    }
-
-    /// Method-entry counterpart of [`Self::reconcile_captured_readonly`]: put
-    /// the variables `code` writes back into the state the declaring frame's
-    /// snapshot recorded. Must run inside the call's readonly frame.
-    ///
-    /// Only a [`crate::ast::ReadonlyKind::Alias`] mark (a parameter or loop
-    /// alias, i.e. a binding of some *running* frame) is dropped when the
-    /// snapshot lacks the name. An immutable-kind mark describes the binding
-    /// itself (`my $x := 42`), and a top-level one may be made after the class
-    /// registered -- dropping it would let the method assign an immutable.
-    // Cost: O(w * s), w = scalar free variables `code` writes, s = snapshot size
-    // (both tiny); O(1) when nothing is readonly.
-    pub(crate) fn reconcile_method_readonly(
-        &mut self,
-        record: Option<&CapturedReadonly>,
-        code: &CompiledCode,
-    ) {
-        let Some(record) = record else {
-            return;
-        };
-        if record.is_empty() && self.no_readonly_vars() {
-            return;
-        }
-        for sym in written_free_vars(code) {
-            let wanted = record.iter().find(|(s, _)| *s == sym).map(|(_, k)| *k);
+            let wanted = record
+                .marks
+                .iter()
+                .find(|(s, _)| *s == sym)
+                .map(|(_, k)| *k);
             let current = self.readonly_kind_sym(sym);
             if current == wanted {
                 continue;
             }
             match (wanted, current) {
                 (Some(kind), _) => self.mark_readonly_sym_with(sym, kind),
-                (None, Some(crate::ast::ReadonlyKind::Alias)) => self.unmark_readonly_sym(sym),
+                (None, Some(ReadonlyKind::Alias)) => self.unmark_readonly_sym(sym),
+                (None, Some(_)) if !record.at_declaration => self.unmark_readonly_sym(sym),
                 (None, _) => {}
             }
         }

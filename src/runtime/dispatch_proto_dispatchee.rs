@@ -108,6 +108,7 @@ impl Interpreter {
             compiled: None,
             dispatchee: Some(code.clone()),
             body_fp_cache,
+            captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
         };
         let key = Self::dispatchee_row_key(proto_key, &def);

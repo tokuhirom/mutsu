@@ -581,6 +581,7 @@ impl Interpreter {
             compiled: None,
             dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
         };
         let proto_params = fdef.params.clone();

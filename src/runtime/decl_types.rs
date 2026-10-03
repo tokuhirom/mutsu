@@ -251,7 +251,7 @@ pub(crate) struct MethodDef {
     /// in, so method entry can undo a caller's same-named readonly parameter
     /// on an outer variable the body writes (#11054). `None` (synthetic
     /// methods) leaves the registry alone. See
-    /// `Interpreter::reconcile_method_readonly`.
+    /// `Interpreter::reconcile_captured_readonly`.
     pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
     /// The parameter names and source file above, interned on first dispatch
     /// (see [`super::method_def_syms`]).

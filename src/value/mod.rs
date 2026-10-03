@@ -1506,7 +1506,22 @@ pub struct SubData {
 }
 
 /// See [`SubData::captured_readonly`].
-pub(crate) type CapturedReadonly = Arc<[(Symbol, crate::ast::ReadonlyKind)]>;
+pub(crate) type CapturedReadonly = Arc<ReadonlySnapshot>;
+
+/// The readonly marks a code object's (or method's) written free variables
+/// must have while it runs. See `Interpreter::reconcile_captured_readonly`.
+#[derive(Debug)]
+pub(crate) struct ReadonlySnapshot {
+    /// Names readonly in the recorded frame, with their kind. A written free
+    /// variable absent here was writable there.
+    pub(crate) marks: Box<[(Symbol, crate::ast::ReadonlyKind)]>,
+    /// Taken when a *declaration* registered (a method, a top-level routine),
+    /// not when the code object was created. Such a snapshot may predate a
+    /// later `my $x := 42` in the same scope (top-level subs are hoisted), so
+    /// an absent name only clears a parameter/loop-alias mark, never an
+    /// immutable-kind one. A creation-time snapshot clears any absent mark.
+    pub(crate) at_declaration: bool,
+}
 
 /// A code object's parameter names, interned once.
 ///
