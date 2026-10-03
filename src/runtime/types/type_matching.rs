@@ -2010,6 +2010,13 @@ impl Interpreter {
                 return self.type_matches_value(&resolved, value);
             }
         }
+        // A `constant` bound to a mixin TYPE OBJECT (`constant StrType = Str
+        // but Type`) names the type `Str+{Type}`: a value matches it when it
+        // is a `Str` that also does every mixed-in role -- not by identity
+        // with the type object, as for a value constant below.
+        if let Some(matched) = self.mixin_type_constant_matches(constraint, value) {
+            return matched;
+        }
         // A `constant` bound to a value, written where a type goes
         // (`constant TAU = 6.28; sub f(TAU $x)`): rakudo turns it into a value
         // constraint, and smartmatching a definite value is `===`. Also last

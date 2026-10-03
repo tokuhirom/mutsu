@@ -88,11 +88,21 @@ impl VisitMut for EnterExtract {
 }
 
 /// A statement whose body runs on entry to its own frame, not this one's.
+///
+/// An exit phaser (`LEAVE`/`KEEP`/`UNDO`) is not one: rakudo runs an `ENTER`
+/// written inside it on entry to the enclosing block, which is what makes
+/// `LEAVE take now - ENTER now` measure the block (Benchmark's timer). Its
+/// `ENTER` is hoisted to the block's entry like any other.
 fn is_own_frame_stmt(stmt: &Stmt) -> bool {
+    if let Stmt::Phaser { kind, .. } = stmt {
+        return !matches!(
+            kind,
+            PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo
+        );
+    }
     matches!(
         stmt,
-        Stmt::Phaser { .. }
-            | Stmt::SubDecl { .. }
+        Stmt::SubDecl { .. }
             | Stmt::MethodDecl { .. }
             | Stmt::ProtoDecl { .. }
             | Stmt::TokenDecl { .. }

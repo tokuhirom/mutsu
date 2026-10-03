@@ -373,7 +373,8 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
-        | RegexNode::CharClassDigit => {}
+        | RegexNode::CharClassDigit
+        | RegexNode::InternalModifier { .. } => {}
     }
 }
 

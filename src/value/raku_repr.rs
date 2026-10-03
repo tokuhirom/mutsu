@@ -247,6 +247,11 @@ pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
         // real `Code.raku` -- `-> $a { #`(Block|N) ... }` / `sub f { ... }` --
         // lives in the `Sub` method handler.
         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+        // A value with a role mixed in (`"foo" but Type`) may get its `.raku`
+        // from that role (`method raku { callsame() ~ " but Type(...)" }`),
+        // which only method dispatch reaches; the pure renderer would print
+        // the bare `"foo"`.
+        ValueView::Mixin(_, overrides) => overrides.keys().any(|k| k.starts_with("__mutsu_role__")),
         _ => false,
     }
 }
