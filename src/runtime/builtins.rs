@@ -5,8 +5,22 @@ use crate::symbol::Symbol;
 /// `is_builtin_function` and for "Did you mean ...?" routine suggestions.
 /// See [`Interpreter::is_core_code_ref_function`].
 const CORE_CODE_REF_FUNCTION_NAMES: &[&str] = &[
-    "pick", "roll", "head", "tail", "first", "skip", "combinations", "permutations",
-    "classify", "categorize", "deepmap", "duckmap", "nodemap", "produce", "reduce", "cache",
+    "pick",
+    "roll",
+    "head",
+    "tail",
+    "first",
+    "skip",
+    "combinations",
+    "permutations",
+    "classify",
+    "categorize",
+    "deepmap",
+    "duckmap",
+    "nodemap",
+    "produce",
+    "reduce",
+    "cache",
 ];
 
 pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
