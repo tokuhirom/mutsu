@@ -558,9 +558,9 @@ impl Compiler {
             }
             RegexAtom::CodeInterp { .. } => {
                 // `$( … )` / `@( … )`: the code yields a pattern (or a list of
-                // them) matched here. The walk asks for every end up front, so
-                // the op does too and enters them highest priority first; under
-                // ratchet the atom commits to the first.
+                // them) matched here, as a frame resumed on demand (so the
+                // program needs the frame-capable run loop); under ratchet the
+                // atom commits to its first end.
                 let height = token.ratchet.then(|| self.reg());
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
@@ -571,6 +571,7 @@ impl Compiler {
                     self.ops.push(RxOp::Cut(h));
                 }
                 self.has_code = true;
+                self.has_call = true;
             }
             RegexAtom::QqInterp { .. } => {
                 // A `"…"` atom whose interpolations a thunk resolved at rule

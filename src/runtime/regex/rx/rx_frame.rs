@@ -74,6 +74,11 @@ pub(super) struct Frame {
     /// The call's binding window (`rx_scope`'s handle), installed while the
     /// callee runs and uninstalled by its return.
     pub(super) window: Option<usize>,
+    /// The frame runs the pattern a `$( … )` / `@( … )` yielded (`site` is
+    /// that `CodeInterp` atom): its return drops the callee's captures, as
+    /// rakudo keeps none of an interpolated regex's, instead of filing a
+    /// subrule Match.
+    pub(super) interp: bool,
 }
 
 /// Calls nested deeper than this fail: a rule that re-enters itself without

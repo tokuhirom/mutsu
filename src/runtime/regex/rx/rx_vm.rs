@@ -191,7 +191,7 @@ impl Interpreter {
         // and a frame that returns to `$ret_pc` in the caller.
         macro_rules! enter_frame {
             ($callee:expr, $callee_pkg:expr, $atom:expr, $entry:expr, $ret_pc:expr,
-             $commit:expr, $stack_base:expr, $proto:expr, $window:expr) => {{
+             $commit:expr, $stack_base:expr, $proto:expr, $window:expr, $interp:expr) => {{
                 let callee: Arc<RxProgram> = $callee;
                 let callee_pkg: Symbol = $callee_pkg;
                 let entry: usize = $entry;
@@ -223,6 +223,7 @@ impl Interpreter {
                     depth,
                     cursor: RefCell::new(None),
                     window: $window,
+                    interp: $interp,
                 });
                 frame = Some((frames.len() - 1) as FrameId);
                 cur = Cur::Callee(callee);
@@ -357,27 +358,59 @@ impl Interpreter {
                         pc = table.pcs[ltm_order[0].0];
                         true
                     }
-                    // Cost: O(n + r) plus the code's run and the match of the pattern
-                    // it yields (`regex_code_interp_ends`), then O(c) per candidate
-                    // entered, c = the captures it adds.
+                    // Cost: O(n + r) plus the code's run (`regex_code_interp_parsed`),
+                    // n = the subject's length, r = the result's rendered length;
+                    // then O(w) to enter the yielded pattern as a frame, w = its
+                    // registers. A pattern that declines is matched up front
+                    // instead: its all-ends match, then O(c) per candidate entered,
+                    // c = the captures it adds.
                     RxOp::InterpEnds(i) => {
                         let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize]
                         else {
                             debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
                             break 'run None;
                         };
-                        walk_use(WalkUse::Bridged, "code-interp");
-                        let cands = self.regex_code_interp_ends(
+                        let parsed = self.regex_code_interp_parsed(
                             code,
                             *list,
                             chars,
                             pos,
                             levels.top().caps(),
-                            pkg,
                             program.atom_ic[i as usize],
                         );
                         pc += 1;
-                        enter_cands!(cands)
+                        match parsed {
+                            None => false,
+                            // The yielded pattern runs as a frame of its own,
+                            // resumed on demand as rakudo's interpolated regex
+                            // is: code in it runs only on the paths the match
+                            // takes. Its return merges its captures here as a
+                            // group's (`Frame::interp`).
+                            Some(parsed) => match super::rx_entry::program_for(&parsed) {
+                                Some(callee) if FRAMES => {
+                                    let stack_base = stack.len();
+                                    enter_frame!(
+                                        Arc::clone(callee),
+                                        pkg,
+                                        i,
+                                        pos,
+                                        pc,
+                                        false,
+                                        stack_base,
+                                        None,
+                                        None,
+                                        true
+                                    );
+                                    continue 'run;
+                                }
+                                _ => {
+                                    walk_use(WalkUse::Leaf, "code-interp-declined");
+                                    let cands = self
+                                        .regex_code_interp_pattern_ends(&parsed, chars, pos, pkg);
+                                    enter_cands!(cands)
+                                }
+                            },
+                        }
                     }
                     // Cost: O(b), b = the scope's bindings (`rx_scope_enter`).
                     RxOp::ScopeEnter { atom, slot } => {
@@ -495,7 +528,8 @@ impl Interpreter {
                                                 commit,
                                                 stack_base,
                                                 None,
-                                                window
+                                                window,
+                                                false
                                             );
                                             continue 'run;
                                         }
@@ -556,7 +590,8 @@ impl Interpreter {
                                                     commit,
                                                     stack_base,
                                                     Some((Arc::clone(&cands), first)),
-                                                    window
+                                                    window,
+                                                    false
                                                 );
                                                 continue 'run;
                                             }
@@ -928,23 +963,34 @@ impl Interpreter {
                                     Some(p) => &frames[p as usize].program,
                                     None => root,
                                 };
-                                let RegexAtom::Named(name) = &caller.atoms[f.site as usize] else {
-                                    debug_assert!(false, "a frame's site is a `<subrule>` atom");
-                                    break 'run None;
-                                };
-                                // Filed straight into the caller's level, which
-                                // the close above made the innermost one again.
-                                let entry_pos = f.entry_pos;
-                                levels.edit(|s| {
-                                    self.file_named_candidate(
-                                        s,
-                                        pos,
-                                        inner,
-                                        entry_pos,
-                                        name.spec(),
-                                        None,
-                                    )
-                                });
+                                if f.interp {
+                                    // An interpolated pattern is a regex of its
+                                    // own: rakudo keeps none of its captures, so
+                                    // its level goes with the frame.
+                                    drop(inner);
+                                } else {
+                                    let RegexAtom::Named(name) = &caller.atoms[f.site as usize]
+                                    else {
+                                        debug_assert!(
+                                            false,
+                                            "a frame's site is a `<subrule>` atom"
+                                        );
+                                        break 'run None;
+                                    };
+                                    // Filed straight into the caller's level, which
+                                    // the close above made the innermost one again.
+                                    let entry_pos = f.entry_pos;
+                                    levels.edit(|s| {
+                                        self.file_named_candidate(
+                                            s,
+                                            pos,
+                                            inner,
+                                            entry_pos,
+                                            name.spec(),
+                                            None,
+                                        )
+                                    });
+                                }
                                 let (ret_pc, trail_base, window, ends_base, binding) =
                                     (f.ret_pc, f.trail_base, f.base, f.ends_base, f.window);
                                 frame = f.parent;
@@ -1151,7 +1197,8 @@ impl Interpreter {
                                     commit,
                                     stack_base,
                                     Some((Arc::clone(&cands), idx)),
-                                    window
+                                    window,
+                                    false
                                 );
                             }
                             None => {
@@ -1177,7 +1224,8 @@ impl Interpreter {
                                 commit,
                                 stack_base,
                                 Some((Arc::clone(&cands), idx)),
-                                window
+                                window,
+                                false
                             );
                             continue 'run;
                         }
