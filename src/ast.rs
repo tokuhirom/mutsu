@@ -576,6 +576,12 @@ pub(crate) struct FunctionDef {
     /// `Interpreter::routine_body_facts`. Derived state, like `body_fp_cache`.
     #[serde(skip)]
     pub(crate) body_facts_cache: std::sync::OnceLock<RoutineBodyFacts>,
+    /// The readonly marks of the frame this declaration registered in, for a
+    /// code value of a routine whose free variables belong to no running
+    /// routine frame (#11070); see `Interpreter::capture_declaring_readonly_state`.
+    /// `None` (synthetic defs, a deserialized def) records nothing.
+    #[serde(skip)]
+    pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
 }
 
 /// Properties of a routine body that the on-the-fly compilation gates ask about.

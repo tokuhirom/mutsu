@@ -1261,6 +1261,9 @@ impl Interpreter {
                 }
                 cell
             },
+            // The declaring frame's readonly marks, for a code value of this
+            // routine (#11070; see `sub_value_for_routine`).
+            captured_readonly: Some(self.capture_declaring_readonly_state()),
             // Seed the OTF-gate body facts eagerly from the plan (ADR-0019
             // C6e): same reason as above. A metadata-less caller (the prelude /
             // forward-declaration walkers) keeps the lazy fill.
@@ -2075,6 +2078,7 @@ impl Interpreter {
             compiled: None,
             dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
         };
         self.insert_token_def_in(package, name, def, multi);
@@ -2272,6 +2276,7 @@ impl Interpreter {
                 compiled: compiled.cloned().map(std::sync::Arc::new),
                 dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
+                captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
             }),
         );
@@ -2348,6 +2353,7 @@ impl Interpreter {
                 compiled: compiled.cloned().map(std::sync::Arc::new),
                 dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
+                captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
             }),
         );
