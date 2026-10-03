@@ -200,9 +200,15 @@ impl Interpreter {
         // A method that fails when called is not necessarily a failed
         // assignment: the legacy attribute/setter conventions below may still
         // apply (they never call the body). Report the shape as inapplicable and
-        // let the existing chain produce the diagnostic.
-        let Ok(result) = result else {
-            return Ok(None);
+        // let the existing chain produce the diagnostic. That chain re-calls
+        // the method with the assigned value as its only argument, so it can
+        // never stand in for a call that carried arguments: such a call's
+        // failure (`Crane::In.in(%h, @bad-path) = $v` dying in a `where`
+        // clause) is the assignment's own exception.
+        let result = match result {
+            Ok(result) => result,
+            Err(err) if !method_args.is_empty() => return Err(err),
+            Err(_) => return Ok(None),
         };
         // The write half, shared with the sub form: store through a container or
         // into an `@`/`%` aggregate the tail named (there is no Scalar around an

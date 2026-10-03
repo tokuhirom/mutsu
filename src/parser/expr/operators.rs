@@ -640,6 +640,10 @@ pub(super) fn parse_postfix_update_op(input: &str) -> Option<(PostfixUpdateOp, u
     if input.starts_with("++") {
         Some((PostfixUpdateOp::Inc, 2))
     } else if input.starts_with("--") {
+        // `$x = True-->Int` in a signature: `-->` is the return-type arrow.
+        if input.starts_with("-->") && crate::parser::stmt::sub_param::in_param_default() {
+            return None;
+        }
         Some((PostfixUpdateOp::Dec, 2))
     } else {
         None

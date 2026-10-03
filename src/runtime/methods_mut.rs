@@ -141,6 +141,7 @@ impl Interpreter {
         let current = current.map(Value::into_descalarized);
         if force_hash_context && !preserve_hash_entries {
             let value = value.into_descalarized();
+            let source = value.clone();
             let result = match value.view() {
                 ValueView::Hash(_) => value,
                 ValueView::Array(items, _)
@@ -163,6 +164,16 @@ impl Interpreter {
                     Value::hash(map)
                 }
                 _ => Self::normalize_hash_like_assignment(ValueMap::default(), value),
+            };
+            // An object-hash attribute keeps the assigned key objects.
+            let result = match current.as_ref().map(Value::view) {
+                Some(ValueView::Hash(h)) if h.key_type.is_some() => {
+                    let key_type = h.key_type.clone().unwrap_or_default();
+                    super::object_hash_assign::retag_assigned_object_hash(
+                        result, &source, &key_type,
+                    )
+                }
+                _ => result,
             };
             return Self::carry_container_default(current.as_ref(), result);
         }

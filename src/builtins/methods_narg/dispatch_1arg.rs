@@ -213,6 +213,11 @@ pub(crate) fn native_method_1arg(
                 } else {
                     return None;
                 }
+            } else if matches!(method, "round" | "log" | "exp") {
+                // A Cool aggregate numifies to its element count
+                // (`{a => 1}.round(0.5)`); see `cool_aggregate_elems`.
+                crate::builtins::methods_0arg::cool_aggregate::cool_aggregate_elems(target)
+                    .map(Value::int)
             } else {
                 None
             };

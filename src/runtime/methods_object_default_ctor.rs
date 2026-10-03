@@ -215,9 +215,18 @@ impl Interpreter {
                 // Raku: assigning `Nil` resets a container to its declared
                 // type's default, so `has Str $.n = Nil` holds `Str` — exactly
                 // what the no-initializer form holds — not `Nil`.
+                // An `is default(...)` value wins (`has $.d is default(5) = Nil`
+                // holds 5), as for any `Nil` store into the attribute.
                 Some(lit_val) if lit_val.is_nil() => {
-                    let seeded =
-                        self.seed_attr_value(cn_resolved, attr_name, *sigil, type_constraints);
+                    let seeded = if *sigil == '$'
+                        && self
+                            .class_attribute_default_with_role_fallback(cn_resolved, attr_name)
+                            .is_some()
+                    {
+                        self.attr_store_nil_default(cn_resolved, attr_name, '$', Value::NIL)
+                    } else {
+                        self.seed_attr_value(cn_resolved, attr_name, *sigil, type_constraints)
+                    };
                     attrs.insert(attr_sym, seeded);
                 }
                 // Fast path: a literal default needs no evaluation or binding.
@@ -263,6 +272,13 @@ impl Interpreter {
                             eval_error = Some(e);
                             break;
                         }
+                    };
+                    // An initializer evaluating to `Nil` resets the Scalar to
+                    // its default, as a literal `= Nil` does.
+                    let val = if *sigil == '$' && val.is_nil() {
+                        self.attr_store_nil_default(cn_resolved, attr_name, '$', val)
+                    } else {
+                        val
                     };
                     // A non-native default whose value does not match the
                     // attribute's type constraint needs the interpreter — fall

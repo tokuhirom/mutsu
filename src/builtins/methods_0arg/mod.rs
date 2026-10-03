@@ -8,6 +8,8 @@ use super::rng::builtin_rand;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
+pub(crate) mod cool_aggregate;
+use cool_aggregate::cool_aggregate_elems;
 pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
@@ -872,6 +874,31 @@ pub(crate) fn native_method_0arg(
             }
             _ => {}
         }
+    }
+    // The Cool aggregates (List/Array, Map/Hash) numify to their element
+    // count for Cool's numeric methods: `{a => 1, b => 2}.round` is 2 and
+    // `[1, 2, 3].floor` is 3, as in raku. `nodemap` relies on it -- it does
+    // not descend into a nested Hash, so `%h.nodemap(*.round)` rounds each
+    // inner Hash as a number.
+    if matches!(
+        method,
+        "abs"
+            | "sign"
+            | "exp"
+            | "log"
+            | "log2"
+            | "log10"
+            | "sqrt"
+            | "ceiling"
+            | "floor"
+            | "truncate"
+            | "round"
+            | "narrow"
+            | "is-int"
+            | "conj"
+    ) && let Some(count) = cool_aggregate_elems(target)
+    {
+        return native_method_0arg(&Value::int(count), method_sym);
     }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
