@@ -37,12 +37,10 @@ impl Interpreter {
     /// not under an explicit `no strict`, when `name` is not a plain
     /// unqualified `$`/`@`/`%` variable (bare scalars carry no sigil), or when
     /// nothing has been stored in it.
-    // Cost: O(1) expected: one env probe, one `our_vars` probe.
-    pub(crate) fn no_strict_package_var(&self, name: &str) -> Option<Value> {
-        if !Self::is_auto_declarable_name(name) {
-            return None;
-        }
-        if Self::env_is_no_strict(self.env()) {
+    // Cost: O(1) expected: one env probe, then the name check (O(1) per
+    // symbol) and one `our_vars` probe.
+    pub(crate) fn no_strict_package_var(&self, name: &str, sym: Symbol) -> Option<Value> {
+        if Self::env_is_no_strict(self.env()) && Self::is_auto_declarable_name(name, sym) {
             self.get_our_var(name).cloned()
         } else {
             None
@@ -65,10 +63,10 @@ impl Interpreter {
     /// element store (`%h<k> = v` on an undeclared `%h`) creates the container
     /// in the env only. Returns whether `key` names such a variable (the
     /// caller then keeps its env binding too).
-    // Cost: O(n) for the name check, n = name length, plus one `our_vars` insert.
+    // Cost: O(1) for the name check plus one `our_vars` insert.
     pub(crate) fn persist_no_strict_package_var(&mut self, key: Symbol, value: &Value) -> bool {
         let name = key.resolve();
-        if !Self::is_auto_declarable_name(&name) {
+        if !Self::is_auto_declarable_name(&name, key) {
             return false;
         }
         self.set_our_var(name, value.clone());
@@ -78,14 +76,14 @@ impl Interpreter {
     /// A user variable name `no strict` auto-declares: an identifier, after an
     /// optional `@`/`%` sigil, with no twigil, no package qualifier, and not a
     /// compiler-internal `__` temporary or the topic.
-    // Cost: O(n), n = name length.
-    fn is_auto_declarable_name(name: &str) -> bool {
+    // Cost: O(1): a few leading-byte checks and a memoized symbol flag.
+    fn is_auto_declarable_name(name: &str, sym: Symbol) -> bool {
         let bare = name.strip_prefix(['@', '%']).unwrap_or(name);
         bare.chars()
             .next()
             .is_some_and(|c| c.is_alphabetic() || c == '_')
             && bare != "_"
             && !bare.starts_with("__")
-            && !bare.contains("::")
+            && !crate::qualified::is_qualified(sym)
     }
 }
