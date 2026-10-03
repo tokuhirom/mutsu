@@ -143,7 +143,13 @@ impl Interpreter {
         };
         match self.module_visibility.module_routine_providers.get(&name) {
             None => true,
-            Some(&module) => self.module_merged_here(module),
+            // An imported alias of the routine (`our sub f is export` is
+            // imported under the very `GLOBAL::f` key) resolves wherever the
+            // import is in scope.
+            Some(&module) => {
+                self.module_merged_here(module)
+                    || name.with_str(|n| self.imported_routine_alias_in_scope(n))
+            }
         }
     }
 
@@ -171,8 +177,9 @@ impl Interpreter {
     }
 
     /// The package-scope names a package-less module declares at its own top
-    /// level that are not types -- `constant`s, `package`/`module` blocks,
-    /// enums and subsets -- and that nothing in scope already answers to, so
+    /// level -- classes and grammars (not `my class`), roles, `package`/`module`
+    /// blocks, enums, subsets and `our` constants -- that nothing in scope
+    /// already answers to, so
     /// attributing them to the module never hides a name the loading program
     /// declared itself. Read before the module body runs.
     // Cost: O(n) over the unit's top-level statements, plus one `env` probe
@@ -199,6 +206,13 @@ impl Interpreter {
                     is_unit: false,
                     ..
                 }
+                | Stmt::ClassDecl {
+                    name,
+                    is_lexical: false,
+                    is_unit: false,
+                    ..
+                }
+                | Stmt::RoleDecl { name, .. }
                 | Stmt::EnumDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. } => *name,
                 _ => continue,
@@ -214,24 +228,6 @@ impl Interpreter {
             }
         }
         names
-    }
-
-    /// The types a unit declares under an explicit `GLOBAL::` name (`class
-    /// GLOBAL::Pointer`, as NativeCall's prelude splice does). Registration
-    /// strips the prefix, but such a declaration really goes into the shared
-    /// GLOBAL -- in Rakudo too -- so it is no module's own merge.
-    // Cost: O(n), n = the unit's top-level statements.
-    pub(crate) fn explicit_global_type_names(stmts: &[crate::ast::Stmt]) -> HashSet<String> {
-        use crate::ast::Stmt;
-        crate::ast::scope_members(stmts)
-            .through_unit_package()
-            .filter_map(|stmt| match stmt {
-                Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => {
-                    name.with_str(|n| n.strip_prefix("GLOBAL::").map(str::to_string))
-                }
-                _ => None,
-            })
-            .collect()
     }
 
     /// Record the modules `unit` merges at its top level before its body runs.

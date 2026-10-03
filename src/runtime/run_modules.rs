@@ -918,7 +918,6 @@ impl Interpreter {
         let unit_name = Self::detect_unit_package_name(&stmts);
         // ADR-11136: the module's own top-level constants, packages, enums and
         // subsets, attributed to it once the load has run.
-        let explicit_global_types = Self::explicit_global_type_names(&stmts);
         let own_scope_names = if unit_name.is_none() {
             self.module_scope_declared_names(&stmts)
         } else {
@@ -1582,24 +1581,10 @@ impl Interpreter {
         // The module's own bare declarations are attributed to it, and the
         // importer gets them -- and the package grant -- only where its
         // `need`/`use` ran (ADR-11136).
-        let own_names: Vec<Symbol> = new_types
-            .iter()
-            .filter(|name| {
-                !crate::qualified::is_qualified(Symbol::intern(name))
-                    && !name.contains('\u{0}')
-                    && !explicit_global_types.contains(name.as_str())
-                    // A core type a prelude registers lazily (`Enumeration`)
-                    // may first appear during a module load.
-                    && !Self::is_builtin_type(name)
-            })
-            .filter(|name| {
-                self.module_owned_types
-                    .get(module)
-                    .is_none_or(|owned| owned.contains(name.as_str()))
-            })
-            .map(|name| Symbol::intern(name))
-            .chain(own_scope_names)
-            .collect();
+        // Attributed from the module's own top-level declarations, not from
+        // the registry delta, which also holds the stub parent packages
+        // (`Log` for `class Log::Timeline`) and lazily-registered core types.
+        let own_names = own_scope_names;
         self.record_module_provenance(module, module_unit, own_names);
         self.merge_module_into_importer(importer_unit, module, &grant);
         // Remember the grant so a LATER importer of this same module gets it
