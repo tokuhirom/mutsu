@@ -172,6 +172,18 @@ impl Interpreter {
                 }
             }
             let new_storage = Value::hash(map);
+            // Replace the existing backing hash's contents in place: every
+            // holder of this instance -- a method's `self`, the caller's
+            // `%h` -- shares that node, so `self.STORE(...)` (or `self = ...`)
+            // inside a method is seen by the caller. Rebuilding the instance
+            // with a fresh storage node only reached the name written back.
+            if let Some(old_storage) = attributes.as_map().get("__mutsu_hash_storage")
+                && let ValueView::Hash(old_gc) = old_storage.view()
+                && let ValueView::Hash(new_gc) = new_storage.view()
+            {
+                Self::hash_inplace_reassign(&old_gc, &new_gc);
+                return Some(Ok(target.clone()));
+            }
             let updated_instance = self.write_back_hash_storage_instance(
                 target_name,
                 &inst_class,

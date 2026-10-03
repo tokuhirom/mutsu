@@ -185,11 +185,20 @@ impl Interpreter {
                 ValueView::VarRef { value, .. } => value.clone(),
                 _ => raw_val,
             };
-            let Some(ValueView::ContainerRef(cell)) = self.env().get("self").map(Value::view)
-            else {
-                return Err(RuntimeError::assignment_ro(None));
+            // The invocant arrives either through a live container cell (a
+            // caller's `@items`) or as the aggregate value itself (a role
+            // mixed into a Hash, `%h does R`, or an `is Hash` instance). An
+            // Array/Hash value shares its backing node with every holder, so
+            // it is reassigned in place either way; a container object is
+            // assigned through its `STORE`, as `=` on any container is.
+            let (cell, current) = match self.env().get("self").map(Value::view) {
+                Some(ValueView::ContainerRef(cell)) => {
+                    let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    (Some(cell), current)
+                }
+                Some(_) => (None, self.env().get("self").cloned().unwrap_or(Value::NIL)),
+                None => return Err(RuntimeError::assignment_ro(None)),
             };
-            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             // `self` on an aggregate is the caller's role-mixed value.  A
             // whole-container assignment must update that value's backing
             // Array/Hash while retaining the Mixin wrapper; replacing the
@@ -225,7 +234,22 @@ impl Interpreter {
                 _ => false,
             };
             if !assigned_in_place {
-                Value::store_through_cell(&cell, &val);
+                match &cell {
+                    Some(cell) => Value::store_through_cell(cell, &val),
+                    // Only a container object (an `is Hash`/`is Array`
+                    // instance) is assignable; a plain object `self` stays
+                    // immutable (X::Assignment::RO).
+                    None if matches!(aggregate.view(), ValueView::Instance { attributes, .. }
+                        if attributes.as_map().contains_key("__mutsu_hash_storage")
+                            || attributes.as_map().contains_key("__mutsu_array_storage")) =>
+                    {
+                        let stored =
+                            self.try_compiled_method_or_interpret(current, "STORE", vec![val])?;
+                        self.stack.push(stored);
+                        return Ok(());
+                    }
+                    None => return Err(RuntimeError::assignment_ro(None)),
+                }
             }
             self.stack
                 .push(if assigned_in_place { current } else { val });
