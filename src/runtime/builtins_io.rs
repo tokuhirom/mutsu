@@ -267,34 +267,7 @@ impl Interpreter {
             }
             None
         });
-        if bin {
-            let bytes = fs::read(&path_buf)
-                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-            let byte_vals: Vec<Value> = bytes
-                .into_iter()
-                .map(|b| Value::int(i64::from(b)))
-                .collect();
-            return Ok(crate::value::value_buf::make_buf(
-                Symbol::intern("Buf[uint8]"),
-                byte_vals,
-            ));
-        }
-        // If a non-UTF-8 encoding is specified, read raw bytes and decode
-        let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
-            let lower = e.to_lowercase();
-            lower != "utf-8" && lower != "utf8"
-        });
-        if needs_non_utf8 {
-            let bytes = fs::read(&path_buf)
-                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-            let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
-            Ok(Value::str(super::utils::translate_nl_in(decoded)))
-        } else {
-            let content = fs::read_to_string(&path_buf)
-                .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
-            let content = super::utils::decode_text_content(content);
-            Ok(Value::str(content))
-        }
+        self.slurp_file(&path_buf, bin, enc.as_deref())
     }
 
     pub(super) fn builtin_spurt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -335,71 +308,7 @@ impl Interpreter {
                 }
             }
         }
-        if createonly && resolved.exists() {
-            return Ok(io_exception_failure(
-                "X::IO::Spurt",
-                format!("Failed to spurt '{}': file already exists", path),
-            ));
-        }
-        let is_buf = crate::runtime::Interpreter::is_buf_value(content_value);
-        let write_result = if is_buf {
-            let bytes = crate::runtime::Interpreter::extract_buf_bytes(content_value);
-            if append {
-                use std::io::Write;
-                fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(&resolved)
-                    .and_then(|mut file| file.write_all(&bytes))
-            } else {
-                fs::write(&resolved, &bytes)
-            }
-        } else {
-            let content = content_value.to_string_value();
-            let bytes = if let Some(ref enc_name) = enc {
-                match self.encode_with_encoding(&content, enc_name) {
-                    Ok(mut b) => {
-                        // For utf16 (auto-endian), prepend BOM like Raku does
-                        let enc_lower = enc_name.to_lowercase();
-                        if enc_lower == "utf-16" || enc_lower == "utf16" {
-                            let bom: &[u8] = if cfg!(target_endian = "little") {
-                                &[0xFF, 0xFE]
-                            } else {
-                                &[0xFE, 0xFF]
-                            };
-                            let mut with_bom = Vec::with_capacity(bom.len() + b.len());
-                            with_bom.extend_from_slice(bom);
-                            with_bom.append(&mut b);
-                            with_bom
-                        } else {
-                            b
-                        }
-                    }
-                    Err(e) => {
-                        return Ok(io_exception_failure("X::IO::Spurt", e.message.into_owned()));
-                    }
-                }
-            } else {
-                content.into_bytes()
-            };
-            if append {
-                use std::io::Write;
-                fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(&resolved)
-                    .and_then(|mut file| file.write_all(&bytes))
-            } else {
-                fs::write(&resolved, &bytes)
-            }
-        };
-        match write_result {
-            Ok(()) => Ok(Value::TRUE),
-            Err(err) => Ok(io_exception_failure(
-                "X::IO::Spurt",
-                format!("Failed to spurt '{}': {}", path, err),
-            )),
-        }
+        Ok(self.spurt_file(&resolved, content_value, append, createonly, enc.as_deref()))
     }
 
     pub(super) fn builtin_unlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -550,24 +459,15 @@ impl Interpreter {
             enc,
             create,
             exclusive,
-            None,
+            // The handle's `.path` is the path as written, as in Rakudo.
+            Some(Path::new(&path)),
         ) {
             Ok(handle) => Ok(handle),
             // Raku returns a Failure (wrapping the exception) when open() fails,
             // rather than dying immediately. Sinking/using the Failure later
             // throws the exception. Preserve any specific exception type the
             // error already carries; otherwise default to X::AdHoc.
-            Err(err) => {
-                let class_name = err
-                    .exception
-                    .as_deref()
-                    .and_then(|ex| match ex.view() {
-                        ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
-                        _ => None,
-                    })
-                    .unwrap_or_else(|| "X::AdHoc".to_string());
-                Ok(io_exception_failure(&class_name, err.message.into_owned()))
-            }
+            Err(err) => Ok(native_io::fs_errors::open_error_failure(err)),
         }
     }
 

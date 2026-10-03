@@ -328,8 +328,9 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("EVALFILE requires a filename"))?;
-        let code = fs::read_to_string(&path)
-            .map_err(|err| RuntimeError::new(format!("Failed to read {}: {}", path, err)))?;
+        let path_buf = self.resolve_path(&path);
+        let code = fs::read_to_string(&path_buf)
+            .map_err(|err| native_io::fs_errors::read_whole_failed(&path_buf, &err))?;
         let saved_file = self.env.get("?FILE").cloned();
         self.env.insert("?FILE".to_string(), Value::str(path));
         let result = self.eval_eval_string(&code);

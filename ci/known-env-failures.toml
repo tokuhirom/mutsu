@@ -37,7 +37,7 @@ reason = "same as file-tests.t: .r/.w/.x (and their ~~ :rw twins) are True for r
 file = "roast/S16-io/eof.t"
 when = ["uid0", "restricted-proc"]
 shape = { exit = 255, planned = 5, ran = 1 }
-reason = "Failed to open '/proc/1/environ': Permission denied"
+reason = "Failed to open file /proc/1/environ: Permission denied"
 
 [[failure]]
 file = "roast/S32-io/IO-Socket-Async.t"

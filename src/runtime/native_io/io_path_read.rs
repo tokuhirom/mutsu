@@ -37,42 +37,52 @@ impl Interpreter {
         match method {
             "slurp" => {
                 let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(args);
-                if bin {
-                    let bytes = fs::read(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    let byte_vals: Vec<Value> = bytes
-                        .into_iter()
-                        .map(|b| Value::int(i64::from(b)))
-                        .collect();
-                    return Ok(crate::value::value_buf::make_buf(
-                        Symbol::intern("Buf[uint8]"),
-                        byte_vals,
-                    ));
-                }
-                // A non-utf-8 encoding reads raw bytes and decodes; utf-8 reads
-                // the string directly (stripping a leading BOM).
-                let needs_non_utf8 = enc.as_ref().is_some_and(|e| {
-                    let lower = e.to_lowercase();
-                    lower != "utf-8" && lower != "utf8"
-                });
-                if needs_non_utf8 {
-                    let bytes = fs::read(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
-                    Ok(Value::str(super::utils::translate_nl_in(decoded)))
-                } else {
-                    let content = fs::read_to_string(&path_buf).map_err(|err| {
-                        RuntimeError::new(format!("Failed to slurp '{}': {}", p, err))
-                    })?;
-                    Ok(Value::str(super::utils::decode_text_content(content)))
-                }
+                self.slurp_file(&path_buf, bin, enc.as_deref())
             }
             "lines" | "words" => {
                 self.io_path_lines_or_words(&path_buf, &p, method == "words", args)
             }
             _ => unreachable!("io_path_content_read called with non-content method"),
+        }
+    }
+
+    /// Read the whole file at `path_buf` (already resolved against the cwd):
+    /// a `Buf[uint8]` with `bin`, otherwise text decoded with `enc` (utf-8 by
+    /// default, stripping a leading BOM). The one implementation behind the
+    /// `slurp` sub and `IO::Path.slurp`; a failure is Rakudo's open error
+    /// (`fs_errors::read_whole_failed`).
+    // Cost: O(b), b = the file's size in bytes.
+    pub(crate) fn slurp_file(
+        &self,
+        path_buf: &std::path::Path,
+        bin: bool,
+        enc: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let fail = |err: std::io::Error| super::fs_errors::read_whole_failed(path_buf, &err);
+        if bin {
+            let bytes = fs::read(path_buf).map_err(fail)?;
+            let byte_vals: Vec<Value> = bytes
+                .into_iter()
+                .map(|b| Value::int(i64::from(b)))
+                .collect();
+            return Ok(crate::value::value_buf::make_buf(
+                Symbol::intern("Buf[uint8]"),
+                byte_vals,
+            ));
+        }
+        // A non-utf-8 encoding reads raw bytes and decodes; utf-8 reads the
+        // string directly (stripping a leading BOM).
+        let non_utf8 = enc.filter(|e| {
+            let lower = e.to_lowercase();
+            lower != "utf-8" && lower != "utf8"
+        });
+        if let Some(enc) = non_utf8 {
+            let bytes = fs::read(path_buf).map_err(fail)?;
+            let decoded = self.decode_with_encoding(&bytes, enc)?;
+            Ok(Value::str(super::utils::translate_nl_in(decoded)))
+        } else {
+            let content = fs::read_to_string(path_buf).map_err(fail)?;
+            Ok(Value::str(super::utils::decode_text_content(content)))
         }
     }
 
@@ -99,26 +109,21 @@ impl Interpreter {
         let utf8 = enc
             .as_deref()
             .is_none_or(|e| matches!(e.to_lowercase().as_str(), "utf-8" | "utf8"));
-        let handle = self
-            .open_file_handle(
-                path_buf,
-                true,
-                false,
-                false,
-                false,
-                chomp,
-                nl_in,
-                None,
-                None,
-                enc,
-                false,
-                false,
-                Some(std::path::Path::new(display)),
-            )
-            .map_err(|err| {
-                let reason = err.message.rsplit(": ").next().unwrap_or("").to_string();
-                RuntimeError::new(format!("Failed to read '{}': {}", display, reason))
-            })?;
+        let handle = self.open_file_handle(
+            path_buf,
+            true,
+            false,
+            false,
+            false,
+            chomp,
+            nl_in,
+            None,
+            None,
+            enc,
+            false,
+            false,
+            Some(std::path::Path::new(display)),
+        )?;
         self.with_handle_mut(&handle, |state| {
             state.close_on_exhaust = true;
             state.seq_reader = state
@@ -203,17 +208,7 @@ impl Interpreter {
                 Ok(handle) => Ok(handle),
                 // Like the `open` sub, `IO::Path.open` returns a Failure (wrapping
                 // the exception) on error rather than throwing.
-                Err(err) => {
-                    let class_name = err
-                        .exception
-                        .as_deref()
-                        .and_then(|ex| match ex.view() {
-                            ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
-                            _ => None,
-                        })
-                        .unwrap_or_else(|| "X::AdHoc".to_string());
-                    Ok(io_exception_failure(&class_name, err.message.into_owned()))
-                }
+                Err(err) => Ok(super::fs_errors::open_error_failure(err)),
             },
         )
     }

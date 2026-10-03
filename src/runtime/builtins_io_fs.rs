@@ -1,5 +1,5 @@
 //! Filesystem builtins: `dir`, `copy`, `rename`, `chmod`, `mkdir`, `rmdir`.
-use super::builtins_io::{check_null_in_path, io_exception_error, io_exception_failure};
+use super::builtins_io::{check_null_in_path, io_exception_error};
 use super::*;
 use crate::value::ValueView;
 
@@ -169,45 +169,10 @@ impl Interpreter {
         check_null_in_path(&dest)?;
         let src_buf = self.resolve_path(&source);
         let dest_buf = self.resolve_path(&dest);
-        if createonly && dest_buf.exists() {
-            return Ok(io_exception_failure(
-                "X::IO::Copy",
-                format!("Failed to copy '{}': destination already exists", source),
-            ));
-        }
-        if src_buf.is_dir() {
-            return Ok(io_exception_failure(
-                "X::IO::Copy",
-                format!("Failed to copy '{}': source is a directory", source),
-            ));
-        }
-        if src_buf.exists() && dest_buf.exists() {
-            let same_file = fs::canonicalize(&src_buf).ok() == fs::canonicalize(&dest_buf).ok();
-            if same_file {
-                return Ok(io_exception_failure(
-                    "X::IO::Copy",
-                    format!(
-                        "Failed to copy '{}': source and destination are the same file",
-                        source
-                    ),
-                ));
-            }
-        }
-        fs::copy(&src_buf, &dest_buf).map_err(|err| {
-            io_exception_error(
-                "X::IO::Copy",
-                format!("Failed to copy '{}': {}", source, err),
-            )
-        })?;
-        Ok(Value::TRUE)
+        Ok(self.copy_file_op(&src_buf, &dest_buf, createonly))
     }
 
     pub(super) fn builtin_rename(&self, name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
-        let ex_type = if name == "rename" {
-            "X::IO::Rename"
-        } else {
-            "X::IO::Move"
-        };
         let mut positional = Vec::new();
         let mut createonly = false;
         for arg in args {
@@ -228,41 +193,7 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("rename requires a destination path"))?;
         let src_buf = self.resolve_path(&source);
         let dest_buf = self.resolve_path(&dest);
-        // Check if source and destination are the same file
-        if src_buf == dest_buf
-            || (src_buf.exists()
-                && dest_buf.exists()
-                && fs::canonicalize(&src_buf).ok() == fs::canonicalize(&dest_buf).ok())
-        {
-            let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
-            let mut failure_attrs = HashMap::new();
-            failure_attrs.insert("exception".to_string(), ex);
-            failure_attrs.insert("handled".to_string(), Value::FALSE);
-            failure_attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Failed to {} '{}': source and destination are the same file",
-                    name, source
-                )),
-            );
-            return Ok(Value::make_instance(
-                Symbol::intern("Failure"),
-                failure_attrs,
-            ));
-        }
-        if createonly && dest_buf.exists() {
-            return Err(io_exception_error(
-                ex_type,
-                format!(
-                    "Failed to {} '{}': destination already exists",
-                    name, source
-                ),
-            ));
-        }
-        fs::rename(&src_buf, &dest_buf).map_err(|err| {
-            io_exception_error(ex_type, format!("Failed to {} '{}': {}", name, source, err))
-        })?;
-        Ok(Value::TRUE)
+        Ok(self.rename_file_op(name, &src_buf, &dest_buf, createonly))
     }
 
     pub(super) fn builtin_chmod(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -331,8 +262,8 @@ impl Interpreter {
                     .unwrap_or_else(|| ".".to_string())
             });
         let path_buf = self.resolve_path(&path);
-        fs::create_dir_all(&path_buf)
-            .map_err(|err| RuntimeError::new(format!("Failed to mkdir '{}': {}", path, err)))?;
+        self.mkdir_op(&path_buf)
+            .map_err(native_io::fs_errors::error_of)?;
         Ok(Value::TRUE)
     }
 

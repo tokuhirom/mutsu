@@ -184,7 +184,7 @@ impl Interpreter {
                     Ok(target) => Ok(Value::str(target.to_string_lossy().into_owned())),
                     Err(e) => Err(RuntimeError::new(format!(
                         "Failed to readlink file: {}",
-                        crate::runtime::nqp_ops_process::libuv_style_reason(&e)
+                        crate::runtime::native_io::fs_errors::libuv_text(&e)
                     ))),
                 }
             }
@@ -370,22 +370,4 @@ impl Interpreter {
             _ => vec![value.to_string_value()],
         }
     }
-}
-
-/// An I/O error's reason as libuv spells it (MoarVM's messages come from
-/// `uv_strerror`): the OS description, lower-cased, without Rust's
-/// " (os error N)" suffix -- "no such file or directory", "invalid argument".
-pub(crate) fn libuv_style_reason(e: &std::io::Error) -> String {
-    let mut text = match e.raw_os_error() {
-        Some(code) => {
-            let full = std::io::Error::from_raw_os_error(code).to_string();
-            full.split(" (os error").next().unwrap_or(&full).to_string()
-        }
-        None => e.to_string(),
-    };
-    // OS error texts are ASCII, so lower-casing the first byte is exact.
-    if let Some(first) = text.get_mut(0..1) {
-        first.make_ascii_lowercase();
-    }
-    text
 }

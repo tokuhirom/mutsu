@@ -358,19 +358,7 @@ impl Interpreter {
                     Ok(handle) => Ok(handle),
                     // Like the `open` sub, `IO::Handle.open` returns a Failure
                     // (wrapping the exception) on error rather than throwing.
-                    Err(err) => {
-                        let class_name = err
-                            .exception
-                            .as_deref()
-                            .and_then(|ex| match ex.view() {
-                                ValueView::Instance { class_name, .. } => {
-                                    Some(class_name.to_string())
-                                }
-                                _ => None,
-                            })
-                            .unwrap_or_else(|| "X::AdHoc".to_string());
-                        Ok(io_exception_failure(&class_name, err.message.into_owned()))
-                    }
+                    Err(err) => Ok(super::fs_errors::open_error_failure(err)),
                 }
             }
             "nl-out" => {
