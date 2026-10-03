@@ -76,8 +76,8 @@ set -u
 # so those two really are build inputs.
 #
 # `.github/**` except ci.yml: issue templates, the release-note config, and the
-# other six workflows (pages, bench, docker, release, tag-release, label-pr,
-# ecosystem-sweep) are read by GitHub, not by any job here -- and each one is
+# other workflows (pages, bench, docker, release, label-pr, ecosystem-sweep,
+# claim-label, stress) are read by GitHub, not by any job here -- and each one is
 # exercised by its own run, which the five build jobs tell you nothing about.
 # `.github/workflows/ci.yml` is the exception and must stay off the allowlist,
 # because it *defines* those five jobs: a change to it is precisely the change

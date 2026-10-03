@@ -2,6 +2,24 @@ use super::*;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// A `%?RESOURCES` entry (`Distribution::Resource`) splits the file's text,
+    /// not its path: swap such a receiver of `.split` for its content. Any other
+    /// receiver or method is returned untouched.
+    // Cost: O(1) for any other receiver; O(f) for a resource, f = file size.
+    pub(crate) fn resource_split_target(
+        &mut self,
+        target: Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        if method == "split"
+            && matches!(target.view(), ValueView::Instance { class_name, attributes, .. }
+                if class_name == "IO::Path" && attributes.contains_key("resource"))
+        {
+            return self.call_method_with_values(target, "slurp", vec![]);
+        }
+        Ok(target)
+    }
+
     /// Build `%?RESOURCES` from the source file attached to the executing code.
     /// This is the most precise context for a routine compiled in a module:
     /// runtime package state can still refer to the module that triggered a
@@ -119,7 +137,10 @@ impl Interpreter {
                         // IO::Path-like entry: `%?RESOURCES<x>.slurp` works
                         // (rakudo's Distribution::Resource — License::SPDX
                         // slurps its licenses.json this way).
-                        result.insert(key, self.make_io_path_instance(&path_val.to_string_value()));
+                        result.insert(
+                            key,
+                            self.make_resource_instance(&path_val.to_string_value()),
+                        );
                         continue;
                     }
                     let actual_path = if key.starts_with("libraries/") {
@@ -141,7 +162,7 @@ impl Interpreter {
                     } else {
                         format!("{prefix}/resources/{key}")
                     };
-                    result.insert(key, self.make_io_path_instance(&actual_path));
+                    result.insert(key, self.make_resource_instance(&actual_path));
                 }
             }
             ValueView::Hash(map) => {

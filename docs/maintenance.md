@@ -112,9 +112,9 @@ Some crates raise the **minimum supported Rust version**. When a bump reports
 - The toolchain pins in the workflows. They are **not** all the same and must be
   kept ≥ the MSRV:
   - `.github/workflows/ci.yml`, `bench.yml` — the test/roast/bench builders.
-  - `.github/workflows/release.yml`, `pages.yml`, `tag-release.yml` — the
-    release/docs builders. `tag-release.yml` is **SHA-pinned** (with a
-    `# <version>` comment); resolve the new tag's commit with
+  - `.github/workflows/release.yml`, `pages.yml` — the release/docs
+    builders. Pins are **SHA-pinned** (with a `# <version>` comment); resolve
+    the new tag's commit with
     `gh api repos/dtolnay/rust-toolchain/commits/<version> --jq .sha`.
 - **`Dockerfile`** — the builder stage pins a `rust:<version>-bookworm` base
   image (and `README.md` documents it). This is easy to forget because it is not

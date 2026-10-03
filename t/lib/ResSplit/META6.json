@@ -1,0 +1,6 @@
+{
+    "name": "ResSplit",
+    "version": "0.0.1",
+    "provides": { "ResSplit": "lib/ResSplit.rakumod" },
+    "resources": [ "strs.bin" ]
+}

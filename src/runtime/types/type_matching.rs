@@ -543,6 +543,15 @@ impl Interpreter {
         if self.type_matches_value_resolved(constraint, value) {
             return true;
         }
+        // `%?RESOURCES{...}` entries are `Distribution::Resource` objects in
+        // raku; mutsu models them as `IO::Path` instances carrying a hidden
+        // `resource` marker (`make_resource_instance`).
+        if constraint == "Distribution::Resource"
+            && matches!(value.view(), ValueView::Instance { class_name, attributes, .. }
+                if class_name == "IO::Path" && attributes.contains_key("resource"))
+        {
+            return true;
+        }
         // A lexical type (`my role R` / `my class C`) is stored under
         // `R\u{0}<decl-id>` and only its declaring scope's env maps the
         // source spelling to that name. A multi candidate exported from a
