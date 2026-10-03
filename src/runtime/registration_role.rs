@@ -15,6 +15,42 @@ use crate::ast::ParamDef;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Enter the scope `role` was declared in, for binding its parameters: a
+    /// default (`Renderer :$r = PrettyTree`) is written there and names what
+    /// that scope sees -- its compilation unit's imports, its package's
+    /// classes (`= BasicStrRenderer`) and its captured lexicals -- not what
+    /// the composing scope sees. The captured env is laid under the bindings
+    /// (the caller restores `env`); [`Self::leave_role_declaring_scope`]
+    /// restores the rest.
+    // Cost: O(e), e = the role's captured env entries.
+    pub(crate) fn enter_role_declaring_scope(
+        &mut self,
+        role: &str,
+        role_def: &RoleDef,
+    ) -> (Symbol, String) {
+        let saved = (self.current_unit, self.current_package());
+        if let Some(unit) = self.class_declaring_units.get(role).copied() {
+            self.current_unit = unit;
+        }
+        if let Some(pkg) = crate::qualified::package_parent(Symbol::intern(role)) {
+            self.set_current_package(pkg.resolve());
+        }
+        if let Some(captured) = role_def.captured_env.as_ref() {
+            for (k, v) in captured.iter() {
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        saved
+    }
+
+    // Cost: O(1).
+    pub(crate) fn leave_role_declaring_scope(&mut self, saved: (Symbol, String)) {
+        self.current_unit = saved.0;
+        self.set_current_package(saved.1);
+    }
+
     fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
         let mut values = Vec::with_capacity(arg_exprs.len());
         for expr in arg_exprs {
@@ -243,11 +279,14 @@ impl Interpreter {
                     // stay on the resolving scope's same-named lexicals.
                     let saved_env = self.env.clone();
                     let readonly_mark = self.enter_readonly_frame();
+                    let saved_scope =
+                        self.enter_role_declaring_scope(base_role_name, &candidate.role_def);
                     let bound = self.bind_function_args_values(
                         &candidate.type_param_defs,
                         &candidate_param_names,
                         &arg_values,
                     );
+                    self.leave_role_declaring_scope(saved_scope);
                     self.exit_readonly_frame(readonly_mark);
                     self.env = saved_env;
                     match bound {
@@ -304,11 +343,13 @@ impl Interpreter {
                 .iter()
                 .map(|pd| pd.name.clone())
                 .collect();
+            let saved_scope = self.enter_role_declaring_scope(base_role_name, &selected.role_def);
             let _ = self.bind_function_args_values(
                 &selected.type_param_defs,
                 &candidate_param_names,
                 &arg_values,
             );
+            self.leave_role_declaring_scope(saved_scope);
             let mut resolved = Vec::with_capacity(selected.type_params.len());
             for (i, param_name) in selected.type_params.iter().enumerate() {
                 // `type_params` are sigil-less (`f`), but the surrounding lexical

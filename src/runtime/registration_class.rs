@@ -33,6 +33,11 @@ pub(crate) fn type_value_name(value: &Value) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
+        // A named argument (`:g(B)`): `parametric_role_arg_name`'s spelling,
+        // not the Pair's `Str` (`"g\t"` for a type-object value).
+        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+            crate::value::types::parametric_role_arg_name(value)
+        }
         _ => value
             .to_string_value()
             .trim_start_matches('(')

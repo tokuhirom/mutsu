@@ -84,6 +84,16 @@ impl Interpreter {
                     .zip(ra.iter())
                     .all(|(l, r)| self.parametric_arg_subtypes(l, r))
             }
+            // A named role parameter's argument (`R[:g(B)]`, or a default
+            // `:$g = B` materialized by a pun) is a Pair: same key, and the
+            // values compare like positional arguments.
+            (ValueView::Pair(lk, lv), ValueView::Pair(rk, rv)) => {
+                lk == rk
+                    && self.parametric_arg_subtypes(
+                        &lv.clone().deref_container(),
+                        &rv.clone().deref_container(),
+                    )
+            }
             _ => lhs == rhs,
         }
     }
