@@ -33,10 +33,37 @@ impl Interpreter {
         }
         let installed =
             dispatch_key::with_amp_name(name, |ampname| self.env().get(ampname).cloned())?;
+        // The override is an import of the units that ran the `sub EXPORT`;
+        // code of any other unit (the exporting module's own routines above
+        // all) keeps what IT imported under the name.
+        if !self.code_unit_imported_override(code, name_sym) {
+            return self.own_import_of_amp(code, name, name_sym);
+        }
         if Self::callable_declared_in_unit_of(&installed, code) {
-            return self.unit_imported_callable(code, name_sym);
+            // The calling unit's own import of `name`, whichever way it came:
+            // its `is export` import (`use WrapA` handing it `greet`) never
+            // reaches `unit_imported_callables`, and falling through to the
+            // by-name dispatch would find the very override this unit
+            // exported (JSON::Fast::Hyper's `to-json` calling itself).
+            return self.own_import_of_amp(code, name, name_sym);
         }
         Some(installed)
+    }
+
+    /// Whether `code`'s unit is one of the importers of a `sub EXPORT`
+    /// override of `name`. Code without a source file (an `EVAL` body, a
+    /// synthetic chunk) is treated as an importer, as before.
+    // Cost: O(1) hash probe, plus O(e) over the recorded EXPORT imports when
+    // the unit imported none of `name`, e = their count.
+    fn code_unit_imported_override(&self, code: &CompiledCode, name_sym: Symbol) -> bool {
+        let Some(file) = code.source_file else {
+            return true;
+        };
+        self.unit_imported_callables.contains_key(&(file, name_sym))
+            || !self
+                .unit_imported_callables
+                .keys()
+                .any(|(_, name)| *name == name_sym)
     }
 
     /// What the unit `code` was compiled in itself imported under `name`

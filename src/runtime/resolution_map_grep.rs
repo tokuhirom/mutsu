@@ -304,6 +304,16 @@ impl Interpreter {
         {
             return (code.clone(), fns.clone());
         }
+        // The recompiled body belongs to the unit the block was written in
+        // (its origin chunk's), not to the unit whose code happens to run the
+        // map: a module routine's `.map({ to-json $_ })` pulled from the
+        // script must still resolve `to-json` as the module imported it.
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(
+            data.compiled_code
+                .as_deref()
+                .and_then(|origin| origin.source_file)
+                .or_else(crate::unit_source_file::current),
+        );
         let mut compiler = crate::compiler::Compiler::new();
         compiler.lexically_in_routine = lexically_in_routine;
         compiler.seed_prebound_placeholders(&data.params);
