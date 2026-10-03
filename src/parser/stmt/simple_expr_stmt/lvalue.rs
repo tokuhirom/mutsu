@@ -98,6 +98,37 @@ pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
     }
 }
 
+/// The value an indexed bind (`@a[i] := v`, `%h<k> := v`) stores through
+/// `IndexAssign`: the RHS wrapped in the `__mutsu_bind_index_value` marker, so
+/// the VM takes bind (not assign) semantics. A compound `*` RHS stays a
+/// WhateverCode, as for any finished value.
+// Cost: O(n), n = size of the RHS.
+pub(crate) fn bind_index_value(rhs: Expr) -> Expr {
+    let rhs = crate::parser::expr::wrap_finished_expr(rhs);
+    let source_meta = bind_source_metadata_expr(&rhs);
+    Expr::Call {
+        name: Symbol::intern("__mutsu_bind_index_value"),
+        args: vec![rhs, source_meta],
+    }
+}
+
+/// `TARGET[INDEX] := RHS` (or `{…}` when not `is_positional`), the one shape
+/// every indexed-bind parse path builds.
+// Cost: O(n), n = size of the RHS.
+pub(crate) fn index_bind_expr(
+    target: Box<Expr>,
+    index: Box<Expr>,
+    is_positional: bool,
+    rhs: Expr,
+) -> Expr {
+    Expr::IndexAssign {
+        target,
+        index,
+        value: Box::new(bind_index_value(rhs)),
+        is_positional,
+    }
+}
+
 pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
     match rhs {
         Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
