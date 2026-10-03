@@ -2065,9 +2065,7 @@ impl Interpreter {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
                     && (role_name == effective_constraint
                         || crate::qualified::last_segment(Symbol::intern(role_name))
-                            == crate::qualified::last_segment(Symbol::intern(
-                                &effective_constraint,
-                            ))
+                            == crate::qualified::last_segment(Symbol::intern(effective_constraint))
                         || self.role_is_subtype(role_name, effective_constraint)
                         || self.role_is_subtype(role_name, constraint))
                 {
