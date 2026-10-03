@@ -24,6 +24,8 @@ pub(crate) struct EmitFrame {
     pub(crate) is_react: bool,
     /// Its setup hold, once a `whenever` taps a live supplier (#11268).
     pub(crate) react_setup: Option<super::react_setup::ReactSetup>,
+    /// The tap a tapped on-demand body's plain emits stream to (#11434).
+    pub(crate) tap_stream: Option<Box<super::supply_tap_stream::TapStream>>,
 }
 
 impl EmitFrame {

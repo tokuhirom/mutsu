@@ -192,6 +192,27 @@ impl Interpreter {
         on_demand_cb: Value,
         emitter_supplier_id: Option<u64>,
     ) -> (Result<Value, RuntimeError>, Vec<Value>, bool) {
+        let (result, emitted, done, _) =
+            self.run_on_demand_body_streaming(on_demand_cb, emitter_supplier_id, None);
+        (result, emitted, done)
+    }
+
+    /// [`Self::run_on_demand_body`], with the body's plain emits on its own
+    /// emitter streamed to `stream`'s tap as they happen instead of collected
+    /// (see `supply_tap_stream`). Streaming needs the emitter's id, so it is
+    /// ignored without one. Returns the stream back, so the caller can see
+    /// whether the tap stopped or failed.
+    pub(crate) fn run_on_demand_body_streaming(
+        &mut self,
+        on_demand_cb: Value,
+        emitter_supplier_id: Option<u64>,
+        stream: Option<super::supply_tap_stream::TapStream>,
+    ) -> (
+        Result<Value, RuntimeError>,
+        Vec<Value>,
+        bool,
+        Option<super::supply_tap_stream::TapStream>,
+    ) {
         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
             let mut a = HashMap::new();
             a.insert("emitted".to_string(), Value::array(Vec::new()));
@@ -201,12 +222,17 @@ impl Interpreter {
             }
             a
         });
-        self.async_state
-            .supply_emit_buffer
-            .push(match emitter_supplier_id {
-                Some(sid) => EmitFrame::owned_by(sid),
-                None => EmitFrame::default(),
-            });
+        let mut frame = match emitter_supplier_id {
+            Some(sid) => EmitFrame::owned_by(sid),
+            None => EmitFrame::default(),
+        };
+        if emitter_supplier_id.is_some()
+            && let Some(mut stream) = stream
+        {
+            stream.emitters_base = self.async_state.active_supply_emitters.len();
+            frame.tap_stream = Some(Box::new(stream));
+        }
+        self.async_state.supply_emit_buffer.push(frame);
         // "Did the body complete *this* supply?" must be asked of this emitter,
         // not of the process. With an id, count `done`s on the emitter itself;
         // without one (`done` cannot reach a supplier), fall back to this
@@ -238,13 +264,17 @@ impl Interpreter {
             None => thread_supplier_done_count(),
         };
         let body_ran_done = done_after > done_before;
-        let emitted = self
+        let frame = self
             .async_state
             .supply_emit_buffer
             .pop()
-            .unwrap_or_default()
-            .values;
-        (result, emitted, body_ran_done)
+            .unwrap_or_default();
+        (
+            result,
+            frame.values,
+            body_ran_done,
+            frame.tap_stream.map(|s| *s),
+        )
     }
 
     /// Rewrite every `whenever <Promise>` subscription marker the body just

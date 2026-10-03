@@ -1023,6 +1023,7 @@ pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
 mod supply_emit_frame;
+pub(crate) mod supply_tap_stream;
 pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_transform;
