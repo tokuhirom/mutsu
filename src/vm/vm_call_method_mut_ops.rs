@@ -395,6 +395,22 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `.elems` / `.end` on an array (`$i < @ch.elems` in a C-style loop
+        // condition): the same native answer the general path's probe gives,
+        // without the receiver probes in between. See `try_array_count_lane`.
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && arg_sources_idx.is_none()
+            && !self.accessor_ref_pending
+            && let Some(result) = self.try_array_count_lane(name.raw, name.sym)
+        {
+            self.pending_call_arg_source_slots.clear();
+            self.set_pending_call_arg_sources(None);
+            self.stack.pop();
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
@@ -709,7 +725,7 @@ impl Interpreter {
         // the Failure for an ordinary Cool value (for example, `Failure.lines`
         // reaches the native Str/Cool method table).
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
                 method,
@@ -1284,7 +1300,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1326,7 +1342,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.resolve() == "Lock::Async"
+            && class_name.as_str() == "Lock::Async"
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
