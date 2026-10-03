@@ -971,6 +971,7 @@ mod routine_candidate_defs;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
+mod run_dist_meta6;
 mod run_main;
 mod run_modules;
 mod run_modules_bound_repo;
@@ -1950,6 +1951,12 @@ pub(crate) struct RoutineFrame {
     /// from the next, which is what a per-call anonymous state (`$++` inside a
     /// block inside a routine) keys on — see `Interpreter::anon_state_key`.
     pub invocation_id: u64,
+    /// The `__mutsu_callable_id` a non-local `return` stamps when it targets
+    /// this frame, for a frame whose id is not its routine's registration id:
+    /// a method invocation binds a fresh id per call. `0` = none recorded (the
+    /// registration id identifies the frame). Read by
+    /// `Interpreter::return_target_is_live`.
+    pub callable_id: u64,
 }
 
 /// Hands out *blocks* of routine-invocation ids, not individual ones.

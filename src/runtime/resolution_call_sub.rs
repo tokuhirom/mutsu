@@ -976,6 +976,7 @@ impl Interpreter {
                 // own private `helper`.
                 def_file: data.source_file.as_deref().map(Symbol::intern),
                 invocation_id,
+                callable_id: 0,
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);

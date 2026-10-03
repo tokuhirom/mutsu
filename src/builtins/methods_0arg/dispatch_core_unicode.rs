@@ -25,6 +25,21 @@ pub(super) fn dispatch(
                     crate::value::value_buf::buf_elem_width(&class_name.resolve()) as i64;
                 Some(Ok(Value::int(elems * bytes_per_elem)))
             }
+            // `Blob.bytes` is `Blob:D:` only: a Buf/Blob type object must
+            // throw rather than count the bytes of its name (`$buf //
+            // Buf[uint8]` handed to `BIO_write` as a 12-byte buffer).
+            ValueView::Package(name)
+                if crate::runtime::utils::is_buf_or_blob_class(&name.resolve()) =>
+            {
+                Some(Err(RuntimeError::parameter_invalid_concreteness(
+                    "Blob",
+                    &name.resolve(),
+                    "bytes",
+                    "self",
+                    true,
+                    true,
+                )))
+            }
             ValueView::Str(s) => Some(Ok(Value::int(s.len() as i64))),
             _ => Some(Ok(Value::int(target.to_string_value().len() as i64))),
         }),

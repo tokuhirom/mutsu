@@ -234,8 +234,9 @@ impl Interpreter {
     pub(crate) fn return_target_is_live(&self, target_id: u64) -> bool {
         self.routine_stack.iter().any(|f| {
             !f.is_block
-                && self.registration_clone_id(&f.package.resolve(), &f.name.resolve())
-                    == Some(target_id)
+                && ((f.callable_id != 0 && f.callable_id == target_id)
+                    || self.registration_clone_id(&f.package.resolve(), &f.name.resolve())
+                        == Some(target_id))
         })
     }
 
@@ -294,6 +295,7 @@ impl Interpreter {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
+            callable_id: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -306,6 +308,8 @@ impl Interpreter {
     /// this, `executing_source_file()`'s frame walk always fell through past a
     /// method frame to the dynamically-scoped `?FILE`, which had already
     /// reverted to the main script by the time the method ran.
+    /// `callable_id` is the per-invocation `__mutsu_callable_id` the method
+    /// body runs under (see `RoutineFrame::callable_id`).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_method_routine_with_location(
         &mut self,
@@ -317,6 +321,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
         is_submethod: bool,
         is_hidden_from_backtrace: bool,
+        callable_id: u64,
     ) {
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
@@ -332,6 +337,7 @@ impl Interpreter {
             is_hidden_from_backtrace,
             def_file,
             invocation_id,
+            callable_id,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -391,6 +397,7 @@ impl Interpreter {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
+            callable_id: 0,
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
@@ -1188,6 +1195,7 @@ mod call_site_file_tests {
             is_hidden_from_backtrace: false,
             def_file,
             invocation_id: 1,
+            callable_id: 0,
         }
     }
 
