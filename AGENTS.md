@@ -87,6 +87,13 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
 - **Never close a PR without preserving its knowledge.** A conflicted PR gets rebased (by you or an
   agent that reads its diff), not closed and summarized.
 - **Never remove a test from `roast-whitelist.txt` because of a regression** — fix the regression.
+- **Never weaken a security protection without the user's prior approval** (user decision,
+  2026-10-03). This covers anything that lowers the security of the shipped binaries or of a
+  user's system, whatever it gains: linking non-PIE or otherwise disabling ASLR, RELRO, stack
+  protectors, CFI or other hardening flags; loosening sandboxing, file permissions, TLS or
+  signature verification; widening what untrusted code or input can reach. Ask *before*
+  implementing it. A note in the PR body or a report after the merge is not approval:
+  #11104 shipped a non-PIE `mutsu` for ~0.5-1 ms of startup, and #11158 had to revert it.
 - **Repository artifacts are always English**: code comments, commit messages, PR titles and
   bodies, ADRs, `news/`, `PLAN.md`, `TODO_roast/`, everything under `docs/`. Conversing with the
   user in Japanese does not change this.

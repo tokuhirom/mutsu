@@ -104,6 +104,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             squash: _,
             non_destructive: _,
         } => {}
+        Expr::Contextualizer { kind: _, inner } => v.visit_expr(inner),
         Expr::MethodCall {
             target,
             name,

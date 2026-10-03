@@ -576,6 +576,40 @@ impl Interpreter {
         }
     }
 
+    /// Record on the registered role (and each of its parameterized
+    /// candidates) the cells `exec_register_role_op` boxed for the body's `:=`
+    /// sources, so every composition runs the body against the declaration
+    /// site's variables (`RoleDef::body_bind_cells`, #11087).
+    // Cost: O(b + k), b = the body's bind sources, k = the role's candidates.
+    pub(crate) fn record_role_body_bind_cells(
+        &mut self,
+        code: &CompiledCode,
+        role: &str,
+        body_bind_source_slots: &[u32],
+    ) {
+        let cells: Vec<(Symbol, Value)> = body_bind_source_slots
+            .iter()
+            .filter_map(|slot| {
+                let slot = *slot as usize;
+                let cell = self.locals.get(slot)?;
+                cell.is_container_ref()
+                    .then(|| (Symbol::intern(&code.locals[slot]), cell.clone()))
+            })
+            .collect();
+        if cells.is_empty() {
+            return;
+        }
+        let mut registry = self.registry_mut();
+        if let Some(role_def) = registry.roles.get_mut(role) {
+            role_def.body_bind_cells = cells.clone();
+        }
+        if let Some(candidates) = registry.role_candidates.get_mut(role) {
+            for candidate in candidates.iter_mut() {
+                candidate.role_def.body_bind_cells = cells.clone();
+            }
+        }
+    }
+
     /// Shared core of the class and role passes: for each compiled method body,
     /// build the `Env` of the declaring frame's lexicals it actually closes
     /// over, keyed by the body's `CompiledCode` identity.

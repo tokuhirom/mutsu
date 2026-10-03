@@ -2215,6 +2215,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `{a => 1}` / `%(a => 1)` -> `Circumfix::HashComposer` /
         // `Contextualizer::Hash`, by the spelling the parser recorded.
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
+        // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
+        Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         Expr::BracketArray(items, _) => {

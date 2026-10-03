@@ -1078,7 +1078,15 @@ impl Interpreter {
         }
         if let ValueView::LazyList(ll) = target.view() {
             let forced = self.force_lazy_list_for_index(&ll, &index)?;
-            target = Value::array(forced);
+            // An `@`-array's lazy store reads like the Array it is: a slot
+            // past the reified end is the element default `Any`, not the
+            // `Nil` a List answers (`my @a = lazy 1, 2; @a[3]` is `Any`).
+            let kind = if ll.in_array_context() {
+                crate::value::ArrayKind::Array
+            } else {
+                crate::value::ArrayKind::List
+            };
+            target = Value::array_with_kind(crate::value::Value::array_arc(forced), kind);
         }
         // Normalize ordinary Seq/Slip targets to List for uniform handling.
         // A mutable collection producer's Seq is different: its elements are

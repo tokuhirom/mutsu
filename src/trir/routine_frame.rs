@@ -33,20 +33,34 @@ impl Interpreter {
     /// exactly as the light path runs an untyped body. The frame's package is
     /// the current one, which every door has already switched to the callee's
     /// (`trir_body_package`).
+    ///
+    /// The body also runs in its own compilation unit, as
+    /// `enter_compilation_unit` does for the untyped entries: a call it makes
+    /// resolves compunit-scoped names (#11081) and user operators for the
+    /// callee's unit, not the caller's. An unset file keeps the caller's
+    /// unit, as for the frame.
     pub(crate) fn run_trir_routine(
         &mut self,
         chunk: &TrChunk,
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        let def_file = chunk.def_file.get().copied();
         self.push_routine_with_location(
             self.current_package_sym(),
             chunk.name,
             self.current_source_line(),
             self.executing_source_file_sym(),
-            chunk.def_file.get().copied(),
+            def_file,
         );
+        let saved_unit = def_file.map(|file| {
+            let unit = self.unit_of_source_sym(Some(file));
+            std::mem::replace(&mut self.current_unit, unit)
+        });
         let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        if let Some(saved_unit) = saved_unit {
+            self.current_unit = saved_unit;
+        }
         self.pop_routine();
         outcome
     }

@@ -66,6 +66,13 @@ impl Interpreter {
         // candidates (`token_key_decl_order`, `sort_sym_keys_by_decl_order` in
         // `resolution.rs`). See
         // todo/tickets/multi-candidates-declaration-order.md.
+        drop(registry);
+        // A compunit-scoped family the running code cannot see is not one of
+        // this routine's candidates (#11081, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope(name) {
+            let name_sym = Symbol::intern(name);
+            candidates.retain(|(def, _)| self.operator_candidate_visible(name_sym, def));
+        }
         candidates.sort_by_key(|(def, _)| def.decl_order);
         let mut seen = std::collections::HashSet::new();
         let mut defs = Vec::new();

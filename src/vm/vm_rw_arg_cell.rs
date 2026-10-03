@@ -36,4 +36,14 @@ impl Interpreter {
         self.register_container_cell_constraint_for_name(&cell, &source_name);
         self.stack.push(cell);
     }
+
+    /// See [`OpCode::MarkReadonlyRwTail`].
+    // Cost: O(1).
+    pub(super) fn exec_mark_readonly_rw_tail_op(&mut self) {
+        if let Some(top) = self.stack.last()
+            && matches!(top.view(), ValueView::Hash(..) | ValueView::Array(..))
+        {
+            self.readonly_rw_tail = Some(top.clone());
+        }
+    }
 }

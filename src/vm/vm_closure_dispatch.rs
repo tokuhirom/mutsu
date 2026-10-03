@@ -1825,9 +1825,18 @@ impl Interpreter {
                     // `$alias := $var` bound through a `lives-ok { ... }`-style
                     // nested chain from every later `$var = ...` write (see
                     // news/2026-08/attr-bind-source-write-tracked-through-nested-call-chain.md).
+                    //
+                    // A dynamic variable is exempt: it is never a lexical capture
+                    // (the body resolves it through the live caller chain, see
+                    // `is_dynamic_var_name`), so its capture-time snapshot says
+                    // nothing about whether a nested call wrote it. A
+                    // `-> { tab-down 2 }` block whose callee set `$*OFF` back to
+                    // the value it held when the block was created must still
+                    // propagate that write (#10996).
                     if captured_names.contains_key(k)
                         && !cc.free_var_syms.contains(k)
                         && !inline_control_written.contains(k)
+                        && !k.with_str(crate::env::is_dynamic_var_name)
                         && data.env.get_sym(*k).is_some_and(|captured| {
                             crate::runtime::utils::container_identity_identical(captured, v)
                         })

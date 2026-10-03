@@ -109,6 +109,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             }
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => mark_expr(expr),
+        Expr::Contextualizer { inner, .. } => mark_expr(inner),
         Expr::MethodCall {
             target, name, args, ..
         } => {

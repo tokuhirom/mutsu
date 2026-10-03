@@ -1304,6 +1304,7 @@ impl Interpreter {
                 method_outer_lexical_slots,
                 type_param_defs,
             );
+            self.record_role_body_bind_cells(code, &qualified_name, body_bind_source_slots);
 
             self.record_module_owned_type(&qualified_name);
             self.last_registered_role_key = Some(qualified_name.clone());

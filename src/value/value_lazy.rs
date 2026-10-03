@@ -192,6 +192,20 @@ impl LazyList {
                 .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
     }
 
+    /// Whether this list provably never ends, so every non-negative index
+    /// exists without generating it: an infinite arithmetic/geometric
+    /// sequence spec, or a bounded cache standing for an endless repetition
+    /// (`LHS xx *`, recorded as an `Inf` element count). A closure sequence is
+    /// not one of them -- its generator may `last` at any element.
+    // Cost: O(1).
+    pub(crate) fn never_ends(&self) -> bool {
+        self.sequence_spec.is_some()
+            || self.elems_count.as_ref().is_some_and(|c| {
+                let f = c.to_f64();
+                f.is_infinite() && f.is_sign_positive()
+            })
+    }
+
     /// A closure sequence can have a concrete endpoint while still requiring
     /// incremental evaluation to discover it. Unlike `... *`, such a sequence
     /// is safe for strict consumers to reify to completion.

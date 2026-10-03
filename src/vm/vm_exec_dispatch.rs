@@ -2047,6 +2047,17 @@ impl Interpreter {
                     && !raw_mode
                     && !is_bind_ctx
                     && !is_rebind
+                    && !self.vardecl_context().get()
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(decayed) = self.sigilless_alias_nil_decay_by_name(&name)
+                {
+                    // A sigilless alias of another variable: the Nil decays
+                    // against that variable's container (#11110).
+                    val = decayed;
+                } else if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
                     && !name.starts_with(['@', '%', '&'])
                     && let Some(def) = self.var_default(&name)
                 {
@@ -3330,6 +3341,11 @@ impl Interpreter {
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
             OpCode::CaptureRwArgCell => {
                 self.exec_capture_rw_arg_cell_op(code);
+                *ip += 1;
+            }
+            // Cost: O(1).
+            OpCode::MarkReadonlyRwTail => {
+                self.exec_mark_readonly_rw_tail_op();
                 *ip += 1;
             }
             // Cost: O(1) (attribute map probes).
