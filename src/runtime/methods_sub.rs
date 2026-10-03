@@ -1180,12 +1180,12 @@ impl Interpreter {
             }
             // `&foo` creates a fresh Sub, so the chain is keyed by name once a
             // routine is wrapped (see `routine_wrap_key`).
-            let (sub_id, func_name) = self.routine_wrap_key(&data);
+            let (sub_id, func_name) = self.routine_wrap_key(data);
             crate::runtime::cow_table_mut(&mut self.wrap_chains)
                 .entry(sub_id)
                 .or_default()
                 .push((handle_id, wrapper));
-            self.note_routine_wrap_chain(sub_id, func_name, &target);
+            self.note_routine_wrap_chain(sub_id, func_name, target);
             // Return a WrapHandle instance
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("sub-id".to_string(), Value::int(sub_id as i64));
