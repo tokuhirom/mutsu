@@ -677,12 +677,11 @@ jobs:
         # This covers every mutsu in the job — any t/ or roast file's own
         # interpreter, and any subprocess it spawned (each writes its own
         # report, told apart by pid and argv). That is why the job env sets an
-        # ABSOLUTE MUTSU_CRASH_DIR: the default `tmp/crash` is resolved against
-        # each process's startup working directory, so a subprocess spawned
-        # with `:cwd`, or one inheriting a `chdir`, would drop its report in
-        # some temp directory this step never looks at. Verified: with the
-        # relative default, a `run(..., :cwd(...))` child's report lands under
-        # that cwd instead.
+        # ABSOLUTE MUTSU_CRASH_DIR: without it a report goes to stderr only,
+        # and a relative one is resolved against each process's startup
+        # working directory, so a subprocess spawned with `:cwd`, or one
+        # inheriting a `chdir`, would drop its report in some temp directory
+        # this step never looks at.
         #
         # `always()` (not `failure()`): a report can exist on an otherwise
         # green job -- a deliberately-provoked subprocess crash a test

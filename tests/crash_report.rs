@@ -176,11 +176,11 @@ fn reporting_can_be_switched_off() {
 /// A process that starts in some other directory must still report into an
 /// absolute `MUTSU_CRASH_DIR`.
 ///
-/// This is the property CI depends on. The default `tmp/crash` is relative to
-/// each process's startup working directory, so a subprocess spawned with
-/// `:cwd` — or one inheriting a parent's `chdir` — would otherwise drop its
-/// report somewhere the collection step never looks, and the crash of a
-/// subprocess is exactly the case this whole feature exists to attribute.
+/// This is the property CI depends on. A relative `MUTSU_CRASH_DIR` is
+/// resolved against each process's startup working directory, so a subprocess
+/// spawned with `:cwd` — or one inheriting a parent's `chdir` — would otherwise
+/// drop its report somewhere the collection step never looks, and the crash of
+/// a subprocess is exactly the case this whole feature exists to attribute.
 #[test]
 fn an_absolute_report_dir_survives_a_different_working_directory() {
     let base = std::env::temp_dir().join(format!("mutsu-crash-test-cwd-{}", std::process::id()));
@@ -232,4 +232,73 @@ fn a_clean_run_creates_no_report_directory() {
         "a clean run must not create {}",
         dir.display()
     );
+}
+
+/// Without `MUTSU_CRASH_DIR` the report goes to stderr and *nothing* is written
+/// anywhere: the shipped binary used to drop `tmp/crash/<pid>.txt` into
+/// whatever directory a user ran it from (#11219).
+#[test]
+fn by_default_the_report_goes_to_stderr_and_no_file_is_written() {
+    let cwd = std::env::temp_dir().join(format!("mutsu-crash-test-default-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&cwd);
+    std::fs::create_dir_all(&cwd).expect("failed to create working directory");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_mutsu"))
+        .args(["-e", "say 'sentinel-marker'"])
+        .current_dir(&cwd)
+        .env("MUTSU_CRASH_SELFTEST", "segv")
+        .env_remove("MUTSU_CRASH_DIR")
+        .output()
+        .expect("failed to spawn mutsu");
+    assert_eq!(out.status.signal(), Some(libc::SIGSEGV));
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(field(&stderr, "signal:"), "11 (SIGSEGV)");
+    assert!(
+        field(&stderr, "argv:").contains("sentinel-marker"),
+        "stderr should carry the report:\n{stderr}"
+    );
+    assert!(stderr.contains("--- backtrace (raw) ---"));
+    let left: Vec<_> = std::fs::read_dir(&cwd)
+        .expect("readdir")
+        .map(|e| e.expect("readdir").path())
+        .collect();
+    assert!(
+        left.is_empty(),
+        "a crash must leave nothing in the cwd: {left:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&cwd);
+}
+
+/// With `MUTSU_CRASH_DIR` the report is a private file, and stderr says where.
+#[test]
+fn a_report_file_is_private_and_announced_on_stderr() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("mutsu-crash-test-private-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out = Command::new(env!("CARGO_BIN_EXE_mutsu"))
+        .args(["-e", "say 'sentinel-marker'"])
+        .env("MUTSU_CRASH_SELFTEST", "segv")
+        .env("MUTSU_CRASH_DIR", &dir)
+        .output()
+        .expect("failed to spawn mutsu");
+    assert_eq!(out.status.signal(), Some(libc::SIGSEGV));
+
+    let report = read_report(&dir);
+    let file = dir.join(format!("{}.txt", field(&report, "pid:")));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(&format!("crash report: {}", file.display())),
+        "stderr should name the report file:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("--- backtrace (raw) ---"),
+        "the report itself belongs in the file, not on stderr:\n{stderr}"
+    );
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&file), 0o600);
+    assert_eq!(mode(&dir), 0o700);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
