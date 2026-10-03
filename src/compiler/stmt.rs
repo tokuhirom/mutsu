@@ -1430,7 +1430,15 @@ impl Compiler {
                     && !*is_our
                     && !is_constant_decl
                     && custom_traits.iter().any(|(n, _)| n == "__init_sees_self");
-                let reset = if init_sees_self {
+                // `my @*x = f()` / `my %*x = f()`: the fresh empty container is
+                // already the dynamic binding a callee of the initializer sees
+                // (the outer or absent one must not show through).
+                let dynamic_coll_decl = is_dynamic
+                    && !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && (name.starts_with("@*") || name.starts_with("%*"));
+                let reset = if init_sees_self || dynamic_coll_decl {
                     DeclReset::Shadow
                 } else if !*is_state
                     && !*is_our
