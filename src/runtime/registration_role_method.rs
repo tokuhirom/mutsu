@@ -341,6 +341,7 @@ impl Interpreter {
             &def.param_defs,
             &decl.body,
             decl.is_rw,
+            false,
             &decl.custom_traits,
         )?;
         // `my method` in roles are role-private, skip method table.

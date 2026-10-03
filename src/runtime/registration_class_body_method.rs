@@ -323,6 +323,7 @@ impl Interpreter {
             &effective_param_defs,
             &decl.body,
             decl.is_rw,
+            false,
             &decl.custom_traits,
         )?;
         // `Method::Also` implements `is also<NAME>` through a custom
