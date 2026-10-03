@@ -155,7 +155,7 @@ pub(crate) fn unwrap_contained_pair(v: &Value) -> Value {
 /// mutsu holds as an `Instance` of `Stash`/`PseudoStash` carrying a `symbols`
 /// Hash. Such an item is a Map in Raku, so a hash initializer flattens it.
 // Cost: O(1).
-fn stash_symbols(v: &Value) -> Option<Value> {
+pub(crate) fn stash_symbols(v: &Value) -> Option<Value> {
     match v.view() {
         ValueView::Instance {
             class_name,

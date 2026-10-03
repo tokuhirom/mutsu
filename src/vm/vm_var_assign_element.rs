@@ -820,6 +820,15 @@ impl Interpreter {
             Some(ValueView::ContainerRef(cell)) => cell.clone(),
             _ => return None,
         };
+        // A module routine's own `our %h` / `our @a` resolves to the package
+        // mirror before env, on the read side and at the write chokepoint
+        // (`env_root_descended_mut_tracked`). The routine's captured env cell
+        // is only the declaring scope's alias of it; storing into that cell
+        // would copy the container away from the mirror every read sees
+        // (Ake's `%TASKS{$name} = ...` in `make-task`).
+        if var_sym.with_str(|n| self.our_package_container_key(n).is_some()) {
+            return None;
+        }
         let slots = code.local_slots_of(var_sym);
         if slots.is_empty() {
             return Some(cell);
