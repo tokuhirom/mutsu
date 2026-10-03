@@ -85,6 +85,23 @@ impl Interpreter {
                 .get_sym(crate::runtime::term_names::term_key_sym(name))
                 .is_none()
     }
+
+    /// Whether `env` binds the bareword `name` to the type object a type
+    /// declaration of that spelling installed: the type itself, or a lexical
+    /// (`my`) type registered under its ADR-0047 storage name
+    /// (`RIS\u{0}<decl-id>`, possibly package-qualified). A `$`-scalar of the
+    /// same spelling holding some other type object does not count.
+    // Cost: O(|p|), p = the bound package name (the unqualified part is memoized).
+    pub(crate) fn env_binds_declared_type(&self, name: &str) -> bool {
+        let Some(v) = self.env().get(name) else {
+            return false;
+        };
+        let ValueView::Package(p) = v.view() else {
+            return false;
+        };
+        crate::qualified::unqualified_part(p)
+            .with_str(|short| short.split('\u{0}').next() == Some(name))
+    }
 }
 
 /// Whether a bareword spelled `name` may be remembered once it resolved to

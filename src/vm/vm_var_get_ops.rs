@@ -405,6 +405,11 @@ impl Interpreter {
             // type when resolved at run time: a `constant Int = 5` shadows it
             // only lexically, through the compiler's slot read.
             .filter(|_| !(self.has_type_direct(name) || Self::is_builtin_type(name)))
+            // Nor does an `our` constant whose block has exited outrank a type
+            // declaration that binds the name in this scope (`my class RIS`
+            // after a sibling block's `constant RIS`, #11261): the innermost
+            // declaration of the name is the type.
+            .filter(|_| !self.env_binds_declared_type(name))
         {
             // A sigil-less constant in scope. It lives in the term namespace
             // (`runtime::term_names`, #9962), so the plain `env[name]` probe
