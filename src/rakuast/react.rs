@@ -11,7 +11,9 @@
 //! `params` / `param_defs` / `body`, the way `Expr::Lambda` and
 //! `Expr::AnonSubParams` hold them, so the converter rebuilds that expression
 //! for the body and the lowering takes it apart again. It records `done` and
-//! `done()` as the same `Stmt::ReactDone`; that renders as the bare call.
+//! `done()` as the same `Stmt::ReactDone`; that renders as the bare call,
+//! which lowers to the bare word the compiler reads as the completion unless
+//! a lexical `&done` shadows it.
 
 use super::convert::{block_node, blockoid, convert_expr, name_from_identifier, node_field};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
