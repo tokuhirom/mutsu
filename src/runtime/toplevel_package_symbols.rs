@@ -5,7 +5,7 @@
 //! there stayed behind in each frame env of the program that loaded it. After
 //! `use Cro::HTTP2::RequestParser` that was 456 of a frame env's ~630 entries:
 //! the qualified names of the classes, roles and subsets the loaded modules
-//! declare (`Cro::HTTP2::Frame`), and three spellings of every enum value
+//! declare (`Cro::HTTP2::Frame`), and the qualified spellings of enum values
 //! (`E::K`, `Pkg::E::K`, `Pkg::K`). Every copy-on-write deep copy of that env
 //! (a call frame's setup, a closure capture) copied all of them.
 //!
@@ -37,6 +37,36 @@
 use super::*;
 
 impl Interpreter {
+    /// Bind `E::K` in the declaring unit package's scope when the enum is
+    /// private. Its `Pkg::E::K` and `Pkg::K` spellings remain package symbols.
+    // Cost: O(|enum_name| + |variant| + t) when copy-on-write clones a table
+    // of t scoped names; otherwise an amortized O(1) insert.
+    pub(crate) fn bind_enum_short_symbol(
+        &mut self,
+        enum_name: &str,
+        variant: &str,
+        value: Value,
+        exported: bool,
+    ) {
+        let enum_sym = Symbol::intern(enum_name);
+        let key = crate::qualified::qualified(enum_sym, Symbol::intern(variant))
+            .as_str()
+            .to_string();
+        if !exported
+            && self.at_module_toplevel()
+            && !self.current_package_is_global()
+            && !crate::qualified::is_qualified(enum_sym)
+        {
+            let owner = self.current_package();
+            crate::runtime::cow_table_mut(&mut self.module_scope_lexicals)
+                .entry(owner)
+                .or_default()
+                .insert(key, value);
+        } else {
+            self.bind_package_symbol(key, value);
+        }
+    }
+
     /// Whether binding the type object `storage` under the package-qualified
     /// name `qualified` in the frame env would only repeat what the type
     /// registry answers: the two names agree, the name is qualified, a module
@@ -70,12 +100,15 @@ impl Interpreter {
         self.env.insert(name, value);
     }
 
-    /// The value [`Self::bind_package_symbol`] recorded for the qualified
-    /// `name` in the module top-level table. Readers ask the env first, so a
-    /// lexical binding of the same name shadows it.
-    // Cost: O(1) when the table is empty, else O(|name|) to intern plus one
-    // table probe.
+    /// A private enum's short qualified name in the running module's scope,
+    /// or the value [`Self::bind_package_symbol`] recorded in the top-level
+    /// table. Readers ask the env first, so a lexical binding shadows either.
+    // Cost: O(c * d + |name|), c = running package candidates (at most 4),
+    // d = package nesting depth, including the global table lookup.
     pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
+        if let Some(scoped) = self.lookup_in_running_package(&self.module_scope_lexicals, name) {
+            return Some(scoped);
+        }
         if self.module_toplevel.package_symbols.is_empty() {
             return None;
         }

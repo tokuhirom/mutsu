@@ -283,6 +283,13 @@ mainline makes directly, by the same depth rule as §7.2:
 Result: a deep-copied frame env falls to ~220 entries, and the per-iteration
 deep-copy volume from **10,057** to **3,401** entries (−66%).
 
+**Scope correction (#11249).** The original slice put all three enum member
+spellings in the process-wide table. Rakudo makes an unexported `E::K` visible
+only in the declaring unit module, while `Pkg::E::K` and `Pkg::K` remain package
+symbols. The short private spelling now lives in `module_scope_lexicals` keyed
+by its declaring package; qualified readers consult that scope before the
+process-wide table. Exported members keep their imported short spelling.
+
 What remains of the env's non-lexical content after this slice: the
 `__mutsu_enum_bare_*` keys of imported enum values (44), group 3's
 `__mutsu_constant_var::` / `__mutsu_type::` markers (45), the qualified names

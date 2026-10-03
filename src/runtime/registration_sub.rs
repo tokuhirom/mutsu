@@ -2587,7 +2587,7 @@ impl Interpreter {
                 index,
             );
             if !is_anonymous {
-                self.bind_package_symbol(format!("{}::{}", name, key), enum_val.clone());
+                self.bind_enum_short_symbol(name, key, enum_val.clone(), export_tags.is_some());
                 // Also register with fully-qualified package name
                 if self.current_package() != "GLOBAL" {
                     self.bind_package_symbol(
