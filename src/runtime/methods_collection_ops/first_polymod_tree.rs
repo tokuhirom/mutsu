@@ -373,24 +373,14 @@ impl Interpreter {
             // .tree(0) — identity
             ValueView::Int(0) => Ok(target),
             // .tree(n) — tree to n levels
-            ValueView::Int(n) if n > 0 => Ok(
-                crate::builtins::methods_0arg::dispatch_core_math::tree_to_depth(
-                    &target, n as usize,
-                ),
-            ),
+            ValueView::Int(n) if n > 0 => {
+                Ok(crate::value::flat::tree_to_depth(&target, n as usize))
+            }
             // .tree(*) or .tree(Inf) — full depth (same as .tree())
-            ValueView::Whatever => Ok(
-                crate::builtins::methods_0arg::dispatch_core_math::tree_to_depth(
-                    &target,
-                    usize::MAX,
-                ),
-            ),
-            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => Ok(
-                crate::builtins::methods_0arg::dispatch_core_math::tree_to_depth(
-                    &target,
-                    usize::MAX,
-                ),
-            ),
+            ValueView::Whatever => Ok(crate::value::flat::tree_to_depth(&target, usize::MAX)),
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                Ok(crate::value::flat::tree_to_depth(&target, usize::MAX))
+            }
             // .tree([&first, *@rest]) — array of closures form
             ValueView::Array(closure_list, ..) => {
                 if closure_list.is_empty() {

@@ -542,12 +542,14 @@ pub(crate) struct MixData {
 }
 
 mod aliased_mut;
+pub(crate) mod array_coerce;
 mod array_data_ops;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
 mod bareword_site;
 pub(crate) mod buf_class_names;
+pub(crate) mod compare;
 pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
@@ -556,11 +558,14 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+pub(crate) mod flat;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
+pub(crate) mod identity;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
+pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 pub mod user_key_map;
@@ -588,6 +593,9 @@ pub(crate) mod eqv_container_type;
 mod native_backing;
 mod promise_await;
 pub(crate) mod promise_wake;
+pub(crate) mod quanthash_keys;
+pub(crate) mod radix_numeric;
+pub(crate) mod rat_parts;
 pub(crate) mod regex_caps;
 pub(crate) mod seq_body;
 mod serde_support;
@@ -595,9 +603,13 @@ pub(crate) mod signature;
 mod signature_smartmatch;
 pub(crate) mod state_scope_reaper;
 mod str_body;
+pub(crate) mod str_increment;
 mod str_iter;
+pub(crate) mod str_numeric;
 mod sync_cell;
 pub(crate) mod temporal_core;
+pub(crate) mod to_list;
+mod to_list_range;
 pub(crate) mod type_name;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
@@ -615,6 +627,7 @@ mod value_gc;
 mod value_instance;
 mod value_lazy;
 mod value_lazy_ctors;
+pub(crate) mod version_cmp;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
@@ -638,6 +651,7 @@ pub use str_body::StrBody;
 pub(crate) use value_str_append_nfc::{StrAppendPlan, has_nfc_boundary_before};
 mod view;
 pub(crate) mod waker;
+pub(crate) mod which_key;
 
 mod native_cache_shapes;
 mod seq_body_shapes;
@@ -3105,7 +3119,7 @@ pub(crate) struct DistinctState {
     pub(crate) as_fn: Option<Value>,
     pub(crate) with_fn: Option<Value>,
     /// Keys seen so far under the default `===` rule (`unique`/`repeated`).
-    pub(crate) seen: crate::runtime::utils::IdentityIndex,
+    pub(crate) seen: crate::value::identity_index::IdentityIndex,
     /// Keys seen so far under a `:with` comparator (`unique`/`repeated`).
     pub(crate) with_seen: Vec<Value>,
     /// The previous element's key (`squish`).

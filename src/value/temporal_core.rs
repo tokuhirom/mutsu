@@ -3,7 +3,9 @@
 //! these, so they live below the builtins (#10779); the builtins re-export
 //! them from `methods_0arg::temporal`.
 
+use crate::symbol::Symbol;
 use crate::value::{AttrMap, Value, ValueView};
+use std::collections::HashMap;
 
 /// Convert epoch days back to (year, month, day).
 pub(crate) fn epoch_days_to_civil(days: i64) -> (i64, i64, i64) {
@@ -220,4 +222,68 @@ pub(crate) fn instant_to_posix(instant: f64) -> f64 {
         posix = instant - ls;
     }
     posix
+}
+
+/// Convert civil date to epoch days (days since 1970-01-01).
+pub(crate) fn civil_to_epoch_days(year: i64, month: i64, day: i64) -> i64 {
+    let y = year - i64::from(month <= 2);
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// Create a Date instance with year/month/day attributes.
+pub(crate) fn make_date(year: i64, month: i64, day: i64) -> Value {
+    make_date_with_formatter(year, month, day, None)
+}
+
+/// Create a Date instance with an optional formatter.
+pub(crate) fn make_date_with_formatter(
+    year: i64,
+    month: i64,
+    day: i64,
+    formatter: Option<Value>,
+) -> Value {
+    let mut attrs = HashMap::new();
+    attrs.insert("year".to_string(), Value::int(year));
+    attrs.insert("month".to_string(), Value::int(month));
+    attrs.insert("day".to_string(), Value::int(day));
+    // Also store epoch days for backward compat and arithmetic
+    attrs.insert(
+        "days".to_string(),
+        Value::int(civil_to_epoch_days(year, month, day)),
+    );
+    if let Some(f) = formatter {
+        attrs.insert("formatter".to_string(), f);
+    }
+    Value::make_instance(Symbol::intern("Date"), attrs)
+}
+
+/// Compute daycount from year/month/day.
+pub(crate) fn daycount(year: i64, month: i64, day: i64) -> i64 {
+    // Raku's daycount is the Modified Julian Day Number
+    // MJD = JD - 2400000.5
+    // For a Date, the JD at noon is what we want
+    // Actually, Raku's .daycount returns the number of days since
+    // the Modified Julian Day epoch (November 17, 1858)
+    // daycount = epoch_days + 40587
+    civil_to_epoch_days(year, month, day) + 40587
+}
+
+/// Compute POSIX timestamp from DateTime components.
+pub(crate) fn datetime_to_posix(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+    timezone: i64,
+) -> f64 {
+    let epoch_days = civil_to_epoch_days(year, month, day);
+    epoch_days as f64 * 86400.0 + hour as f64 * 3600.0 + minute as f64 * 60.0 + second
+        - timezone as f64
 }

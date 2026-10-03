@@ -83,45 +83,6 @@ fn str_to_rat(s: &str) -> Value {
     crate::value::make_big_rat(n, BigInt::from(1))
 }
 
-/// Recursively apply `.tree` to nested arrays.
-/// `.tree` on an Iterable is `$(self.map(*.tree).Seq)`: every node it descends
-/// into becomes an *itemized* Seq, so `(1, (2, 3)).tree.raku` is
-/// `$((1, $((2, 3).Seq)).Seq)`. A non-Iterable is its own tree.
-///
-/// `depth` is how many levels still get treed — `.tree(1)` itemizes only the
-/// top node and leaves its children as they are, `.tree(0)` is the identity,
-/// and `.tree` / `.tree(*)` are `usize::MAX`. Shared with the `.tree(...)`
-/// argument forms in `runtime::…::dispatch_tree`.
-/// Cost: O(1) on an Array (each level is a lazy Seq, `ListGen::Tree`, that
-/// trees an element as it is pulled); O(e) on a Seq/Slip/Hash/Range, e =
-/// elements of that level.
-pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
-    if depth == 0 {
-        return v.clone();
-    }
-    let children = match v.view() {
-        ValueView::Array(..) => {
-            return Value::scalar(Value::seq_list_gen(
-                crate::value::ListGen::tree(v.clone(), depth),
-                false,
-            ));
-        }
-        ValueView::Seq(inner) => inner.to_vec(),
-        ValueView::Slip(inner) => inner.to_vec(),
-        ValueView::Hash(_)
-        | ValueView::Range(..)
-        | ValueView::RangeExcl(..)
-        | ValueView::RangeExclStart(..)
-        | ValueView::RangeExclBoth(..) => crate::runtime::utils::value_to_list(v),
-        _ => return v.clone(),
-    };
-    let treed = children
-        .iter()
-        .map(|c| tree_to_depth(c, depth - 1))
-        .collect();
-    Value::scalar(Value::seq(treed))
-}
-
 /// Levenshtein edit distance between two strings (by Unicode scalar), used for
 /// the numeric value of a `StrDistance`.
 fn levenshtein(a: &str, b: &str) -> usize {
@@ -629,7 +590,10 @@ pub(super) fn dispatch(
                 }
             }
         }),
-        "tree" => Some(Some(Ok(tree_to_depth(target, usize::MAX)))),
+        "tree" => Some(Some(Ok(crate::value::flat::tree_to_depth(
+            target,
+            usize::MAX,
+        )))),
         // Cost: O(n), n = bytes of the invocant.
         "encode" => {
             let s = target.to_string_value();

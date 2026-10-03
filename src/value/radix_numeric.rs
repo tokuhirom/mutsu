@@ -1,4 +1,6 @@
-use super::*;
+use crate::value::to_list::value_to_list;
+use crate::value::{Value, ValueView};
+use num_bigint::BigInt;
 
 fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
     let mut end = 0;
@@ -9,7 +11,7 @@ fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
             end += c.len_utf8();
             continue;
         }
-        let Some(dv) = crate::builtins::unicode::unicode_decimal_digit_value(c) else {
+        let Some(dv) = crate::ucd::numeric::unicode_decimal_digit_value(c) else {
             break;
         };
         saw_digit = true;
@@ -73,14 +75,13 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
             saw_dot = true;
             continue;
         }
-        let value =
-            crate::builtins::unicode::unicode_decimal_digit_value(c).or_else(|| match c {
-                'a'..='z' => Some(10 + (c as u32 - 'a' as u32)),
-                'A'..='Z' => Some(10 + (c as u32 - 'A' as u32)),
-                'ａ'..='ｚ' => Some(10 + (c as u32 - 'ａ' as u32)),
-                'Ａ'..='Ｚ' => Some(10 + (c as u32 - 'Ａ' as u32)),
-                _ => None,
-            })?;
+        let value = crate::ucd::numeric::unicode_decimal_digit_value(c).or_else(|| match c {
+            'a'..='z' => Some(10 + (c as u32 - 'a' as u32)),
+            'A'..='Z' => Some(10 + (c as u32 - 'A' as u32)),
+            'ａ'..='ｚ' => Some(10 + (c as u32 - 'ａ' as u32)),
+            'Ａ'..='Ｚ' => Some(10 + (c as u32 - 'Ａ' as u32)),
+            _ => None,
+        })?;
         if value >= base {
             return None;
         }
@@ -159,7 +160,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         // value instead of truncating to Int.
         ValueView::Enum { value, .. } => coerce_to_numeric(value.to_value()),
         ValueView::Str(s) => {
-            if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
+            if let Some(v) = crate::value::str_numeric::parse_raku_str_to_numeric(&s) {
                 v
             } else {
                 Value::int(0)
@@ -229,9 +230,8 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             attributes,
             ..
         } if class_name == "Date" => {
-            let (y, m, d) =
-                crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
-            let epoch = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(y, m, d);
+            let (y, m, d) = crate::value::temporal_core::date_attrs(&(attributes).as_map());
+            let epoch = crate::value::temporal_core::civil_to_epoch_days(y, m, d);
             Value::int(epoch * 86400)
         }
         ValueView::Instance {
@@ -240,8 +240,8 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             ..
         } if class_name == "DateTime" => {
             let (y, mo, d, h, mi, s, tz) =
-                crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
-            Value::num(crate::builtins::methods_0arg::temporal::datetime_to_posix(
+                crate::value::temporal_core::datetime_attrs(&(attributes).as_map());
+            Value::num(crate::value::temporal_core::datetime_to_posix(
                 y, mo, d, h, mi, s, tz,
             ))
         }
@@ -250,7 +250,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         // arithmetic on that payload instead of treating the wrapper instance
         // as zero (`class Amount is Int { }; Amount.new(5) + 1`).
         ValueView::Instance { attributes, .. } => {
-            crate::builtins::numeric_subclass::numeric_payload_of(&attributes)
+            crate::value::numeric_payload::numeric_payload_of(&attributes)
                 .map(coerce_to_numeric)
                 .unwrap_or_else(|| Value::int(0))
         }

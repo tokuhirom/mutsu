@@ -21,7 +21,8 @@ use dispatch_3arg::native_function_3arg;
 use dispatch_variadic::native_function_variadic;
 use sprintf_fmt::native_sprintf;
 
-pub(crate) use flat::{deitemize_flat_operand, flat_val, join_flat, thread_junctions_in_items};
+pub(crate) use crate::value::flat::{deitemize_flat_operand, flat_val};
+pub(crate) use flat::{join_flat, thread_junctions_in_items};
 pub(crate) use junction::build_junction;
 pub(crate) use math::factorial_bigint;
 pub(crate) use uniparse::uniparse_impl;

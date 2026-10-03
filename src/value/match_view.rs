@@ -234,7 +234,7 @@ impl Value {
         let items = self
             .match_list()
             .as_ref()
-            .map(crate::runtime::utils::value_to_list)
+            .map(crate::value::to_list::value_to_list)
             .unwrap_or_default();
         Value::capture_list_with_holes(items, as_array)
     }

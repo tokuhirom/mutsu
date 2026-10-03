@@ -25,7 +25,7 @@
 //! cross-kind arm (they compare numerically), so they share one bucket space
 //! rather than being excluded.
 
-use super::shaped::values_identical;
+use crate::value::identity::values_identical;
 use crate::value::{Value, ValueView};
 use num_traits::ToPrimitive;
 use std::collections::HashMap;

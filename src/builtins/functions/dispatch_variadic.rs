@@ -1,7 +1,7 @@
 use super::dispatch_2arg::native_function_2arg;
-use super::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use super::math::{gcd_u64, generic_range_as_bigint, is_extrema_named_pair};
 use crate::runtime;
+use crate::value::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
 

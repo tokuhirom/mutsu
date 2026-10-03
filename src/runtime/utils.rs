@@ -5,36 +5,11 @@ use std::collections::{HashMap, HashSet};
 use crate::value::ValueMap;
 use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
-use num_integer::Integer;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
 
-/// Maximum number of elements when expanding an infinite range to a list.
-pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
+pub(crate) use crate::value::to_list::MAX_RANGE_EXPAND;
 
-/// Maximum number of elements eagerly pre-populated when a genuinely
-/// *infinite* i64 `Range` (`b == i64::MAX`, e.g. `^Inf`, `1..*`) is bound
-/// into a `Lazy`-kind Array, a slurpy (`*@`) parameter, or the RHS/index set
-/// of a slice assignment — the initial window materialized before further
-/// elements are reified on demand. This must NEVER be applied to a *finite*
-/// range: a finite range has a real, known bound and always expands to it in
-/// full (see `todo/tickets/finite-range-assign-truncates-at-100k.md` — a
-/// prior bug applied this cap unconditionally, silently truncating finite
-/// assignments above 100k elements).
-///
-/// This single constant replaces what used to be three independent
-/// same-valued literals (`coerce_to_array`'s `MAX_ARRAY_EXPAND`,
-/// `assignment_rhs_values`/`slice_indices_from_index`'s
-/// `MAX_ASSIGN_SLICE_EXPAND`, and `flatten_into_slurpy`'s
-/// `MAX_SLURPY_RANGE_EXPAND`) — all three capped the exact same case
-/// (an infinite i64 Range) with the same value, so keeping them as separate
-/// numbers was a maintenance hazard, not a deliberate difference.
-///
-/// Deliberately NOT unified with `MAX_RANGE_EXPAND` above: that constant
-/// bounds a full, non-lazy, one-shot materialization (`.List`/`.Array`
-/// coercion, `map`/`grep` over a range) where a larger allowance is
-/// reasonable because the result is not retained as an on-demand `Lazy`
-/// array.
-pub(crate) const MAX_LAZY_RANGE_PREFIX: i64 = 100_000;
+pub(crate) use crate::value::array_coerce::MAX_LAZY_RANGE_PREFIX;
 
 /// The env key recording the `:=` alias target of the sigilless/aliased variable
 /// `name` (`my $b := $a` stores `a` under the key for `b`), pre-interned.
@@ -404,96 +379,18 @@ pub(crate) fn io_path_parts_keys() -> &'static [&'static str] {
     &["volume", "dirname", "basename"]
 }
 
-pub(crate) fn version_cmp_parts(
-    a_parts: &[crate::value::VersionPart],
-    b_parts: &[crate::value::VersionPart],
-) -> std::cmp::Ordering {
-    use crate::value::VersionPart;
-    let max_len = a_parts.len().max(b_parts.len());
-    for i in 0..max_len {
-        let a = a_parts.get(i);
-        let b = b_parts.get(i);
-        match (a, b) {
-            (Some(VersionPart::Num(an)), Some(VersionPart::Num(bn))) => match an.cmp(bn) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            },
-            (Some(VersionPart::Str(sa)), Some(VersionPart::Str(sb))) => match sa.cmp(sb) {
-                std::cmp::Ordering::Equal => continue,
-                other => return other,
-            },
-            // Str parts sort before Num parts (alpha/pre-release comes before release)
-            (Some(VersionPart::Num(_)), Some(VersionPart::Str(_))) => {
-                return std::cmp::Ordering::Greater;
-            }
-            (Some(VersionPart::Str(_)), Some(VersionPart::Num(_))) => {
-                return std::cmp::Ordering::Less;
-            }
-            // Missing part defaults: Num(0) for missing
-            (None, Some(VersionPart::Num(n))) => {
-                if *n != 0 {
-                    return std::cmp::Ordering::Less;
-                }
-            }
-            (Some(VersionPart::Num(n)), None) => {
-                if *n != 0 {
-                    return std::cmp::Ordering::Greater;
-                }
-            }
-            // Missing vs Str: missing (treated as Num(0)) is Greater than Str
-            // (Str parts are pre-release, so they come before the plain version)
-            (None, Some(VersionPart::Str(_))) => return std::cmp::Ordering::Greater,
-            (Some(VersionPart::Str(_)), None) => return std::cmp::Ordering::Less,
-            // A `*` (Whatever) part sorts *before* any concrete part (it acts as
-            // -infinity for ordering: `v1.* <=> v1.0` is `Less`). This is distinct
-            // from smart-matching, where a Whatever in the *matcher* accepts anything.
-            (Some(VersionPart::Whatever), Some(VersionPart::Whatever)) => continue,
-            (Some(VersionPart::Whatever), _) => return std::cmp::Ordering::Less,
-            (_, Some(VersionPart::Whatever)) => return std::cmp::Ordering::Greater,
-            (None, None) => continue,
-        }
-    }
-    std::cmp::Ordering::Equal
-}
-
-/// Full `Version` ordering, including the trailing `+` / `-` flag as a
-/// tie-breaker: when the parts compare equal, `v1+ <=> v1` is `More` (a `+`
-/// version sorts *after* the bare version) and `-` sorts before it.
-pub(crate) fn version_cmp(
-    a_parts: &[crate::value::VersionPart],
-    a_plus: bool,
-    a_minus: bool,
-    b_parts: &[crate::value::VersionPart],
-    b_plus: bool,
-    b_minus: bool,
-) -> std::cmp::Ordering {
-    match version_cmp_parts(a_parts, b_parts) {
-        std::cmp::Ordering::Equal => {
-            let a_rank = a_plus as i8 - a_minus as i8;
-            let b_rank = b_plus as i8 - b_minus as i8;
-            a_rank.cmp(&b_rank)
-        }
-        other => other,
-    }
-}
-
 mod binding_errors;
 mod char_cursor;
 mod coerce_containers;
-mod compare;
 mod errors;
 mod gist;
-mod identity_index;
 mod list;
 mod list_borrow;
-mod quanthash_keys;
-mod radix_numeric;
 mod rat;
 mod set_algebra;
 mod set_coerce;
 mod set_operand;
 mod set_ops;
-mod shaped;
 mod type_check_errors;
 mod type_constraints;
 mod type_misc;
@@ -502,27 +399,34 @@ mod zero_denominator;
 pub(crate) use binding_errors::*;
 pub(crate) use char_cursor::*;
 pub(crate) use coerce_containers::*;
-pub(crate) use compare::*;
 pub(crate) use errors::*;
 pub(crate) use gist::*;
-pub(crate) use identity_index::*;
 pub(crate) use list::*;
 pub(crate) use list_borrow::*;
-pub(crate) use quanthash_keys::*;
-pub(crate) use radix_numeric::*;
 pub(crate) use rat::*;
 pub(crate) use set_algebra::*;
 pub(crate) use set_coerce::*;
 pub(crate) use set_operand::*;
 pub(crate) use set_ops::*;
-pub(crate) use shaped::*;
 // The name-marker byte scans live below the runtime (issue #10779); the
 // glob re-export keeps them reachable as `runtime::utils::*`.
 pub(crate) use crate::str_scan::*;
+pub(crate) use crate::value::array_coerce::{
+    deitemize_real_array_elements, itemize_real_array_elements,
+};
 pub(crate) use crate::value::buf_class_names::*;
+pub(crate) use crate::value::compare::*;
+pub(crate) use crate::value::identity::*;
+pub(crate) use crate::value::identity_index::*;
 pub(crate) use crate::value::numeric_coerce::*;
+pub(crate) use crate::value::quanthash_keys::*;
+pub(crate) use crate::value::radix_numeric::*;
+pub(crate) use crate::value::rat_parts::*;
 pub(crate) use crate::value::shaped_array::*;
+pub(crate) use crate::value::to_list::value_to_list;
 pub(crate) use crate::value::type_name::value_type_name;
+pub(crate) use crate::value::version_cmp::*;
+pub(crate) use crate::value::which_key::value_which_key;
 pub(crate) use type_check_errors::*;
 pub(crate) use type_constraints::*;
 pub(crate) use type_misc::*;

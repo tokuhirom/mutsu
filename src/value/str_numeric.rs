@@ -21,9 +21,9 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
 
     // If the string contains Unicode decimal digits (Nd category), normalize
     // them to their ASCII equivalents before further parsing.
-    if s.chars().any(|c| {
-        !c.is_ascii() && crate::builtins::unicode::unicode_decimal_digit_value(c).is_some()
-    }) && let Some(ascii_str) = normalize_unicode_decimal_digits(s)
+    if s.chars()
+        .any(|c| !c.is_ascii() && crate::ucd::numeric::unicode_decimal_digit_value(c).is_some())
+        && let Some(ascii_str) = normalize_unicode_decimal_digits(s)
     {
         return parse_raku_str_to_numeric(&ascii_str);
     }
@@ -192,7 +192,7 @@ fn normalize_unicode_decimal_digits(s: &str) -> Option<String> {
         if ch.is_ascii() {
             result.push(ch);
         } else {
-            let d = crate::builtins::unicode::unicode_decimal_digit_value(ch)?;
+            let d = crate::ucd::numeric::unicode_decimal_digit_value(ch)?;
             result.push(char::from_digit(d, 10).unwrap());
         }
     }
@@ -467,7 +467,7 @@ fn try_parse_generic_radix(body: &str) -> Option<Value> {
         return None;
     }
 
-    crate::runtime::utils::parse_radix_number_body(digits_body, base)
+    crate::value::radix_numeric::parse_radix_number_body(digits_body, base)
 }
 
 /// Scan base digits (ASCII digits + underscores) and return (scanned, rest).

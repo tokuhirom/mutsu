@@ -575,7 +575,7 @@ impl Value {
                     ValueView::Whatever | ValueView::HyperWhatever | ValueView::Sub(_)
                 ) || matches!(end.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
                 if !is_infinite {
-                    let items = crate::runtime::utils::value_to_list(self);
+                    let items = crate::value::to_list::value_to_list(self);
                     // `value_to_list` may return `[self.clone()]` for non-expandable ranges
                     // (e.g. NaN endpoints). Avoid recursive `.Str` by only expanding when
                     // the single returned item is not itself a GenericRange.

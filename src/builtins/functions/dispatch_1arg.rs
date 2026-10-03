@@ -1,9 +1,9 @@
-use super::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use super::math::factorial_bigint;
 use super::uniparse::uniparse_impl;
 use crate::builtins::rng::builtin_srand;
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;

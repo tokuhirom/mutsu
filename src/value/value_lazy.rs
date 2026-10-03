@@ -262,7 +262,7 @@ impl LazyList {
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => !crate::builtins::is_infinite_range(source),
+            | ValueView::GenericRange { .. } => !crate::value::flat::is_infinite_range(source),
             ValueView::LazyList(ll) => {
                 if ll.lazy_pipe.is_some() {
                     ll.pipe_bottoms_out_finite()

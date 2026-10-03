@@ -43,7 +43,7 @@ impl Interpreter {
     }
 
     pub(crate) fn string_succ(s: &str) -> String {
-        crate::builtins::str_increment::string_succ(s)
+        crate::value::str_increment::string_succ(s)
     }
 
     /// `$x++`'s new value: `.succ` (`builtins::value_succ`, ADR-0118), with

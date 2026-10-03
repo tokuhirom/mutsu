@@ -992,7 +992,7 @@ mod sprintf_hexfloat;
 mod sprintf_validate;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
-pub(crate) mod str_numeric;
+pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
 mod supply_promise;
@@ -1009,6 +1009,7 @@ mod type_check_repr;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
+mod lazy_pipe_ctors;
 mod mixin_wrapped_methods;
 mod operator_scope;
 mod plain_fn_resolve_memo;

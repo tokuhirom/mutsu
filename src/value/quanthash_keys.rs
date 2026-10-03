@@ -22,7 +22,7 @@ use std::collections::HashSet;
 /// Storage key + decontainerized element for a QuantHash element.
 pub(crate) fn quanthash_elem_entry(v: &Value) -> (String, Value) {
     let elem = v.deref_container();
-    (super::value_which_key(&elem), elem)
+    (crate::value::which_key::value_which_key(&elem), elem)
 }
 
 /// Storage key for an element already known to be a plain string (a `Pair`
