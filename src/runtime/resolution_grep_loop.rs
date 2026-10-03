@@ -17,6 +17,36 @@ use crate::value::ValueView;
 /// are reported by the loop rather than re-derived by the caller.
 pub(crate) type GrepOutcome = (Value, Vec<Value>, Option<Vec<usize>>);
 
+/// Where a lazily fed grep loop reads its source elements: `fetch(i)` is the
+/// `i`-th element from where the pull starts, read when the loop reaches it,
+/// `None` past the end. A Live array's elements are therefore read as they
+/// are when the loop gets there, as Rakudo's array iterator reads them.
+pub(crate) struct GrepFeed<'a> {
+    fetch: &'a dyn Fn(usize) -> Option<Value>,
+    /// The loop stops after this many matches.
+    pub(crate) max_matches: usize,
+}
+
+impl<'a> GrepFeed<'a> {
+    // Cost: O(1).
+    pub(crate) fn new(fetch: &'a dyn Fn(usize) -> Option<Value>, max_matches: usize) -> Self {
+        Self { fetch, max_matches }
+    }
+
+    // Cost: O(1) plus `fetch`'s cost.
+    fn fetch(&self, i: usize) -> Option<Value> {
+        (self.fetch)(i)
+    }
+
+    /// The first `max_matches` elements: what a chunked pull greps when the
+    /// callback cannot run over a feed (every match needs a source element,
+    /// so the chunk never runs the callback over one the pull does not need).
+    // Cost: O(max_matches).
+    fn window(self) -> Vec<Value> {
+        (0..self.max_matches).map_while(|i| self.fetch(i)).collect()
+    }
+}
+
 impl Interpreter {
     /// Run `func` over `list_items`, returning the matched values, the
     /// (possibly `$_`-mutated) source items, and — when the grep consumed one
@@ -49,7 +79,36 @@ impl Interpreter {
     pub(crate) fn eval_grep_over_items_planned(
         &mut self,
         func: Option<Value>,
+        list_items: Vec<Value>,
+        slot: &mut MapGrepPlanSlot,
+    ) -> Result<GrepOutcome, RuntimeError> {
+        self.eval_grep_loop(func, list_items, None, slot)
+    }
+
+    /// [`Self::eval_grep_over_items_planned`] over the source elements `feed`
+    /// reads, stopping at its `max_matches`-th match: one loop run (one env
+    /// merge, one register reset) for a whole prefix pull, however many source
+    /// elements it skips. The returned source items are the elements the loop
+    /// consumed — the pull advances by their count.
+    // Cost: one callback call per element consumed, up to the
+    // `max_matches`-th match.
+    pub(crate) fn eval_grep_over_feed_planned(
+        &mut self,
+        func: Option<Value>,
+        feed: GrepFeed<'_>,
+        slot: &mut MapGrepPlanSlot,
+    ) -> Result<GrepOutcome, RuntimeError> {
+        self.eval_grep_loop(func, Vec::new(), Some(feed), slot)
+    }
+
+    /// The grep loop: over `list_items`, or — with `feed` — over the elements
+    /// it reads, `list_items` collecting them as they are consumed.
+    // Cost: see the two callers.
+    fn eval_grep_loop(
+        &mut self,
+        func: Option<Value>,
         mut list_items: Vec<Value>,
+        mut feed: Option<GrepFeed<'_>>,
         slot: &mut MapGrepPlanSlot,
     ) -> Result<GrepOutcome, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
@@ -93,6 +152,9 @@ impl Interpreter {
                     || (data.body.is_empty() && data.compiled_routine.is_some())
                     || super::resolution_map_grep::sub_reads_block_var(&data));
             if needs_full_binding {
+                if let Some(feed) = feed.take() {
+                    list_items = feed.window();
+                }
                 let mut matched = Vec::new();
                 for (i, item) in list_items.iter().enumerate() {
                     let callable = Value::sub_value(data.clone());
@@ -110,6 +172,16 @@ impl Interpreter {
                 return Ok((Value::array(result), list_items, Some(matched)));
             }
             let arity = crate::runtime::map_grep_plan::inline_loop_arity(&data);
+            // Only the inline loop below reads a feed lazily, and only one
+            // element per call; anything else greps the window a chunked pull
+            // used to copy.
+            if (arity != 1
+                || (cached_plan.is_none()
+                    && super::resolution_map_grep::sub_is_call_carrier(&data)))
+                && let Some(feed) = feed.take()
+            {
+                list_items = feed.window();
+            }
             // Carrier Subs (.assuming wrapper, composed callable, multi-candidate
             // dispatcher) — delegate to call_sub_value which resolves the markers.
             if cached_plan.is_none() && super::resolution_map_grep::sub_is_call_carrier(&data) {
@@ -188,7 +260,20 @@ impl Interpreter {
                 vm.state_scope_id.set(Some(data.id));
                 let mut i = 0usize;
                 let mut stop = false;
-                while i < list_items.len() {
+                loop {
+                    if let Some(feed) = &feed {
+                        // `i` is always the next element to read here: a feed
+                        // runs one element per call.
+                        if result.len() >= feed.max_matches {
+                            break;
+                        }
+                        match feed.fetch(i) {
+                            Some(item) => list_items.push(item),
+                            None => break,
+                        }
+                    } else if i >= list_items.len() {
+                        break;
+                    }
                     if arity > 1 && i + arity > list_items.len() {
                         break;
                     }
@@ -344,6 +429,18 @@ impl Interpreter {
             }
             let mut result = Vec::new();
             let mut matched = Vec::new();
+            if let Some(feed) = feed {
+                while result.len() < feed.max_matches
+                    && let Some(item) = feed.fetch(list_items.len())
+                {
+                    if self.smart_match(&item, &pattern) {
+                        result.push(item.clone());
+                        matched.push(list_items.len());
+                    }
+                    list_items.push(item);
+                }
+                return Ok((Value::array(result), list_items, Some(matched)));
+            }
             for (i, item) in list_items.iter().enumerate() {
                 if self.smart_match(item, &pattern) {
                     result.push(item.clone());
@@ -363,6 +460,9 @@ impl Interpreter {
                 }
             }
             return Ok((Value::array(result), list_items, Some(matched)));
+        }
+        if let Some(feed) = feed {
+            list_items = feed.window();
         }
         let all = (0..list_items.len()).collect();
         Ok((Value::array(list_items.clone()), list_items, Some(all)))

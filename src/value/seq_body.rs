@@ -50,6 +50,14 @@ pub(crate) enum MapGrepMode {
     GrepArray(Value),
 }
 
+impl MapGrepMode {
+    /// Whether this is a `.grep` (which may skip source elements).
+    // Cost: O(1).
+    pub(crate) fn is_grep(&self) -> bool {
+        matches!(self, MapGrepMode::Grep | MapGrepMode::GrepArray(_))
+    }
+}
+
 /// What a `Seq` still has to do to produce its elements.
 #[derive(Clone)]
 pub(crate) enum SeqSource {
