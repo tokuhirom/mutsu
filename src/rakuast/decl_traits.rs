@@ -28,6 +28,9 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The parser's `custom_traits` entry for an `is default(…)` trait.
 const DEFAULT: &str = "default";
 
+/// A declaration's `custom_traits` entries.
+type CustomTraits = Vec<(String, Option<Expr>)>;
+
 /// The trait name of `is dynamic`.
 const DYNAMIC: &str = "dynamic";
 
@@ -120,10 +123,7 @@ pub(super) fn dynamic_trait() -> Value {
 /// A declaration's `traits` back as `custom_traits` entries, in order, and
 /// whether one of them was `is dynamic`.
 // Cost: O(t), t = traits of the declaration.
-#[allow(clippy::type_complexity)]
-pub(super) fn lower(
-    node: &RakuAstNode,
-) -> Result<(Vec<(String, Option<Expr>)>, bool), RuntimeError> {
+pub(super) fn lower(node: &RakuAstNode) -> Result<(CustomTraits, bool), RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
         return Ok((Vec::new(), false));
