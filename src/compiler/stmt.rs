@@ -518,6 +518,9 @@ impl Compiler {
                     | crate::token_kind::TokenKind::DotDotDotCaret
             ),
             Expr::ArrayLiteral(_) | Expr::Whatever => true,
+            // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into
+            // a WhateverCode that yields the range.
+            Expr::WhateverCurry(inner) => Self::for_index_is_slice(inner),
             _ => false,
         }
     }

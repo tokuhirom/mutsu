@@ -282,6 +282,25 @@ impl Interpreter {
         items.iter().map(Self::index_to_usize).collect()
     }
 
+    /// The positions a bind-mode array slice selects: an explicit index list,
+    /// or a range -- including one with `*`/WhateverCode endpoints
+    /// (`@a[1..*-1]`, `@a[1..*]`), resolved against the array's length.
+    // Cost: O(k), k = number of selected positions.
+    fn bind_slice_positions(&mut self, index: &Value, array: &Value) -> Option<Vec<usize>> {
+        if let Some(indices) = Self::slice_bind_indices(index) {
+            return Some(indices);
+        }
+        let len = match array.view() {
+            ValueView::Array(items, _) => items.len(),
+            _ => 0,
+        };
+        let index = self
+            .resolve_generic_range_for_assign(index, len)
+            .unwrap_or_else(|| index.clone());
+        let index = self.resolve_whatever_index_for_target(index, Some(array));
+        Self::slice_bind_indices(&index).or_else(|| Self::slice_indices_from_index(&index))
+    }
+
     /// Whether a `[...]` subscript on a type object is a type *parameterization*
     /// (`Any[Int]`, `Any[Int, Str]`) rather than a positional *index*
     /// (`$any[0]`). A single type object, or a list whose every element is a
@@ -456,7 +475,7 @@ impl Interpreter {
                     } else {
                         self.stack.push(Value::NIL);
                     }
-                } else if let Some(indices) = Self::slice_bind_indices(&index) {
+                } else if let Some(indices) = self.bind_slice_positions(&index, &resolved) {
                     // Bound array SLICE (`@slice := @array[1,2]`): promote each
                     // indexed element to a shared cell (same mechanism as the
                     // single-index case above) and hand back a plain Array
