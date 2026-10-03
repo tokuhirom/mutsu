@@ -29,6 +29,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    super::shadowed_terms::scan(node);
     let mut stmts = lower_stmts(node)?;
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
@@ -1871,6 +1872,17 @@ fn term_identifier_expr(name: &str) -> Expr {
     match name {
         "True" => Expr::Literal(Value::truth(true)),
         "False" => Expr::Literal(Value::truth(false)),
+        // The math constants are the numeric literals the parser folds them to,
+        // unless the unit declares a term of that name.
+        "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(name) => {
+            Expr::Literal(Value::num(std::f64::consts::PI))
+        }
+        "tau" | "\u{3c4}" if !super::shadowed_terms::is_shadowed(name) => {
+            Expr::Literal(Value::num(std::f64::consts::TAU))
+        }
+        "e" | "\u{1D452}" if !super::shadowed_terms::is_shadowed(name) => {
+            Expr::Literal(Value::num(std::f64::consts::E))
+        }
         _ => Expr::BareWord(name.to_string()),
     }
 }

@@ -32,6 +32,7 @@ mod regex_quantifier;
 mod render;
 mod role;
 mod routine_traits;
+mod shadowed_terms;
 mod signature_decl;
 mod subscript_adverb;
 mod type_lower;
