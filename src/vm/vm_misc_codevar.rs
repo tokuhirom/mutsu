@@ -167,12 +167,9 @@ impl Interpreter {
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.
         if val.is_nil()
-            && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
-            && let Some(ValueView::Instance { attributes, .. }) =
-                self.get_env_self().as_ref().map(Value::view)
-            && let Some(attr_val) = attributes.as_map().get(attr_name)
+            && let Some(attr_val) = self.self_private_code_attr(name)
         {
-            val = attr_val.clone();
+            val = attr_val;
         }
         // In Raku, &foo for an undefined routine is a compile-time error.
         // We approximate this at runtime, but only inside EVAL context
@@ -664,5 +661,23 @@ impl Interpreter {
     pub(super) fn exec_exists_expr_op(&mut self) {
         let val = self.stack.pop().unwrap_or(Value::NIL);
         self.stack.push(Value::truth(val.truthy()));
+    }
+
+    /// `&!attr` read straight from `self`'s attributes: the fallback when a
+    /// fast-path method dispatch (skip_env_setup) left no `&!attr` in env.
+    /// A punned role's instance is a role-marked Mixin over the object, so it
+    /// is looked through (`role P { has &.c; method m { &!c(1) } }; P.new.m`).
+    // Cost: O(1) (one env read and one attribute lookup).
+    pub(super) fn self_private_code_attr(&self, name: &str) -> Option<Value> {
+        let attr_name = name.strip_prefix('!').filter(|n| !n.is_empty())?;
+        let self_val = self.get_env_self()?;
+        let object = match self_val.view() {
+            ValueView::Mixin(inner, _) => Value::clone(inner.as_ref()),
+            _ => self_val.clone(),
+        };
+        match object.view() {
+            ValueView::Instance { attributes, .. } => attributes.as_map().get(attr_name).cloned(),
+            _ => None,
+        }
     }
 }

@@ -142,7 +142,12 @@ impl Interpreter {
     /// failing TWEAK, say) is passed through untouched. `extra` carries the
     /// markers only a *parameterised* pun needs (the type arguments, the matched
     /// candidate's role id and its bound parameters).
-    fn mark_punned_role_instance(&mut self, role: Symbol, value: Value, extra: ValueMap) -> Value {
+    pub(super) fn mark_punned_role_instance(
+        &mut self,
+        role: Symbol,
+        value: Value,
+        extra: ValueMap,
+    ) -> Value {
         let role_name = role.resolve();
         let attrs: Vec<(String, Value)> = match value.view() {
             ValueView::Instance {

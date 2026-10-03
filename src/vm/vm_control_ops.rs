@@ -546,8 +546,12 @@ impl Interpreter {
                 self.pop_loop_local_scope(code);
                 return Err(e);
             }
+            // The loop condition is a boolean context like `if`'s: a user
+            // `Bool` method decides it (`while self`), and a Failure tested
+            // there is handled.
+            Self::mark_failure_handled_on_stack(&mut self.stack);
             let cond_val = self.stack.pop().unwrap();
-            if !cond_val.truthy() {
+            if !self.eval_truthy(&cond_val) {
                 break;
             }
             let topic_before_body = if spec.isolate_topic {
