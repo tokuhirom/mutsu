@@ -417,6 +417,14 @@ impl Interpreter {
             self.module_export_terms
                 .push((env_key.clone(), value.clone()));
         }
+        // `&term:<today>` makes the bareword `today` a call to the routine,
+        // exactly as binding `my &term:<today>` does (`exec_set_local_op`
+        // stores the bare symbol too) -- the Today dist exports its term this
+        // way from `sub EXPORT`.
+        if let Some(symbol) = Interpreter::term_symbol_from_name(&env_key) {
+            self.record_import_env_key(symbol);
+            self.env.insert(symbol.to_string(), value.clone());
+        }
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {
             self.record_import_env_key(&normalized_env_key);

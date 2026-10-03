@@ -12,8 +12,8 @@ use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
 use export_hook::{
-    collect_export_hook_operator_subs, collect_export_hook_value_terms,
-    collect_unit_scope_routines, declares_export_sub,
+    collect_export_hook_literal_keys, collect_export_hook_operator_subs,
+    collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
 };
 
 /// Everything one module-file scan learns that importers need replayed:
@@ -879,6 +879,9 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // `is export` and handed out through the returned `Map` — see the
         // function's own doc.
         collect_export_hook_operator_subs(&stmts, &mut exports);
+        // A sixth idiom: operators and terms named only by a literal pair key
+        // of the returned `Map` (`'&term:<today>' => &today`).
+        collect_export_hook_literal_keys(&stmts, &mut exports);
         // A second idiom's value terms, declared locally inside the hook's own
         // body rather than drawn from `UNIT::` — see the function's own doc
         // for why a value term (unlike a routine) needs this at all.
