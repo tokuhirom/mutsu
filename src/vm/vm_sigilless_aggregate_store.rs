@@ -38,6 +38,43 @@ impl Interpreter {
         }
     }
 
+    /// The value `Nil` resets to when assigned through a sigilless name: the
+    /// default of the scalar container it aliases (its `of` type object, else
+    /// `Any`). The container is the shared cell the name is bound to, or the
+    /// source variable it aliases by name. `None` when the name aliases
+    /// nothing scalar (the plain store keeps its value) or the container has
+    /// an `is default(..)` value, which the Nil read already supplies.
+    // Cost: O(d), d = length of the alias chain.
+    fn sigilless_nil_reset_value(&mut self, name: &str, bound: Option<&Value>) -> Option<Value> {
+        let constraint = if let Some(ValueView::ContainerRef(cell)) = bound.map(Value::view) {
+            crate::value::lookup_container_constraint(&cell)
+        } else {
+            let mut source = name.to_string();
+            let mut seen = std::collections::HashSet::new();
+            while seen.insert(source.clone()) {
+                let key = crate::runtime::sigilless_alias_key(&source);
+                let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
+                    break;
+                };
+                source = next.to_string();
+            }
+            if source == name || source.starts_with(['@', '%', '&']) {
+                return None;
+            }
+            if self.var_default(&source).is_some() {
+                return None;
+            }
+            loan_env!(self, var_type_constraint(&source))
+        };
+        Some(match constraint {
+            Some(tc) if tc != "Mu" && tc != "Nil" => {
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&tc));
+                Value::package(Symbol::intern(&nominal))
+            }
+            _ => Value::package(crate::symbol::wk::any()),
+        })
+    }
+
     /// `OpCode::SigillessAggregateStore`: when the sigilless name (local
     /// `slot`, or `env` when `slot` is `u32::MAX`) is bound to a mutable
     /// Array/Hash, replace the right-hand side on the stack with that
@@ -55,6 +92,14 @@ impl Interpreter {
         } else {
             self.locals.get(slot as usize).cloned()
         };
+        if self.stack.last().is_some_and(Value::is_nil) {
+            let name = code.const_sym(name_idx).resolve();
+            if let Some(reset) = self.sigilless_nil_reset_value(&name, bound.as_ref()) {
+                self.stack.pop();
+                self.stack.push(reset);
+                return;
+            }
+        }
         let Some(aggregate) = bound.map(|v| v.deref_container()) else {
             return;
         };
