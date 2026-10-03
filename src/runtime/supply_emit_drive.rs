@@ -31,8 +31,9 @@
 use super::*;
 use crate::runtime::native_methods::{
     SupplierEmitAction, ZipAction, supplier_done, supplier_emit, supplier_emit_callbacks,
-    supplier_produce_update_acc, supplier_unique_mark_seen, take_supplier_done_callbacks,
-    zip_buffer_value, zip_latest_buffer_value, zip_latest_state_info, zip_state_info,
+    supplier_mark_preserved_consumed, supplier_produce_update_acc, supplier_unique_mark_seen,
+    take_supplier_done_callbacks, zip_buffer_value, zip_latest_buffer_value, zip_latest_state_info,
+    zip_state_info,
 };
 
 impl Interpreter {
@@ -45,6 +46,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         supplier_emit(downstream_supplier_id, value.clone());
         let actions = supplier_emit_callbacks(downstream_supplier_id, &value);
+        // A live tap consumed this emission, so it is not part of the backlog
+        // a preserving derived supply replays to its next tap (the same
+        // bookkeeping `Supplier.emit` does for its own supplier).
+        if !actions.is_empty() {
+            supplier_mark_preserved_consumed(downstream_supplier_id);
+        }
         self.drive_supplier_emit_actions(downstream_supplier_id, actions)
     }
 
@@ -72,7 +79,7 @@ impl Interpreter {
                     tap_index,
                 } => {
                     let key = if let Some(f) = as_fn {
-                        self.call_sub_value(f, vec![value.clone()], true)?
+                        self.call_supply_callback(f, vec![value.clone()], true)?
                     } else {
                         value.clone()
                     };
@@ -106,7 +113,7 @@ impl Interpreter {
                     downstream_supplier_id,
                 } => {
                     let new_acc = if let Some(acc) = accumulator {
-                        self.call_sub_value(callable, vec![acc, value], false)?
+                        self.call_supply_callback(callable, vec![acc, value], false)?
                     } else {
                         value
                     };
@@ -118,7 +125,7 @@ impl Interpreter {
                         self.handle_supply_forward(dsid, new_acc)?;
                     } else if !callback.is_nil() {
                         Self::sleep_for_supply_delay(delay_seconds);
-                        self.call_sub_value(callback, vec![new_acc], true)?;
+                        self.call_supply_callback(callback, vec![new_acc], true)?;
                     }
                 }
                 SupplierEmitAction::StartCall {
@@ -221,7 +228,8 @@ impl Interpreter {
         match tuple_val.view() {
             ValueView::Array(items, ..) => {
                 let items = items.to_vec();
-                self.call_sub_value(f, items, false).unwrap_or(tuple_val)
+                self.call_supply_callback(f, items, false)
+                    .unwrap_or(tuple_val)
             }
             _ => tuple_val,
         }

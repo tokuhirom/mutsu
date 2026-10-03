@@ -81,7 +81,7 @@ impl Interpreter {
             Self::sleep_for_supply_delay(delay_seconds);
         }
         for cb in do_cbs {
-            self.call_sub_value(cb.clone(), vec![v.clone()], true)?;
+            self.call_supply_callback(cb.clone(), vec![v.clone()], true)?;
         }
         if !Self::supply_has_active_callback(tap_cb) {
             return Ok(TapStep::Continue);
@@ -104,7 +104,7 @@ impl Interpreter {
         if let Some(ref e) = own_emitter {
             self.async_state.active_supply_emitters.push(e.clone());
         }
-        let tap_result = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+        let tap_result = self.call_supply_callback(tap_cb.clone(), vec![v.clone()], true);
         if own_emitter.is_some() {
             self.async_state.active_supply_emitters.pop();
         }

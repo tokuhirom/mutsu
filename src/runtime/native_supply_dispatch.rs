@@ -239,7 +239,7 @@ impl Interpreter {
                 let mut best_key: Option<Value> = None;
                 for value in values {
                     let key = if let Some(ref map_fn) = mapper {
-                        self.call_sub_value(map_fn.clone(), vec![value.clone()], true)?
+                        self.call_supply_callback(map_fn.clone(), vec![value.clone()], true)?
                     } else {
                         value.clone()
                     };
@@ -410,13 +410,13 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for val in &values {
                     let key = if let Some(ref f) = as_fn {
-                        self.call_sub_value(f.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(f.clone(), vec![val.clone()], true)?
                     } else {
                         val.clone()
                     };
                     let found = seen_keys.iter().any(|s| {
                         if let Some(ref f) = with_fn {
-                            self.call_sub_value(f.clone(), vec![s.clone(), key.clone()], true)
+                            self.call_supply_callback(f.clone(), vec![s.clone(), key.clone()], true)
                                 .map(|v| v.truthy())
                                 .unwrap_or(false)
                         } else {
@@ -723,7 +723,11 @@ impl Interpreter {
                         if err.is_some() {
                             return std::cmp::Ordering::Equal;
                         }
-                        match self.call_sub_value(comp.clone(), vec![a.clone(), b.clone()], false) {
+                        match self.call_supply_callback(
+                            comp.clone(),
+                            vec![a.clone(), b.clone()],
+                            false,
+                        ) {
                             Ok(result) => {
                                 // Handle Order enum (Less=-1, Same=0, More=1)
                                 let n = match result.view() {
@@ -1004,8 +1008,11 @@ impl Interpreter {
                     let mut acc = source_values[0].clone();
                     produced.push(acc.clone());
                     for val in source_values.iter().skip(1) {
-                        acc =
-                            self.call_sub_value(reducer.clone(), vec![acc, val.clone()], false)?;
+                        acc = self.call_supply_callback(
+                            reducer.clone(),
+                            vec![acc, val.clone()],
+                            false,
+                        )?;
                         produced.push(acc.clone());
                     }
                 }
@@ -1249,7 +1256,7 @@ impl Interpreter {
                 let mut cur_max_key: Option<Value> = None;
                 for val in source_values {
                     let key = if let Some(ref func) = mapper {
-                        self.call_sub_value(func.clone(), vec![val.clone()], true)?
+                        self.call_supply_callback(func.clone(), vec![val.clone()], true)?
                     } else {
                         val.clone()
                     };
@@ -1545,7 +1552,7 @@ impl Interpreter {
                             tuple.push(other[i].clone());
                         }
                         if let Some(ref wf) = with_fn {
-                            let combined = self.call_sub_value(wf.clone(), tuple, false)?;
+                            let combined = self.call_supply_callback(wf.clone(), tuple, false)?;
                             zipped.push(combined);
                         } else {
                             zipped.push(Value::array(tuple));
@@ -1579,7 +1586,7 @@ impl Interpreter {
                 let source_values = self.supply_get_values(attributes)?;
                 let mut results = Vec::new();
                 for val in source_values {
-                    let result = self.call_sub_value(block.clone(), vec![val], true)?;
+                    let result = self.call_supply_callback(block.clone(), vec![val], true)?;
                     let mut inner_attrs = HashMap::new();
                     inner_attrs.insert("values".to_string(), Value::array(vec![result]));
                     inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -1674,7 +1681,18 @@ impl Interpreter {
                     }
                     return Ok(Value::channel(ch));
                 }
-                let source_values = self.supply_get_values(attributes)?;
+                // A preserving supply hands its un-replayed backlog to the
+                // channel, exactly as it does to a `.tap` (the backlog is what
+                // its supplier buffered while nothing listened, and a derived
+                // supply's `values` snapshot never saw it — #8825).
+                let preserved_sid = attributes
+                    .contains_key("preserving")
+                    .then(|| supplier_id_from_attrs(attributes))
+                    .flatten();
+                let source_values = match preserved_sid {
+                    Some(sid) => supplier_take_preserved_backlog(sid),
+                    None => self.supply_get_values(attributes)?,
+                };
                 let ch = SharedChannel::new();
                 for v in source_values {
                     ch.send(v);

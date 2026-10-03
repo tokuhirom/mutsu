@@ -112,7 +112,7 @@ impl Interpreter {
                                 if idx >= vals.len() {
                                     break;
                                 }
-                                if let Ok(result) = winterp.call_sub_value(
+                                if let Ok(result) = winterp.call_supply_callback(
                                     blk.clone(),
                                     vec![vals[idx].clone()],
                                     false,
@@ -166,7 +166,8 @@ impl Interpreter {
             } else {
                 let mut promises = Vec::with_capacity(source_values.len());
                 for val in &source_values {
-                    let result = self.call_sub_value(block.clone(), vec![val.clone()], false)?;
+                    let result =
+                        self.call_supply_callback(block.clone(), vec![val.clone()], false)?;
                     let promise = SharedPromise::new_kept(result);
                     promises.push(Value::promise(promise));
                 }
@@ -303,7 +304,7 @@ impl Interpreter {
         let seen_keys = supplier_unique_get_seen(supplier_id, tap_index);
         for seen in &seen_keys {
             let is_same = if let Some(func) = with_fn {
-                self.call_sub_value(func.clone(), vec![seen.clone(), key.clone()], true)?
+                self.call_supply_callback(func.clone(), vec![seen.clone(), key.clone()], true)?
                     .truthy()
             } else {
                 values_identical(seen, key)
@@ -347,7 +348,7 @@ impl Interpreter {
         let mut thread_interp = self.clone_for_thread();
         crate::runtime::worker_pool::submit(move || {
             let result_val = thread_interp
-                .call_sub_value(callable, vec![value], true)
+                .call_supply_callback(callable, vec![value], true)
                 .unwrap_or(Value::NIL);
             // Emit the result into the inner Supply
             supplier_emit(inner_supplier_id, result_val.clone());

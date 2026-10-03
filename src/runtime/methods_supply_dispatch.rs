@@ -172,7 +172,7 @@ impl Interpreter {
         for i in 0..min_len {
             let tuple: Vec<Value> = supply_values.iter().map(|sv| sv[i].clone()).collect();
             if let Some(ref wf) = with_fn {
-                let combined = self.call_sub_value(wf.clone(), tuple, false)?;
+                let combined = self.call_supply_callback(wf.clone(), tuple, false)?;
                 zipped.push(combined);
             } else {
                 zipped.push(Value::array(tuple));
@@ -536,7 +536,7 @@ impl Interpreter {
 
         let mut mapped_values = Vec::with_capacity(source_values.len());
         for value in source_values {
-            mapped_values.push(self.call_sub_value(mapper.clone(), vec![value], true)?);
+            mapped_values.push(self.call_supply_callback(mapper.clone(), vec![value], true)?);
         }
 
         let mut attrs = HashMap::new();
@@ -578,8 +578,10 @@ impl Interpreter {
         // A non-live source can carry values seeded next to its supplier
         // (`Supply.merge` of a live and a cold source): run them through the
         // transform now, since nothing will ever emit them to the tap above.
+        let preserving = attributes.contains_key("preserving");
         let mut seeded_out = Vec::new();
-        if !attributes.get("live").is_some_and(Value::truthy)
+        if !preserving
+            && !attributes.get("live").is_some_and(Value::truthy)
             && let Some(ValueView::Array(seeded, ..)) = attributes.get("values").map(Value::view)
             && !seeded.is_empty()
         {
@@ -593,8 +595,16 @@ impl Interpreter {
             }
             seeded_out = crate::runtime::native_methods::supplier_snapshot(downstream_sid).0;
         }
+        // `Supplier::Preserving`: the derived supply inherits the backlog
+        // (`supply_preserving_derive`, #8825).
+        if preserving {
+            self.carry_preserved_backlog_into_derived(source_sid, downstream_sid, &callable, mode);
+        }
         let has_seeded = !seeded_out.is_empty();
         let mut new_attrs = HashMap::new();
+        if preserving {
+            new_attrs.insert("preserving".to_string(), Value::TRUE);
+        }
         new_attrs.insert("values".to_string(), Value::array(seeded_out));
         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
@@ -740,12 +750,12 @@ impl Interpreter {
                 }
             }
             TransformMode::Map => {
-                let mapped = self.call_sub_value(callable, vec![value], true)?;
+                let mapped = self.call_supply_callback(callable, vec![value], true)?;
                 self.handle_supply_forward(downstream_supplier_id, mapped)?;
             }
             TransformMode::Do => {
                 // Side-effect only: the original value passes through.
-                self.call_sub_value(callable, vec![value.clone()], true)?;
+                self.call_supply_callback(callable, vec![value.clone()], true)?;
                 self.handle_supply_forward(downstream_supplier_id, value)?;
             }
         }
