@@ -362,6 +362,31 @@ impl Interpreter {
                 if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &args) {
                     return Some(res);
                 }
+                // `Mu.new(*%attrinit)` takes named arguments only, whether it
+                // is called directly or reached by `callwith`/`nextwith` from a
+                // user `new` — `bless` would silently drop the positionals
+                // (#9761). Same check as the direct call's.
+                if args
+                    .iter()
+                    .any(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+                {
+                    let class_name = match invocant.view() {
+                        ValueView::Package(name) => name.resolve(),
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
+                        _ => crate::runtime::value_type_name(&invocant).to_string(),
+                    };
+                    if !self.class_does_baggy_or_setty(&class_name)
+                        && !super::methods_object_dispatch_new::default_new_accepts_positionals(
+                            &self.class_mro(&class_name),
+                        )
+                    {
+                        return Some(Err(
+                            super::methods_object_dispatch_new::constructor_positional_error(
+                                &class_name,
+                            ),
+                        ));
+                    }
+                }
                 Some(self.call_method_with_values(invocant, "bless", args))
             }
             _ => None,
