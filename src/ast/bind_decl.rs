@@ -109,17 +109,21 @@ pub(crate) fn expand(decl: Stmt) -> Stmt {
 
 /// Whether binding to `expr` aliases an existing container: a variable, an
 /// element, or a conditional choosing between such.
-// Cost: O(d), d = conditional nesting depth.
+// Cost: O(b), b = branches of the conditional.
 fn binds_a_container(expr: &Expr) -> bool {
-    match expr {
-        Expr::Var(_) | Expr::Index { .. } | Expr::MultiDimIndex { .. } => true,
-        Expr::Ternary {
-            then_expr,
-            else_expr,
-            ..
-        } => binds_a_container(then_expr) && binds_a_container(else_expr),
-        _ => false,
+    let mut pending = vec![expr];
+    while let Some(branch) = pending.pop() {
+        match branch {
+            Expr::Var(_) | Expr::Index { .. } | Expr::MultiDimIndex { .. } => {}
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => pending.extend([then_expr.as_ref(), else_expr.as_ref()]),
+            _ => return false,
+        }
     }
+    true
 }
 
 /// The binding declaration `stmt` is the [`expand`]ed form of, if it is one:
