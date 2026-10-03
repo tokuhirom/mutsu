@@ -568,6 +568,7 @@ impl Interpreter {
             registry
                 .classes
                 .keys()
+                .chain(registry.roles.keys())
                 .find(|key| {
                     (key.starts_with(&prefix) || key.as_str() == fq_name)
                         && self.is_my_scoped_package_item(key)
@@ -584,6 +585,40 @@ impl Interpreter {
         };
         self.unit_chain_contains_unit(self.executing_unit_sym_for_module_load(), declaring_unit)
             || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+    }
+
+    /// The `my`-scoped classes and roles of the running compilation unit's
+    /// top level, keyed by their source name: what `UNIT::` lists besides the
+    /// unit's variables and routines (a module's `sub EXPORT` returning
+    /// `UNIT::.grep({ .key eq 'Type' ... })`, highlighter).
+    // Cost: O(m), m = `my`-scoped package items across all units.
+    pub(crate) fn unit_lexical_types(&self) -> Vec<(String, Value)> {
+        let mut out = Vec::new();
+        for item in self.my_scoped_package_items.iter() {
+            let display = item.split('\u{0}').next().unwrap_or(item);
+            if display.is_empty() || crate::qualified::is_qualified(Symbol::intern(display)) {
+                continue;
+            }
+            let is_type = {
+                let registry = self.registry();
+                registry.classes.contains_key(item) || registry.roles.contains_key(item)
+            };
+            if !is_type {
+                continue;
+            }
+            // Only the running unit's own declarations: a type another unit
+            // declared (a module this one imported) is not in this pad.
+            let Some(&declaring_unit) = self.class_declaring_units.get(item) else {
+                continue;
+            };
+            if self
+                .unit_chain_contains_unit(self.executing_unit_sym_for_module_load(), declaring_unit)
+                || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+            {
+                out.push((display.to_string(), Value::package(Symbol::intern(item))));
+            }
+        }
+        out
     }
 
     /// Must a call to this qualified name stay unresolved? True for a
