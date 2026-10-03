@@ -193,6 +193,32 @@ impl Interpreter {
             );
             return Some(Ok(updated_instance));
         }
+        // `self.BIND-KEY($k, $v)` from inside the subclass (WriteOnceHash's
+        // `STORE`/`ASSIGN-KEY`): binds the key in the backing hash in place,
+        // like `STORE` above, so every holder of the instance sees it. The
+        // native `BIND-KEY` lives on the opcode path, which a re-targeted
+        // by-value dispatch never reaches.
+        if method == "BIND-KEY"
+            && args.len() == 2
+            && let ValueView::Hash(old_gc) = storage.view()
+        {
+            let mut data = (**old_gc).clone();
+            let key = if data.key_type.is_some() {
+                let which = crate::runtime::utils::value_which_key(&args[0]);
+                data.original_keys
+                    .get_or_insert_with(ValueMap::default)
+                    .insert(which.clone(), args[0].clone());
+                which
+            } else {
+                args[0].to_string_value()
+            };
+            data.map.insert(key, args[1].clone());
+            let new_storage = Value::hash(data);
+            if let ValueView::Hash(new_gc) = new_storage.view() {
+                Self::hash_inplace_reassign(&old_gc, &new_gc);
+            }
+            return Some(Ok(args[1].clone()));
+        }
         // Seed a synthetic binding so the native xxKEY fast paths (which
         // write back into `self.env` by NAME — see `vm_call_method_mut_ops.rs`)
         // have somewhere to write the mutated hash.
