@@ -407,6 +407,13 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         {
             return Err(PError::expected("user-declared type shadows keyword"));
         }
+        // Likewise a user-declared enum member (`enum Index <r w x e d>`)
+        // shadows the math constants `e`, `pi` and `tau`.
+        if matches!(kw, "e" | "\u{1D452}" | "pi" | "π" | "tau" | "τ")
+            && crate::parser::stmt::simple::is_user_declared_enum_value(kw)
+        {
+            return Err(PError::expected("user-declared enum value shadows keyword"));
+        }
         // An L10N slang vocabulary spells these term keywords in its own
         // language (`term-now` → `現在`, `enum-True` → `正`), and they are
         // recognized here rather than as barewords, so the vocabulary has to be
