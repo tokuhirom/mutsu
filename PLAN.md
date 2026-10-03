@@ -48,12 +48,13 @@ mutsu's unique position. Four components:
 
 ---
 
-## 0. Two architecture projects that must be finished
+## 0. Architecture projects that must be finished
 
-Both replace a mechanism the interpreter outgrew, both are spread over many PRs, and both end in a
-**deletion**: they are done when the old path is gone, not when the new one mostly works. Neither is
+Each project here replaces a mechanism the interpreter outgrew, is spread over many PRs, and ends
+in a **deletion**: it is done when the old path is gone, not when the new one mostly works. None is
 a background campaign to drop when it gets hard — keep working them alongside §1 (user decision,
-2026-10-02).
+2026-10-02). The list is open: a new project of this kind is added as one more item, with its ADR
+and its deletion criterion.
 
 - [ ] **RakuAST becomes the frontend IR** —
       [ADR-10723](docs/adr/10723-rakuast-is-the-frontend-ir.md) (supersedes ADR-0011); roadmap,
@@ -80,8 +81,21 @@ a background campaign to drop when it gets hard — keep working them alongside 
       `bridged=0` over the roast whitelist and `t/`, every `leaf=` primitive has moved out of the
       walk's modules, and then the walk, its eager `Named` arm and the `MUTSU_RX_DIFF` mode are
       deleted. Progress is recorded in ADR-0135 §8, not here.
+- [ ] **Built-in methods are handler rows in the one method table** —
+      [ADR-11276](docs/adr/11276-built-in-methods-are-handler-rows.md),
+      [#11276](https://github.com/tokuhirom/mutsu/issues/11276): a built-in method is one
+      registered row `(owner, name, shape, flags, handler)`, and calls reach it through that row
+      and the call-site cache. This replaces the name-matching `match` cascades
+      (`builtins/methods_0arg/`, `builtins/methods_narg/`, the slow-path arms in
+      `runtime/methods*.rs`). Slices 1a/1b (the table, the `CallMethodMut` lane and its per-site
+      memo) have landed. Families migrate one PR at a time and delete their arms as they move
+      (ADR §6). The completion criterion is ADR §6 slice 5: the cascades,
+      `try_native_method_raw`'s name checks, `should_bypass_native_fastpath`,
+      `native_method_row_table.rs` and the `native_call_unmodeled` counter are deleted, so rows are
+      the only source of truth for both dispatch and `.^can`/`.^methods`. Progress is recorded in
+      ADR-11276 §9, not here.
 
-The two meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
+RakuAST and the regex project meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
 a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so neither
 project may reintroduce a regex kept only as source text.
 
@@ -359,5 +373,6 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 | GC / JIT | **default on** ✅ | Achieved |
 | RakuAST frontend round trip (§0) | tracked in [#7564](https://github.com/tokuhirom/mutsu/issues/7564) | parity with the ordinary frontend, then default flip |
 | Regex walk uses, `regex-walk:` (§0) | tracked in ADR-0135 §8 | `walked=0 bridged=0`, then the walk deleted |
+| Built-in method rows (§0) | tracked in ADR-11276 §9 | every family migrated, then the cascades deleted |
 | Startup vs raku | **0.04×** | maintain |
 | fib / method-call / bench-class vs raku | all under target (bench CI) | maintain |
