@@ -64,6 +64,11 @@ pub(crate) enum ScanMode {
     Eval,
 }
 
+/// Whether a `use` of `module` imports no names at all (a pragma, `lib`).
+pub(crate) fn module_imports_no_names(module: &str) -> bool {
+    conditional::imports_no_routines(module)
+}
+
 /// A declared name with its sigil and twigil removed.
 fn bare_name(name: &str) -> &str {
     let bare = name.strip_prefix('\\').unwrap_or(name);

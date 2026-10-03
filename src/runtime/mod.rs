@@ -1016,6 +1016,7 @@ mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;
 pub(crate) mod unbounded_range;
+mod undeclared_names;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unicode_name_prop;
