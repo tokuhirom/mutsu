@@ -22,5 +22,5 @@ comment that justifies sharing the store.
 `pending_dispatch_error` stayed on `Interpreter`. It is set by one call and
 taken by the next, which makes it a side channel, and ADR-10779 D3 turns those
 into explicit parameters instead of struct fields. Its subsystem rule now
-classifies it as such. `Interpreter` went from 340 to 316 direct fields. Only
+classifies it as such. `Interpreter` went from 319 to 295 direct fields. Only
 fields moved; the behaviour is unchanged.
