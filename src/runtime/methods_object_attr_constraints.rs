@@ -313,6 +313,14 @@ impl Interpreter {
             if value.is_nil() {
                 continue;
             }
+            // An attribute left unset holds its (undefined) type object, which
+            // Rakudo never runs the `where` predicate against: `has $.x where
+            // Positional|Associative` (or `has Int $.y where * > 5`) constructs
+            // fine with no value given (JSON::Marshal's type-constraint tests).
+            // A typed attribute's synthesized default is that type object too.
+            if matches!(value.view(), ValueView::Package(_)) {
+                continue;
+            }
             let scope = self.attribute_decl_scope(attr, class_name);
             if !self.check_attribute_where_constraint(pred, value, scope) {
                 return Err(RuntimeError::new(format!(

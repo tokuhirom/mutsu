@@ -1526,8 +1526,12 @@ impl Interpreter {
                     }
                     _ => {
                         self.grammar_has_user_method_memo(cn, method_sym)
-                            // `has ObjAt $.WHICH` overrides `.WHICH` (Rake).
-                            || (matches!(method, "WHICH" | "WHY")
+                            // `has ObjAt $.WHICH` overrides `.WHICH` (Rake), and
+                            // a quoted or run-time name (`$obj."$n"()` with
+                            // `$n = "hash"`) reaches `has %.hash`'s accessor
+                            // too: the plain-name lanes that answer an
+                            // accessor read are skipped for a quoted name.
+                            || ((quoted || matches!(method, "WHICH" | "WHY"))
                                 && self.has_public_accessor(&cn.resolve(), method))
                     }
                 }
