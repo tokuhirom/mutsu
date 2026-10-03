@@ -333,9 +333,7 @@ impl Interpreter {
         match own_imports {
             None => self.add_visible_routines_to_pseudo_stash(&mut entries),
             Some(Some(scope)) => self.add_scope_imported_routines(scope, &mut entries),
-            Some(None) if package_block_imports => {
-                self.add_package_imported_routines(&mut entries)
-            }
+            Some(None) if package_block_imports => self.add_package_imported_routines(&mut entries),
             Some(None) => {}
         }
         let stash = self.pseudo_stash_hash(entries);
