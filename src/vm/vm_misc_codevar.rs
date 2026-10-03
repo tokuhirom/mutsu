@@ -117,7 +117,13 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
-        let mut val = self.resolve_amp_var_for(code, name);
+        // A routine's free `&name` is the binding visible at its declaration,
+        // not a same-named `my &name` in the CALLER's env -- the value-read
+        // twin of `CallOnCodeVar`'s lookup.
+        let mut val = match self.declared_scope_amp_var_for(code, name) {
+            Some(v) => v,
+            None => self.resolve_amp_var_for(code, name),
+        };
         // The same module-scope lexical the bare-call path consults (see
         // `lexical_amp_var_callable`): an imported CODE variable outlives its
         // `env` entry only in `module_scope_lexicals`, so `&f()` written in a

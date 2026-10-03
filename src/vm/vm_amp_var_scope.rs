@@ -64,4 +64,38 @@ impl Interpreter {
         }
         loan_env!(self, resolve_code_var(name))
     }
+
+    /// The binding a routine's free `&name` closes over when it lives in a
+    /// declaration-scoped store rather than in the running frame: a mainline
+    /// or block sub's captured unit-lexical cell (ADR-0024, #10483), or a
+    /// class/package body's own `my &name` (`package_lexicals`). Consulted
+    /// before the by-name env, where a CALLER's same-named `my &name` sits
+    /// -- reading that one is dynamic scoping (URI::Template's `uri-encode`
+    /// called from a method whose `my &enc` shadowed the class body's).
+    /// Scalars resolve through the same two stores ahead of env (`GetGlobal`).
+    ///
+    /// A `&name` slot of the running `code` itself (a parameter, or a
+    /// `my &name` of this frame) shadows both stores, so none is consulted
+    /// then.
+    ///
+    /// Cost: O(1), three hashed probes (the two stores answer immediately
+    /// when empty).
+    pub(super) fn declared_scope_amp_var_for(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+    ) -> Option<Value> {
+        if name.contains("::") || name.starts_with(['!', '?', '*', '.']) {
+            return None;
+        }
+        crate::runtime::dispatch_key::with_amp_name(name, |amp| {
+            if self.find_local_slot(code, amp).is_some() {
+                return None;
+            }
+            self.unit_scope_lexical(amp)
+                .or_else(|| self.package_scope_lexical(amp))
+        })
+        .map(Value::into_deref)
+        .filter(|v| !v.is_nil())
+    }
 }

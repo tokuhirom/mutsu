@@ -131,6 +131,23 @@ impl Interpreter {
     /// The flag says whether the binding may be cached under
     /// `unit_lexical_gen` (see `trir_seed_outers`).
     fn trir_outer_binding(&self, chunk: &TrChunk, name: &str) -> Option<(Value, bool)> {
+        // A free variable the capture pass did not put in a bucket is an
+        // ordinary environment name (a mainline `my` the sub reads while the
+        // mainline frame is still live). It may well be a plain value rather
+        // than a cell, which is why the caller refuses to cache one that is
+        // not celled.
+        self.trir_declared_binding(chunk, name).or_else(|| {
+            self.env()
+                .get(name)
+                .cloned()
+                .map(|v| (v.clone(), v.is_container_ref()))
+        })
+    }
+
+    /// [`Self::trir_outer_binding`] without its environment fallback: the
+    /// binding one of the declaration-scoped stores holds for `name`.
+    // Cost: O(d), d = package nesting depth walked.
+    fn trir_declared_binding(&self, chunk: &TrChunk, name: &str) -> Option<(Value, bool)> {
         let callee = chunk.name;
         let celled = |v: Value| {
             let stable = v.is_container_ref();
@@ -174,12 +191,26 @@ impl Interpreter {
                 return Some((v, true));
             }
         }
-        // A free variable the capture pass did not put in a bucket is an
-        // ordinary environment name (a mainline `my` the sub reads while the
-        // mainline frame is still live). It may well be a plain value rather
-        // than a cell, which is why the caller refuses to cache one that is
-        // not celled.
-        self.env().get(name).cloned().map(celled)
+        None
+    }
+
+    /// The callable a TRIR generic call site `name(...)` reaches through a
+    /// declaration-scoped `my &name` (a mainline/block capture, a module's
+    /// or a class body's), which a caller's same-named `my &name` in the
+    /// environment must not shadow -- the TRIR twin of the bytecode path's
+    /// `lexical_amp_var_callable`.
+    // Cost: O(d), as `trir_declared_binding`.
+    pub(crate) fn trir_declared_amp_callable(
+        &mut self,
+        chunk: &TrChunk,
+        name: &str,
+    ) -> Option<Value> {
+        if name.contains("::") || !self.lexical_amp_call_eligible(name) {
+            return None;
+        }
+        let amp = format!("&{name}");
+        let (binding, _) = self.trir_declared_binding(chunk, &amp)?;
+        Some(binding.into_deref()).filter(Self::is_lexical_amp_call_target)
     }
 
     /// The cell an `is rw` parameter binds when a TRIR body passes its free
