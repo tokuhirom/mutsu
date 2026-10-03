@@ -669,14 +669,8 @@ impl Interpreter {
             // `die` inside the method) must propagate out of the parse rather than
             // being swallowed as a silent non-match.
             if raw_empty
-                && let Some(result) = self.try_regex_subrule_as_method(
-                    &spec,
-                    chars,
-                    pos,
-                    current_caps,
-                    pkg,
-                    &arg_values,
-                )
+                && let Some(result) =
+                    self.try_regex_subrule_as_method(&spec, chars, pos, pkg, &arg_values)
             {
                 return result;
             }

@@ -629,7 +629,6 @@ impl Interpreter {
                                             &name.spec().lookup_name,
                                             chars,
                                             pos,
-                                            levels.top().caps(),
                                             pkg,
                                             call_args.as_deref().unwrap_or(&[]),
                                             cursor,

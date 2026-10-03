@@ -24,30 +24,30 @@ impl Interpreter {
     ///
     /// The method is user code, so under `MUTSU_RX_DIFF` it is recorded and
     /// replayed like a code atom (`rx_code_call`, ADR-0135 D6): the walk's run
-    /// of the same match must not call it a second time. `caps` is what the
-    /// call sees (the differential mode's fingerprint).
+    /// of the same match must not call it a second time. The method sees no
+    /// captures (its arguments were evaluated before the call), so the record
+    /// is keyed by its name and position alone.
     // Cost: the method's own run, plus O(1) to read its answer.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn regex_grammar_method_end(
         &mut self,
         name: &str,
         chars: &[char],
         pos: usize,
-        caps: &RegexCaptures,
         pkg: Symbol,
         args: &[Value],
         invocant: Value,
     ) -> Option<usize> {
         // The pending-exception test is part of the recorded invocation: the
         // walk's replay runs after the compiled run raised it.
-        let end: Option<(usize, RegexCaptures)> = self.rx_code_call(name, pos, caps, |interp| {
-            if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                return None;
-            }
-            interp
-                .grammar_method_call(name, chars, pos, pkg, args, invocant)
-                .map(|end| (end, RegexCaptures::default()))
-        });
+        let end: Option<(usize, RegexCaptures)> =
+            self.rx_code_call(name, pos, &RegexCaptures::default(), |interp| {
+                if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+                    return None;
+                }
+                interp
+                    .grammar_method_call(name, chars, pos, pkg, args, invocant)
+                    .map(|end| (end, RegexCaptures::default()))
+            });
         end.map(|(end, _)| end)
     }
 
@@ -153,7 +153,6 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
-        caps: &RegexCaptures,
         pkg: Symbol,
         args: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
@@ -168,7 +167,7 @@ impl Interpreter {
             None => self.new_grammar_cursor(chars, pos, pkg),
         };
         Some(
-            self.regex_grammar_method_end(&spec.lookup_name, chars, pos, caps, pkg, args, invocant)
+            self.regex_grammar_method_end(&spec.lookup_name, chars, pos, pkg, args, invocant)
                 .map(|end| (end, RegexCaptures::default()))
                 .into_iter()
                 .collect(),
