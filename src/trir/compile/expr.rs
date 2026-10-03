@@ -456,7 +456,8 @@ impl TrirCompiler<'_> {
             // `nqp::ifnull(a, b)` is lazy in `b`: rakudo's idiom installs a
             // fresh store only when there is none, and evaluating both arms
             // would install one over a live store.
-            "nqp::ifnull" if args.len() == 2 => {
+            // `nqp::defor(a, b)` is the same lowering (`a // b`).
+            "nqp::ifnull" | "nqp::defor" if args.len() == 2 => {
                 let ak = self.compile_expr(&args[0])?;
                 self.coerce(ak, TrKind::Obj)?;
                 self.ops.push(TrOp::DupObj);

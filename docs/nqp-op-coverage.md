@@ -42,9 +42,9 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Bit | 15 / 15 | 0 | #11491 |
 | Captures | 0 / 5 | 5 | #11496 |
 | Coercion | 10 / 10 | 0 | #11553 |
-| Conditional | 3 / 5 | 2 | #11500 |
+| Conditional | 5 / 5 | 0 | #11500 |
 | Context Introspection | 4 / 24 | 20 | #11498 |
-| Loop/Control | 5 / 7 | 2 | #11500 |
+| Loop/Control | 6 / 6 | 0 | #11500 |
 | Exception Handling | 15 / 15 | 0 | #11497 |
 | Processes | 0 / 4 | 4 | #11501 |
 | File / Directory / Network | 9 / 25 | 16 | #11501 |
@@ -68,16 +68,14 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **362 / 578** | **216** | |
+| **Total** | **365 / 577** | **212** | |
 
 ## Missing ops by category
 
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
 - **Captures** (#11496): `captureexistsnamed`, `capturehasnameds`, `captureposelems`, `savecapture`, `usecapture`
-- **Conditional** (#11500): `with`, `without`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
-- **Loop/Control** (#11500): `defor`, `for`
 - **Processes** (#11501): `execname`, `exit`, `getpid`, `getppid`
 - **File / Directory / Network** (#11501): `chdir`, `chmod`, `chown`, `copy`, `cwd`, `fileexecutable`, `filewritable`, `getport`, `link`, `lstat_time`, `mkdir`, `rename`, `rmdir`, `stat_time`, `symlink`, `unlink`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
@@ -108,4 +106,5 @@ Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `ad
 - `bindkey_i`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
 - `bindkey_n`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
 - `bindkey_s`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `for`: Rakudo rejects every Raku call at compile time ("The 'for' op expects a block as its second operand, got QAST::Op"): a Raku block literal compiles to a closure op, never the bare QAST::Block the op requires (NQP's own `nqp::for` fails the same way).
 - `list_b`: Rakudo rejects every Raku call at compile time ("The 'list_b' op needs a list of blocks, got QAST::Op"): a Raku block literal never compiles to the bare QAST::Block the op requires.

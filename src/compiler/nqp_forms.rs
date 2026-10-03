@@ -173,6 +173,9 @@ impl Compiler {
             "nqp::p6store" | "nqp::p6sink" | "nqp::p6return" | "nqp::p6invokeflat" => {
                 self.try_compile_nqp_p6_form(name, args)
             }
+            "nqp::with" | "nqp::without" | "nqp::defor" => {
+                self.try_compile_nqp_cond_form(name, args, sunk)
+            }
             // nqp::where(obj) — the object's identity integer. It is `.WHERE`
             // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
             // that method rather than keeping a second identity scheme (#9346).
@@ -276,7 +279,7 @@ impl Compiler {
 
     /// Compile an operand of an `nqp::` control form, in sink position when
     /// `sunk` (so a loop form there stays a plain jump loop).
-    fn compile_nqp_operand(&mut self, e: &Expr, sunk: bool) {
+    pub(super) fn compile_nqp_operand(&mut self, e: &Expr, sunk: bool) {
         if sunk {
             self.with_stmt_root(|c| c.compile_expr(e));
         } else {
