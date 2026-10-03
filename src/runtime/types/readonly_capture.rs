@@ -39,14 +39,15 @@
 //! [`crate::value::ReadonlySnapshot::at_declaration`]).
 
 use super::*;
-use crate::opcode::CompiledCode;
 use crate::ast::ReadonlyKind;
+use crate::opcode::CompiledCode;
 use crate::value::{CapturedReadonly, ReadonlySnapshot};
 use std::sync::{Arc, LazyLock};
 
 /// Shared by every creation-time record whose frame had nothing readonly, so
 /// the common case allocates nothing.
-static NO_READONLY_CAPTURES: LazyLock<CapturedReadonly> = LazyLock::new(|| snapshot(Vec::new(), false));
+static NO_READONLY_CAPTURES: LazyLock<CapturedReadonly> =
+    LazyLock::new(|| snapshot(Vec::new(), false));
 
 /// The declaration-time counterpart of [`NO_READONLY_CAPTURES`].
 static NO_READONLY_AT_DECLARATION: LazyLock<CapturedReadonly> =
@@ -161,7 +162,11 @@ impl Interpreter {
             return;
         }
         for sym in written_free_vars(code) {
-            let wanted = record.marks.iter().find(|(s, _)| *s == sym).map(|(_, k)| *k);
+            let wanted = record
+                .marks
+                .iter()
+                .find(|(s, _)| *s == sym)
+                .map(|(_, k)| *k);
             let current = self.readonly_kind_sym(sym);
             if current == wanted {
                 continue;
