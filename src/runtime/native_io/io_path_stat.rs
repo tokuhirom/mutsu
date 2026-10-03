@@ -225,7 +225,7 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
-        Some(Self::io_path_stat_result(&path_buf, &p, method))
+        Some(Self::io_path_stat_result(&path_buf, method))
     }
 
     /// Resolve an `IO::Path`'s `path` attribute to an absolute filesystem
@@ -245,10 +245,14 @@ impl Interpreter {
     }
 
     /// Pure `stat`-based result for the [`Self::try_io_path_fs_stat`] methods given an
-    /// already-resolved `path_buf` (and the original `p` for error/Failure
-    /// messages). Factored out so both the VM-native path and `native_io_path`
+    /// already-resolved `path_buf`, which also names the path in a Failure's
+    /// message. Factored out so both the VM-native path and `native_io_path`
     /// run the exact same filesystem queries and Failure shaping.
-    fn io_path_stat_result(path_buf: &Path, p: &str, method: &str) -> Result<Value, RuntimeError> {
+    fn io_path_stat_result(path_buf: &Path, method: &str) -> Result<Value, RuntimeError> {
+        // A missing path is reported by its absolute form, as Rakudo's
+        // `X::IO::DoesNotExist` does (`fs_errors` module docs).
+        let abs = path_buf.to_string_lossy();
+        let p = abs.as_ref();
         match method {
             "e" => Ok(Value::truth(path_buf.exists())),
             "f" | "d" | "l" | "r" | "w" | "x" | "rw" | "rwx" => {
@@ -259,20 +263,7 @@ impl Interpreter {
             }
             "z" => match fs::metadata(path_buf) {
                 Ok(meta) => Ok(Value::truth(meta.len() == 0)),
-                Err(_) => {
-                    let message = format!("Failed to find '{}' while trying to do '.z'", p);
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(message));
-                    attrs.insert("path".to_string(), Value::str(p.to_string()));
-                    attrs.insert("trying".to_string(), Value::str_from("z"));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::DoesNotExist"), attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
+                Err(_) => Ok(io_path_missing_failure(p, "z")),
             },
             // `.mode` returns an `IntStr` allomorph (`.Int` = the octal mode value,
             // `.Str` = the zero-padded octal string) and fails with

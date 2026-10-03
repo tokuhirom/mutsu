@@ -587,12 +587,13 @@ impl Interpreter {
         exclusive: bool,
         display_path: Option<&Path>,
     ) -> Result<Value, RuntimeError> {
-        // Opening a directory as a file handle is an error in Raku
+        // Opening a directory as a file handle is an error in Raku: `IO::Handle.open`
+        // checks `.d` first and fails with `X::IO::Directory`, naming the path
+        // as written.
         if path.is_dir() {
-            return Err(RuntimeError::new(format!(
-                "Failed to open '{}': Is a directory",
-                path.display()
-            )));
+            return Err(native_io::fs_errors::directory_open_error(
+                &display_path.unwrap_or(path).to_string_lossy(),
+            ));
         }
         let mut options = fs::OpenOptions::new();
         options.read(read);
@@ -620,9 +621,9 @@ impl Interpreter {
         if exclusive {
             options.create(false).create_new(true);
         }
-        let file = options.open(path).map_err(|err| {
-            RuntimeError::new(format!("Failed to open '{}': {}", path.display(), err))
-        })?;
+        let file = options
+            .open(path)
+            .map_err(|err| native_io::fs_errors::open_failed(path, &err))?;
         let mode = if read && (write || append) {
             IoHandleMode::ReadWrite
         } else if append {

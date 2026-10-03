@@ -61,113 +61,22 @@ impl Interpreter {
                         }
                     }
                 }
-                if createonly && path_buf.exists() {
-                    return Ok(io_exception_failure(
-                        "X::IO::Spurt",
-                        format!("Failed to spurt '{}': file already exists", p),
-                    ));
-                }
-                let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
-                let write_result = if is_buf {
-                    let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
-                    if append {
-                        use std::io::Write;
-                        fs::OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(&path_buf)
-                            .and_then(|mut file| file.write_all(&bytes))
-                    } else {
-                        fs::write(&path_buf, &bytes)
-                    }
-                } else {
-                    let content = content_value.to_string_value();
-                    let bytes = if let Some(ref enc_name) = enc {
-                        match self.encode_with_encoding(&content, enc_name) {
-                            Ok(mut b) => {
-                                // For utf16 (auto-endian), prepend BOM
-                                let enc_lower = enc_name.to_lowercase();
-                                if enc_lower == "utf-16" || enc_lower == "utf16" {
-                                    let bom: &[u8] = if cfg!(target_endian = "little") {
-                                        &[0xFF, 0xFE]
-                                    } else {
-                                        &[0xFE, 0xFF]
-                                    };
-                                    let mut with_bom = Vec::with_capacity(bom.len() + b.len());
-                                    with_bom.extend_from_slice(bom);
-                                    with_bom.append(&mut b);
-                                    with_bom
-                                } else {
-                                    b
-                                }
-                            }
-                            Err(e) => {
-                                return Ok(io_exception_failure(
-                                    "X::IO::Spurt",
-                                    e.message.into_owned(),
-                                ));
-                            }
-                        }
-                    } else {
-                        content.into_bytes()
-                    };
-                    if append {
-                        use std::io::Write;
-                        fs::OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(&path_buf)
-                            .and_then(|mut file| file.write_all(&bytes))
-                    } else {
-                        fs::write(&path_buf, &bytes)
-                    }
-                };
-                match write_result {
-                    Ok(()) => Ok(Value::TRUE),
-                    Err(err) => Ok(io_exception_failure(
-                        "X::IO::Spurt",
-                        format!("Failed to spurt '{}': {}", p, err),
-                    )),
-                }
+                Ok(self.spurt_file(
+                    &path_buf,
+                    &content_value,
+                    append,
+                    createonly,
+                    enc.as_deref(),
+                ))
             }
-            "mkdir" => match fs::create_dir_all(&path_buf) {
+            "mkdir" => match self.mkdir_op(&path_buf) {
                 Ok(()) => Ok(Value::make_instance(
                     Symbol::intern(class_name),
                     attributes.clone(),
                 )),
-                Err(err) => {
-                    let msg = format!(
-                        "Failed to create directory '{}' with mode '0o777': Failed to mkdir: {}",
-                        p, err
-                    );
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
-                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::Mkdir"), ex_attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
+                Err(exception) => Ok(super::fs_errors::failure_of(exception)),
             },
-            "rmdir" => match fs::remove_dir(&path_buf) {
-                Ok(()) => Ok(Value::TRUE),
-                Err(err) => {
-                    let msg = format!("Failed to remove the directory '{}': {}", p, err);
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
-                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
-                    let ex = Value::make_instance(Symbol::intern("X::IO::Rmdir"), ex_attrs);
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))
-                }
-            },
+            "rmdir" => Ok(self.rmdir_op(&path_buf)),
             // Per raku, `.unlink` returns True on success, False when the file did
             // not exist, and fails softly (a Failure carrying X::IO::Unlink) for
             // any other error (e.g. the path is a directory) so `without`/`try`
@@ -176,14 +85,9 @@ impl Interpreter {
                 Ok(()) => Ok(Value::TRUE),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::FALSE),
                 Err(err) => {
-                    // Rakudo reports libuv's wording for a directory target
-                    // ("illegal operation on a directory"); use it for the
-                    // EISDIR case and fall back to the OS message otherwise.
-                    let reason = if err.raw_os_error() == Some(21) {
-                        "illegal operation on a directory".to_string()
-                    } else {
-                        err.to_string()
-                    };
+                    // Rakudo reports libuv's wording ("illegal operation on a
+                    // directory" for a directory target).
+                    let reason = super::fs_errors::libuv_text(&err);
                     let msg = format!(
                         "Failed to remove the file '{}': Failed to delete file: {}",
                         Self::stringify_path(&path_buf),
@@ -233,11 +137,7 @@ impl Interpreter {
                             )));
                         }
                     };
-                    let perms = PermissionsExt::from_mode(mode_int);
-                    fs::set_permissions(&path_buf, perms).map_err(|err| {
-                        RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
-                    })?;
-                    Ok(Value::TRUE)
+                    Ok(self.chmod_op(&path_buf, mode_int))
                 }
             }
             "chown" => {
@@ -332,82 +232,18 @@ impl Interpreter {
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
         match method {
-            "copy" => {
+            "copy" | "rename" | "move" => {
                 let dest = args
                     .first()
                     .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("copy requires destination"))?;
+                    .ok_or_else(|| RuntimeError::new(format!("{} requires destination", method)))?;
                 let createonly = Self::named_bool(args, "createonly");
                 let dest_buf = self.resolve_path(&dest);
-                // Check if source and destination are the same file
-                if path_buf == dest_buf
-                    || (path_buf.exists()
-                        && dest_buf.exists()
-                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
-                {
-                    return Ok(io_exception_failure(
-                        "X::IO::Copy",
-                        format!(
-                            "Failed to copy '{}': source and destination are the same file",
-                            p
-                        ),
-                    ));
-                }
-                if createonly && dest_buf.exists() {
-                    return Ok(io_exception_failure(
-                        "X::IO::Copy",
-                        format!("Failed to copy '{}': destination already exists", p),
-                    ));
-                }
-                fs::copy(&path_buf, &dest_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", p, err)))?;
-                Ok(Value::TRUE)
-            }
-            "rename" | "move" => {
-                let ex_type = if method == "rename" {
-                    "X::IO::Rename"
+                Ok(if method == "copy" {
+                    self.copy_file_op(&path_buf, &dest_buf, createonly)
                 } else {
-                    "X::IO::Move"
-                };
-                let verb = if method == "rename" { "rename" } else { "move" };
-                let dest = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("rename/move requires destination"))?;
-                let createonly = Self::named_bool(args, "createonly");
-                let dest_buf = self.resolve_path(&dest);
-                // Check if source and destination are the same file
-                if path_buf == dest_buf
-                    || (path_buf.exists()
-                        && dest_buf.exists()
-                        && fs::canonicalize(&path_buf).ok() == fs::canonicalize(&dest_buf).ok())
-                {
-                    let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
-                    let mut failure_attrs = HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    failure_attrs.insert("handled".to_string(), Value::FALSE);
-                    failure_attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Failed to {} '{}': source and destination are the same file",
-                            verb, p
-                        )),
-                    );
-                    return Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ));
-                }
-                if createonly && dest_buf.exists() {
-                    return Err(io_exception(
-                        ex_type,
-                        format!("Failed to {} '{}': destination already exists", verb, p),
-                    ));
-                }
-                fs::rename(&path_buf, &dest_buf).map_err(|err| {
-                    io_exception(ex_type, format!("Failed to {} '{}': {}", verb, p, err))
-                })?;
-                Ok(Value::TRUE)
+                    self.rename_file_op(method, &path_buf, &dest_buf, createonly)
+                })
             }
             "symlink" => {
                 // Platforms with no symlink syscall refuse before touching the

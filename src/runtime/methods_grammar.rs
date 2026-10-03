@@ -636,9 +636,10 @@ impl Interpreter {
             ));
         };
         let text = if method == "parsefile" {
-            match std::fs::read_to_string(&source_text) {
+            let path_buf = self.resolve_path(&source_text);
+            match std::fs::read_to_string(&path_buf) {
                 Ok(contents) => contents,
-                Err(err) => return Err(RuntimeError::new(err.to_string())),
+                Err(err) => return Err(native_io::fs_errors::read_whole_failed(&path_buf, &err)),
             }
         } else {
             source_text

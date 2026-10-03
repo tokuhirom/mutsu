@@ -19,15 +19,6 @@ pub(crate) fn numeric_limit_arg(arg: &Value) -> Option<usize> {
     }
 }
 
-pub(crate) fn io_exception(class_name: &str, message: String) -> RuntimeError {
-    let mut err = RuntimeError::new(message);
-    err.exception = Some(Box::new(Value::make_instance(
-        Symbol::intern(class_name),
-        HashMap::new(),
-    )));
-    err
-}
-
 pub(crate) fn io_exception_failure(class_name: &str, message: String) -> Value {
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(message));
