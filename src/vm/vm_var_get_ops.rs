@@ -134,6 +134,14 @@ impl Interpreter {
                 name,
             )));
         }
+        // A leading constant that names a package is a valid qualifier
+        // (`constant E = A::B; E::Status::Started`): resolve the rest under
+        // the package it stands for, as a qualified call or `&E::f` already do.
+        if crate::runtime::utils::has_double_colon(name)
+            && let Some(real) = self.resolve_package_alias_prefix(name)
+        {
+            return self.push_bare_word_value(&real, compiled_fns);
+        }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
         // routine before the type-object paths below, so the bare term is
