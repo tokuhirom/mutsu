@@ -135,7 +135,7 @@ impl Interpreter {
 
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
-        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default();
+        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default().values;
         if subscriptions.is_empty() {
             return Ok(());
         }

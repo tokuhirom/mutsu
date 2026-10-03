@@ -33,18 +33,32 @@ impl SharedChannel {
         state.taps.push(ChannelTap {
             id,
             emitter,
+            thread: std::thread::current().id(),
             ready: false,
         });
         id
     }
 
-    /// The `.tap` call that attached this tap has finished registering it.
+    /// The id the next attached tap will get: a `.tap` call notes it before
+    /// it runs, to find the taps it attached.
+    // Cost: O(1).
+    pub(crate) fn next_tap_id(&self) -> u64 {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().next_tap_id
+    }
+
+    /// A `.tap` call on this thread has finished registering: mark the taps
+    /// this thread attached since `first_id` ready. Taps another thread is
+    /// still setting up are left alone.
     // Cost: O(t), t = attached taps.
-    pub(crate) fn mark_tap_ready(&self, id: u64) {
+    pub(crate) fn mark_taps_ready_since(&self, first_id: u64) {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
-        if let Some(tap) = state.taps.iter_mut().find(|t| t.id == id) {
-            tap.ready = true;
+        let me = std::thread::current().id();
+        for tap in state.taps.iter_mut() {
+            if tap.id >= first_id && tap.thread == me {
+                tap.ready = true;
+            }
         }
     }
 

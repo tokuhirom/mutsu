@@ -3726,8 +3726,10 @@ struct ChannelState {
 struct ChannelTap {
     id: u64,
     emitter: Value,
-    /// Set once the `.tap` call that started this tap has registered its
-    /// callback (`SharedChannel::mark_tap_ready`).
+    /// The thread whose `.tap` call attached it.
+    thread: std::thread::ThreadId,
+    /// Set once that `.tap` call has registered its callback
+    /// (`SharedChannel::mark_taps_ready_since`).
     ready: bool,
 }
 

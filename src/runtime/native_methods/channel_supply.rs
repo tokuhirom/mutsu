@@ -121,7 +121,6 @@ impl Interpreter {
             None => {}
         }
         let tap_id = ch.attach_tap(emitter.clone());
-        self.pending_channel_taps.push((ch.clone(), tap_id));
         if let ValueView::Instance { attributes, .. } = emitter.view()
             && let Some(sid) = supplier_id_from_attrs(&attributes.as_map())
         {
@@ -188,11 +187,12 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `Supply.tap`/`.act`, then -- for every `Channel.Supply` tap this call
-    /// attached -- mark it ready and pump: values sent while it was being set
+    /// `Supply.tap`/`.act`, then -- on a `Channel.Supply` -- mark the taps
+    /// this call attached ready and pump: values sent while it was being set
     /// up (from another thread) are still queued, and a close in that window
-    /// still has to complete it.
-    // Cost: O(1) plus the tap, plus `pump_channel_taps` per channel tapped.
+    /// still has to complete it. (A derived supply such as `.map` taps the
+    /// channel's Supply through this same method, so its tap is covered too.)
+    // Cost: O(1) plus the tap, plus `pump_channel_taps` for a channel's Supply.
     pub(in crate::runtime) fn native_supply_mut(
         &mut self,
         attrs: AttrMap,
@@ -200,21 +200,18 @@ impl Interpreter {
         args: Vec<Value>,
         publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        if !matches!(method, "tap" | "act") {
+        let channel = if matches!(method, "tap" | "act") {
+            channel_of(&attrs)
+        } else {
+            None
+        };
+        let Some(ch) = channel else {
             return self.native_supply_mut_unpumped(attrs, method, args, publish);
-        }
-        let mark = self.pending_channel_taps.len();
-        let out = self.native_supply_mut_unpumped(attrs, method, args, publish);
-        let attached = self
-            .pending_channel_taps
-            .split_off(mark.min(self.pending_channel_taps.len()));
-        let out = out?;
-        for (ch, id) in &attached {
-            ch.mark_tap_ready(*id);
-        }
-        for (ch, _) in &attached {
-            self.pump_channel_taps(ch)?;
-        }
+        };
+        let first_id = ch.next_tap_id();
+        let out = self.native_supply_mut_unpumped(attrs, method, args, publish)?;
+        ch.mark_taps_ready_since(first_id);
+        self.pump_channel_taps(&ch)?;
         Ok(out)
     }
 }
