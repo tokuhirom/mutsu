@@ -1040,14 +1040,23 @@ impl Interpreter {
     /// assignment falls back to `.STORE` on a non-`Scalar` target, so such a
     /// name is assignable even though the name itself holds no container.
     pub(super) fn sigilless_value_has_store(&mut self, code: &CompiledCode, name: &str) -> bool {
-        let value = match code.locals.iter().position(|l| l == name) {
-            Some(idx) => self.locals.get(idx).cloned(),
-            None => self.get_env_with_main_alias(name),
-        };
-        value.is_some_and(|v| {
+        // A sigilless loop parameter (`-> \x`) is bound by name in `env`, while
+        // an enclosing `my $x` owns the code's local slot `x`: both answers are
+        // probed so the scalar's slot cannot hide the parameter (#11361).
+        let local = code
+            .locals
+            .iter()
+            .position(|l| l == name)
+            .and_then(|idx| self.locals.get(idx).cloned());
+        let has_store = |this: &mut Self, v: Value| {
             let v = v.deref_container();
-            Self::is_sigilless_assignable_aggregate(&v) || self.instance_is_tied(&v)
-        })
+            Self::is_sigilless_assignable_aggregate(&v) || this.instance_is_tied(&v)
+        };
+        if local.is_some_and(|v| has_store(self, v)) {
+            return true;
+        }
+        self.get_env_with_main_alias(name)
+            .is_some_and(|v| has_store(self, v))
     }
 
     /// Consume the `pending_sigilless_store` mark `CheckReadOnly` left for
