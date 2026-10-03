@@ -8,8 +8,10 @@ t/collections/array/array-assign-bound-iterable.t
 t/collections/array/array-coercer-result-element-store.t
 t/collections/array/array-coercion-type.t
 t/collections/array/array-composer-iterable-instance.t
+t/collections/array/array-counted-head-tail-rw.t
 t/collections/array/array-delete-hole-reads-is-default.t
 t/collections/array/array-delete-pos-nested-index-trims-inner.t
+t/collections/array/array-element-scalar-splice-shares.t
 t/collections/array/array-explicit-any-element-not-hole.t
 t/collections/array/array-front-mutation-head-offset.t
 t/collections/array/array-grab.t
@@ -91,6 +93,7 @@ t/collections/hash/hash-odd-number-message-element-container.t
 t/collections/hash/hash-odd-number.t
 t/collections/hash/hash-predicate-iteration.t
 t/collections/hash/hash-push-bound.t
+t/collections/hash/hash-push-named-argument.t
 t/collections/hash/hash-push-seq-of-pairs.t
 t/collections/hash/hash-raku-itemization.t
 t/collections/hash/hash-set-membership-truthy.t
@@ -359,6 +362,7 @@ t/collections/subscript/nested-index-range-slice-assign.t
 t/collections/subscript/nested-junction-slice-assign.t
 t/collections/subscript/nested-whatever-index-assign.t
 t/collections/subscript/object-subscript-protocol.t
+t/collections/subscript/out-of-range-scalar-index.t
 t/collections/subscript/positional-index-on-any.t
 t/collections/subscript/postcircumfix-subscript-call-adverbs.t
 t/collections/subscript/rw-slice-arg-is-not-a-container.t
@@ -422,6 +426,7 @@ t/collections/transform/grep-sub-returns-seq.t
 t/collections/transform/head-whatevercode.t
 t/collections/transform/invert-scalar-held-list.t
 t/collections/transform/invert.t
+t/collections/transform/join-nested-list-user-str.t
 t/collections/transform/map-array-shared-loop.t
 t/collections/transform/map-block-my-shadow-leak.t
 t/collections/transform/map-first-lazy-range.t
@@ -449,6 +454,7 @@ t/collections/transform/polymod-rat-exact.t
 t/collections/transform/polymod-seq.t
 t/collections/transform/produce-last.t
 t/collections/transform/reduce-concat-fold.t
+t/collections/transform/reduce-concat-single-positional.t
 t/collections/transform/reduce-empty-and-typeobject.t
 t/collections/transform/reduce-no-zero-arg-meaning.t
 t/collections/transform/reduce-notandthen.t
@@ -730,6 +736,7 @@ t/exceptions/routine-unwrap-error.t
 t/exceptions/rw-param-typed-exception-class.t
 t/exceptions/say-gist-exception-propagates.t
 t/exceptions/str-numeric-error.t
+t/exceptions/stringify-propagates-user-str-exception.t
 t/exceptions/throws-like-colonpair-fat-arrow.t
 t/exceptions/throws-like-gather-sink.t
 t/exceptions/throws-like-lexical-class-matcher.t
@@ -740,6 +747,7 @@ t/exceptions/try-does-not-recatch-a-handled-failure.t
 t/exceptions/try-failure-bang.t
 t/exceptions/try-fatal-does-not-retroactively-flag-closure-seq.t
 t/exceptions/try-prefix-statement-modifier-next-line.t
+t/exceptions/try-return-failure-fatal.t
 t/exceptions/try-tail-assign-value.t
 t/exceptions/typed-exception-class-of-compile-errors.t
 t/exceptions/typed-exceptions.t
@@ -758,6 +766,7 @@ t/exceptions/x-wrapper-role.t
 t/grammar/append-one-arg-rule.t
 t/grammar/class-with-rule-is-not-a-grammar-mro.t
 t/grammar/dispatch-token-cross-stack-nesting.t
+t/grammar/grammar-actions-fallback.t
 t/grammar/grammar-alias-action-fires-once.t
 t/grammar/grammar-alias-capture-identity.t
 t/grammar/grammar-backtracked-action-replay.t
@@ -770,6 +779,7 @@ t/grammar/grammar-inline-adverb-bracket-scope.t
 t/grammar/grammar-make-named-argument.t
 t/grammar/grammar-meta-mro.t
 t/grammar/grammar-optional-ordered-alternative.t
+t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
 t/grammar/grammar-rule-separated-quantifier-whitespace.t
 t/grammar/grammar-sibling-implicit-core-parent.t
@@ -782,6 +792,7 @@ t/grammar/rule-sigspace-charclass-brace.t
 t/grammar/rule-sigspace-escaped-brace.t
 t/grammar/slurpy-single-argument-rule.t
 t/grammar/subset-where-class-scoped-grammar.t
+t/grammar/token-wrap-callsame-failed-cursor.t
 t/grammar/token-zero-width-quantified-subrule.t
 t/io/argfiles-eof-stdin.t
 t/io/chdir-adverbs.t
@@ -816,6 +827,7 @@ t/io/io-handle-read-one-decoder-parity.t
 t/io/io-handle-slurp-rest.t
 t/io/io-handle-tier2c-write-spurt.t
 t/io/io-handle-wrapped-subclass-nl-out.t
+t/io/io-newline-pragma.t
 t/io/io-path-accepts-subclass.t
 t/io/io-path-add-relative.t
 t/io/io-path-child-concat.t
@@ -856,6 +868,7 @@ t/io/open-failure-print-nomatch.t
 t/io/open-io-special.t
 t/io/platform-library-name-path.t
 t/io/platform-library-name-version.t
+t/io/proc-gist-not-exitcode.t
 t/io/proc-run-merge-captures-output.t
 t/io/proc-run-missing-program.t
 t/io/proc-signal-exitcode.t
@@ -1024,6 +1037,7 @@ t/lang/quoting/angle-spaceship-quote-word.t
 t/lang/quoting/backslash-unrecognized.t
 t/lang/quoting/embedded-qqw-qw-escape.t
 t/lang/quoting/escaped-our-sub-incdec.t
+t/lang/quoting/heredoc-trailing-code-nested-blocks-perf.t
 t/lang/quoting/heredoc.t
 t/lang/quoting/interp-brace-in-quote.t
 t/lang/quoting/interp-unicode-var-name.t
@@ -1052,6 +1066,7 @@ t/lang/string-interp-hash-sigil-hyphen.t
 t/lang/string-methods.t
 t/lang/string-positions-are-graphemes.t
 t/lang/string-range-odometer.t
+t/lang/term-binding-smiley-name.t
 t/lang/term-keyword-call-form-undeclared.t
 t/lang/term-keyword-not-listop-head.t
 t/lang/tight-and-ternary-precedence.t
@@ -1059,8 +1074,10 @@ t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/adr0110-trir-module-linkage.t
 t/modules/backtrace-module-block-file.t
+t/modules/bare-package-id-metamethods.t
 t/modules/batteries/crypt-random-battery.t
 t/modules/batteries/digest-battery.t
+t/modules/batteries/json-depth-limit.t
 t/modules/batteries/json-jsonc.t
 t/modules/batteries/json-module-ladder.t
 t/modules/batteries/json-strict-parse.t
@@ -1071,6 +1088,7 @@ t/modules/begin-package-dynvar.t
 t/modules/block-declares-in-its-own-package.t
 t/modules/block-import-operator-unit-module-scope.t
 t/modules/block-use-keeps-nested-module-imports.t
+t/modules/builtin-args-package-body-lexical-cell.t
 t/modules/classhow-methods-package.t
 t/modules/classhow-set-name-package.t
 t/modules/closure-package-method-class.t
@@ -1155,6 +1173,7 @@ t/modules/import-export/nested-export-sub-scoping.t
 t/modules/import-export/nested-routine-export-out-of-extent.t
 t/modules/import-export/nested-routine-sub-is-export.t
 t/modules/import-export/nested-unit-dependency-export.t
+t/modules/import-export/proto-export-tag-not-default.t
 t/modules/import-export/proto-export-tag.t
 t/modules/import-export/reimport-tagged-export-after-plain-use.t
 t/modules/import-export/require-dist-selectors.t
@@ -1207,6 +1226,7 @@ t/modules/module-loaded-in-eval-keeps-my-roles.t
 t/modules/module-local-type-shadows-builtin.t
 t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-own-dynamic-does-not-leak.t
+t/modules/module-parse-warning-once.t
 t/modules/module-pod-variable.t
 t/modules/module-state-sub-shared-cell.t
 t/modules/module-sub-otf-dispatch.t
@@ -1261,6 +1281,7 @@ t/modules/resources-second-use-module.t
 t/modules/role-body-use-imports-into-role-package.t
 t/modules/role-body-use-module-imports-own-operator.t
 t/modules/scalar-trailing-package-separator.t
+t/modules/script-multi-does-not-join-module-family.t
 t/modules/strict-module-scope.t
 t/modules/test-assertion-module-otf.t
 t/modules/typed-decl-package-qualified-constraint.t
@@ -1304,6 +1325,7 @@ t/nativecall/native-array-slice-assign-after-scalar-arg.t
 t/nativecall/native-array-splice.t
 t/nativecall/native-buf-construct.t
 t/nativecall/native-buf-gist.t
+t/nativecall/native-buf-mut.t
 t/nativecall/native-buf-type-aliases.t
 t/nativecall/native-build-construct.t
 t/nativecall/native-builtin-utf-uni-construct.t
@@ -1376,6 +1398,7 @@ t/nativecall/slip-native-constructor-flatten.t
 t/nativecall/sort-native.t
 t/nativecall/starts-ends-substr-eq-named-native.t
 t/nativecall/starts-ends-with-native.t
+t/nativecall/str-search-match-invocant-native.t
 t/nativecall/subst-native.t
 t/nativecall/substr-eq-native.t
 t/nativecall/substr-native-layer.t
@@ -1383,6 +1406,7 @@ t/nativecall/systemic-can-sees-native-methods.t
 t/nativecall/test-fn-native-dispatch.t
 t/nativecall/trir-native-num-param-rejects-int.t
 t/oo/attribute/accessor-list-element-assign-ro.t
+t/oo/attribute/accessor-method-signature-count.t
 t/oo/attribute/amp-attr-accessor-call-chain.t
 t/oo/attribute/ampersand-dot-accessor.t
 t/oo/attribute/array-hash-attribute-assign-copies.t
@@ -1427,6 +1451,7 @@ t/oo/attribute/multi-method-mixed-attribute-type-object-specificity.t
 t/oo/attribute/multi-method-where-invocant-attribute.t
 t/oo/attribute/name-accessor-type-object.t
 t/oo/attribute/nested-index-assign-method-accessor.t
+t/oo/attribute/placeholder-attribute.t
 t/oo/attribute/prefix-incdec-on-an-rw-accessor.t
 t/oo/attribute/rw-arg-attribute-source-writeback.t
 t/oo/attribute/rw-param-does-not-hijack-same-named-attribute.t
@@ -1547,9 +1572,11 @@ t/oo/method/flat-method.t
 t/oo/method/gate-b-class-method-outer-lexical.t
 t/oo/method/gate-b-jit-method-mut-writeback.t
 t/oo/method/has-decl-nested-in-method-closures.t
+t/oo/method/hash-subclass-store-in-method.t
 t/oo/method/hyper-hash-method-scalar.t
 t/oo/method/hyper-method-call-subscript.t
 t/oo/method/hyper-method-on-nil.t
+t/oo/method/hyper-user-method-on-objects.t
 t/oo/method/index-method-no-writeback.t
 t/oo/method/indirect-method-notation.t
 t/oo/method/inherited-method-recursive-nested-sub-unaffected-by-subclass-subs.t
@@ -1592,6 +1619,7 @@ t/oo/method/method-return-type-pseudo-class.t
 t/oo/method/method-rooted-lvalue-subscript-through-object.t
 t/oo/method/method-rw-param-writeback-coherence.t
 t/oo/method/method-rw-writeback-attr-source-no-leak.t
+t/oo/method/method-self-assign-aggregate.t
 t/oo/method/method-self-sigil-context.t
 t/oo/method/method-subset-param-predicate-runs-once.t
 t/oo/method/method-table.t
@@ -1622,6 +1650,7 @@ t/oo/method/private-method-apostrophe-name.t
 t/oo/method/private-method-call-in-closure.t
 t/oo/method/private-method-compiled-dispatch.t
 t/oo/method/private-method-in-closure.t
+t/oo/method/private-method-resolution-cache.t
 t/oo/method/private-method-table.t
 t/oo/method/private-method-unqualified.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
@@ -1635,6 +1664,7 @@ t/oo/method/scalar-param-container-share-method.t
 t/oo/method/scoped-overlay-method.t
 t/oo/method/self-longname-method-call.t
 t/oo/method/self-method-decontainerizes.t
+t/oo/method/self-term-in-method-closure.t
 t/oo/method/set-op-after-method.t
 t/oo/method/sprintf-method-form-arg-count.t
 t/oo/method/sprintf-method-form-flatten.t
@@ -1642,6 +1672,7 @@ t/oo/method/str-sprintf-method.t
 t/oo/method/submethod-defer.t
 t/oo/method/submethod-wrap.t
 t/oo/method/superscript-method-power.t
+t/oo/method/topic-method-colon-args-trailing-comma-modifier.t
 t/oo/method/topic-quoted-method-call.t
 t/oo/method/which-method.t
 t/oo/mixin-array-hash-mutator-override.t
@@ -1842,13 +1873,17 @@ t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-phaser.t
+t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-reduction.t
 t/rakuast/rakuast-regex-char-class-assertions.t
 t/rakuast/rakuast-regex-char-classes.t
+t/rakuast/rakuast-regex-match-markers.t
 t/rakuast/rakuast-regex-modifiers-anchors.t
+t/rakuast/rakuast-regex-outer-adverbs.t
 t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
+t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-return-type.t
@@ -1891,6 +1926,7 @@ t/regex/ignorecase-casefold-equivalence.t
 t/regex/m-prefixed-kebab-sub.t
 t/regex/match/array-num-smartmatch.t
 t/regex/match/closure-interpolation-match-so-far.t
+t/regex/match/comb-capture-markers.t
 t/regex/match/comb-ignoremark.t
 t/regex/match/comb-separated-quantifier-capture.t
 t/regex/match/comb-sub-form.t
@@ -1902,6 +1938,7 @@ t/regex/match/make-requires-match.t
 t/regex/match/match-caps-chunks.t
 t/regex/match/match-caps.t
 t/regex/match/match-capture-exists.t
+t/regex/match/match-cursor-more.t
 t/regex/match/match-cursor-protocol.t
 t/regex/match/match-from-to-counts-graphemes.t
 t/regex/match/match-gist.t
@@ -1912,6 +1949,7 @@ t/regex/match/match-named-capture-kv-values-flatten.t
 t/regex/match/match-nonregex-matcher.t
 t/regex/match/match-nth-ordinal.t
 t/regex/match/match-positional-iteration.t
+t/regex/match/match-quantified-group-capture-semantics.t
 t/regex/match/match-raku-in-collection.t
 t/regex/match/match-raku-list-parens.t
 t/regex/match/match-replace-with.t
@@ -1927,16 +1965,22 @@ t/regex/match/numeric-opaque-object-no-match.t
 t/regex/match/pair-smartmatch.t
 t/regex/match/positional-match-index-coercion.t
 t/regex/match/regex-alternation-untaken-branch-list-capture.t
+t/regex/match/regex-capture-marker-in-alternation.t
+t/regex/match/regex-capture-markers-before-alternation.t
 t/regex/match/regex-capture-numbering-alternation.t
 t/regex/match/regex-closure-interp-discards-captures.t
 t/regex/match/regex-comb-ratchet-no-capture.t
+t/regex/match/regex-ignoremark-capture-span.t
 t/regex/match/regex-interp-capture-alias.t
+t/regex/match/regex-interp-captured-scope-regex.t
+t/regex/match/regex-lookahead-escape-and-capture-markers.t
 t/regex/match/regex-match-capture-slip.t
 t/regex/match/regex-named-alias-dual-capture.t
 t/regex/match/regex-optional-group-list-captures.t
 t/regex/match/regex-optional-subrule-zero-capture.t
 t/regex/match/regex-quantified-capture-single-iteration.t
 t/regex/match/regex-range-quant-no-capture.t
+t/regex/match/regex-scoped-ignoremark-match-from.t
 t/regex/match/regex-separator-quant-capture.t
 t/regex/match/regex-tree-array-captures.t
 t/regex/match/regex-tree-captures.t
@@ -1954,14 +1998,21 @@ t/regex/match/temporal-smartmatch.t
 t/regex/match/whatever-smart-not-match.t
 t/regex/match/when-only-block-nonmatch-value.t
 t/regex/match/zen-slice-match-var.t
+t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
+t/regex/regex-adverb-error.t
 t/regex/regex-alias-subrule-quantified.t
+t/regex/regex-aliased-group-subcap.t
 t/regex/regex-basic.t
 t/regex/regex-code-block-process-magicals.t
 t/regex/regex-code-block-writeback.t
+t/regex/regex-compact-combined-property-class.t
 t/regex/regex-composite-class-subtraction.t
+t/regex/regex-corner-bracket-literal-raw.t
 t/regex/regex-crlf-literal-escape-pair.t
+t/regex/regex-dq-hex-escape.t
 t/regex/regex-grapheme-literal-atom.t
+t/regex/regex-ignorecase-named-builtin-no-fold.t
 t/regex/regex-interp-quote-var.t
 t/regex/regex-interp-whitespace-literal.t
 t/regex/regex-interpolated-module-our-var.t
@@ -1969,13 +2020,18 @@ t/regex/regex-interpolation-hyphen-var.t
 t/regex/regex-literal-lt-then-scalar.t
 t/regex/regex-longname-alias-rhs.t
 t/regex/regex-lookaround.t
+t/regex/regex-ltm-measured-branch-rank.t
+t/regex/regex-ltm-uniprop-negated-named-fate.t
 t/regex/regex-make.t
 t/regex/regex-negated-class-crlf.t
 t/regex/regex-negated-class-grapheme-cluster.t
+t/regex/regex-negated-property-minus-enum.t
 t/regex/regex-nested-subcaps-sharing.t
 t/regex/regex-parse-cache.t
 t/regex/regex-perl5-adverb-not-allowed.t
 t/regex/regex-quantified-scalar-interpolation.t
+t/regex/regex-repeated-optional-name-list.t
+t/regex/regex-scan-prefilter-chain.t
 t/regex/regex-separator-leading-empty.t
 t/regex/regex-spaces-in-bare-range.t
 t/regex/regex-str-coercion-warns.t
@@ -1993,9 +2049,13 @@ t/regex/regex-tree-static-execution.t
 t/regex/regex-tree-value-provenance.t
 t/regex/regex-unspace.t
 t/regex/regex-word-boundary.t
+t/regex/rx-ignoremark-adverb.t
+t/regex/rx-literal-in-block-topic.t
 t/regex/rx-value-bool-defining-topic.t
 t/regex/rx-value-bool-map-topic.t
+t/regex/rx-value-interpolation-not-cached-across-calls.t
 t/regex/subset-regex-return-check.t
+t/regex/subst/match-var-param-subst-invocant.t
 t/regex/subst/str-trans-errors.t
 t/regex/subst/subst-closure-quantified-capture.t
 t/regex/subst/subst-closure-writeback.t
@@ -2004,12 +2064,14 @@ t/regex/subst/subst-module-constant-interpolation.t
 t/regex/subst/subst-mutate.t
 t/regex/subst/subst-named-sub-replacement.t
 t/regex/subst/subst-nth-range.t
+t/regex/subst/subst-replacement-exception-propagates.t
 t/regex/subst/subst-string-pattern-closure.t
 t/regex/subst/trans-long-subject.t
 t/regex/subst/trans-replacement-cycle.t
 t/regex/subst/trans-single-char-key-multichar-value.t
 t/regex/syntax/alias-exact-count-quantifier.t
 t/regex/syntax/charclass-negated-lead-union.t
+t/regex/syntax/charclass-unicode-property-hyphen-operator.t
 t/regex/syntax/lookbehind.t
 t/regex/syntax/multi-name-shadows-builtin-char-class.t
 t/regex/syntax/quantifier-alternation-backtrack.t
@@ -2018,8 +2080,10 @@ t/regex/syntax/regex-anchored-alternation.t
 t/regex/syntax/regex-anchored-separated-repeat.t
 t/regex/syntax/regex-array-var-lookahead.t
 t/regex/syntax/regex-backtrack-early-exit.t
+t/regex/syntax/regex-char-class-grapheme.t
 t/regex/syntax/regex-charclass-escapes.t
 t/regex/syntax/regex-charclass-grapheme-fastpath.t
+t/regex/syntax/regex-charclass-negated-property-union.t
 t/regex/syntax/regex-counted-quantifier-alternation-backtrack.t
 t/regex/syntax/regex-frugal-quantifier-nocap-matcher.t
 t/regex/syntax/regex-frugal-ratchet.t
@@ -2027,10 +2091,12 @@ t/regex/syntax/regex-frugal-separated-quantifiers.t
 t/regex/syntax/regex-ignorecase-charclass-folds.t
 t/regex/syntax/regex-octal-charclass-range.t
 t/regex/syntax/regex-quantifier-range-atom-boundary.t
+t/regex/syntax/regex-sep-quantifier-prefixed.t
 t/regex/syntax/regex-separated-quantifier-zero-matches.t
 t/regex/syntax/regex-tree-anchors.t
 t/regex/syntax/regex-zero-width-counted-quantifier.t
 t/regex/syntax/separator-backtracking.t
+t/regex/throws-like-regex-matcher.t
 t/regex/toggle-regex-block-condition.t
 t/regex/unterminated-regex.t
 t/routines/amp-var-callable-object-call.t
@@ -2118,6 +2184,7 @@ t/routines/closure/eval-closure-imported-sub.t
 t/routines/closure/gate-b-closure-capture-cluster.t
 t/routines/closure/gate-b-closure-scalar-container-delete.t
 t/routines/closure/lazy-closure-seq.t
+t/routines/closure/lexsub-free-var-closure-before-declaration.t
 t/routines/closure/loop-bind-closure-capture.t
 t/routines/closure/loop-body-local-closure-capture.t
 t/routines/closure/loop-var-closure-capture.t
@@ -2141,6 +2208,7 @@ t/routines/core-postcircumfix-routine.t
 t/routines/dispatch/anonymous-any-multi-dispatch.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
 t/routines/dispatch/block-local-sub-dispatch.t
+t/routines/dispatch/block-scoped-use-main-not-dispatched.t
 t/routines/dispatch/builtin-shadow-dispatch-refuses-bad-args.t
 t/routines/dispatch/builtin-shadow-dispatch.t
 t/routines/dispatch/builtin-shadow-varref-dispatch.t
@@ -2223,6 +2291,7 @@ t/routines/hash-literal-nested-placeholder.t
 t/routines/inner-sub-same-name-across-routines.t
 t/routines/keyword-as-function.t
 t/routines/keyword-named-subs.t
+t/routines/kill-routine-without-path.t
 t/routines/lexical-amp-binding-shadows-a-routine.t
 t/routines/lexical-sub-not-clobbered-by-nested-call.t
 t/routines/lexical-sub-shadow-static-link.t
@@ -2296,6 +2365,7 @@ t/routines/signature/named-dynamic-parameter.t
 t/routines/signature/named-hash-param.t
 t/routines/signature/named-param-alias-type-check.t
 t/routines/signature/named-param-container-share.t
+t/routines/signature/named-param-default-reads-earlier-named.t
 t/routines/signature/named-param-no-leak-from-caller.t
 t/routines/signature/named-param-subsignature-dispatch.t
 t/routines/signature/named-param-type-constraint-enforced.t
@@ -2425,6 +2495,7 @@ t/types/any-list-derived-methods-use-user-list.t
 t/types/any-serial.t
 t/types/base64-battery.t
 t/types/blob-buf-concat-result-type.t
+t/types/blob-bytes-type-object.t
 t/types/blob-comparison-across-types.t
 t/types/blob-comparison-errors.t
 t/types/blob-empty-gist.t
@@ -2521,6 +2592,7 @@ t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
 t/types/enum-subset/lowercase-subset-return-type.t
 t/types/enum-subset/omitted-optional-subset-implicit-default.t
+t/types/enum-subset/qualified-enum-short-name-import.t
 t/types/expression-typed-scalar-assignment.t
 t/types/fatrat-add-overflow.t
 t/types/fatrat-log.t
@@ -2555,6 +2627,7 @@ t/types/numeric/bignum-infix-sub-comparison.t
 t/types/numeric/bigrat-sort-compare.t
 t/types/numeric/bit-shift-large.t
 t/types/numeric/bitwise-bool-scalar-operand.t
+t/types/numeric/bitwise-prefix-spacing.t
 t/types/numeric/bitwise.t
 t/types/numeric/decimal-literal-big-integer-part.t
 t/types/numeric/decimal-point-illegal-comp-group.t
@@ -2591,6 +2664,7 @@ t/types/numeric/round-scale-bigint.t
 t/types/numeric/roundrobin-itemization.t
 t/types/numeric/signal-enum-complete.t
 t/types/numeric/signal-enum-type-constraint.t
+t/types/numeric/signal-pipe-cloexec.t
 t/types/numeric/spaceship-edge-cases.t
 t/types/rindex.t
 t/types/sequence-nonnumeric-regression.t
@@ -2619,6 +2693,7 @@ t/types/string/split-separator-list.t
 t/types/string/sprintf-6e.t
 t/types/string/sprintf-c-flags.t
 t/types/string/sprintf-container-args.t
+t/types/string/sprintf-directive-count.t
 t/types/string/sprintf-e-exact-rounding.t
 t/types/string/sprintf-g-small-exponent-threshold.t
 t/types/string/sprintf-hexfloat.t
@@ -2630,12 +2705,14 @@ t/types/string/sprintf-utf8-literal.t
 t/types/string/str-accepts-user-stringify.t
 t/types/string/str-bitwise-compound-assign.t
 t/types/string/str-date-coercion.t
+t/types/string/str-decode-utf16-strict.t
 t/types/string/str-encode-normalization-form.t
 t/types/string/str-encode-strict-adverb-false.t
 t/types/string/str-indent-huge-count.t
 t/types/string/str-int-radix-coerce.t
 t/types/string/str-naive-word-wrapper.t
 t/types/string/str-num-inf-nan.t
+t/types/string/str-numeric-long-decimal-exact-rat.t
 t/types/string/str-numeric-marker.t
 t/types/string/str-numify-decimal-rat.t
 t/types/string/str-operator-forms-parity.t
@@ -2803,6 +2880,7 @@ t/vm/non-variable-dollar.t
 t/vm/nqp-array-sorted-ops.t
 t/vm/nqp-atkey-rebind-null.t
 t/vm/nqp-atpos-wide-buf.t
+t/vm/nqp-atposref-buf.t
 t/vm/nqp-attr-literal-name-parity.t
 t/vm/nqp-attr-ops-slots.t
 t/vm/nqp-bareword-type-operand-memo.t

@@ -5,7 +5,8 @@
 //! Measured on rakudo 2026.09: the assertion holds its elements
 //! positionally; an `Enumeration` holds `negated` and an `elements` list of
 //! `Character`s (positional string), `Range`s (`from` / `to` codepoints) and
-//! `CharClass::*` nodes; a `Rule` holds `negated` and `name`.
+//! `CharClass::*` nodes; a `Rule` holds `negated` and `name`; a `Property`
+//! holds `negated`, `inverted` (its `!`) and `property`.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::regex_tree::{CharClassElement, EnumerationElement};
@@ -61,6 +62,21 @@ fn convert_element(element: &CharClassElement) -> Value {
             }
             fields.push(named("name", Value::str(name.clone())));
             node(RakuAstClass::RegexCharClassElementRule, fields)
+        }
+        CharClassElement::Property {
+            name,
+            negated,
+            inverted,
+        } => {
+            let mut fields = Vec::new();
+            if *negated {
+                fields.push(named("negated", Value::truth(true)));
+            }
+            if *inverted {
+                fields.push(named("inverted", Value::truth(true)));
+            }
+            fields.push(named("property", Value::str(name.clone())));
+            node(RakuAstClass::RegexCharClassElementProperty, fields)
         }
     }
 }
@@ -152,6 +168,20 @@ fn lower_element(node: &RakuAstNode) -> Option<CharClassElement> {
                 negated: negated(node),
             })
         }
+        RakuAstClass::RegexCharClassElementProperty => {
+            // A predicate (`<:Nv(1)>`) has no tree form.
+            if field(node, Some("predicate")).is_some() {
+                return None;
+            }
+            let name = field(node, Some("property"))?.to_string_value();
+            let identifier =
+                !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+            identifier.then(|| CharClassElement::Property {
+                name,
+                negated: negated(node),
+                inverted: field(node, Some("inverted")).is_some_and(Value::truthy),
+            })
+        }
         _ => None,
     }
 }
@@ -212,6 +242,7 @@ pub(super) fn construct(
             RakuAstClass::RegexCharClassElementEnumeration
         }
         "RakuAST::Regex::CharClassElement::Rule" => RakuAstClass::RegexCharClassElementRule,
+        "RakuAST::Regex::CharClassElement::Property" => RakuAstClass::RegexCharClassElementProperty,
         "RakuAST::Regex::CharClassEnumerationElement::Character" => {
             RakuAstClass::RegexCharClassEnumerationElementCharacter
         }
@@ -234,6 +265,7 @@ pub(super) fn construct(
                         c,
                         RakuAstClass::RegexCharClassElementEnumeration
                             | RakuAstClass::RegexCharClassElementRule
+                            | RakuAstClass::RegexCharClassElementProperty
                     )
                 }) {
                     return error("takes CharClassElement nodes");
@@ -254,6 +286,9 @@ pub(super) fn construct(
             let order: &[&str] = match class {
                 RakuAstClass::RegexCharClassElementEnumeration => &["negated", "elements"],
                 RakuAstClass::RegexCharClassElementRule => &["negated", "name"],
+                RakuAstClass::RegexCharClassElementProperty => {
+                    &["negated", "inverted", "property", "predicate"]
+                }
                 _ => &["from", "to"],
             };
             if let Some((key, _)) = named_args
@@ -267,9 +302,9 @@ pub(super) fn construct(
                     continue;
                 };
                 match name {
-                    "negated" => {
+                    "negated" | "inverted" => {
                         if value.truthy() {
-                            fields.push(named("negated", Value::truth(true)));
+                            fields.push(named(name, Value::truth(true)));
                         }
                     }
                     "elements" => fields.push(RakuAstField {
@@ -282,7 +317,9 @@ pub(super) fn construct(
                             },
                         }),
                     }),
-                    "name" => fields.push(named("name", Value::str(value.to_string_value()))),
+                    "name" | "property" => {
+                        fields.push(named(name, Value::str(value.to_string_value())))
+                    }
                     _ => fields.push(named(name, value.clone())),
                 }
             }

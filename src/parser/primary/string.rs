@@ -16,6 +16,7 @@ mod q_string;
 mod quoted;
 mod quotewords;
 mod qx;
+mod regex_quote;
 
 pub(super) use escapes::process_escape_sequence;
 pub(super) use helpers::{
@@ -28,6 +29,7 @@ pub(super) use interp_content::{finalize_interpolation, parse_closure_part};
 pub(super) use interp_var::try_interpolate_var;
 pub(super) use q_string::{big_q_string, q_string};
 pub(super) use quoted::{corner_bracket_string, parse_backslash_c_bracket};
+pub(crate) use regex_quote::{decode_q_regex_quote, decode_qq_regex_quote};
 // Reachable from other `crate::parser` submodules (e.g. pointy-block literal
 // parameters in `stmt::control::pointy_param`), so widen past `pub(super)`.
 pub(in crate::parser) use quoted::{

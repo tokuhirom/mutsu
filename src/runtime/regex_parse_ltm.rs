@@ -1815,7 +1815,15 @@ mod static_execution_tests {
                 ..
             }]
         ));
-        assert!(lower_static_execution_pattern(r#""\x20""#).is_none());
+        // A quoted escape decodes to the character it denotes.
+        let space = lower_static_execution_pattern(r#""\x20""#).expect("decoded quote");
+        assert!(matches!(
+            space.tokens.as_slice(),
+            [RegexToken {
+                atom: RegexAtom::Literal(' '),
+                ..
+            }]
+        ));
         assert!(lower_static_execution_pattern("\u{1}42\u{1}").is_none());
     }
 
