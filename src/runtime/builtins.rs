@@ -3,6 +3,12 @@ use crate::symbol::Symbol;
 
 /// All built-in (core) function names. Single source of truth for
 /// `is_builtin_function` and for "Did you mean ...?" routine suggestions.
+/// See [`Interpreter::is_core_code_ref_function`].
+const CORE_CODE_REF_FUNCTION_NAMES: &[&str] = &[
+    "pick", "roll", "head", "tail", "first", "skip", "combinations", "permutations",
+    "classify", "categorize", "deepmap", "duckmap", "nodemap", "produce", "reduce", "cache",
+];
+
 pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "postcircumfix:<[ ]>",
     "postcircumfix:<{ }>",
@@ -1359,6 +1365,18 @@ impl Interpreter {
     /// methods in other resolution paths; `resolve_code_var` special-cases them.
     pub(crate) fn is_mop_macro_function(name: &str) -> bool {
         matches!(name, "WHAT" | "HOW" | "VAR")
+    }
+
+    /// Core subs that are callable as bare functions but are dispatched by a
+    /// route other than `BUILTIN_FUNCTION_NAMES` (the list-method-shaped
+    /// `pick`/`roll`/`head`/..., which the call path forwards to the method on
+    /// their last argument). Adding them to `BUILTIN_FUNCTION_NAMES` would
+    /// change how their calls dispatch (`pick(*, @list)` stops working), so
+    /// `resolve_code_var` consults this list only to expose `&pick`, `&roll`,
+    /// ... as first-class Routine values; calling one goes through the same
+    /// by-name function dispatch as a bare call.
+    pub(crate) fn is_core_code_ref_function(name: &str) -> bool {
+        CORE_CODE_REF_FUNCTION_NAMES.contains(&name)
     }
 
     /// Builtin `skip(N, list)` function — skips N elements from the list.
