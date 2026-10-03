@@ -146,7 +146,7 @@ pub(crate) fn sign_of(target: &Value) -> Option<Result<Value, RuntimeError>> {
         ValueView::BigRat(n, d) if d.is_zero() && n.is_zero() => Some(Ok(Value::num(f64::NAN))),
         ValueView::BigRat(n, d) if d.is_zero() => of(bigint_sign(n)),
         ValueView::BigRat(n, d) => of(bigint_sign(n) * bigint_sign(d)),
-        ValueView::Complex(re, im) if im == 0.0 => of(f64_sign(re)),
+        ValueView::Complex(re, 0.0) => of(f64_sign(re)),
         ValueView::Complex(re, im) => Some(Err(complex_not_real(target, re, im))),
         _ => None,
     }
