@@ -814,6 +814,19 @@ impl Interpreter {
                 if unchanged {
                     continue;
                 }
+                // A callee sigilless parameter's alias entry describes the
+                // callee's own binding: when the caller has a same-named
+                // sigilless parameter, merging it back would retarget the
+                // caller's alias at the callee's argument variable, so the
+                // caller's return-side writeback then clobbers that variable.
+                if kflags & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0
+                    && k.with_str(|s| {
+                        s.strip_prefix(crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX)
+                            .is_some_and(|base| cf.param_defs.iter().any(|pd| pd.name == base))
+                    })
+                {
+                    continue;
+                }
                 if restored_env.contains_key_sym(*k)
                     && !cf.is_callee_local_sym(*k)
                     // A `my enum` this body declared is its own lexical, but it

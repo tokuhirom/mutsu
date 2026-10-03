@@ -681,6 +681,7 @@ mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
+pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
@@ -813,6 +814,7 @@ mod methods_object;
 mod methods_object_attr_constraints;
 pub(crate) mod multi_dispatch_plan;
 pub(crate) mod multi_dispatch_program;
+mod object_hash_assign;
 pub(crate) use methods_object_attr_constraints::AttrWhereScope;
 pub(crate) mod find_method_intercept;
 mod methods_dispatcher_raku;
@@ -2869,14 +2871,11 @@ pub struct Interpreter {
     /// loading chain. Saved/restored around each top-level `use_module_with_tags`
     /// call so it only contains packages from the current loading chain.
     pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
-    /// Registration clone ids of routines a loaded module's mainline declared
-    /// at its top level, keyed by their `__mutsu_callable_id::` marker symbol.
-    /// Kept here rather than in the env the module body ran in (ADR-0084 §2
-    /// group 1); see `runtime::toplevel_callable_ids`.
-    pub(crate) toplevel_callable_ids: std::sync::Arc<rustc_hash::FxHashMap<Symbol, i64>>,
-    /// The depths the executing module mainline started at, while one runs.
-    /// See `Interpreter::run_module_mainline`.
-    pub(crate) module_toplevel_depth: Option<toplevel_callable_ids::ModuleToplevelDepth>,
+    /// What a loaded module's mainline declares directly at its top level,
+    /// kept off the env the module body ran in (ADR-0084 §2 groups 1 and 2),
+    /// and the depths the executing mainline started at. See
+    /// `runtime::toplevel_callable_ids` and `runtime::toplevel_package_symbols`.
+    pub(crate) module_toplevel: toplevel_callable_ids::ModuleToplevel,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
     module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,

@@ -340,9 +340,11 @@ pub(crate) fn declared_regex_var_names(pattern: &str) -> std::collections::HashS
 /// body. That separator may be a newline, not just a space: YAMLish's
 /// `block-string` writes its lookahead across several source lines.
 pub(super) fn lookaround_keyword(inner: &str) -> Option<(bool, bool, usize)> {
-    let (negated, prefix_len) = match inner.as_bytes().first() {
-        Some(b'?') | Some(b'.') => (false, 1),
-        Some(b'!') => (true, 1),
+    // `<?!before …>` is the negative form spelled with both prefixes.
+    let (negated, prefix_len) = match inner.as_bytes() {
+        [b'?', b'!', ..] => (true, 2),
+        [b'?' | b'.', ..] => (false, 1),
+        [b'!', ..] => (true, 1),
         _ => (false, 0),
     };
     let rest = &inner[prefix_len..];
@@ -1203,8 +1205,16 @@ impl Interpreter {
         /// A `<...>` whose body starts with one of these holds a nested REGEX,
         /// where a quote is a string delimiter. Every other non-class `<...>`
         /// treats it as an ordinary character.
-        const LOOKAROUND_PREFIXES: [&str; 8] = [
-            "before ", "?before ", "!before ", ".before ", "after ", "?after ", "!after ",
+        const LOOKAROUND_PREFIXES: [&str; 10] = [
+            "before ",
+            "?before ",
+            "!before ",
+            "?!before ",
+            ".before ",
+            "after ",
+            "?after ",
+            "!after ",
+            "?!after ",
             ".after ",
         ];
 
@@ -3442,6 +3452,14 @@ impl Interpreter {
                                     // Check for Raku character class: <[...]>, <-[...]>, <+[...]>
                                     // Also handles composite: <[a..z]-[aeiou]>, <+[a..z]-[aeiou]-[y]>
                                     let trimmed = name.trim();
+                                    // `<?!x>` is the zero-width negative form spelled
+                                    // with both prefixes; it means exactly `<!x>`
+                                    // (CSS::Minifier writes `<?!alpha>`).
+                                    let trimmed = if trimmed.starts_with("?!") {
+                                        &trimmed[1..]
+                                    } else {
+                                        trimmed
+                                    };
                                     // Validate mode: reject a compound character class
                                     // assertion that is missing a `+`/`-` operator
                                     // between its parts (e.g. `<[abc] [def]>`,
