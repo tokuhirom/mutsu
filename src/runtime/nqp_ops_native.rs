@@ -27,11 +27,12 @@ pub(crate) fn uint64_value(v: &Value) -> Value {
     let wide = match v.view() {
         ValueView::Int(n) => NumBigInt::from(n),
         ValueView::BigInt(b) => NumBigInt::clone(&b),
-        ValueView::Instance { attributes, .. } => match attributes.as_map().get("__mutsu_int_value")
-        {
-            Some(payload) => payload.to_bigint(),
-            None => NumBigInt::from(crate::runtime::to_int(v)),
-        },
+        ValueView::Instance { attributes, .. } => {
+            match attributes.as_map().get("__mutsu_int_value") {
+                Some(payload) => payload.to_bigint(),
+                None => NumBigInt::from(crate::runtime::to_int(v)),
+            }
+        }
         _ => NumBigInt::from(crate::runtime::to_int(v)),
     };
     let wrapped = crate::native_types::wrap_native_int("uint64", &wide);
