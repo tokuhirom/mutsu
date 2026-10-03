@@ -83,6 +83,12 @@ impl Interpreter {
         {
             return None;
         }
+        // Most calls name a method no row has. A bit test answers those
+        // without taking the memo's lock, which an `Int` receiver (it has a
+        // shape) would otherwise pay on every such call.
+        if !method_table::names_a_row(code.const_sym(name_idx)) {
+            return None;
+        }
         let shape = self.stack.last()?.dispatch_shape()?;
         let sites = code.constants.len();
         let idx = name_idx as usize;

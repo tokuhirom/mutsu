@@ -15,8 +15,11 @@ fn sample(shape: DispatchShape) -> Value {
             Value::int(1),
         )])),
         DispatchShape::Str => Value::str_from("abc"),
+        DispatchShape::Int => Value::int(7),
         DispatchShape::Num => Value::num(1.5),
         DispatchShape::Rat => crate::value::make_rat(1, 3),
+        DispatchShape::FatRat => Value::fat_rat_raw(1, 3),
+        DispatchShape::Complex => Value::complex(1.0, 2.0),
     }
 }
 
@@ -85,6 +88,31 @@ fn lookup_walks_the_mro() {
     let numerator = Symbol::intern("numerator");
     assert!(lookup(DispatchShape::Rat, numerator).is_some());
     assert!(lookup(DispatchShape::Num, numerator).is_none());
+    // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
+    assert!(lookup(DispatchShape::Int, numerator).is_none());
+    assert_eq!(
+        lookup(DispatchShape::FatRat, numerator).unwrap().owner,
+        "FatRat"
+    );
+}
+
+/// A big-component rational has the shape of the type its flag names.
+#[test]
+fn big_rationals_take_their_type_s_shape() {
+    let big = num_bigint::BigInt::from(u64::MAX) * num_bigint::BigInt::from(3);
+    let three = num_bigint::BigInt::from(3);
+    assert_eq!(
+        Value::bigrat(big.clone(), three.clone() + 1).dispatch_shape(),
+        Some(DispatchShape::Rat)
+    );
+    assert_eq!(
+        Value::bigfatrat(big.clone(), three + 1).dispatch_shape(),
+        Some(DispatchShape::FatRat)
+    );
+    assert_eq!(
+        Value::bigint(big).dispatch_shape(),
+        Some(DispatchShape::Int)
+    );
 }
 
 #[test]
@@ -99,9 +127,8 @@ fn dispatch_shape_refuses_non_plain_receivers() {
     for (what, value) in [
         ("a type object", Value::package(Symbol::intern("Any"))),
         ("a Seq", Value::seq(vec![Value::int(1)])),
-        ("an Int", Value::int(1)),
+        ("a Bool", Value::TRUE),
         ("Nil", Value::NIL),
-        ("a FatRat", Value::fat_rat_raw(1, 3)),
     ] {
         assert_eq!(
             value.dispatch_shape(),
@@ -113,12 +140,18 @@ fn dispatch_shape_refuses_non_plain_receivers() {
 
 /// A row's owner is the type Rakudo declares the method on, so `.^can`
 /// (which reads the same owner from the recognition catalog) agrees with
-/// where the table finds it.
+/// where the table finds it. The catalog folds some owners (`FatRat` into
+/// `Rat`, ADR-11276 §8), so a row is checked under its folded owner.
 #[test]
 fn rows_are_declared_by_rakudo() {
     for row in rows() {
+        let owner = match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner)
+        {
+            "" => row.owner,
+            folded => folded,
+        };
         assert!(
-            crate::builtins::native_method_row::native_method_declared(row.owner, row.name),
+            crate::builtins::native_method_row::native_method_declared(owner, row.name),
             "{}.{} has a row, but the catalog does not record Rakudo declaring it there",
             row.owner,
             row.name

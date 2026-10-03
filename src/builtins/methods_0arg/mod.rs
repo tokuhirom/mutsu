@@ -306,6 +306,24 @@ pub(crate) fn native_method_0arg(
     target: &Value,
     method_sym: Symbol,
 ) -> Option<Result<Value, RuntimeError>> {
+    // A plain receiver whose method has a row in the built-in method table
+    // (ADR-11276) is answered by the row, for every caller of this entry. The
+    // row is the method's only implementation: its arm is gone from the
+    // cascade.
+    // Cost: O(1) to decline (a bit test on the method symbol), otherwise a
+    // tag probe and one hash lookup plus the row's handler.
+    if let Some(result) = crate::builtins::method_table::answer(target, method_sym, &[]) {
+        return Some(result);
+    }
+    native_method_0arg_cascade(target, method_sym)
+}
+
+/// [`native_method_0arg`] without the method table: the name-matching
+/// cascade, which `method_table`'s debug cross-check also runs.
+pub(crate) fn native_method_0arg_cascade(
+    target: &Value,
+    method_sym: Symbol,
+) -> Option<Result<Value, RuntimeError>> {
     // `as_str`, not `resolve`: the latter is `as_str().to_owned()`, so every
     // native method call heap-allocated a copy of a string the symbol table
     // already owns as `&'static str`. This is the entry point for EVERY
