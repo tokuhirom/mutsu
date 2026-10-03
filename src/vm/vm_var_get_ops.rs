@@ -109,7 +109,7 @@ impl Interpreter {
         if let Some(sym) = Symbol::lookup(name)
             && !self.bare_name_visible_here(sym)
         {
-            return Err(RuntimeError::undeclared_symbols(&format!(
+            return Err(RuntimeError::undeclared_symbols(format!(
                 "Undeclared name:\n    {name} used at line 1"
             )));
         }
