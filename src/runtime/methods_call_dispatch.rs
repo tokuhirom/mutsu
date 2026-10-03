@@ -1997,8 +1997,14 @@ impl Interpreter {
             // (`[1,2,3].pop(:zzz)` died with an arity error; raku pops).
             let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
             // Check element type constraints from container metadata (e.g., typed attribute arrays)
-            if matches!(method, "push" | "append" | "unshift" | "prepend") {
+            // `append`/`prepend` flatten a single iterable argument (the
+            // one-arg rule), so check the elements that will actually land,
+            // not the argument list: `$o.s.append(@more)` on `has Str @.s`.
+            if matches!(method, "push" | "unshift") {
                 self.check_array_value_element_types(&target, &args)?;
+            } else if matches!(method, "append" | "prepend") {
+                let landing = crate::runtime::flatten_append_args(args.clone());
+                self.check_array_value_element_types(&target, &landing)?;
             }
             // splice's start/elems positions take `Int` (plus `Whatever`/
             // `Callable`) — a `Num`/`Str`/`Array` there matches no candidate and

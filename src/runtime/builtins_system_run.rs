@@ -354,7 +354,7 @@ impl Interpreter {
                 let os_error = err.to_string();
                 // Fallback for cases where $*EXECUTABLE is passed as an IO::Path-ish value
                 // that stringifies ambiguously. Retry with current_exe.
-                if first_arg_io_path || program == "$*EXECUTABLE" || program.ends_with("mutsu") {
+                if first_arg_io_path || program == "$*EXECUTABLE" {
                     let fallback = Some(
                         Self::resolved_current_executable_path()
                             .to_string_lossy()

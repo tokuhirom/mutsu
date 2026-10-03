@@ -25,7 +25,8 @@
 //! flag as unrecognized if a real call reached that (owner, name) pair. Per
 //! the doc comment on `builtin_type_methods`, row *generation* must stay
 //! static (no native-method invocation during real `Interpreter`
-//! construction); the probing that produced [`RAW_ROWS`] below ran once in a
+//! construction); the probing that produced
+//! [`RAW_ROWS`](super::native_method_row_table::RAW_ROWS) below ran once in a
 //! throwaway `#[test]`, and its output was pasted here as plain data --
 //! production code never calls a native method to build this table. The
 //! `INTROSPECTABLE` flag (F3 step 2/3) was added the same way: raku-verified
@@ -180,7 +181,7 @@ pub(crate) struct NativeMethodRow {
 /// the probe (see the ADR PR for the generating snippet) rather than
 /// hand-editing rows in place, the same discipline `builtin_type_methods.rs`
 /// uses for its name lists.
-use super::native_method_row_table::RAW_ROWS;
+use super::native_method_row_table::rows;
 
 type RowKey = (&'static str, &'static str);
 type RowValue = (u8, u8);
@@ -188,7 +189,7 @@ type RowValue = (u8, u8);
 fn classification_table() -> &'static HashMap<RowKey, RowValue> {
     static TABLE: OnceLock<HashMap<RowKey, RowValue>> = OnceLock::new();
     TABLE.get_or_init(|| {
-        RAW_ROWS
+        rows()
             .iter()
             .map(|&(owner, name, arity, flags)| ((owner, name), (arity, flags)))
             .collect()
@@ -196,7 +197,7 @@ fn classification_table() -> &'static HashMap<RowKey, RowValue> {
 }
 
 /// The recognition row for one `(owner, name)` pair. A pair with no entry in
-/// [`RAW_ROWS`] -- an owner E2a's probe did not cover (`Sub`/`Signature`/
+/// [`RAW_ROWS`](super::native_method_row_table::RAW_ROWS) -- an owner E2a's probe did not cover (`Sub`/`Signature`/
 /// `IO::Path`/`IO::Handle`/`Cool`), the untouched majority of `Any`/`Mu`'s own
 /// method surface (E2b added only `so`/`not`/`defined`/`DEFINITE` by hand so
 /// far), or a name the probe itself did not recognize at any arity --
@@ -243,13 +244,13 @@ pub(crate) fn native_method_declared(owner: &str, name: &str) -> bool {
 
 /// ADR-0019 Phase F box F3 step 3: the `.^methods` name list for a *folded*
 /// built-in owner (already run through `canonical_builtin_owner`), read
-/// straight off [`RAW_ROWS`] in table order. This is what
+/// straight off [`rows`] in table order. This is what
 /// `builtin_type_methods::builtin_type_method_names` now delegates to instead
 /// of concatenating hand-written per-type name slices -- the introspectable
 /// bit on each row (set once, F3 step 2's raku-verified triage) is the only
 /// thing that used to live in those slices.
 pub(crate) fn introspectable_names_for_owner(owner: &str) -> Vec<&'static str> {
-    RAW_ROWS
+    rows()
         .iter()
         .filter(|&&(o, _, _, flags)| {
             o == owner && NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE)
@@ -282,18 +283,52 @@ pub(crate) fn native_method_rows(type_name: &str) -> Vec<NativeMethodRow> {
 mod tests {
     use super::*;
     use crate::builtins::builtin_type_methods::{builtin_sample_value, native_method_arities};
+    use crate::builtins::native_method_row_table::RAW_ROWS;
     use crate::symbol::Symbol;
     use crate::value::Value;
 
     #[test]
-    fn raw_rows_have_no_duplicate_keys() {
-        let mut seen = std::collections::HashSet::new();
-        for &(owner, name, _, _) in RAW_ROWS {
-            assert!(
-                seen.insert((owner, name)),
-                "duplicate row for {owner}x{name}"
-            );
+    fn raw_rows_repeated_keys_agree() {
+        let mut seen = HashMap::new();
+        for &(owner, name, arity, flags) in RAW_ROWS {
+            if let Some(&first) = seen.get(&(owner, name)) {
+                assert_eq!(
+                    first,
+                    (arity, flags),
+                    "{owner}.{name} is repeated with a different arity/flags; keep one row"
+                );
+            } else {
+                seen.insert((owner, name), (arity, flags));
+            }
         }
+    }
+
+    #[test]
+    fn fold_repeated_keys_keeps_the_first_row_in_order() {
+        use crate::builtins::native_method_row_table::fold_repeated_keys;
+        let raw = [
+            ("Duration", "rand", 1, 16),
+            ("Instant", "rand", 1, 16),
+            ("Duration", "raku", 1, 16),
+            ("Duration", "rand", 1, 16),
+        ];
+        assert_eq!(
+            fold_repeated_keys(&raw),
+            vec![
+                ("Duration", "rand", 1, 16),
+                ("Instant", "rand", 1, 16),
+                ("Duration", "raku", 1, 16),
+            ]
+        );
+    }
+
+    #[test]
+    fn rows_fold_repeated_keys_into_the_first() {
+        let mut seen = std::collections::HashSet::new();
+        for &(owner, name, _, _) in rows() {
+            assert!(seen.insert((owner, name)), "{owner}.{name} survives twice");
+        }
+        assert_eq!(seen.len(), classification_table().len());
     }
 
     #[test]
@@ -487,7 +522,7 @@ mod tests {
                 .into_iter()
                 .map(|e| e.name)
                 .collect();
-            let raw: Vec<&str> = RAW_ROWS
+            let raw: Vec<&str> = rows()
                 .iter()
                 .filter(|&&(o, _, _, _)| o == folded)
                 .map(|&(_, n, _, _)| n)

@@ -95,6 +95,11 @@ impl Interpreter {
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
+        if name == "UNIT::" {
+            for (display, value) in self.unit_lexical_types() {
+                entries.entry(display).or_insert(value);
+            }
+        }
         let stash = self.pseudo_stash_hash(entries);
         self.stack.push(stash);
         Ok(())

@@ -24,6 +24,11 @@ impl Interpreter {
         // (docs/adr/0058 §8.2's read-path family; `t/seq-multidim-flatten.t`).
         self.reify_map_grep_seq(&target)?;
 
+        if let Some(result) = self.try_user_multidim_subscript(&target, &dims, is_positional)? {
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // A role-punned Positional value is represented as a Mixin and does
         // not expose its storage to the ordinary array-walking reader.  Its
         // AT-POS method is the source of truth, including for a DataFrame-like
@@ -64,6 +69,36 @@ impl Interpreter {
         }
         self.stack.push(result);
         Ok(())
+    }
+
+    /// A user `multi sub postcircumfix:<[; ]>` / `<{; }>` intercepts the
+    /// multi-dim subscript operator for a matching object invocant, exactly as
+    /// the single-index path consults `postcircumfix:<[ ]>` first
+    /// (`exec_index_op_with_positional`). raku's operator takes the indices as
+    /// one List: `postcircumfix:<[; ]>(\SELF, @indices)`.
+    // Cost: O(c) candidate resolution, c = the operator's user candidates; plus the call.
+    fn try_user_multidim_subscript(
+        &mut self,
+        target: &Value,
+        dims: &[Value],
+        is_positional: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) {
+            return Ok(None);
+        }
+        let op_name = if is_positional {
+            "postcircumfix:<[; ]>"
+        } else {
+            "postcircumfix:<{; }>"
+        };
+        let args = vec![target.clone(), Value::array(dims.to_vec())];
+        match self.resolve_function_with_types(op_name, &args) {
+            Some(def) => self.call_routine_def(&def, args).map(Some),
+            None => Ok(None),
+        }
     }
 
     /// Read a positional multi-dimensional subscript from a role-punned
@@ -208,6 +243,12 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+        // Call arguments compile to this opcode too, so the user operator
+        // must be consulted here as on the rvalue path.
+        if let Some(result) = self.try_user_multidim_subscript(&target, &dims, is_positional)? {
+            self.stack.push(result);
+            return Ok(());
+        }
         let assoc_scalar_slice = Self::assoc_multislice(is_positional)
             && dims.len() >= 2
             && Self::walks_associative(&target)
