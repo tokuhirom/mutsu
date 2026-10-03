@@ -12,7 +12,6 @@
 use super::{Handler, MethodRow};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
-use num_integer::Integer;
 use num_traits::{FromPrimitive, Signed, Zero};
 
 /// Zero-argument rows owned by `$owner`.
@@ -88,9 +87,13 @@ fn integral_num_to_int(f: f64) -> Value {
     BigInt::from_f64(f).map_or(Value::num(f), Value::from_bigint)
 }
 
-/// An integer quotient as an `Int`, narrowed to a word when it fits.
-fn int_from_i128(q: i128) -> Value {
-    i64::try_from(q).map_or_else(|_| Value::from_bigint(BigInt::from(q)), Value::int)
+/// Whether an integer value is below zero.
+fn value_is_negative(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Int(i) => i < 0,
+        ValueView::BigInt(n) => n.is_negative(),
+        _ => false,
+    }
 }
 
 /// The `Failure` a rational with a zero denominator answers a rounding method
@@ -223,26 +226,28 @@ impl Rounding {
         }
     }
 
-    /// `n / d` rounded, exactly.
-    fn apply_i128(self, n: i128, d: i128) -> i128 {
+    /// `n / d` rounded, exactly, through the one floored-division routine
+    /// (`int_div`, ADR-0118): `ceiling` is `-((-n) div d)`, `round` is
+    /// `(2n + d) div 2d`, and `truncate` is whichever of the two rounds
+    /// towards zero.
+    // Cost: O(1) for word-sized parts; O(b^2) for big ones, b = size in bits.
+    fn apply_rational(self, n: Value, d: Value) -> Result<Value, RuntimeError> {
+        use crate::builtins::{arith_add, arith_mul, arith_negate, int_div};
+        let ceiling = |n: Value, d: &Value| -> Result<Value, RuntimeError> {
+            arith_negate(int_div(&arith_negate(n)?, d))
+        };
         match self {
-            Rounding::Floor => Integer::div_floor(&n, &d),
-            Rounding::Ceiling => Integer::div_ceil(&n, &d),
-            Rounding::Round => Integer::div_floor(&(2 * n + d), &(2 * d)),
-            Rounding::Truncate => n / d,
-        }
-    }
-
-    /// `n / d` rounded, exactly.
-    fn apply_big(self, n: &BigInt, d: &BigInt) -> BigInt {
-        match self {
-            Rounding::Floor => Integer::div_floor(n, d),
-            Rounding::Ceiling => Integer::div_ceil(n, d),
+            Rounding::Floor => Ok(int_div(&n, &d)),
+            Rounding::Ceiling => ceiling(n, &d),
             Rounding::Round => {
-                let twice: BigInt = n * 2;
-                Integer::div_floor(&(twice + d), &(d * 2))
+                let twice_d = arith_mul(d.clone(), Value::int(2));
+                Ok(int_div(
+                    &arith_add(arith_mul(n, Value::int(2)), d)?,
+                    &twice_d,
+                ))
             }
-            Rounding::Truncate => n / d,
+            Rounding::Truncate if value_is_negative(&n) != value_is_negative(&d) => ceiling(n, &d),
+            Rounding::Truncate => Ok(int_div(&n, &d)),
         }
     }
 
@@ -258,10 +263,17 @@ impl Rounding {
                 return zero_denominator(self.name());
             }
             ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                int_from_i128(self.apply_i128(i128::from(n), i128::from(d)))
+                return Some(self.apply_rational(Value::int(n), Value::int(d)));
             }
             ValueView::BigRat(_, d) if d.is_zero() => return zero_denominator(self.name()),
-            ValueView::BigRat(n, d) => Value::from_bigint(self.apply_big(n, d)),
+            ValueView::BigRat(n, d) => {
+                return Some(
+                    self.apply_rational(
+                        Value::from_bigint(n.clone()),
+                        Value::from_bigint(d.clone()),
+                    ),
+                );
+            }
             ValueView::Complex(re, im) => Value::complex(self.apply_f64(re), self.apply_f64(im)),
             _ => return None,
         }))
