@@ -570,6 +570,8 @@ impl Interpreter {
                     // up to the enclosing module). See
                     // `package_chain_var_fallback`.
                     .or_else(|| self.package_chain_var_fallback(name))
+                    // `$E::v` through `constant E = A::B` (#11315).
+                    .or_else(|| self.package_alias_var_read(name))
                     // Anonymous state variable (`$`): fall back to persisted
                     // state so the value survives across closure calls.
                     .or_else(|| self.anon_state_value(name))
@@ -859,6 +861,8 @@ impl Interpreter {
                     // ancestors just as scalar reads do; the immediate package
                     // lookup below cannot see Outer from Outer::Inner.
                     .or_else(|| self.package_chain_var_fallback(name))
+                    // `$E::v` through `constant E = A::B` (#11315).
+                    .or_else(|| self.package_alias_var_read(name))
                     // Class-body outer-lexical fallback — see the GetHashVar twin.
                     .or_else(|| self.auto_qualified_bare_env_read(name))
                     // Last resort before the undeclared-variable default: a
@@ -1040,6 +1044,8 @@ impl Interpreter {
                     // Nested classes inherit enclosing package-body container
                     // lexicals; mirror the array read's package-chain fallback.
                     .or_else(|| self.package_chain_var_fallback(name))
+                    // `$E::v` through `constant E = A::B` (#11315).
+                    .or_else(|| self.package_alias_var_read(name))
                     // Outer-lexical fallback, mirroring GetGlobal: each class-body
                     // statement compiles as its own chunk, so a read of a `my`
                     // declared by an earlier body statement was auto-qualified

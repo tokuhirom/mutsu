@@ -4689,9 +4689,32 @@ impl Interpreter {
             let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
         }
+        // `@E::a` through `constant E = A::B` mutates `@A::B::a` (#11315).
+        if !self.env().contains_key(var_name)
+            && let Some(real) = self.package_alias_var_name(var_name)
+            && let Some(root) = self.package_alias_root_mut(&real)
+        {
+            let root = root as *mut Value;
+            // SAFETY: as for the redirects above — `root` points into a value
+            // owned by env or `our_vars`, which nothing else borrows while the
+            // returned reference is held (see `descend_container_ref`).
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
+            // SAFETY: `descended` was derived from `root` just above.
+            return Some(unsafe { &mut *descended });
+        }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
         Some(unsafe { &mut *descended })
+    }
+
+    /// The stored root of the package variable an alias resolved to: its live
+    /// env binding, else its `our_vars` home.
+    // Cost: O(d), d = env tiers probed, plus one hash probe.
+    fn package_alias_root_mut(&mut self, real: &str) -> Option<&mut Value> {
+        if self.env().contains_key(real) {
+            return self.env_mut().get_mut(real);
+        }
+        self.get_our_var_mut(real)
     }
 
     /// Deep nested index assignment (3+ levels): `@a[i][j][k]... = val`
