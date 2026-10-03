@@ -106,11 +106,11 @@ pub(in crate::parser) use pragma_preseed::{
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label,
-    lookup_custom_infix_precedence, lookup_postfix_precedence, lookup_prefix_precedence,
-    lookup_user_infix_assoc, register_loop_label, register_op_precedence,
-    register_user_infix_assoc, register_user_sub, register_user_test_assertion_sub,
-    reset_user_subs, resolve_op_precedence, restore_declare_keywords,
-    set_eval_language_version_preseed,
+    lookup_custom_infix_precedence, lookup_op_prec, lookup_postfix_precedence,
+    lookup_prefix_precedence, lookup_user_infix_assoc, register_loop_label, register_op_prec,
+    register_op_precedence, register_user_infix_assoc, register_user_sub,
+    register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(crate) use slang_use::apply_slang_overrides;
@@ -144,6 +144,8 @@ pub(in crate::parser) struct LexicalScope {
     /// Operator precedence levels. Key is full operator name (e.g. `infix:<add>`),
     /// value is numeric precedence level.
     op_precedence: HashMap<String, i32>,
+    /// A user operator's `Routine.prec` hash, keyed like `op_precedence`.
+    op_prec: HashMap<String, crate::op_prec::OpPrec>,
     /// User-declared class/role/grammar/enum names. Used to disambiguate
     /// identifiers like `S` from the `S///` substitution operator.
     user_types: HashSet<String>,

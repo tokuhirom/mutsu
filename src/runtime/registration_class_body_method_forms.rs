@@ -161,6 +161,7 @@ impl Interpreter {
             return_type: None,
             is_default: false,
             deprecated_message: None,
+            op_prec: None,
             source_file: self.current_source_file(),
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
