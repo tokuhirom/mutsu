@@ -278,6 +278,7 @@ pub(crate) mod vm_misc_reduction_setop;
 pub(crate) mod vm_misc_scope;
 pub(crate) mod vm_misc_typecheck;
 pub(crate) mod vm_misc_typed_range;
+mod vm_mixin_container_store;
 mod vm_mixin_does_ops;
 mod vm_module_ops;
 mod vm_native_dispatch;

@@ -842,6 +842,12 @@ impl Interpreter {
         {
             return Ok(Some(()));
         }
+        if self
+            .maybe_mixin_container_store(Some(idx), &name)?
+            .is_some()
+        {
+            return Ok(Some(()));
+        }
         // The tied instance normally lives in the local slot, but when this store
         // runs inside a block invoked by another sub (`runit({ %h = "a" })`, or a
         // `throws-like { %h = ... }` block) the hash is a captured lexical held in
@@ -912,6 +918,9 @@ impl Interpreter {
                 .get_env_with_main_alias(name)
                 .is_some_and(|v| Self::is_sigilless_assignable_aggregate(&v.deref_container()))
         {
+            return Ok(Some(()));
+        }
+        if self.maybe_mixin_container_store(None, name)?.is_some() {
             return Ok(Some(()));
         }
         let Some(raw) = self.tied_candidate_outside_slot(name) else {
