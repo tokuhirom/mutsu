@@ -354,6 +354,15 @@ impl Interpreter {
         if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
             return assigned;
         }
+        // An ITEMIZED aggregate that reached here bare is the value a readonly
+        // `$` binding holds (`sub w($p) is rw { $p }; w(%r) = 1`): every
+        // writable `$` returns its Scalar cell and was taken above, while an
+        // `@`/`%` or sigilless tail that aliases a real aggregate is never
+        // itemized. Storing into it would write the caller's `%r` through a
+        // parameter Raku never let the routine write (#11108).
+        if Self::is_itemized_aggregate(&result) {
+            return Err(RuntimeError::readonly_variable());
+        }
         if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
             return Ok(stored);
         }
@@ -363,6 +372,17 @@ impl Interpreter {
         // `assignment_ro_value` knows and the typename form does not — an
         // out-of-range `return-rw` index into an immutable `List` reaches it.
         Err(RuntimeError::assignment_ro_value(result))
+    }
+
+    /// A `$`-itemized `Hash` or `Array`: an aggregate seen through an item
+    /// binding rather than the aggregate container itself.
+    // Cost: O(1).
+    fn is_itemized_aggregate(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Hash(_) => v.hash_is_itemized(),
+            ValueView::Array(_, kind) => kind == crate::value::ArrayKind::ItemArray,
+            _ => false,
+        }
     }
 
     /// A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for
