@@ -41,7 +41,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Binary Data | 6 / 6 | 0 |  |
 | Bit | 15 / 15 | 0 | #11491 |
 | Captures | 0 / 5 | 5 | #11496 |
-| Coercion | 2 / 10 | 8 | #11492 |
+| Coercion | 10 / 10 | 0 | #11553 |
 | Conditional | 3 / 5 | 2 | #11500 |
 | Context Introspection | 4 / 24 | 20 | #11498 |
 | Loop/Control | 5 / 7 | 2 | #11500 |
@@ -64,11 +64,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Threads | 0 / 7 | 7 | #11502 |
 | Timish | 1 / 3 | 2 | #11501 |
 | Trigonometric | 10 / 10 | 0 | #11490 |
-| Type / Conversion | 21 / 53 | 32 | #11492 |
+| Type / Conversion | 36 / 53 | 17 | #11553 |
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **282 / 586** | **304** | |
+| **Total** | **305 / 586** | **281** | |
 
 ## Missing ops by category
 
@@ -76,7 +76,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
 - **Captures** (#11496): `captureexistsnamed`, `capturehasnameds`, `captureposelems`, `savecapture`, `usecapture`
-- **Coercion** (#11492): `coerce_in`, `coerce_iu`, `coerce_ni`, `coerce_ns`, `coerce_ui`, `coerce_us`, `intify`, `numify`
 - **Conditional** (#11500): `with`, `without`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **Loop/Control** (#11500): `defor`, `for`
@@ -96,7 +95,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **System Introspection** (#11501): `backendconfig`, `cpucores`, `freemem`, `getenvhash`, `getsignals`, `totalmem`, `uname`, `UNAME_SYSNAME`, `UNAME_RELEASE`, `UNAME_VERSION`, `UNAME_MACHINE`
 - **Threads** (#11502): `currentthread`, `newthread`, `threadid`, `threadjoin`, `threadlockcount`, `threadrun`, `threadyield`
 - **Timish** (#11501): `decodelocaltime`, `sleep`
-- **Type / Conversion** (#11492): `bool_I`, `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `box_n`, `box_u`, `decont_i`, `decont_n`, `decont_s`, `fromI_I`, `fromnum_I`, `fromstr_I`, `isbig_I`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isinvokable`, `isnum`, `isprime_I`, `isrwcont`, `isstr`, `isttyfh`, `tonum_I`, `tostr_I`
+- **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Unicode Properties** (#11495): `getuniname`, `getuniprop_bool`, `hasuniprop`, `matchuniprop`, `unipvalcode`
 - **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindassert`, `p6bindcaptosig`, `p6bindsig`, `p6box`, `p6capturelex`, `p6clearpre`, `p6decontrv`, `p6decontrv_6c`, `p6definite`, `p6getouterctx`, `p6invokeflat`, `p6isbindable`, `p6return`, `p6setautothreader`, `p6setfirstflag`, `p6setpre`, `p6sink`, `p6stateinit`, `p6staticouter`, `p6store`, `p6takefirstflag`, `p6trialbind`, `p6trybindsig`, `p6typecheckrv`
