@@ -38,6 +38,35 @@ impl Interpreter {
         }
     }
 
+    /// The value `Nil` resets to when assigned through a sigilless name bound
+    /// to a shared Scalar cell (`for ($z,) -> \q { q = Nil }`): the cell's own
+    /// `is default`, else its `of` type object, else `Any`. `None` when the
+    /// name is not bound to a cell; an alias reached by name decays through
+    /// `sigilless_alias_nil_decay` instead.
+    // Cost: O(1).
+    fn sigilless_nil_reset_value(&mut self, name: Symbol, bound: Option<&Value>) -> Option<Value> {
+        if self
+            .env()
+            .get_sym(crate::runtime::sigilless_alias_key(&name.resolve()))
+            .is_some_and(|v| matches!(v.view(), ValueView::Str(_)))
+        {
+            return None;
+        }
+        let Some(ValueView::ContainerRef(cell)) = bound.map(Value::view) else {
+            return None;
+        };
+        if let Some(def) = cell.default_value() {
+            return Some(def);
+        }
+        Some(match crate::value::lookup_container_constraint(&cell) {
+            Some(tc) if tc != "Mu" && tc != "Nil" => {
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&tc));
+                Value::package(Symbol::intern(&nominal))
+            }
+            _ => Value::package(crate::symbol::wk::any()),
+        })
+    }
+
     /// `OpCode::SigillessAggregateStore`: when the sigilless name (local
     /// `slot`, or `env` when `slot` is `u32::MAX`) is bound to a mutable
     /// Array/Hash, replace the right-hand side on the stack with that
@@ -55,6 +84,14 @@ impl Interpreter {
         } else {
             self.locals.get(slot as usize).cloned()
         };
+        if self.stack.last().is_some_and(Value::is_nil)
+            && let Some(reset) =
+                self.sigilless_nil_reset_value(code.const_sym(name_idx), bound.as_ref())
+        {
+            self.stack.pop();
+            self.stack.push(reset);
+            return;
+        }
         let Some(aggregate) = bound.map(|v| v.deref_container()) else {
             return;
         };
