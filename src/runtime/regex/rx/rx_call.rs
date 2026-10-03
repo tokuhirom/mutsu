@@ -64,6 +64,10 @@ pub(super) enum CallTarget {
     /// No rule of that name: a builtin (`<.ws>`, `<wb>`, `<alpha>`, …) the walk's
     /// single-candidate arm decides, with at most one end.
     Single,
+    /// No rule of that name, but a plain grammar METHOD of it: the method runs
+    /// once on the calling frame's cursor and answers at most one end
+    /// (`regex_grammar_method_end`).
+    Method,
     /// A call evaluated eagerly by the growing-seed loop (`subrule_seed_ends`),
     /// every end up front, and entered highest priority first; the reason is
     /// its `MUTSU_VM_STATS` leaf. Taken by a rule that may re-enter itself at
@@ -121,10 +125,16 @@ impl Interpreter {
             None => self.rx_call_target_checked(name, pkg, ic),
             Some(args) => {
                 let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, args);
-                // No rule of that name: a grammar method or a builtin, which
-                // the walk's producer dispatches with these arguments.
+                // No candidate for these arguments: a grammar method runs with
+                // them. Anything else — a builtin, or a rule none of whose
+                // candidates binds them (a type error the producer raises) —
+                // is the walk's producer's to dispatch.
                 if raw_empty {
-                    Err("args-method")
+                    if self.subrule_names_user_method(spec, pkg) {
+                        Ok(CallTarget::Method)
+                    } else {
+                        Err("args-unbound")
+                    }
                 } else {
                     self.call_target_from_candidates(name, pkg, ic, candidates)
                 }
@@ -293,15 +303,14 @@ impl Interpreter {
     }
 
     /// [`Self::rx_call_target`] with the one verdict a method definition can
-    /// change: a plain grammar METHOD named like the rule is invoked by the
-    /// walk's producer (`try_regex_subrule_as_method`), so such a call bridges.
+    /// change, and so is never cached: a call with no rule of its name that
+    /// names a plain grammar METHOD calls the method.
     // Cost: O(1) expected.
     fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
         let target = self.rx_call_target(name, pkg, ic)?;
-        if matches!(target, CallTarget::Single)
-            && self.grammar_has_user_method_sym(pkg.as_str(), name.spec().lookup_sym)
+        if matches!(target, CallTarget::Single) && self.subrule_names_user_method(name.spec(), pkg)
         {
-            return Err("grammar-method");
+            return Ok(CallTarget::Method);
         }
         Ok(target)
     }

@@ -1253,6 +1253,31 @@ cannot compare: the walk still matches it up front, and so runs that code at eve
 dropped captures, ratchet). Found on the way: a `/`-delimited `rx/…/` inside `$( … )` in a `/…/`
 regex ends the outer literal early ([#11606](https://github.com/tokuhirom/mutsu/issues/11606)).
 
+### Slice E, eighteenth part: a grammar method is a leaf
+
+The `grammar-method` bridge goes, and so does `args-method` where the call names a method. A
+`<name>` call with no rule of that name that names a plain grammar METHOD (`<.panic>`,
+`<.expect('x')>`) now resolves to `CallTarget::Method`. The engine calls the method once, on
+the calling frame's cursor (`rx_cursor_of`, #9803), and takes the one end it answers, as it does
+for a builtin (`Single`). No choice point is pushed. A call that backtracks to the same site
+calls the method again at the new position, as rakudo does.
+
+The method call moved out of the walk's producer into `regex_grammar_method.rs`
+(`regex_grammar_method_end`). The walk's `try_regex_subrule_as_method` is now a thin entry over
+it. The method is user code, so D6 records and replays it like a code atom (`rx_code_call`). In
+`MUTSU_RX_DIFF` runs, both engines used to call it, so its side effects happened twice. The
+pending-exception check is part of the recorded call, so a method that dies is replayed as well.
+
+What is left of `args-method` is renamed `args-unbound`: a call with arguments that no
+candidate binds (a parameter type error the producer raises) or that names a builtin. Survey
+(`t/grammar`, `t/regex`, `t/modules`, debug build): `grammar-method` 56 → 0 and `args-method`
+13 → `args-unbound` 10. The bridges left are `wrapped` 22, `custom-how` 15, `args-unbound` 10,
+`qq-thunks` 5 and `no-candidates` 2. `t/grammar/regex-grammar-method-leaf.t` pins rakudo's
+values (zero-width `self`, arguments, a failed cursor, a returned Match's extent, the exception,
+call counts under backtracking, the cursor the method writes). The same file passes under
+`MUTSU_RX_DIFF=1`. Found on the way: a user type named `Cursor` resolves to `Match`
+([#11705](https://github.com/tokuhirom/mutsu/issues/11705)).
+
 ### Reproducing §2
 
 ```raku

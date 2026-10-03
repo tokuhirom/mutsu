@@ -617,6 +617,31 @@ impl Interpreter {
                                             None => false,
                                         }
                                     }
+                                    // A grammar method gets this invocation's own
+                                    // cursor, not a throwaway one: what it writes to
+                                    // its attributes is the Match's (#9803).
+                                    Ok(CallTarget::Method) => {
+                                        pc += 1;
+                                        let slot = frame
+                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
+                                        let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
+                                        match self.regex_grammar_method_end(
+                                            &name.spec().lookup_name,
+                                            chars,
+                                            pos,
+                                            levels.top().caps(),
+                                            pkg,
+                                            call_args.as_deref().unwrap_or(&[]),
+                                            cursor,
+                                        ) {
+                                            Some(end) => {
+                                                pos = end;
+                                                farthest = farthest.max(pos);
+                                                true
+                                            }
+                                            None => false,
+                                        }
+                                    }
                                     Err(why) => {
                                         walk_use(WalkUse::Bridged, why);
                                         // A grammar method the call runs gets this
