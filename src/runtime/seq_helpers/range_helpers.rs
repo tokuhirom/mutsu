@@ -205,6 +205,30 @@ impl Interpreter {
             }
         }
 
+        // A big rational against whole-number bounds is compared exactly: its
+        // nearest double can land on the bound (`4.99...9 ~~ 0..^5`, 44 nines).
+        if let ValueView::BigRat(n, d) = val.view()
+            && !num_traits::Zero::is_zero(d)
+        {
+            let cmp_bound = |bound: f64| -> Option<std::cmp::Ordering> {
+                if !bound.is_finite() || bound.fract() != 0.0 || bound.abs() >= 9.0e15 {
+                    return None;
+                }
+                let scaled = num_bigint::BigInt::from(bound as i64) * d;
+                // d > 0 for a normalized BigRat, so the order of n/d vs bound is that of n vs bound*d.
+                Some(if d.sign() == num_bigint::Sign::Minus {
+                    scaled.cmp(n)
+                } else {
+                    n.cmp(&scaled)
+                })
+            };
+            if let (Some(lo), Some(hi)) = (cmp_bound(r_min), cmp_bound(r_max)) {
+                let min_ok = if r_es { lo.is_gt() } else { lo.is_ge() };
+                let max_ok = if r_ee { hi.is_lt() } else { hi.is_le() };
+                return min_ok && max_ok;
+            }
+        }
+
         let v = val.to_f64();
         let min_ok = if r_es { v > r_min } else { v >= r_min };
         let max_ok = if r_ee { v < r_max } else { v <= r_max };

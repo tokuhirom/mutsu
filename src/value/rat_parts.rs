@@ -5,7 +5,7 @@ use crate::value::radix_numeric::coerce_to_numeric;
 use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
 use num_integer::Integer;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, Zero};
 
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     // Unwrap allomorphic types (Mixin) to their inner numeric value
@@ -81,7 +81,7 @@ fn big_rat_parts_to_f64(num: &BigInt, den: &BigInt) -> f64 {
             f64::NEG_INFINITY
         }
     } else {
-        num.to_f64().unwrap_or(0.0) / den.to_f64().unwrap_or(1.0)
+        crate::value::bigrat_to_f64(num, den)
     }
 }
 

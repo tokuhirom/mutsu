@@ -58,7 +58,8 @@ impl Interpreter {
             crate::opcode::CompoundBaseOp::Add => "infix:<+>",
             crate::opcode::CompoundBaseOp::Sub => "infix:<->",
             crate::opcode::CompoundBaseOp::Mul => "infix:<*>",
-            _ => unreachable!("only native integer +, -, and * are emitted"),
+            crate::opcode::CompoundBaseOp::BitShiftLeft => "infix:<+<>",
+            _ => unreachable!("only native integer +, -, *, and +< are emitted"),
         };
         // Native candidates remain overridable by a user-declared infix. Put
         // the operands back and use the ordinary path so its junction and
@@ -70,6 +71,7 @@ impl Interpreter {
                 crate::opcode::CompoundBaseOp::Add => self.exec_add_op()?,
                 crate::opcode::CompoundBaseOp::Sub => self.exec_sub_op()?,
                 crate::opcode::CompoundBaseOp::Mul => self.exec_mul_op()?,
+                crate::opcode::CompoundBaseOp::BitShiftLeft => self.exec_bit_shift_left_op()?,
                 _ => unreachable!(),
             }
             return Ok(());
@@ -92,6 +94,9 @@ impl Interpreter {
                     crate::opcode::CompoundBaseOp::Add => nqp_native::add_u(left, right),
                     crate::opcode::CompoundBaseOp::Sub => nqp_native::sub_u(left, right),
                     crate::opcode::CompoundBaseOp::Mul => nqp_native::mul_u(left, right),
+                    crate::opcode::CompoundBaseOp::BitShiftLeft => {
+                        nqp_native::shl_i(left as i64, right as i64)
+                    }
                     _ => unreachable!(),
                 })),
                 _ => None,
@@ -112,6 +117,7 @@ impl Interpreter {
                     crate::opcode::CompoundBaseOp::Add => nqp_native::add_i(left, right),
                     crate::opcode::CompoundBaseOp::Sub => nqp_native::sub_i(left, right),
                     crate::opcode::CompoundBaseOp::Mul => nqp_native::mul_i(left, right),
+                    crate::opcode::CompoundBaseOp::BitShiftLeft => nqp_native::shl_i(left, right),
                     _ => unreachable!(),
                 })),
                 _ => None,
@@ -131,6 +137,7 @@ impl Interpreter {
             crate::opcode::CompoundBaseOp::Add => self.exec_add_op()?,
             crate::opcode::CompoundBaseOp::Sub => self.exec_sub_op()?,
             crate::opcode::CompoundBaseOp::Mul => self.exec_mul_op()?,
+            crate::opcode::CompoundBaseOp::BitShiftLeft => self.exec_bit_shift_left_op()?,
             _ => unreachable!(),
         }
         Ok(())

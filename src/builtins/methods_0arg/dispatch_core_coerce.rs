@@ -1160,10 +1160,7 @@ pub(super) fn dispatch(
                 ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
                 ValueView::FatRat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
                 ValueView::BigRat(n, d) if !d.is_zero() => {
-                    use num_traits::ToPrimitive;
-                    let num = n.to_f64().unwrap_or(0.0);
-                    let den = d.to_f64().unwrap_or(1.0);
-                    Value::num(num / den)
+                    Value::num(crate::value::bigrat_to_f64(n, d))
                 }
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
                 // plus a trimmed copy).
