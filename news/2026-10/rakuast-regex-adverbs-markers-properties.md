@@ -28,8 +28,8 @@ does. The old copy left control characters and `{` unescaped.
 Execution keeps the runtime parser's plan for the new nodes. The round-trip
 ratchet grew from 2947 to 3025 files.
 
-The work turned up three bugs outside the slice, filed as issues:
+The work turned up three problems outside the slice:
 - a `｢\｣` term is "not terminated" at run time (#11569);
 - a `)>` inside a capturing group is rejected (#11570);
-- `make 1` renders as `Call::Name` rather than `WithoutParentheses`
-  (#11571).
+- `make 1` renders as `Call::Name` rather than `WithoutParentheses`, a case
+  of the existing #8125.
