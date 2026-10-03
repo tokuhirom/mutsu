@@ -827,10 +827,14 @@ impl Interpreter {
                 // container of a shared outer variable), but never over an array
                 // the closure lexically owns: that would let an unrelated caller
                 // `@m` -- or a previous call's leaked copy -- shadow this
-                // closure's own capture (#9429).
+                // closure's own capture (#9429). A caller array boxed into a
+                // shared cell is the same live container: a `supply` block
+                // created before the caller's `my @log` captured whatever `@log`
+                // was visible then, and installing that over the caller's cell
+                // pointed the caller's own `@log` at an unrelated array (#11345).
                 if matches!(
                     new_env.get_sym(*k).map(Value::view),
-                    Some(ValueView::Array(..))
+                    Some(ValueView::Array(..) | ValueView::ContainerRef(_))
                 ) && matches!(v.view(), ValueView::Array(..))
                     && !is_authoritative(*k)
                 {
