@@ -41,9 +41,10 @@ permissions:
   contents: read
 
 jobs:
-  # The release binary for the two roast jobs, built once -- same shape and
-  # reasoning as ci.yml's `build` job (MUTSU_GC / MUTSU_JIT are runtime env
-  # vars, so one binary serves both configurations).
+  # The release binary for the two roast jobs, built once and shared as an
+  # artifact (MUTSU_GC / MUTSU_JIT are runtime env vars, so one binary serves
+  # both configurations). Two consumers make the separate job pay off here;
+  # ci.yml, with one consumer left, builds inside `test-suites` (ADR-11581).
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
