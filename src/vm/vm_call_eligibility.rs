@@ -210,9 +210,12 @@ impl Interpreter {
                     // need the general binder: `%h` materializes nested named
                     // pairs into a Hash, while the light path would bind the
                     // nested Pair itself.
+                    // A dynamic named parameter (`:$*x`) must be published
+                    // where a callee's `$*x` lookup finds it, which only the
+                    // general binder does -- as for a positional `$*x` below.
                     pd.type_constraint.is_none()
                         && pd.sub_signature.is_none()
-                        && !pd.name.starts_with(['@', '%', '&'])
+                        && !pd.name.starts_with(['@', '%', '&', '*'])
                 } else {
                     // Positional params in a mixed signature: the
                     // positional-light constraints (see

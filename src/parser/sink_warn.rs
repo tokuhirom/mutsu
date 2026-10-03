@@ -318,6 +318,9 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // so it must be reported before the generic sigiled-name skip below.
         Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
+        // `$.name` / `@.name` / `%.name` is a method call on `self`
+        // (`gather { $.take-subs }` in Test::Describe), never a useless value.
+        Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) if n.starts_with('.') => None,
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
         Expr::BareWord(s) if is_type_name(s) => Some(format!("constant value {}", s)),

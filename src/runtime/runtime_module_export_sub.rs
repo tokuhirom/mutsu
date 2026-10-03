@@ -277,6 +277,17 @@ impl Interpreter {
                     self.install_export_map(&item, inner_export_importer);
                 }
             }
+            // A stash is a Map of its symbols (`sub EXPORT { Mod::EXPORT::ALL:: }`).
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::value::types::is_stash_class_name(&class_name.resolve()) => {
+                let symbols = attributes.as_map().get("symbols").cloned();
+                if let Some(symbols) = symbols {
+                    self.install_export_map(&symbols, inner_export_importer);
+                }
+            }
             _ => {}
         }
     }

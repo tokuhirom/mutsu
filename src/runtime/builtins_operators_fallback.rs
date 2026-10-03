@@ -887,6 +887,15 @@ impl Interpreter {
                 matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
                     || (matches!(v.view(), ValueView::Routine { .. })
                         && !is_dead_end_self_referential_routine(v, name))
+                    // A `&name` bound to a `Callable` object (`for @its -> &it
+                    // { it |%p }` over instances with a `CALL-ME`, as in
+                    // Test::Describe) is invoked through it.
+                    || match v.view() {
+                        ValueView::Instance { class_name, .. } => {
+                            self.class_has_method(&class_name.resolve(), "CALL-ME")
+                        }
+                        _ => false,
+                    }
             })
             .or_else(|| {
                 callable_from_plain.filter(|v| {
