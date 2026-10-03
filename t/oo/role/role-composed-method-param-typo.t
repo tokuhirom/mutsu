@@ -2,7 +2,7 @@ use v6;
 use lib 't/lib';
 use Test;
 
-plan 1;
+plan 2;
 
 # #8083: a role method whose parameter names a GENUINELY mistyped type must
 # not be silently accepted just because the role body `use`s a module that
@@ -11,8 +11,7 @@ plan 1;
 # is declared -- i.e. when its module loads, as rakudo reports it ("Invalid
 # typename 'TotallyBogusTypeName:U' in parameter declaration").
 
-throws-like
-    { EVAL q[use RolePendingTypo::R] },
-    Exception,
-    message => /'Invalid typename \'TotallyBogusTypeName:U\' in parameter declaration'/,
-    'a genuinely mistyped role-method param type is caught once the role body\'s use has run';
+try EVAL q[use RolePendingTypo::R];
+ok $!.defined, 'loading the role dies';
+ok $!.message.contains(q[Invalid typename 'TotallyBogusTypeName:U' in parameter declaration]),
+    'with the invalid-typename error for the mistyped role-method param type';
