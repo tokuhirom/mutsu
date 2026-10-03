@@ -118,9 +118,13 @@ Each is a general compatibility gap; none is NativeCall-specific.
 | #11310 user `trait_mod:<is>` candidates leak across compunits; `is array_type` is core | Done; `load UNC` now stops at `nqp::nativecallsizeof` (#11211) |
 | #11209 REPRs selected by `is repr<...>` | In progress: `nqp::create` keeps a mixin type's roles; `is repr('CArray')` gives native element storage typed by `.^array_type` (a mixed-in role's trait included); `nqp::atposref_{i,u,n}` on native storage answer `IntPosRef`/`UIntPosRef`/`NumPosRef`. The trial's `CArray[int32]` steps pass. Open: reference-element `CArray` (`Str`, `Pointer`, CStruct; ADR-0015 P3c), `CStruct.new` allocation, `CUnion`, `CPPStruct`, `CStr`, the `NativeCall` REPR with `is box_target` |
 | #11211 the six VM FFI ops | Done (`src/runtime/nativecall_nqp.rs`, `nativecall_info.rs`); `load UNC` and `nativesizeof` now pass. A routine callsite is rebuilt per call until #11209 gives `is box_target` its delegation |
-| #11207 `Code.$!do` readable and rebindable | Done: a bound body is the innermost entry of the routine's `.wrap` chain (`src/runtime/code_do_attr.rs`). The trial's `is native strlen` and `CStruct` steps now pass through upstream's backend-neutral replacement body; only the `CArray` steps (#11209) fail |
-| Vendored module is what `use NativeCall` loads | Not started |
+| #11207 `Code.$!do` readable and rebindable | Done: a bound body is the innermost entry of the routine's `.wrap` chain (`src/runtime/code_do_attr.rs`) |
+| Vendored module is what `use NativeCall` loads | Measured on the unmerged branch `exp/11203-nativecall-interception-off` (see #11203). Upstream's `is native` trait runs, and the first call stops at #11528 (`Native!setup` reads its `INIT` lock as Nil). Also #11530 (EXPORT-returned trait not installed) and #11529 (SIGSEGV on an unrecognized pointer argument) |
 | Native provider deleted | Not started |
+
+Until that switch, mutsu consumes `is native` natively even under the trial's renamed
+module, so the trial's `is native` steps exercise the native call path with upstream's
+types, not upstream's replacement body.
 
 `scripts/nativecall-upstream-trial.sh` measures the frontier: it loads the vendored
 files under a renamed namespace (the real names are still intercepted) and runs

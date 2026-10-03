@@ -8,6 +8,11 @@
 # -> `UNC` (a mechanical sed; nothing else changes) and runs one probe per
 # step, each in its own process, so one failure does not hide the next.
 #
+# Caveat: mutsu still consumes `is native` natively (register_native_call_sub)
+# under the renamed module too, so the `is native` steps exercise the native
+# call path with upstream's types, not upstream's replacement body. The real
+# switch is measured on branch exp/11203-nativecall-interception-off (#11203).
+#
 # Usage: scripts/nativecall-upstream-trial.sh [path/to/mutsu]
 #        (default: $MUTSU_BIN, else target/debug/mutsu)
 # Exit status: 0 when every step passes, 1 otherwise.
