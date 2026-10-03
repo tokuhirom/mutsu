@@ -22,6 +22,8 @@
 //!   rather than an abort. mutsu is under active development and its parser is
 //!   not panic-free; `check` catches it.
 
+#[cfg(test)]
+mod no_execute_tests;
 pub mod symbols;
 
 pub use symbols::{Symbol, SymbolKind, symbols};
@@ -258,6 +260,9 @@ fn split_warning_location(warning: &str) -> (String, Option<u32>, Option<String>
 /// multiple diagnostics per document need `parse_program_partial` to grow
 /// positions and errors first (ADR-0065 S3).
 pub fn check(source: &str) -> Vec<Diagnostic> {
+    // Nothing executes (D4): the parse-time probes that would run a `use`d
+    // module's mainline are off for this whole check, recovery pass included.
+    let _no_execute = crate::parser::no_execute::NoExecuteGuard::enter();
     // The parser is not panic-free, and a language server must outlive a
     // document that trips it. `AssertUnwindSafe` is the honest annotation here:
     // the parser's state is thread-local and every entry point resets what it

@@ -149,6 +149,8 @@ pub fn gc_register_main_thread() {
 
 /// Parse source code and return a pretty-printed AST string.
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
+    // Dumping does not execute: no parse-time probe may run a `use`d module.
+    let _no_execute = parser::no_execute::NoExecuteGuard::enter();
     let (stmts, _) = parse_dispatch::parse_source(input)?;
     Ok(format!("{:#?}", stmts))
 }
@@ -162,6 +164,8 @@ pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
 /// each instruction whose location differs from the one before it.
 pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, RuntimeError> {
     use std::fmt::Write;
+    // Dumping does not execute: no parse-time probe may run a `use`d module.
+    let _no_execute = parser::no_execute::NoExecuteGuard::enter();
     let (stmts, _) = parse_dispatch::parse_source(input)?;
     let _unit_file = unit_source_file::UnitSourceFileGuard::enter(
         source_file.map(crate::symbol::Symbol::intern),
