@@ -216,7 +216,6 @@ pub(crate) struct ResolvedSequence {
 pub(crate) fn value_is_definite(value: &Value) -> bool {
     match value.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
-        ValueView::Slip(items) if items.is_empty() => false,
         _ => true,
     }
 }
