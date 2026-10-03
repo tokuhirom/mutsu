@@ -130,6 +130,7 @@ impl Interpreter {
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.qualified_our_var_read(name_sym))
             .or_else(|| self.anon_state_value(name))
+            .or_else(|| self.package_alias_var_read(name))
             .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place,
         // atomically under its lock so concurrent `start { $shared++ }` blocks
