@@ -473,11 +473,9 @@ pub(super) fn dispatch(
         // concrete instance rather than a type object. It is NOT `.defined`
         // (which Failure overrides to False) — a `Failure.new(...)` instance is
         // still definite, so it must NOT be special-cased here.
-        // `Empty` is a concrete Slip too (`.defined` is False for it).
-        "DEFINITE" => Some(Some(Ok(Value::truth(match target.view() {
-            ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
-            _ => true,
-        })))),
+        "DEFINITE" => Some(Some(Ok(Value::truth(crate::runtime::value_is_definite(
+            target,
+        ))))),
         "WHICH" => {
             // A plain Str's identity is `Str|<text>`. The ValueObjAt keeps the
             // invocant itself (shared) and renders that text only when it is

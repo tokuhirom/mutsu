@@ -214,10 +214,11 @@ pub(crate) struct ResolvedSequence {
 /// implements, needed here to decide whether a `Native` candidate's row
 /// requires [`crate::builtins::native_method_row::NativeRowFlags::TYPE_OBJECT_OK`].
 pub(crate) fn value_is_definite(value: &Value) -> bool {
-    match value.view() {
-        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
-        _ => true,
-    }
+    // `Empty` is a concrete Slip too (`.defined` is False for it).
+    !matches!(
+        value.view(),
+        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..)
+    )
 }
 
 /// ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
