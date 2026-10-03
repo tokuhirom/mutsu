@@ -356,6 +356,10 @@ pub(in crate::parser) static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
 pub(in crate::parser) const PREC_SEQUENCE: i32 = 10;
+/// `||` `^^` `//` and `&&`: looser than structural/comparison, tighter than the
+/// list-infix level. A user operator declared `is equiv(&infix:<||>)` lands here.
+pub(in crate::parser) const PREC_OR_OR: i32 = 12;
+pub(in crate::parser) const PREC_AND_AND: i32 = 14;
 pub(in crate::parser) const PREC_STRUCTURAL: i32 = 20;
 pub(in crate::parser) const PREC_CONCAT: i32 = 30;
 pub(in crate::parser) const PREC_ADDITIVE: i32 = 40;

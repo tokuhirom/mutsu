@@ -117,6 +117,8 @@ fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
         "**" => Some(PREC_POWER),
         "~" => Some(PREC_CONCAT),
         "but" | "does" => Some(PREC_STRUCTURAL),
+        "&&" => Some(PREC_AND_AND),
+        "||" | "^^" | "//" => Some(PREC_OR_OR),
         // The list-infix level: looser than the comma operator, so an operator
         // declared `is equiv<Z>` takes a whole comma list as its operand
         // (#9405).
