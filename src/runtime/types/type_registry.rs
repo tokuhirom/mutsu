@@ -84,13 +84,13 @@ impl Interpreter {
         let Some((parent, _)) = name.rsplit_once("::") else {
             return;
         };
-        let enclosing = self.current_package();
-        if parent == enclosing {
+        let enclosing = self.current_package_sym();
+        if parent == enclosing.as_str() {
             self.registry_mut().compound_declared_types.remove(name);
         } else {
             self.registry_mut()
                 .compound_declared_types
-                .insert(name.to_string());
+                .insert(name.to_string(), enclosing);
         }
     }
 
@@ -99,7 +99,21 @@ impl Interpreter {
     /// real lexical scope for it. See
     /// [`crate::runtime::Registry::compound_declared_types`].
     fn compound_name_segment_is_not_a_scope(&self, qualified: &str) -> bool {
-        self.registry().compound_declared_types.contains(qualified)
+        self.registry()
+            .compound_declared_types
+            .contains_key(qualified)
+    }
+
+    /// The scope a type lookup visits after `pkg` on its way outward: the
+    /// package `pkg` was really declared in when it was declared with a
+    /// compound name (`class Foo::Bar` at file scope is declared in GLOBAL,
+    /// not in `Foo`), else `pkg`'s parent prefix.
+    // Cost: O(1), one hash probe.
+    fn enclosing_lookup_scope(&self, pkg: crate::symbol::Symbol) -> Option<crate::symbol::Symbol> {
+        match self.registry().compound_declared_types.get(pkg.as_str()) {
+            Some(&enclosing) => Some(enclosing),
+            None => crate::qualified::package_parent(pkg),
+        }
     }
 }
 
@@ -967,8 +981,15 @@ impl Interpreter {
             return Some(pkg.to_string());
         }
         let name_sym = crate::symbol::Symbol::intern(name);
-        for pkg in crate::qualified::package_ancestors(pkg_sym) {
-            if crate::qualified::is_global_package(pkg) {
+        // Walk the REAL enclosing scopes: a compound-declared package jumps
+        // straight to the package it was declared in. Inside a file-scope
+        // `class LLM::Chat::Template::Jinja2`, `LLM::Chat` is not a scope, so
+        // `Template::Jinja2` is the imported GLOBAL class, not
+        // `LLM::Chat::Template::Jinja2` itself.
+        let mut scope = Some(pkg_sym);
+        while let Some(pkg) = scope {
+            scope = self.enclosing_lookup_scope(pkg);
+            if pkg.as_str().is_empty() || crate::qualified::is_global_package(pkg) {
                 return None;
             }
             let qualified = crate::qualified::qualified(pkg, name_sym);

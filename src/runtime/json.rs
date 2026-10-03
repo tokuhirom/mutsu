@@ -635,9 +635,14 @@ impl<'a> Parser<'a> {
         if self.pos + 4 > self.bytes.len() {
             return Err("Truncated \\u escape in JSON string".to_string());
         }
-        let hex = &self.chars[self.pos..self.pos + 4];
-        let cp = u32::from_str_radix(hex, 16)
-            .map_err(|_| "Invalid \\u escape in JSON string".to_string())?;
+        // Work on bytes: slicing the &str could split a multi-byte character.
+        let mut cp = 0u32;
+        for &b in &self.bytes[self.pos..self.pos + 4] {
+            let digit = (b as char)
+                .to_digit(16)
+                .ok_or_else(|| "Invalid \\u escape in JSON string".to_string())?;
+            cp = cp * 16 + digit;
+        }
         self.pos += 4;
         Ok(cp)
     }
