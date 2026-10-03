@@ -67,8 +67,8 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Type / Conversion | 36 / 53 | 17 | #11553 |
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
-| Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **334 / 578** | **244** | |
+| Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
+| **Total** | **350 / 578** | **228** | |
 
 ## Missing ops by category
 
@@ -96,7 +96,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Unicode Properties** (#11495): `getuniname`, `getuniprop_bool`, `hasuniprop`, `matchuniprop`, `unipvalcode`
 - **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`
-- **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindassert`, `p6bindcaptosig`, `p6bindsig`, `p6box`, `p6capturelex`, `p6clearpre`, `p6decontrv`, `p6decontrv_6c`, `p6definite`, `p6getouterctx`, `p6invokeflat`, `p6isbindable`, `p6return`, `p6setautothreader`, `p6setfirstflag`, `p6setpre`, `p6sink`, `p6stateinit`, `p6staticouter`, `p6store`, `p6takefirstflag`, `p6trialbind`, `p6trybindsig`, `p6typecheckrv`
+- **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6invokehandler`
 
