@@ -51,7 +51,7 @@ def first_reason(record: dict) -> str:
 
 def main() -> int:
     if not os.path.isdir(DISTS_DIR):
-        sys.exit(f"no records at {DISTS_DIR} — run scripts/ecosystem-sweep.py first")
+        sys.exit(f"no records at {DISTS_DIR} — run scripts/ecosystem-ledger.sh pull first")
 
     rows, measured = [], {}
     # The page is keyed by the record's own `dist`, never by its filename, so a

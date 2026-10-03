@@ -116,6 +116,7 @@ def main() -> int:
     if not args.ignore_exclude_list:
         excluded |= set(eco.load_exclude(EXCLUDE_LIST))
 
+    eco.require_ledger(DISTS)
     records = load_records()
     if not records:
         print(f"error: no records under {DISTS}", file=sys.stderr)

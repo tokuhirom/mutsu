@@ -37,14 +37,6 @@ on: # zizmor: ignore[dangerous-triggers]
   # one deploys. That is what makes an unfiltered trigger safe rather than a way
   # to queue twenty deploys of the same tree.
   #
-  # Note that the ecosystem parity data needs no trigger of its own: a sweep
-  # lands its records as a pull request into main (ecosystem-sweep.yml), so that
-  # merge is an ordinary push — which is the right moment, because the records
-  # are only in the tree this job checks out once they are merged. Do NOT "fix"
-  # this by adding `Ecosystem sweep` to the workflow_run list: that fires while
-  # the pull request is still open and would deploy the previous sweep's
-  # numbers.
-  #
   # The daily schedule remains the safety net for what no push can signal: an
   # npm package published outside a tagged release, and a stretch of days with
   # no merges at all.
@@ -66,7 +58,12 @@ on: # zizmor: ignore[dangerous-triggers]
     # hours behind, and this ordering also closes the one-commit lag the
     # render step used to document: the row for the commit being measured is
     # already on `bench-data` by the time this fires.
-    workflows: [Release, Bench]
+    #
+    # Ecosystem sweep: the same situation as Bench. The parity records live on
+    # the `ecosystem-data` branch, which ecosystem-sweep.yml pushes to with the
+    # default GITHUB_TOKEN, so the run's completion is the only signal that new
+    # numbers exist (ADR-0085, 2026-10-03 amendment).
+    workflows: [Release, Bench, Ecosystem sweep]
     types: [completed]
   workflow_dispatch:
 
@@ -86,9 +83,12 @@ jobs:
     # is nothing new for this deploy to pick up and only a tag push counts —
     # whereas Bench appends its row to `bench-data` however it was started, so
     # a dispatched Bench run is just as much a reason to redeploy as a pushed
-    # one.
+    # one. An Ecosystem sweep run counts whatever its conclusion: one failed
+    # shard fails the run, yet its `collect` job still lands the other 26.
     if: >-
       github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.name == 'Ecosystem sweep' &&
+       github.event.workflow_run.conclusion != 'cancelled') ||
       (github.event.workflow_run.conclusion == 'success' &&
        (github.event.workflow_run.name != 'Release' ||
         github.event.workflow_run.event == 'push'))
@@ -127,12 +127,14 @@ jobs:
 
       - name: Generate the ecosystem compatibility listing
         # ecosystem.html answers "does my module work on mutsu?" from the parity
-        # ledger (ecosystem/dists/**.json), so like the batteries page it is
-        # generated rather than hand-written and cannot drift from the
-        # measurements. The chart is copied alongside it when a full sweep has
-        # produced one. Best-effort: a checkout with no records yet deploys the
-        # page with an "not measured yet" state rather than failing the deploy.
+        # ledger (ecosystem/dists/**.json on the `ecosystem-data` branch), so
+        # like the batteries page it is generated rather than hand-written and
+        # cannot drift from the measurements. The chart is copied alongside it
+        # when a full sweep has produced one. Best-effort: with no ledger to
+        # fetch, the page deploys in a "not measured yet" state rather than
+        # failing the deploy.
         run: |
+          scripts/ecosystem-ledger.sh pull || echo "no ecosystem ledger to fetch"
           python3 scripts/gen-ecosystem-manifest.py || \
             echo '{"distributions":[],"counts":{"green":0,"graded":0},"dist_parity":0,"file_parity":0,"measured":{}}' \
               > site/content/ecosystem.json

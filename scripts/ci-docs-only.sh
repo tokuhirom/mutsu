@@ -63,13 +63,13 @@ set -u
 # AGENTS.md points at `.agents/skills/` -- so leaving it off meant every
 # SKILL.md edit paid the full suite. It was an oversight, not a distinction.)
 #
-# `ecosystem/**` is the zef-distribution parity ledger (one JSON record per
-# distribution, plus history.tsv/.svg and the index snapshot). It is a
-# *measurement of* mutsu, never an input to it: the writer is
-# .github/workflows/ecosystem-sweep.yml and the only reader is pages.yml, which
-# has its own `paths:` trigger on the same tree. A 250-file re-measurement sweep
-# used to pay for two cargo builds and three roast runs to confirm that
-# recording what mutsu did does not change what mutsu does.
+# `ecosystem/**` is the zef-distribution parity ledger's directory. Its
+# measurements moved to the `ecosystem-data` branch on 2026-10-03 (ADR-0085);
+# what is left on main is its README and the sweep's two hand-maintained inputs
+# (exclude.txt, accepted-divergences.toml). All of it is about *measuring*
+# mutsu, never an input to it: nothing the build or the test suites run reads
+# it. (The self-test cases below still use record paths: they pin the
+# classification, whichever branch such a file would appear on.)
 # NOTE the asymmetry with `site/`, which stays OFF the allowlist even for the
 # generated ecosystem projection: `site/e2e.test.mjs` (the wasm-e2e job) loads
 # `site/ecosystem.html` and cross-checks it against `site/content/ecosystem.json`,

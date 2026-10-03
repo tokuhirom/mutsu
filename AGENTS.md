@@ -31,7 +31,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 | [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass, or working a red/`blocked_load` `ecosystem/` record |
 | [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution and locking it on the board so parallel agents do not collide |
-| [`ecosystem-sweep-landing`](.agents/skills/ecosystem-sweep-landing/SKILL.md) | The nightly landing routine fires, or an `ecosystem/sweep-*` branch has no pull request: verify it, open and merge its PR, file new failure clusters |
+| [`ecosystem-cluster-filing`](.agents/skills/ecosystem-cluster-filing/SKILL.md) | Filing issues for the ecosystem ledger's new root-cause failure clusters, by hand or when the post-sweep routine fires |
 | [`ecosystem-lock-board-rotation`](.agents/skills/ecosystem-lock-board-rotation/SKILL.md) | The lock board passed ~250 comments or a `get_comments` read of it overflows: moving it to a fresh issue |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass for wasted `.clone()` calls |
 | [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, the bump PR, pushing the `vX.Y.Z` tag, verifying tarballs/npm/Release |
@@ -187,7 +187,8 @@ work, so free space with the `reclaim-disk` skill and continue.
 Run **`scripts/dev gate`** and **do not publish until its verdict is `pass`.** It is one job that runs
 the branch check (`scripts/dev branch-check`: lists every file the branch changes against its merge
 base with `origin/main`, and fails when one is back at an *older* `main` state — the shape of a stale
-tree committed on a newer `main`; read that list against what you meant to change), then
+tree committed on a newer `main`; read that list against what you meant to change; deleting a file
+`main` added recently on purpose needs a `Deletes: <path>` trailer in one of the branch's commits), then
 `make checks` (the build-free static guards: `t/` layout, ratchets, self-tests — first, so they fail in
 seconds), `cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
 writes a structured `report.json` ([ADR-0126](docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md)).

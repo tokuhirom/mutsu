@@ -1,6 +1,6 @@
 ---
 name: ecosystem-dist-fix
-description: Make one real zef distribution's own test suite pass under mutsu by fixing mutsu — download the dist and its dependency closure, run every test file under rakudo and mutsu, fix the interpreter where the gap is bounded, file a tokuhirom/mutsu issue where it needs a complex feature, and land it as a PR to tokuhirom/mutsu that also updates the ecosystem/ ledger record. The distribution is the test subject, never the thing being patched, and no PR or issue ever goes to another repository. Use when asked to make a named distribution's tests pass ("String::Utils のテストを通るようにして", "get Trie green", "fix the JSON::Fast suite"), or to work the red/partial/blocked_load records in ecosystem/.
+description: Make one real zef distribution's own test suite pass under mutsu by fixing mutsu — download the dist and its dependency closure, run every test file under rakudo and mutsu, fix the interpreter where the gap is bounded, file a tokuhirom/mutsu issue where it needs a complex feature, and land it as a PR to tokuhirom/mutsu whose body reports the re-measured verdict. The distribution is the test subject, never the thing being patched, and no PR or issue ever goes to another repository. Use when asked to make a named distribution's tests pass ("String::Utils のテストを通るようにして", "get Trie green", "fix the JSON::Fast suite"), or to work the red/partial/blocked_load records of the ecosystem ledger.
 metadata:
   short-description: Take one zef distribution from red to green
 ---
@@ -63,9 +63,13 @@ the mapping table in [docs/agent-environments.md](../../../docs/agent-environmen
 ## 1. Read the ledger record before you download anything
 
 ```sh
+scripts/ecosystem-ledger.sh pull              # the records live on the `ecosystem-data` branch
 ls ecosystem/dists/S/String--Utils*           # <S> = first letter; :: becomes --,
                                               # plus a ~<digest> (see ecosystem/README.md)
 ```
+
+The records are not on `main`: `pull` puts the newest ones into your checkout's gitignored
+`ecosystem/` (ADR-0085, D9's fourth amendment). Nothing you do to that copy is ever committed.
 
 `status` tells you what kind of job this is, and it is worth knowing before you spend a build:
 
@@ -85,7 +89,7 @@ of §5, not the fix case — decide that deliberately rather than discovering it
 evidence about that commit, not about `main`; re-measure rather than trusting it.
 
 If there is no record at all, that is fine — the corpus sweep is partial (see
-`ecosystem/README.md`). Go to step 2 and create one in step 7.
+`ecosystem/README.md`). Go to step 2; step 7 measures it for the first time.
 
 ## 1b. Take the lock — it may already be somebody's
 
@@ -226,8 +230,9 @@ dead-end case", so a future random draw does not re-spend an investigation on th
 implementation artefact (not a language rule roast or raku-doc specify), and the user or an ADR
 decided mutsu will not copy it. Do not exclude the whole distribution. Add a `[[divergence]]` entry
 to `ecosystem/accepted-divergences.toml` with the issue number and the record's exact `mutsu` failure
-shape, run `scripts/ecosystem-sweep.py --regrade`, and commit the regraded record with the entry
-([ADR-0130](../../../docs/adr/0130-ecosystem-accepted-divergences.md); #9746 is the worked
+shape, run `scripts/ecosystem-sweep.py --regrade` to check that the entry matches (the record
+should now grade the file `accepted`), and commit only the entry — the nightly sweep grades with it
+from then on ([ADR-0130](../../../docs/adr/0130-ecosystem-accepted-divergences.md); #9746 is the worked
 example). A file the ledger already grades `accepted` has been decided, so do not reinvestigate it.
 
 ## 6. Fix, and pin it in `t/`
@@ -247,16 +252,17 @@ Then the standard gate, before publishing: `cargo fmt --all`, then `scripts/dev 
 PR"). Its verdict already classifies the remote container's environment-only failures; read a
 failed file's reason from the job's stage log in `tmp/jobs/<id>/` rather than re-running a suite.
 
-## 7. Re-measure with `--only` and update the ledger record
+## 7. Re-measure with `--only` and report the verdict
 
 > **Not when you came from [`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md):**
-> that wrapper skips this whole step and commits no `ecosystem/dists/` record (user decision,
-> 2026-10-01; per-PR record rewrites conflicted). A *named*-distribution run still does it.
+> that wrapper skips this whole step (user decision, 2026-10-01). A *named*-distribution run still
+> does it.
 
 **Every interpreter change made in this loop ends with a `--only` re-measure — no exceptions.** It
 is not a formality: it is how you learn whether the fix moved the distribution at all, and how
-often it moved a *different* file than the one you were chasing. The record is part of the
-deliverable, and a fix that leaves the ledger saying `red` has not been reported. This applies to
+often it moved a *different* file than the one you were chasing. The re-measured verdict is part
+of the deliverable — it goes in the PR body (step 8) — and a fix whose effect on the distribution
+was never measured has not been reported. This applies to
 the small fixes too — one method, one operator, one parse gap — and to a run that ends in an issue
 rather than a fix, where the re-measure is what proves the residue is what you say it is.
 
@@ -268,12 +274,12 @@ MUTSU_BIN=target/release/mutsu scripts/ecosystem-sweep.py --only String::Utils
 - **Re-measure with the release binary you actually built.** `touch src/main.rs` is not
   superstition: the sweep reads `MUTSU_BIN` and will happily measure yesterday's binary, producing
   a record that says your fix did nothing.
-- **`ecosystem/index-snapshot.json` must not appear in your diff.** It is corpus-level provenance —
-  "the records beside me were resolved against this fez/REA snapshot" — so a one-distribution run
-  has no business dating the whole ledger to today's index. `--only` therefore leaves it alone
-  (the sweep logs `index-snapshot.json: left unchanged`); `--no-index-snapshot` does the same for a
-  `--status` / `--stale` re-measure after a fix. If it shows up in `git status` anyway, revert it
-  rather than committing it: `git checkout -- ecosystem/index-snapshot.json`.
+- **The record you just wrote is scratch.** It lands in your gitignored copy of the ledger and
+  nowhere else; the `ecosystem-data` branch is written only by
+  `.github/workflows/ecosystem-sweep.yml`, so the nightly sweep after your merge records the new
+  verdict. To record it sooner, dispatch that workflow with `scope: only` and the distribution
+  names (`docs/ecosystem-parity.md` §8.1). Run `scripts/ecosystem-ledger.sh pull` again to throw
+  the local edits away.
 - **The sandbox is the default and you should keep it.** `.claude/hooks/session-start.sh` installs
   and verifies `bwrap` in a remote container too, so the "no bubblewrap here" excuse is gone. Drop
   to `--sandbox none` only when the hook reported that the sandbox does not work (`bwrap --version`
@@ -298,27 +304,26 @@ and a second record flipping to `green` for free is the cheapest evidence this l
 the fix was general rather than a dressed-up special case. Pick them by the root cause (the ledger
 records naming the same failing construct), not by convenience, and add them to the PR body.
 
-Commit the changed `ecosystem/dists/<S>/<Dist--Name>.json` files — and nothing else under
-`ecosystem/` — in the same PR as the fix. `git status --porcelain ecosystem/` before you commit is
-the one-command check: every line should be a `dists/` record.
+The only `ecosystem/` files a PR from this loop may change are the hand-maintained inputs
+(`exclude.txt`, `accepted-divergences.toml`); the records are gitignored and cannot be committed.
 
 ## 8. Publish — to `tokuhirom/mutsu`
 
 Branch off an updated `main` **of `tokuhirom/mutsu`**, commit (English, root cause in the message),
 push, open a **non-draft** PR *against that repository*, enable auto-merge with the **merge** method
 (squash is rejected by this repository), then immediately check `mergeStateStatus` is not
-`DIRTY` — the ledger records are
-one-file-per-dist precisely so parallel PRs do not conflict, but `src/` still can. Watch CI in the
+`DIRTY` — `src/` can conflict with a sibling PR. Watch CI in the
 background and fix forward. The full flow, including the one-branch-per-session case, is
 [`mutsu-ticket-flow`](../mutsu-ticket-flow/SKILL.md).
 
-The PR body states: the distribution and version, baseline files before → after, what was fixed,
-and the issue number for every file still red. Write the accomplishment up as
+The PR body states: the distribution and version, its status and baseline files before → after
+(from the ledger record and your step 7 re-measure, with the mutsu commit you measured), what was
+fixed, and the issue number for every file still red. Write the accomplishment up as
 `news/YYYY-MM/<slug>.md`, and close any issue the fix resolves with `Closes #NNNN`.
 
 ## Done means
 
-Either the distribution's record reads `green`, or every remaining non-`parity` baseline file is
+Either the distribution re-measures `green`, or every remaining non-`parity` baseline file is
 explained by an open `tokuhirom/mutsu` issue named in the PR. "I improved some assertions" is not a
 finish line; "3 of 3 baseline files pass, and `t/02` needs #NNNN" is.
 

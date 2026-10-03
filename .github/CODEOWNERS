@@ -19,11 +19,12 @@
 /docs/security.md                 @tokuhirom
 
 # Scripts that run inside privileged CI jobs: the npm publish job (OIDC
-# publish rights) and the ecosystem sweep's `collect` job (the App token),
+# publish rights) and the ecosystem sweep's `collect` job (a write token),
 # plus the classifier that decides whether CI builds at all.
 /scripts/build-npm-package.sh     @tokuhirom
 /scripts/prepare-npm-package.mjs  @tokuhirom
 /scripts/ecosystem-ci.py          @tokuhirom
+/scripts/ecosystem-ledger.sh      @tokuhirom
 /scripts/ecosystem-sweep.py       @tokuhirom
 /scripts/ecosystem_common.py      @tokuhirom
 /scripts/ci-docs-only.sh          @tokuhirom

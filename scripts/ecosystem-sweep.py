@@ -9,6 +9,12 @@ rakudo does not pass cleanly is excluded from the KPI, never charged to mutsu.
 Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md
 Operations: docs/ecosystem-parity.md   Tracking issue: #7785
 
+The records under ecosystem/dists/ (and the summary, history and index
+snapshot beside them) are not on `main`: they live on the `ecosystem-data`
+branch, which only .github/workflows/ecosystem-sweep.yml writes. Run
+`scripts/ecosystem-ledger.sh pull` to put them here; a local re-measure updates
+that gitignored copy and nothing else.
+
 A bulk selection (--all / --prefix / --status / --stale) skips whatever
 ecosystem/exclude.txt lists -- distributions already confirmed permanently
 unfixable. --only <name> always measures the name given, exclude list or not.
@@ -676,6 +682,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="resolve and print the plan only")
     args = ap.parse_args()
 
+    eco.require_ledger(DISTS_DIR)
     if args.regrade:
         regrade()
     if args.rollup or args.regrade:
