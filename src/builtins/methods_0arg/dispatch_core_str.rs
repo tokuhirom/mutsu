@@ -10,6 +10,10 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(n), n = bytes of the invocant.
+        "naive-word-wrapper" => {
+            Some(crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[]))
+        }
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
         "words" => Some(Some(Ok(crate::value::str_iter_seq(
             target,
