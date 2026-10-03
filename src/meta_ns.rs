@@ -262,6 +262,10 @@ pub(crate) enum MetaNs {
     /// the scope for a match replaces it with the thunk's string result,
     /// which the interpolation pre-pass splices in as a literal (#9628).
     RegexQq,
+    /// `__mutsu_pragma::<name>` — a lexical pragma's state in this scope
+    /// (`use MONKEY-SEE-NO-EVAL` stores `True`, `no MONKEY-SEE-NO-EVAL`
+    /// `False`); block scoping of the env is what makes it lexical.
+    Pragma,
 }
 
 impl MetaNs {
@@ -322,6 +326,7 @@ impl MetaNs {
         MetaNs::AttrTrait,
         MetaNs::TypeCaptureBound,
         MetaNs::RegexQq,
+        MetaNs::Pragma,
     ];
 
     /// The literal key prefix, including whatever separator the namespace puts
@@ -384,6 +389,7 @@ impl MetaNs {
             MetaNs::AttrTrait => "__mutsu_attr_trait__",
             MetaNs::TypeCaptureBound => "__mutsu_type_capture_bound__",
             MetaNs::RegexQq => "__mutsu_regex_qq::",
+            MetaNs::Pragma => "__mutsu_pragma::",
         }
     }
 
@@ -649,6 +655,7 @@ mod tests {
             (MetaNs::Attr, "__mutsu_attr__@a"),
             (MetaNs::TypeCaptureBound, "__mutsu_type_capture_bound__@a"),
             (MetaNs::RegexQq, "__mutsu_regex_qq::@a"),
+            (MetaNs::Pragma, "__mutsu_pragma::@a"),
         ];
         for (ns, expected) in spellings {
             assert_eq!(ns.key(n).as_str(), expected, "{ns:?} key spelling");

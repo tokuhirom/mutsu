@@ -1659,6 +1659,8 @@ impl Interpreter {
         } else if module == "fatal" {
             self.fatal_mode = false;
             self.lexical_fatal_mode = false;
+        } else if module == "MONKEY-SEE-NO-EVAL" || module == "MONKEY" {
+            self.set_monkey_see_no_eval(false);
         }
         Ok(())
     }

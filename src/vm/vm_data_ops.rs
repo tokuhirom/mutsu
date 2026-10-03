@@ -495,6 +495,18 @@ impl Interpreter {
         if inner.is_container_ref() {
             return (inner, true);
         }
+        // `($!name, $x)`: an attribute's container is the invocant's own
+        // attribute cell. Boxing the method frame's slot instead made a
+        // private copy and published it under `!name` in the env, where a
+        // nested call of the same class on ANOTHER invocant read it back as
+        // its own `$!name`.
+        if let Some(attr) = name.strip_prefix('!')
+            && !attr.is_empty()
+            && attr.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            && let Some(cell) = self.try_promote_attr_container_named(code, attr)
+        {
+            return (cell, true);
+        }
         // An `is raw`/`is rw` PARAMETER's own local slot may already hold the
         // caller's real shared cell: `bind_function_args_values`'s
         // `rw_shared_cell_key` mechanism boxes it there at call time so the

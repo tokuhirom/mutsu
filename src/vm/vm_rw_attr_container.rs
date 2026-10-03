@@ -90,6 +90,17 @@ impl Interpreter {
     /// `exec_attr_container_ref_op`'s doc comment lists.
     fn try_promote_attr_container(&mut self, code: &CompiledCode, name_idx: u32) -> Option<Value> {
         let attr = Self::const_str(code, name_idx).to_string();
+        self.try_promote_attr_container_named(code, &attr)
+    }
+
+    /// [`Self::try_promote_attr_container`] by the attribute's bare name.
+    // Cost: O(1) attribute map probes, plus an MRO walk for a typed attribute.
+    pub(super) fn try_promote_attr_container_named(
+        &mut self,
+        code: &CompiledCode,
+        attr: &str,
+    ) -> Option<Value> {
+        let attr = attr.to_string();
         let base = self.frame_self_value(code)?;
         let ValueView::Instance {
             attributes,

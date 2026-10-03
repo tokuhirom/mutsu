@@ -744,6 +744,7 @@ mod lock_async_recursion;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
+mod pragma_monkey_eval;
 mod main_args;
 mod main_usage;
 mod main_usage_program;
