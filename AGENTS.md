@@ -451,7 +451,7 @@ day it is not practical.) So:
   what it was missing. Do not fix forward, and do not let the open PRs each fix it: a single break
   fixed in N PRs oscillates. On 2026-10-03 the Duration/Instant `.rand` native rows went from 3
   copies to 0 to 8 open PRs re-adding them.
-- This is the one exception to "Trust `main`" below. If your branch fails on a gate it did not
+- This is the one exception to "Trust `main`" above. If your branch fails on a gate it did not
   touch and `main` is red the same way, search the open PRs (`gh pr list` + `gh pr diff | grep`)
   and the issues for the fix first, and rebase onto it once it lands. Do not add another copy of
   the fix to your PR.
