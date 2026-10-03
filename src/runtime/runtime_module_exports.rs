@@ -890,8 +890,10 @@ impl Interpreter {
             // A qualified package exported as itself (`unit module A::B::C is
             // export`) is registered under its full name, not under `module::`.
             .or_else(|| {
-                (sigil.is_none() && name.contains("::") && self.is_declared_package(name))
-                    .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+                (sigil.is_none()
+                    && crate::qualified::is_qualified(crate::symbol::Symbol::intern(name))
+                    && self.is_declared_package(name))
+                .then(|| Value::package(crate::symbol::Symbol::intern(name)))
             })
             .or_else(|| {
                 self.package_lexicals
@@ -1520,7 +1522,11 @@ impl Interpreter {
                 // export`); `resolve_package_alias_prefix` maps it back.
                 let short_pkg = (!target.starts_with(['$', '@', '%', '&'])
                     && matches!(value.view(), ValueView::Package(_)))
-                .then(|| target.rsplit_once("::").map(|(_, short)| short.to_string()))
+                .then(|| {
+                    let sym = crate::symbol::Symbol::intern(&target);
+                    crate::qualified::is_qualified(sym)
+                        .then(|| crate::qualified::unqualified_part(sym).as_str().to_string())
+                })
                 .flatten()
                 .filter(|short| !short.is_empty());
                 self.record_import_env_key(&env_target);

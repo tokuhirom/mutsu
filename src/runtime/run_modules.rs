@@ -1636,16 +1636,20 @@ impl Interpreter {
                 // file (`A/B/MD5.rakumod` declaring `unit class A::B::Other::MD5
                 // is export`): an exported one is still this compunit's.
                 if unit_name.as_deref() == Some(qualified.as_str())
-                    && qualified
-                        .rsplit("::")
-                        .next()
-                        .is_some_and(|short| exported_here.contains(short))
+                    && exported_here.contains(
+                        crate::qualified::unqualified_part(crate::symbol::Symbol::intern(
+                            qualified,
+                        ))
+                        .as_str(),
+                    )
                 {
                     return true;
                 }
                 // `class A::B::EmptyCI is export` in `A/B/CI.rakumod`: named by
                 // its full name in this compunit's own export list.
-                if qualified.contains("::") && exported_here.contains(qualified.as_str()) {
+                if crate::qualified::is_qualified(crate::symbol::Symbol::intern(qualified))
+                    && exported_here.contains(qualified.as_str())
+                {
                     return true;
                 }
                 let Some(prefix) = unit_prefix.as_deref() else {
@@ -2111,7 +2115,7 @@ impl Interpreter {
                 let target = target.resolve();
                 (target != *name
                     && (self.has_type_direct(&target) || self.is_declared_package(&target)))
-                    .then(|| (name.clone(), target.to_string()))
+                .then(|| (name.clone(), target.to_string()))
             })
             .collect()
     }

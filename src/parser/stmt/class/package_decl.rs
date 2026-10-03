@@ -531,7 +531,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Ok((
             rest,
-            Stmt::SyntheticBlock(vec![package, super::class_decl::export_type_stmt(&name, &tags)]),
+            Stmt::SyntheticBlock(vec![
+                package,
+                super::class_decl::export_type_stmt(&name, &tags),
+            ]),
         ));
     }
     Ok((rest, package))

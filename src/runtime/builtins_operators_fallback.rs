@@ -1329,7 +1329,8 @@ impl Interpreter {
             // under a longer name (`unit module A::B::Fac is export`), which the
             // module's own routines keep after the load restores the importer.
             None => {
-                let target = self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
+                let target =
+                    self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
                 if !self.is_declared_package(target) {
                     return None;
                 }

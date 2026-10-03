@@ -52,8 +52,10 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
         {
             let name = name.resolve();
             // A qualified declarator name publishes its last part, as rakudo does.
-            if let Some((_, short)) = name.rsplit_once("::") {
-                self.0.insert(short.to_string());
+            let sym = crate::symbol::Symbol::intern(&name);
+            if crate::qualified::is_qualified(sym) {
+                self.0
+                    .insert(crate::qualified::unqualified_part(sym).as_str().to_string());
             }
             self.0.insert(name);
         }
@@ -68,11 +70,12 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
             let name = value.to_string_value();
             // `class A::B::C is export` publishes the short name `C`, as rakudo
             // does for a qualified declarator name.
-            let short = name.rsplit("::").next().unwrap_or("");
+            let sym = crate::symbol::Symbol::intern(&name);
+            let short = crate::qualified::unqualified_part(sym).as_str().to_string();
             if !short.is_empty() {
-                self.0.insert(short.to_string());
+                self.0.insert(short);
             }
-            if name.contains("::") {
+            if crate::qualified::is_qualified(sym) {
                 self.0.insert(name);
             }
         }
