@@ -353,6 +353,26 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         | StatementModifierUnless
         | StatementModifierWith
         | StatementModifierWithout => "expression",
+        // Every statement prefix wraps its block-or-statement ("blorst")
+        // positionally, and rakudo names it `.blorst` (#9761).
+        StatementPrefixDo
+        | StatementPrefixTry
+        | StatementPrefixGather
+        | StatementPrefixPhaserBegin
+        | StatementPrefixPhaserCheck
+        | StatementPrefixPhaserClose
+        | StatementPrefixPhaserEnd
+        | StatementPrefixPhaserEnter
+        | StatementPrefixPhaserFirst
+        | StatementPrefixPhaserInit
+        | StatementPrefixPhaserKeep
+        | StatementPrefixPhaserLast
+        | StatementPrefixPhaserLeave
+        | StatementPrefixPhaserNext
+        | StatementPrefixPhaserPost
+        | StatementPrefixPhaserPre
+        | StatementPrefixPhaserQuit
+        | StatementPrefixPhaserUndo => "blorst",
         _ => return None,
     })
 }

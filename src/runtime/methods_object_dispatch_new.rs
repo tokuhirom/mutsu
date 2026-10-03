@@ -23,10 +23,21 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
         .all(|arg| matches!(arg.view(), ValueView::Pair(key, _) if !is_datetime_constructor_named_arg(key)))
 }
 
+/// Whether a class with this MRO builds from positional arguments through
+/// its default constructor: a subclass of a builtin whose `new` takes them
+/// (`class A is Array`, `class I is Int`). Every other class's `Mu.new` takes
+/// named arguments only.
+// Cost: O(m), m = the MRO's length.
+pub(crate) fn default_new_accepts_positionals(class_mro: &[Symbol]) -> bool {
+    class_mro.iter().any(|n| {
+        *n == "Array" || *n == "List" || *n == "Int" || *n == "Num" || *n == "Rat" || *n == "Hash"
+    })
+}
+
 /// Build a typed `X::Constructor::Positional` for a default constructor that
 /// was handed positional arguments (e.g. `Mu.new(1)`). The `type` attribute is
 /// the type object so the test matcher `type => Foo` accepts it.
-fn constructor_positional_error(class_name: &str) -> RuntimeError {
+pub(crate) fn constructor_positional_error(class_name: &str) -> RuntimeError {
     let msg = format!(
         "Default constructor for '{}' only takes named arguments",
         class_name
@@ -2141,15 +2152,7 @@ impl Interpreter {
                     if self.class_does_baggy_or_setty(&cn) {
                         return self.construct_baggy_instance(&cn, &args);
                     }
-                    let accepts_positional = class_mro.iter().any(|n| {
-                        *n == "Array"
-                            || *n == "List"
-                            || n == "Int"
-                            || n == "Num"
-                            || n == "Rat"
-                            || n == "Hash"
-                    });
-                    if !accepts_positional {
+                    if !default_new_accepts_positionals(&class_mro) {
                         return Err(constructor_positional_error(&class_name.resolve()));
                     }
                 }
