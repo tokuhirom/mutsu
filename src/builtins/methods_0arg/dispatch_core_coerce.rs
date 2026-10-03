@@ -1426,6 +1426,18 @@ fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, Runtime
             Ok(Value::num(f64::INFINITY))
         };
     }
+    // An Int/BigInt-ended range counts from its endpoints (no expansion cap).
+    if let ValueView::GenericRange { start, end, .. } = target.view()
+        && matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_))
+    {
+        let exact = crate::value::radix_numeric::coerce_to_numeric(target.clone());
+        return Ok(if method == "Num" {
+            Value::num(exact.to_f64())
+        } else {
+            exact
+        });
+    }
     let count = match target.view() {
         ValueView::Range(s, e) => (e - s + 1).max(0),
         ValueView::RangeExcl(s, e) | ValueView::RangeExclStart(s, e) => (e - s).max(0),
