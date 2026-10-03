@@ -935,42 +935,35 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 fields,
             })))
         }
+        // `also does R;` in a package body.
+        Stmt::DoesDecl {
+            name,
+            also: true,
+            from_is: false,
+            ..
+        } => Ok(Some(super::role::also_statement(name.resolve().as_str())?)),
         Stmt::RoleDecl {
             name,
             type_params,
+            type_param_defs,
             is_export,
             export_tags,
             body,
             is_rw,
             custom_traits,
             ..
-        } => {
-            // Plain `role NAME { body }`. Parameterised roles (`role R[::T]`),
-            // export, `rw`, and traits carry extra RakuAST shape, deferred. The
-            // role body is a `RoleBody` (not a plain `Block`).
-            if !type_params.is_empty()
-                || *is_export
-                || !export_tags.is_empty()
-                || *is_rw
-                || !custom_traits.is_empty()
-            {
-                return Err(unsupported("role with type params / export / traits"));
-            }
-            let role_body = RakuAstNode {
-                class: RakuAstClass::RoleBody,
-                fields: vec![node_field(
-                    Some("body"),
-                    blockoid(&crate::parser::unhoist_nested_methods(body))?,
-                )],
-            };
-            Ok(Some(statement_expression(RakuAstNode {
-                class: RakuAstClass::Role,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(Some("body"), role_body),
-                ],
-            })))
-        }
+        } => Ok(Some(statement_expression(super::role::convert(
+            super::role::RoleDecl {
+                name: *name,
+                type_params,
+                type_param_defs,
+                is_export: *is_export,
+                export_tags,
+                body,
+                is_rw: *is_rw,
+                custom_traits,
+            },
+        )?))),
         Stmt::HasDecl {
             name,
             is_public,
@@ -2590,7 +2583,7 @@ fn elsif_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeE
 /// The body keeps the enclosing unit's declared names: the unit-level scan
 /// already entered every block, and re-collecting here would *replace* them
 /// with the block's own, hiding `class C { }` from a closure `{ C.new }`.
-fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Blockoid,
         fields: vec![node_field(None, statement_list_inner(body)?)],
@@ -3331,7 +3324,7 @@ fn routine_node(
 /// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`
 /// prepends the implicit `type => Type::Setting(Any)` on each parameter —
 /// present in sub/method signatures, absent in pointy-block signatures.
-fn signature(
+pub(super) fn signature(
     param_defs: &[ParamDef],
     type_setting: bool,
     returns: Option<&str>,

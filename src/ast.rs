@@ -2333,6 +2333,11 @@ pub(crate) enum Stmt {
         /// them apart (#8100).
         #[serde(default)]
         from_is: bool,
+        /// Written as an `also does Role;` statement in the body, rather than
+        /// folded in from the declaration header. RakuAST renders the two
+        /// spellings differently (`Statement::Also` vs a header `Trait::Does`).
+        #[serde(default)]
+        also: bool,
     },
     TrustsDecl {
         name: Symbol,

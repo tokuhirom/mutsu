@@ -25,7 +25,9 @@ mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
-pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws};
+pub(crate) use stmt::class::{
+    inject_implicit_rule_ws, inject_separator_ws, parse_bracket_arg_exprs, role_type_param_names,
+};
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::auto_default_expr_for_type;

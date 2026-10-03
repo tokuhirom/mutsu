@@ -932,6 +932,7 @@ impl Compiler {
                     name,
                     args,
                     from_is,
+                    ..
                 } => {
                     let name_str = name.resolve();
                     if name_str == "__mutsu_role_hidden__" {

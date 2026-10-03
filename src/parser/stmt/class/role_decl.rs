@@ -87,6 +87,19 @@ fn type_capture_default(rest: &str) -> Option<Option<Expr>> {
         .then_some(Some(default_expr))
 }
 
+/// The names a parameterized role substitutes for its parameters: a type
+/// capture's name (`T` for `::T`), else the parameter's name without its sigil.
+// Cost: O(p), p = number of parameters.
+pub(crate) fn role_type_param_names(param_defs: &[ParamDef]) -> Vec<String> {
+    param_defs
+        .iter()
+        .map(|pd| match pd.captured_type_name() {
+            Some(captured) => captured.to_string(),
+            None => pd.name.trim_start_matches(['$', '@', '%', '&']).to_string(),
+        })
+        .collect()
+}
+
 /// Parse optional role type parameters like `[::T]`, `[Str $x]`, or
 /// `[Int $x where { ... }]`.
 /// Returns both full parameter defs and plain names used for substitution.
@@ -149,16 +162,7 @@ pub(crate) fn parse_optional_role_type_params(
                 return Err(PError::fatal_with_exception(msg, Box::new(ex)));
             }
         }
-        let params = param_defs
-            .iter()
-            .map(|pd| {
-                if let Some(captured) = pd.captured_type_name() {
-                    captured.to_string()
-                } else {
-                    pd.name.trim_start_matches(['$', '@', '%', '&']).to_string()
-                }
-            })
-            .collect::<Vec<_>>();
+        let params = role_type_param_names(&param_defs);
         let (rest, _) = ws(rest)?;
         return Ok((rest, (params, param_defs)));
     }
@@ -494,6 +498,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
                 name: Symbol::intern("__mutsu_role_hidden__"),
                 args: None,
                 from_is: false,
+                also: false,
             },
         );
     }
@@ -504,6 +509,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
                 name: Symbol::intern(&role_name),
                 args,
                 from_is,
+                also: false,
             },
         );
     }

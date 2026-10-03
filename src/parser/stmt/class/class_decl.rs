@@ -778,6 +778,7 @@ pub(crate) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: Symbol::intern(&name),
                 args,
                 from_is: false,
+                also: true,
             },
         ));
     }

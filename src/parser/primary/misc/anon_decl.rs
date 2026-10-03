@@ -120,6 +120,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
                 name: Symbol::intern(role_name),
                 args: None,
                 from_is: false,
+                also: false,
             },
         );
     }

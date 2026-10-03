@@ -371,6 +371,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: Symbol::intern(&role_name),
                     args,
                     from_is,
+                    also: false,
                 },
             );
         }
