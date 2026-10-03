@@ -233,13 +233,13 @@ impl Compiler {
         // form of that builtin for the block's own body only.
         let saved_listop_shadows = self.user_listop_shadows.clone();
         self.seed_user_listop_shadows(stmts);
-        // Snapshot the sigilless bindings that name a native lowercase type
-        // (`str`/`int`/...). A `my \str` declared *inside* this block is
-        // lexically scoped to it, so it must stop shadowing the native type once
-        // the block ends; drop any such name the block newly registers on exit.
-        // Scoped to type names only to keep the (pre-existing) leak behaviour of
-        // ordinary sigilless names.
-        let sigilless_types_before = self.snapshot_sigilless_type_names();
+        // Snapshot the sigilless bindings in scope. A `my \x` declared *inside*
+        // this block is lexically scoped to it: once the block ends, the name
+        // must stop being a sigilless term -- both so a `my \str` no longer
+        // shadows the native type, and so a later, unrelated `my $x` (which
+        // shares the `x` local key) is not mistaken for a sigilless bind and
+        // stored un-itemized (#11228).
+        let sigilless_before = self.sigilless_locals.clone();
         // A genuine source `{ ... }` is a Raku callframe (it contributes an
         // anonymous frame to a backtrace captured inside it); a synthesized
         // if/while/loop body is not. `synthetic_block_body` is set by those
@@ -274,7 +274,7 @@ impl Compiler {
         if let Some(saved) = saved_fatal_pragma_active {
             self.fatal_pragma_active = saved;
         }
-        self.restore_sigilless_type_names(sigilless_types_before);
+        self.sigilless_locals = sigilless_before;
         self.user_listop_shadows = saved_listop_shadows;
         if let Some(saved) = saved_dynamic_scope {
             self.pop_dynamic_scope_lexical(saved);
@@ -422,18 +422,5 @@ impl Compiler {
             isolate_decls_idx: u32::MAX,
             scope_routines: plan.declares_routines,
         })
-    }
-
-    fn snapshot_sigilless_type_names(&self) -> std::collections::HashSet<String> {
-        self.sigilless_locals
-            .iter()
-            .filter(|n| crate::runtime::Interpreter::is_builtin_type(n))
-            .cloned()
-            .collect()
-    }
-
-    fn restore_sigilless_type_names(&mut self, before: std::collections::HashSet<String>) {
-        self.sigilless_locals
-            .retain(|n| before.contains(n) || !crate::runtime::Interpreter::is_builtin_type(n));
     }
 }
