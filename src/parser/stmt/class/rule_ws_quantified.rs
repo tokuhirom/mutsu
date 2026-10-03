@@ -8,6 +8,50 @@ pub(super) fn is_quantifier_start(next: Option<char>) -> bool {
     matches!(next, Some('*' | '+' | '?'))
 }
 
+/// Mark a quantifier that ends `out` as backtrackable (`:!`) when the rule's
+/// significant whitespace follows it. Rakudo ratchets the `[atom <.ws>]`
+/// wrapper there, not the quantifier, so `rule { 'D' <id>? <v> }` gives
+/// `<id>` back to let `<v>` match (ASN::Grammar's `'DEFAULT' <id-string>?
+/// <value>`); an explicit backtrack modifier (`?:`, `?:!`, `??`, `?!`)
+/// keeps its own meaning, and a `%` separator binds to the quantifier.
+// Cost: O(1).
+pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, escaped: bool) {
+    if escaped || next == Some('%') {
+        return;
+    }
+    let trimmed_len = out.trim_end().len();
+    // `<id> ** 0..1`: a range quantifier, which the single-char check below
+    // cannot see.
+    if let Some(pos) = out[..trimmed_len].rfind("**") {
+        let range = out[pos + 2..trimmed_len].trim_start();
+        if !range.is_empty()
+            && range
+                .chars()
+                .all(|c| c.is_ascii_digit() || matches!(c, '.' | '^' | '*'))
+        {
+            out.truncate(trimmed_len);
+            out.push_str(":!");
+            return;
+        }
+    }
+    let mut rev = out[..trimmed_len].chars().rev();
+    let (Some(quant), Some(before)) = (rev.next(), rev.next()) else {
+        return;
+    };
+    let is_quant = matches!(quant, '?' | '*' | '+');
+    // A frugal (`*?`, `??`) or already-modified quantifier is left alone, and
+    // the character before must close an atom (`x?`, `<id>?`, `]*`, `)+`).
+    if !is_quant
+        || matches!(before, '?' | '*' | '+' | ':' | '!' | '\\')
+        || before.is_whitespace()
+        || matches!(before, '|' | '&' | '(' | '[' | '{' | '<' | '%' | '=')
+    {
+        return;
+    }
+    out.truncate(trimmed_len);
+    out.push_str(":!");
+}
+
 /// Wrap the last atom of `out` as `[ATOM <.ws>]` so a quantifier that
 /// follows repeats the whitespace with it. Returns false (leaving `out`
 /// untouched) when the text before the quantifier does not end in an atom

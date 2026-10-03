@@ -281,7 +281,10 @@ impl Interpreter {
                     current.push(ch);
                 }
                 '>' => {
-                    if chars.peek() == Some(&'>') {
+                    // `>>` is the right word boundary only outside an
+                    // assertion; inside one it closes two nested `<…<…>>`
+                    // levels (`<value:sym<number>>`).
+                    if depth_angle == 0 && chars.peek() == Some(&'>') {
                         current.push(ch);
                         current.push(chars.next().unwrap());
                         continue;

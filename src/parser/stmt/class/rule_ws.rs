@@ -424,6 +424,12 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     && super::rule_ws_quantified::wrap_last_atom_with_ws(&mut out)
                 {
                     // `<item> +`: the whitespace repeats with the atom.
+                } else if out.trim_end().ends_with("**") && !last_char_is_escaped(&out) {
+                    // `a ** 1..3`: the whitespace between `**` and its count
+                    // is layout inside the quantifier, not sigspace.
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
                 } else if p == '^' {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
@@ -431,6 +437,8 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     out.push_str("<.ws>?");
                     out.push(' ');
                 } else if should_insert(p, n) {
+                    let escaped = last_char_is_escaped(&out);
+                    super::rule_ws_quantified::mark_backtracking_before_ws(&mut out, next, escaped);
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }
