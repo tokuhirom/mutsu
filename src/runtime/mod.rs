@@ -763,6 +763,7 @@ mod methods_classhow;
 mod methods_classhow_attribute;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
+mod methods_classhow_grammar_tokens;
 mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
