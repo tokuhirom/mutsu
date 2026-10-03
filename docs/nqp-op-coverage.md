@@ -34,7 +34,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 
 | Category | Implemented | Missing | Tracking |
 | --- | ---: | ---: | --- |
-| Arithmetic | 22 / 26 | 4 | #11490 |
+| Arithmetic | 26 / 26 | 0 | #11490 |
 | Array | 34 / 61 | 27 | #11493 |
 | Asynchronous | 0 / 11 | 11 | #11502 |
 | Atomic | 0 / 11 | 11 | #11502 |
@@ -53,7 +53,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Input/Output | 6 / 14 | 8 | #11501 |
 | Relational / Logic | 27 / 40 | 13 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
-| Numeric | 1 / 17 | 16 | #11490 |
+| Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 17 / 31 | 14 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
 | Profiling | 0 / 3 | 3 | #11504 |
@@ -63,16 +63,15 @@ recorded under "Not applicable" with its reason, never stubbed.
 | System Introspection | 18 / 29 | 11 | #11501 |
 | Threads | 0 / 7 | 7 | #11502 |
 | Timish | 1 / 3 | 2 | #11501 |
-| Trigonometric | 0 / 10 | 10 | #11490 |
+| Trigonometric | 10 / 10 | 0 | #11490 |
 | Type / Conversion | 21 / 53 | 32 | #11492 |
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **236 / 586** | **350** | |
+| **Total** | **266 / 586** | **320** | |
 
 ## Missing ops by category
 
-- **Arithmetic** (#11490): `div_In`, `gcd_i`, `lcm_i`, `mod_n`
 - **Array** (#11493): `atpos2d`, `atpos2d_i`, `atpos2d_n`, `atpos2d_s`, `atpos3d`, `atpos3d_i`, `atpos3d_n`, `atpos3d_s`, `atposnd`, `atposnd_i`, `atposnd_n`, `atposnd_s`, `atposref_s`, `bindpos2d`, `bindpos2d_i`, `bindpos2d_n`, `bindpos2d_s`, `bindpos3d`, `bindpos3d_i`, `bindpos3d_n`, `bindpos3d_s`, `bindposnd`, `bindposnd_i`, `bindposnd_n`, `bindposnd_s`, `existspos`, `list_b`
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
@@ -90,7 +89,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Input/Output** (#11501): `eoffh`, `filenofh`, `flushfh`, `print`, `say`, `seekfh`, `tellfh`, `writefh`
 - **Relational / Logic** (#11491): `cmp_u`, `eqaticim`, `eqatim`, `iseq_u`, `isge_s`, `isge_u`, `isgt_s`, `isgt_u`, `isle_s`, `isle_u`, `islt_s`, `islt_u`, `isne_u`
 - **NativeCall** (#11504): `nativecallinvoke`
-- **Numeric** (#11490): `base_I`, `ceil_n`, `exp_n`, `expmod_I`, `floor_n`, `inf`, `log_n`, `nan`, `neginf`, `pow_i`, `pow_n`, `rand_n`, `rand_i`, `rand_I`, `sqrt_n`, `srand`
 - **Objects** (#11499): `bind`, `bindcomp`, `call`, `callmethod`, `findmethod`, `how`, `how_nd`, `objectid`, `rebless`, `reprname`, `setwho`, `tryfindmethod`, `what_nd`, `who`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
@@ -100,7 +98,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **System Introspection** (#11501): `backendconfig`, `cpucores`, `freemem`, `getenvhash`, `getsignals`, `totalmem`, `uname`, `UNAME_SYSNAME`, `UNAME_RELEASE`, `UNAME_VERSION`, `UNAME_MACHINE`
 - **Threads** (#11502): `currentthread`, `newthread`, `threadid`, `threadjoin`, `threadlockcount`, `threadrun`, `threadyield`
 - **Timish** (#11501): `decodelocaltime`, `sleep`
-- **Trigonometric** (#11490): `acos_n`, `asin_n`, `atan_n`, `atan2_n`, `cos_n`, `cosh_n`, `sin_n`, `sinh_n`, `tan_n`, `tanh_n`
 - **Type / Conversion** (#11492): `bool_I`, `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `box_n`, `box_u`, `decont_i`, `decont_n`, `decont_s`, `fromI_I`, `fromnum_I`, `fromstr_I`, `isbig_I`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isinvokable`, `isnum`, `isprime_I`, `isrwcont`, `isstr`, `isttyfh`, `tonum_I`, `tostr_I`
 - **Unicode Properties** (#11495): `getuniname`, `getuniprop_bool`, `hasuniprop`, `matchuniprop`, `unipvalcode`
 - **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`

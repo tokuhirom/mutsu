@@ -1030,6 +1030,11 @@ impl Interpreter {
                 }
             }
 
+            // The numeric / transcendental / random ops (`sqrt_n`, `cos_n`,
+            // `gcd_i`, `div_In`, `rand_n`, ...) live in their own module.
+            // Cost: O(d^2) at worst, d = operand digits (each op states its own).
+            _ if let Some(result) = super::nqp_ops_numeric::call_nqp_numeric_op(op, args) => result,
+
             // The process/introspection half of the table lives in its own
             // module (file-size limit); an op neither knows still errors.
             _ => return self.call_nqp_op_process(op, args),

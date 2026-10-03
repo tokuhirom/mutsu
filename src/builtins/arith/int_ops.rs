@@ -286,6 +286,37 @@ pub(crate) fn int_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
     l.to_bigint().cmp(&r.to_bigint())
 }
 
+/// The digits `Int.base` and `nqp::base_I` render with: `0-9A-Z` for the
+/// radixes Raku allows, continuing `a-z+/` up to 64 as MoarVM's libtommath
+/// does for `nqp::base_I`.
+const BASE_DIGITS: &[u8; 64] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
+
+/// The one rendering of an integer in radix `radix` (2..=64), shared by
+/// `Int.base` and `nqp::base_I`: upper-case digits, a leading `-` for a
+/// negative value, `"0"` for zero. The caller validates the radix.
+// Cost: O(d^2), d = digits of the operand (one bignum division per digit).
+pub(crate) fn int_to_base(v: &Value, radix: u32) -> String {
+    debug_assert!((2..=64).contains(&radix));
+    let n = int_operand(v).to_bigint();
+    let negative = num_traits::Signed::is_negative(&n);
+    let mut mag = num_traits::Signed::abs(&n);
+    if mag.is_zero() {
+        return "0".to_string();
+    }
+    let radix_big = BigInt::from(radix);
+    let mut buf = Vec::new();
+    while !mag.is_zero() {
+        let digit = num_traits::ToPrimitive::to_usize(&(&mag % &radix_big)).unwrap_or(0);
+        buf.push(BASE_DIGITS[digit]);
+        mag /= &radix_big;
+    }
+    if negative {
+        buf.push(b'-');
+    }
+    buf.reverse();
+    String::from_utf8(buf).expect("base digits are ASCII")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,6 +365,15 @@ mod tests {
         assert_eq!(s(int_shift_right(&Value::int(-8), &Value::int(1))), "-4");
         assert_eq!(s(int_shift_right(&Value::int(-1), &Value::int(100))), "-1");
         assert_eq!(s(int_shift_left(&Value::int(8), &Value::int(-2))), "2");
+    }
+
+    #[test]
+    fn base_renders_upper_case_with_sign() {
+        assert_eq!(int_to_base(&Value::int(255), 16), "FF");
+        assert_eq!(int_to_base(&Value::int(-255), 2), "-11111111");
+        assert_eq!(int_to_base(&Value::int(0), 10), "0");
+        assert_eq!(int_to_base(&Value::int(i64::MIN), 16), "-8000000000000000");
+        assert_eq!(int_to_base(&Value::int(10), 37), "A");
     }
 
     #[test]

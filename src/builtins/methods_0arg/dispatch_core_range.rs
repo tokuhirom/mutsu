@@ -771,7 +771,7 @@ fn value_to_bigint(v: &Value) -> Option<num_bigint::BigInt> {
 }
 
 /// Generate a random BigInt in [0, range_size).
-fn random_bigint_in_range(range_size: &num_bigint::BigInt) -> num_bigint::BigInt {
+pub(crate) fn random_bigint_in_range(range_size: &num_bigint::BigInt) -> num_bigint::BigInt {
     use num_bigint::BigInt as NumBigInt;
     use num_traits::{ToPrimitive, Zero};
 
