@@ -328,11 +328,13 @@ impl Interpreter {
         }
         // The BEGIN-time preload loads a block's module at the head of the
         // unit, inside a preload scope that keeps what it installs; the
-        // in-position `need`/`use` replays the merge where it belongs.
+        // in-position `need`/`use` replays the merge where it belongs. A
+        // module loaded *by* that preload merges its own `use`s at its unit
+        // level as usual: nothing replays those.
         if self
             .import_scope_stack
             .last()
-            .is_some_and(|scope| !scope.scope_classes)
+            .is_some_and(|scope| !scope.scope_classes && scope.unit == importer)
         {
             return;
         }
