@@ -193,6 +193,24 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
+    /// The storage name a lexical (`my class P`) type is registered under,
+    /// when `name` is that type's short name bound in the current scope:
+    /// `.type` must be the type object itself (`=== P`, with its attributes),
+    /// not a fresh package of the bare spelling (JSON::Unmarshal's
+    /// `$attr.type.^attributes` saw an empty list).
+    // Cost: O(1), one env probe.
+    pub(crate) fn lexical_type_storage_name(&self, name: String) -> String {
+        if let Some(bound) = self.env().get(&name)
+            && let ValueView::Package(sym) = bound.view()
+        {
+            let storage = sym.resolve();
+            if storage != name && storage.split('\u{0}').next() == Some(name.as_str()) {
+                return storage.to_string();
+            }
+        }
+        name
+    }
+
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let attr_name = &attr.name;
         let is_public = attr.is_public;
@@ -230,7 +248,8 @@ impl Interpreter {
                     .then(|| class_def.attribute_types.get(attr_name).cloned())
                     .flatten()
             })
-            .map(|t| self.resolve_type_name_for_owner(owner, t));
+            .map(|t| self.resolve_type_name_for_owner(owner, t))
+            .map(|t| self.lexical_type_storage_name(t));
         // For @ sigil, the exposed type is Positional[T]; for % it is Associative[T]
         let type_name = match sigil {
             '@' => {

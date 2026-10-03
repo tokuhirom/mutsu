@@ -504,6 +504,12 @@ impl Interpreter {
                 Ok(Value::str(name))
             }
             "array_type" if !args.is_empty() => {
+                // A type that recorded one (`is array_type(T)`, a composed
+                // role's trait, `.^set_array_type`) answers it.
+                let owner = self.mop_receiver_owner(&args[0]);
+                if let Some(recorded) = self.recorded_array_type(&owner) {
+                    return Ok(recorded);
+                }
                 // The element type of a native array-ish container. Derived from
                 // the same name `.^name` reports — `dispatch_caret_name`, which
                 // is where a `CArray[int32]` / `array[uint8]` gets its
@@ -515,6 +521,12 @@ impl Interpreter {
                 Ok(Value::package(crate::symbol::Symbol::intern(
                     array_element_type_name(&name),
                 )))
+            }
+            // Cost: O(1).
+            "set_array_type" if args.len() == 2 => {
+                let owner = self.mop_receiver_owner(&args[0]);
+                self.set_array_type(&owner, args[1].clone());
+                Ok(Value::NIL)
             }
             "shortname" if !args.is_empty() => {
                 let full = self
