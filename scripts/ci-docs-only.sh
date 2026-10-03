@@ -115,6 +115,8 @@ is_doc_path() {
     scripts/check-interp-construction.py) return 1 ;;
     # `make check-layer-deps` (#10779), likewise a `make checks` ratchet.
     scripts/check-layer-deps.py) return 1 ;;
+    # `make check-interp-fields` (ADR-10779 D4) runs it with --check.
+    scripts/interp-field-matrix.py) return 1 ;;
     scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
@@ -378,6 +380,7 @@ self_test() {
   check false 'the AST-walker ratchet'  scripts/check-ast-walkers.py
   check false 'the interp ratchet'      scripts/check-interp-construction.py
   check false 'the layer-deps ratchet'  scripts/check-layer-deps.py
+  check false 'the interp-fields ratchet' scripts/interp-field-matrix.py
   check false 'shell script'            scripts/run-t-test.sh
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv

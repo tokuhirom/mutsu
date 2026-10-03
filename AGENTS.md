@@ -253,6 +253,11 @@ scripts/dev stop <id>
   `Interpreter` (#10779): move a pure helper down, or route an essential compile-time call
   through a trait. `make check-layer-deps` is a shrinking ratchet over
   `scripts/layer-deps-baseline.txt`.
+- **No new fields on `Interpreter`.** New state goes into the subsystem type it belongs to
+  ([ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md); the subsystems
+  are the `SUBSYSTEMS` rules in `scripts/interp-field-matrix.py`), and a value passed from a
+  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` is a
+  shrinking ratchet over `scripts/interp-fields-baseline.txt`.
 - **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
   (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
   closure is called on the interpreter you already have (`call_compiled_closure`,
