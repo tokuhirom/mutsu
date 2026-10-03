@@ -1114,7 +1114,10 @@ impl Interpreter {
     /// The role body's lexicals are persisted under this name, so a role
     /// method's dispatch must look them up under the same name (#11528).
     // Cost: O(a), a = total length of the arguments' spellings.
-    pub(crate) fn parametric_role_pun_name(base_name: &str, type_args: &[Value]) -> (String, String) {
+    pub(crate) fn parametric_role_pun_name(
+        base_name: &str,
+        type_args: &[Value],
+    ) -> (String, String) {
         let role_spelling = format!(
             "{}[{}]",
             base_name,

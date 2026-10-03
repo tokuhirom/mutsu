@@ -438,6 +438,51 @@ impl Interpreter {
                 return Some(f(&attributes, &map, key));
             }
         }
+        // A closure a role method made, run after that method returned, has no
+        // role method on the dispatch stack to name the owner, yet its `$!x`
+        // is still the role's attribute (`method mk { -> { $!x } }` on a
+        // routine or value the role was mixed into; upstream NativeCall's
+        // replacement body reads `$!arity` this way, #11203). Find the
+        // attribute in whichever mixed-in role layer stores it.
+        if let Some((attributes, key)) = Self::mixin_role_attr_by_name(self_val, bare) {
+            let map = attributes.as_map();
+            return Some(f(&attributes, &map, key));
+        }
+        None
+    }
+
+    /// The role cell and key that store the role attribute `bare` in one of
+    /// `val`'s mixin layers, searched outermost first; `None` when no layer
+    /// has it.
+    // Cost: O(m * a), m = mixin layers (bounded by 8), a = attributes stored
+    // in a layer's role cell. Taken only when the dispatch stack names no
+    // owner that holds the attribute.
+    fn mixin_role_attr_by_name(
+        val: &Value,
+        bare: crate::symbol::Symbol,
+    ) -> Option<(
+        crate::gc::Gc<crate::value::InstanceAttrs>,
+        crate::symbol::Symbol,
+    )> {
+        let suffix = format!("\0{}", bare.as_str());
+        let mut current = val.clone();
+        for _ in 0..8 {
+            match current.view() {
+                ValueView::Mixin(inner_value, mixins) => {
+                    let cell = mixins.attributes().clone();
+                    let key = cell.as_map().keys().copied().find(|k| {
+                        let k = k.as_str();
+                        k.starts_with("__mutsu_role_attr__\0") && k.ends_with(suffix.as_str())
+                    });
+                    if let Some(key) = key {
+                        return Some((cell, key));
+                    }
+                    current = inner_value.as_ref().clone();
+                }
+                ValueView::ContainerRef(_) => current = current.deref_container(),
+                _ => return None,
+            }
+        }
         None
     }
 
