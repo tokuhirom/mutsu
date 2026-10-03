@@ -455,7 +455,7 @@ impl Interpreter {
         if let Some(existing) = self.env().get(&store_name).cloned()
             && let ValueView::ContainerRef(arc) = existing.view()
         {
-            self.check_container_cell_constraint(&arc, &value)?;
+            let value = self.coerce_container_cell_store(&arc, value)?;
             Self::cell_store_preserving_container_identity(&store_name, &arc, &value);
             self.note_caller_env_write(&store_name);
             let result = if sigil == "$" {
@@ -526,7 +526,7 @@ impl Interpreter {
         if let Some(existing) = self.env().get(&store_name).cloned()
             && let ValueView::ContainerRef(arc) = existing.view()
         {
-            self.check_container_cell_constraint(&arc, &value)?;
+            let value = self.coerce_container_cell_store(&arc, value)?;
             Self::cell_store_preserving_container_identity(&store_name, &arc, &value);
             self.note_caller_env_write(&store_name);
             self.stack.push(value);

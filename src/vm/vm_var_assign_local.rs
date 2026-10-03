@@ -398,7 +398,7 @@ impl Interpreter {
                 replaces_value_share = true;
             } else if scalar {
                 let arc = arc.clone();
-                self.check_container_cell_constraint(&arc, &val)?;
+                let val = self.coerce_container_cell_store(&arc, val)?;
                 Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 self.stack.push(val);

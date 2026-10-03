@@ -42,9 +42,10 @@ impl Interpreter {
                 // (`array_slot_ref` / `hash_slot_ref`), so `tel() = "nope"` on
                 // a `my Int @typed` element is rejected here, as `@typed[0] =
                 // "nope"` would be.
-                if let Err(err) = self.check_container_cell_constraint(&cell, &value) {
-                    return Some(Err(err));
-                }
+                let value = match self.coerce_container_cell_store(&cell, value) {
+                    Ok(value) => value,
+                    Err(err) => return Some(Err(err)),
+                };
                 *cell.lock().unwrap() = value.clone();
                 Some(Ok(value))
             }

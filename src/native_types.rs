@@ -128,6 +128,17 @@ pub(crate) fn native_family(name: &str) -> Option<&'static str> {
     }
 }
 
+/// The value an unwritten slot of a native container holds: `0` for the
+/// integer families, `0e0` for `num`, `""` for `str` (`my int16 @a; @a[3] = 5`
+/// leaves `0 0 0 5`). `None` for a boxed type, whose hole is its type object.
+pub(crate) fn native_zero_value(name: &str) -> Option<crate::value::Value> {
+    Some(match native_family(name)? {
+        "num" => crate::value::Value::num(0.0),
+        "str" => crate::value::Value::str(String::new()),
+        _ => crate::value::Value::int(0),
+    })
+}
+
 /// Returns (min, max) bounds for a native integer type as BigInt values.
 /// `byte` is an alias for `uint8`.
 /// `int` is an alias for `int64`, `uint` is an alias for `uint64`.
