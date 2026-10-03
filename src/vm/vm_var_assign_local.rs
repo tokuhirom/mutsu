@@ -407,6 +407,28 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A captured `@`/`%` lexical (a named sub or closure closes over it)
+        // lives in a shared `ContainerRef` cell: store THROUGH the cell, as the
+        // statement-form `SetLocal` does, instead of replacing the slot, which
+        // detached the variable from the capture (`my $t = (@s = ()); ps()`
+        // pushed onto a container the mainline no longer saw).
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let ValueView::ContainerRef(arc) = self.locals[idx].view()
+        {
+            let arc = arc.clone();
+            let name = name.clone();
+            let old = arc.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            let written = if name.starts_with('%') {
+                self.hash_container_writethrough_value(&name, val, &old)?
+            } else {
+                self.array_container_writethrough_value(&name, val, &old)?
+            };
+            let written = self.coerce_container_cell_store(&arc, written)?;
+            Self::cell_store_preserving_container_identity(&name, &arc, &written);
+            self.flush_local_to_env(code, idx);
+            self.stack.push(written);
+            return Ok(());
+        }
         // Container identity + Raku `=` copy semantics, mirroring the
         // statement-form SetLocal: when the slot already holds a same-kind
         // container, copy the new contents into the EXISTING backing `Gc` so
