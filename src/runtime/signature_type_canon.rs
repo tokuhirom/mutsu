@@ -31,8 +31,10 @@ impl Interpreter {
     // env probes.
     pub(crate) fn declared_type_alias_target(&self, spelling: &str) -> Option<String> {
         let (base, smiley) = crate::runtime::types::strip_type_smiley(spelling);
-        // An alias is declared under a plain identifier.
-        if base.contains("::") {
+        // An alias is declared under a plain identifier, and a spelling nobody
+        // interned cannot be bound to anything.
+        let sym = crate::symbol::Symbol::lookup(base)?;
+        if crate::qualified::is_qualified(sym) {
             return None;
         }
         let target = self.resolve_type_alias_chain(base)?;

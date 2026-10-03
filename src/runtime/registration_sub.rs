@@ -1062,10 +1062,14 @@ impl Interpreter {
         // A `constant` alias of a type (`--> size_t` under upstream
         // NativeCall's `constant size_t = NativeCall::Types::size_t`) names
         // the aliased type, also resolved here (#11555).
+        // Not in the hoist pass, whose `constant`s are not assigned yet.
+        let resolve_aliases = !custom_traits.iter().any(|(t, _)| t == "__hoisted");
         let effective_return_type = return_type.map(|rt| {
             let resolved = rt.replace("::?CLASS", &package);
             let resolved = self.resolve_method_type_name(&package, &resolved);
-            self.declared_type_alias_target(&resolved)
+            resolve_aliases
+                .then(|| self.declared_type_alias_target(&resolved))
+                .flatten()
                 .unwrap_or(resolved)
         });
         if let Some(spec) = return_type
@@ -1190,7 +1194,10 @@ impl Interpreter {
         }
         // Type aliases, as for the return type above. A multi keeps its
         // spellings for the reason given in the loop above.
-        if !multi && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs) {
+        if !multi
+            && resolve_aliases
+            && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs)
+        {
             effective_param_defs = defs;
         }
         self.validate_static_default_typechecks(&effective_param_defs)?;

@@ -231,9 +231,16 @@ impl Interpreter {
             // A type alias in the signature (`--> size_t` under
             // `constant size_t = NativeCall::Types::size_t`) names the aliased
             // type, resolved here in the declaring scope (#11555).
-            let canon_defs = self.canonical_signature_param_types(param_defs);
+            // Not in the hoist pass: a `constant` it would read is declared but
+            // not yet assigned (it reads `Any`), so only the in-sequence
+            // registration can tell what the alias names.
+            let hoisting = custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            let canon_defs = (!hoisting)
+                .then(|| self.canonical_signature_param_types(param_defs))
+                .flatten();
             let canon_return = return_type
                 .as_deref()
+                .filter(|_| !hoisting)
                 .and_then(|rt| self.declared_type_alias_target(rt));
             // The rewritten declaration is a different one from what a
             // registration that saw no alias (the hoist pass, before the
