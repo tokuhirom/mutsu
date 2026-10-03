@@ -797,8 +797,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Int", "msb", 1, 24),
     ("Int", "Supply", 1, 0),
     ("Int", "pairs", 1, 0),
-    ("Int", "denominator", 1, 0),
-    ("Int", "numerator", 1, 0),
     ("Int", "kv", 1, 0),
     ("Int", "int8", 1, 24),
     ("Int", "rindex", 2, 0),

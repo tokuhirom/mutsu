@@ -35,14 +35,13 @@
 //! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+mod complex;
+mod int;
 mod list;
 mod map;
 mod num;
-mod rat;
+mod rational;
 mod str;
-
-pub(crate) use num::is_nan as num_is_nan;
-pub(crate) use rat::{denominator as rat_denominator, numerator as rat_numerator};
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -73,7 +72,16 @@ pub(crate) struct MethodRow {
 }
 
 /// Every family's rows. A family module owns the rows of one declaring type.
-static FAMILIES: &[&[MethodRow]] = &[list::ROWS, map::ROWS, str::ROWS, num::ROWS, rat::ROWS];
+static FAMILIES: &[&[MethodRow]] = &[
+    list::ROWS,
+    map::ROWS,
+    str::ROWS,
+    int::ROWS,
+    num::ROWS,
+    rational::RAT_ROWS,
+    rational::FAT_RAT_ROWS,
+    complex::ROWS,
+];
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.
 fn shape_type(shape: DispatchShape) -> &'static str {
@@ -82,18 +90,24 @@ fn shape_type(shape: DispatchShape) -> &'static str {
         DispatchShape::Array => "Array",
         DispatchShape::Hash => "Hash",
         DispatchShape::Str => "Str",
+        DispatchShape::Int => "Int",
         DispatchShape::Num => "Num",
         DispatchShape::Rat => "Rat",
+        DispatchShape::FatRat => "FatRat",
+        DispatchShape::Complex => "Complex",
     }
 }
 
-const SHAPES: [DispatchShape; 6] = [
+const SHAPES: [DispatchShape; 9] = [
     DispatchShape::List,
     DispatchShape::Array,
     DispatchShape::Hash,
     DispatchShape::Str,
+    DispatchShape::Int,
     DispatchShape::Num,
     DispatchShape::Rat,
+    DispatchShape::FatRat,
+    DispatchShape::Complex,
 ];
 
 /// `(shape, method) -> row`, resolved along each shape's MRO, plus the set of
@@ -223,24 +237,37 @@ pub(crate) fn try_dispatch(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    let table = table();
-    if !table.has_name(method) {
-        return None;
-    }
-    let shape = target.dispatch_shape()?;
-    let id = resolve(shape, method, args.len())?;
-    let result = invoke(id, target, args);
+    let result = answer(target, method, args)?;
     debug_assert_matches_full_path(target, method, args, &result);
     Some(result)
 }
 
-/// In debug builds, re-answer a table hit through the full pure-native path
-/// and assert the two agree.
+/// [`try_dispatch`] without the debug cross-check: what the cascades' own
+/// entry (`native_method_0arg`) asks first.
+// Cost: O(1) to find the row (a bit test, a tag probe and one hash lookup),
+// plus the handler's own cost.
+#[inline]
+pub(crate) fn answer(
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !table().has_name(method) {
+        return None;
+    }
+    let shape = target.dispatch_shape()?;
+    let id = resolve(shape, method, args.len())?;
+    Some(invoke(id, target, args))
+}
+
+/// In debug builds, re-answer a table hit through the cascades and assert
+/// the two agree.
 ///
 /// This is the maintenance net for the table. A row is admitted by an argument
 /// about which skipped probes could claim the call, and a later commit adding
 /// a probe has no way of knowing it invalidated one; running both paths over
 /// the whole TAP suite turns that silent divergence into a failing assertion.
+/// A cascade that declines agrees: a migrated method has no arm left there.
 /// Sound to run twice only because every pure row is side-effect free.
 fn debug_assert_matches_full_path(
     target: &Value,
@@ -251,7 +278,7 @@ fn debug_assert_matches_full_path(
     #[cfg(debug_assertions)]
     {
         let slow = match args {
-            [] => super::methods_0arg::native_method_0arg(target, method),
+            [] => super::methods_0arg::native_method_0arg_cascade(target, method),
             [a] => super::native_method_1arg(target, method, a),
             [a, b] => super::native_method_2arg(target, method, a, b),
             _ => return,
@@ -261,9 +288,12 @@ fn debug_assert_matches_full_path(
             Some(Ok(v)) => format!("ok:{}", crate::runtime::gist_value(v)),
             Some(Err(e)) => format!("err:{}", e.message),
         };
+        let Some(slow) = slow else {
+            return;
+        };
         debug_assert_eq!(
             render(Some(fast)),
-            render(slow.as_ref()),
+            render(Some(&slow)),
             "method_table row disagrees with the full path for .{} on a {:?} \
              receiver -- a probe the table skips now claims this call",
             method.as_str(),

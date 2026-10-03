@@ -571,7 +571,16 @@ impl NanBox {
             Classified::Kind(Kind::HashPlain) => Some(DispatchShape::Hash),
             Classified::Kind(Kind::Str) => Some(DispatchShape::Str),
             Classified::Num(_) => Some(DispatchShape::Num),
+            Classified::Int(_) | Classified::Kind(Kind::IntBoxed | Kind::BigInt) => {
+                Some(DispatchShape::Int)
+            }
             Classified::Kind(Kind::Rat) => Some(DispatchShape::Rat),
+            Classified::Kind(Kind::FatRat) => Some(DispatchShape::FatRat),
+            // One `BigRat` kind carries both big-component rationals; the box's
+            // flag says which type it is.
+            Classified::Kind(Kind::BigRat) if self.is_bigfatrat() => Some(DispatchShape::FatRat),
+            Classified::Kind(Kind::BigRat) => Some(DispatchShape::Rat),
+            Classified::Kind(Kind::Complex) => Some(DispatchShape::Complex),
             _ => None,
         }
     }
