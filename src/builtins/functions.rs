@@ -45,10 +45,22 @@ pub(crate) fn native_function(
     // Math::NumberTheory does, `multi sub is-prime(Complex:D)`) left every
     // fall-through-to-core call with a wrapped argument. Strip it here, at the
     // one door into the table, rather than at each of its callers.
+    //
+    // The wrapper of a free variable owned by a package or class body (`class
+    // M { my $m = <a b>; method t { elems($m) } }`) carries that store's
+    // shared cell, not the value (`exec_wrap_var_ref_op`), so read through the
+    // cell too: a raw `ContainerRef` is one opaque item to every handler, and
+    // `elems($m)` answered 1, `sort($m)` Nil, `any($m)` a one-element junction.
+    // An earlier strip (`normalize_call_args_for_target`) can leave that bare
+    // cell behind, so a `ContainerRef` argument is read through as well.
     let unwrapped: Option<Vec<Value>> = args
         .iter()
-        .any(Value::is_varref)
-        .then(|| args.iter().map(|a| a.unwrap_varref().clone()).collect());
+        .any(|a| a.is_varref() || a.is_container_ref())
+        .then(|| {
+            args.iter()
+                .map(|a| a.unwrap_varref().clone().into_deref())
+                .collect()
+        });
     let args: &[Value] = unwrapped.as_deref().unwrap_or(args);
     let name = name_sym.resolve();
     let name = name.as_str();

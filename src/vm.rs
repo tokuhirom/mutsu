@@ -304,6 +304,7 @@ mod vm_react_loop;
 mod vm_react_receiver;
 mod vm_react_subscriptions;
 mod vm_react_supply_helpers;
+mod vm_reduction_concat_single;
 mod vm_regex_bool;
 mod vm_register_ops;
 mod vm_register_sub_ops;
