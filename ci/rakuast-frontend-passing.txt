@@ -1739,6 +1739,7 @@ t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
+t/rakuast/rakuast-invocant-parameters.t
 t/rakuast/rakuast-l10n-constructs.t
 t/rakuast/rakuast-labelled-repeat.t
 t/rakuast/rakuast-leaf-accessors.t
@@ -1749,6 +1750,7 @@ t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
+t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-reduction.t
