@@ -451,6 +451,7 @@ impl Interpreter {
         slot: Option<u32>,
         increment: bool,
         return_new: bool,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         if let Some(result) =
             self.try_fast_hash_element_incdec(code, name_idx, slot, increment, return_new)
@@ -458,7 +459,7 @@ impl Interpreter {
             return result;
         }
         let pre = self.attr_elem_env_snapshot(code, name_idx);
-        self.exec_inc_dec_index_op(code, name_idx, slot, increment, return_new)?;
+        self.exec_inc_dec_index_op(code, name_idx, slot, increment, return_new, is_positional)?;
         self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
         Ok(())
     }

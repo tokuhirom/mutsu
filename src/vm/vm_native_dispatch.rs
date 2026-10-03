@@ -25,6 +25,37 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
+        // ADR-0058: a native method reads its ARGUMENTS' elements through pure
+        // Rust (the receiver is already handled by
+        // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
+        // `600.polymod((1..3).map(* * 3))` — must run its callback first.
+        if let Err(e) = self.reify_map_grep_seq_args(args) {
+            return Some(Err(e));
+        }
+        // The built-in method table (ADR-11276, #8888). For a plain receiver
+        // of a shape it covers, a row is the method's implementation, and no
+        // probe between here and the family cascade can claim the call: each
+        // is gated on a method name with no row, or on a receiver kind
+        // `dispatch_shape` refuses -- the two `Cool` gates just below only
+        // ever claim a type object. So the table goes first and the walk is
+        // skipped outright. `builtins::method_table` cross-checks itself
+        // against the full path in debug builds.
+        //
+        // The one thing the table cannot decide is whether user code has
+        // `augment`ed the receiver's builtin type with a method of this name,
+        // which is a property of the registry rather than of the call: that
+        // stays the same memoized gate the general path applies.
+        if let Some(result) = crate::builtins::method_table::try_dispatch(target, method_sym, args)
+            && !self.native_lever_a_user_override_sym(target, method_sym)
+        {
+            self.record_native_row_coverage(
+                "vm_native_dispatch::method_table",
+                target,
+                method_sym.as_str(),
+                args.len(),
+            );
+            return Some(self.settle_native_warning(result));
+        }
         // `Any` is not a `Cool` (#7773): the cascades below recognize a `Cool`
         // method by NAME and answer out of the stringified receiver, which for
         // a type object is its gist -- so `$undefined.uc` answered `"(ANY)"`.
@@ -40,22 +71,33 @@ impl Interpreter {
         if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
             return Some(result);
         }
-        // ADR-0058: a native method reads its ARGUMENTS' elements through pure
-        // Rust (the receiver is already handled by
-        // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
-        // `600.polymod((1..3).map(* * 3))` — must run its callback first.
-        if let Err(e) = self.reify_map_grep_seq_args(args) {
-            return Some(Err(e));
+        let result = self.try_native_method_raw(target, method_sym, args)?;
+        Some(self.settle_native_warning(result))
+    }
+
+    /// Settle a resumable warning a pure native method returned, at its raise
+    /// site (see [`Self::try_native_method`]). Every native result passes
+    /// through here, so the common case -- no warning -- is one inlined test.
+    #[inline(always)]
+    fn settle_native_warning(
+        &mut self,
+        result: Result<Value, RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
+        match &result {
+            Err(e) if e.is_warn() && e.return_value.is_some() => {
+                self.raise_native_warning(e.message.to_string(), e.return_value.clone())
+            }
+            _ => result,
         }
-        let result = self.try_native_method_raw(target, method_sym, args);
-        if let Some(Err(e)) = &result
-            && e.is_warn()
-            && let Some(resume) = e.return_value.clone()
-        {
-            let message = e.message.to_string();
-            return Some(self.raise_resumable_warning(&message, resume));
-        }
-        result
+    }
+
+    #[cold]
+    fn raise_native_warning(
+        &mut self,
+        message: String,
+        resume: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        self.raise_resumable_warning(&message, resume.unwrap_or(Value::NIL))
     }
 
     fn try_native_method_raw(
@@ -72,31 +114,6 @@ impl Interpreter {
             .transpose()
         {
             return Some(view);
-        }
-        // The `(receiver kind, method symbol)` table (#8888). For a plain
-        // aggregate or `Str` calling one of the pure value queries the table
-        // lists, every probe between here and the family cascade is known to
-        // decline -- each is gated either on a method name the table excludes
-        // or on a receiver kind `dispatch_shape` refuses -- so the walk that
-        // proves it again on every call is skipped outright. `builtins::
-        // fast_0arg` carries the argument, and cross-checks itself against the
-        // full path in debug builds.
-        //
-        // The one thing the table cannot decide is whether user code has
-        // `augment`ed the receiver's builtin type with a method of this name,
-        // which is a property of the registry rather than of the call: that
-        // stays the same memoized gate the general path applies below.
-        if args.is_empty()
-            && let Some(result) = crate::builtins::fast_0arg::try_dispatch(target, method_sym)
-            && !self.native_lever_a_user_override_sym(target, method_sym)
-        {
-            self.record_native_row_coverage(
-                "vm_native_dispatch::fast_0arg",
-                target,
-                method_sym.as_str(),
-                0,
-            );
-            return Some(result);
         }
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.

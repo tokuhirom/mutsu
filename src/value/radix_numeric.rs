@@ -1,6 +1,7 @@
 use crate::value::to_list::value_to_list;
 use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
+use num_traits::{Signed, Zero};
 
 fn parse_unicode_decimal_digits(input: &str) -> Option<(&str, String)> {
     let mut end = 0;
@@ -193,6 +194,36 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::int(0)
             }
         }
+        // A finite Int range numifies to its exact element count, computed from
+        // the endpoints: expanding it would stop at `MAX_RANGE_EXPAND`.
+        // Cost: O(1).
+        ValueView::Range(a, b) if a != i64::MIN && b != i64::MAX => {
+            Value::int((i128::from(b) - i128::from(a) + 1).max(0) as i64)
+        }
+        ValueView::RangeExcl(a, b) | ValueView::RangeExclStart(a, b)
+            if a != i64::MIN && b != i64::MAX =>
+        {
+            Value::int((i128::from(b) - i128::from(a)).max(0) as i64)
+        }
+        ValueView::RangeExclBoth(a, b) if a != i64::MIN && b != i64::MAX => {
+            Value::int((i128::from(b) - i128::from(a) - 1).max(0) as i64)
+        }
+        // The same for a range whose Int endpoint does not fit 64 bits (`^(2**64-1)`).
+        // Cost: O(1) in the number of elements.
+        ValueView::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } if let (Some(s), Some(e)) = (int_endpoint(start), int_endpoint(end)) => {
+            let adj = i64::from(excl_start) + i64::from(excl_end);
+            let count: BigInt = e - s + 1 - adj;
+            Value::from_bigint(if count.is_negative() {
+                BigInt::zero()
+            } else {
+                count
+            })
+        }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)
@@ -257,5 +288,15 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         ValueView::Uni(u) => Value::int(u.len() as i64),
         ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
         _ => Value::int(0),
+    }
+}
+
+/// An `Int`/`BigInt` range endpoint as a `BigInt`; `None` for anything else
+/// (Num, Rat, Str, infinity), which keeps the expansion-based count.
+fn int_endpoint(v: &Value) -> Option<BigInt> {
+    match v.view() {
+        ValueView::Int(i) => Some(BigInt::from(i)),
+        ValueView::BigInt(b) => Some((**b).clone()),
+        _ => None,
     }
 }

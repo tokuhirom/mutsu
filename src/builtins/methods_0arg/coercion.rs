@@ -14,7 +14,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // role/class instances (e.g. the Rational role prelude's
         // `$.numerator`); return None so dispatch falls through to them.
         "numerator" => match target.view() {
-            ValueView::Rat(n, _) => Some(Ok(Value::int(n))),
+            ValueView::Rat(..) => Some(crate::builtins::method_table::rat_numerator(target, &[])),
             ValueView::FatRat(n, _) => Some(Ok(Value::int(n))),
             ValueView::BigRat(n, _) => Some(Ok(Value::bigint(n.clone()))),
             ValueView::Int(i) => Some(Ok(Value::int(i))),
@@ -22,7 +22,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "denominator" => match target.view() {
-            ValueView::Rat(_, d) => Some(Ok(Value::int(d))),
+            ValueView::Rat(..) => Some(crate::builtins::method_table::rat_denominator(target, &[])),
             ValueView::FatRat(_, d) => Some(Ok(Value::int(d))),
             ValueView::BigRat(_, d) => Some(Ok(Value::bigint(d.clone()))),
             ValueView::Int(_) | ValueView::BigInt(_) => Some(Ok(Value::int(1))),
@@ -31,7 +31,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "isNaN" => match target.view() {
             ValueView::Rat(0, 0) => Some(Ok(Value::TRUE)),
             ValueView::FatRat(0, 0) => Some(Ok(Value::TRUE)),
-            ValueView::Num(f) => Some(Ok(Value::truth(f.is_nan()))),
+            ValueView::Num(_) => Some(crate::builtins::method_table::num_is_nan(target, &[])),
             // A Complex is NaN when EITHER its real or imaginary part is NaN
             // (`(NaN+5i).isNaN` is True) — Complex.isNaN is `re.isNaN || im.isNaN`.
             ValueView::Complex(re, im) => Some(Ok(Value::truth(re.is_nan() || im.is_nan()))),

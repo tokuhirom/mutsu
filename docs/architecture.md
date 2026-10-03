@@ -34,6 +34,11 @@ This is a **bytecode VM** architecture. The VM handles ALL operations natively v
 
 ## Method dispatch (two-tier)
 
+0. **Method table** — `builtins/method_table/` ([ADR-11276](adr/11276-built-in-methods-are-handler-rows.md)):
+   a built-in method is a row `(owner, name, arity, handler)`, looked up by the receiver's
+   `DispatchShape` along the declaring type's MRO, at the VM's native entry (`try_native_method`)
+   ahead of the tiers below. A miss falls through to them unchanged. Methods migrate here family by
+   family; a new built-in method is a row, not a new cascade arm.
 1. **Fast path** — `builtins/methods_0arg/`, `builtins/methods_narg.rs`: Pure Rust native methods dispatched by arity. No AST execution needed.
 2. **Slow path** — `runtime/methods.rs`: Falls through from builtins for methods needing `&mut self` (say, match, map, sort with comparator, grep, new), enum dispatch, instance dispatch, and user-defined class methods.
 
