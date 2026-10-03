@@ -198,3 +198,29 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
 ## 9. Implementation status
 
 - 2026-10-03: accepted. Slice 1 (the mechanism) started.
+- 2026-10-03, slice 1a: `src/builtins/method_table/` holds `MethodRow` / `Handler::Pure` and
+  the `(DispatchShape, method) -> row` lookup, resolved along each shape's MRO from the built-in
+  type catalog on first use. A miss falls back to the cascades. `DispatchShape` covers `List`,
+  `Array`, `Hash`, `Str`, `Num` and `Rat`. The table replaced `builtins::fast_0arg`. Its rows
+  are `List.elems/end/Bool`, `Map.elems/Bool`, `Str.chars/Bool`, `Num.isNaN` and
+  `Rat.numerator/denominator`; the cascade arms that answer the same methods for other receivers
+  call the same handlers. The lookup sits at the top of `try_native_method`. Debug builds
+  re-answer every hit through the full pure path.
+  - Baseline (§5), callgrind on the profiling build, 200,000 calls per benchmark, against the
+    same `main`: `@a.elems` -15.3%, `%h.elems` -15.3%, `$s.chars` -11.6%, `$n.isNaN` -41.4%,
+    `$r.numerator` -36.3%. A benchmark whose calls miss the table (`@a.map(*+1).elems`) moved
+    +0.19%: about 50 Ir per iteration for two misses (a bit test on the symbol id), plus a
+    `memcmp` shift with identical call counts.
+  - No arm-count ratchet in CI. A first draft added one (`check-method-arms`, a global count of
+    the cascades' quoted-name arms every PR had to keep equal to a committed baseline). It was
+    dropped before merging: on 2026-10-03 the #11271 Rakudo oracle test, which had the same shape
+    (one shared table that every parallel PR touching a native method had to edit), kept `main`
+    red and made every concurrent agent's CI fail (#11405, #11407). A migration progress count
+    belongs in a report, not in a gate that couples unrelated PRs.
+  - Finding for the next slices: a `.elems` call on a variable spends ~6,300 Ir, of which only
+    ~1,600 are in `try_native_method`. The rest is the `CallMethodMut` path's per-call probes
+    before it (`native_lever_a_user_override_sym` ~500, `cool_type_object_string_method` ~450,
+    `maybe_autothread_method_args`, `try_fast_accessor_read`, `reify_or_consume_seq_target`,
+    `try_baggy_storage_delegate_mut`, `try_env_pure_mut_dispatch`). The call-site inline cache
+    (§2.5) and the single guard step (§2.4) have to sit in front of those to pay off, so they
+    are deferred to slice 1b instead of being bolted onto `try_native_method`.

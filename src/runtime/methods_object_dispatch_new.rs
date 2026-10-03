@@ -2708,6 +2708,11 @@ impl Interpreter {
                     let storage_key =
                         super::attribute_storage_key(&class_attrs_info, attr_name, sigil);
                     if let Some(val) = attrs.get(storage_key).cloned() {
+                        // The smiley is recorded apart from the type
+                        // (`attribute_smileys`); `has Str:D @.e` is an
+                        // `Array[Str:D]`, as `my Str:D @e` is.
+                        let elem_type =
+                            self.attribute_reported_constraint(class_key, attr_name, &elem_type);
                         let tagged =
                             self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val)?;
                         attrs.insert(storage_key, tagged);

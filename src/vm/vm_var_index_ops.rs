@@ -166,6 +166,37 @@ impl Interpreter {
         }
     }
 
+    /// A `WhateverCode` position into a not-yet-vivified container
+    /// (`return-rw c[*-0]` with `c` bound to a missing `%h<a>`) is computed
+    /// against the empty Array the write will create, as rakudo does: the
+    /// subscript then names one position and the deferred path can record it.
+    // Cost: O(1) plus one call of the WhateverCode.
+    fn resolve_whatever_index_on_undefined(
+        &mut self,
+        index: Value,
+        target: &Value,
+        is_positional: bool,
+    ) -> Value {
+        if !is_positional || !matches!(index.view(), ValueView::Sub(_)) {
+            return index;
+        }
+        let base = match target.view() {
+            ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+            ValueView::Scalar(inner) => inner.clone(),
+            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            _ => target.clone(),
+        };
+        if !matches!(base.view(), ValueView::Nil | ValueView::Package(_)) {
+            return index;
+        }
+        let empty = Value::array(Vec::new());
+        let candidate = self.resolve_whatever_index_for_target(index.clone(), Some(&empty));
+        match candidate.view() {
+            ValueView::Int(_) if Self::index_to_usize(&candidate).is_some() => candidate,
+            _ => index,
+        }
+    }
+
     /// Auto-vivifying index: creates intermediate Hash/Array entries and returns
     /// a `HashEntryRef` (hash) or a shared `ContainerRef` cell (array element) so
     /// that `:=` bind to nested elements works.
@@ -344,6 +375,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
+        let index = self.resolve_whatever_index_on_undefined(index, &target, is_positional);
 
         // A subscript that selects several elements (a slice, a `Junction`, a
         // `*`/`WhateverCode` not resolvable to one position) names no single

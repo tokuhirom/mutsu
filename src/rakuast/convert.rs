@@ -12,7 +12,8 @@ use super::{
     hash_literal, name_parts, routine_traits, subscript_adverb,
 };
 use crate::ast::{
-    AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
+    AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef,
+    Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexModifierKind, RegexNode, RegexQuantifier, RegexTree};
@@ -1395,7 +1396,7 @@ fn var_declaration(
 /// including an operator name that merely contains `::` (`infix:<::=>`),
 /// stays one `Name.from-identifier("<s>")` string.
 pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
-    if name_parts::is_qualified_identifier(s) {
+    if name_parts::is_qualified_identifier(s) && !s.starts_with("::?") {
         return name_parts::qualified_name(s);
     }
     RakuAstNode {
@@ -1409,17 +1410,18 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
 /// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
 /// `::`-separated segment must be a bare identifier.
 fn is_simple_type(t: &str) -> bool {
-    !t.is_empty()
-        && name_parts::identifier_segments(t).all(|seg| {
-            !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        })
+    is_pseudo_type(t)
+        || !t.is_empty()
+            && name_parts::identifier_segments(t).all(|seg| {
+                !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            })
 }
 
 /// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
 /// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
 /// `Type::Definedness`; a `Base[Arg, ...]` -> `Type::Parameterized`. Coercion
 /// (`Str()`) and `:_` types defer.
-fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
         if !is_simple_type(base) {
             return Err(unsupported("definite type over a non-simple base"));
@@ -1481,7 +1483,7 @@ fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
 /// on `@`/`%`/`&` declarations but strips it from `$` ones.
-fn split_sigil(name: &str) -> (&str, &str) {
+pub(super) fn split_sigil(name: &str) -> (&str, &str) {
     match name.as_bytes().first() {
         Some(b'@') => ("@", &name[1..]),
         Some(b'%') => ("%", &name[1..]),
@@ -3331,28 +3333,51 @@ fn signature(
 /// `sub-signature => Signature`, and a basic `::T` type capture becomes the
 /// `type-captures` field. Richer capture forms remain the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
-    if (pd.onearg && !pd.sigilless)
-        || pd.literal_value.is_some()
-        || !pd.trait_args.is_empty()
-        || !pd.traits.iter().all(|t| is_parameter_is_trait(t))
-        || (pd.optional_marker && (pd.named || pd.default.is_some()))
-        || pd.is_invocant
-        || pd.shape_constraints.is_some()
-        || pd.code_signature.is_some()
-        || pd.outer_sub_signature.is_some()
+    // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
+    // plus an `invocant` trait, and a synthesized one (no variable) with the
+    // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
+    let implicit_invocant = pd.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT);
+    let user_traits: Vec<&str> = pd
+        .traits
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
+        .collect();
+    let refusal = if pd.onearg && !pd.sigilless {
+        Some("single-argument slurpy parameter with a sigil")
+    } else if pd.literal_value.is_some() {
+        Some("literal-value parameter")
+    } else if !pd.trait_args.is_empty() || !user_traits.iter().all(|t| is_parameter_is_trait(t)) {
+        Some("parameter with a custom trait")
+    } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
+        || (implicit_invocant && !pd.is_invocant)
     {
-        return Err(unsupported("non-trivial signature parameter"));
+        Some("invocant marker without an invocant")
+    } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless) {
+        Some("non-scalar invocant parameter")
+    } else if pd.optional_marker && pd.default.is_some() {
+        Some("defaulted parameter with a `?` marker")
+    } else if pd.shape_constraints.is_some() {
+        Some("shaped array parameter")
+    } else if pd.code_signature.is_some() {
+        Some("parameter with a code signature")
+    } else if pd.outer_sub_signature.is_some() {
+        Some("parameter with an outer sub-signature")
+    } else {
+        None
+    };
+    if let Some(what) = refusal {
+        return Err(unsupported(what));
     }
-    // Named aliases (`:s(:$sort)`) and capture parameters also use the
-    // internal `sub_signature` slot, but RakuAST represents those with fields
-    // other than `sub-signature`. Keep this slice to ordinary positional and
-    // array-destructuring parameters whose target is preserved by mutsu.
+    // Capture parameters also use the internal `sub_signature` slot, but
+    // RakuAST represents those with fields other than `sub-signature`. A named
+    // alias's chain is read by `named_param`.
     if pd.sub_signature.is_some()
-        && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless || pd.name.starts_with("__"))
+        && (pd.slurpy || pd.double_slurpy || pd.sigilless || pd.name.starts_with("__"))
     {
         return Err(unsupported("non-positional signature sub-signature"));
     }
-    let type_capture = match pd.captured_type_name() {
+    let type_capture = match type_capture_name(pd) {
         Some(name) => Some(type_capture_node(name)?),
         None => None,
     };
@@ -3380,11 +3405,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             fields,
         });
     }
-    let ordinary_type_constraint = if type_capture.is_some() {
-        None
-    } else {
-        pd.type_constraint.as_deref()
-    };
+    // A `::T` capture spelled as the type constraint itself is not a nominal
+    // type; `::T Foo:D:` keeps the capture apart from its nominal `Foo:D`.
+    let constraint_is_capture = pd.type_capture.is_none() && type_capture.is_some();
+    let ordinary_type_constraint = pd
+        .type_constraint
+        .as_deref()
+        .filter(|_| !constraint_is_capture);
     // A sigilless parameter (`\x`) targets a term, not a variable. The
     // parser's sigilless slurpies are `+a` (`onearg`) and the capture `|c`.
     if pd.sigilless && (pd.double_slurpy || pd.named) {
@@ -3404,14 +3431,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         slurpy_parameter(sigil, desigil, pd.double_slurpy)?
     } else if pd.named {
-        // A typed/defaulted/where-constrained named param carries richer shape.
-        if (pd.type_constraint.is_some() && type_capture.is_none())
-            || pd.default.is_some()
-            || pd.where_constraint.is_some()
-        {
-            return Err(unsupported("typed/defaulted named parameter"));
-        }
-        named_parameter(sigil, desigil, type_setting)?
+        super::named_param::named_parameter(pd, type_setting)?
     } else {
         simple_parameter(
             sigil,
@@ -3425,7 +3445,8 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if pd.sigilless {
         sigilless_target(&mut node, &pd.name);
     }
-    if let Some(type_capture) = type_capture {
+    // `named_parameter` places a named parameter's capture itself.
+    if let Some(type_capture) = type_capture.filter(|_| !pd.named) {
         let target_index = node
             .fields
             .iter()
@@ -3433,6 +3454,25 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             .ok_or_else(|| unsupported("type capture without a parameter target"))?;
         node.fields
             .insert(target_index, type_captures_field(type_capture));
+    }
+    // `invocant => True` follows `type`/`type-captures`; a synthesized
+    // invocant has no target (measured on rakudo 2026.09).
+    if pd.is_invocant {
+        let target_index = node
+            .fields
+            .iter()
+            .position(|field| field.name == Some("target"))
+            .ok_or_else(|| unsupported("invocant without a parameter target"))?;
+        if implicit_invocant {
+            node.fields.remove(target_index);
+        }
+        node.fields.insert(
+            target_index,
+            RakuAstField {
+                name: Some("invocant"),
+                value: RakuAstFieldValue::Node(Value::truth(true)),
+            },
+        );
     }
     // `$x?`: rakudo's `optional => True`, where a plain positional has False.
     if pd.optional_marker {
@@ -3442,7 +3482,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             }
         }
     }
-    if let Some(sub_params) = &pd.sub_signature {
+    if let Some(sub_params) = super::named_param::destructuring_sub_signature(pd) {
         node.fields.push(node_field(
             Some("sub-signature"),
             signature(sub_params, type_setting, None)?,
@@ -3450,9 +3490,8 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // `$x is copy` -> `traits => (Trait::Is(name => Name.from-identifier("copy")),)`,
     // after every other field (measured on 2026.09).
-    if !pd.traits.is_empty() {
-        let traits = pd
-            .traits
+    if !user_traits.is_empty() {
+        let traits = user_traits
             .iter()
             .map(|t| {
                 Value::rakuast(Box::new(RakuAstNode {
@@ -3469,6 +3508,24 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     Ok(node)
 }
 
+/// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`
+/// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`
+/// pseudo-type is a nominal type here, the way rakudo's `.AST` shows it.
+pub(super) fn type_capture_name(pd: &ParamDef) -> Option<&str> {
+    pd.captured_type_name().filter(|_| {
+        !pd.type_constraint.as_deref().is_some_and(is_pseudo_type) || pd.type_capture.is_some()
+    })
+}
+
+/// `::?CLASS`, `::?ROLE`, `::?PACKAGE`, with an optional smiley.
+fn is_pseudo_type(t: &str) -> bool {
+    let base = t
+        .strip_suffix(":D")
+        .or_else(|| t.strip_suffix(":U"))
+        .unwrap_or(t);
+    matches!(base, "::?CLASS" | "::?ROLE" | "::?PACKAGE")
+}
+
 /// The built-in parameter traits that take no argument.
 fn is_parameter_is_trait(name: &str) -> bool {
     matches!(name, "copy" | "rw" | "raw" | "readonly")
@@ -3477,7 +3534,7 @@ fn is_parameter_is_trait(name: &str) -> bool {
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
 /// richer capture spellings need more internal metadata and remain deferred.
-fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     if name.is_empty()
         || !name
             .chars()
@@ -3491,7 +3548,7 @@ fn type_capture_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
+pub(super) fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
     RakuAstField {
         name: Some("type-captures"),
         value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(type_capture))]),
@@ -3523,36 +3580,6 @@ fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstN
             node_field(Some("target"), target),
             leaf_field(Some("slurpy"), slurpy),
         ],
-    })
-}
-
-/// A named parameter `:$x` -> `Parameter(type => Type::Setting(Any),
-/// names => ("x",), target => ParameterTarget::Var)`. Named params are optional
-/// by default, so no `optional`/`default` field is emitted.
-fn named_parameter(
-    sigil: &str,
-    desigil: &str,
-    type_setting: bool,
-) -> Result<RakuAstNode, RuntimeError> {
-    let target = RakuAstNode {
-        class: RakuAstClass::ParameterTargetVar,
-        fields: vec![leaf_field(
-            Some("name"),
-            Value::str(format!("{sigil}{desigil}")),
-        )],
-    };
-    let mut fields = Vec::new();
-    if type_setting {
-        fields.push(node_field(Some("type"), type_setting_any()));
-    }
-    fields.push(RakuAstField {
-        name: Some("names"),
-        value: RakuAstFieldValue::List(vec![Value::str(desigil.to_string())]),
-    });
-    fields.push(node_field(Some("target"), target));
-    Ok(RakuAstNode {
-        class: RakuAstClass::Parameter,
-        fields,
     })
 }
 
@@ -3606,6 +3633,13 @@ fn sigilless_target(parameter: &mut RakuAstNode, name: &str) {
 
 /// `Type::Setting.new(Name.from-identifier("Any"))` — the implicit default type
 /// carried by every sub/method-signature parameter.
+/// The type rakudo gives an untyped parameter: `Type::Setting(Any)` on a
+/// scalar (or sigilless) routine parameter, nothing on an `@`/`%`/`&` one or
+/// on a block's.
+pub(super) fn implicit_parameter_type(sigil: &str, type_setting: bool) -> Option<RakuAstNode> {
+    (type_setting && sigil == "$").then(type_setting_any)
+}
+
 fn type_setting_any() -> RakuAstNode {
     let name = RakuAstNode {
         class: RakuAstClass::Name,
@@ -3640,8 +3674,11 @@ fn simple_parameter(
     // `Type::Setting(Any)` that untyped sub/method params carry.
     match type_constraint {
         Some(tc) => fields.push(node_field(Some("type"), build_type_node(tc)?)),
-        None if type_setting => fields.push(node_field(Some("type"), type_setting_any())),
-        None => {}
+        None => {
+            if let Some(implicit) = implicit_parameter_type(sigil, type_setting) {
+                fields.push(node_field(Some("type"), implicit));
+            }
+        }
     }
     fields.push(node_field(Some("target"), target));
     match default {

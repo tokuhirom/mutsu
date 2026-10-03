@@ -3,6 +3,11 @@ use crate::symbol::Symbol;
 
 impl Compiler {
     pub(super) fn compile_expr_unary(&mut self, op: &TokenKind, expr: &Expr) {
+        if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
+            && self.compile_incdec_through_ternary(expr, op.clone(), false)
+        {
+            return;
+        }
         // Constant folding (ADR-0006 §2.1): `-1` / `-(2 * 3)` collapse to one
         // LoadConst instead of a LoadConst + Negate pair.
         if let Some(folded) = self.try_const_fold_unary(op, expr) {
@@ -103,13 +108,22 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreIncrement(name_idx, slot));
-                } else if let Expr::Index { target, index, .. } = expr {
+                } else if let Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                } = expr
+                {
                     if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));
-                        self.code
-                            .emit(OpCode::PreIncrementIndex(name_idx, target_slot));
+                        self.code.emit(OpCode::PreIncrementIndex(
+                            name_idx,
+                            target_slot,
+                            *is_positional,
+                        ));
                     } else {
                         // Nested index (e.g. ++$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, true);
@@ -171,13 +185,22 @@ impl Compiler {
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::PreDecrement(name_idx, slot));
-                } else if let Expr::Index { target, index, .. } = expr {
+                } else if let Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                    ..
+                } = expr
+                {
                     if let Some(name) = self.postfix_index_name(target) {
                         self.compile_expr(index);
                         let target_slot = self.local_map.get(&name).copied();
                         let name_idx = self.code.add_constant(Value::str(name));
-                        self.code
-                            .emit(OpCode::PreDecrementIndex(name_idx, target_slot));
+                        self.code.emit(OpCode::PreDecrementIndex(
+                            name_idx,
+                            target_slot,
+                            *is_positional,
+                        ));
                     } else {
                         // Nested index (e.g. --$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, false);

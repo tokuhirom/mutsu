@@ -34,6 +34,7 @@ pub(crate) mod profile;
 pub(crate) mod qualified;
 pub(crate) mod qualified_tail_index;
 mod rakuast;
+pub(crate) mod regex_code_nested;
 pub(crate) mod regex_qq_atoms;
 pub(crate) mod regex_tree;
 #[cfg(feature = "native")]
