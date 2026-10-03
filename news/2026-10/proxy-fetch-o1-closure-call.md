@@ -14,3 +14,10 @@ chain. Env effects are still thrown away after the read. With the issue's
 repro, 5000 reads take 0.017s at L=250 and 0.018s at L=1000. Before the change
 they took 0.175s and 0.441s. The `~~ Proxy RHS vs frame locals` case in
 `scripts/vm-complexity-check.sh` is now flat.
+
+The switch exposed a separate bug. An anonymous `method` called through its
+code value (`$m(self)`) took its private-method caller from whatever method
+called it, not from the package it was declared in. The interpreter carrier
+had pushed such a call as a block frame, which hid the bug. Only a direct VM
+call showed it. `private_calling_package` now treats an anonymous routine
+frame like a closure block, so the package the code was written in wins.
