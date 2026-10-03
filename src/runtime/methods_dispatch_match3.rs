@@ -51,7 +51,7 @@ impl Interpreter {
                         ));
                     }
                     if matches!(name.as_str(), "site" | "home" | "vendor" | "perl" | "core")
-                        && let Some(dir) = Self::default_repo_dir(&name)
+                        && let Some(dir) = self.default_repo_dir(&name)
                     {
                         let mut new_args = vec![Value::pair(
                             "prefix".to_string(),
