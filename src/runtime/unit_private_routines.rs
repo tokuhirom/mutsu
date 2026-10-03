@@ -446,6 +446,10 @@ impl Interpreter {
         if self.import_scope_stack.is_empty() {
             return false;
         }
+        // `current_unit` only: the frame-based anchor falls back to the
+        // importer's file for a grammar action or a closure frame, which would
+        // match the importer's own scope -- where a module loaded inside it
+        // recorded its *own* imports (`Cro::Iri`'s `decode-percents`).
         let unit = self.current_unit;
         let packages = self.bare_name_packages_syms();
         self.import_scope_stack.iter().any(|scope| {
@@ -489,15 +493,24 @@ impl Interpreter {
     /// the name-keyed resolution caches, which are not keyed by unit.
     #[inline]
     pub(crate) fn is_unit_scoped_routine_name(&self, name: &str) -> bool {
-        if self.unit_private_names.is_empty() {
+        if self.unit_private_names.is_empty()
+            && self.module_visibility.module_routine_providers.is_empty()
+        {
             return false;
         }
-        Symbol::lookup(name).is_some_and(|s| self.unit_private_names.contains(&s))
+        Symbol::lookup(name).is_some_and(|s| self.is_unit_scoped_routine_sym(s))
     }
 
-    /// [`Self::is_unit_scoped_routine_name`] for an already-interned name.
+    /// [`Self::is_unit_scoped_routine_name`] for an already-interned name. A
+    /// module's own `our sub` counts too: whether it resolves depends on where
+    /// the module is merged (ADR-11136).
     #[inline]
     pub(crate) fn is_unit_scoped_routine_sym(&self, name: Symbol) -> bool {
-        !self.unit_private_names.is_empty() && self.unit_private_names.contains(&name)
+        (!self.unit_private_names.is_empty() && self.unit_private_names.contains(&name))
+            || (!self.module_visibility.module_routine_providers.is_empty()
+                && self
+                    .module_visibility
+                    .module_routine_providers
+                    .contains_key(&name))
     }
 }

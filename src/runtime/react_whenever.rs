@@ -202,7 +202,7 @@ impl Interpreter {
     /// Enter react mode: whenever blocks will register subscriptions
     /// instead of executing immediately.
     pub(crate) fn enter_react(&mut self) {
-        self.supply_emit_buffer.push(EmitFrame::default()); // Use supply_emit_buffer as react subscription storage marker
+        self.supply_emit_buffer.push(EmitFrame::react()); // Use supply_emit_buffer as react subscription storage marker
     }
 
     pub(crate) fn value_array_items(value: &Value) -> Option<Vec<Value>> {
@@ -381,6 +381,16 @@ impl Interpreter {
                 Value::int(whenever_id as i64),
             ]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
+                // A react body tapping a live supplier: its producers now wait
+                // for this react to handle what they emit (#11268).
+                if last.is_react
+                    && let ValueView::Instance { attributes, .. } = supply_val.view()
+                    && let Some(ValueView::Int(sid)) =
+                        attributes.as_map().get("supplier_id").map(Value::view)
+                    && sid > 0
+                {
+                    super::react_setup::ReactSetup::hold(&mut last.react_setup, sid as u64);
+                }
                 last.push(sub);
             } else {
                 // No registration frame: this `whenever` ran inside a

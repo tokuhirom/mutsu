@@ -109,6 +109,7 @@ impl Interpreter {
                 | "name"
                 | "shortname"
                 | "array_type"
+                | "set_array_type"
                 | "set_name"
                 | "ver"
                 | "auth"

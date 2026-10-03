@@ -303,10 +303,15 @@ impl Interpreter {
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,
+            // A lexical `my class P` named as the type is resolved to the
+            // storage name it is registered under while it is still in
+            // scope, so the attribute's `.type` is that type object even when
+            // introspected after the declaring scope has exited.
             type_constraint: decl
                 .type_constraint
                 .as_ref()
-                .map(|tc| tc.replace("::?CLASS", cx.name)),
+                .map(|tc| tc.replace("::?CLASS", cx.name))
+                .map(|tc| self.lexical_type_storage_name(tc)),
             where_constraint: decl.where_constraint.clone(),
             declared_shape,
             source_line: decl.decl_line,

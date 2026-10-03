@@ -147,7 +147,7 @@ impl Interpreter {
         // With a spliced prelude the answer also depends on which compunit is
         // executing (`prelude_visible_here`), which the key does not carry —
         // answer uncached then rather than leak one unit's answer into another.
-        if self.has_prelude_functions() {
+        if self.has_prelude_functions() || self.is_unit_scoped_routine_sym(name_sym) {
             return self.has_declared_function(name);
         }
         let generation = self.caches.fn_resolve_gen;

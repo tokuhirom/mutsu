@@ -70,4 +70,21 @@ impl Interpreter {
         self.native_base_bypass = saved;
         Some(result)
     }
+
+    /// When a grammar's own `method ws` (or `alpha`, `ident`, ...) defers with
+    /// `callsame`/`nextsame` and the user candidates are exhausted, the
+    /// built-in rule is the next candidate, exactly as `Match`'s method is in
+    /// Rakudo's MRO: it runs at the invocant cursor's position and answers the
+    /// advanced (or failed) cursor. `None` when the receiver is no grammar
+    /// cursor or the method is no built-in rule.
+    // Cost: O(k) for the rule's k consumed chars plus O(a) to copy the
+    // cursor's a attributes (see `grammar_builtin_rule_on_cursor`).
+    pub(super) fn native_grammar_builtin_rule_next_candidate(
+        &mut self,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let name = self.samewith_context_stack.last()?.name.clone();
+        let invocant = self.method_dispatch_stack.last()?.invocant.clone();
+        self.grammar_builtin_rule_on_cursor(&invocant, &name)
+            .map(Ok)
+    }
 }
