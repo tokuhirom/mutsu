@@ -611,15 +611,49 @@ impl Interpreter {
         // `unit module` name differs from its provided module path.
         let candidate_prefix = format!("{}::{}/", package, name);
         let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
-            self.registry()
-                .functions
-                .iter()
-                .filter_map(|(key, candidate)| {
-                    let key = key.resolve();
-                    key.strip_prefix(&candidate_prefix)
-                        .map(|suffix| (suffix.to_string(), candidate.clone()))
-                })
-                .collect()
+            // Every `{package}::{name}/…` key reduces under
+            // `function_key_base_name` to `name`'s own base (the package prefix
+            // and the `/<arity>` suffix registration writes are exactly what it
+            // strips), so the base-name index narrows the search to that one
+            // bucket instead of every registered function. A module exporting
+            // a multi family re-registers its exports once per candidate, so
+            // the full scan made loading such a module O(candidates × registry).
+            // Debug builds still run the full scan and require agreement.
+            let base_keys = self.fn_keys_for_base(&name);
+            let registry = self.registry();
+            let candidate_of = |key: &Symbol| {
+                let candidate = registry.functions.get(key)?;
+                key.as_str()
+                    .strip_prefix(candidate_prefix.as_str())
+                    .map(|suffix| (suffix.to_string(), candidate.clone()))
+            };
+            let narrowed: Vec<(String, Arc<FunctionDef>)> =
+                base_keys.iter().filter_map(candidate_of).collect();
+            #[cfg(debug_assertions)]
+            {
+                let mut full: Vec<&str> = registry
+                    .functions
+                    .keys()
+                    .filter(|key| key.as_str().starts_with(candidate_prefix.as_str()))
+                    .map(|key| key.as_str())
+                    .collect();
+                let mut seen: Vec<&str> = base_keys
+                    .iter()
+                    .filter(|key| {
+                        key.as_str().starts_with(candidate_prefix.as_str())
+                            && registry.functions.contains_key(key)
+                    })
+                    .map(|key| key.as_str())
+                    .collect();
+                full.sort_unstable();
+                seen.sort_unstable();
+                assert_eq!(
+                    seen, full,
+                    "fn_keys_for_base index missed a multi candidate of \
+                     {candidate_prefix:?} in register_exported_sub"
+                );
+            }
+            narrowed
         } else {
             Vec::new()
         };

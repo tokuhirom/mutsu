@@ -48,9 +48,9 @@ fn collect_use_declared_type_names(
             i += 1;
             continue;
         }
-        let rest: String = bytes[i..bytes.len().min(i + 8)].iter().collect();
         let Some(kw) = DECLARATORS.iter().find(|kw| {
-            rest.starts_with(**kw) && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
+            chars_start_with(&bytes[i..], kw)
+                && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
         }) else {
             i += 1;
             continue;
@@ -73,6 +73,14 @@ fn collect_use_declared_type_names(
     }
     collect_source_constant_names(&bytes, out);
     crate::parser::source_declares_export_hook(&source)
+}
+
+/// Whether `chars` begins with the ASCII keyword `kw`, compared in place: the
+/// declarator scan above tries five keywords at every source position, so it
+/// must not build a `String` per position to ask.
+// Cost: O(k), k = keyword length.
+fn chars_start_with(chars: &[char], kw: &str) -> bool {
+    kw.len() <= chars.len() && kw.bytes().zip(chars).all(|(b, &c)| c == char::from(b))
 }
 
 /// Record the `constant NAME = ...;` names a used module's source declares.

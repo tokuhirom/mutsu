@@ -5233,11 +5233,7 @@ pub(crate) fn compiled_routine_metadata(
     // `RoutineBodyFacts::uses_return_rw`).
     let _ = (is_rw, is_raw);
     let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
-        let body_shape = format!("{body:?}");
-        (
-            body_shape.contains("ArrayVar(\"_\")"),
-            body_shape.contains("HashVar(\"_\")"),
-        )
+        crate::ast_visit::legacy_arg_reads(body)
     } else {
         (false, false)
     };
