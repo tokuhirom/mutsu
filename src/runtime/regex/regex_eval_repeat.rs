@@ -279,10 +279,10 @@ impl Interpreter {
         // string comparison missed) now is reported.
         let snapshot: HashMap<Symbol, Value> =
             self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
-        let saved_in_block = self.in_regex_code_block;
-        self.in_regex_code_block = true;
+        let saved_in_block = self.regex_state.in_regex_code_block;
+        self.regex_state.in_regex_code_block = true;
         let eval_result = self.eval_block_value_cached(stmts, cache_id);
-        self.in_regex_code_block = saved_in_block;
+        self.regex_state.in_regex_code_block = saved_in_block;
         // Record changed env variables as pending local updates for the outer VM
         for (k, v) in &self.env {
             let rebound = snapshot.get(k).is_none_or(|old| !old.same_binding(v));
@@ -393,7 +393,7 @@ impl Interpreter {
         // anyway would deep-copy shared `Arc` nodes through `make_mut` (each is
         // already in `REDUCED_SUBRULES` and/or a `snapshot()`) to leave them
         // byte-identical. Such grammars are the overwhelming majority.
-        if self.grammar_rule_dynvar_decls.is_empty() {
+        if self.regex_state.grammar_rule_dynvar_decls.is_empty() {
             return;
         }
         // Children first, so an outer declaration is in force while the matches
@@ -461,11 +461,11 @@ impl Interpreter {
         rule_name: Option<&str>,
         recorded: &crate::runtime::RegexVarMap,
     ) -> (Vec<String>, super::regex_dynparams::SavedDynParams) {
-        if self.grammar_rule_dynvar_decls.is_empty() {
+        if self.regex_state.grammar_rule_dynvar_decls.is_empty() {
             return (Vec::new(), Vec::new());
         }
         let Some(decls) = rule_name
-            .and_then(|r| self.grammar_rule_dynvar_decls.get(r))
+            .and_then(|r| self.regex_state.grammar_rule_dynvar_decls.get(r))
             .cloned()
         else {
             return (Vec::new(), Vec::new());
