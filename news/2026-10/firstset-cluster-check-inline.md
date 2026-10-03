@@ -1,4 +1,4 @@
-# The scan prefilter's cluster-start check no longer calls out per rejected position
+# A first-set scan reads each character once again
 
 The negated-class grapheme fix (#10875) taught `FirstSet::admits_at` to offer
 the engine every position that starts a multi-codepoint grapheme cluster,
@@ -8,20 +8,24 @@ per-position reject path of every prefiltered scan — and the deterministic
 bench series showed it: `bench-regex-long-subject` +20% Ir and
 `bench-regex-split-subst` +11% (#11145).
 
-`admits_at` now looks at the next codepoint first. When it is ASCII, or there is
-none, nothing can extend `chars[i]` (no ASCII codepoint is a mark, ZWJ or other
-extender), so the only multi-codepoint cluster that can start there is `\r\n`,
-answered by one comparison. `grapheme_end` is asked only when a non-ASCII
-codepoint follows. The answer is unchanged in every case; new tests pin the
-CRLF cluster against a negated class without `\n` and an ASCII base followed by
-a mark.
+Asked one position at a time, the question needs a look ahead at every rejected
+position. Asked as a scan, it does not: only a non-ASCII character can extend
+the cluster of the character before it, and `\r\n` is the one cluster made of
+ASCII alone. The new `FirstSet::find_admitted` is the loop of the `FirstChar`
+and `Inner` scans. It tests each ASCII character against the bitmap with `\r`
+added, so a rejected `\r` reaches the exact check. On meeting a non-ASCII
+character it looks back once at the ASCII position before it. A rejected ASCII
+position therefore costs one load and a bit test again. A unit test pins
+`find_admitted` against position-by-position `admits_at` over every subject of
+up to four characters, in every window. New TAP cases pin the CRLF cluster
+against a negated class and an ASCII base followed by a mark.
 
-Measured with `scripts/bench-det.sh` against current `main`:
-`bench-regex-long-subject` 86.45M → 73.12M Ir, `bench-regex-split-subst`
-477.73M → 442.74M Ir; `grapheme_end` itself drops from 99.4M to 2.2M Ir on the
-latter's callgrind profile.
+Measured with `scripts/bench-det.sh` on the same `main`:
 
-For scale, the same `main` with the cluster check deleted outright (the
-pre-#10875 behaviour, wrong on clusters) measures 70.51M and 436.58M: the
-correct check now costs 2.6M and 6.2M Ir instead of 15.9M and 41.2M, about 85%
-of the regression recovered.
+| benchmark | before | after | check deleted (wrong on clusters) |
+| --- | ---: | ---: | ---: |
+| bench-regex-long-subject | 87.10M | 71.68M | 71.16M |
+| bench-regex-split-subst | 478.38M | 437.79M | 437.22M |
+
+The correct check now costs 0.5M Ir and 0.6M Ir on these two benchmarks,
+instead of 15.9M and 41.2M.
