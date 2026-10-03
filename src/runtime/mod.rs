@@ -790,6 +790,7 @@ mod methods_grammar_method_start;
 mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
+pub(crate) mod module_merge;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
@@ -899,6 +900,7 @@ mod quanthash_subclass;
 pub(crate) mod raku_cycle_guards;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
+pub(crate) mod react_setup;
 pub(crate) mod react_whenever;
 mod receiver_class;
 pub(crate) mod regex;
@@ -949,6 +951,7 @@ mod repl_compiler_prelude;
 mod require_stub;
 pub(crate) mod resolution;
 pub(crate) mod resolution_caches;
+mod resolution_call_by_name;
 mod resolution_call_sub;
 mod resolution_deferral;
 mod resolution_eval;
@@ -2371,32 +2374,10 @@ pub struct Interpreter {
     /// blocks, and a script's own top-level `unit module`, never populate
     /// this table, so they are never mistakenly gated).
     pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
-    /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
-    /// module, the top-level package names (same first-segment granularity
-    /// as `package_declaring_units`) it is therefore entitled to reference
-    /// package-qualified — e.g. `use OuterConst;` grants `"OuterConst"`, but
-    /// NOT `"InnerConst"` even though `OuterConst.rakumod` itself `use`d
-    /// `InnerConst`: rakudo installs a `use`d package into the *importing*
-    /// compunit's `MY::` only, so visibility does not transit through a
-    /// second `use`. `Interpreter::qualified_name_visible_here` walks the
-    /// `EVAL` parent chain (`eval_unit_parent`) from the executing unit
-    /// consulting this table, exactly as `prelude_visible_here` does for
-    /// prelude splices.
-    pub(crate) compunit_visible_packages: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
-    /// The package names one module's FIRST load granted to its importer
-    /// (`compunit_visible_packages`), keyed by the module name — its own
-    /// name, the `unit module`/`unit class` package it declares, every type
-    /// it registered under that prefix, and each of their top-level
-    /// `::`-segments.
-    ///
-    /// A re-`use` of an already-loaded module never re-runs that load, so it
-    /// cannot recompute the set; without replaying it, the second importer
-    /// only ever learns the module's own name. That is invisible while the
-    /// declared package matches the file name, and fatal when it does not:
-    /// `Acme/Cow.rakumod` says `unit module Cow;`, so a script whose first
-    /// load came from an `EVAL` (`Test`'s `use-ok`) reached `Cow::cow` only
-    /// through a grant its own `use Acme::Cow;` never made.
-    pub(crate) module_granted_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
+    /// Which module declarations resolve where: the #7797 package grants and
+    /// ADR-11136's GLOBAL-merge provenance and merges
+    /// (`runtime::module_merge::ModuleVisibility`).
+    pub(crate) module_visibility: module_merge::ModuleVisibility,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
@@ -4965,9 +4946,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
-    /// The compilation unit whose code opened this scope (`current_unit` at
-    /// the push). An import made here shadows that unit's own top-level
-    /// routines, but not another unit's (#11103).
+    /// The compilation unit whose code opened this scope
+    /// (`executing_unit_sym_for_module_load` at the push). An import made here
+    /// shadows that unit's own top-level routines, but not another unit's
+    /// (#11103), and a `need`/`use` it runs merges into it (ADR-11136).
     pub(crate) unit: Symbol,
 }
 

@@ -5,9 +5,12 @@ impl Interpreter {
     /// running. Nested module loads push their own name, so the outer module
     /// does not accidentally claim a dependency's declarations.
     pub(crate) fn record_module_owned_type(&mut self, name: &str) {
+        self.release_foreign_provenance(name);
         let Some(module) = self.module_load_stack.last().cloned() else {
             return;
         };
+        crate::runtime::cow_table_mut(&mut self.module_visibility.module_declared_types)
+            .insert(name.to_string());
         crate::runtime::cow_table_mut(&mut self.module_owned_types)
             .entry(module)
             .or_default()
@@ -89,7 +92,7 @@ impl Interpreter {
                 scope_classes,
                 imported_env_aliases: self.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
-                unit: self.current_unit,
+                unit: self.executing_unit_sym_for_module_load(),
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -134,7 +137,14 @@ impl Interpreter {
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
         let alias = Symbol::intern(&format!("{package}::{name}"));
-        if let Some(top) = self.import_scope_stack.last_mut() {
+        // Only the importing compunit's own scope owns the import: a module
+        // loaded while the importer's block is open records its own `use`s on
+        // that block's scope otherwise, and the block then shadows the module's
+        // private copy of the routine (`Cro::Iri`'s `decode-percents`).
+        let importer = self.executing_unit_sym_for_module_load();
+        if let Some(top) = self.import_scope_stack.last_mut()
+            && top.unit == importer
+        {
             top.own_routine_imports.insert(alias);
         }
         std::sync::Arc::make_mut(&mut self.imported_routine_aliases).insert(alias);
@@ -263,7 +273,8 @@ impl Interpreter {
     /// removing any entries added since the push.
     /// The class registry keys an import scope's rollback keeps: everything
     /// registered before the scope, every `A::B`-qualified class (a loaded
-    /// module's own, see below), every type minted at run time by
+    /// module's own, see below), every class a module's body declared
+    /// (`module_declared_types`, ADR-11136), every type minted at run time by
     /// `new_type` (`persistent_classes`), and -- transitively -- every class
     /// one of those names as a parent. The last rule is what keeps
     /// `sub f { use Base; my $c := ....new_type(...); $c.^add_parent(Base); $c }`
@@ -287,6 +298,11 @@ impl Interpreter {
                     // module closed: a later `use` re-ran the module's
                     // EXPORT, whose `P.new` then found no class.
                     || key.contains('\u{0}')
+                    // A class a module's body declared stays registered:
+                    // escaped instances and the module's own code need it, and
+                    // whether its name resolves here is the ADR-11136 gate's
+                    // call, not the registry's.
+                    || self.module_visibility.module_declared_types.contains(*key)
             })
             .cloned()
             .collect();

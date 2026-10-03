@@ -103,6 +103,14 @@ impl Interpreter {
                 "Undeclared name:\n    _ used at line 1",
             ));
         }
+        // A module's own bare declaration (`class OuterCls`, `constant C`)
+        // resolves only where that module's GLOBAL is merged: in the scope that
+        // ran its `need`/`use`, or in the module itself (ADR-11136).
+        if self.module_name_hidden_here(name) {
+            return Err(RuntimeError::undeclared_symbols(format!(
+                "Undeclared name:\n    {name} used at line 1"
+            )));
+        }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
         // on first use (runtime::repl_compiler), like `nqp::getcomp` does.
         if matches!(name, "REPL" | "Perl6::Compiler") && !self.has_class(name) {
@@ -133,6 +141,12 @@ impl Interpreter {
                 "Could not find symbol '{}'",
                 name,
             )));
+        }
+        // A leading constant that names a package is a valid qualifier
+        // (`constant E = A::B; E::Status::Started`): resolve the rest under
+        // the package it stands for, as a qualified call or `&E::f` already do.
+        if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
+            return self.push_bare_word_value(&real, compiled_fns);
         }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
