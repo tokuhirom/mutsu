@@ -1564,7 +1564,7 @@ impl Interpreter {
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
-        let package_symbols_before = self.toplevel_package_symbols.clone();
+        let package_symbols_before = self.module_toplevel.package_symbols.clone();
         // `need` withholds only the *import* into the caller's lexical
         // scope: the module's `is export` routines are still registered, so
         // its own `Mod::EXPORT::<tag>` stashes are populated as in Rakudo
@@ -1597,7 +1597,8 @@ impl Interpreter {
             // A module's top-level package-qualified symbols live off the env
             // (ADR-0084 §2 group 2), so the new ones are scanned alongside.
             let new_package_symbols = self
-                .toplevel_package_symbols
+                .module_toplevel
+                .package_symbols
                 .keys()
                 .filter(|k| !package_symbols_before.contains_key(*k));
             for key in self.env.keys().chain(new_package_symbols) {

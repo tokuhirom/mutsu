@@ -19,7 +19,7 @@
 //! frame env after `use Cro::HTTP2::RequestParser`, each one copied by every
 //! copy-on-write deep copy of that env.
 //!
-//! So such a registration goes to [`Interpreter::toplevel_callable_ids`]
+//! So such a registration goes to [`ModuleToplevel::callable_ids`]
 //! instead, a per-interpreter table that frames neither clone nor capture, and
 //! every reader asks [`Interpreter::registration_callable_id`], which consults
 //! the env first (a lexical registration shadows) and this table second.
@@ -47,6 +47,36 @@ pub(crate) struct ModuleToplevelDepth {
     block_scopes: usize,
 }
 
+/// The per-interpreter state of the module-top-level side tables (ADR-0084 §2):
+/// the tables themselves and, while a module's mainline runs, the depths it
+/// started at.
+#[derive(Clone, Default)]
+pub(crate) struct ModuleToplevel {
+    /// Registration clone ids of routines a loaded module's mainline declared
+    /// at its top level, keyed by their `__mutsu_callable_id::` marker symbol
+    /// (group 1, this module).
+    pub(crate) callable_ids: std::sync::Arc<rustc_hash::FxHashMap<Symbol, i64>>,
+    /// Package-qualified enum values a loaded module's mainline bound at its
+    /// top level (group 2, `runtime::toplevel_package_symbols`).
+    pub(crate) package_symbols: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Value>>,
+    /// The depths the executing module mainline started at, while one runs.
+    /// See [`Interpreter::run_module_mainline`].
+    pub(crate) depth: Option<ModuleToplevelDepth>,
+}
+
+impl ModuleToplevel {
+    /// A spawned thread's copy: it shares both tables copy-on-write (#7796)
+    /// but is not itself running a module mainline.
+    // Cost: O(1), two `Arc` bumps.
+    pub(crate) fn for_thread(&self) -> Self {
+        Self {
+            callable_ids: self.callable_ids.clone(),
+            package_symbols: self.package_symbols.clone(),
+            depth: None,
+        }
+    }
+}
+
 impl Interpreter {
     /// The depths the executing code sits at, comparable with a recorded
     /// [`ModuleToplevelDepth`].
@@ -60,7 +90,7 @@ impl Interpreter {
 
     /// Run a loaded module's mainline, marking its top level so the routines it
     /// registers there record their clone ids in
-    /// [`Self::toplevel_callable_ids`]. Saved and restored, so a nested module
+    /// [`ModuleToplevel::callable_ids`]. Saved and restored, so a nested module
     /// load marks its own mainline and gives the outer one back.
     // Cost: O(1) beyond `body`.
     pub(crate) fn run_module_mainline<T>(
@@ -68,9 +98,9 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         let depth = self.current_toplevel_depth();
-        let saved = self.module_toplevel_depth.replace(depth);
+        let saved = self.module_toplevel.depth.replace(depth);
         let result = body(self);
-        self.module_toplevel_depth = saved;
+        self.module_toplevel.depth = saved;
         result
     }
 
@@ -78,7 +108,7 @@ impl Interpreter {
     ///
     /// The one writer of the `__mutsu_callable_id::` marker: a registration
     /// made directly by a module's mainline goes to
-    /// [`Self::toplevel_callable_ids`]; every other one stays a lexical env
+    /// [`ModuleToplevel::callable_ids`]; every other one stays a lexical env
     /// entry.
     // Cost: O(|package| + |name|) for the memoized key lookup, plus one
     // amortized O(1) insert (a copy-on-write table clone, O(t), only while a
@@ -92,7 +122,7 @@ impl Interpreter {
             // it in place rather than leave a stale id in front.
             && !self.env.contains_key_sym(key)
         {
-            crate::runtime::cow_table_mut(&mut self.toplevel_callable_ids).insert(key, id);
+            crate::runtime::cow_table_mut(&mut self.module_toplevel.callable_ids).insert(key, id);
             return;
         }
         self.env.insert_sym_noting(key, Value::int(id));
@@ -102,7 +132,8 @@ impl Interpreter {
     /// the depths it started at (see [`Self::run_module_mainline`]).
     // Cost: O(1).
     pub(crate) fn at_module_toplevel(&self) -> bool {
-        self.module_toplevel_depth
+        self.module_toplevel
+            .depth
             .is_some_and(|depth| depth == self.current_toplevel_depth())
     }
 
@@ -113,7 +144,7 @@ impl Interpreter {
     pub(crate) fn registration_callable_id(&self, key: Symbol) -> Option<i64> {
         match self.env().get_sym(key) {
             Some(v) => v.as_int(),
-            None => self.toplevel_callable_ids.get(&key).copied(),
+            None => self.module_toplevel.callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
     }

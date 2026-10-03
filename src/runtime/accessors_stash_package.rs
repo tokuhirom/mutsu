@@ -168,7 +168,8 @@ impl Interpreter {
         // A module's top-level package-qualified symbols live off the env
         // (ADR-0084 §2 group 2); an env binding of the same key shadows one.
         let package_symbols = self
-            .toplevel_package_symbols
+            .module_toplevel
+            .package_symbols
             .iter()
             .filter(|(key, _)| !self.env.contains_key_sym(**key));
         for (key, val) in self.env.iter().chain(package_symbols) {

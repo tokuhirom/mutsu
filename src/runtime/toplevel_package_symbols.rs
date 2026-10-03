@@ -18,7 +18,7 @@
 //!   simply not made ([`Interpreter::qualified_identity_binding_is_redundant`]).
 //!   A `my` type (mangled storage name) or a bare short name is untouched.
 //! - An **enum value** is a value the registry does not hand out by name, so
-//!   it goes to [`Interpreter::toplevel_package_symbols`], a per-interpreter
+//!   it goes to [`ModuleToplevel::package_symbols`](super::toplevel_callable_ids::ModuleToplevel::package_symbols), a per-interpreter
 //!   table frames neither clone nor capture
 //!   ([`Interpreter::bind_package_symbol`]). The readers that resolve a
 //!   qualified name — bareword lookup, `::('…')`, the package stash and the
@@ -56,14 +56,14 @@ impl Interpreter {
     }
 
     /// Bind the package-qualified symbol `name` to `value`: in
-    /// [`Self::toplevel_package_symbols`] when a module's mainline makes the
+    /// [`ModuleToplevel::package_symbols`](super::toplevel_callable_ids::ModuleToplevel::package_symbols) when a module's mainline makes the
     /// binding directly, else in the frame env.
     // Cost: O(|name|) to intern, plus one amortized O(1) insert (a
     // copy-on-write table clone, O(t), only while a spawned thread still
     // shares the table, t = recorded symbols).
     pub(crate) fn bind_package_symbol(&mut self, name: String, value: Value) {
         if self.at_module_toplevel() && !self.env.contains_key(&name) {
-            crate::runtime::cow_table_mut(&mut self.toplevel_package_symbols)
+            crate::runtime::cow_table_mut(&mut self.module_toplevel.package_symbols)
                 .insert(Symbol::intern(&name), value);
             return;
         }
@@ -76,9 +76,11 @@ impl Interpreter {
     // Cost: O(1) when the table is empty, else O(|name|) to intern plus one
     // table probe.
     pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
-        if self.toplevel_package_symbols.is_empty() {
+        if self.module_toplevel.package_symbols.is_empty() {
             return None;
         }
-        self.toplevel_package_symbols.get(&Symbol::intern(name))
+        self.module_toplevel
+            .package_symbols
+            .get(&Symbol::intern(name))
     }
 }

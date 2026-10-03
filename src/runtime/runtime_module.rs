@@ -670,7 +670,7 @@ impl Interpreter {
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let role_snapshot: HashSet<String> = self.registry().roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
-        let package_symbols_before = self.toplevel_package_symbols.clone();
+        let package_symbols_before = self.module_toplevel.package_symbols.clone();
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
 
         // NativeCall loads no Raku module here (the machinery is in the VM), but
@@ -779,7 +779,8 @@ impl Interpreter {
             // A module's top-level package-qualified symbols live off the env
             // (ADR-0084 §2 group 2), so the new ones are scanned alongside.
             let new_package_symbols = self
-                .toplevel_package_symbols
+                .module_toplevel
+                .package_symbols
                 .keys()
                 .filter(|k| !package_symbols_before.contains_key(*k));
             for key in self.env.keys().chain(new_package_symbols) {

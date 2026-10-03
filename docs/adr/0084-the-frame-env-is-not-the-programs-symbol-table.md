@@ -275,7 +275,7 @@ mainline makes directly, by the same depth rule as §7.2:
   visibility gate first. A `my` type (mangled storage name), a short alias and a
   `unit module`'s own package binding are unchanged.
 - An **enum value**'s three qualified spellings (`E::K`, `Pkg::E::K`,
-  `Pkg::K`) go to a per-interpreter table, `Interpreter::toplevel_package_symbols`,
+  `Pkg::K`) go to a per-interpreter table, `Interpreter::module_toplevel.package_symbols`,
   that frames neither clone nor capture. Bareword lookup, indirect lookup, the
   package stash and the `need` hiding scans consult it after the env; a thread
   clone shares it copy-on-write.

@@ -36,7 +36,7 @@ impl Interpreter {
         let prefix = format!("{name}::");
         self.env
             .keys()
-            .chain(self.toplevel_package_symbols.keys())
+            .chain(self.module_toplevel.package_symbols.keys())
             .any(|k| k.resolve().starts_with(&prefix))
             || self
                 .registry()
@@ -491,7 +491,7 @@ impl Interpreter {
         let prefix = format!("{package}::");
         self.env
             .keys()
-            .chain(self.toplevel_package_symbols.keys())
+            .chain(self.module_toplevel.package_symbols.keys())
             .any(|k| k.starts_with(&prefix))
             || self
                 .registry()
