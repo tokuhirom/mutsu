@@ -83,6 +83,21 @@ impl Interpreter {
         Some(boxed)
     }
 
+    /// The pending hoist cell `slot` already holds, if any: a second hoisted
+    /// sub reading the same not-yet-declared variable must share the first
+    /// one's cell, or the first is left holding a cell no declaration adopts.
+    // Cost: O(p), p = pending hoist cells.
+    pub(super) fn pending_hoist_cell_at(&self, slot: usize) -> Option<Value> {
+        let cur = self.locals.get(slot)?;
+        let ValueView::ContainerRef(cell) = cur.view() else {
+            return None;
+        };
+        self.hoist_pending_cells
+            .iter()
+            .any(|p| Gc::ptr_eq(&p.cell, &cell))
+            .then(|| cur.clone())
+    }
+
     /// Before a declaration's store into `slot`: take the pending hoist cell
     /// the slot still holds, if any.
     // Cost: O(p), p = pending hoist cells (sub calls that precede a free

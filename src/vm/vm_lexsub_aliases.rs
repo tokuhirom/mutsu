@@ -100,9 +100,14 @@ impl Interpreter {
             // declaration then replaces. Seed the cell the declaration adopts
             // instead (#9911's mechanism, `vm_hoist_capture_cells.rs`).
             let seeded = match a.var_slot {
-                Some(slot) if plan.hoist_seed_slots.contains(&slot) => {
+                Some(slot)
+                    if plan.hoist_seed_slots.contains(&slot)
+                        && !code.param_locals.contains(&a.var)
+                        && !a.var.as_str().starts_with(['@', '%', '&']) =>
+                {
                     let name = a.var.resolve();
-                    self.seed_hoist_capture_cell(slot as usize, &name, "")
+                    self.pending_hoist_cell_at(slot as usize)
+                        .or_else(|| self.seed_hoist_capture_cell(slot as usize, &name, ""))
                 }
                 _ => None,
             };
