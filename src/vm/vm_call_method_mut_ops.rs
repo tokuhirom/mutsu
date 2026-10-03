@@ -642,6 +642,11 @@ impl Interpreter {
             self.stack.push(weight);
             return Ok(());
         }
+        if let Some(failure) = self.exception_failure_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "Failure");
+            self.stack.push(failure);
+            return Ok(());
+        }
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched
