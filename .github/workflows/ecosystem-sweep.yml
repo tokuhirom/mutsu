@@ -115,9 +115,10 @@ on:
         default: pull-request
         options: [pull-request, branch, none]
 
+# Read-only by default: the `sweep` shards run third-party distributions'
+# test suites and must hold no write token. Only `collect` writes.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 # Never run two sweeps at once: they would race the same records, and the second
 # one to finish would land a mixture. Queue instead of cancelling -- a cancelled
@@ -140,6 +141,8 @@ jobs:
       mutsu-commit: ${{ steps.plan.outputs.mutsu-commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # ~1s, and it catches a dispatch typo before a release build and 27 rakudo
       # installs. `ecosystem_common` is here too because its self-test existed
@@ -282,6 +285,8 @@ jobs:
         chunk: ${{ fromJSON(needs.build.outputs.chunks) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download the mutsu binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -447,6 +452,13 @@ jobs:
       && needs.sweep.result != 'cancelled' && needs.sweep.result != 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # The App key lives in the `release` environment, which only `main` (and
+    # `v*` tags) may deploy to, so a sweep dispatched from another branch
+    # stops here instead of handing that branch's workflow the key.
+    environment: release
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       # A pull request opened with the default GITHUB_TOKEN does not start CI --
       # GitHub suppresses workflow triggers from it. The repo already has an App
@@ -458,12 +470,16 @@ jobs:
         with:
           client-id: ${{ vars.TAGPR_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAGPR_APP_PRIVATE_KEY }}
+          # Push the records branch, open the PR and enable auto-merge -- not
+          # the App's whole installation scope (it is a ruleset bypass actor).
+          permission-contents: write
+          permission-pull-requests: write
 
       # `ref: main` deliberately, not the dispatch-time commit: a corpus sweep
       # runs for over an hour and main moves under it, so the records are
       # assembled on top of whatever main is NOW. `fetch-depth: 0` is what lets
       # `ecosystem-ci.py apply` order two commits with `merge-base`.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked] -- this job pushes with the persisted App token
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
           ref: main

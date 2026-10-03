@@ -4,7 +4,9 @@
 # mutsu's home page, not a WebAssembly demo").
 name: Deploy the site to GitHub Pages
 
-on:
+# `workflow_run` is safe here: the build checks out `main` itself and consumes
+# nothing (no artifact, no output) from the run that triggered it.
+on: # zizmor: ignore[dangerous-triggers]
   # EVERY push to main deploys, with no `paths:` filter. This job used to build
   # the wasm playground from source, which is why it was narrowed to the files
   # that change the site itself; it does not any more — the interpreter comes
@@ -68,10 +70,9 @@ on:
     types: [completed]
   workflow_dispatch:
 
+# Only the `deploy` job writes (Pages + the OIDC token deploy-pages needs).
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: "pages"
@@ -94,6 +95,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -103,6 +106,11 @@ jobs:
         run: |
           npm install --prefix tmp/pages-package --ignore-scripts --no-audit --no-fund \
             @tokuhirom/mutsu@latest
+          # The playground serves this package to every visitor, so check the
+          # registry signature and the provenance attestation npm trusted
+          # publishing attaches (release.yml, `release` environment) before
+          # deploying it.
+          (cd tmp/pages-package && npm audit signatures)
           mkdir -p site/pkg
           cp -R tmp/pages-package/node_modules/@tokuhirom/mutsu/. site/pkg/
           node -e 'const p = require("./site/pkg/package.json"); console.log(`using ${p.name}@${p.version}`)'
@@ -192,6 +200,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

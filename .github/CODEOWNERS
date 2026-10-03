@@ -1,0 +1,29 @@
+# Paths whose changes need the maintainer's review before they merge
+# (docs/security.md, "CI, release and agents"). They are the control surface
+# of CI, releases and agent sessions: a change here runs with repository
+# secrets, publishes artifacts, or changes what every future agent session
+# is told to do, so it must not land by auto-merge alone.
+#
+# The ruleset for `main` enforces this with "Require review from Code
+# Owners". Everything not listed here keeps the ordinary auto-merge flow.
+
+# Workflows, their helper scripts, this file and dependabot.
+/.github/                         @tokuhirom
+
+# Agent configuration: the session-start hook runs in every remote session,
+# settings.json grants tool permissions, and the instructions steer every
+# agent.
+/.claude/                         @tokuhirom
+/.agents/                         @tokuhirom
+/AGENTS.md                        @tokuhirom
+/docs/security.md                 @tokuhirom
+
+# Scripts that run inside privileged CI jobs: the npm publish job (OIDC
+# publish rights) and the ecosystem sweep's `collect` job (the App token),
+# plus the classifier that decides whether CI builds at all.
+/scripts/build-npm-package.sh     @tokuhirom
+/scripts/prepare-npm-package.mjs  @tokuhirom
+/scripts/ecosystem-ci.py          @tokuhirom
+/scripts/ecosystem-sweep.py       @tokuhirom
+/scripts/ecosystem_common.py      @tokuhirom
+/scripts/ci-docs-only.sh          @tokuhirom
