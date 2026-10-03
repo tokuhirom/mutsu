@@ -91,3 +91,28 @@ Of the PR run's ~40 runner-minutes, the two largest jobs that do not decide whet
 - **Merging `debug-tap` into `test-check`.** Saves one job slot and setup, but `debug-tap` builds at
   `opt-level=1` and `test-check` at 0, so the two builds share little; the gain is ~2-3 runner-minutes
   against ~8 for moving the job post-merge.
+
+## Amendment (2026-10-03): `build` folds into `test-suites`
+
+`ci.yml`'s `build` job compiled the release binary and handed it to the other jobs as an artifact.
+That paid off while three jobs consumed it (`test-suites`, `gc-stress`, `jit-stress`). After
+ADR-10738 moved the stress jobs to `stress.yml`, `test-suites` was the only consumer, and it already
+waited for `build` (`needs: build`). So the split bought no parallelism. It cost a second runner
+slot per run, the artifact upload and download, and the queue wait between the two jobs: 7.5
+minutes on run 37125005503 (`build` finished 13:18:30, `test-suites` started 13:26:00).
+
+`test-suites` now builds the binary itself (same toolchain, `ci-linux-release` rust-cache key, mold,
+`CARGO_PROFILE_RELEASE_DEBUG=false`) and runs the suites on it. A compile failure shows as a red
+`test-suites` at its "Build (release)" step. The `test` aggregator no longer lists `build`; `build`
+was never a required check. `stress.yml` keeps its own shared build job, because it has two
+consumers.
+
+## Outcome (first hours, 2026-10-03)
+
+- PR runs went from ~33 to 14-19 minutes of wall clock, and jobs on the 18:43 run on `main`
+  started within seconds of being queued.
+- GitHub's `schedule` trigger fired far less often than its cron asked for. Between the merge at
+  14:34 and 21:42 UTC, the hourly CI and Bench crons each fired once, and the two-hourly Pages cron
+  fired once. The existing three-hourly `claim-label` cron shows the same 4-6 h spacing. In
+  practice, the post-merge cadence is best-effort, roughly every 4-5 hours. The run that did fire
+  worked as designed: diff base resolved, `wasm-e2e`, `debug-tap` and Miri green, caches saved.
