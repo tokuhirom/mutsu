@@ -161,7 +161,10 @@ pub(crate) fn named_sub_lvalue_assign_expr(
     // Evaluate it and assign to the value it yields instead, as for any other
     // non-routine expression: a container is written through, anything else
     // dies with X::Assignment::RO naming the value (#9811).
-    if name.starts_with("__mutsu_") {
+    //
+    // An `nqp::` op is no routine either: `nqp::atposref_i(@a, 0) = 5` runs the
+    // op and writes through the container it returns (#11451).
+    if name.starts_with("__mutsu_") || name.starts_with("nqp::") {
         return callable_lvalue_assign_expr(
             Expr::Call {
                 name: Symbol::intern(&name),
