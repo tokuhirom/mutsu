@@ -1278,6 +1278,30 @@ call counts under backtracking, the cursor the method writes). The same file pas
 `MUTSU_RX_DIFF=1`. Found on the way: a user type named `Cursor` resolves to `Match`
 ([#11705](https://github.com/tokuhirom/mutsu/issues/11705)).
 
+### Slice E, nineteenth part: lookarounds run on the compiled engine
+
+The `lookaround` walk leaf goes. Until now, `<?before …>` / `<!after …>` compiled to a `CapAtom`
+that called the walk's single-candidate matcher. The walk armed its inline-vars seed (the
+enclosing `:my` lexicals) and asked the compiled engine for the body. When the enclosing regex
+had lexicals, that nested run hit `context:inline-regex-vars` and the body was walked whole. All
+34 of those declines in the survey came from lookarounds.
+
+The new `Look` op runs the body as a nested run of its own program (`rx_run_seeded`). The body
+gets a seed that carries the enclosing level's `:my` lexicals and nothing else. Rakudo's
+lookaround is a cursor of its own: its `$/` starts where it is tried and holds none of the
+enclosing captures, and its code reads and writes the enclosing lexicals. A lookahead takes the
+body's first match. A lookbehind tries each candidate start from `lookbehind_start_floor` up to
+the cursor, until a match ends there. The op is zero-width. When the lookaround passes, it files
+the lexicals the body's code wrote; the body's captures are dropped. A `:m` body still goes
+through the walk's entry, which maps the mark-stripped subject (`rx_try_ignoremark`).
+
+Survey (`t/grammar`, `t/regex`, `t/modules`, debug build): leaf `lookaround` 779 → 0, walked
+`context:inline-regex-vars` 34 → 0. `walked` now holds only `context:ltm-declarative` 20,
+`context:vm-off` 3 and `ignoremark-no-target` 2. `t/regex/regex-lookaround-compiled-op.t` pins
+rakudo's values. Under `MUTSU_RX_DIFF=1`, the same 16 files fail on this branch and on `main`,
+each with the same first disagreement. Found on the way: a code block in a regex with no captures
+reads the previous statement's `$0` ([#11740](https://github.com/tokuhirom/mutsu/issues/11740)).
+
 ### Reproducing §2
 
 ```raku

@@ -17,7 +17,7 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Run one capture op at `pos`: the new position, or `None` on failure.
-    /// Only `CapAtom` can fail or move the cursor.
+    /// Only `CapAtom` can move the cursor; it and `Look` can fail.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_capture_op(
         &mut self,
@@ -114,6 +114,58 @@ impl Interpreter {
                 )?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
+            }
+            // Cost: one run of the body for a lookahead; for a lookbehind,
+            // one per candidate start (at most the body's longest match
+            // back), until one ends at `pos`.
+            RxOp::Look(i) => {
+                let RegexAtom::Lookaround {
+                    pattern,
+                    negated,
+                    is_behind,
+                } = &program.atoms[i as usize]
+                else {
+                    unreachable!("a Look op names a lookaround");
+                };
+                let body = super::rx_entry::program_for(pattern)
+                    .expect("a compiled lookaround's body compiles");
+                let vars = levels.top().caps().regex_vars_shared().cloned();
+                // The body is a cursor of its own (rakudo): its `$/` starts
+                // where it does and holds none of the enclosing captures, but
+                // its code reads and writes the enclosing `:my` lexicals.
+                let run = |interp: &mut Interpreter, from: usize, end: Option<usize>| {
+                    let mut seed = RegexCaptures {
+                        match_from: from,
+                        ..Default::default()
+                    };
+                    seed.set_regex_vars_shared(vars.clone());
+                    interp
+                        .rx_run_seeded(body, chars, from, pkg, end, Some(seed))
+                        .map(|(_, caps)| caps)
+                };
+                let found = if *is_behind {
+                    // A start earlier than `pos` minus the most the body can
+                    // consume cannot end at `pos` (#7576).
+                    let floor =
+                        super::super::regex_lookbehind::lookbehind_start_floor(pattern, chars, pos);
+                    (floor..=pos).find_map(|from| run(self, from, Some(pos)))
+                } else {
+                    run(self, pos, None)
+                };
+                match (found, *negated) {
+                    (Some(mut inner), false) => {
+                        // A lookaround publishes no captures, but the writes its
+                        // code made to the enclosing `:my` lexicals are real.
+                        let written = inner.take_regex_vars();
+                        if !written.is_empty() {
+                            let mut delta = RegexCaptures::default();
+                            delta.extend_regex_vars(written);
+                            levels.edit(|s| s.merge_delta(delta));
+                        }
+                    }
+                    (None, true) => {}
+                    _ => return None,
+                }
             }
             // Cost: O(1) amortized to merge the delta, plus `regex_code_atom`'s
             // own cost (one run of the user's code).

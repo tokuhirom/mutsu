@@ -868,6 +868,7 @@ impl Interpreter {
                     | RxOp::DropCapture
                     | RxOp::CloseCapture { .. }
                     | RxOp::CapAtom(_)
+                    | RxOp::Look(_)
                     | RxOp::Code(_)
                     | RxOp::VarDecl(_)
                     | RxOp::Named { .. }
