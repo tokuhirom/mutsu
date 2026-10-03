@@ -82,13 +82,25 @@ fn starts_with_quote_adverb(rest: &str) -> bool {
 }
 
 /// Whether the quote-language construct that `input` opens with is shadowed by
-/// a declared symbol of the same name, and so must be parsed as a term instead.
+/// a declared symbol of the same name, or is the autoquoted key of a pair, and
+/// so must be parsed as a term instead.
 ///
 /// `input` must start at the quote construct's *name* (`Q…`, `q…`, `s…`, ...).
+///
+/// An identifier followed by `=>` (horizontal whitespace between allowed) is
+/// always a pair key in Raku, so `s=>1`, `tr=>4` and `q=>5` never open a quote
+/// with `=` as its delimiter -- which would otherwise succeed whenever a later
+/// `=` on the line closes it.
 pub(crate) fn quote_lang_shadowed(input: &str) -> bool {
     let len = leading_ident_len(input);
     if len == 0 {
         return false;
+    }
+    if input[len..]
+        .trim_start_matches([' ', '\t'])
+        .starts_with("=>")
+    {
+        return true;
     }
     // An adverb makes this unambiguously the quote language, declaration or not.
     if starts_with_quote_adverb(&input[len..]) {
@@ -110,6 +122,15 @@ mod tests {
         assert_eq!(leading_ident_len("/a/"), 0);
         assert_eq!(leading_ident_len(""), 0);
         assert_eq!(leading_ident_len("_x1;"), 3);
+    }
+
+    #[test]
+    fn fat_arrow_key_is_never_a_quote() {
+        assert!(quote_lang_shadowed("s=>1, m=>2"));
+        assert!(quote_lang_shadowed("tr =>4, q=>5"));
+        assert!(quote_lang_shadowed("qq\t=> 1"));
+        assert!(!quote_lang_shadowed("s=a=b="));
+        assert!(!quote_lang_shadowed("q{=>}"));
     }
 
     #[test]
