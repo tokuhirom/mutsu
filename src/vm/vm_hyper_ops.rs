@@ -25,7 +25,7 @@ impl Interpreter {
         //     topic value itself.
         // A smartmatch RHS (`$x ~~ tr///`) writes through to the matched
         // variable, so it is never blocked here.
-        if !non_destructive && !self.in_smartmatch_rhs {
+        if !non_destructive && !self.topic_state.in_smartmatch_rhs {
             let mixin_ro = matches!(
                 target.view(),
                 ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_topic_ro__")
@@ -58,13 +58,13 @@ impl Interpreter {
 
         // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
         // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
-        if !non_destructive || self.in_smartmatch_rhs {
+        if !non_destructive || self.topic_state.in_smartmatch_rhs {
             self.env_mut().insert("_".to_string(), translated_value);
         }
         // Signal to the smartmatch handler that this is a transliterate result
         // so it returns the result directly (as StrDistance) instead of comparing.
-        if self.in_smartmatch_rhs {
-            self.transliterate_in_smartmatch = true;
+        if self.topic_state.in_smartmatch_rhs {
+            self.topic_state.transliterate_in_smartmatch = true;
         }
         // tr/// (destructive) returns a StrDistance object holding both the
         // original and the transliterated string; it stringifies to `after`.

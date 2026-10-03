@@ -167,7 +167,7 @@ impl Interpreter {
                 qq_result: false,
             });
             self.env.insert("_".to_string(), topic);
-            self.regex_topic_pinned += 1;
+            self.topic_state.regex_topic_pinned += 1;
         }
         Some(saved)
     }
@@ -228,7 +228,8 @@ impl Interpreter {
         let Some(saved) = saved else { return };
         for b in saved {
             if b.pins_topic {
-                self.regex_topic_pinned = self.regex_topic_pinned.saturating_sub(1);
+                self.topic_state.regex_topic_pinned =
+                    self.topic_state.regex_topic_pinned.saturating_sub(1);
             }
             if b.qq_result {
                 Self::end_regex_qq_thunk();

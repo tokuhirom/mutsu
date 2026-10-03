@@ -353,7 +353,7 @@ impl Interpreter {
         let rhs_start = lhs_end;
         let rhs_end = rhs_end as usize;
 
-        if self.in_smartmatch_rhs {
+        if self.topic_state.in_smartmatch_rhs {
             let lhs_pattern = self.eval_expr_range(code, lhs_start, lhs_end, compiled_fns)?;
             let rhs_pattern = self.eval_expr_range(code, rhs_start, rhs_end, compiled_fns)?;
             let scope = self.flip_flop_scope_key();

@@ -299,14 +299,14 @@ impl Interpreter {
     // Cost: O(1) amortized (one set probe, plus one env probe and a name copy
     // the first time this scope sees `name`).
     pub(crate) fn save_lexical_type_binding_for_scope_exit(&mut self, name: &str) {
-        let Some(scope) = self.loop_local_saved_env.last() else {
+        let Some(scope) = self.topic_state.loop_local_saved_env.last() else {
             return;
         };
         if scope.contains_key(name) {
             return;
         }
         let prev = self.env().get(name).cloned();
-        if let Some(scope) = self.loop_local_saved_env.last_mut() {
+        if let Some(scope) = self.topic_state.loop_local_saved_env.last_mut() {
             scope.insert(name.to_string(), prev);
         }
     }

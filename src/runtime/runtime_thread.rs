@@ -39,6 +39,7 @@ impl Interpreter {
                 // spawns each hold their own value
                 // (todo/deep/concurrent-for-loop-siblings-...).
                 if self
+                    .topic_state
                     .active_loop_param_names
                     .iter()
                     .any(|s| s.contains(bare))
@@ -685,7 +686,7 @@ impl Interpreter {
             why_cache: ValueMap::default(),
             why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
-            when_matched: Box::new(std::cell::Cell::new(false)),
+            topic_state: self.topic_state.fork_for_thread(),
             async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
             // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
@@ -915,20 +916,6 @@ impl Interpreter {
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
             frame_owned: Vec::new(),
-            in_smartmatch_rhs: false,
-            transliterate_in_smartmatch: false,
-            substitution_in_smartmatch: false,
-            regex_topic_pinned: 0,
-            last_topic_value: None,
-            topic_save_stack: Vec::new(),
-            topic_source_save_stack: Vec::new(),
-            container_ref_var: None,
-            container_ref_reversed: false,
-            topic_source_var: None,
-            topic_container_source: None,
-            element_source: None,
-            quanthash_bind_params: Vec::new(),
-            for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             stack_check_countdown: 0,
             control_handlers: Vec::new(),
@@ -987,14 +974,7 @@ impl Interpreter {
             native_base_bypass: None,
             user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: crate::runtime::ScopeStack::new(),
-            given_pointy_capture_slots: Vec::new(),
-            given_pointy_captured: Vec::new(),
-            loop_local_vars: crate::runtime::ScopeStack::new(),
-            active_loop_param_names: crate::runtime::ScopeStack::new(),
-            active_loop_rw_param_names: crate::runtime::ScopeStack::new(),
             constant_var_names_seen: rustc_hash::FxHashSet::default(),
-            loop_local_saved_env: crate::runtime::ScopeStack::new(),
-            loop_cond_active: false,
             outer_scope_locals: Vec::new(),
             enter_result_stack: Vec::new(),
             pending_alias_bind_names: Vec::new(),

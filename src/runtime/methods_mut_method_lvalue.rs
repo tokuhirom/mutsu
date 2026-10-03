@@ -653,7 +653,7 @@ impl Interpreter {
                 // (set by the for-loop). Weight 0 removes the key; a non-numeric
                 // Str coercion raises X::Str::Numeric. An immutable Bag/Mix/Set
                 // falls through to the read-only guard below.
-                if let Some(source) = self.topic_source_var.clone()
+                if let Some(source) = self.topic_state.topic_source_var.clone()
                     && matches!(
                         self.env.get(&source).map(Value::view),
                         Some(

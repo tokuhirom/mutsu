@@ -277,8 +277,8 @@ impl Interpreter {
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let chunk_mode = !spec.multi_param_names.is_empty();
-        let saved_topic_source = self.topic_source_var.take();
-        let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
+        let saved_topic_source = self.topic_state.topic_source_var.take();
+        let saved_quanthash_bind = std::mem::take(&mut self.topic_state.quanthash_bind_params);
         // The tagged source name plus its compile-time-baked local slot (§1.5):
         // the slot lets the topic writeback target the exact `locals` slot when
         // shadow slots are active (a shadowed name occupies several slots and
@@ -330,8 +330,8 @@ impl Interpreter {
                     | Some(ValueView::Bag(_, true))
             )
         });
-        let container_reversed = self.container_ref_reversed;
-        self.container_ref_reversed = false;
+        let container_reversed = self.topic_state.container_ref_reversed;
+        self.topic_state.container_ref_reversed = false;
         // ADR-0045 slice 6: a multi-parameter rw loop binds through the
         // bind-prefix `MarkBind` declarations, which read out of the CHUNK. So
         // the source's elements must be promoted before the chunk is built —
@@ -615,7 +615,7 @@ impl Interpreter {
         // see `todo/deep/for-loop-var-shared-across-nested-closure-captures.md`).
         // Reuses the exact name set just pushed for `active_loop_param_names`
         // (ADR-0023), so this is additive bookkeeping, not a new computation.
-        if let Some(set) = self.loop_local_vars.last_mut() {
+        if let Some(set) = self.topic_state.loop_local_vars.last_mut() {
             set.extend(loop_param_names.iter().map(|n| Symbol::intern(n)));
         }
         // Determine if the implicit topic ($_) should be read-only.
@@ -1017,7 +1017,7 @@ impl Interpreter {
             // weight would clobber the MixHash/BagHash. The per-element
             // `write_back_quanthash_value_item` handles that source, so suppress
             // the whole-topic writeback here.
-            self.topic_source_var =
+            self.topic_state.topic_source_var =
                 if writes_back_topic && !(spec.values_mode && source_mutable_quant) {
                     container_binding.clone()
                 } else {
@@ -1130,7 +1130,7 @@ impl Interpreter {
             // `%`-sigil for-loop bindings preserve a QuantHash value (and keep
             // its type across a `%a = ...pairs` reset) instead of coercing it to
             // a plain Hash — Raku binds params, it does not assign-coerce them.
-            self.quanthash_bind_params = spec
+            self.topic_state.quanthash_bind_params = spec
                 .multi_param_names
                 .iter()
                 .chain(param_name.iter())
@@ -1562,8 +1562,8 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        self.topic_source_var = saved_topic_source;
-                        self.quanthash_bind_params = saved_quanthash_bind;
+                        self.topic_state.topic_source_var = saved_topic_source;
+                        self.topic_state.quanthash_bind_params = saved_quanthash_bind;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
                         self.unmask_for_params(&masked_params);
@@ -1678,7 +1678,7 @@ impl Interpreter {
                 // restore the binding now, as the body-error path does.
                 self.restore_saved_for_param(entry);
             } else {
-                self.for_param_restore_stack.push(entry);
+                self.topic_state.for_param_restore_stack.push(entry);
             }
         }
         self.pop_loop_local_scope(code);
@@ -1699,8 +1699,8 @@ impl Interpreter {
         {
             self.locals[slot] = val;
         }
-        self.topic_source_var = saved_topic_source;
-        self.quanthash_bind_params = saved_quanthash_bind;
+        self.topic_state.topic_source_var = saved_topic_source;
+        self.topic_state.quanthash_bind_params = saved_quanthash_bind;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(e) = pull_error {
             return Err(e);

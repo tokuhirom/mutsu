@@ -98,7 +98,7 @@ impl Interpreter {
                 } => {
                     self.async_state.gather_for_loop_resume = inner.map(|b| *b);
                     self.async_state.gather_resume_body_ip = resume_body_ip;
-                    self.container_ref_var = container_binding
+                    self.topic_state.container_ref_var = container_binding
                         .map(|(name, slot)| (name, slot, Self::resume_code_fp(code)));
                     let _ = self.exec_for_loop_body(
                         code,
@@ -534,6 +534,7 @@ impl Interpreter {
             && !spec.zero_positional_params
             && spec.source_var_names.is_empty()
             && self
+                .topic_state
                 .container_ref_var
                 .as_ref()
                 .is_none_or(|(_, _, fp)| *fp != Self::resume_code_fp(code))

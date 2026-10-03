@@ -354,13 +354,14 @@ impl Interpreter {
         // scope and be restored (clobbered) at the caller's loop exit. Repro:
         // `sub f($n){ my $r=0; my @w=(1,); while @w.splice { f($n-1) if $n>0; $r+=10 }; $r }`
         // returned 0 instead of 10. Restored on every exit path.
-        let saved_loop_local_vars = self.loop_local_vars.push_frame();
-        let saved_loop_local_saved_env = self.loop_local_saved_env.push_frame();
+        let saved_loop_local_vars = self.topic_state.loop_local_vars.push_frame();
+        let saved_loop_local_saved_env = self.topic_state.loop_local_saved_env.push_frame();
         // ADR-0023: isolate the caller's active-loop-param stack the same way
         // (mirrors vm_call_fast.rs) — this path also bypasses
         // `with_nested_registers`.
-        let saved_active_loop_param_names = self.active_loop_param_names.push_frame();
-        let saved_active_loop_rw_param_names = self.active_loop_rw_param_names.push_frame();
+        let saved_active_loop_param_names = self.topic_state.active_loop_param_names.push_frame();
+        let saved_active_loop_rw_param_names =
+            self.topic_state.active_loop_rw_param_names.push_frame();
         // Isolate the caller's block-scope `my`-declaration tracking (mirrors the
         // loop-local isolation above). Without this, the callee's routine-level
         // `my $x` — which runs before the callee enters any of its own blocks —
@@ -593,12 +594,17 @@ impl Interpreter {
                 }
             }
             self.locals.pop_frame(saved_locals_base);
-            self.loop_local_vars.pop_frame(saved_loop_local_vars);
-            self.loop_local_saved_env
+            self.topic_state
+                .loop_local_vars
+                .pop_frame(saved_loop_local_vars);
+            self.topic_state
+                .loop_local_saved_env
                 .pop_frame(saved_loop_local_saved_env);
-            self.active_loop_param_names
+            self.topic_state
+                .active_loop_param_names
                 .pop_frame(saved_active_loop_param_names);
-            self.active_loop_rw_param_names
+            self.topic_state
+                .active_loop_rw_param_names
                 .pop_frame(saved_active_loop_rw_param_names);
             self.block_declared_vars
                 .pop_frame(saved_block_declared_vars);
@@ -975,12 +981,17 @@ impl Interpreter {
                 self.stack.truncate(saved_stack_depth.min(self.stack.len()));
                 self.cur_source_line = saved_line;
                 self.locals.pop_frame(saved_locals_base);
-                self.loop_local_vars.pop_frame(saved_loop_local_vars);
-                self.loop_local_saved_env
+                self.topic_state
+                    .loop_local_vars
+                    .pop_frame(saved_loop_local_vars);
+                self.topic_state
+                    .loop_local_saved_env
                     .pop_frame(saved_loop_local_saved_env);
-                self.active_loop_param_names
+                self.topic_state
+                    .active_loop_param_names
                     .pop_frame(saved_active_loop_param_names);
-                self.active_loop_rw_param_names
+                self.topic_state
+                    .active_loop_rw_param_names
                     .pop_frame(saved_active_loop_rw_param_names);
                 self.block_declared_vars
                     .pop_frame(saved_block_declared_vars);
@@ -1029,12 +1040,17 @@ impl Interpreter {
 
         self.cur_source_line = saved_line;
         self.locals.pop_frame(saved_locals_base);
-        self.loop_local_vars.pop_frame(saved_loop_local_vars);
-        self.loop_local_saved_env
+        self.topic_state
+            .loop_local_vars
+            .pop_frame(saved_loop_local_vars);
+        self.topic_state
+            .loop_local_saved_env
             .pop_frame(saved_loop_local_saved_env);
-        self.active_loop_param_names
+        self.topic_state
+            .active_loop_param_names
             .pop_frame(saved_active_loop_param_names);
-        self.active_loop_rw_param_names
+        self.topic_state
+            .active_loop_rw_param_names
             .pop_frame(saved_active_loop_rw_param_names);
         self.block_declared_vars
             .pop_frame(saved_block_declared_vars);

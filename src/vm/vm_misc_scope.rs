@@ -624,7 +624,7 @@ impl Interpreter {
         self.push_lexical_class_scope();
         self.push_enum_scope();
         let stack_base = self.stack.len();
-        let topic_before = self.last_topic_value.clone();
+        let topic_before = self.topic_state.last_topic_value.clone();
         let end_phaser_mark_before = self.end_phaser_capture_mark();
         // If ENTER died, skip the body but still run LEAVE phasers
         let mut body_result = if let Err(e) = enter_result {
@@ -634,8 +634,8 @@ impl Interpreter {
         };
         let body_value = if self.stack.len() > stack_base {
             self.stack.last().cloned()
-        } else if self.last_topic_value != topic_before {
-            self.last_topic_value.clone()
+        } else if self.topic_state.last_topic_value != topic_before {
+            self.topic_state.last_topic_value.clone()
         } else {
             None
         };
@@ -677,7 +677,11 @@ impl Interpreter {
         // Set $! to the exception if the body threw one
         if post_start < end {
             let post_topic = match &body_result {
-                Ok(()) => self.last_topic_value.clone().unwrap_or(Value::NIL),
+                Ok(()) => self
+                    .topic_state
+                    .last_topic_value
+                    .clone()
+                    .unwrap_or(Value::NIL),
                 Err(e) => e.return_value.clone().unwrap_or(Value::NIL),
             };
             self.env_mut().insert("_".to_string(), post_topic.clone());

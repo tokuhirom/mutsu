@@ -51,7 +51,7 @@ impl Interpreter {
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let chunk_mode = !spec.multi_param_names.is_empty();
-        let saved_topic_source = self.topic_source_var.take();
+        let saved_topic_source = self.topic_state.topic_source_var.take();
         let saved_topic_readonly = self.readonly_kind("_");
 
         // A multi-param loop binds through `$_`; the body's bind statements
@@ -158,7 +158,7 @@ impl Interpreter {
                 }
                 _ => item,
             };
-            self.topic_source_var = None;
+            self.topic_state.topic_source_var = None;
             if param_name.is_none() {
                 self.set_loop_topic(topic_local, chunk_mode, item.clone());
             }
@@ -306,7 +306,7 @@ impl Interpreter {
                             self.unmark_readonly(name);
                         }
                         self.restore_topic_readonly(saved_topic_readonly);
-                        self.topic_source_var = saved_topic_source;
+                        self.topic_state.topic_source_var = saved_topic_source;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         return Err(e);
                     }
@@ -333,7 +333,7 @@ impl Interpreter {
             self.unmark_readonly(name);
         }
         self.restore_topic_readonly(saved_topic_readonly);
-        self.topic_source_var = saved_topic_source;
+        self.topic_state.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));
@@ -377,7 +377,7 @@ impl Interpreter {
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let chunk_mode = !spec.multi_param_names.is_empty();
-        let saved_topic_source = self.topic_source_var.take();
+        let saved_topic_source = self.topic_state.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         // ADR-0052 Slice 1: unconditional base, truncated after every iteration.
         let stack_base = self.stack.len();
@@ -528,7 +528,7 @@ impl Interpreter {
         {
             self.unmark_readonly(name);
         }
-        self.topic_source_var = saved_topic_source;
+        self.topic_state.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));

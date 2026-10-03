@@ -76,14 +76,14 @@ impl Interpreter {
         for v in &self.upvalues {
             visit_opt(visitor, v);
         }
-        visit_opt(visitor, &self.last_topic_value);
-        visit_slice(visitor, &self.topic_save_stack);
-        if let Some((_, path)) = &self.element_source {
+        visit_opt(visitor, &self.topic_state.last_topic_value);
+        visit_slice(visitor, &self.topic_state.topic_save_stack);
+        if let Some((_, path)) = &self.topic_state.element_source {
             for (v, _) in path {
                 visitor.visit_value(v);
             }
         }
-        for (_, v, _) in &self.for_param_restore_stack {
+        for (_, v, _) in &self.topic_state.for_param_restore_stack {
             visit_opt(visitor, v);
         }
         for frame in &self.call_frames {
@@ -135,7 +135,7 @@ impl Interpreter {
         // executing call's scope frames, and every suspended caller below it
         // holds live values in its own loop-local saves. Reading through the
         // window would free them while the program still needs them.
-        for map in self.loop_local_saved_env.all_frames() {
+        for map in self.topic_state.loop_local_saved_env.all_frames() {
             // A `None` entry is a removal marker (the name did not exist before
             // the loop), so it roots nothing.
             for v in map.values().flatten() {

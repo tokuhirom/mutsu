@@ -3403,7 +3403,7 @@ impl Interpreter {
         }
         if name == "_"
             && !Self::is_topic_ro_assignment(&val)
-            && let Some(ref source_var) = self.topic_source_var
+            && let Some(ref source_var) = self.topic_state.topic_source_var
             && !source_var.starts_with('@')
             && !source_var.starts_with('%')
         {
@@ -3537,15 +3537,16 @@ impl Interpreter {
         // `has_coherent_slot` false regardless — so the env read and the O(locals)
         // coherence scan below are pure waste on all but the first iteration.
         let already_loop_local = self
+            .topic_state
             .loop_local_vars
             .last()
             .is_some_and(|s| s.contains(&name_sym));
-        let prev_env_value = if self.loop_cond_active || already_loop_local {
+        let prev_env_value = if self.topic_state.loop_cond_active || already_loop_local {
             None
         } else {
             self.env().get_sym(name_sym).cloned()
         };
-        if !self.loop_cond_active && !already_loop_local && prev_env_value.is_none() {
+        if !self.topic_state.loop_cond_active && !already_loop_local && prev_env_value.is_none() {
             // The name did not exist before this body-local declaration, so there
             // is nothing to *restore* — but the entry this `my` is about to create
             // must not outlive the block either. Record a removal marker.
@@ -3565,13 +3566,13 @@ impl Interpreter {
             let is_body_local =
                 !code.local_slots_of(name_sym).is_empty() && !code.is_state_name(name);
             if is_body_local
-                && let Some(saved) = self.loop_local_saved_env.last_mut()
+                && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
             {
                 saved.insert(name.to_string(), None);
             }
         }
-        if !self.loop_cond_active
+        if !self.topic_state.loop_cond_active
             && !already_loop_local
             && let Some(prev) = prev_env_value
         {
@@ -3605,7 +3606,7 @@ impl Interpreter {
                 })
             });
             if has_coherent_slot
-                && let Some(saved) = self.loop_local_saved_env.last_mut()
+                && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
             {
                 saved.insert(name.to_string(), Some(prev));
@@ -3635,6 +3636,7 @@ impl Interpreter {
                 || reset == crate::opcode::DeclReset::Fresh
                     && had_binding
                     && self
+                        .topic_state
                         .loop_local_vars
                         .last()
                         .is_some_and(|set| set.contains(&name_sym));
@@ -3677,7 +3679,7 @@ impl Interpreter {
         }
         // Track loop-body declarations so a closure created in the body can mark
         // this name as a per-iteration `owned_capture` (see Interpreter::loop_local_vars).
-        if let Some(set) = self.loop_local_vars.last_mut() {
+        if let Some(set) = self.topic_state.loop_local_vars.last_mut() {
             set.insert(name_sym);
         }
     }

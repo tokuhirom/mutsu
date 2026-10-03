@@ -1196,7 +1196,7 @@ impl Interpreter {
         self.propagate_sigilless_alias_chain(code, name, slot.map(|s| s as usize), &new_val);
         // Write back to source variable when the target is `$_` bound to a container.
         if name == "_"
-            && let Some(ref source_var) = self.topic_source_var
+            && let Some(ref source_var) = self.topic_state.topic_source_var
             && !source_var.starts_with('@')
             && !source_var.starts_with('%')
         {
