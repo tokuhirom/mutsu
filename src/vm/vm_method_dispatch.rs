@@ -944,6 +944,10 @@ impl Interpreter {
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
         // full rationale). Reset for the body; restore the caller's value below.
         let saved_when_matched = self.when_matched();
+        // `use fatal` -- explicit, or implied by a caller's `try` -- is lexical
+        // to where this method was declared, not the caller's state (#11391).
+        let saved_lexical_fatal_mode =
+            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1031,6 +1035,7 @@ impl Interpreter {
         // Restore the caller's `when_matched` — a bare `when` inside this method
         // body must not leak its match state to an enclosing given/with.
         self.set_when_matched(saved_when_matched);
+        self.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
@@ -2431,6 +2436,10 @@ impl Interpreter {
         // `when_matched` must not leak to an enclosing given/with (see the slow
         // path above / vm_call_light.rs for the full rationale).
         let saved_when_matched = self.when_matched();
+        // `use fatal` is lexical to the method's declaration (#11391) -- see
+        // the slow path above.
+        let saved_lexical_fatal_mode =
+            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -2514,6 +2523,7 @@ impl Interpreter {
 
         // Restore the caller's `when_matched` — see the slow path above.
         self.set_when_matched(saved_when_matched);
+        self.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {

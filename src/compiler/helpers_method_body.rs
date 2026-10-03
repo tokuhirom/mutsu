@@ -239,6 +239,7 @@ impl Compiler {
         let own_compiled_fns =
             self.import_compiled_functions(&mut cc, method_compiler.take_compiled_functions());
 
+        cc.method_fatal_pragma = self.fatal_pragma_active;
         let mut cf = CompiledFunction {
             code: cc,
             source_file: None,
