@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 6;
+plan 8;
 
 # Module resolution searches `use lib` -> `-I` -> MUTSULIB -> installed repos ->
 # bundled batteries, and nothing else (#11213). It used to also search, ahead of
@@ -64,6 +64,25 @@ sub run-script(IO::Path $script, Str $code) {
             'use lib $?FILE.IO.parent(3).add("packages/Probe11213/lib"); '
             ~ 'use Probe11213; say probe-it();'),
         'from-ancestor-packages-dir', 'an explicit `use lib` on the package still reaches it';
+}
+
+# A repository the program binds into `$*REPO` itself is searched, ahead of
+# the rest of the chain (roast's S11-modules/require.t loads Fancy::Utilities
+# this way).
+{
+    my $repo = $root.add('bound');
+    write-module($repo.add('lib'), 'Probe11213', 'from-bound-repo');
+    write-module($repo.add('lib'), 'Base64', 'from-bound-repo');
+    is run-script($root.add('elsewhere/bound.raku'),
+            'PROCESS::<$REPO> := CompUnit::Repository::FileSystem.new('
+            ~ ':next-repo($*REPO), :prefix("' ~ $repo.add('lib').absolute ~ '")); '
+            ~ 'require Probe11213 <&probe-it>; say probe-it();'),
+        'from-bound-repo', 'a FileSystem repository bound into $*REPO is searched';
+    is run-script($root.add('elsewhere/bound-first.raku'),
+            'PROCESS::<$REPO> := CompUnit::Repository::FileSystem.new('
+            ~ ':next-repo($*REPO), :prefix("' ~ $repo.add('lib').absolute ~ '")); '
+            ~ 'require Base64 <&encode-base64>; say encode-base64("hi", :str);'),
+        'from-bound-repo', 'it heads the chain, ahead of the bundled batteries';
 }
 
 sub rm-tree(IO::Path $p) {

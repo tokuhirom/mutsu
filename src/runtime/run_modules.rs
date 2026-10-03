@@ -12,6 +12,30 @@ impl Interpreter {
         let base_name = module.replace("::", "/");
         let extensions = [".rakumod", ".pm6", ".pm"];
 
+        let probe_dir = |base_path: &Path| -> Option<std::path::PathBuf> {
+            for ext in &extensions {
+                let filename = format!("{}{}", base_name, ext);
+                for candidate in [
+                    base_path.join(&filename),
+                    base_path.join("lib").join(&filename),
+                ] {
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+            Self::resolve_module_from_meta6(base_path, module)
+        };
+
+        // Repositories the program bound into `$*REPO` itself (`PROCESS::<$REPO>
+        // := CompUnit::Repository::FileSystem.new(:next-repo($*REPO), ...)`)
+        // head the chain, so they are searched first.
+        for base_path in self.bound_repo_prefixes() {
+            if let Some(candidate) = probe_dir(&base_path) {
+                return Some((candidate, None));
+            }
+        }
+
         // Walk `lib_paths` ONCE, in order. Plain directories (`use lib`, `-I`,
         // `MUTSULIB`) and installed repositories (`inst#`, appended by
         // `add_default_site_repo`) share a single precedence chain, exactly like
@@ -25,19 +49,7 @@ impl Interpreter {
                 }
                 continue; // Don't try inst# path as a filesystem path
             }
-            let base_path = Path::new(base.as_str());
-            for ext in &extensions {
-                let filename = format!("{}{}", base_name, ext);
-                for candidate in [
-                    base_path.join(&filename),
-                    base_path.join("lib").join(&filename),
-                ] {
-                    if candidate.exists() {
-                        return Some((candidate, None));
-                    }
-                }
-            }
-            if let Some(candidate) = Self::resolve_module_from_meta6(base_path, module) {
+            if let Some(candidate) = probe_dir(Path::new(base.as_str())) {
                 return Some((candidate, None));
             }
         }

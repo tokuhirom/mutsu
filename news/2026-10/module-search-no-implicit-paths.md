@@ -14,4 +14,13 @@ parser scan, so the search order is exactly `use lib` → `-I` → `MUTSULIB` �
 installed → bundled batteries. Roast files already reach `Test::Util` through
 their own `use lib $?FILE.IO.parent(2).add('packages/Test-Helpers')`.
 
-`t/modules/module-search-no-implicit-paths.t` pins both cases.
+The ancestor walk had also been hiding a real gap: roast's
+`S11-modules/require.t` installs its own repository with
+`PROCESS::<$REPO> := CompUnit::Repository::FileSystem.new(:next-repo($*REPO), :prefix(...))`
+and then `require`s from it, and that only worked because the walk happened to
+find `roast/packages/Fancy/lib`. The resolver now reads repositories the
+program binds into `$*REPO` itself off the chain and searches them first, as
+the head of the chain. The default `$*REPO` head (prefix `.`) is marked so it
+is never mistaken for one — the current directory is not a search location.
+
+`t/modules/module-search-no-implicit-paths.t` pins all three behaviours.
