@@ -304,9 +304,14 @@ impl Interpreter {
     /// object (`$*THREAD does R` inside a thread whose `.finish` the caller is
     /// waiting on), and its write lock would wait on our read lock forever.
     /// Callers pass a snapshot of the attributes instead.
+    ///
+    /// Keyed on the method alone: the joined thread may have reblessed the very
+    /// receiver (`$*THREAD does R` names it `Thread+{R}` before it seeds the
+    /// role's attributes), so a class-name test raced with that write and
+    /// deadlocked the join. A snapshot is only a copy for any other `finish`.
     // Cost: O(1).
-    pub(crate) fn native_method_blocks_on_other_thread(class_name: &str, method: &str) -> bool {
-        class_name == "Thread" && method == "finish"
+    pub(crate) fn native_method_blocks_on_other_thread(_class_name: &str, method: &str) -> bool {
+        method == "finish"
     }
 
     pub(super) fn call_native_instance_method_mut_in_place(
