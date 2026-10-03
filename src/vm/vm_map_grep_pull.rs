@@ -43,19 +43,11 @@ impl Interpreter {
         // One loop run over the whole rest: the plan is built once either
         // way, so a scratch copy of the slot costs nothing.
         let mut plan = plan.clone();
-        if let MapGrepItems::Chain(chain) = items {
-            let mut pos = *pos;
+        if matches!(items, MapGrepItems::Chain(_)) {
+            // A scratch copy, as for the plan: the chain itself is shared.
+            let mut source = source.clone();
             return self
-                .pull_map_grep_chain(
-                    func,
-                    *fatal,
-                    mode,
-                    &mut plan,
-                    items,
-                    chain,
-                    &mut pos,
-                    usize::MAX,
-                )
+                .pull_map_grep_chain(&mut source, usize::MAX)
                 .map(|(out, _)| out);
         }
         self.run_map_grep_chunk(func, *fatal, mode, &mut plan, items, *pos, items.len())
@@ -95,6 +87,13 @@ impl Interpreter {
         source: &mut SeqSource,
         needed: usize,
     ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        if let SeqSource::MapGrep {
+            items: MapGrepItems::Chain(_),
+            ..
+        } = source
+        {
+            return self.pull_map_grep_chain(source, needed);
+        }
         let SeqSource::MapGrep {
             items,
             pos,
@@ -111,10 +110,6 @@ impl Interpreter {
                 self.run_map_grep_chunk(func, *fatal, mode, plan, items, *pos, items.len())?;
             *pos = items.len();
             return Ok((out, true));
-        }
-        if let MapGrepItems::Chain(chain) = items {
-            let chain = chain.clone();
-            return self.pull_map_grep_chain(func, *fatal, mode, plan, items, &chain, pos, needed);
         }
         let mut out = Vec::new();
         while out.len() < needed && *pos < items.len() {
@@ -176,18 +171,27 @@ impl Interpreter {
     /// `pull_map_grep_prefix`) drains the upstream first and runs once.
     // Cost: one upstream pull plus one callback call per upstream element up
     // to the `needed`-th element produced.
-    #[allow(clippy::too_many_arguments)]
     fn pull_map_grep_chain(
         &mut self,
-        func: &Option<Value>,
-        fatal: bool,
-        mode: &MapGrepMode,
-        plan: &mut MapGrepPlanSlot,
-        items: &MapGrepItems,
-        chain: &crate::value::MapGrepChain,
-        pos: &mut usize,
+        source: &mut SeqSource,
         needed: usize,
     ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        let SeqSource::MapGrep {
+            items,
+            pos,
+            func,
+            fatal,
+            mode,
+            plan,
+        } = source
+        else {
+            return Ok((Vec::new(), true));
+        };
+        let MapGrepItems::Chain(chain) = items else {
+            return Ok((Vec::new(), true));
+        };
+        let chain = chain.clone();
+        let fatal = *fatal;
         if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
             while chain.extend(|source| self.pull_map_grep_prefix(source, usize::MAX))? > 0 {}
             let out = self.run_map_grep_chunk(func, fatal, mode, plan, items, *pos, items.len())?;
