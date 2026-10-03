@@ -3294,6 +3294,11 @@ impl Interpreter {
                 self.exec_capture_rw_arg_cell_op(code);
                 *ip += 1;
             }
+            // Cost: O(1).
+            OpCode::MarkReadonlyRwTail => {
+                self.exec_mark_readonly_rw_tail_op();
+                *ip += 1;
+            }
             // Cost: O(1) (attribute map probes).
             OpCode::AttrContainerRef(name_idx) => {
                 self.exec_attr_container_ref_op(code, *name_idx);

@@ -354,15 +354,6 @@ impl Interpreter {
         if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
             return assigned;
         }
-        // An ITEMIZED aggregate that reached here bare is the value a readonly
-        // `$` binding holds (`sub w($p) is rw { $p }; w(%r) = 1`): every
-        // writable `$` returns its Scalar cell and was taken above, while an
-        // `@`/`%` or sigilless tail that aliases a real aggregate is never
-        // itemized. Storing into it would write the caller's `%r` through a
-        // parameter Raku never let the routine write (#11108).
-        if Self::is_itemized_aggregate(&result) {
-            return Err(RuntimeError::readonly_variable());
-        }
         if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
             return Ok(stored);
         }
@@ -374,14 +365,18 @@ impl Interpreter {
         Err(RuntimeError::assignment_ro_value(result))
     }
 
-    /// A `$`-itemized `Hash` or `Array`: an aggregate seen through an item
-    /// binding rather than the aggregate container itself.
+    /// Refuse assigning to a routine-call result that is the aggregate its
+    /// `is rw` tail handed back through a readonly binding (see
+    /// `Interpreter::readonly_rw_tail`): `sub w($p) is rw { $p }; w(%r) = 1`
+    /// must not store into `%r` (#11108). The identity check keeps a mark
+    /// left by some inner call from refusing an unrelated result.
     // Cost: O(1).
-    fn is_itemized_aggregate(v: &Value) -> bool {
-        match v.view() {
-            ValueView::Hash(_) => v.hash_is_itemized(),
-            ValueView::Array(_, kind) => kind == crate::value::ArrayKind::ItemArray,
-            _ => false,
+    fn refuse_readonly_rw_tail(&mut self, result: &Value) -> Result<(), RuntimeError> {
+        match self.readonly_rw_tail.take() {
+            Some(tail) if crate::runtime::values_identical(&tail, result) => {
+                Err(RuntimeError::readonly_variable())
+            }
+            _ => Ok(()),
         }
     }
 
@@ -675,10 +670,12 @@ impl Interpreter {
             let rw_capable = Self::routine_is_rw_capable(&def);
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
+            self.readonly_rw_tail = None;
             let result = self.call_function(name, call_args);
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
             if rw_capable {
+                self.refuse_readonly_rw_tail(&result)?;
                 return self.assign_through_rw_result(result, value);
             }
             // Rakudo names the value the routine returned: `sub f { 10 }; f() = 3`
@@ -719,10 +716,12 @@ impl Interpreter {
                 let rw_capable = Self::sub_is_rw_capable(&data);
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
+                self.readonly_rw_tail = None;
                 let result = self.call_sub_value(Value::sub_value(data), call_args, true);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
                 if rw_capable {
+                    self.refuse_readonly_rw_tail(&result)?;
                     return self.assign_through_rw_result(result, value);
                 }
                 Err(RuntimeError::assignment_ro_value(result))

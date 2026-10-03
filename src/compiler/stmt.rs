@@ -1552,6 +1552,7 @@ impl Compiler {
                 // A body `my $x` shadowing a container-less `$x` parameter is
                 // an ordinary Scalar container again.
                 self.decont_scalar_params.remove(name.as_str());
+                self.readonly_scalar_params.remove(name.as_str());
                 // A `constant` initializer is evaluated at BEGIN (compile) time,
                 // so an uncaught exception while evaluating it surfaces as
                 // X::Comp::BeginTime (with the original exception nested). Wrap
