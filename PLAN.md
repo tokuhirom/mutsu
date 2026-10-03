@@ -94,6 +94,33 @@ and its deletion criterion.
       `native_method_row_table.rs` and the `native_call_unmodeled` counter are deleted, so rows are
       the only source of truth for both dispatch and `.^can`/`.^methods`. Progress is recorded in
       ADR-11276 §9, not here.
+- [ ] **`Interpreter` is split into subsystems, and the lower layers stop naming the upper ones** —
+      [ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md),
+      [#10779](https://github.com/tokuhirom/mutsu/issues/10779). `struct Interpreter` keeps only the
+      VM frame core and holds one type per subsystem. Each subsystem type owns its fields and states
+      its own thread policy in `fork_for_thread`. The `pending_*` side channels become explicit
+      parameters (D3). The AST, parser, `Value`, `opcode`, `Env` and the GC reach the runtime only
+      through narrow traits (D5). The field map behind the subsystem list is
+      [docs/interpreter-state-map.md](docs/interpreter-state-map.md).
+      - [x] Phase 1 — move misplaced helpers down; `make check-layer-deps` ratchet (208 → 71 upward
+            references).
+      - [x] Phase 2 — the field × file map (`scripts/interp-field-matrix.py`).
+      - [ ] Phase 3 — extract the subsystems, one per PR. `make check-interp-fields` blocks new
+            direct fields; an extraction adds `scripts/interp-fields.d/<subsystem>.txt`. Done:
+            guards, caches, regex, async, threads (and `ModuleVisibility`); 439 → 340 fields. Next:
+            io, control, topic, dispatch, lexicals, then module and types. `eval` waits on its
+            `pending_*` fields becoming parameters.
+      - [ ] Phase 4 — the crate split, a separate measured decision (ADR D7).
+      The completion criterion is reached when these are deleted:
+      - every `Interpreter` field outside the frame core and the subsystem holders;
+      - the `pending_*` handoff fields;
+      - the per-field body of `clone_for_thread`, which becomes one `fork_for_thread` call per
+        subsystem;
+      - the frozen `scripts/interp-fields-baseline.txt`
+        ([#11337](https://github.com/tokuhirom/mutsu/issues/11337));
+      - every entry of `scripts/layer-deps-baseline.txt`, so `check-layer-deps` reads 0.
+
+      Progress is recorded in ADR-10779 §Implementation status, not here.
 
 RakuAST and the regex project meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
 a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so neither
