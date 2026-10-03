@@ -513,6 +513,30 @@ impl Interpreter {
                 // The capture markers `<(` / `)>` also need the capturing path:
                 // `.comb` returns each match's `.Str`, which they narrow.
                 let has_markers = pat.contains("<(") || pat.contains(")>");
+                // `:match` hands back each Match whole, captures included
+                // (`$path.comb($rx, :match)` reading `$<var>`; Path::Map), so it
+                // takes the capturing path and builds the Matches from it.
+                if return_match {
+                    let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
+                    let result = matches
+                        .iter_mut()
+                        .map(|(_, _, caps)| {
+                            if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
+                                let ct = caps.target_or_new(&text);
+                                self.reduce_regex_captures_made(caps, Some(&ct));
+                            }
+                            Value::make_match_object_full(
+                                caps.from as i64,
+                                caps.to as i64,
+                                &caps.positional,
+                                &caps.named,
+                                caps.target_or_new(&text),
+                            )
+                            .with_match_cursor_pos(caps.narrowed_pos())
+                        })
+                        .collect::<Vec<_>>();
+                    return Some(Ok(make_seq(result)));
+                }
                 let spans: Vec<(usize, usize)> =
                     if self.has_code_block_in_prefix(&pat) || has_markers {
                         let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
@@ -535,16 +559,7 @@ impl Interpreter {
                     } else {
                         self.regex_find_all_limited(&pat, &text, max)
                     };
-                let result: Vec<Value> = if return_match {
-                    let mt = crate::runtime::MatchTarget::new(&text);
-                    spans
-                        .iter()
-                        .map(|(start, end)| Self::create_match_object(&mt, *start, *end))
-                        .collect()
-                } else {
-                    Self::char_span_strs(&text, &spans)
-                };
-                Some(Ok(make_seq(result)))
+                Some(Ok(make_seq(Self::char_span_strs(&text, &spans))))
             }
             Some(ValueView::Sub(_) | ValueView::WeakSub(_)) => Some(Err(RuntimeError::new(
                 "none of these signatures match: comb does not accept a Code argument",
@@ -590,23 +605,6 @@ impl Interpreter {
             out.push(Value::str(text[b_start..b_end].to_string()));
         }
         out
-    }
-
-    /// Create a Match object from regex match positions, sharing the call's
-    /// subject `target`.
-    // Cost: O(1): the target is shared by refcount, not copied per Match.
-    fn create_match_object(
-        target: &crate::runtime::MatchTarget,
-        start: usize,
-        end: usize,
-    ) -> Value {
-        Value::make_match_object_full(
-            start as i64,
-            end as i64,
-            &[],
-            &Default::default(),
-            target.clone(),
-        )
     }
 
     /// Dispatch trig methods on Instance values via Numeric/Bridge coercion.

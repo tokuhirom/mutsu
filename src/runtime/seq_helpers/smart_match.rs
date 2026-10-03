@@ -2086,9 +2086,15 @@ impl Interpreter {
 
     /// Check if a value is iterable (can be treated as a list in smartmatch).
     fn is_iterable(v: &Value) -> bool {
+        // A Hash is Iterable too: `List.ACCEPTS` compares its `.list`, the
+        // pairs (`%vars ~~ ()` is True for an empty hash; Path::Map).
         matches!(
             v.view(),
-            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) | ValueView::LazyList(_)
+            ValueView::Array(..)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::LazyList(_)
+                | ValueView::Hash(_)
         ) || v.is_range()
     }
 
@@ -2110,7 +2116,11 @@ impl Interpreter {
 
     /// Extract list items from a value, expanding ranges.
     fn extract_list_items(v: &Value) -> Vec<Value> {
-        if let Some(items) = v.as_list_items() {
+        if let ValueView::Hash(map) = v.view() {
+            map.iter()
+                .map(|(k, val)| map.typed_pair(k, val.clone()))
+                .collect()
+        } else if let Some(items) = v.as_list_items() {
             items.to_vec()
         } else if v.is_range() {
             Self::value_to_list(v)
