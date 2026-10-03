@@ -39,6 +39,10 @@ pub(crate) fn native_method_1arg(
     {
         return Some(result);
     }
+    // Cost: O(n), n = bytes of the invocant.
+    if method == "naive-word-wrapper" {
+        return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[arg]);
+    }
     if method == "add-statement"
         && let Some(result) = target.rakuast_add_statement(arg.clone())
     {
