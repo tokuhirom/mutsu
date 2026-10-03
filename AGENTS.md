@@ -406,6 +406,13 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    replays the branch's own commits. Above all never `git reset --soft origin/main` (or onto any ref you
    just fetched): that commits the branch's *old* tree on top of the newer `main`, and the merge
    silently reverts every PR merged in between (#10983 reverted three; #11005 restored them).
+   **Name the branch after the change**: `<type>/<issue>-<slug>` or `<type>/<slug>`, using the
+   PR-title types (`fix/11190-rakuast-callassign-initializer`, `perf/csv-map-closure`,
+   `eco/asn-grammar`). A harness-assigned name (`claude/<adjective>-<name>-<hash>`, `ccr-<hash>`)
+   says nothing in `git branch -r`, the claim comments or the PR list: before the first push,
+   create a descriptive branch from it (`git switch -c <type>/<slug>`) and work there — the
+   maintainer allows this in every session. Pick the name before claiming an issue, since the
+   `Claiming:` line carries it.
 2. Open the PR (`gh pr create` / `create_pull_request`) with a `type:` or `type(scope):` title —
    it drives the category label and release-note section. No version-bump label.
 3. Enable auto-merge with **merge**, not squash (`gh pr merge --auto --merge <n>` /
