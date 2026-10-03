@@ -100,6 +100,14 @@ impl Interpreter {
         self.env.insert_sym_noting(key, Value::int(id));
     }
 
+    /// Whether the executing code is a loaded module's mainline, directly at
+    /// the depths it started at (see [`Self::run_module_mainline`]).
+    // Cost: O(1).
+    pub(crate) fn at_module_toplevel(&self) -> bool {
+        self.module_toplevel_depth
+            .is_some_and(|depth| depth == self.current_toplevel_depth())
+    }
+
     /// The registration clone id recorded under the marker `key` (built with
     /// [`MetaNs::CallableId`]): the visible env marker, else the module
     /// top-level table. `None` when neither holds a non-zero id.
@@ -110,5 +118,15 @@ impl Interpreter {
             None => self.toplevel_callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
+    }
+
+    /// Whether binding the type object `storage` under the package-qualified
+    /// name `qualified` in the frame env would only repeat what the type
+    /// registry already answers. EXPERIMENT.
+    pub(crate) fn qualified_identity_binding_is_redundant(&self, qualified: &str, storage: &str) -> bool {
+        qualified == storage
+            && crate::runtime::utils::has_double_colon(qualified)
+            && self.at_module_toplevel()
+            && !self.env.contains_key(qualified)
     }
 }

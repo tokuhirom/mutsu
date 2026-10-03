@@ -544,6 +544,8 @@ impl Interpreter {
             // this declaration's identity, not an earlier same-named class's.
             let source_alias =
                 source_compound_name(custom_traits).filter(|alias| !self.has_type_direct(alias));
+            let skip_identity_binding =
+                self.qualified_identity_binding_is_redundant(&qualified_name, &storage_name);
             let env = self.env_mut();
             // NB: registering a type must NOT touch `$_`. A `class`/`role`
             // declaration is not an expression whose value becomes the topic,
@@ -553,10 +555,12 @@ impl Interpreter {
             // Always insert the class type object so that class names take
             // precedence over same-named `$`-sigiled variables (whose stripped
             // name may already be in the env).
-            env.insert(
-                qualified_name.clone(),
-                Value::package(Symbol::intern(&storage_name)),
-            );
+            if !skip_identity_binding {
+                env.insert(
+                    qualified_name.clone(),
+                    Value::package(Symbol::intern(&storage_name)),
+                );
+            }
             // A *nested* declared name stays reachable under the name as written,
             // too. Rakudo installs `class X::Imported::Boom` inside
             // `unit module M` into the already-existing outer `X::` package while
@@ -1203,7 +1207,8 @@ impl Interpreter {
             // See `exec_register_class_op`: a declaration does not set the topic.
             if is_mangled {
                 self.bind_lexical_role_names(&qualified_name, &source_qualified_name, &name_str);
-            } else {
+            } else if !self.qualified_identity_binding_is_redundant(&qualified_name, &qualified_name)
+            {
                 self.env_mut().insert(
                     qualified_name.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
