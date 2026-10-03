@@ -626,7 +626,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
-            if let Some(buf) = self.supply_emit_buffer.last_mut() {
+            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 return Ok(Value::NIL);
             }

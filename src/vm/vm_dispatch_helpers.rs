@@ -642,7 +642,7 @@ impl Interpreter {
     /// The block is always a plain `Sub` here (the native map path rejects
     /// assuming/compose/Routine wrappers), so only the two `Sub` fast-paths of
     /// [`Self::vm_call_on_value`] are needed. When `capture_rw_topic` is set the
-    /// block's final `$_` lands in `self.rw_map_topic_capture`.
+    /// block's final `$_` lands in `self.async_state.rw_map_topic_capture`.
     pub(super) fn vm_call_map_block(
         &mut self,
         block: &Value,

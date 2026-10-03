@@ -105,10 +105,10 @@ impl Interpreter {
             return Ok(result_items);
         }
         let saved_env = self.env.clone();
-        let saved_len = self.gather_items.len();
+        let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
-        self.gather_items.push(Vec::new());
-        self.gather_take_limits.push(None);
+        self.async_state.gather_items.push(Vec::new());
+        self.async_state.gather_take_limits.push(None);
         // The gather body is a lexical block: a `sub` declared inside it shadows
         // any same-named routine from an enclosing (or sibling) scope rather than
         // redeclaring it. Without this depth bump the routine registration would
@@ -124,11 +124,11 @@ impl Interpreter {
         let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
         self.pop_captured_samewith_context(pushed_samewith);
         self.pop_block_scope_depth();
-        let items = self.gather_items.pop().unwrap_or_default();
-        self.gather_take_limits.pop();
-        while self.gather_items.len() > saved_len {
-            self.gather_items.pop();
-            self.gather_take_limits.pop();
+        let items = self.async_state.gather_items.pop().unwrap_or_default();
+        self.async_state.gather_take_limits.pop();
+        while self.async_state.gather_items.len() > saved_len {
+            self.async_state.gather_items.pop();
+            self.async_state.gather_take_limits.pop();
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {
@@ -155,11 +155,11 @@ impl Interpreter {
         }
 
         let saved_env = self.env.clone();
-        let saved_len = self.gather_items.len();
+        let saved_len = self.async_state.gather_items.len();
         self.env = list.env.clone();
-        self.gather_items.push(Vec::new());
-        self.gather_take_limits.push(Some(needed_len));
-        self.gather_suspend_pending = false;
+        self.async_state.gather_items.push(Vec::new());
+        self.async_state.gather_take_limits.push(Some(needed_len));
+        self.async_state.gather_suspend_pending = false;
         // See `push_captured_samewith_context`.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
         // See `force_lazy_list_bridge`: restore the package the gather was
@@ -174,12 +174,12 @@ impl Interpreter {
         self.pop_captured_samewith_context(pushed_samewith);
         // Clear the deferred-suspension flag on exit — see the matching clear
         // in force_lazy_list_vm_n_inner.
-        self.gather_suspend_pending = false;
-        let mut items = self.gather_items.pop().unwrap_or_default();
-        self.gather_take_limits.pop();
-        while self.gather_items.len() > saved_len {
-            self.gather_items.pop();
-            self.gather_take_limits.pop();
+        self.async_state.gather_suspend_pending = false;
+        let mut items = self.async_state.gather_items.pop().unwrap_or_default();
+        self.async_state.gather_take_limits.pop();
+        while self.async_state.gather_items.len() > saved_len {
+            self.async_state.gather_items.pop();
+            self.async_state.gather_take_limits.pop();
         }
         let mut merged_env = saved_env;
         for (k, v) in self.env.iter() {

@@ -391,7 +391,7 @@ impl Interpreter {
                     // thread) is observable on the main thread — `supplier_done`
                     // resolves this promise, and the resolution survives the
                     // `supplier_reset` that clears the raw done flag afterward.
-                    let close_done_promise = if self.react_active > 0 {
+                    let close_done_promise = if self.async_state.react_active > 0 {
                         let p = crate::value::SharedPromise::new();
                         supplier_register_promise(emitter_supplier_id, p.clone());
                         Some(p)
@@ -1100,7 +1100,7 @@ impl Interpreter {
                         };
                     if !own_close_cbs.is_empty() {
                         let (_, emitter_done, _) = supplier_snapshot(emitter_supplier_id);
-                        if self.react_active > 0 {
+                        if self.async_state.react_active > 0 {
                             // Tapped by a nested `whenever` while a react drive
                             // loop is running (`whenever $outer { whenever $sod {} }`).
                             // Fire the `closing => { ... }` callbacks on the main
@@ -1117,11 +1117,11 @@ impl Interpreter {
                                 // once the emitter's done-signal promise resolves.
                                 // Wake the loop when that happens so it doesn't
                                 // wait out its idle cap to notice.
-                                if let Some(w) = &self.current_react_waker {
+                                if let Some(w) = &self.async_state.current_react_waker {
                                     let w = w.clone();
                                     let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
                                 }
-                                self.pending_tap_closes.push((p, own_close_cbs));
+                                self.async_state.pending_tap_closes.push((p, own_close_cbs));
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)
                                 {
@@ -1334,11 +1334,11 @@ impl Interpreter {
                         let (own_emitter, stamped) = Self::whenever_tap_emitter(&tap_cb);
                         let own_emitter = own_emitter.filter(|_| stamped);
                         if let Some(ref e) = own_emitter {
-                            self.active_supply_emitters.push(e.clone());
+                            self.async_state.active_supply_emitters.push(e.clone());
                         }
                         let tap_result = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
                         if own_emitter.is_some() {
-                            self.active_supply_emitters.pop();
+                            self.async_state.active_supply_emitters.pop();
                         }
                         drop(_react_done_handler);
                         match tap_result {

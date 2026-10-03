@@ -97,7 +97,7 @@ impl Interpreter {
             visitor.visit_value(v);
         }
         visit_slice(visitor, &self.enter_result_stack);
-        visit_opt(visitor, &self.rw_map_topic_capture);
+        visit_opt(visitor, &self.async_state.rw_map_topic_capture);
         visit_opt(visitor, &self.regex_state.action_made);
         visit_opt(visitor, &self.regex_state.current_grammar_actions);
         // ForLoopResumeState::LazyGather holds an `crate::gc::Gc<LazyList>`, not a bare
@@ -106,7 +106,7 @@ impl Interpreter {
         // `LazyList::visit_gc_children` exists.
         // Walk the whole nested-resume chain: any level may be a List holding
         // Values (see ForLoopResumeState::inner_state).
-        let mut cur = self.gather_for_loop_resume.as_ref();
+        let mut cur = self.async_state.gather_for_loop_resume.as_ref();
         while let Some(state) = cur {
             if let ForLoopResumeState::List { items, .. } = state {
                 visit_slice(visitor, items);
@@ -222,7 +222,7 @@ impl Interpreter {
         for inner in self.type_metadata.values() {
             visit_map_values(visitor, inner);
         }
-        for vec in &self.gather_items {
+        for vec in &self.async_state.gather_items {
             visit_slice(visitor, vec);
         }
         for frame in &self.block_stack {
@@ -260,19 +260,19 @@ impl Interpreter {
                 visitor.visit_value(key);
             }
         }
-        for vec in &self.supply_emit_buffer {
+        for vec in &self.async_state.supply_emit_buffer {
             visit_slice(visitor, vec);
         }
         // A marker queued here holds the whenever's source Supply and its
         // callbacks, and it is the ONLY thing holding them between the nested
         // `whenever` running and the drive loop's next round.
-        visit_slice(visitor, &self.pending_react_subscriptions);
-        for vec in &self.supply_emit_timed_buffer {
+        visit_slice(visitor, &self.async_state.pending_react_subscriptions);
+        for vec in &self.async_state.supply_emit_timed_buffer {
             for (v, _) in vec {
                 visitor.visit_value(v);
             }
         }
-        for consumer in &self.supply_stream_consumers {
+        for consumer in &self.async_state.supply_stream_consumers {
             visitor.visit_value(&consumer.consumer_cb);
         }
         // `shared_vars` is genuinely live-shared across threads (not a

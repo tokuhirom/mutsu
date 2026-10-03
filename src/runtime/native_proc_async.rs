@@ -696,8 +696,8 @@ impl Interpreter {
                 // last chunk (or the tap's `done =>`) was actually delivered.
                 //
                 // Skipped for a `whenever $p.stdout { ... }` registered inside a
-                // `react`/`supply` block (`!self.supply_emit_buffer.is_empty() ||
-                // self.react_active > 0` — the same condition
+                // `react`/`supply` block (`!self.async_state.supply_emit_buffer.is_empty() ||
+                // self.async_state.react_active > 0` — the same condition
                 // `subtest.rs`'s whenever-registration path itself checks to
                 // decide "am I in react mode"; `react_active` alone is not
                 // enough because a `whenever`'s SOURCE expression, including
@@ -727,7 +727,9 @@ impl Interpreter {
                 // for that (uncommon) case.
                 let mut live_tap_handles = Vec::new();
                 for sid in [stdout_supply_id, stderr_supply_id].into_iter().flatten() {
-                    if !self.supply_emit_buffer.is_empty() || self.react_active > 0 {
+                    if !self.async_state.supply_emit_buffer.is_empty()
+                        || self.async_state.react_active > 0
+                    {
                         continue;
                     }
                     if let Some(enc) = get_supply_enc(sid)

@@ -251,9 +251,9 @@ impl Interpreter {
         // `closing => { ... }` callbacks to this (main) thread via
         // `pending_tap_closes`, rather than firing them on an async body's
         // worker thread (see `native_supply_mut_methods` tap on-demand path).
-        self.react_active += 1;
+        self.async_state.react_active += 1;
         let result = self.drive_react_subscriptions_inner(react_subs, policy, prewired);
-        self.react_active -= 1;
+        self.async_state.react_active -= 1;
         // Fire any close callbacks whose emitter completed but was not drained
         // in-loop (e.g. the final tap's emitter finishing as the react ended).
         let _ = self.fire_ready_tap_closes();
@@ -266,14 +266,14 @@ impl Interpreter {
     /// tap. Runs both each drive-loop poll and once when the loop exits.
     /// Returns whether any callback fired.
     fn fire_ready_tap_closes(&mut self) -> Result<bool, RuntimeError> {
-        if self.pending_tap_closes.is_empty() {
+        if self.async_state.pending_tap_closes.is_empty() {
             return Ok(false);
         }
         let mut fired = false;
         let mut i = 0;
-        while i < self.pending_tap_closes.len() {
-            if self.pending_tap_closes[i].0.is_resolved() {
-                let (_, cbs) = self.pending_tap_closes.remove(i);
+        while i < self.async_state.pending_tap_closes.len() {
+            if self.async_state.pending_tap_closes[i].0.is_resolved() {
+                let (_, cbs) = self.async_state.pending_tap_closes.remove(i);
                 for cb in cbs {
                     let _ = self.call_react_callback(&cb, Vec::new());
                 }
@@ -357,7 +357,7 @@ impl Interpreter {
         }
         // Publish this loop's waker so sources wired up mid-loop (a nested
         // `whenever` tapping an async on-demand supply) can wake it too.
-        let prev_waker = self.current_react_waker.replace(waker.clone());
+        let prev_waker = self.async_state.current_react_waker.replace(waker.clone());
         // Arm any `whenever <Promise>` stand-in suppliers only now, AFTER their
         // sinks are registered. An already-resolved promise fires its arm
         // closure synchronously; before this ordering the closure's emit+done
@@ -370,7 +370,7 @@ impl Interpreter {
         let result =
             self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker, &mut sink_regs);
         drop(synchronous);
-        self.current_react_waker = prev_waker;
+        self.async_state.current_react_waker = prev_waker;
         for (sid, sink_id) in sink_regs {
             supplier_sink_unregister(sid, sink_id);
         }
@@ -409,7 +409,7 @@ impl Interpreter {
         waker: &ReactWaker,
         sink_regs: &mut Vec<(u64, u64)>,
     ) -> Result<bool, RuntimeError> {
-        if self.pending_react_subscriptions.is_empty() {
+        if self.async_state.pending_react_subscriptions.is_empty() {
             return Ok(false);
         }
         // A marker whose tap was already closed is adopted like any other: the
@@ -419,13 +419,13 @@ impl Interpreter {
         // subscription registers its sink, which replays those with their real
         // sequences; the drive loop's ordered retirement then retires it as soon
         // as it owes nothing. Dropping the marker outright discarded them.
-        let pending: Vec<Value> = std::mem::take(&mut self.pending_react_subscriptions);
+        let pending: Vec<Value> = std::mem::take(&mut self.async_state.pending_react_subscriptions);
         for marker in &pending {
             if let ValueView::Array(items, ..) = marker.view()
                 && items.len() >= 2
                 && let ValueView::Sub(data) = items[1].view()
             {
-                self.nested_react_callbacks.insert(data.id);
+                self.async_state.nested_react_callbacks.insert(data.id);
             }
         }
         let first_new = react_subs.len();
@@ -530,7 +530,12 @@ impl Interpreter {
             // the outer whenever's callback) is recorded as `StreamConsumer::done`
             // rather than propagated — `try_stream_emit` has to swallow it so the
             // emitting body can unwind. Honour it here: `done` ends the react.
-            if self.supply_stream_consumers.iter().any(|c| c.done) {
+            if self
+                .async_state
+                .supply_stream_consumers
+                .iter()
+                .any(|c| c.done)
+            {
                 break 'react_loop;
             }
             // Phase 1: deliver all queued supplier events in push (= emit)
@@ -756,7 +761,7 @@ impl Interpreter {
             // subscription is done" must not end the react while a fresh one is still
             // waiting to be adopted, or the nested whenever's source is silently
             // dropped (Cro::TCP::Connector.establish never received its response).
-            let has_pending_adoptions = !self.pending_react_subscriptions.is_empty();
+            let has_pending_adoptions = !self.async_state.pending_react_subscriptions.is_empty();
             match &policy {
                 SupplyDrivePolicy::React => {
                     if !has_pending_adoptions && (all_done || react_subs.iter().all(|s| s.done)) {

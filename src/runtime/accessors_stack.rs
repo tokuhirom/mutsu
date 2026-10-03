@@ -725,7 +725,7 @@ impl Interpreter {
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         let call_depth = self.call_frames.len();
         let routine_depth = self.routine_stack_len();
-        if let Some(items) = self.gather_items.last_mut() {
+        if let Some(items) = self.async_state.gather_items.last_mut() {
             // `take` of a Slip flattens it into the gather (`take Empty` /
             // `take slip(1,2)` add zero / two elements — Rakudo semantics);
             // every other value, including a List/Seq, is added as one element
@@ -735,7 +735,7 @@ impl Interpreter {
             } else {
                 items.push(val);
             }
-            if let Some(Some(limit)) = self.gather_take_limits.last()
+            if let Some(Some(limit)) = self.async_state.gather_take_limits.last()
                 && items.len() >= *limit
             {
                 // A take inside a routine call NESTED under the lazy-pull
@@ -753,35 +753,37 @@ impl Interpreter {
                 // only takes came from a nested call under an infinite loop
                 // (`gather { loop { self!bitmap(...) } }`, EuclideanRhythm).
                 let nested_vm_call = self
+                    .async_state
                     .lazy_pull_entry_call_depth
                     .is_some_and(|entry| call_depth > entry);
                 let nested_interpreter_call = self
+                    .async_state
                     .lazy_pull_entry_routine_depth
                     .is_some_and(|entry| routine_depth > entry);
                 if nested_vm_call || nested_interpreter_call {
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     return Ok(());
                 }
-                if self.take_defer_to_op_end {
+                if self.async_state.take_defer_to_op_end {
                     // Inside an opcode that takes once per element (`@a».take`):
                     // it cannot be resumed mid-iteration, so let it finish (its
                     // iteration is finite) and suspend at its own end
                     // (`suspend_after_take_deferring_op`). No overshoot
                     // backstop: signalling here would drop the rest of its
                     // elements (#9785).
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     return Ok(());
                 }
-                if self.lazy_take_boundary_defer {
+                if self.async_state.lazy_take_boundary_defer {
                     // Inside a condition-driven loop: defer the suspension to
                     // the loop's iteration boundary (`gather_suspend_pending`)
                     // — suspending at the take itself replays the statements
                     // between the take and the iteration end on resume. The
                     // overshoot backstop still signals here if no boundary is
                     // ever reached.
-                    self.gather_suspend_pending = true;
+                    self.async_state.gather_suspend_pending = true;
                     if items.len() >= limit.saturating_add(64) {
-                        self.gather_suspend_pending = false;
+                        self.async_state.gather_suspend_pending = false;
                         return Err(RuntimeError::new(
                             "__mutsu_lazy_gather_take_limit_reached__",
                         ));
@@ -806,45 +808,51 @@ impl Interpreter {
     /// callee's return and the gather body's own loop consumes it one boundary
     /// later.
     pub(crate) fn gather_suspend_boundary_reached(&self) -> bool {
-        if !self.gather_suspend_pending {
+        if !self.async_state.gather_suspend_pending {
             return false;
         }
         let outside_vm_call = self
+            .async_state
             .lazy_pull_entry_call_depth
             .is_none_or(|entry| self.call_frames.len() <= entry);
         let outside_interpreter_call = self
+            .async_state
             .lazy_pull_entry_routine_depth
             .is_none_or(|entry| self.routine_stack_len() <= entry);
         outside_vm_call && outside_interpreter_call
     }
 
     pub(crate) fn gather_items_len(&self) -> usize {
-        self.gather_items.len()
+        self.async_state.gather_items.len()
     }
 
     pub(crate) fn push_gather_items(&mut self, items: Vec<Value>) {
-        self.gather_items.push(items);
+        self.async_state.gather_items.push(items);
     }
 
     pub(crate) fn pop_gather_items(&mut self) -> Option<Vec<Value>> {
-        self.gather_items.pop()
+        self.async_state.gather_items.pop()
     }
 
     /// The take collector at `depth` on the gather-items stack.
     pub(crate) fn gather_items_at(&self, depth: usize) -> Option<&[Value]> {
-        self.gather_items.get(depth).map(Vec::as_slice)
+        self.async_state.gather_items.get(depth).map(Vec::as_slice)
     }
 
     pub(crate) fn current_gather_items(&self) -> Vec<Value> {
-        self.gather_items.last().cloned().unwrap_or_default()
+        self.async_state
+            .gather_items
+            .last()
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub(crate) fn push_gather_take_limit(&mut self, limit: Option<usize>) {
-        self.gather_take_limits.push(limit);
+        self.async_state.gather_take_limits.push(limit);
     }
 
     pub(crate) fn pop_gather_take_limit(&mut self) {
-        self.gather_take_limits.pop();
+        self.async_state.gather_take_limits.pop();
     }
 
     /// The package currently in scope, read out of the shared `Arc<RwLock>`
@@ -880,13 +888,13 @@ impl Interpreter {
     /// block allocator only when the block runs out.
     #[inline]
     pub(crate) fn take_invocation_id(&mut self) -> u64 {
-        if self.next_invocation_id == self.invocation_id_block_end {
+        if self.async_state.next_invocation_id == self.async_state.invocation_id_block_end {
             let base = crate::runtime::claim_invocation_id_block();
-            self.next_invocation_id = base;
-            self.invocation_id_block_end = base + crate::runtime::INVOCATION_ID_BLOCK;
+            self.async_state.next_invocation_id = base;
+            self.async_state.invocation_id_block_end = base + crate::runtime::INVOCATION_ID_BLOCK;
         }
-        let id = self.next_invocation_id;
-        self.next_invocation_id += 1;
+        let id = self.async_state.next_invocation_id;
+        self.async_state.next_invocation_id += 1;
         id
     }
 

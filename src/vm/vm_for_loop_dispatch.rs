@@ -21,7 +21,7 @@ impl Interpreter {
         // A `for` loop keeps the immediate at-take lazy suspension (its
         // positional resume state makes that exact) — see
         // `lazy_take_boundary_defer`.
-        let saved_defer = std::mem::replace(&mut self.lazy_take_boundary_defer, false);
+        let saved_defer = std::mem::replace(&mut self.async_state.lazy_take_boundary_defer, false);
         let result = if !spec.body_declares_routines {
             self.exec_for_loop_op_inner(code, spec, ip, compiled_fns)
         } else {
@@ -30,7 +30,7 @@ impl Interpreter {
             self.restore_routine_registry(snapshot);
             result
         };
-        self.lazy_take_boundary_defer = saved_defer;
+        self.async_state.lazy_take_boundary_defer = saved_defer;
         result
     }
 
@@ -56,10 +56,11 @@ impl Interpreter {
         // the slot so the nested loop op reached during the replay resumes too.
         let this_code_id = code.ops.as_ptr() as usize;
         if self
+            .async_state
             .gather_for_loop_resume
             .as_ref()
             .is_some_and(|s| s.code_id() == Some(this_code_id) && s.loop_ip() == Some(*ip))
-            && let Some(resume) = self.gather_for_loop_resume.take()
+            && let Some(resume) = self.async_state.gather_for_loop_resume.take()
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
@@ -72,8 +73,8 @@ impl Interpreter {
                     inner,
                     ..
                 } => {
-                    self.gather_for_loop_resume = inner.map(|b| *b);
-                    self.gather_resume_body_ip = resume_body_ip;
+                    self.async_state.gather_for_loop_resume = inner.map(|b| *b);
+                    self.async_state.gather_resume_body_ip = resume_body_ip;
                     self.exec_for_loop_int_range(
                         code,
                         spec,
@@ -95,8 +96,8 @@ impl Interpreter {
                     inner,
                     ..
                 } => {
-                    self.gather_for_loop_resume = inner.map(|b| *b);
-                    self.gather_resume_body_ip = resume_body_ip;
+                    self.async_state.gather_for_loop_resume = inner.map(|b| *b);
+                    self.async_state.gather_resume_body_ip = resume_body_ip;
                     self.container_ref_var = container_binding
                         .map(|(name, slot)| (name, slot, Self::resume_code_fp(code)));
                     let _ = self.exec_for_loop_body(
@@ -119,8 +120,8 @@ impl Interpreter {
                     inner,
                     ..
                 } => {
-                    self.gather_for_loop_resume = inner.map(|b| *b);
-                    self.gather_resume_body_ip = resume_body_ip;
+                    self.async_state.gather_for_loop_resume = inner.map(|b| *b);
+                    self.async_state.gather_resume_body_ip = resume_body_ip;
                     self.exec_for_loop_lazy_gather_from(
                         code,
                         spec,
