@@ -44,7 +44,9 @@ fn collect_use_declared_type_names(
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
-        if i > 0 && is_ident(bytes[i - 1]) {
+        // Every declarator starts with one of these; reject other positions on
+        // one comparison before the (Unicode) identifier-boundary test.
+        if !matches!(bytes[i], 'c' | 'r' | 'g' | 'e' | 's') || (i > 0 && is_ident(bytes[i - 1])) {
             i += 1;
             continue;
         }
@@ -98,7 +100,8 @@ fn collect_source_constant_names(bytes: &[char], out: &mut HashSet<String>) {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
-        if (i > 0 && is_ident(bytes[i - 1]))
+        if bytes[i] != 'c'
+            || (i > 0 && is_ident(bytes[i - 1]))
             || !bytes[i..].starts_with(&['c', 'o', 'n', 's', 't', 'a', 'n', 't'])
             || bytes.get(i + 8).is_some_and(|c| is_ident(*c))
         {

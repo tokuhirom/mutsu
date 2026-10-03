@@ -10,20 +10,13 @@ impl Compiler {
     /// not a use: counting it made an `if` block bind its condition as `@_`
     /// (LLM::Graph's `when $name ∈ <$_ @_ %_>`), while a real read was missed.
     pub(super) fn body_uses_legacy_args(body: &[Stmt]) -> bool {
-        let body_str = format!("{:?}", body);
-        body_str.contains("ArrayVar(\"_\")")
-            || body_str.contains("HashVar(\"_\")")
-            || Self::body_writes_legacy_args_str(&body_str)
+        crate::ast_visit::legacy_arg_uses(body)
     }
 
     /// The write-only half of [`Compiler::body_uses_legacy_args`]: a sigiled
     /// `@_` / `%_` assignment, `temp` or declaration target.
     pub(super) fn body_writes_legacy_args(body: &[Stmt]) -> bool {
-        Self::body_writes_legacy_args_str(&format!("{:?}", body))
-    }
-
-    fn body_writes_legacy_args_str(body_str: &str) -> bool {
-        body_str.contains("name: \"@_\"") || body_str.contains("name: \"%_\"")
+        crate::ast_visit::legacy_arg_writes(body)
     }
 
     /// Bind the duplicated `if` condition on the stack as the branch's own
