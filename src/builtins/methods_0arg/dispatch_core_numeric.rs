@@ -164,6 +164,16 @@ pub(super) fn dispatch(
                 ValueView::GenericRange { .. } if is_infinite_range(target) => {
                     return Some(range_elems_lazy_failure("elems"));
                 }
+                // An Int/BigInt-ended range counts from its endpoints (the same
+                // exact count `.Numeric` uses); expanding it would stop at
+                // `MAX_RANGE_EXPAND`.
+                // Cost: O(1) for Int/BigInt endpoints, O(e) otherwise.
+                ValueView::GenericRange { start, end, .. }
+                    if matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
+                        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_)) =>
+                {
+                    crate::value::radix_numeric::coerce_to_numeric(target.clone())
+                }
                 ValueView::GenericRange { .. } => {
                     let list = crate::runtime::utils::value_to_list(target);
                     Value::int(list.len() as i64)
