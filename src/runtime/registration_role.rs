@@ -421,6 +421,7 @@ impl Interpreter {
             attribute_conflicts: Vec::new(),
             own_attribute_names: HashSet::new(),
             deferred_body: deferred_body_ops.to_vec(),
+            body_bind_cells: Vec::new(),
             // Captured here, while the role's OWN compunit is still the
             // ambient one: the body is re-run at each composition, from the
             // composing scope, where `?FILE` names the composer instead. See
