@@ -779,6 +779,15 @@ impl Interpreter {
             }
             index = inner;
         }
+        // A positional subscript numifies an allomorph (`@a[<1>]`, an `IntStr`
+        // from `:top<1>` or a `<...>` word list): its numeric part addresses
+        // the slot, as it does for a hash key's Str part below.
+        if is_positional
+            && let ValueView::Mixin(inner, mixins) = index.view()
+            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        {
+            index = inner.as_ref().clone();
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice
@@ -3217,6 +3226,12 @@ impl Interpreter {
                     && name.resolve() == "Any"
                     && !Self::index_is_type_parameterization(&idx) =>
             {
+                // A finite Range (`$any[1..3]`) is a slice too.
+                let range_list = Self::finite_int_range_as_list(&index);
+                let idx = match &range_list {
+                    Some(list) => list.view(),
+                    None => idx,
+                };
                 match idx {
                     ValueView::Array(items, ..) => Value::array(
                         items
