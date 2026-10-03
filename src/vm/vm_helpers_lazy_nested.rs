@@ -20,15 +20,6 @@ impl Interpreter {
         match value.view() {
             ValueView::Seq(body) => {
                 if seen.insert((0, body.identity())) {
-                    // A deferred, non-lazy Seq nested in what is being read
-                    // (a `gather` held in a variable or returned per element
-                    // by a hyper: `@nodes>>.all`) is pulled once here, as
-                    // its `.gist`/`.Str`/`.flat` would; reading it through
-                    // pure code rendered it as empty.
-                    if !body.is_lazy() {
-                        let body = std::sync::Arc::clone(&body);
-                        self.reify_seq_body(&body)?;
-                    }
                     for item in body.iter() {
                         self.reify_nested_map_grep_for_read_inner(item, seen)?;
                     }
