@@ -76,7 +76,9 @@ impl Interpreter {
         attrs.insert("version".to_string(), version);
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
+            // Rakudo leaves every `.signature` of the system objects unset:
+            // the `Blob` type object, which stringifies to "" with a warning.
+            Value::package(Symbol::intern("Blob")),
         );
         attrs.insert("desc".to_string(), Value::str(String::new()));
         attrs.insert("release".to_string(), Value::str(release));

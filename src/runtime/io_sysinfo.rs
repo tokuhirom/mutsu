@@ -214,7 +214,9 @@ impl Interpreter {
         attrs.insert("version".to_string(), version);
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
+            // Rakudo leaves every `.signature` of the system objects unset:
+            // the `Blob` type object, which stringifies to "" with a warning.
+            Value::package(Symbol::intern("Blob")),
         );
         attrs.insert("desc".to_string(), Value::str(desc));
         attrs.insert("release".to_string(), Value::str(release));
@@ -276,11 +278,8 @@ impl Interpreter {
         attrs.insert("version".to_string(), Self::language_version_value());
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Blob"), {
-                let mut a = HashMap::new();
-                a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
-                a
-            }),
+            // The `Blob` type object, as in Rakudo.
+            Value::package(Symbol::intern("Blob")),
         );
         attrs.insert(
             "desc".to_string(),
@@ -377,11 +376,8 @@ impl Interpreter {
         );
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Blob"), {
-                let mut a = HashMap::new();
-                a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
-                a
-            }),
+            // The `Blob` type object, as in Rakudo.
+            Value::package(Symbol::intern("Blob")),
         );
         attrs.insert("desc".to_string(), Value::str_from("mutsu virtual machine"));
         // osname mirrors the build-time OS name MoarVM exposes via `$*VM.osname`
