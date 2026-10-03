@@ -3407,10 +3407,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     // A `::T` capture spelled as the type constraint itself is not a nominal
     // type; `::T Foo:D:` keeps the capture apart from its nominal `Foo:D`.
+    let constraint_is_capture = pd.type_capture.is_none() && type_capture.is_some();
     let ordinary_type_constraint = pd
         .type_constraint
         .as_deref()
-        .filter(|t| !t.starts_with("::") || is_pseudo_type(t));
+        .filter(|_| !constraint_is_capture);
     // A sigilless parameter (`\x`) targets a term, not a variable. The
     // parser's sigilless slurpies are `+a` (`onearg`) and the capture `|c`.
     if pd.sigilless && (pd.double_slurpy || pd.named) {
@@ -3511,14 +3512,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
 /// (whose binder reading this does not change), a `::?CLASS` / `::?ROLE`
 /// pseudo-type is a nominal type here, the way rakudo's `.AST` shows it.
 pub(super) fn type_capture_name(pd: &ParamDef) -> Option<&str> {
-    match pd.type_capture.as_deref() {
-        Some(name) => Some(name),
-        None => pd
-            .type_constraint
-            .as_deref()
-            .filter(|t| !is_pseudo_type(t))
-            .and_then(|t| t.strip_prefix("::")),
-    }
+    pd.captured_type_name().filter(|_| {
+        !pd.type_constraint.as_deref().is_some_and(is_pseudo_type) || pd.type_capture.is_some()
+    })
 }
 
 /// `::?CLASS`, `::?ROLE`, `::?PACKAGE`, with an optional smiley.
