@@ -931,10 +931,8 @@ impl Interpreter {
                 if crate::qualified::is_qualified(sym) || known {
                     Vec::new()
                 } else {
-                    crate::runtime::cow_table_mut(
-                        &mut self.module_visibility.unit_package_names,
-                    )
-                    .insert(sym);
+                    crate::runtime::cow_table_mut(&mut self.module_visibility.unit_package_names)
+                        .insert(sym);
                     vec![sym]
                 }
             }
