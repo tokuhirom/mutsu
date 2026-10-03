@@ -65,6 +65,7 @@ pub enum RakuAstFieldValue {
 /// adding a kind is a compile error until every site handles it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RakuAstClass {
+    CompUnit,
     StatementList,
     StatementExpression,
     IntLiteral,
@@ -102,6 +103,8 @@ pub enum RakuAstClass {
     RegexAnchorEndOfString,
     RegexAnchorEndOfLine,
     RegexCharClassDigit,
+    RegexInternalModifierIgnoreCase,
+    RegexInternalModifierIgnoreMark,
     ColonPairTrue,
     ColonPairFalse,
     ColonPairVariable,
@@ -326,6 +329,7 @@ impl RakuAstClass {
     pub fn printed_name(self) -> &'static str {
         use RakuAstClass::*;
         match self {
+            CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
             IntLiteral => "RakuAST::IntLiteral",
@@ -363,6 +367,8 @@ impl RakuAstClass {
             RegexAnchorEndOfString => "RakuAST::Regex::Anchor::EndOfString",
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
             RegexCharClassDigit => "RakuAST::Regex::CharClass::Digit",
+            RegexInternalModifierIgnoreCase => "RakuAST::Regex::InternalModifier::IgnoreCase",
+            RegexInternalModifierIgnoreMark => "RakuAST::Regex::InternalModifier::IgnoreMark",
             ColonPairTrue => "RakuAST::ColonPair::True",
             ColonPairFalse => "RakuAST::ColonPair::False",
             ColonPairVariable => "RakuAST::ColonPair::Variable",
@@ -531,6 +537,8 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorEndOfString
                 | RakuAstClass::RegexAnchorEndOfLine
                 | RakuAstClass::RegexCharClassDigit
+                | RakuAstClass::RegexInternalModifierIgnoreCase
+                | RakuAstClass::RegexInternalModifierIgnoreMark
                 | RakuAstClass::NamePartEmpty
                 | RakuAstClass::NamePartEmptyEdge
         )
@@ -641,6 +649,12 @@ impl RakuAstClass {
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
             RegexCharClassDigit => &[
                 "RakuAST::Regex::CharClass",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            RegexInternalModifierIgnoreCase | RegexInternalModifierIgnoreMark => &[
+                "RakuAST::Regex::InternalModifier",
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
@@ -822,6 +836,18 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
         ],
+        "RakuAST::Regex::InternalModifier::IgnoreCase"
+        | "RakuAST::Regex::InternalModifier::IgnoreMark" => &[
+            "RakuAST::Regex::InternalModifier",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
+        "RakuAST::Regex::InternalModifier" => &[
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
         "RakuAST::ColonPair::True"
         | "RakuAST::ColonPair::False"
         | "RakuAST::ColonPair::Variable"
@@ -888,6 +914,7 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
 }
 
 const RAKUAST_CLASSES: &[RakuAstClass] = &[
+    RakuAstClass::CompUnit,
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
     RakuAstClass::IntLiteral,
@@ -925,6 +952,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorEndOfString,
     RakuAstClass::RegexAnchorEndOfLine,
     RakuAstClass::RegexCharClassDigit,
+    RakuAstClass::RegexInternalModifierIgnoreCase,
+    RakuAstClass::RegexInternalModifierIgnoreMark,
     RakuAstClass::ColonPairTrue,
     RakuAstClass::ColonPairFalse,
     RakuAstClass::ColonPairVariable,
@@ -1070,6 +1099,40 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
     let (stmts, _finish) = crate::parse_dispatch::parse_source(source)?;
     let node = convert::statement_list(&stmts)?;
     Ok(Value::rakuast(Box::new(node)))
+}
+
+/// Entry point for `Str.AST(:compunit)`: the parsed `StatementList` wrapped in
+/// a `RakuAST::CompUnit`, as rakudo returns it. Rakudo names each compunit
+/// with a fresh 40-hex-digit identifier (two parses of the same source get
+/// different names); mutsu derives one from the source and a process-wide
+/// counter, which keeps that distinctness.
+// Cost: O(n), n = source length (the parse dominates).
+pub fn str_dot_ast_compunit(source: &str) -> Result<Value, RuntimeError> {
+    use std::hash::{Hash, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COMPUNIT_SERIAL: AtomicU64 = AtomicU64::new(0);
+    let statement_list = str_dot_ast(source)?;
+    let serial = COMPUNIT_SERIAL.fetch_add(1, Ordering::Relaxed);
+    let mut words = [0u64; 3];
+    for (salt, word) in words.iter_mut().enumerate() {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (salt, serial, source).hash(&mut hasher);
+        *word = hasher.finish();
+    }
+    let name = format!("{:016X}{:016X}{:08X}", words[0], words[1], words[2] as u32);
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::CompUnit,
+        fields: vec![
+            RakuAstField {
+                name: Some("statement-list"),
+                value: RakuAstFieldValue::Node(statement_list),
+            },
+            RakuAstField {
+                name: Some("comp-unit-name"),
+                value: RakuAstFieldValue::Node(Value::str(name)),
+            },
+        ],
+    })))
 }
 
 /// Entry point for `Str.AST($slang)`: parse the source under the localized
@@ -1594,22 +1657,44 @@ pub fn construct(
             RakuAstClass::Name,
             "RakuAST::VarDeclaration::Simple.new",
         )?;
-        let mut fields = vec![
-            RakuAstField {
-                name: Some("sigil"),
-                value: RakuAstFieldValue::Node(sigil),
-            },
-            RakuAstField {
-                name: Some("desigilname"),
-                value: RakuAstFieldValue::Node(desigilname),
-            },
-        ];
+        let mut fields = vec![RakuAstField {
+            name: Some("sigil"),
+            value: RakuAstFieldValue::Node(sigil),
+        }];
+        // Only the dynamic twigil is modelled for a hand-built declaration;
+        // the attribute twigils (`.`/`!`) come with a `has` scope this
+        // constructor does not take.
+        if let Some(twigil) = named_arg(args, "twigil")
+            && twigil.truthy()
+        {
+            if twigil.to_string_value() != "*" {
+                return Err(RuntimeError::new(format!(
+                    "RakuAST::VarDeclaration::Simple.new does not support twigil '{}'",
+                    twigil.to_string_value()
+                )));
+            }
+            fields.push(RakuAstField {
+                name: Some("twigil"),
+                value: RakuAstFieldValue::Node(twigil),
+            });
+        }
+        fields.push(RakuAstField {
+            name: Some("desigilname"),
+            value: RakuAstFieldValue::Node(desigilname),
+        });
         if let Some(initializer) = named_arg(args, "initializer") {
-            require_rakuast_class(
-                &initializer,
-                RakuAstClass::InitializerAssign,
-                "RakuAST::VarDeclaration::Simple.new",
-            )?;
+            let is_initializer = matches!(
+                initializer.view(),
+                ValueView::RakuAst(n) if matches!(
+                    n.class,
+                    RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
+                )
+            );
+            if !is_initializer {
+                return Err(RuntimeError::new(
+                    "RakuAST::VarDeclaration::Simple.new expects a RakuAST::Initializer node",
+                ));
+            }
             fields.push(RakuAstField {
                 name: Some("initializer"),
                 value: RakuAstFieldValue::Node(initializer),
@@ -2238,6 +2323,39 @@ pub fn construct(
             ],
         }))));
     }
+    // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:
+    // both nameds optional. A field equal to its default (the short spelling,
+    // `False`) is left off, which is what the renderer then elides.
+    let modifier_class = match (class_name, method) {
+        ("RakuAST::Regex::InternalModifier::IgnoreCase", "new") => {
+            Some((RakuAstClass::RegexInternalModifierIgnoreCase, "i"))
+        }
+        ("RakuAST::Regex::InternalModifier::IgnoreMark", "new") => {
+            Some((RakuAstClass::RegexInternalModifierIgnoreMark, "m"))
+        }
+        _ => None,
+    };
+    if let Some((class, short)) = modifier_class {
+        let mut fields = Vec::new();
+        if let Some(modifier) = named_arg(args, "modifier")
+            && modifier.to_string_value() != short
+        {
+            fields.push(RakuAstField {
+                name: Some("modifier"),
+                value: RakuAstFieldValue::Node(Value::str(modifier.to_string_value())),
+            });
+        }
+        if named_arg(args, "negated").is_some_and(|v| v.truthy()) {
+            fields.push(RakuAstField {
+                name: Some("negated"),
+                value: RakuAstFieldValue::Node(Value::truth(true)),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+        }))));
+    }
     if let Some(class) = zero_positional_class(class_name, method) {
         if !args.is_empty() {
             return Err(RuntimeError::new(format!(
@@ -2377,6 +2495,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorEndOfString
                     | RakuAstClass::RegexAnchorEndOfLine
                     | RakuAstClass::RegexCharClassDigit
+                    | RakuAstClass::RegexInternalModifierIgnoreCase
+                    | RakuAstClass::RegexInternalModifierIgnoreMark
             ) =>
         {
             Ok(())
@@ -2584,6 +2704,10 @@ fn multi_field_schema(
         }
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
         ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
+        ("RakuAST::CompUnit", "new") => (
+            RakuAstClass::CompUnit,
+            &["statement-list", "comp-unit-name"][..],
+        ),
         ("RakuAST::PointyBlock", "new") => (RakuAstClass::PointyBlock, &["signature", "body"][..]),
         ("RakuAST::Var::Package", "new") => (RakuAstClass::VarPackage, &["name", "sigil"][..]),
         ("RakuAST::ParameterTarget::Var", "new") => {
@@ -2688,8 +2812,18 @@ pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
         _ => {}
     }
     names.extend(accessor_names(class));
+    if class == RakuAstClass::CompUnit {
+        names.push("replace-statement-list");
+    }
+    if class == RakuAstClass::StatementExpression {
+        names.push("set-expression");
+    }
+    if class == RakuAstClass::ArgList {
+        names.push("push");
+    }
     if class == RakuAstClass::StatementList {
         names.push("add-statement");
+        names.push("unshift-statement");
     }
     names.sort_unstable();
     names.dedup();
@@ -2737,7 +2871,10 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 fn constructor_is_supported(class: RakuAstClass) -> bool {
     matches!(
         class,
-        RakuAstClass::ArgList
+        RakuAstClass::CompUnit
+            | RakuAstClass::RegexInternalModifierIgnoreCase
+            | RakuAstClass::RegexInternalModifierIgnoreMark
+            | RakuAstClass::ArgList
             | RakuAstClass::SemiList
             | RakuAstClass::StatementList
             | RakuAstClass::IntLiteral
