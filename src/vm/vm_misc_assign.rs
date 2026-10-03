@@ -605,7 +605,11 @@ impl Interpreter {
                 && !storer.is_nil()
             {
                 let proxy_val = current_proxy.unwrap();
-                let stored = if assigned_nil { Value::NIL } else { val.clone() };
+                let stored = if assigned_nil {
+                    Value::NIL
+                } else {
+                    val.clone()
+                };
                 // The expression's value is the Proxy container, read through
                 // FETCH, not the right-hand side.
                 let fetched = loan_env!(self, assign_proxy_lvalue(proxy_val, stored))?;
