@@ -91,7 +91,7 @@ impl Interpreter {
         // matching comment in `call_compiled_function_positional_light`): a
         // callee's routine-level `my $x` must not register in the caller's active
         // `BlockScope` frame and be reverted at the caller's block exit.
-        let saved_block_declared_vars = self.block_declared_vars.push_frame();
+        let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -502,7 +502,8 @@ impl Interpreter {
             self.topic_state
                 .active_loop_rw_param_names
                 .pop_frame(saved_active_loop_rw_param_names);
-            self.block_declared_vars
+            self.lexicals
+                .block_declared_vars
                 .pop_frame(saved_block_declared_vars);
             self.current_unit = saved_unit;
             return Err(e);
@@ -750,7 +751,8 @@ impl Interpreter {
                 self.topic_state
                     .active_loop_rw_param_names
                     .pop_frame(saved_active_loop_rw_param_names);
-                self.block_declared_vars
+                self.lexicals
+                    .block_declared_vars
                     .pop_frame(saved_block_declared_vars);
                 self.finish_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
@@ -810,7 +812,8 @@ impl Interpreter {
         self.topic_state
             .active_loop_rw_param_names
             .pop_frame(saved_active_loop_rw_param_names);
-        self.block_declared_vars
+        self.lexicals
+            .block_declared_vars
             .pop_frame(saved_block_declared_vars);
 
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)

@@ -84,7 +84,7 @@ impl Interpreter {
         // through its persisted shared cell FIRST (see `escaping_our_read`), ignoring
         // the upvalue slot entirely. Gated on a non-empty name set so ordinary
         // closures pay only an `is_empty` check on this hot path.
-        let val = if !self.escaping_our_lexical_names.is_empty()
+        let val = if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(v) = self.escaping_our_read(Self::const_str(code, name_idx))
         {
             v

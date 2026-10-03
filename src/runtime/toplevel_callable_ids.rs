@@ -84,7 +84,7 @@ impl Interpreter {
     fn current_toplevel_depth(&self) -> ModuleToplevelDepth {
         ModuleToplevelDepth {
             routines: self.routine_stack().len(),
-            block_scopes: self.block_declared_vars.all_frames().len(),
+            block_scopes: self.lexicals.block_declared_vars.all_frames().len(),
         }
     }
 

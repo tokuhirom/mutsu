@@ -45,7 +45,7 @@ impl Interpreter {
         code: &CompiledCode,
         target: &str,
     ) -> Option<LvalueUnitRedirect> {
-        if self.unit_lexicals.is_empty() || self.find_local_slot(code, target).is_some() {
+        if self.lexicals.unit_lexicals.is_empty() || self.find_local_slot(code, target).is_some() {
             return None;
         }
         let cell = self.unit_lexical_slot(target)?;

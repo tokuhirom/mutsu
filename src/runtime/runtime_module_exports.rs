@@ -856,8 +856,13 @@ impl Interpreter {
                 |v: &&Value| matches!(v.view(), ValueView::Package(p) if p == qualified);
             return qualified_binding
                 .filter(|v| !is_type_self_binding(v))
-                .or_else(|| self.package_lexicals.get(module).and_then(|e| e.get(name)))
-                .or_else(|| self.our_vars.get(qualified.as_str()))
+                .or_else(|| {
+                    self.lexicals
+                        .package_lexicals
+                        .get(module)
+                        .and_then(|e| e.get(name))
+                })
+                .or_else(|| self.lexicals.our_vars.get(qualified.as_str()))
                 .or_else(|| {
                     self.module_scope_lexicals
                         .get(module)
@@ -917,7 +922,8 @@ impl Interpreter {
                 .then(|| Value::package(crate::symbol::Symbol::intern(name)))
             })
             .or_else(|| {
-                self.package_lexicals
+                self.lexicals
+                    .package_lexicals
                     .get(module)
                     .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
                     .cloned()
@@ -926,8 +932,8 @@ impl Interpreter {
             // module load restores their lexical env entries after the first
             // import, so a later tagged re-import must read the durable
             // package store as well (e.g. Math::Trig's code aliases).
-            .or_else(|| self.our_vars.get(&qualified).cloned())
-            .or_else(|| self.our_vars.get(name).cloned())
+            .or_else(|| self.lexicals.our_vars.get(&qualified).cloned())
+            .or_else(|| self.lexicals.our_vars.get(name).cloned())
             // Code variables use the routine registry as an additional
             // durable store.  This matters for `our &alias = &routine`: the
             // module's lexical `env` entry is restored after its first load,

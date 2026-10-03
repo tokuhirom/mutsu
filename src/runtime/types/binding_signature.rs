@@ -1621,7 +1621,7 @@ impl Interpreter {
                     positional_idx = args.len();
                     if !pd.name.is_empty() {
                         if pd.sigilless {
-                            self.sigilless_alias_seen = true;
+                            self.lexicals.sigilless_alias_seen = true;
                             self.env
                                 .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
                             self.env.remove_sym(sigilless_alias_key(&pd.name));
@@ -1741,7 +1741,7 @@ impl Interpreter {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
                     // read-only List under the bare name, with no `@` sigil.
                     if !pd.name.is_empty() {
-                        self.sigilless_alias_seen = true;
+                        self.lexicals.sigilless_alias_seen = true;
                         self.env
                             .insert_sym_noting(sigilless_readonly_key(&pd.name), Value::TRUE);
                         self.env.remove_sym(sigilless_alias_key(&pd.name));
@@ -3042,7 +3042,7 @@ impl Interpreter {
                             let alias_key = sigilless_alias_key(&pd.name);
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(source_name));
-                            self.sigilless_alias_seen = true;
+                            self.lexicals.sigilless_alias_seen = true;
                         } else if matches!(
                             args[positional_idx].view(),
                             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
@@ -3236,7 +3236,7 @@ impl Interpreter {
                         // nothing to remove, and the two `format!`s plus their
                         // interning removes were a fixed cost on every `is copy`
                         // parameter of every call.
-                        if self.sigilless_alias_seen {
+                        if self.lexicals.sigilless_alias_seen {
                             self.env
                                 .remove_sym(crate::runtime::sigilless_alias_key(&pd.name));
                             self.env
@@ -3285,7 +3285,7 @@ impl Interpreter {
                         // sigilless meta keys; the latch is what lets an
                         // `is copy` binding skip removing them when none can
                         // exist (see there).
-                        self.sigilless_alias_seen = true;
+                        self.lexicals.sigilless_alias_seen = true;
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
                         if implicit_raw_veto || raw_readonly_source {
@@ -3334,7 +3334,7 @@ impl Interpreter {
                             self.env
                                 .insert_sym_noting(alias_key, Value::str(resolved_source));
                             self.env.insert_sym_noting(readonly_key, Value::FALSE);
-                            self.sigilless_alias_seen = true;
+                            self.lexicals.sigilless_alias_seen = true;
                         } else if let Some(source_name) = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
@@ -3386,7 +3386,7 @@ impl Interpreter {
                                 self.env
                                     .insert_sym_noting(alias_key, Value::str(resolved_source));
                                 self.env.insert_sym_noting(readonly_key, Value::FALSE);
-                                self.sigilless_alias_seen = true;
+                                self.lexicals.sigilless_alias_seen = true;
                             } else {
                                 self.env.remove_sym(alias_key);
                                 self.env.insert_sym_noting(readonly_key, Value::TRUE);
@@ -3895,7 +3895,7 @@ impl Interpreter {
                     // the caller's readonly state via `restore_readonly_vars`.
                     self.unmark_readonly_sym(pd_name_sym);
                 }
-            } else if !self.readonly_vars.borrow().is_empty() {
+            } else if !self.lexicals.readonly_vars.borrow().is_empty() {
                 // The same leak for a fresh, writable `@`/`%` param: an outer
                 // same-named immutable binding (`my @names is List` in a
                 // module or role body) made `sub EXPORT(*@names) { @names ||=

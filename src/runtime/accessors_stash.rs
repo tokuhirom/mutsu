@@ -643,20 +643,21 @@ impl Interpreter {
         // Fallback: check persistent `our`-scoped variables (constants, `our` decls)
         // which may have been removed from the lexical env by block-scope restoration.
         if let Some(bare) = name.strip_prefix('$')
-            && let Some(value) = self.our_vars.get(bare)
+            && let Some(value) = self.lexicals.our_vars.get(bare)
             && !value.is_nil()
         {
             return value.clone();
         }
         if !name.starts_with(['$', '@', '%', '&'])
             && let Some(value) = self
+                .lexicals
                 .our_vars
                 .get(&crate::runtime::term_names::term_key(name))
             && !value.is_nil()
         {
             return value.clone();
         }
-        if let Some(value) = self.our_vars.get(name)
+        if let Some(value) = self.lexicals.our_vars.get(name)
             && !value.is_nil()
         {
             return value.clone();

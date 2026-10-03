@@ -43,7 +43,7 @@ impl Interpreter {
             return None;
         }
         let pkg = self.current_package();
-        let cur = self.package_lexicals.get(&pkg)?.get(bare)?.clone();
+        let cur = self.lexicals.package_lexicals.get(&pkg)?.get(bare)?.clone();
         if let ValueView::ContainerRef(c) = cur.view() {
             return Some(c.clone());
         }

@@ -197,14 +197,14 @@ impl Interpreter {
         name: &str,
         found: Option<Value>,
     ) -> Option<Value> {
-        if !self.process_dynamics.is_populated() {
+        if !self.lexicals.process_dynamics.is_populated() {
             return found;
         }
         let Some(key) = stash_key(name) else {
             return found;
         };
         match found {
-            None => self.process_dynamics.get(key),
+            None => self.lexicals.process_dynamics.get(key),
             Some(v) => self.process_value_for_binding(key, &v).unwrap_or(Some(v)),
         }
     }
@@ -217,7 +217,7 @@ impl Interpreter {
     // probe, an env probe and, for a process-looking binding, a marker probe.
     #[inline]
     pub(crate) fn process_dynamic_read(&self, name: &str) -> Option<Value> {
-        if !self.process_dynamics.is_populated() {
+        if !self.lexicals.process_dynamics.is_populated() {
             return None;
         }
         self.process_dynamic_read_slow(name)
@@ -225,11 +225,11 @@ impl Interpreter {
 
     fn process_dynamic_read_slow(&self, name: &str) -> Option<Value> {
         if let Some(key) = process_qualified_key(name) {
-            return self.process_dynamics.get(&key);
+            return self.lexicals.process_dynamics.get(&key);
         }
         let key = stash_key(name)?;
         match self.env_dynamic_binding(name) {
-            None => self.process_dynamics.get(key),
+            None => self.lexicals.process_dynamics.get(key),
             Some(found) => self.process_value_for_binding(key, &found).flatten(),
         }
     }
@@ -239,6 +239,7 @@ impl Interpreter {
     /// lexical one, `None` when nothing is published under `key`.
     fn process_value_for_binding(&self, key: &str, found: &Value) -> Option<Option<Value>> {
         let current = self
+            .lexicals
             .process_dynamics
             .current_if_holds(key, &found.clone().into_deref())?;
         Some(current.filter(|_| !self.dynamic_declared_lexically(key)))
@@ -300,7 +301,8 @@ impl Interpreter {
     pub(crate) fn publish_process_dynamic(&mut self, key: &str, value: Value) -> bool {
         let key = stash_key(key).unwrap_or(key);
         let mirror = self.binding_is_process_level(key, key);
-        self.process_dynamics
+        self.lexicals
+            .process_dynamics
             .set(key, value, || self.process_dynamic_seed(key));
         // A later `$*X = ...` from any frame must pass `CheckDynamicVarDeclared`
         // — installing a process-level default declares it.
@@ -318,7 +320,8 @@ impl Interpreter {
             return;
         };
         if self.binding_is_process_level(name, key) {
-            self.process_dynamics
+            self.lexicals
+                .process_dynamics
                 .set(key, value.clone(), || self.process_dynamic_seed(key));
         }
     }

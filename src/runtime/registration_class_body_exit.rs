@@ -169,7 +169,7 @@ impl Interpreter {
             }
         }
         if !body_lexicals.is_empty() {
-            let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
+            let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
                 .entry(name.to_string())
                 .or_default();
             for (bare, _) in &body_lexicals {

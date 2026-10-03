@@ -1230,7 +1230,7 @@ impl Interpreter {
         let Some(bucket) = self.active_unit_lexical_bucket() else {
             return;
         };
-        let Some(mainline) = self.unit_lexicals.get(bucket) else {
+        let Some(mainline) = self.lexicals.unit_lexicals.get(bucket) else {
             return;
         };
         for sym in &cc.free_var_syms {

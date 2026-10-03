@@ -66,7 +66,7 @@ impl Interpreter {
             Symbol::intern("__mutsu_declared_method_capture"),
             Value::int(1),
         );
-        let Some(owner) = self.nested_capture_owners.last().copied() else {
+        let Some(owner) = self.lexicals.nested_capture_owners.last().copied() else {
             // Not a package-body walk: the marker sits in the body of a
             // routine of the package (`method ^find_method { multi method
             // handler { ... $name ... } }`), and this is one of its calls.
@@ -81,7 +81,9 @@ impl Interpreter {
             });
             return;
         };
-        self.nested_method_captures.insert((owner, spec.index), env);
+        self.lexicals
+            .nested_method_captures
+            .insert((owner, spec.index), env);
     }
 
     /// Give the captures a role body's nested blocks just filed (under
@@ -101,19 +103,22 @@ impl Interpreter {
         let role_sym = Symbol::intern(role);
         let mut captures: rustc_hash::FxHashMap<u32, crate::env::Env> =
             rustc_hash::FxHashMap::default();
-        self.nested_method_captures.retain(|(owner, index), env| {
-            if *owner == role_sym {
-                captures.insert(*index, std::mem::take(env));
-                false
-            } else {
-                true
-            }
-        });
+        self.lexicals
+            .nested_method_captures
+            .retain(|(owner, index), env| {
+                if *owner == role_sym {
+                    captures.insert(*index, std::mem::take(env));
+                    false
+                } else {
+                    true
+                }
+            });
         if captures.is_empty() {
             return;
         }
         self.give_nested_method_captures(role, target_class, &captures, true);
-        self.composed_nested_method_captures
+        self.lexicals
+            .composed_nested_method_captures
             .insert((Symbol::intern(target_class), role_sym), captures);
     }
 
@@ -132,7 +137,12 @@ impl Interpreter {
         target_class: &str,
     ) {
         let key = (Symbol::intern(target_class), Symbol::intern(role));
-        let Some(captures) = self.composed_nested_method_captures.get(&key).cloned() else {
+        let Some(captures) = self
+            .lexicals
+            .composed_nested_method_captures
+            .get(&key)
+            .cloned()
+        else {
             return;
         };
         self.give_nested_method_captures(role, target_class, &captures, false);

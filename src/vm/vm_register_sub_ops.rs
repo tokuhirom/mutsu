@@ -500,23 +500,30 @@ impl Interpreter {
             // top-of-block registration runs before the box and finds no cell, so it
             // correctly persists nothing (a call before the block reads undefined).
             if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-                && !self.escaping_our_lexical_names.is_empty()
+                && !self.lexicals.escaping_our_lexical_names.is_empty()
             {
                 // Record the sub itself: the cell resolution
                 // (`escaping_our_read`/`escaping_our_write_cell`) fires only while
                 // the innermost named routine frame is one of these subs, so a
                 // plain `my sub` sharing a captured variable's name keeps using
                 // its own live env capture.
-                crate::runtime::cow_table_mut(&mut self.escaped_our_sub_names)
+                crate::runtime::cow_table_mut(&mut self.lexicals.escaped_our_sub_names)
                     .insert(resolved_name.clone());
-                let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
+                let names: Vec<String> = self
+                    .lexicals
+                    .escaping_our_lexical_names
+                    .iter()
+                    .cloned()
+                    .collect();
                 for name in names {
                     let Some(cur) = self.env().get(&name).cloned() else {
                         continue;
                     };
                     let cell = if cur.is_container_ref() {
                         cur
-                    } else if self.escaping_our_env_param_names.contains(&name) && !cur.is_nil() {
+                    } else if self.lexicals.escaping_our_env_param_names.contains(&name)
+                        && !cur.is_nil()
+                    {
                         // A `for -> $i` parameter bound by name: box the binding
                         // in place, as a declaration would have. The next
                         // iteration binds a fresh value, leaving this cell with
@@ -527,7 +534,7 @@ impl Interpreter {
                     } else {
                         continue;
                     };
-                    self.escaped_our_lexical_cells.insert(name, cell);
+                    self.lexicals.escaped_our_lexical_cells.insert(name, cell);
                 }
             }
             // ADR-0024: a mainline named sub whose body reads a free variable
@@ -791,7 +798,7 @@ impl Interpreter {
                     captured_any = true;
                 }
                 if captured_any {
-                    crate::runtime::cow_table_mut(&mut self.mainline_lexical_subs)
+                    crate::runtime::cow_table_mut(&mut self.lexicals.mainline_lexical_subs)
                         .insert(resolved_name.clone(), unit_key);
                 }
             }

@@ -379,7 +379,7 @@ impl Interpreter {
     /// left by some inner call from refusing an unrelated result.
     // Cost: O(1).
     fn refuse_readonly_rw_tail(&mut self, result: &Value) -> Result<(), RuntimeError> {
-        match self.readonly_rw_tail.take() {
+        match self.lexicals.readonly_rw_tail.take() {
             Some(tail) if crate::runtime::values_identical(&tail, result) => {
                 Err(RuntimeError::readonly_variable())
             }
@@ -677,7 +677,7 @@ impl Interpreter {
             let rw_capable = Self::routine_is_rw_capable(&def);
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
-            self.readonly_rw_tail = None;
+            self.lexicals.readonly_rw_tail = None;
             let result = self.call_function(name, call_args);
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
@@ -723,7 +723,7 @@ impl Interpreter {
                 let rw_capable = Self::sub_is_rw_capable(&data);
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
-                self.readonly_rw_tail = None;
+                self.lexicals.readonly_rw_tail = None;
                 let result = self.call_sub_value(Value::sub_value(data), call_args, true);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;

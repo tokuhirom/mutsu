@@ -138,7 +138,7 @@ pub(crate) struct TrInnerCall {
 /// Stage 1 resolves the NAME once per routine invocation rather than once per
 /// access — `nom-ws`'s `GetGlobal("ws")` runs per loop iteration today. The
 /// resolution result is additionally memoized on the routine across calls,
-/// keyed by [`crate::runtime::Interpreter::unit_lexical_gen`], so a steady
+/// keyed by [`LexicalState::unit_lexical_gen`](crate::runtime::lexical_state::LexicalState::unit_lexical_gen), so a steady
 /// state pays one integer comparison.
 #[derive(Debug, Clone)]
 pub(crate) struct TrOuter {

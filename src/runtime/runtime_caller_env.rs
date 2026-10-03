@@ -393,7 +393,7 @@ impl Interpreter {
                 entries.insert(key, v.clone().into_deref());
             }
         }
-        for (env_key, v) in self.process_dynamics.entries() {
+        for (env_key, v) in self.lexicals.process_dynamics.entries() {
             if let Some(key) = stash_key(&env_key) {
                 entries.insert(key, v.clone().into_deref());
             }
@@ -449,7 +449,8 @@ impl Interpreter {
         // (latched process-wide: the Tier B inline GetLocal fast path relies
         // on a zero counter to skip resolve_binding — see CALLER_VAR_BINDS).
         crate::vm::vm_jit::note_caller_var_binding();
-        self.var_bindings
+        self.lexicals
+            .var_bindings
             .insert(target_name.to_string(), source_name.to_string());
         // Also update current env
         self.env.insert(target_name.to_string(), source_val);
@@ -460,19 +461,19 @@ impl Interpreter {
     pub(crate) fn resolve_binding(&self, name: &str) -> Option<&str> {
         // Empty-map fast exit: this runs on every GetLocal, and the common
         // program never creates a `$CALLER::x := ...` binding.
-        if self.var_bindings.is_empty() {
+        if self.lexicals.var_bindings.is_empty() {
             return None;
         }
-        self.var_bindings.get(name).map(|s| s.as_str())
+        self.lexicals.var_bindings.get(name).map(|s| s.as_str())
     }
 
     /// Save and clear var_bindings, returning the saved state.
     pub(crate) fn take_var_bindings(&mut self) -> HashMap<String, String> {
-        std::mem::take(&mut self.var_bindings)
+        std::mem::take(&mut self.lexicals.var_bindings)
     }
 
     /// Restore previously saved var_bindings.
     pub(crate) fn restore_var_bindings(&mut self, bindings: HashMap<String, String>) {
-        self.var_bindings = bindings;
+        self.lexicals.var_bindings = bindings;
     }
 }

@@ -132,7 +132,7 @@ impl Interpreter {
         // matching comment in `call_compiled_function_positional_light`): a
         // callee's routine-level `my $x` must not register in the caller's active
         // `BlockScope` frame and be reverted at the caller's block exit.
-        let saved_block_declared_vars = self.block_declared_vars.push_frame();
+        let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
@@ -328,7 +328,8 @@ impl Interpreter {
         self.topic_state
             .active_loop_param_names
             .pop_frame(saved_active_loop_param_names);
-        self.block_declared_vars
+        self.lexicals
+            .block_declared_vars
             .pop_frame(saved_block_declared_vars);
 
         // Restore env: if env was mutated, merge non-local changes back.

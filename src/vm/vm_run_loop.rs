@@ -485,7 +485,7 @@ impl Interpreter {
         let saved_for_param_restore_stack =
             std::mem::take(&mut self.topic_state.for_param_restore_stack);
         let saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
-        let saved_block_declared_vars = self.block_declared_vars.push_frame();
+        let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
         let saved_loop_local_vars = self.topic_state.loop_local_vars.push_frame();
         let saved_loop_local_saved_env = self.topic_state.loop_local_saved_env.push_frame();
         // ADR-0027: a nested run (EVAL, dies-ok/lives-ok block, ...) starts
@@ -513,11 +513,12 @@ impl Interpreter {
         // isolation for an ordinary call) always did.
         let (saved_mark_flags, saved_mark_share_source) = self.mark_ctx.take_all();
         let saved_loop_cond_active = self.topic_state.loop_cond_active;
-        let saved_state_scope_id = self.state_scope_id.take();
+        let saved_state_scope_id = self.lexicals.state_scope_id.take();
         // A fallback-dispatched routine body hands its registration clone id
         // across this register reset (see `pending_nested_state_scope`).
-        self.state_scope_id
-            .set(self.pending_nested_state_scope.take());
+        self.lexicals
+            .state_scope_id
+            .set(self.lexicals.pending_nested_state_scope.take());
         let saved_gather_for_loop_resume = self.async_state.gather_for_loop_resume.take();
         let saved_rw_map_topic_capture = self.async_state.rw_map_topic_capture.take();
         // A nested-registers run (the map/grep/first eager fast paths above
@@ -586,7 +587,8 @@ impl Interpreter {
         self.topic_state.quanthash_bind_params = saved_quanthash_bind_params;
         self.topic_state.for_param_restore_stack = saved_for_param_restore_stack;
         self.local_bind_pairs = saved_local_bind_pairs;
-        self.block_declared_vars
+        self.lexicals
+            .block_declared_vars
             .pop_frame(saved_block_declared_vars);
         self.topic_state
             .loop_local_vars
@@ -607,7 +609,7 @@ impl Interpreter {
         self.mark_ctx
             .restore_all(saved_mark_flags, saved_mark_share_source);
         self.topic_state.loop_cond_active = saved_loop_cond_active;
-        self.state_scope_id.set(saved_state_scope_id);
+        self.lexicals.state_scope_id.set(saved_state_scope_id);
         self.async_state.gather_for_loop_resume = saved_gather_for_loop_resume;
         self.async_state.rw_map_topic_capture = saved_rw_map_topic_capture;
         self.current_code = saved_current_code;
@@ -766,7 +768,7 @@ impl Interpreter {
     /// (including the JIT shims, see `vm_jit_helpers::{set_local,
     /// set_local_decl}`), so this must be free.
     pub(crate) fn scoped_state_key(&self, key: Symbol) -> (Symbol, Option<u64>) {
-        (key, self.state_scope_id.get())
+        (key, self.lexicals.state_scope_id.get())
     }
 
     // Both loaders/syncers resolve the key through `scoped_state_key`, matching

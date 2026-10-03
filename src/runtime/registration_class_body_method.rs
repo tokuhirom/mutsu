@@ -170,7 +170,8 @@ impl Interpreter {
         // `vm_nested_method_capture`). A block that never ran leaves none, and
         // the method is installed regardless, as in rakudo.
         let nested_capture = decl.nested_capture_index.and_then(|index| {
-            self.nested_method_captures
+            self.lexicals
+                .nested_method_captures
                 .remove(&(Symbol::intern(cx.name), index))
         });
         let def = MethodDef {

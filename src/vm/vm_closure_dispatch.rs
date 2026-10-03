@@ -420,7 +420,7 @@ impl Interpreter {
         });
         // RAII (`StateScopeGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores `state_scope_id` on drop, including on a Rust panic unwind
-        // through the body loop below -- a manual `self.state_scope_id =
+        // through the body loop below -- a manual `self.lexicals.state_scope_id =
         // saved;` statement near this function's end would be skipped by an
         // unwind.
         let state_scope_guard =

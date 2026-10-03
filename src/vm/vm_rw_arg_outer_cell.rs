@@ -42,7 +42,7 @@ impl Interpreter {
         sym: crate::symbol::Symbol,
     ) -> Option<Value> {
         let name = sym.as_str();
-        if !self.escaping_our_lexical_names.is_empty()
+        if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(cell) = self.escaping_our_write_cell(code, name)
         {
             return Some(cell);

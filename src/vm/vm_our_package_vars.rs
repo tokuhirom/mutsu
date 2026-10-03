@@ -163,7 +163,9 @@ impl Interpreter {
         // so an ordinary variable read pays one hash-set check. It also keeps
         // the `current_package()` lock read and the `locals` scan below off the
         // hot path for every unrelated name.
-        if self.our_scalar_cell_names.is_empty() || !self.our_scalar_cell_names.contains(name) {
+        if self.lexicals.our_scalar_cell_names.is_empty()
+            || !self.lexicals.our_scalar_cell_names.contains(name)
+        {
             return None;
         }
         let key = self.our_package_var_key(name)?;

@@ -904,7 +904,7 @@ impl Interpreter {
         // without it, a class declared inside any block had every method call
         // init under `key#c<caller>` and sync under `key`, so `method m { state
         // $n; $n++ }` restarted on every call. Restored after the sync.
-        let saved_state_scope = self.state_scope_id.take();
+        let saved_state_scope = self.lexicals.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this
@@ -1093,7 +1093,7 @@ impl Interpreter {
             let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
-        self.state_scope_id.set(saved_state_scope);
+        self.lexicals.state_scope_id.set(saved_state_scope);
 
         // `Some` only when a `:=`-bound attribute was recovered beyond the raw
         // cell contents (`reconcile_attrs`); the common exit stays `None` = the
@@ -1141,7 +1141,7 @@ impl Interpreter {
             // into the caller's same-named `@x` (zef `!find-prereq-candidates`
             // `@needed`). The light-call merge already excludes these via
             // `declared_locals`.
-            let class_body_static_names = self.class_body_static_names.clone();
+            let class_body_static_names = self.lexicals.class_body_static_names.clone();
             let is_method_local = |s: &str| -> bool {
                 matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                     || method_def.params.iter().any(|p| p == s)
@@ -2381,7 +2381,7 @@ impl Interpreter {
         crate::alloc_scope_named!(_sc_loc_state, "mfast:loc:state-and-defaults");
         // See the sibling path: a method body's `state` is keyed by the method,
         // not by the caller's closure scope. Restored after the sync.
-        let saved_state_scope = self.state_scope_id.take();
+        let saved_state_scope = self.lexicals.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this
@@ -2587,7 +2587,7 @@ impl Interpreter {
             let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
-        self.state_scope_id.set(saved_state_scope);
+        self.lexicals.state_scope_id.set(saved_state_scope);
         crate::alloc_scope_end!(_sc_body);
         crate::alloc_scope!("mfast:epilogue");
 
@@ -2666,7 +2666,7 @@ impl Interpreter {
                 // leak to the caller): frame fixtures, params, attribute twigil
                 // forms, and compiled locals. No alias arm — the fast-path gate
                 // excludes alias-carrying instances.
-                let class_body_static_names = self.class_body_static_names.clone();
+                let class_body_static_names = self.lexicals.class_body_static_names.clone();
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)

@@ -31,8 +31,9 @@ impl Interpreter {
             // A lexical `&infix:<op>` binding (e.g. a `&infix:<@@>` parameter)
             // shadows the package-level operator of the same name. Guarded by the
             // shadow-name set so the common case (no operator param) is free.
-            if !self.amp_param_shadowed_names.is_empty()
+            if !self.lexicals.amp_param_shadowed_names.is_empty()
                 && self
+                    .lexicals
                     .amp_param_shadowed_names
                     .contains(&Symbol::intern(&infix_name))
                 && let Some(callable) = self.lexical_infix_override(code, &infix_name)

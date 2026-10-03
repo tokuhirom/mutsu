@@ -786,9 +786,9 @@ impl Interpreter {
             // runs via `run_nested`, whose register reset would otherwise
             // clear the scope, so hand it across (consumed by
             // `with_nested_registers`).
-            self.pending_nested_state_scope = registration_id;
+            self.lexicals.pending_nested_state_scope = registration_id;
             let result = self.eval_block_value_with_pre_post(&def.body);
-            self.pending_nested_state_scope = None;
+            self.lexicals.pending_nested_state_scope = None;
             self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.pending_eval_sigilless = saved_eval_sigilless;
             self.set_current_package(saved_package);

@@ -171,7 +171,7 @@ pub(crate) struct ResolutionCaches {
     /// ([#8300](https://github.com/tokuhirom/mutsu/issues/8300)).
     ///
     /// Interior-mutable (and in its own `Box`ed allocation, for the same
-    /// aliasing reason as [`Interpreter::readonly_vars`]) because the callers
+    /// aliasing reason as [`LexicalState::readonly_vars`](crate::runtime::lexical_state::LexicalState::readonly_vars)) because the callers
     /// hold `&self`: the package itself lives behind an `RwLock` precisely so
     /// a temporary switch does not need `&mut self`.
     ///

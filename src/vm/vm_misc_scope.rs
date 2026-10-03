@@ -208,7 +208,8 @@ impl Interpreter {
         // `vm_our_package_vars`. A file-scope `our $x` collapses `qualified`
         // to the bare name, has no package to reconstruct, and is skipped.
         if qualified != local_name {
-            crate::runtime::cow_table_mut(&mut self.our_scalar_cell_names).insert(local_name);
+            crate::runtime::cow_table_mut(&mut self.lexicals.our_scalar_cell_names)
+                .insert(local_name);
         }
         // Persist under the qualified key too, matching what every other
         // `our`/package-qualified store already does (stash introspection,
@@ -576,7 +577,8 @@ impl Interpreter {
         };
         let once_scope = self.next_once_scope_id();
         // Track variables declared within this block scope.
-        self.block_declared_vars
+        self.lexicals
+            .block_declared_vars
             .push(crate::runtime::NameSet::default());
         // Push saved locals for $OUTER:: variable access.
         //
@@ -712,7 +714,7 @@ impl Interpreter {
         self.restore_routine_registry(routine_snapshot);
 
         // Pop the block-declared variables set.
-        let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+        let block_declared = self.lexicals.block_declared_vars.pop().unwrap_or_default();
         // Pop the outer scope locals snapshot.
         self.outer_scope_locals.pop();
 

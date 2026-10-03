@@ -29,7 +29,7 @@ impl Interpreter {
                 // whether or not the local got a cell — roast
                 // S12-construction/roles-6e.t's `$order` holds a List, a shape
                 // `box_captured_lexicals` declines to box at all.
-                if self.type_body_written_lexicals.contains(bare) {
+                if self.lexicals.type_body_written_lexicals.contains(bare) {
                     continue;
                 }
                 // ADR-0023: a name currently bound as a for-loop parameter is a
@@ -142,11 +142,11 @@ impl Interpreter {
             // into one copy (#10076). `ParamBoundAggregates` records them
             // weakly, so it neither pins arguments alive nor mistakes a reused
             // address for a recorded one.
-            for name in self.param_bound_aggregates.names() {
+            for name in self.lexicals.param_bound_aggregates.names() {
                 if self
                     .env
                     .get(name)
-                    .is_some_and(|cur| self.param_bound_aggregates.holds(name, cur))
+                    .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(name, cur))
                 {
                     out.insert(name.clone());
                 }
@@ -208,7 +208,7 @@ impl Interpreter {
     pub(crate) fn note_type_body_written_lexicals(&mut self, code: &CompiledCode) {
         for sym in &code.type_body_written_lexicals {
             let name = sym.resolve();
-            crate::runtime::cow_table_mut(&mut self.type_body_written_lexicals)
+            crate::runtime::cow_table_mut(&mut self.lexicals.type_body_written_lexicals)
                 .insert(name.trim_start_matches('$').to_string());
         }
     }
@@ -755,9 +755,7 @@ impl Interpreter {
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
-            nested_capture_owners: Vec::new(),
-            nested_method_captures: Default::default(),
-            composed_nested_method_captures: self.composed_nested_method_captures.clone(),
+            lexicals: self.lexicals.fork_for_thread(),
             module_loading_unit_stack: Vec::new(),
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),
@@ -781,46 +779,8 @@ impl Interpreter {
             fatal_mode: self.fatal_mode,
             lexical_fatal_mode: self.lexical_fatal_mode,
             suppress_cross_eval_class_redeclaration_check: false,
-            our_vars: rustc_hash::FxHashMap::default(),
-            our_var_unqualified: rustc_hash::FxHashSet::default(),
-            // ADR-11318: one `PROCESS::` stash for the whole lineage.
-            process_dynamics: self.process_dynamics.clone(),
-            hll_syms: rustc_hash::FxHashMap::default(),
-            package_lexicals: self.package_lexicals.clone(),
-            class_body_static_names: self.class_body_static_names.clone(),
-            unit_lexicals: self.unit_lexicals.clone(),
-            mainline_lexical_subs: self.mainline_lexical_subs.clone(),
-            lexsub_free_aliases: self.lexsub_free_aliases.clone(),
-            lexsub_latest_cells: self.lexsub_latest_cells.clone(),
-            escaped_our_lexical_cells: self.escaped_our_lexical_cells.clone(),
-            escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
-            escaping_our_env_param_names: self.escaping_our_env_param_names.clone(),
-            escaped_our_sub_names: self.escaped_our_sub_names.clone(),
-            our_scalar_cell_names: self.our_scalar_cell_names.clone(),
-            state_vars: HashMap::new(),
-            state_vars_unmigrated: Vec::new(),
-            // Pending hoist cells belong to the parent's frames.
-            hoist_pending_cells: Vec::new(),
-            // The child re-binds its own env-bound parameters if it runs any.
-            param_bound_aggregates: Default::default(),
-            // A worker can instantiate a type registered on the parent, so the
-            // set of method-written lexicals travels with the clone.
-            type_body_written_lexicals: self.type_body_written_lexicals.clone(),
-            // Mirror state_vars: a thread clone starts with no persisted
-            // closure captured state (falls back to the captured-env initial
-            // values), exactly as before this store existed.
-            closure_captured_state: HashMap::new(),
-            var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
-            var_bindings: HashMap::new(),
             attributes_pragma: self.attributes_pragma.clone(),
-            // Inherit monotonically: if the parent ever registered an atomic var,
-            // the child (which shares the atomic storage via shared_vars) must keep
-            // running the atomic-variable read check.
-            // Inherit monotonically: the parent's sigilless-alias env keys are
-            // copied into the child env, so the child must keep walking the chain.
-            atomic_var_seen: self.atomic_var_seen,
-            sigilless_alias_seen: self.sigilless_alias_seen,
             attr_var_defaults: self.attr_var_defaults.clone(),
             attr_var_defaults_epoch: self.attr_var_defaults_epoch,
             attr_var_defaults_current: Default::default(),
@@ -853,11 +813,6 @@ impl Interpreter {
             lexical_class_pending_scopes: self.lexical_class_pending_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
-            readonly_vars: Box::new(std::cell::RefCell::new(
-                crate::runtime::ReadonlySet::default(),
-            )),
-            readonly_undo: Box::new(std::cell::RefCell::new(Vec::new())),
-            readonly_frames: Box::new(std::cell::Cell::new(0)),
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
@@ -870,7 +825,6 @@ impl Interpreter {
             stack: Vec::new(),
             locals: crate::runtime::locals::Locals::new(),
             trir: crate::trir::frame::TrStacks::default(),
-            unit_lexical_gen: 0,
             trir_outer_cache: rustc_hash::FxHashMap::default(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
@@ -896,16 +850,12 @@ impl Interpreter {
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
-            readonly_rw_tail: None,
             // Share the parent's captured module-sub bodies by value so a `start`
             // block that calls a module sub with `state` reaches the same compiled
             // body (and thus the same cross-thread `state` cell) the parent used.
             imported_compiled_fns: self.imported_compiled_fns.clone(),
-            state_scope_id: Box::new(std::cell::Cell::new(None)),
-            pending_nested_state_scope: None,
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
             pos_light_ic_epoch: 1,
-            amp_param_shadowed_names: std::collections::HashSet::new(),
             // Which env keys an EXPORT hook installed is load-time knowledge,
             // not per-thread run state: a routine the parent loaded may run on
             // the thread and must still see its module's hook-installed names
@@ -914,15 +864,10 @@ impl Interpreter {
             export_amp_override_names: self.export_amp_override_names.clone(),
             unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
-            frame_lexical_routines: Arc::clone(&self.frame_lexical_routines),
-            frame_lexical_closure_bodies: Arc::clone(&self.frame_lexical_closure_bodies),
             user_declared_classes: self.user_declared_classes.clone(),
-            block_declared_vars: crate::runtime::ScopeStack::new(),
-            constant_var_names_seen: rustc_hash::FxHashSet::default(),
             outer_scope_locals: Vec::new(),
             enter_result_stack: Vec::new(),
             pending_alias_bind_names: Vec::new(),
-            hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
             nested_run_depth: 0,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).

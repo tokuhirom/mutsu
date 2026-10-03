@@ -296,7 +296,7 @@ impl Interpreter {
                 || self
                     .env
                     .get(key)
-                    .is_some_and(|cur| self.param_bound_aggregates.holds(key, cur)))
+                    .is_some_and(|cur| self.lexicals.param_bound_aggregates.holds(key, cur)))
     }
 
     /// Mask each scalar and aggregate parameter (`&` parameters are excluded)

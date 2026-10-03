@@ -40,3 +40,4 @@ unit_lexical_gen
 unit_lexicals
 var_bindings
 var_dynamic_flags
+lexicals

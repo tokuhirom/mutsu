@@ -3,7 +3,7 @@ use crate::meta_ns::MetaNs;
 
 /// Process-global, monotonic: set the first time any atomic variable / atomic
 /// storage is registered on ANY interpreter. See
-/// [`Interpreter::atomic_var_seen`] for why this cannot be per-interpreter.
+/// [`LexicalState::atomic_var_seen`](crate::runtime::lexical_state::LexicalState::atomic_var_seen) for why this cannot be per-interpreter.
 static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Process-global, monotonic: set the first time any variable type constraint
@@ -184,9 +184,11 @@ impl Interpreter {
         // (and only when the map is non-empty, avoiding the sigil-strip alloc).
         let key = Self::normalize_var_meta_name(name);
         if dynamic {
-            self.var_dynamic_flags.insert(key.to_string(), true);
-        } else if !self.var_dynamic_flags.is_empty() {
-            self.var_dynamic_flags.remove(key);
+            self.lexicals
+                .var_dynamic_flags
+                .insert(key.to_string(), true);
+        } else if !self.lexicals.var_dynamic_flags.is_empty() {
+            self.lexicals.var_dynamic_flags.remove(key);
         }
     }
 
@@ -619,7 +621,7 @@ impl Interpreter {
     /// VM, and an opaque atomic load there is not free.
     #[inline(always)]
     pub(crate) fn atomic_var_seen(&self) -> bool {
-        self.atomic_var_seen
+        self.lexicals.atomic_var_seen
     }
 
     /// Whether any atomic variable has ever been registered *anywhere in the
@@ -640,7 +642,7 @@ impl Interpreter {
     /// this interpreter (for the read gates) and process-wide (for the reset gate
     /// and the JIT's `LOCAL_READ_SPOILERS` latch).
     pub(crate) fn mark_atomic_var_seen(&mut self) {
-        self.atomic_var_seen = true;
+        self.lexicals.atomic_var_seen = true;
         ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         crate::vm::vm_jit::note_local_read_spoiler();
     }
@@ -687,13 +689,13 @@ impl Interpreter {
     /// costs a `format!` + env lookup on every inc-dec / compound-assign).
     #[inline(always)]
     pub(crate) fn sigilless_alias_seen(&self) -> bool {
-        self.sigilless_alias_seen
+        self.lexicals.sigilless_alias_seen
     }
 
     /// Mark that a sigilless-parameter alias env key has been registered. Called at
     /// every `__mutsu_sigilless_alias::*` insert site (see `sigilless_alias_key`).
     pub(crate) fn mark_sigilless_alias_seen(&mut self) {
-        self.sigilless_alias_seen = true;
+        self.lexicals.sigilless_alias_seen = true;
     }
 
     /// Get the evaluated `is default(...)` value for a class attribute.

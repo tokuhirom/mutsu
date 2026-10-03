@@ -126,6 +126,7 @@ impl Interpreter {
             return Arc::clone(&NO_READONLY_AT_DECLARATION);
         }
         let record: Vec<(Symbol, ReadonlyKind)> = self
+            .lexicals
             .readonly_vars
             .borrow()
             .iter()

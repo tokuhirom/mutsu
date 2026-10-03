@@ -55,7 +55,7 @@ impl Interpreter {
             .sub_decl_plans
             .get(plan_idx as usize)
             .is_some_and(|plan| plan.frame_lexical_value);
-        if let Some(target) = self.frame_lexical_routines.get(&r) {
+        if let Some(target) = self.lexicals.frame_lexical_routines.get(&r) {
             if plan_value {
                 let package = target.package;
                 self.mint_frame_lexical_callable_id(package, r.name);
@@ -91,7 +91,7 @@ impl Interpreter {
         let package = def
             .as_ref()
             .map_or_else(|| self.current_package_sym(), |def| def.package);
-        crate::runtime::cow_table_mut(&mut self.frame_lexical_routines).insert(
+        crate::runtime::cow_table_mut(&mut self.lexicals.frame_lexical_routines).insert(
             r,
             FrameLexicalTarget {
                 cf,
@@ -125,7 +125,7 @@ impl Interpreter {
         name: Symbol,
     ) -> Option<Value> {
         let r = code.lexical_routine(name)?;
-        let def = self.frame_lexical_routines.get(&r)?.def.as_ref()?;
+        let def = self.lexicals.frame_lexical_routines.get(&r)?.def.as_ref()?;
         Some(self.sub_value_from_function_def((**def).clone()))
     }
 
@@ -148,7 +148,7 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        if !self.frame_lexical_routines.contains_key(&r) {
+        if !self.lexicals.frame_lexical_routines.contains_key(&r) {
             return Ok(None);
         }
         let args = self.trir_site_fallback_args(site, code);
@@ -190,8 +190,12 @@ impl Interpreter {
             return;
         }
         let key = body.as_ptr() as usize;
-        if !self.frame_lexical_closure_bodies.contains_key(&key) {
-            crate::runtime::cow_table_mut(&mut self.frame_lexical_closure_bodies)
+        if !self
+            .lexicals
+            .frame_lexical_closure_bodies
+            .contains_key(&key)
+        {
+            crate::runtime::cow_table_mut(&mut self.lexicals.frame_lexical_closure_bodies)
                 .insert(key, (body, Arc::clone(cc)));
         }
     }
@@ -205,10 +209,11 @@ impl Interpreter {
         code: &mut CompiledCode,
         fns: &mut CompiledFns,
     ) {
-        if self.frame_lexical_closure_bodies.is_empty() || body.is_empty() {
+        if self.lexicals.frame_lexical_closure_bodies.is_empty() || body.is_empty() {
             return;
         }
         if let Some((_, origin)) = self
+            .lexicals
             .frame_lexical_closure_bodies
             .get(&(body.as_ptr() as usize))
         {
@@ -234,7 +239,7 @@ impl Interpreter {
         if self.any_routine_wrapped() && self.routine_is_wrapped(r.name.as_str()) {
             return Ok(None);
         }
-        let Some(target) = self.frame_lexical_routines.get(&r).cloned() else {
+        let Some(target) = self.lexicals.frame_lexical_routines.get(&r).cloned() else {
             return Ok(None);
         };
         let FrameLexicalCallSite {

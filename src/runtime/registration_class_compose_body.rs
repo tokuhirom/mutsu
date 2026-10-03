@@ -65,7 +65,7 @@ impl Interpreter {
         if new_lexicals.is_empty() {
             return;
         }
-        let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
+        let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
             .entry(owner.to_string())
             .or_default();
         for (bare, _) in &new_lexicals {
@@ -455,14 +455,15 @@ impl Interpreter {
             let import_mark = self.deferred_body_import_mark();
             // A method declared in a nested block of the role body files its
             // capture under the role, not the composing class's package.
-            self.nested_capture_owners
+            self.lexicals
+                .nested_capture_owners
                 .push(Symbol::intern(base_role_name));
             let r = if is_use_decl {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
                 run_one(self)
             };
-            self.nested_capture_owners.pop();
+            self.lexicals.nested_capture_owners.pop();
             if is_type_decl
                 || is_regex_decl
                 || is_proto_token_decl

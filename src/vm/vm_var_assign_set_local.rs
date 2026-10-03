@@ -773,7 +773,7 @@ impl Interpreter {
         // A declaration whose slot holds the cell a hoisted sub seeded for it
         // (#9911, `vm_hoist_capture_cells.rs`): the store replaces the slot,
         // then the value moves into that cell.
-        if !self.hoist_pending_cells.is_empty()
+        if !self.lexicals.hoist_pending_cells.is_empty()
             && self.vardecl_context().get()
             && let Some(pending) = self.take_hoist_pending_cell(idx as usize)
         {
@@ -1460,7 +1460,11 @@ impl Interpreter {
                 // next call into the module. Every other cell keeps the
                 // existing `Nil` overwrite, which preserves the key for saved
                 // frame propagation.
-                if self.our_scalar_cell_names.contains(&code.locals[idx]) {
+                if self
+                    .lexicals
+                    .our_scalar_cell_names
+                    .contains(&code.locals[idx])
+                {
                     self.env_mut().remove_sym(sym);
                 } else {
                     self.env_mut().insert_sym(sym, Value::NIL);
@@ -2590,7 +2594,7 @@ impl Interpreter {
             // lexical, and `class E { my $w := $z }` must share its cell, or
             // the alias degrades to a by-name write that a later `$z = 5`
             // never reaches (#11086).
-            let source_in_enclosing_decl_scope = !self.nested_capture_owners.is_empty()
+            let source_in_enclosing_decl_scope = !self.lexicals.nested_capture_owners.is_empty()
                 && !source_in_same_scope
                 && self.env().contains_key(&resolved_source);
             let source_in_outer_frame = !is_percall_pseudo_var
@@ -3486,10 +3490,13 @@ impl Interpreter {
         // interpolation).
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             if is_constant {
-                self.constant_var_names_seen.insert(name.to_string());
+                self.lexicals
+                    .constant_var_names_seen
+                    .insert(name.to_string());
                 self.env_mut()
                     .insert_sym_noting(MetaNs::ConstantVar.key_for_str(name), Value::TRUE);
-            } else if is_vardecl && !is_bind && self.constant_var_names_seen.contains(name) {
+            } else if is_vardecl && !is_bind && self.lexicals.constant_var_names_seen.contains(name)
+            {
                 self.env_mut()
                     .remove_sym(MetaNs::ConstantVar.key_for_str(name));
             }
@@ -3521,7 +3528,7 @@ impl Interpreter {
         // -- the set is keyed by bare name) does not apply to it. The
         // declaration's own traits re-mark it right after this op. Journaled
         // like any unmark, so leaving the frame restores the outer mark.
-        if !self.readonly_vars.borrow().is_empty() {
+        if !self.lexicals.readonly_vars.borrow().is_empty() {
             self.unmark_readonly_sym(name_sym);
         }
         // A `my $*name` is this frame's own binding of the dynamic, not the
@@ -3718,7 +3725,7 @@ impl Interpreter {
             // declaration (#9911) keeps the cell: the fresh binding is the
             // cell's, so the sub still shares it.
             let kept_hoist_cell = (reset_existing || !had_binding)
-                && !self.hoist_pending_cells.is_empty()
+                && !self.lexicals.hoist_pending_cells.is_empty()
                 && local_slot.is_some_and(|slot| {
                     self.reset_hoist_pending_cell(slot as usize, name, &default)
                 });
@@ -3741,7 +3748,7 @@ impl Interpreter {
         // Track this variable as declared within the current block scope.
         // BlockScope restoration uses this to avoid propagating block-local
         // variable values back to the outer scope.
-        if let Some(set) = self.block_declared_vars.last_mut() {
+        if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
             set.insert(name_sym);
         }
         // Track loop-body declarations so a closure created in the body can mark

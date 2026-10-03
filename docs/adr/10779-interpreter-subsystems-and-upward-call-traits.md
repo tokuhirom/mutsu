@@ -227,4 +227,10 @@ these preconditions:
     dispatch-stack, `.wrap`, operator-table, function-key-index and dispatch-flag fields;
     `fork_for_thread` carries the operator tables, `.wrap` chains and stub decl sites over and
     starts the rest fresh; 295 → 266.
-  - Next: `io`, `lexicals`.
+  - `lexicals`: done. `LexicalState` (`src/runtime/lexical_state.rs`) holds the 41 `our`/
+    package/unit-lexical, `state`, escaping-`our`, lexsub-alias, nested-capture, readonly and
+    block-declaration fields. `new()`/`fork_for_thread()` are exactly the entries
+    `Interpreter::new`/`clone_for_thread` spelled out per field, comments included; 266 → 226.
+  - Next: `io` (most of it already lives in `OutputSink`/`IoHandleTable`/`TapState`; its
+    `doc_comments`/`why_*` fields are declarator docs and need re-classifying first), then
+    `module` and `types`.

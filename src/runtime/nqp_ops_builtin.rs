@@ -173,7 +173,7 @@ impl Interpreter {
             // build info before any Raku-level class is composed. mutsu seeds
             // the one binding it needs (`bootstrap_hll_syms`) and otherwise
             // treats this as a genuinely general get/set pair backed by
-            // [`Interpreter::hll_syms`], not a special case for that one key.
+            // [`LexicalState::hll_syms`](crate::runtime::lexical_state::LexicalState::hll_syms), not a special case for that one key.
             // Cost: O(m), m = chars of $hll + $name (copied into an owned key tuple, then hashed).
             "gethllsym" => {
                 let hll = args
