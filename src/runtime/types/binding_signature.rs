@@ -1771,15 +1771,29 @@ impl Interpreter {
                     // that were not consumed by explicit named parameters.
                     let mut positional = Vec::new();
                     let mut named = ValueMap::default();
-                    // First, collect remaining args from positional_idx
-                    for arg in args[positional_idx..].iter().cloned() {
-                        let arg = unwrap_varref_value(arg);
+                    // First, collect remaining args from positional_idx. A
+                    // positional read from a caller variable keeps that
+                    // variable's container (#11295, `capture_param_containers`).
+                    let capture_key = (!pd.name.is_empty()).then_some(binding_name);
+                    for (arg_idx, raw_arg) in args.iter().enumerate().skip(positional_idx) {
+                        let arg = unwrap_varref_value(raw_arg.clone());
                         if let ValueView::Pair(key, val) = arg.view() {
                             if !explicit_named_keys.contains(key) {
                                 named.insert(key.clone(), val.clone());
                             }
                         } else {
-                            positional.push(arg.clone());
+                            let arg_source = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref());
+                            let elem_idx = positional.len();
+                            positional.push(self.capture_positional_container(
+                                raw_arg,
+                                arg_source,
+                                capture_key,
+                                elem_idx,
+                                &mut rw_bindings,
+                            ));
                         }
                     }
                     // Also collect Pair args that were skipped before positional_idx
