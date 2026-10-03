@@ -182,8 +182,10 @@ impl CaptureView {
             let hidden = match removed {
                 None => layer.hidden.clone(),
                 Some(removed) => {
-                    let mut hidden: FxHashSet<Symbol> =
-                        layer.hidden.as_deref().cloned().unwrap_or_default();
+                    let mut hidden: FxHashSet<Symbol> = match layer.hidden.as_deref() {
+                        Some(h) => h.clone(),
+                        None => FxHashSet::default(),
+                    };
                     hidden.extend(removed.iter().copied());
                     Some(Arc::new(hidden))
                 }
