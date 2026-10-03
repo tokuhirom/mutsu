@@ -1097,6 +1097,7 @@ mod expr_closure;
 mod expr_data;
 mod expr_helpers;
 mod expr_incdec_nested;
+mod expr_incdec_ternary;
 mod expr_index_concat_assign;
 mod expr_method;
 mod expr_ops;

@@ -968,14 +968,18 @@ impl Compiler {
                 op: TokenKind::PlusPlus,
                 expr,
             } => {
-                self.compile_expr_postfix_inc(expr);
+                if !self.compile_incdec_through_ternary(expr, TokenKind::PlusPlus, true) {
+                    self.compile_expr_postfix_inc(expr);
+                }
             }
             // Postfix -- on variable
             Expr::PostfixOp {
                 op: TokenKind::MinusMinus,
                 expr,
             } => {
-                self.compile_expr_postfix_dec(expr);
+                if !self.compile_incdec_through_ternary(expr, TokenKind::MinusMinus, true) {
+                    self.compile_expr_postfix_dec(expr);
+                }
             }
             // Assignment as expression
             Expr::AssignExpr {

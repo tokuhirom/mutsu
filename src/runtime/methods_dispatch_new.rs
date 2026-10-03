@@ -1122,6 +1122,8 @@ impl Interpreter {
             if attr.sigil == '@' {
                 let mut arr = Value::real_array(Vec::new());
                 if let Some(tc) = type_constraint {
+                    // With the smiley: `has Str:D @.e` starts as `Array[Str:D]`.
+                    let tc = self.attribute_reported_constraint(class_name, &attr_name, &tc);
                     arr = self.tag_container_metadata(
                         arr,
                         super::ContainerTypeInfo {

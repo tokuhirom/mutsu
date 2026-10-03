@@ -3,6 +3,11 @@ use crate::symbol::Symbol;
 
 impl Compiler {
     pub(super) fn compile_expr_unary(&mut self, op: &TokenKind, expr: &Expr) {
+        if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
+            && self.compile_incdec_through_ternary(expr, op.clone(), false)
+        {
+            return;
+        }
         // Constant folding (ADR-0006 §2.1): `-1` / `-(2 * 3)` collapse to one
         // LoadConst instead of a LoadConst + Negate pair.
         if let Some(folded) = self.try_const_fold_unary(op, expr) {
