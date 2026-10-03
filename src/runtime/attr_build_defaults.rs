@@ -360,6 +360,14 @@ impl Interpreter {
         attrs: &AttrMap,
         scope: AttrDeclScope<'_>,
     ) -> Result<Value, RuntimeError> {
+        // A literal default (`is default(False)`, `has $.n = 0`) evaluates to
+        // itself: the scope set up below -- `self`, `?CLASS`, a `!x`/`.x` pair
+        // per attribute, the declaring package and unit -- is restored
+        // untouched afterwards and nothing reads it. Skip it; it cost ~13k
+        // instructions per default per construction (#9494, `CSV::Field.new`).
+        if let DeclTraitArg::Literal(value) = arg {
+            return Ok(value.clone().detach_shared_container());
+        }
         let AttrDeclScope {
             env: captured_env,
             unit: captured_unit,

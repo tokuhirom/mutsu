@@ -1558,6 +1558,11 @@ pub(crate) struct NativeCtorPlan {
     /// call falls back to the default constructor, which the native builder
     /// then serves exactly as for an `eligible` class.
     pub(crate) eligible_when_user_new_declines: bool,
+    /// Memo of `user_new_declines` for a call with NO arguments, whose answer
+    /// is a function of the class shape alone -- exactly what this plan is
+    /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
+    /// mutation and generation bump), so the memo cannot outlive it.
+    pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
