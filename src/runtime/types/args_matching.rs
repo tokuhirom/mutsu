@@ -657,7 +657,7 @@ impl Interpreter {
                             arg_idx,
                             &dispatch_arg,
                         ))
-                        || !self.type_matches_value(&resolved_constraint, &dispatch_arg)
+                        || !self.param_constraint_accepts(&resolved_constraint, &dispatch_arg)
                     {
                         return false;
                     }

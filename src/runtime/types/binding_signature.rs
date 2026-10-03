@@ -593,7 +593,10 @@ impl Interpreter {
         // Only an `@` parameter binds through `PositionalBindFailover`, so the
         // role check (a full type walk for an object argument) is asked of
         // those alone.
-        if pd.name.starts_with('@')
+        // A `Positional`-typed parameter (`sub f(Positional $p)`) binds a
+        // Seq through the same failover (rakudo#4864).
+        let positional_typed = pd.type_constraint.as_deref() == Some("Positional");
+        if (pd.name.starts_with('@') || positional_typed)
             && !seq_list_array_context
             && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))

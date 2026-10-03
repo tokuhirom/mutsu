@@ -536,6 +536,16 @@ impl Interpreter {
             || self.type_matches_value("PositionalBindFailover", value)
     }
 
+    /// Whether an argument satisfies a parameter's nominal `constraint` for
+    /// dispatch: the type check, plus the failover a `Positional`-typed
+    /// parameter grants a Seq (`sub f(Positional $p)`, rakudo#4864).
+    // Cost: O(1) amortized, as `type_matches_value`.
+    pub(crate) fn param_constraint_accepts(&mut self, constraint: &str, value: &Value) -> bool {
+        self.type_matches_value(constraint, value)
+            || (constraint == "Positional"
+                && self.type_matches_value("PositionalBindFailover", value))
+    }
+
     // Cost: O(1) when the constraint matches or names no lexical type; the
     // miss path adds one registry-name probe and, on a hit, a scan of the type
     // tables.
