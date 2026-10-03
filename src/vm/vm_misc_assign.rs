@@ -185,11 +185,20 @@ impl Interpreter {
                 ValueView::VarRef { value, .. } => value.clone(),
                 _ => raw_val,
             };
-            let Some(ValueView::ContainerRef(cell)) = self.env().get("self").map(Value::view)
-            else {
-                return Err(RuntimeError::assignment_ro(None));
+            // The invocant arrives either through a live container cell (a
+            // caller's `@items`) or as the aggregate value itself (a role
+            // mixed into a Hash, `%h does R`, or an `is Hash` instance). An
+            // Array/Hash value shares its backing node with every holder, so
+            // it is reassigned in place either way; a container object is
+            // assigned through its `STORE`, as `=` on any container is.
+            let (cell, current) = match self.env().get("self").map(Value::view) {
+                Some(ValueView::ContainerRef(cell)) => {
+                    let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                    (Some(cell), current)
+                }
+                Some(_) => (None, self.env().get("self").cloned().unwrap_or(Value::NIL)),
+                None => return Err(RuntimeError::assignment_ro(None)),
             };
-            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             // `self` on an aggregate is the caller's role-mixed value.  A
             // whole-container assignment must update that value's backing
             // Array/Hash while retaining the Mixin wrapper; replacing the
@@ -225,7 +234,22 @@ impl Interpreter {
                 _ => false,
             };
             if !assigned_in_place {
-                Value::store_through_cell(&cell, &val);
+                match &cell {
+                    Some(cell) => Value::store_through_cell(cell, &val),
+                    // Only a container object (an `is Hash`/`is Array`
+                    // instance) is assignable; a plain object `self` stays
+                    // immutable (X::Assignment::RO).
+                    None if matches!(aggregate.view(), ValueView::Instance { attributes, .. }
+                        if attributes.as_map().contains_key("__mutsu_hash_storage")
+                            || attributes.as_map().contains_key("__mutsu_array_storage")) =>
+                    {
+                        let stored =
+                            self.try_compiled_method_or_interpret(current, "STORE", vec![val])?;
+                        self.stack.push(stored);
+                        return Ok(());
+                    }
+                    None => return Err(RuntimeError::assignment_ro(None)),
+                }
             }
             self.stack
                 .push(if assigned_in_place { current } else { val });
@@ -506,6 +530,9 @@ impl Interpreter {
         let attr_constraint = (!val.is_nil())
             .then(|| self.scalar_attr_type_constraint(&name))
             .flatten();
+        // A Proxy's STORE gets an assigned `Nil` as written (see the Proxy arm
+        // below); the Nil resets that follow are for containers.
+        let assigned_nil = val.is_nil();
         let mut val = if !name.starts_with('@')
             && !name.starts_with('%')
             && let Some(constraint) =
@@ -602,7 +629,14 @@ impl Interpreter {
                 && !storer.is_nil()
             {
                 let proxy_val = current_proxy.unwrap();
-                loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
+                let stored = if assigned_nil {
+                    Value::NIL
+                } else {
+                    val.clone()
+                };
+                // The expression's value is the Proxy container, read through
+                // FETCH, not the right-hand side.
+                let fetched = loan_env!(self, assign_proxy_lvalue(proxy_val, stored))?;
                 // A Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = v`) mutates
                 // the referent caller lexical (`$str`) by name in env. The STORE
                 // records the referent on the retain-on-miss writeback list
@@ -610,7 +644,7 @@ impl Interpreter {
                 // is refreshed precisely without the blanket env→locals pull
                 // (substrate step toward env_dirty removal; byte-identical under ON).
                 self.apply_pending_rw_writeback(code);
-                self.stack.push(val);
+                self.stack.push(fetched);
                 return Ok(());
             }
         }

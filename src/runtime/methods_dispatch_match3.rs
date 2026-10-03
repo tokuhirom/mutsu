@@ -844,6 +844,17 @@ impl Interpreter {
                     Err(e) => return Some(Err(e)),
                 };
                 resolved.push(Value::str(s.to_string_value()));
+            } else if (v.as_list_items().is_some() || matches!(v.view(), ValueView::Hash(_)))
+                && crate::value::gist::str_needs_dispatch(&v)
+            {
+                // A nested list/hash holding an instance (Terminal::Print's
+                // grid rows of `Cell`s): its `.Str` reaches the elements' own
+                // `.Str`, which `to_str_context` cannot run.
+                let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
+                    Ok(s) => s,
+                    Err(e) => return Some(Err(e)),
+                };
+                resolved.push(Value::str(s.to_string_value()));
             } else {
                 resolved.push(v);
             }

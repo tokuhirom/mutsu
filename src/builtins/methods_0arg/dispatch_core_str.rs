@@ -370,13 +370,11 @@ pub(super) fn dispatch(
                 // first so a cell-wrapped Instance is also routed to runtime.
                 // A Junction likewise falls through — it must thread the
                 // whole `join` over its eigenstates, not stringify in place.
+                // A nested list holding an instance (`([$cell],).join`) needs
+                // it too: the inner list's `.Str` stringifies its elements.
                 if items.iter().any(|v| {
-                    v.with_deref(|inner| {
-                        matches!(
-                            inner.view(),
-                            ValueView::Instance { .. } | ValueView::Junction { .. }
-                        )
-                    })
+                    v.with_deref(|inner| matches!(inner.view(), ValueView::Junction { .. }))
+                        || crate::value::gist::str_needs_dispatch(v)
                 }) {
                     return Some(None);
                 }

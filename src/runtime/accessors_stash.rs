@@ -327,6 +327,14 @@ impl Interpreter {
         (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
     }
 
+    /// Parse `CALLER::...::OUR::`, the package stash of a caller frame's
+    /// package, into its `CALLER` depth.
+    // Cost: O(n), n = bytes in the pseudo-stash name.
+    pub(crate) fn caller_our_stash_depth(name: &str) -> Option<usize> {
+        let prefix = name.strip_suffix("OUR::")?;
+        Self::caller_stash_depth(prefix)
+    }
+
     /// Parse `CALLER::...::LEXICAL::`, the lexical-pad view of a caller frame.
     // Cost: O(n), n = bytes in the pseudo-stash name.
     pub(crate) fn caller_lexical_stash_depth(name: &str) -> Option<usize> {

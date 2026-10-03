@@ -17,6 +17,7 @@ use super::{Expr, Stmt};
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
     SignatureDecl(SignatureDecl),
+    MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

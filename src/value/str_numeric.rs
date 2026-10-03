@@ -700,11 +700,17 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
         let numer = if sign < 0 { -numer } else { numer };
         return Some(crate::value::make_rat(numer, denom));
     }
-    // Overflow or too many digits: fall back to f64 approximation
-    let combined = format!("{}.{}", int_clean, frac_clean);
-    let f: f64 = combined.parse().ok()?;
-    let f = if sign < 0 { -f } else { f };
-    Some(Value::num(f))
+    // Too many digits for i64: the value is still the exact decimal, as Rakudo
+    // keeps it (`"0.1234567890123456789012345".Numeric` is a Rat whose
+    // denominator is 2e24), the same arbitrary-precision Rat a numeric literal
+    // of that spelling builds. Only arithmetic on it degrades to Num.
+    use num_bigint::BigInt;
+    let int_val: BigInt = int_clean.parse().ok()?;
+    let frac_val: BigInt = frac_clean.parse().ok()?;
+    let denom = BigInt::from(10).pow(u32::try_from(frac_clean.len()).ok()?);
+    let numer = int_val * &denom + frac_val;
+    let numer = if sign < 0 { -numer } else { numer };
+    Some(crate::value::make_big_rat(numer, denom))
 }
 
 /// Parse plain integer with underscores.

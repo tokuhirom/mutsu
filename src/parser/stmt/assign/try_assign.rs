@@ -87,6 +87,18 @@ pub(crate) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
 /// how the list-infix lift below came to be missing from all of them while the
 /// ordinary postfix `.method: …` path had it.
 pub(crate) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
+    parse_colon_args_with(input, parse_colon_method_arg)
+}
+
+/// [`parse_colon_args`] with the per-argument parser supplied by the caller:
+/// a topic call (`.method: a, b`) stops each argument at the loose
+/// word-logical operators, so `.contains: 'a' and .contains: 'b'` is two calls.
+/// Everything else -- the sequence-argument lift, adjacent colonpairs, and the
+/// trailing comma before a terminator or statement modifier -- is shared.
+pub(crate) fn parse_colon_args_with(
+    input: &str,
+    parse_arg: fn(&str) -> PResult<'_, Expr>,
+) -> PResult<'_, Vec<Expr>> {
     let r = &input[1..];
     let (r, _) = ws(r)?;
     // Raku's list-infix operators are LOOSER than the comma separating the
@@ -99,7 +111,7 @@ pub(crate) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
         let (r_seq, seq) = result?;
         return Ok((r_seq, vec![seq]));
     }
-    let (r, first_arg) = parse_colon_method_arg(r)?;
+    let (r, first_arg) = parse_arg(r)?;
     let mut args = vec![first_arg];
     let mut r_inner = r;
     loop {
@@ -118,20 +130,20 @@ pub(crate) fn parse_colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
         }
         let r2 = &r2[1..];
         let (r2, _) = ws(r2)?;
-        // Trailing comma before `;`, `}`, or a statement modifier — the comma is
+        // Trailing comma before `;`, `}`, the close of an enclosing group
+        // (`)` / `]`), or a statement modifier — the comma is
         // an empty list slot, exactly as in the listop argument path (see
         // `is_stmt_modifier_after_trailing_comma`). Without the modifier case,
         // `self.set-from-file: $!browser, #`[ $.debug ] unless $driver;`
         // (WebDriver2) demanded one more argument and read `unless …` as it.
-        if r2.starts_with(';')
-            || r2.starts_with('}')
+        if r2.starts_with([';', '}', ')', ']'])
             || r2.is_empty()
             || crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma(r2)
         {
             r_inner = r2;
             break;
         }
-        let (r2, next) = parse_colon_method_arg(r2)?;
+        let (r2, next) = parse_arg(r2)?;
         args.push(next);
         r_inner = r2;
     }

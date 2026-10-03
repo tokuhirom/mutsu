@@ -91,7 +91,7 @@ impl Interpreter {
             }
         }
         // Re-publishing the same cell would still move the env tier (a
-        // copy-on-write by-name store), defeating the closure-capture memo.
+        // copy-on-write by-name store) for nothing.
         let unchanged = self
             .env()
             .get(key)

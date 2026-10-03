@@ -1248,6 +1248,11 @@ impl Interpreter {
             }
         }
 
+        // A full force from inside this gather's own running body.
+        if let Some(prefix) = self.reentrant_gather_pull(list, usize::MAX) {
+            return prefix;
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
@@ -1314,6 +1319,7 @@ impl Interpreter {
         let saved_gather_len = self.gather_items_len();
         self.push_gather_items(Vec::new());
         self.push_gather_take_limit(None);
+        Self::set_gather_running_collector(list, Some(saved_gather_len));
 
         // Initialize locals for the compiled code
         self.locals.refill_slots(cc.locals.len());
@@ -1356,6 +1362,7 @@ impl Interpreter {
         // Collect gather items
         let items = self.pop_gather_items().unwrap_or_default();
         self.pop_gather_take_limit();
+        Self::set_gather_running_collector(list, None);
 
         // Clean up extra gather items if needed
         while self.gather_items_len() > saved_gather_len {
@@ -1388,7 +1395,11 @@ impl Interpreter {
         // back: a body loop var shadowing a same-named consumer lexical would
         // otherwise clobber it (see CompiledCode::self_declared_names).
         let body_declared = cc.self_declared_names();
-        for (k, v) in gather_result_env.iter() {
+        // The body's writes are all in the env's own overlay: a layered capture
+        // (`Env::layered_capture`) keeps its shared system-name layers in a
+        // fallback no write reaches, so walking those too would only compare
+        // every unchanged system name in scope on every force (#9170).
+        for (k, v) in gather_result_env.overlay_iter() {
             if !saved_env.contains_key_sym(*k) {
                 continue;
             }

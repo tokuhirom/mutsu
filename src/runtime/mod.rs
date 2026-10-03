@@ -647,6 +647,8 @@ mod class;
 mod class_attr_table;
 mod class_dispatch;
 mod class_introspection;
+#[cfg(unix)]
+pub(crate) mod cloexec_pipe;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 pub(crate) mod array_type_trait;
@@ -683,6 +685,8 @@ pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
 pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
+mod attribute_core_traits;
+mod container_store;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
@@ -762,6 +766,7 @@ mod methods_classhow;
 mod methods_classhow_attribute;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
+mod methods_classhow_grammar_tokens;
 mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
@@ -792,6 +797,7 @@ mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 pub(crate) mod module_merge;
+pub(crate) mod process_stash;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
@@ -1560,6 +1566,11 @@ pub(crate) struct NativeCtorPlan {
     /// call falls back to the default constructor, which the native builder
     /// then serves exactly as for an `eligible` class.
     pub(crate) eligible_when_user_new_declines: bool,
+    /// Memo of `user_new_declines` for a call with NO arguments, whose answer
+    /// is a function of the class shape alone -- exactly what this plan is
+    /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
+    /// mutation and generation bump), so the memo cannot outlive it.
+    pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
@@ -3382,23 +3393,17 @@ pub struct Interpreter {
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
     our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
-    /// Runtime-installed `PROCESS::` dynamics (`PROCESS::<$name> := value`,
-    /// the `Rakudo::Internals.REGISTER-DYNAMIC` idiom), keyed by the same
-    /// dynamic-var env key `store_process_dynamic` writes (`*name`/`@*name`/
-    /// `%*name`).
+    /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
+    /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
+    /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
     ///
-    /// `self.env_mut().insert(...)` alone is not durable: when the
-    /// `PROCESS::<...> := ...` write executes inside any nested block/
-    /// module/sub frame (a `Env::scoped_child`), that frame's overlay is
-    /// dropped the moment the frame exits, and a later `$*name` read from an
-    /// unrelated frame throws `X::Dynamic::NotFound` even though real `raku`
-    /// installs the default globally regardless of nesting depth (#8682).
-    /// This store — plain on `Interpreter`, not part of any `Env` chain, so
-    /// it outlives every frame — is what such a later read falls back to
-    /// (`GetGlobal`'s final fallback chain) and what a same-named later
-    /// `$*name = ...` write from any frame keeps in sync, mirroring
-    /// `our_vars`'s block-scope-survival role for `our` variables.
-    process_dynamics: rustc_hash::FxHashMap<String, Value>,
+    /// One store for the whole lineage: thread clones share it, so a write on
+    /// one thread is seen by a thread that was already running (ADR-11318,
+    /// #11318). It is also what makes such a write durable across frames: it
+    /// never lands in a frame's env overlay, which a nested block/sub frame
+    /// drops on exit (#8682). Reads reach it through
+    /// [`Interpreter::resolve_process_dynamic`].
+    process_dynamics: process_stash::ProcessStash,
     /// The NQP/MoarVM HLL symbol table (`nqp::bindhllsym`/`nqp::gethllsym`),
     /// keyed by `(hll, name)`. Real MoarVM keeps one such table per process,
     /// shared by every HLL; mutsu instead seeds it fresh on every

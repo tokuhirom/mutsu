@@ -304,8 +304,18 @@ impl Trace for LazyList {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         // Same shared-overlay rule as `SubData::trace`: claim the captured
         // env map's edges only as its sole holder.
+        //
+        // Only the overlay: a layered capture's shared system-name layers
+        // (`Env::layered_capture`) are held by every closure of their scope
+        // and by the tier that memoized them, so they are external holders
+        // in exactly the same sense (#9170).
         if self.env.gc_overlay_uniquely_owned() {
-            for v in self.env.values() {
+            for v in self.env.overlay_values() {
+                v.gc_trace(visit);
+            }
+        }
+        if let Some(merged) = self.env.gc_capture_merged() {
+            for v in merged.values() {
                 v.gc_trace(visit);
             }
         }
@@ -330,9 +340,12 @@ impl Trace for LazyList {
     fn drop_gc_edges(&mut self) {
         // Sever only a uniquely-owned overlay — see `SubData::drop_gc_edges`.
         if self.env.gc_overlay_uniquely_owned() {
-            for v in self.env.values_mut() {
+            for v in self.env.overlay_values_mut() {
                 *v = Value::Nil;
             }
+        }
+        if self.env.gc_capture_merged().is_some() {
+            self.env.drop_capture_merged();
         }
         if let Ok(mut cache) = self.cache.lock() {
             *cache = None;
@@ -359,8 +372,18 @@ impl Trace for SubData {
         // a cycle routed solely through it defers (never corrupts). Flattened
         // captures (`clone_env` at Sub creation) build a fresh map, so the
         // common closure-capture cycles stay uniquely owned and collectable.
+        //
+        // Only the overlay: a layered capture's shared system-name layers
+        // (`Env::layered_capture`) are held by every closure of their scope
+        // and by the tier that memoized them, so they are external holders
+        // in exactly the same sense (#9170).
         if self.env.gc_overlay_uniquely_owned() {
-            for v in self.env.values() {
+            for v in self.env.overlay_values() {
+                v.gc_trace(visit);
+            }
+        }
+        if let Some(merged) = self.env.gc_capture_merged() {
+            for v in merged.values() {
                 v.gc_trace(visit);
             }
         }
@@ -377,9 +400,12 @@ impl Trace for SubData {
         // COW-clone the whole map mid-reclaim, running `Gc::clone`s that
         // corrupt the collector's scratch counts.
         if self.env.gc_overlay_uniquely_owned() {
-            for v in self.env.values_mut() {
+            for v in self.env.overlay_values_mut() {
                 *v = Value::Nil;
             }
+        }
+        if self.env.gc_capture_merged().is_some() {
+            self.env.drop_capture_merged();
         }
         self.assumed_positional.clear();
         self.assumed_named.clear();

@@ -689,6 +689,15 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             c.is_alphanumeric() || c == '_' || c == '-'
         })?;
         (r, Some(Expr::Var(var.to_string())), String::new())
+    } else if let Some(after_amp) = rest.strip_prefix('&')
+        && after_amp.starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        // `my %opts .= &get-opts` calls a routine as a method on the fresh
+        // variable (`%opts = %opts.&get-opts`), as the statement form does.
+        let (r, var) = super::take_while1(after_amp, |c: char| {
+            c.is_alphanumeric() || c == '_' || c == '-'
+        })?;
+        (r, Some(Expr::CodeVar(var.to_string())), String::new())
     } else {
         let (r, name) =
             super::take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -713,43 +722,11 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         (rest_ws, Vec::new())
     };
-    // Build: Type.method(args)
-    // For typed `@`/`%` declarations, the `.=` target is the *container* type
-    // parameterized by the element constraint, e.g. `my Int @x .= new` calls
-    // `Array[Int].new`, and `my Array of Bool @x .= new` calls
-    // `Array[Array[Bool]].new` — not `Int.new` / `Array[Bool].new`.
-    let target_expr = match &s.type_constraint {
-        Some(c) if s.name.starts_with('@') => {
-            if crate::native_types::is_native_array_element_type(c) {
-                Expr::BareWord(format!("array[{c}]"))
-            } else {
-                Expr::BareWord(format!("Array[{c}]"))
-            }
-        }
-        Some(c) if s.name.starts_with('%') => Expr::BareWord(format!("Hash[{c}]")),
-        // In v6.c, `.=` calls the declared type, including its smiley, so
-        // `my Int:D $x .= new` tries to instantiate Int:D and fails. Later
-        // revisions use the base type. The `@`/`%` arms above always keep the
-        // smiley because it constrains the element of the container type.
-        Some(c) => {
-            let target = if crate::parser::current_language_version_starts_with("6.c") {
-                c.as_str()
-            } else {
-                crate::parser::stmt::decl::strip_type_smiley_suffix(c)
-            };
-            Expr::BareWord(target.to_string())
-        }
-        // Untyped: `.= new` desugars to `$var = $var.new(...)`, so the invocant is
-        // the variable itself, NOT a type named after it. Using a `@c`-named
-        // `BareWord` mis-dispatched (e.g. `my @c .= new(:shape(2,2), ...)` built
-        // only a 1-element array). Mirror the `@c = @c.new(...)` var-read expr.
-        None => match s.name.chars().next() {
-            Some('@') => Expr::ArrayVar(s.name[1..].to_string()),
-            Some('%') => Expr::HashVar(s.name[1..].to_string()),
-            Some('$') => Expr::Var(s.name[1..].to_string()),
-            _ => Expr::BareWord(s.name.clone()),
-        },
-    };
+    let target_expr = crate::ast::method_assign_decl::invocant(
+        &s.name,
+        s.type_constraint.as_deref(),
+        crate::parser::current_language_version_starts_with("6.c"),
+    );
     // The untyped form's self-read is the `.=` invocant, not a use of the
     // variable in its own initializer: exempt it from that check
     // (`outer_redecl`, X::Syntax::Variable::Initializer).
@@ -779,6 +756,8 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
+    let is_static_method = dynamic_name.is_none();
+    let source_args = args.clone();
     let expr = match dynamic_name {
         Some(name_expr) => Expr::DynamicMethodCall {
             target: Box::new(target_expr),
@@ -802,17 +781,41 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let chain_base = (rest.starts_with('.') && !rest.starts_with(".."))
         .then(|| Expr::Var(s.name.clone()))
         .filter(|_| !s.name.starts_with(['@', '%', '&']));
-    let stmt = Stmt::VarDecl {
-        name: s.name,
-        expr,
-        type_constraint: s.type_constraint,
-        is_state: s.is_state,
-        is_our: s.is_our,
-        is_dynamic: s.has_dynamic_trait,
-        is_export: s.has_export_trait,
-        export_tags: s.export_tags.clone(),
-        custom_traits,
-        where_constraint: s.where_constraint.clone(),
+    let (after_ws, _) = ws(rest)?;
+    let has_trailing_comma = after_ws.starts_with(',') && !after_ws.starts_with(",,");
+    let stmt = if is_static_method
+        && s.apply_modifier
+        && s.shape_dims.is_none()
+        && chain_base.is_none()
+        && !has_trailing_comma
+    {
+        crate::ast::method_assign_decl::expand(crate::ast::method_assign_decl::MethodAssignDecl {
+            name: s.name,
+            type_constraint: s.type_constraint,
+            is_state: s.is_state,
+            is_our: s.is_our,
+            is_dynamic: s.has_dynamic_trait,
+            is_export: s.has_export_trait,
+            export_tags: s.export_tags,
+            custom_traits: s.custom_traits,
+            where_constraint: s.where_constraint,
+            method: Symbol::intern(&method_name),
+            args: source_args,
+            is_v6c: crate::parser::current_language_version_starts_with("6.c"),
+        })
+    } else {
+        Stmt::VarDecl {
+            name: s.name,
+            expr,
+            type_constraint: s.type_constraint,
+            is_state: s.is_state,
+            is_our: s.is_our,
+            is_dynamic: s.has_dynamic_trait,
+            is_export: s.has_export_trait,
+            export_tags: s.export_tags.clone(),
+            custom_traits,
+            where_constraint: s.where_constraint.clone(),
+        }
     };
     if let Some(base) = chain_base {
         let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;

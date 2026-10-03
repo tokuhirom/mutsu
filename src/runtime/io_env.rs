@@ -439,6 +439,11 @@ impl Interpreter {
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {
+        // A handle written to the process binding (`$PROCESS::OUT = $fh`, on
+        // any thread) lives only in the process stash (ADR-11318).
+        if let Some(v) = self.process_dynamic_read(name) {
+            return Some(v);
+        }
         self.env.get(name).cloned().or_else(|| {
             crate::runtime::utils::twigil_dynamic_alias(name)
                 .and_then(|alias| self.env.get(&alias).cloned())

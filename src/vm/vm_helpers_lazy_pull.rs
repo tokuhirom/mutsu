@@ -115,6 +115,11 @@ impl Interpreter {
             }
         }
 
+        // A pull from inside this gather's own running body.
+        if let Some(prefix) = self.reentrant_gather_pull(list, needed) {
+            return prefix.map(Some);
+        }
+
         // Need compiled code
         let (cc, fns) = match (&list.compiled_code, &list.compiled_fns) {
             (Some(cc), Some(fns)) => (cc.clone(), fns.clone()),
@@ -224,6 +229,7 @@ impl Interpreter {
             self.push_gather_items(Vec::new());
             0
         };
+        Self::set_gather_running_collector(list, Some(saved_gather_len));
         self.push_gather_take_limit(Some(needed));
         // Record this pull's VM and interpreter routine depths so `take_value`
         // can detect a take arriving from a NESTED routine call, where
@@ -319,6 +325,7 @@ impl Interpreter {
                 started: true,
                 for_loop_resume,
                 state_scope_id: gather_scope_id,
+                running_collector: None,
             };
             if let Some(ref coro_mutex) = list.coroutine {
                 *coro_mutex.lock().unwrap() = coro_state;
@@ -328,6 +335,7 @@ impl Interpreter {
         } else if let Some(ref coro_mutex) = list.coroutine {
             let mut coro = coro_mutex.lock().unwrap();
             coro.finished = true;
+            coro.running_collector = None;
         }
 
         // Merge env changes back to outer scope
@@ -338,7 +346,11 @@ impl Interpreter {
         // back: a body loop var shadowing a same-named consumer lexical would
         // otherwise clobber it (see CompiledCode::self_declared_names).
         let body_declared = cc.self_declared_names();
-        for (k, v) in gather_result_env.iter() {
+        // The body's writes are all in the env's own overlay: a layered capture
+        // (`Env::layered_capture`) keeps its shared system-name layers in a
+        // fallback no write reaches, so walking those too would only compare
+        // every unchanged system name in scope on every force (#9170).
+        for (k, v) in gather_result_env.overlay_iter() {
             if !saved_env.contains_key_sym(*k) {
                 continue;
             }
