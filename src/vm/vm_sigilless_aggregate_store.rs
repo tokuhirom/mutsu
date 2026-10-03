@@ -23,14 +23,17 @@ use super::*;
 impl Interpreter {
     /// Whether `value` is an aggregate a sigilless name can assign into: a
     /// real `Array` (not a `List`, which rakudo refuses as immutable) or a
-    /// `Hash` that is not a `Map`.
+    /// `Hash` that is not a `Map`. An itemized one is the content of a Scalar
+    /// (`my $h = {...}; f($h)` binding `\c`), so the assignment replaces the
+    /// Scalar's value instead.
     // Cost: O(1).
     pub(super) fn is_sigilless_assignable_aggregate(value: &Value) -> bool {
         match value.view() {
             ValueView::Array(_, kind) => {
-                kind.is_real_array() || kind == crate::value::ArrayKind::Shaped
+                !kind.is_itemized()
+                    && (kind.is_real_array() || kind == crate::value::ArrayKind::Shaped)
             }
-            ValueView::Hash(_) => !value.is_immutable_map(),
+            ValueView::Hash(_) => !value.hash_is_itemized() && !value.is_immutable_map(),
             _ => false,
         }
     }
