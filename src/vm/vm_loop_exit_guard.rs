@@ -1,5 +1,5 @@
 //! `OpCode::LoopExitGuard`: run a loop iteration's exit phasers when a loop
-//! control signal unwinds out of the iteration.
+//! control signal or an exception unwinds out of the iteration.
 //!
 //! The phasers are queued on the *dynamic* path, the way rakudo's loop
 //! handlers run them: whether a `next` leaves this loop is only known when the
@@ -12,8 +12,10 @@ use super::*;
 impl Interpreter {
     /// Run the guarded body `[ip+1..body_end)`. On a `next` aimed at this loop
     /// run the NEXT queue `[body_end..exit_start)`; on any `next`/`last`/`redo`/
-    /// `return` leaving the iteration run the UNDO+LEAVE queue
-    /// `[exit_start..end)`; then re-raise the signal for the loop runner.
+    /// `return` or ordinary exception leaving the iteration run the UNDO+LEAVE
+    /// queue `[exit_start..end)`; then re-raise the signal for the loop runner
+    /// (or the handler that catches the exception). An exception unwinds only
+    /// once the CATCH handlers have declined to `.resume` it (#10580).
     ///
     /// The queue order (NEXT, then UNDO, then LEAVE) is the one rakudo uses for
     /// an interrupted iteration, the reverse of the fall-through order
@@ -34,23 +36,58 @@ impl Interpreter {
         let stack_depth = self.stack.len();
         // A lazy-gather pull that suspended inside the body re-enters here:
         // continue where it stopped instead of replaying the body.
-        let run_start = self
+        let mut run_start = self
             .take_try_catch_gather_resume(code, guard_ip)
             .unwrap_or(guard_ip + 1);
-        let err = match self.run_range(code, run_start, body_end, compiled_fns) {
-            Ok(()) => {
-                *ip = end as usize;
-                return Ok(());
+        let err = loop {
+            let err = match self.run_range(code, run_start, body_end, compiled_fns) {
+                Ok(()) => {
+                    *ip = end as usize;
+                    return Ok(());
+                }
+                Err(e) => e,
+            };
+            if Self::is_gather_take_limit_signal(&err) {
+                // A coroutine suspension, not an exit: the iteration goes on.
+                return Err(self.park_try_catch_gather_suspend(code, guard_ip, body_end, err));
             }
-            Err(e) => e,
+            if !Self::is_inline_catchable(&err) || err.catch_inline_verdict().is_some() {
+                break err;
+            }
+            // An ordinary exception no handler has seen yet. `die`/`.throw`
+            // already offered it to the resume-capable CATCH handlers at their
+            // throw site (ADR-0072); an error raised by any other op reaches
+            // them here, before the iteration unwinds, so a handler that
+            // `.resume`s continues this iteration instead of finding its LEAVE
+            // queue already run -- rakudo likewise runs the handler first and
+            // the exit phasers only while unwinding.
+            match self.try_catch_inline(err) {
+                Ok(_) => {
+                    self.stack.truncate(stack_depth);
+                    match self.take_resume_ip_for(code) {
+                        Some(resume) if resume > guard_ip && resume < body_end => {
+                            run_start = resume;
+                        }
+                        // The resume point is not in this iteration's own
+                        // code (the throw site has unwound): the iteration
+                        // completes, as a resumed `try` region does.
+                        _ => {
+                            *ip = end as usize;
+                            return Ok(());
+                        }
+                    }
+                }
+                Err(e) => break e,
+            }
         };
-        if Self::is_gather_take_limit_signal(&err) {
-            // A coroutine suspension, not an exit: the iteration goes on.
-            return Err(self.park_try_catch_gather_suspend(code, guard_ip, body_end, err));
-        }
         let queue_start = if err.is_next() && Self::label_matches(&err.label, label) {
             body_end
-        } else if err.is_next() || err.is_last() || err.is_redo() || err.is_return() {
+        } else if err.is_next()
+            || err.is_last()
+            || err.is_redo()
+            || err.is_return()
+            || (Self::is_inline_catchable(&err) && !self.is_halted())
+        {
             exit_start as usize
         } else {
             return Err(err);
