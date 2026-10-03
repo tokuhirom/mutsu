@@ -294,8 +294,17 @@ impl Interpreter {
         // does consume an optional argument, however, it must compete with
         // longer signatures whose required parameters may describe the call
         // more precisely (the `is-approx` tolerance overloads).
+        //
+        // A slurpy exact-arity candidate is no such fast-path winner: a
+        // sibling with an optional positional (`multi g($x?)`, registered under
+        // a different arity) ties it on `min_arity` and ranks narrower because
+        // it is not slurpy, so the two must be ranked together (#11173).
+        let exact_candidate_slurpy = candidates
+            .iter()
+            .any(|(_, def)| def.param_defs.iter().any(|p| p.is_variadic()));
         if !exact_candidate_consumes_optional
             && !exact_candidate_untyped
+            && !exact_candidate_slurpy
             && exact_candidate_has_unnamed
         {
             stages.push(self.rank_candidates_for_plan(name, arg_values, candidates.clone()));
