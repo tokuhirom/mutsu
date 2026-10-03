@@ -448,11 +448,23 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // it renders as one, parenthesised, as an element of an outer list too
         // (`[(5) (5)]` for `@nodes>>.all`).
         // Cost: O(t), t = rendered size of at most the first 100 elements.
-        ValueView::LazyList(ll) if ll.cache.lock().unwrap().is_some() => {
-            let cache = ll.cache.lock().unwrap();
-            let items = cache.as_deref().unwrap_or(&[]);
-            let open = if ll.in_array_context() { "[" } else { "(" };
-            let close = if ll.in_array_context() { "]" } else { ")" };
+        ValueView::LazyList(ll)
+            if ll
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some() =>
+        {
+            let cache = ll
+                .cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let items = cache.as_deref().unwrap_or_default();
+            let (open, close) = if ll.in_array_context() {
+                ("[", "]")
+            } else {
+                ("(", ")")
+            };
             format!("{open}{}{close}", gist_elements(items.iter(), " "))
         }
         // Cost: O(t), t = rendered size of at most the first 100 elements (the
