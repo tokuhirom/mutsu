@@ -1,6 +1,6 @@
 # ADR-11136: A module's GLOBAL merge is lexical to the scope that loaded it
 
-- **Status**: Accepted (user decision 2026-10-03). Implementation: see §6.
+- **Status**: Accepted (user decision 2026-10-03). Implemented; see §6.
 - **Date**: 2026-10-03
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11136](https://github.com/tokuhirom/mutsu/issues/11136) (split out of
@@ -116,7 +116,14 @@ Keep the stores global. Visibility is decided by **provenance + merges**:
 - **`GLOBAL::OuterCls`** stays resolvable: mutsu's `GLOBAL` *is* the shared store. This also
   only widens visibility.
 - **A setting-namespace declaration** (`class X::Foo` in a module) is unaffected, as #7797
-  already decided: Rakudo merges those into the setting's shared stash.
+  already decided: Rakudo merges those into the setting's shared stash. So is a declaration
+  under an explicit `GLOBAL::` name (`class GLOBAL::Pointer`, NativeCall's prelude splice),
+  which Rakudo installs into `GLOBAL` too.
+- **`require` in expression position** (`my $m = (require ::($name))`) merges at unit level:
+  only a statement-level `need`/`use`/`require` opens a block's import scope.
+- **A `unit module`'s own unexported class by its bare short name** stays reachable through the
+  importer-package alias (`package_type_aliases`). That is a separate mechanism, tracked in
+  [#11181](https://github.com/tokuhirom/mutsu/issues/11181).
 
 ## 5. Alternatives rejected
 
@@ -134,6 +141,24 @@ Keep the stores global. Visibility is decided by **provenance + merges**:
 
 ## 6. Implementation status
 
-- Bare-name provenance, merges and gate for types, packages and terms; block-level merges
-  through import-scope env keys; `need`-only blocks open an import scope; the #7797 gate
-  honours block-level merges (#11136's PR).
+Implemented in #11136's PR (`src/runtime/module_merge.rs`):
+
+- **Provenance.** `module_name_providers` holds the bare classes, roles, constants, packages,
+  enums and subsets of a package-less module's own top level. `module_routine_providers` holds
+  its `our sub`s (`GLOBAL::name`). Prelude routines and `GLOBAL::`-named types are excluded.
+- **Merges.**
+  - A block-level merge is a `MetaNs::ModuleMerge` env key in the innermost import scope that
+    the importing compunit opened. A statement-level `need`/`require` now opens one too
+    (`has_use_stmt`).
+  - A unit-level merge goes into `unit_merged_modules`. A unit's top-level unconditional
+    `need`/`use` is recorded when the unit's body starts (`premerge_top_level_uses`), because it
+    is a compile-time merge that mutsu's CHECK guards must already see.
+  - The BEGIN-time preload of a nested `use` does not merge; the in-position statement does.
+- **Gate.**
+  - `bare_name_visible_here` is consulted by bareword resolution (`push_bare_word_value` and the
+    per-site memo), `::('...')` and the `EVAL` undeclared-name check.
+  - `module_routine_visible_here` is consulted by the three bare routine lookups. Such a name
+    bypasses the name-keyed routine caches (`is_unit_scoped_routine_name`).
+  - #7797's qualified gate checks a module-published top-level package and block-level package
+    grants (`package_granting_modules`).
+- **Registry.** An import scope's class rollback keeps every module-published class.
