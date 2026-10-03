@@ -142,9 +142,15 @@ impl crate::ast_visit::VisitMut for Hoister {
 
 /// A nested package declaration hoists its own body.
 fn owns_its_scope(stmt: &Stmt) -> bool {
+    // An `augment class Int { method m {...} }` inside a class body declares
+    // `m` on `Int`, not on the enclosing class (Int::polydiv's `unit class`
+    // augments the core `Int`).
     matches!(
         stmt,
-        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::Package { .. }
+        Stmt::ClassDecl { .. }
+            | Stmt::RoleDecl { .. }
+            | Stmt::Package { .. }
+            | Stmt::AugmentClass { .. }
     )
 }
 
