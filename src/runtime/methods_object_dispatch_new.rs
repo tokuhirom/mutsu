@@ -251,7 +251,7 @@ impl Interpreter {
         self.registry_mut().clear_user_methods_for_owner(owner);
         self.registry_mut().sync_accessor_entries(owner);
         self.clear_private_zeroarg_method_cache();
-        self.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_cache.clear();
     }
 
     /// Bind a parameterised role's type arguments to its type parameters and

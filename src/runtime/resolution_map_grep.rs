@@ -300,7 +300,7 @@ impl Interpreter {
             lexically_in_routine,
         });
         if let Some(key) = &key
-            && let Some((code, fns)) = self.map_grep_compile_cache.get(key)
+            && let Some((code, fns)) = self.caches.map_grep_compile_cache.get(key)
         {
             return (code.clone(), fns.clone());
         }
@@ -337,7 +337,8 @@ impl Interpreter {
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         if let Some(key) = key {
-            self.map_grep_compile_cache
+            self.caches
+                .map_grep_compile_cache
                 .insert(key, (code.clone(), fns.clone()));
         }
         (code, fns)
@@ -372,7 +373,7 @@ impl Interpreter {
             lexically_in_routine: false,
         });
         if let Some(key) = &key
-            && let Some((code, fns)) = self.gather_compile_cache.get(key)
+            && let Some((code, fns)) = self.caches.gather_compile_cache.get(key)
         {
             return (code.clone(), fns.clone());
         }
@@ -409,7 +410,8 @@ impl Interpreter {
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         if let Some(key) = key {
-            self.gather_compile_cache
+            self.caches
+                .gather_compile_cache
                 .insert(key, (code.clone(), fns.clone()));
         }
         (code, fns)

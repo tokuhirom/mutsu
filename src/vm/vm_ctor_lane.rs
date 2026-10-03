@@ -86,12 +86,12 @@ impl Interpreter {
         class_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.ctor_lane.is_empty() {
+        if self.caches.ctor_lane.is_empty() {
             return None;
         }
         self.refresh_method_caches_for_generation();
-        let installed = self.ctor_lane.get(&class_sym)?;
-        let current = self.native_ctor_plan_cache.get(&class_sym)?;
+        let installed = self.caches.ctor_lane.get(&class_sym)?;
+        let current = self.caches.native_ctor_plan_cache.get(&class_sym)?;
         if !std::sync::Arc::ptr_eq(installed, current) {
             return None;
         }
@@ -118,10 +118,10 @@ impl Interpreter {
     // Cost: O(1) when the candidate does not match; otherwise one plan fetch
     // and the eligibility checks, once per class and generation.
     pub(crate) fn note_ctor_lane_reached(&mut self, class_sym: crate::symbol::Symbol) {
-        if self.ctor_lane_candidate != Some(class_sym) {
+        if self.caches.ctor_lane_candidate != Some(class_sym) {
             return;
         }
-        self.ctor_lane_candidate = None;
+        self.caches.ctor_lane_candidate = None;
         let plan = self.native_ctor_plan(class_sym);
         if !plan.eligible
             || plan.is_cunion
@@ -132,6 +132,6 @@ impl Interpreter {
         {
             return;
         }
-        self.ctor_lane.insert(class_sym, plan);
+        self.caches.ctor_lane.insert(class_sym, plan);
     }
 }

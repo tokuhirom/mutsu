@@ -33,6 +33,16 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         ValueView::Array(data, _) => data.items().to_vec(),
         ValueView::Seq(items) => items.to_vec(),
         ValueView::Slip(items) => (**items).clone(),
+        // A `Match` destructures through its `.Capture`: the positional
+        // captures are its positional part (`-> ($a, $b) {...}($/)`).
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => match attributes.as_map().get("list").map(Value::view) {
+            Some(ValueView::Array(data, _)) => data.items().to_vec(),
+            _ => Vec::new(),
+        },
         // A plain scalar has no positional part: its `.Capture` is empty, so
         // `sub f($x ($a)) {}; f('abc')` fails to bind in Rakudo rather than
         // unpacking the value as a one-element list.
@@ -492,6 +502,17 @@ pub(in crate::runtime) fn named_values_from_unpack_target(value: &Value) -> Valu
         ValueView::Array(data, _) => pairs_in_list_to_named(data.items()),
         ValueView::Seq(items) => pairs_in_list_to_named(&items),
         ValueView::Slip(items) => pairs_in_list_to_named(&items),
+        // A `Match`'s named part is its named captures (`-> (:$key) {...}`
+        // as an `.subst` replacement, Lumberjack's formatter), not its
+        // object attributes.
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Match" => match attributes.as_map().get("named").map(Value::view) {
+            Some(ValueView::Hash(map)) => map.map.clone(),
+            _ => ValueMap::default(),
+        },
         ValueView::Instance { attributes, .. } => HashMap::from(&*attributes.as_map()),
         _ => ValueMap::default(),
     }

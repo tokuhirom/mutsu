@@ -77,10 +77,11 @@ impl Interpreter {
             // `try_compiled_method_or_interpret_inner`'s own on-demand-compile
             // cache refresh).
             let cache_key = (class_sym, method_sym);
-            self.method_resolve_cache
+            self.caches
+                .method_resolve_cache
                 .insert(cache_key, Some((owner, def.clone())));
             if !def.is_multi {
-                self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
+                self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             }
             (owner, def)
         } else {
@@ -135,10 +136,11 @@ impl Interpreter {
                 self.populate_uncompiled_method(cn, owner_class.as_str(), method, args, target)
         {
             let cache_key = (class_sym, method_sym);
-            self.method_resolve_cache
+            self.caches
+                .method_resolve_cache
                 .insert(cache_key, Some((owner, def.clone())));
             if !def.is_multi {
-                self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
+                self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             }
             (owner, def)
         } else {

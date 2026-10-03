@@ -833,7 +833,12 @@ impl Interpreter {
             // it as is (its payload), not through its own `.Str` (#11026).
             if let Some(payload) = crate::runtime::str_subclass_payload(&v) {
                 resolved.push(payload);
-            } else if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+            } else if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+                // A deferred inner `.map` Seq (an outer map's block returned
+                // `(3,4).map({...})`) has not run its callback yet; its `.Str`
+                // runs it, where `to_str_context` would read the empty seed.
+                || matches!(v.view(), ValueView::Seq(s) if s.awaits_vm_reify())
+            {
                 let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
                     Ok(s) => s,
                     Err(e) => return Some(Err(e)),

@@ -141,9 +141,9 @@ impl Interpreter {
         arity: usize,
     ) -> Arc<BareMultiPlan> {
         let key = self.bare_multi_plan_key(name, arg_values);
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
-            && let Some(plan) = self.bare_multi_plan_cache.get(generation, key)
+            && let Some(plan) = self.caches.bare_multi_plan_cache.get(generation, key)
         {
             return plan.clone();
         }
@@ -151,8 +151,9 @@ impl Interpreter {
         plan.keyed = key.is_some();
         let plan = Arc::new(plan);
         if let Some(key) = key {
-            debug_assert_eq!(generation, self.fn_resolve_gen);
-            self.bare_multi_plan_cache
+            debug_assert_eq!(generation, self.caches.fn_resolve_gen);
+            self.caches
+                .bare_multi_plan_cache
                 .insert(generation, key, plan.clone());
         }
         plan

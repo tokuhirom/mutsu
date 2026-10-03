@@ -246,7 +246,7 @@ impl Interpreter {
     ///
     /// The answer is a function of the operand *types*, so it is memoized per
     /// `(operator, candidate, argument type keys)` in
-    /// [`Interpreter::core_infix_wins_cache`] (#10111): ranking the core set
+    /// [`ResolutionCaches::core_infix_wins_cache`](crate::runtime::resolution_caches::ResolutionCaches::core_infix_wins_cache) (#10111): ranking the core set
     /// walks every modelled core signature through `type_hierarchy_distance`,
     /// ~30 string-keyed MRO walks per operator call, which was the largest
     /// single cost of a user `multi infix:<*>` call. A candidate whose rank
@@ -261,17 +261,18 @@ impl Interpreter {
         right: &Value,
     ) -> bool {
         let key = self.core_infix_wins_key(name, def, left, right);
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
-            && let Some((cached_def, wins)) = self.core_infix_wins_cache.get(generation, key)
+            && let Some((cached_def, wins)) = self.caches.core_infix_wins_cache.get(generation, key)
             && Arc::ptr_eq(cached_def, def)
         {
             return *wins;
         }
         let wins = self.core_infix_candidate_wins_uncached(name, def, left, right);
         if let Some(key) = key {
-            debug_assert_eq!(generation, self.fn_resolve_gen);
-            self.core_infix_wins_cache
+            debug_assert_eq!(generation, self.caches.fn_resolve_gen);
+            self.caches
+                .core_infix_wins_cache
                 .insert(generation, key, (Arc::clone(def), wins));
         }
         wins

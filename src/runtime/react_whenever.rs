@@ -191,11 +191,11 @@ impl Interpreter {
         body: &std::sync::Arc<Vec<Stmt>>,
     ) -> super::WheneverBodySplit {
         let key = super::WheneverBodyKey(std::sync::Arc::clone(body));
-        if let Some(hit) = self.whenever_body_splits.get(&key) {
+        if let Some(hit) = self.caches.whenever_body_splits.get(&key) {
             return hit.clone();
         }
         let split = Self::split_whenever_body_phasers(body);
-        self.whenever_body_splits.insert(key, split.clone());
+        self.caches.whenever_body_splits.insert(key, split.clone());
         split
     }
 

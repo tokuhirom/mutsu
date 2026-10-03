@@ -1092,6 +1092,25 @@ impl Interpreter {
                 attributes,
                 id,
             } => (class_name, attributes.clone(), id),
+            // A type-object invocant whose method hands back a real `Array` /
+            // `Hash` (`Lumberjack.dispatchers = (...)`, where the `:U`
+            // candidate forwards to a singleton's `@!dispatchers`): an
+            // aggregate IS a container, so this is a list assignment into it,
+            // exactly as for a routine-call result.
+            ValueView::Package(_) => {
+                let saved_sources = self.take_pending_call_arg_sources();
+                let result =
+                    self.call_method_with_values(target.clone(), method, method_args.clone());
+                self.set_pending_call_arg_sources(saved_sources);
+                let result = result?;
+                if let Some(stored) = self.store_into_aggregate_lvalue(&result, value.clone()) {
+                    return Ok(stored);
+                }
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: cannot assign through .{} on non-instance",
+                    method
+                )));
+            }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "X::Assignment::RO: cannot assign through .{} on non-instance",
