@@ -88,6 +88,27 @@ impl Interpreter {
             }
         }
         names.retain(|name| !packaged.contains(name));
+        // The main script's own package-less candidates of a name this module
+        // now scopes, declared before the load. See
+        // [`Self::scope_main_family_if_contested`].
+        let main = crate::runtime::main_unit();
+        let mut contested_main: HashSet<Symbol> = HashSet::new();
+        if decl_unit != main {
+            let registry = self.registry();
+            for (key, def) in registry.functions.iter() {
+                let ks = key.as_str();
+                let base = function_key_base_name(ks);
+                if ks
+                    .strip_prefix("GLOBAL::")
+                    .and_then(|tail| tail.strip_prefix(base))
+                    .is_some_and(|rest| rest.starts_with('/'))
+                    && crate::qualified::is_global_package(def.package)
+                    && self.unit_of_source(def.source_file.as_deref()) == main
+                {
+                    contested_main.insert(Symbol::intern(base));
+                }
+            }
+        }
         names.retain(|name| {
             let name_str = name.as_str();
             name_str != "MAIN"
@@ -102,7 +123,11 @@ impl Interpreter {
         }
         let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
         for name in names {
-            table.entry(name).or_default().entry(decl_unit).or_default();
+            let families = table.entry(name).or_default();
+            families.entry(decl_unit).or_default();
+            if contested_main.contains(&name) {
+                families.entry(main).or_default();
+            }
         }
         self.operator_import_gen += 1;
         self.invalidate_fn_resolution();
@@ -212,5 +237,41 @@ impl Interpreter {
             }
         }
         self.operator_import_gen += 1;
+    }
+
+    /// Scope the main script's own package-less family of `name` to the main
+    /// script, once a loaded module's family of the same name is scoped
+    /// (#11081).
+    ///
+    /// Both families register under the same `GLOBAL::name/<sig>` keys. A
+    /// candidate with no record is visible everywhere, so without this the
+    /// script's `multi sub name(Str)` joined the dispatch inside the module,
+    /// which in Raku only sees its own lexical family. Only a contested name
+    /// is recorded: an uncontested script multi keeps the unit-blind dispatch
+    /// caches, which a scoped name bypasses.
+    // Cost: O(1) unless `name` is scoped; then O(1) hash probes.
+    pub(crate) fn scope_main_family_if_contested(&mut self, name: &str, source_file: Option<&str>) {
+        let Some(name_sym) = Symbol::lookup(name) else {
+            return;
+        };
+        if !self.operator_has_import_scope_sym(name_sym) {
+            return;
+        }
+        let main = crate::runtime::main_unit();
+        if self.unit_of_source(source_file) != main
+            || self
+                .operator_import_units
+                .get(&name_sym)
+                .is_some_and(|families| families.contains_key(&main))
+        {
+            return;
+        }
+        crate::runtime::cow_table_mut(&mut self.operator_import_units)
+            .entry(name_sym)
+            .or_default()
+            .entry(main)
+            .or_default();
+        self.operator_import_gen += 1;
+        self.invalidate_fn_resolution();
     }
 }
