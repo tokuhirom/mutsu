@@ -103,6 +103,18 @@ const NON_SYMBOL_BAREWORDS: &[&str] = &[
     "IterationEnd",
 ];
 
+/// Rakudo core names mutsu builds lazily or only as the result of a method
+/// (`REPL` is registered on first use, `Mu.WALK` returns a `WalkList`), so no
+/// type registry knows them before the program runs. `GLOBALish` is the
+/// compiler's name for the unit's `GLOBAL`.
+const CORE_CLASSES_REGISTERED_ON_USE: &[&str] = &[
+    "REPL",
+    "WalkList",
+    "GLOBALish",
+    "PROCESS",
+    "Perl6::Compiler",
+];
+
 /// A keyword or core term the parser can leave where a symbol would be.
 // Cost: O(k), k = length of the keyword list.
 pub(super) fn is_core_term(name: &str) -> bool {
@@ -162,6 +174,11 @@ struct UndeclaredName<'a> {
     /// declared anywhere is never reported).
     declared: &'a HashSet<String>,
     found: Option<String>,
+    /// Judge only capitalised (type-like) names. The mainline leaves a
+    /// lowercase term to the undeclared-routine check: rakudo reports one as
+    /// an undeclared routine, and the parser leaves several lowercase
+    /// keywords and regex names as barewords.
+    type_like_only: bool,
     /// The line of the statement being walked, for the mainline's message.
     line: i64,
     found_line: i64,
@@ -186,6 +203,13 @@ impl UndeclaredName<'_> {
         {
             return self.is_known(base);
         }
+        // A parameterised type (`Tree[Type]`) is known when its base type is.
+        if let Some(open) = name.find('[')
+            && open > 0
+            && name.ends_with(']')
+        {
+            return self.is_known(&name[..open]);
+        }
         is_core_term(name)
             // Package-qualified names are looked up elsewhere.
             || name.contains("::")
@@ -204,6 +228,9 @@ impl UndeclaredName<'_> {
             // A file-scope constant of the running routine's own module.
             || interp.module_scope_lexical(name).is_some()
             || Interpreter::is_builtin_type(name)
+            || crate::builtin_types::catalog::builtin_type_info(name).is_some()
+            || Interpreter::is_pseudo_package_name(name)
+            || CORE_CLASSES_REGISTERED_ON_USE.contains(&name)
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || Interpreter::is_builtin_function(name)
             || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
@@ -227,6 +254,7 @@ impl<'ast> Visit<'ast> for UndeclaredName<'_> {
             return;
         }
         if let Expr::BareWord(name) = expr
+            && (!self.type_like_only || name.starts_with(|c: char| c.is_ascii_uppercase()))
             && !self.is_known(name)
         {
             self.found = Some(name.clone());
@@ -246,11 +274,13 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
         declared: &HashSet<String>,
+        type_like_only: bool,
     ) -> Option<(String, i64)> {
         let mut scan = UndeclaredName {
             interp: self,
             declared,
             found: None,
+            type_like_only,
             line: 1,
             found_line: 1,
         };
@@ -400,7 +430,7 @@ impl Interpreter {
         }
         declared.extend(types.types);
         declared.extend(types.packages);
-        if let Some((name, _)) = self.first_undeclared_name(stmts, &declared) {
+        if let Some((name, _)) = self.first_undeclared_name(stmts, &declared, false) {
             let suggestions = self.suggest_type_names(&name);
             return Err(RuntimeError::undeclared_type_symbols(
                 &name,

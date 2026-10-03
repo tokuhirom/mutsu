@@ -69,7 +69,7 @@ impl Interpreter {
         let types = Self::unit_declared_types(stmts);
         declared.extend(types.types);
         declared.extend(types.packages);
-        let Some((name, line)) = self.first_undeclared_name(stmts, &declared) else {
+        let Some((name, line)) = self.first_undeclared_name(stmts, &declared, true) else {
             return Ok(());
         };
         let suggestions = self.suggest_type_names(&name);

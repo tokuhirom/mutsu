@@ -7,7 +7,7 @@ use Test;
 # A compile-time error cannot be caught in-process, so the program runs in a
 # child process.
 
-plan 12;
+plan 17;
 
 sub run-snippet(Str:D $code) {
     my $proc = run $*EXECUTABLE.absolute, '-e', $code, :out, :err;
@@ -52,6 +52,17 @@ sub run-snippet(Str:D $code) {
     is $status, 0, 'pair keys, angle words, declared types, enums and constants still work';
     is $out, "Later\n12bazRed42\nInt\nStr:D\n", '...with the right values';
     is $err, '', '...and nothing on stderr';
+}
+
+# Names declared by a type capture, a label or the core are not undeclared.
+for 'sub f(::T $x) { T.^name }; say f(1)', "Int\n",
+    'role Tree[::E] { has Tree[E] $.left; method e { E.^name } }; say Tree[Int].new.e', "Int\n",
+    'class C { method w(::S:) { S.^name } }; say C.w', "C\n",
+    'LOOP: for 1..2 { last LOOP }; say "done"', "done\n",
+    'say GLOBAL.^name ~ REPL.^name ~ CompUnit.^name', "GLOBALREPLCompUnit\n"
+    -> $code, $expected {
+    my ($status, $out, $err) = run-snippet $code;
+    is "$status $out", "0 $expected", "declared: $code";
 }
 
 # EVAL keeps its own check.
