@@ -629,6 +629,20 @@ impl Interpreter {
                 return Err(err);
             }
         }
+        // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the
+        // two callbacks interleave per element (#11176). A map run inside a
+        // gather body stays eager (see below), so it takes the receiver whole.
+        let (chain, target) = self.map_grep_receiver_chain(target, self.gather_items_len() == 0)?;
+        if let Some(items) = chain {
+            return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items,
+                pos: 0,
+                func: args.first().cloned(),
+                fatal: self.fatal_mode,
+                mode: crate::value::MapGrepMode::Map,
+                plan: Default::default(),
+            }));
+        }
         // Infinite/lazy source: return a truly lazy `map` pipeline stage instead
         // of materializing the (possibly infinite) source. Falls back to the
         // eager path for callbacks that need chunked binding (multi-arity /

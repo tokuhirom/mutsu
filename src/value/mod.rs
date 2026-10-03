@@ -648,7 +648,7 @@ pub(crate) use str_iter::{
 pub(crate) mod list_gen;
 pub(crate) mod list_gen_rotor;
 mod map_grep_items;
-pub(crate) use map_grep_items::MapGrepItems;
+pub(crate) use map_grep_items::{MapGrepChain, MapGrepItems};
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;
