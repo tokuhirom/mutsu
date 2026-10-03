@@ -229,13 +229,13 @@ impl Interpreter {
     /// such an alias.
     // Cost: O(n) in the length of `name`, plus one env lookup for the head.
     pub(crate) fn package_alias_var_name(&self, name: &str) -> Option<String> {
-        if !crate::runtime::utils::has_double_colon(name) {
-            return None;
-        }
         let (sigil, rest) = match name.as_bytes().first() {
             Some(b'@' | b'%') => name.split_at(1),
             _ => ("", name),
         };
+        if !crate::qualified::is_qualified(Symbol::intern(rest)) {
+            return None;
+        }
         let real = self.resolve_package_alias_prefix(rest)?;
         Some(format!("{sigil}{real}"))
     }
