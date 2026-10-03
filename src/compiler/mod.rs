@@ -4461,8 +4461,8 @@ impl Compiler {
                 let is_last = i == stmts.len() - 1;
                 // A sunk tail expression or call compiles exactly as any other
                 // statement, `SinkPop` included (`unit_tail_sinks`).
-                let sunk_tail = self.unit_tail_sinks
-                    && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. });
+                let sunk_tail =
+                    self.unit_tail_sinks && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. });
                 if is_last && !sunk_tail {
                     match stmt {
                         Stmt::Expr(expr) => {
