@@ -567,16 +567,6 @@ impl Interpreter {
         self.check_readonly_for_incdec_for(name, None, "postfix:<++>")
     }
 
-    /// [`Self::check_readonly_for_increment`] for a caller holding `name`'s
-    /// interned form. See [`Self::name_is_readonly_binding_for`].
-    pub(crate) fn check_readonly_for_increment_for(
-        &self,
-        name: &str,
-        name_sym: Option<Symbol>,
-    ) -> Result<(), RuntimeError> {
-        self.check_readonly_for_incdec_for(name, name_sym, "postfix:<++>")
-    }
-
     /// Whether `name` denotes a readonly binding, asking BOTH mechanisms that
     /// record one: the `readonly_vars` registry (a non-`is rw` parameter, a
     /// `for` alias, a `constant`) and the separate

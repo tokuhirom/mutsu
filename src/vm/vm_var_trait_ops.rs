@@ -286,6 +286,11 @@ impl Interpreter {
                     }
                 }
                 self.mark_readonly_with(name, crate::ast::ReadonlyKind::ImmutableValue);
+                self.record_readonly_on_own_binding(
+                    code,
+                    name,
+                    crate::ast::ReadonlyKind::ImmutableValue,
+                );
                 return Ok(());
             }
             let is_buf_trait = matches!(
@@ -386,6 +391,11 @@ impl Interpreter {
             }
             // Mark the variable read-only to prevent mutation
             self.mark_readonly_with(&name_str, crate::ast::ReadonlyKind::ImmutableValue);
+            self.record_readonly_on_own_binding(
+                code,
+                &name_str,
+                crate::ast::ReadonlyKind::ImmutableValue,
+            );
             return Ok(());
         }
 

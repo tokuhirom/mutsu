@@ -232,3 +232,40 @@ still records only in the registry. So a free-variable write that resolves to a
 binding without a kind still falls back to the registry. #11165 is the case
 where that fallback is wrong for a *writable* binding. The binding's answer can
 only become final for free variables once slice 2 covers every readonly writer.
+
+### 7.2 Writable decisions for captured `my` declarations (#11165, 2026-10-03)
+
+§7.1's fallback was wrong for a *writable* binding: a top-level sub writing a
+mainline `my $x` from a routine with its own readonly `$x` hit the caller's
+registry mark. This slice lets the declaring frame decide writable bindings
+too, without waiting for every readonly writer:
+
+- **Representation.** `ContainerCell::readonly` gains a `DECIDED_WRITABLE`
+  code (`set_binding_decision` / `binding_decision`). A cell can now say
+  "undecided" (0), "writable, decided by my declaring frame", or a readonly
+  kind. `is_readonly` keeps meaning "carries a readonly kind".
+- **Writer.** Only a plain `=` declaration store decides, and only for the cell
+  `box_decl_local_cell` makes for a local that a nested routine writes by name
+  (`needs_cell_named_sub`, `needs_cell_ref_capture_slots`, escaping `our sub`
+  captures): a fresh `my` is writable (`decide_declared_binding_writable`). The
+  other boxing sites (method captures, regex captures, closure boxing) can box a
+  parameter or a loop alias and stay undecided. A `:=` declaration does not
+  decide: an immutable bind seats §7.1's kind cell or leaves a bare value, and a
+  container bind aliases a binding decided elsewhere.
+- **Re-deciding.** The declaration-time readonly marks — `MarkVarReadonly`
+  (`constant`, `:=` declarations), the `is List`/`Map` traits, the immutable,
+  type-object and itemized-scalar `:=` marks, and a sigilless term's readonly
+  verdict — also re-decide the frame's own binding cell when it carries a
+  decision (`record_readonly_on_own_binding`). The registry mark is still made.
+- **Readers.** `CheckReadOnly`, the by-name `SetGlobal` store check and the
+  named `++`/`--`/`OP=` check (`check_named_incdec_readonly`) resolve the free
+  variable's binding (`free_var_binding_decision`). A readonly kind anywhere on
+  the binding-cell chain refuses; a writable decision skips the registry; an
+  undecided binding still asks the registry. The sigilless marker is still
+  consulted in both cases.
+
+Still open: a write that resolves to an undecided binding (a parameter or loop
+alias captured by a nested routine, an immutable `:=` that kept a bare value,
+`my $y := $x`) still asks the registry, so a caller's same-named mark can still
+decide it. #11263 records that a `constant` anywhere in the file makes §7.1's
+immutable binding cell unreachable from another frame.
