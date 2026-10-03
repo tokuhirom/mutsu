@@ -60,13 +60,7 @@ pub(super) fn dispatch(
             ))))
         }
         // Cost: O(1) (borrows the payload).
-        "ord" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
-            target,
-            |s| match s.chars().next() {
-                Some(ch) => Value::int(ch as u32 as i64),
-                None => Value::NIL,
-            },
-        )))),
+        "ord" => Some(Some(crate::builtins::method_table::str::ord(target, &[]))),
         // Cost: O(n), n = chars of the invocant.
         "ords" => {
             let s = target.to_string_value();

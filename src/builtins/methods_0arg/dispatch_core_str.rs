@@ -20,11 +20,10 @@ pub(super) fn dispatch(
             crate::value::StrIterMode::Words,
             None,
         )))),
-        // Cost: O(n), n = chars of the invocant.
-        "codes" => {
-            let s = target.to_string_value();
-            Some(Some(Ok(Value::int(s.chars().count() as i64))))
-        }
+        // `Cool.codes` and the other `Cool` text methods below: the `Str`
+        // rows' handlers (ADR-11276), on the receiver's string form.
+        // Cost: O(n), n = chars of the invocant's string form.
+        "codes" => Some(Some(crate::builtins::method_table::str::codes(target, &[]))),
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
         "lines" => {
             // Skip for Supply instances -- handled by native Supply.lines
@@ -68,24 +67,20 @@ pub(super) fn dispatch(
             };
             Some(Some(result))
         }
-        // Cost: O(n), n = chars of the invocant (the scan touches only the ends, but the
-        // result is copied).
-        "trim" => Some(Some(Ok(Value::str(
-            target.to_string_value().trim().to_string(),
-        )))),
-        // Cost: O(n), n = chars of the invocant (result copied).
-        "trim-leading" => Some(Some(Ok(Value::str(
-            target.to_string_value().trim_start().to_string(),
-        )))),
-        // Cost: O(n), n = chars of the invocant (result copied).
-        "trim-trailing" => Some(Some(Ok(Value::str(
-            target.to_string_value().trim_end().to_string(),
-        )))),
-        // Cost: O(n), n = chars of the invocant.
-        "flip" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
+        // Cost: O(n), n = chars of the invocant's string form.
+        "trim" => Some(Some(crate::builtins::method_table::str::trim(target, &[]))),
+        // Cost: O(n), n = chars of the invocant's string form.
+        "trim-leading" => Some(Some(crate::builtins::method_table::str::trim_leading(
             target,
-            crate::builtins::str_prim::flip,
-        )))),
+            &[],
+        ))),
+        // Cost: O(n), n = chars of the invocant's string form.
+        "trim-trailing" => Some(Some(crate::builtins::method_table::str::trim_trailing(
+            target,
+            &[],
+        ))),
+        // Cost: O(n), n = chars of the invocant's string form.
+        "flip" => Some(Some(crate::builtins::method_table::str::flip(target, &[]))),
         "so" => {
             // Calling .so on a Failure marks it as handled
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -257,7 +252,7 @@ pub(super) fn dispatch(
             if matches!(target.view(), ValueView::Instance { .. }) {
                 return Some(None);
             }
-            Some(Some(Ok(crate::builtins::chomp_value(target))))
+            Some(Some(crate::builtins::method_table::str::chomp(target, &[])))
         }
         // Cost: O(n), n = chars of the invocant (result copied).
         "chop" => {
@@ -267,9 +262,7 @@ pub(super) fn dispatch(
                     type_name,
                 )))));
             }
-            let mut s = target.to_string_value();
-            s.pop();
-            Some(Some(Ok(Value::str(s))))
+            Some(Some(crate::builtins::method_table::str::chop(target, &[])))
         }
         // Cost: O(n), n = chars of the invocant (one Str per grapheme; eager, so
         // `.comb.head(k)` still pays O(n)).
