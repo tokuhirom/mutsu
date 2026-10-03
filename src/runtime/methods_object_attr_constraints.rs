@@ -443,7 +443,8 @@ impl Interpreter {
                     .unwrap_or_else(|| "Any".to_string());
                     // Elements are checked against the value type alone; an
                     // object hash's key part (`Str{Int}`) is not theirs.
-                    let (value_type, _) = crate::runtime::types::split_object_hash_constraint(&base);
+                    let (value_type, _) =
+                        crate::runtime::types::split_object_hash_constraint(&base);
                     let constraint = Self::join_constraint_smiley(value_type, smiley);
                     let display = format!("{}!{}", attr.sigil, attr_name);
                     let mut elements = Vec::new();

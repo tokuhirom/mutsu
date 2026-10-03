@@ -301,10 +301,7 @@ impl Interpreter {
             .get("mode")
             .is_some_and(|m| m.to_string_value() == "lines")
         {
-            fwd_attrs.insert(
-                "lines_id".to_string(),
-                Value::int(lines_register() as i64),
-            );
+            fwd_attrs.insert("lines_id".to_string(), Value::int(lines_register() as i64));
         }
         let forwarder = Value::make_instance(Symbol::intern(CLASS), fwd_attrs);
         let tap_args = vec![
