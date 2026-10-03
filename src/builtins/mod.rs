@@ -26,6 +26,7 @@ mod methods_narg;
 pub(crate) mod mix_weight;
 pub(crate) mod native_method_row;
 #[cfg(test)]
+#[path = "native_method_row_rakudo_oracle.rs"]
 mod native_method_row_rakudo_oracle;
 mod native_method_row_table;
 pub(crate) mod numeric_subclass;
