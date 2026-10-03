@@ -38,6 +38,30 @@ impl BlockRoutineness {
     }
 }
 
+/// What kind of body `eval_block_value_inner` runs, as far as its compile's
+/// routine classification goes: an EVAL'd unit's mainline (ADR-0037), a body a
+/// code object owns (its recorded classification, ADR-0050), or a body nothing
+/// owns (the ambient fallback).
+#[derive(Clone, Copy)]
+enum CarrierBody {
+    EvalUnit,
+    Owned(BlockRoutineness),
+    Unowned,
+}
+
+impl CarrierBody {
+    fn is_eval_unit(self) -> bool {
+        matches!(self, CarrierBody::EvalUnit)
+    }
+
+    fn routineness(self) -> Option<BlockRoutineness> {
+        match self {
+            CarrierBody::Owned(routineness) => Some(routineness),
+            CarrierBody::EvalUnit | CarrierBody::Unowned => None,
+        }
+    }
+}
+
 /// The four per-`SubData` mutations `eval_block_value_inner` applies to the
 /// chunk it compiles for a carrier block, gathered so they can be both keyed on
 /// and applied in one place.
@@ -345,10 +369,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Id(cache_id)),
-            None,
             None,
             None,
         )
@@ -372,12 +395,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            routineness.map_or(CarrierBody::Unowned, CarrierBody::Owned),
             false,
             Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
             None,
             None,
-            routineness,
         )
     }
 
@@ -400,11 +422,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             body,
-            false,
+            CarrierBody::Unowned,
             false,
             Some(CarrierCacheKey::Id(cache_id)),
             Some(free_var_writes_out),
-            None,
             None,
         )
     }
@@ -424,7 +445,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, true, None, None, None, None)
+        self.eval_block_value_inner(body, CarrierBody::Unowned, true, None, None, None)
     }
 
     /// Run a chunk the compiler built from a signature expression (ADR-0133)
@@ -439,12 +460,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         self.eval_block_value_inner(
             &[],
-            false,
+            CarrierBody::Unowned,
             record_free_var_writes,
             None,
             None,
             Some(chunk),
-            None,
         )
     }
 
@@ -467,7 +487,12 @@ impl Interpreter {
         // retain-on-miss list then refreshes the slot in whichever frame declares
         // the lexical, and `propagate_pending_caller_writes` carries the value
         // across each intervening frame exit.
-        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None, None, None, None)
+        let kind = if is_eval_unit {
+            CarrierBody::EvalUnit
+        } else {
+            CarrierBody::Unowned
+        };
+        self.eval_block_value_inner(body, kind, is_eval_unit, None, None, None)
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -588,13 +613,14 @@ impl Interpreter {
     fn eval_block_value_inner(
         &mut self,
         body: &[Stmt],
-        is_eval_unit: bool,
+        kind: CarrierBody,
         record_free_var_writes: bool,
         cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
         precompiled: Option<&crate::opcode::CompiledDeclExpr>,
-        routineness: Option<BlockRoutineness>,
     ) -> Result<Value, RuntimeError> {
+        let is_eval_unit = kind.is_eval_unit();
+        let routineness = kind.routineness();
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
         let rw_tail = std::mem::take(&mut self.pending_eval_rw_tail);
