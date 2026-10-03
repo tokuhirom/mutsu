@@ -3222,7 +3222,8 @@ pub struct Interpreter {
     /// visible to a direct importer, but declarations from the module's
     /// dependencies are not. The load stack lets registration attribute the
     /// type to the correct compunit while nested modules are loading.
-    pub(crate) module_owned_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
+    pub(crate) module_owned_types:
+        std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>,
     /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
     /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
