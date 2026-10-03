@@ -43,8 +43,27 @@ pub(crate) fn native_method_1arg(
     if method == "naive-word-wrapper" {
         return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[arg]);
     }
-    if method == "add-statement"
-        && let Some(result) = target.rakuast_add_statement(arg.clone())
+    // `Str.AST(:compunit)`: the parse wrapped in a `RakuAST::CompUnit`.
+    // Cost: O(n), n = source length.
+    if method == "AST"
+        && let ValueView::Str(source) = target.view()
+        && let ValueView::Pair(key, flag) = arg.view()
+        && key.as_str() == "compunit"
+    {
+        return Some(if flag.truthy() {
+            crate::rakuast::str_dot_ast_compunit(&source)
+        } else {
+            crate::rakuast::str_dot_ast(&source)
+        });
+    }
+    // Cost: O(1).
+    if matches!(method, "replace-statement-list" | "set-expression")
+        && let Some(result) = target.rakuast_set_field(method, arg.clone())
+    {
+        return Some(result);
+    }
+    if matches!(method, "add-statement" | "unshift-statement" | "push")
+        && let Some(result) = target.rakuast_add_child(method, arg.clone())
     {
         return Some(result);
     }

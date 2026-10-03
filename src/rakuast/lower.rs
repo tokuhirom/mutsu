@@ -44,6 +44,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 
 fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
+        RakuAstClass::CompUnit => lower_stmts(named_child(node, "statement-list")?),
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
@@ -1605,9 +1606,13 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(unsupported(node)),
         },
     };
-    if node.fields.iter().any(|f| f.name == Some("twigil")) {
-        return Err(unsupported(node));
-    }
+    // `*` is a dynamic variable (`my $*x`); any other twigil on a non-`has`
+    // declaration stays the boundary.
+    let is_dynamic = match node.fields.iter().find(|f| f.name == Some("twigil")) {
+        None => false,
+        Some(_) if leaf_str(node, "twigil")? == "*" => true,
+        Some(_) => return Err(unsupported(node)),
+    };
     let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
         Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
         None => None,
@@ -1619,10 +1624,11 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         ValueView::Str(s) => s.to_string(),
         _ => return Err(unsupported(node)),
     };
+    let twigil = if is_dynamic { "*" } else { "" };
     let name = if sigil == "$" {
-        desigil
+        format!("{twigil}{desigil}")
     } else {
-        format!("{sigil}{desigil}")
+        format!("{sigil}{twigil}{desigil}")
     };
     // The initializer field is present only for `= EXPR`; without it a plain
     // `my $x` declares an undefined value.
@@ -1669,7 +1675,7 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             type_constraint,
             is_state,
             is_our,
-            is_dynamic: false,
+            is_dynamic,
             is_export: false,
             export_tags: Vec::new(),
             custom_traits,
@@ -1682,7 +1688,7 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         type_constraint,
         is_state,
         is_our,
-        is_dynamic: false,
+        is_dynamic,
         is_export: false,
         export_tags: Vec::new(),
         custom_traits,
@@ -1790,9 +1796,23 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 /// a trailing empty edge) is the parser's `PseudoStash`; a leading empty edge
 /// followed by an expression part is the dynamic `::(...)` lookup retained by
 /// `Expr::IndirectTypeLookup`.
+/// A setting term named by a bare identifier, as the parser produces it:
+/// `True`/`False` are the Bool literals the parser folds them to (a
+/// `BareWord("False")` would evaluate to the string), anything else the
+/// bareword. Shared by `Term::Enum` and `Term::Name`, which rakudo both
+/// resolve against the setting.
+// Cost: O(1).
+fn term_identifier_expr(name: &str) -> Expr {
+    match name {
+        "True" => Expr::Literal(Value::truth(true)),
+        "False" => Expr::Literal(Value::truth(false)),
+        _ => Expr::BareWord(name.to_string()),
+    }
+}
+
 fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
-        NameShape::Identifier(name) => Ok(Expr::BareWord(name)),
+        NameShape::Identifier(name) => Ok(term_identifier_expr(&name)),
         NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
         NameShape::Indirect {
             expr,
@@ -2476,6 +2496,32 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             })
         }
         RakuAstClass::RegexCharClassDigit => Ok(RegexNode::CharClassDigit),
+        RakuAstClass::RegexInternalModifierIgnoreCase
+        | RakuAstClass::RegexInternalModifierIgnoreMark => {
+            let kind = if node.class == RakuAstClass::RegexInternalModifierIgnoreCase {
+                crate::regex_tree::RegexModifierKind::IgnoreCase
+            } else {
+                crate::regex_tree::RegexModifierKind::IgnoreMark
+            };
+            let (short, long_name) = kind.spellings();
+            let long = match node.fields.iter().find(|f| f.name == Some("modifier")) {
+                None => false,
+                Some(_) => match leaf_str(node, "modifier")?.as_str() {
+                    s if s == short => false,
+                    s if s == long_name => true,
+                    _ => return Err(unsupported(node)),
+                },
+            };
+            let negated = node.fields.iter().any(|f| {
+                f.name == Some("negated")
+                    && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
+            });
+            Ok(RegexNode::InternalModifier {
+                kind,
+                long,
+                negated,
+            })
+        }
         RakuAstClass::RegexAnchorBeginningOfString => Ok(RegexNode::AnchorBeginningOfString),
         RakuAstClass::RegexAnchorBeginningOfLine => Ok(RegexNode::AnchorBeginningOfLine),
         RakuAstClass::RegexAnchorEndOfString => Ok(RegexNode::AnchorEndOfString),
@@ -2941,9 +2987,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `True`/`False` -> the Bool literal; any other setting enum value
         // (`Less`, `Kept`) -> the bareword the parser produces for it.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
-            ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
-            ValueView::Str(s) if s.as_str() == "False" => Ok(Expr::Literal(Value::truth(false))),
-            ValueView::Str(s) if !s.is_empty() => Ok(Expr::BareWord(s.to_string())),
+            ValueView::Str(s) if !s.is_empty() => Ok(term_identifier_expr(&s)),
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
@@ -3361,19 +3405,29 @@ pub(super) fn named_child<'a>(
         .iter()
         .find(|f| f.name == Some(name))
         .and_then(|f| match &f.value {
-            RakuAstFieldValue::Node(v) => match v.view() {
-                ValueView::RakuAst(child) => Some(child),
-                _ => None,
-            },
+            RakuAstFieldValue::Node(v) => rakuast_node_of(v),
             _ => None,
         })
         .ok_or_else(|| unsupported(node))
 }
 
+/// The RakuAST node a field value holds, seeing through a role mixed in with
+/// `but` (`RakuAST::Term::TopicCall.new(...) but Type('and')`): the mixin
+/// only adds methods for the caller's own bookkeeping, and the node it
+/// wraps is what lowers.
+// Cost: O(d), d = depth of nested mixins (normally 0 or 1).
+pub(super) fn rakuast_node_of(v: &Value) -> Option<&RakuAstNode> {
+    match v.view() {
+        ValueView::RakuAst(node) => Some(node),
+        ValueView::Mixin(inner, _) => rakuast_node_of(inner),
+        _ => None,
+    }
+}
+
 /// The child RakuAST node wrapped in a `Node` field value.
 fn child_node(fv: &RakuAstFieldValue) -> Result<&RakuAstNode, RuntimeError> {
     if let RakuAstFieldValue::Node(v) = fv
-        && let ValueView::RakuAst(child) = v.view()
+        && let Some(child) = rakuast_node_of(v)
     {
         return Ok(child);
     }

@@ -1615,6 +1615,25 @@ impl Interpreter {
             // compare `Package("R")` against `Package("R")` and wrongly
             // report True by identity, so this case is excluded and falls
             // through to the generic fallback below instead.
+            // A mixin TYPE OBJECT (`Str but Type`, the composed type
+            // `Str+{Type}`) is not a pun: its base type is not one of its
+            // roles. A value matches it when it is a `Str` that also does
+            // every mixed-in role -- a plain `"x"` is not a `Str+{Type}`.
+            (_, ValueView::Mixin(base, mixins))
+                if matches!(base.view(), ValueView::Package(name)
+                    if mixins.keys().any(|k| k.strip_prefix("__mutsu_role__")
+                        .is_some_and(|role| role != name.resolve().as_str()))) =>
+            {
+                let roles: Vec<String> = mixins
+                    .keys()
+                    .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+                    .map(str::to_string)
+                    .collect();
+                self.smart_match_inner(left, base.as_ref())
+                    && roles.iter().all(|role| {
+                        self.smart_match_inner(left, &Value::package(Symbol::intern(role)))
+                    })
+            }
             (_, ValueView::Mixin(pun_inner, pun_mixins))
                 if pun_mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
                     && !matches!(left.view(), ValueView::Package(name)
