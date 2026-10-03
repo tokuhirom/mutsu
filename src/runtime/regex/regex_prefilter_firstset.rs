@@ -216,6 +216,64 @@ impl FirstSet {
         !prev.is_ascii() || (prev == '\r' && chars[i] == '\n')
     }
 
+    /// The first position in `from..=last` that [`FirstSet::admits_at`]
+    /// admits — the scan loop of every first-set narrowed scan, answering
+    /// exactly what asking `admits_at` at each position in turn would.
+    ///
+    /// Asked one position at a time, `admits_at` must look one character
+    /// ahead at every rejected position, because a cluster that starts there
+    /// is always admitted. This loop reads each character once instead:
+    ///
+    /// - an ASCII character is tested against the bitmap with `\r` added, so
+    ///   a `\r` the set rejects (which may start the `\r\n` cluster) goes to
+    ///   the exact `admits_at` check, as does every character the set holds;
+    /// - a non-ASCII character is the only thing that can extend the cluster
+    ///   of the character before it, so meeting one first asks `admits_at`
+    ///   about the preceding ASCII position (when it is in range), then about
+    ///   its own position;
+    /// - the character just past `last` can still extend `last`'s cluster,
+    ///   so it gets the same look-back once the loop ends.
+    ///
+    /// A look-back never yields a position twice: one the loop already
+    /// admitted returned it, and one it rejected is rejected again. A
+    /// mark-skewed set's rule looks at the previous character rather than the
+    /// next one, so it keeps the position-by-position walk.
+    // Cost: O(n), n = last - from + 1; one load and a bit test per ASCII
+    // position the set rejects.
+    pub(crate) fn find_admitted(&self, chars: &[char], from: usize, last: usize) -> Option<usize> {
+        if self.mark_skewed {
+            return (from..=last).find(|&i| self.admits_at(chars, i));
+        }
+        let mut mask = self.ascii;
+        mask[0] |= 1u64 << (b'\r' & 63);
+        let ascii_rejected_before =
+            |j: usize| j >= from && chars[j].is_ascii() && !self.contains(chars[j]);
+        for i in from..=last {
+            let cp = chars[i] as u32;
+            if cp < 128 {
+                if mask[(cp >> 6) as usize] & (1u64 << (cp & 63)) != 0 && self.admits_at(chars, i) {
+                    return Some(i);
+                }
+                continue;
+            }
+            if i > from && ascii_rejected_before(i - 1) && self.admits_at(chars, i - 1) {
+                return Some(i - 1);
+            }
+            if self.admits_at(chars, i) {
+                return Some(i);
+            }
+        }
+        let after = last + 1;
+        if after < chars.len()
+            && !chars[after].is_ascii()
+            && ascii_rejected_before(last)
+            && self.admits_at(chars, last)
+        {
+            return Some(last);
+        }
+        None
+    }
+
     /// A set that admits everything constrains nothing, so applying it would
     /// be pure overhead.
     pub(crate) fn is_universal(&self) -> bool {
