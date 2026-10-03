@@ -121,6 +121,14 @@ impl Interpreter {
     /// that is already a type name in its own right, so an ordinary
     /// parameterization such as `CArray[uint64]` is left untouched.
     fn type_alias_target(&self, name: &str) -> Option<String> {
+        // A definiteness smiley (`Int:D`, `Str:U`) never names an alias: an
+        // alias is declared under a plain identifier, so the env walk below
+        // could only miss -- and it ran on every `Int:D` check in a program
+        // that loaded a module (#9494). The aliased base with a smiley
+        // (`MyInt:D`) is resolved where the smiley is stripped.
+        if name.contains(':') && !crate::runtime::utils::has_double_colon(name) {
+            return None;
+        }
         if name.is_empty()
             || crate::runtime::utils::is_known_type_constraint(name)
             || self.registry().classes.contains_key(name)

@@ -8393,6 +8393,18 @@ impl CompiledCode {
         }
     }
 
+    /// Every local's interned name, or an empty slice for a hand-built chunk
+    /// that never ran `compute_locals_sym`. Only for a caller that treats the
+    /// slice as a fast-path subset of a by-name test it still runs.
+    // Cost: O(1).
+    pub(crate) fn locals_syms(&self) -> &[Symbol] {
+        if self.locals_sym.len() == self.locals.len() {
+            &self.locals_sym
+        } else {
+            &[]
+        }
+    }
+
     /// The interned name of local `idx`. Served from the pre-interned table; a
     /// hand-built chunk that never ran `compute_locals_sym` falls back to
     /// interning on the spot, so a by-Symbol slot match is never silently missed.
