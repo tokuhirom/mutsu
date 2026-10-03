@@ -867,6 +867,16 @@ impl Interpreter {
         // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
         // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
         self.env.insert_sym_noting(name_sym, value.clone());
+        // A dynamic scalar parameter (`sub f($*OUT)`) binds both env spellings
+        // of the name, as `my $*OUT` does through `set_env_with_main_alias`:
+        // the `say`/`print` builtins resolve their handle through the `$*OUT`
+        // spelling first (#11348). Both are callee-local
+        // (`compute_declared_locals`), so neither leaks to the caller.
+        if name.starts_with('*')
+            && let Some(alias) = crate::runtime::utils::twigil_dynamic_alias(name)
+        {
+            self.env.insert(alias, value.clone());
+        }
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {
             Some(a)
