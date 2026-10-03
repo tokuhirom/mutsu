@@ -27,25 +27,23 @@ pub(crate) fn try_custom_infix_at_level<'a>(
     max_level: i32,
     operand_parser: fn(&str) -> PResult<'_, Expr>,
 ) -> Result<Option<&'a str>, PError> {
-    if let Some((name, len)) = crate::parser::expr::precedence::parse_custom_infix_word(r)
-        && let Some(level) = crate::parser::stmt::simple::lookup_custom_infix_precedence(&name)
-        && level > min_level
-        && level <= max_level
-    {
-        let r = &r[len..];
-        let (r, _) = ws(r)?;
-        let (r, right) = operand_parser(r).map_err(|err| {
-            enrich_expected_error(err, "expected expression after infix operator", r.len())
-        })?;
-        *left = Expr::InfixFunc {
-            name: name.clone(),
-            left: Box::new(left.clone()),
-            right: vec![right],
-            modifier: None,
-        };
-        return Ok(Some(r));
+    // Only an operator with a declared precedence is taken here; the shared
+    // custom-infix application then applies its `is assoc` folding (an
+    // `is assoc<list> is equiv(&[~])` chain is ONE n-ary call, OneSeq's
+    // `@a >>> @b >>> @c`) and trailing adverbs exactly as at every other layer.
+    let Some((name, _)) = crate::parser::expr::precedence::parse_custom_infix_word(r) else {
+        return Ok(None);
+    };
+    if crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).is_none() {
+        return Ok(None);
     }
-    Ok(None)
+    crate::parser::expr::precedence::try_custom_infix_word(
+        r,
+        left,
+        min_level,
+        max_level,
+        &operand_parser,
+    )
 }
 
 /// Classify an operator string by its precedence level.
@@ -162,6 +160,13 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
                 };
                 rest = r2;
                 continue;
+            }
+            // The longer user symbol is declared at a LOOSER level
+            // (`is equiv(&[~])`): the built-in prefix of it must not be taken
+            // here either, or `1 +++ 2` reads as `1 + (++2)`. Stop this layer
+            // and let the operator's own level take the whole token.
+            if builtin_len > 0 && ulen > builtin_len {
+                break;
             }
         }
         if let Some((op, len)) = parse_additive_op(r) {
@@ -310,6 +315,13 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 };
                 rest = r2;
                 continue;
+            }
+            // The longer user symbol is declared at a LOOSER level
+            // (`is equiv(&[~])`): the built-in prefix of it must not be taken
+            // here either, or `1 +++ 2` reads as `1 + (++2)`. Stop this layer
+            // and let the operator's own level take the whole token.
+            if builtin_len > 0 && ulen > builtin_len {
+                break;
             }
         }
         if let Some((op, len)) = parse_multiplicative_op(r) {
