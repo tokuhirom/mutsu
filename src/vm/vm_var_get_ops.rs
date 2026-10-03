@@ -193,9 +193,10 @@ impl Interpreter {
         // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
         // one whose block has exited), which is stored under its term key rather
         // than under the qualified spelling the lookups below ask for (#11518).
-        if let Some(short) = name.strip_prefix("GLOBAL::")
-            && !short.contains("::")
-            && let Some(v) = self.term_binding(short)
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::package_parent(name_sym) == Some(crate::symbol::wk::global_package())
+            && let Some(v) =
+                self.term_binding(crate::qualified::unqualified_part(name_sym).as_str())
         {
             self.stack.push(v);
             return Ok(());
