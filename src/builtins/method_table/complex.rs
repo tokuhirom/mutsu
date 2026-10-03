@@ -15,6 +15,8 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
 fn is_nan(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     match target.view() {
         ValueView::Complex(re, im) => Ok(Value::truth(re.is_nan() || im.is_nan())),
-        _ => Err(RuntimeError::new("Complex.isNaN: receiver is not a Complex")),
+        _ => Err(RuntimeError::new(
+            "Complex.isNaN: receiver is not a Complex",
+        )),
     }
 }

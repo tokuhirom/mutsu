@@ -90,7 +90,10 @@ fn lookup_walks_the_mro() {
     assert!(lookup(DispatchShape::Num, numerator).is_none());
     // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
     assert!(lookup(DispatchShape::Int, numerator).is_none());
-    assert_eq!(lookup(DispatchShape::FatRat, numerator).unwrap().owner, "FatRat");
+    assert_eq!(
+        lookup(DispatchShape::FatRat, numerator).unwrap().owner,
+        "FatRat"
+    );
 }
 
 /// A big-component rational has the shape of the type its flag names.
@@ -106,7 +109,10 @@ fn big_rationals_take_their_type_s_shape() {
         Value::bigfatrat(big.clone(), three + 1).dispatch_shape(),
         Some(DispatchShape::FatRat)
     );
-    assert_eq!(Value::bigint(big).dispatch_shape(), Some(DispatchShape::Int));
+    assert_eq!(
+        Value::bigint(big).dispatch_shape(),
+        Some(DispatchShape::Int)
+    );
 }
 
 #[test]

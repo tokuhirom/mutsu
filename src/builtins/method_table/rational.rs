@@ -55,7 +55,9 @@ pub(super) static RAT_ROWS: &[MethodRow] = &rational_rows!("Rat");
 pub(super) static FAT_RAT_ROWS: &[MethodRow] = &rational_rows!("FatRat");
 
 fn not_rational(method: &str) -> RuntimeError {
-    RuntimeError::new(format!("Rational.{method}: receiver is not a Rat or FatRat"))
+    RuntimeError::new(format!(
+        "Rational.{method}: receiver is not a Rat or FatRat"
+    ))
 }
 
 /// `Rational.numerator`.
