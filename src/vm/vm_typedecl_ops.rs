@@ -59,8 +59,9 @@ impl Interpreter {
             Some(crate::opcode::CompiledDeclPlanRef::Proto(plan_idx)) => {
                 self.exec_register_proto_sub_op(code, plan_idx, compiled_fns)
             }
-            Some(crate::opcode::CompiledDeclPlanRef::ProtoToken(name)) => {
-                self.register_proto_token_decl(&name.resolve());
+            Some(crate::opcode::CompiledDeclPlanRef::ProtoToken(plan_idx)) => {
+                let (name, param_defs) = &code.proto_token_plans[plan_idx as usize];
+                self.register_proto_token_decl(&name.resolve(), param_defs);
                 Ok(())
             }
             Some(crate::opcode::CompiledDeclPlanRef::Token(plan_idx)) => {

@@ -139,7 +139,47 @@ pub(crate) fn regex_param_value_is_opaque(value: &Value) -> bool {
     }
 }
 
+/// The `$*` parameters among a signature's positional parameters, or `None`.
+// Cost: O(p), p = the signature's parameters.
+fn collect_dynamic_params(param_defs: &[ParamDef]) -> Option<Vec<DynParam>> {
+    let collected: Vec<DynParam> = param_defs
+        .iter()
+        .filter(|pd| !pd.named && !pd.is_invocant)
+        .enumerate()
+        .filter(|(_, pd)| is_dynamic_var_name(&pd.name))
+        .map(|(idx, pd)| (idx, pd.clone()))
+        .collect();
+    (!collected.is_empty()).then_some(collected)
+}
+
 impl Interpreter {
+    /// The signature of the `proto token`/`proto rule` named `name` as seen
+    /// from `pkg`, following the same scope/MRO walk as
+    /// [`Self::has_proto_token_in_pkg`].
+    // Cost: O(s * m), s = enclosing scopes of pkg, m = MRO length.
+    fn proto_token_params_in_pkg(&self, name: &str, pkg: Symbol) -> Option<Arc<Vec<ParamDef>>> {
+        if self.registry().proto_token_params.is_empty() {
+            return None;
+        }
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
+            return self.registry().proto_token_params.get(name).cloned();
+        }
+        for scope in self.qualified_name_scopes(pkg) {
+            for owner in self.mro_readonly(&scope) {
+                let found = crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
+                    self.registry().proto_token_params.get(key).cloned()
+                });
+                if found.is_some() {
+                    return found;
+                }
+            }
+        }
+        crate::runtime::dispatch_key::with_qualified("GLOBAL", name, |key| {
+            self.registry().proto_token_params.get(key).cloned()
+        })
+    }
+
     fn subrule_dynamic_params(&mut self, name: &str, pkg: Symbol) -> Arc<Vec<DynParam>> {
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
@@ -152,22 +192,18 @@ impl Interpreter {
         }) {
             return hit;
         }
-        // A proto/multi rule may spread its candidates over several defs; the
-        // dynamic parameters are a property of the signature, so take them from
-        // the first candidate that declares any.
+        // A `proto token p($*K) {*}` declares the parameters for all of its
+        // candidates, so its own signature wins; otherwise a proto/multi rule
+        // may spread them over several defs, and the dynamic parameters are a
+        // property of the signature, so take them from the first candidate
+        // that declares any.
         let params = self
-            .resolve_token_defs_in_pkg(name, pkg)
-            .into_iter()
-            .find_map(|def| {
-                let collected: Vec<DynParam> = def
-                    .param_defs
-                    .iter()
-                    .filter(|pd| !pd.named && !pd.is_invocant)
-                    .enumerate()
-                    .filter(|(_, pd)| is_dynamic_var_name(&pd.name))
-                    .map(|(idx, pd)| (idx, pd.clone()))
-                    .collect();
-                (!collected.is_empty()).then_some(collected)
+            .proto_token_params_in_pkg(name, pkg)
+            .and_then(|defs| collect_dynamic_params(&defs))
+            .or_else(|| {
+                self.resolve_token_defs_in_pkg(name, pkg)
+                    .into_iter()
+                    .find_map(|def| collect_dynamic_params(&def.param_defs))
             })
             .unwrap_or_default();
         let arc = Arc::new(params);

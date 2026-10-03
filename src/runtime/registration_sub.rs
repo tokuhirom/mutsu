@@ -2354,8 +2354,19 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(crate) fn register_proto_token_decl(&mut self, name: &str) {
+    pub(crate) fn register_proto_token_decl(
+        &mut self,
+        name: &str,
+        param_defs: &[crate::ast::ParamDef],
+    ) {
         let key = format!("{}::{}", self.current_package(), name);
+        if param_defs.iter().any(|pd| !pd.named && !pd.slurpy) {
+            crate::runtime::regex::regex_dynparams::note_token_def_params(param_defs);
+            let params = std::sync::Arc::new(param_defs.to_vec());
+            self.registry_mut()
+                .proto_token_params
+                .insert(key.clone(), params);
+        }
         self.registry_mut().proto_tokens.insert(key);
     }
 

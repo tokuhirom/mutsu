@@ -256,7 +256,7 @@ impl<'ast> Visit<'ast> for OutlineScan {
             Stmt::RuleDecl { name, body, .. } => {
                 self.declaration(name.resolve(), SymbolKind::Rule, body, true, None)
             }
-            Stmt::ProtoToken { name } => self.leaf(name.resolve(), SymbolKind::Token),
+            Stmt::ProtoToken { name, .. } => self.leaf(name.resolve(), SymbolKind::Token),
             Stmt::SubsetDecl { name, .. } => self.leaf(name.resolve(), SymbolKind::Subset),
             Stmt::EnumDecl { name, variants, .. } => {
                 let mut symbol = leaf(name.resolve(), SymbolKind::Enum, self.line);

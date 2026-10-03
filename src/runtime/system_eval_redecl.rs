@@ -135,7 +135,7 @@ impl Interpreter {
                     // {*}` and `proto token f {*}; token f {x}` are both refused).
                     Stmt::TokenDecl { name, .. }
                     | Stmt::RuleDecl { name, .. }
-                    | Stmt::ProtoToken { name } => {
+                    | Stmt::ProtoToken { name, .. } => {
                         let n = name.resolve().to_string();
                         if n.is_empty() {
                             continue;

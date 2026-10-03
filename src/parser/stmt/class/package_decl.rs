@@ -629,6 +629,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 rest,
                 Stmt::ProtoToken {
                     name: Symbol::intern(&name),
+                    param_defs,
                 },
             ));
         }
@@ -659,6 +660,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             rest,
             Stmt::ProtoToken {
                 name: Symbol::intern(&name),
+                param_defs,
             },
         ));
     }

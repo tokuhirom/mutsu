@@ -1761,6 +1761,10 @@ pub(crate) enum Stmt {
     },
     ProtoToken {
         name: Symbol,
+        /// The proto's own signature (`proto token p($*K) {*}`): its `$*`
+        /// parameters are bound around every candidate's match.
+        #[serde(default)]
+        param_defs: Vec<ParamDef>,
     },
     Package {
         name: Symbol,

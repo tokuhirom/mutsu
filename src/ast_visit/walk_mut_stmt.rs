@@ -131,7 +131,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             }
             v.visit_stmts_mut(body);
         }
-        Stmt::ProtoToken { name: _ } => {}
+        Stmt::ProtoToken { .. } => {}
         Stmt::TrustsDecl { name: _ } => {}
         Stmt::Package {
             name: _,
