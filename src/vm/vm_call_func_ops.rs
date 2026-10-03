@@ -1468,6 +1468,11 @@ impl Interpreter {
         // above can never hold one of these names because they are only
         // populated further down, past this gate.
         if Self::name_is_core_type_coercer(&name) && !args.is_empty() {
+            // The coercers read their argument's elements directly, so a
+            // still-deferred `.map`/`.grep` Seq must be pulled first (the
+            // same ADR-0058 guard `try_native_function` applies); otherwise
+            // `Bag(@rows.map({ ... }))` sees the empty seed.
+            self.reify_map_grep_seq_args(&args)?;
             let result = self.vm_call_function(&name, args)?;
             self.stack.push(result);
             return Ok(());
