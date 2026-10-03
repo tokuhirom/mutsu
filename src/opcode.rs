@@ -9346,6 +9346,16 @@ impl CompiledCode {
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
                     )
                 }
+                // The method form `$code.EVAL` resolves the caller's lexicals
+                // the same way; missing it left a top-level `my $x` unmirrored,
+                // so `Q{ $x }.EVAL` read `Any` unless some other chunk (a `use`d
+                // module's own `EVAL`) had latched the global flag (#11399).
+                OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => {
+                    matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "EVAL"
+                    )
+                }
                 _ => false,
             };
             if reflective {
