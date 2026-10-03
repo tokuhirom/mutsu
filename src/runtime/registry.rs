@@ -279,7 +279,11 @@ pub(crate) struct Registry {
     /// outward package walk in `resolve_type_in_current_package`, which would
     /// otherwise re-derive `Foo` as a scope and let the class resolve *itself*
     /// under its own short name.
-    pub(crate) compound_declared_types: HashSet<String>,
+    ///
+    /// Maps each such name to the package it was really declared in, which is
+    /// the next scope the outward walk visits after it (skipping the
+    /// intermediate segments the compound name merely spells).
+    pub(crate) compound_declared_types: HashMap<String, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
