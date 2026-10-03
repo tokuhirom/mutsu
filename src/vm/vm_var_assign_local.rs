@@ -828,10 +828,20 @@ impl Interpreter {
         idx: usize,
     ) -> Result<Option<()>, RuntimeError> {
         let name = &code.locals[idx];
+        let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name.as_str());
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
         }
         let name = name.to_string();
+        // A read-only sigilless name bound to a mutable Array/Hash, which
+        // `CheckReadOnly` let through: the preceding `SigillessAggregateStore`
+        // already stored into it, so the assignment is complete (see
+        // `vm_sigilless_aggregate_store`).
+        if checked_sigilless
+            && Self::is_sigilless_assignable_aggregate(&self.locals[idx].deref_container())
+        {
+            return Ok(Some(()));
+        }
         // The tied instance normally lives in the local slot, but when this store
         // runs inside a block invoked by another sub (`runit({ %h = "a" })`, or a
         // `throws-like { %h = ... }` block) the hash is a captured lexical held in
@@ -893,8 +903,16 @@ impl Interpreter {
         &mut self,
         name: &str,
     ) -> Result<Option<()>, RuntimeError> {
+        let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name);
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
+        }
+        if checked_sigilless
+            && self
+                .get_env_with_main_alias(name)
+                .is_some_and(|v| Self::is_sigilless_assignable_aggregate(&v.deref_container()))
+        {
+            return Ok(Some(()));
         }
         let Some(raw) = self.tied_candidate_outside_slot(name) else {
             return Ok(None);
@@ -1015,7 +1033,10 @@ impl Interpreter {
             Some(idx) => self.locals.get(idx).cloned(),
             None => self.get_env_with_main_alias(name),
         };
-        value.is_some_and(|v| self.instance_is_tied(&v.deref_container()))
+        value.is_some_and(|v| {
+            let v = v.deref_container();
+            Self::is_sigilless_assignable_aggregate(&v) || self.instance_is_tied(&v)
+        })
     }
 
     /// Consume the `pending_sigilless_store` mark `CheckReadOnly` left for

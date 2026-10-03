@@ -146,9 +146,23 @@ impl Interpreter {
                     });
                     continue;
                 }
+                // A root `our $x` lives in a shared cell under `GLOBAL::x`
+                // (`DeclareOurScalar`); the `our_vars` mirror is a plain copy.
+                // Publish the cell, so a write through the stash entry
+                // (`for OUR::.kv -> \k, \v { v = Nil }`, P5reset) lands in
+                // the variable.
                 symbols
                     .entry(Self::add_sigil_prefix(effective_key))
-                    .or_insert_with(|| val.clone());
+                    .or_insert_with(|| {
+                        let global = crate::qualified::qualified(
+                            Symbol::intern("GLOBAL"),
+                            Symbol::intern(effective_key),
+                        );
+                        match self.env.get(global.as_str()) {
+                            Some(cell) if cell.is_container_ref() => cell.clone(),
+                            _ => val.clone(),
+                        }
+                    });
             }
         }
 

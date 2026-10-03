@@ -194,3 +194,29 @@ pub(crate) fn walk_list_candidates(attributes: &crate::value::InstanceAttrs) -> 
     }
     Some(cands)
 }
+
+/// The `(key, value)` entries of a `Stash`/`PseudoStash`, each value left as
+/// the symbol's own container (a root `our $x` is published as its shared
+/// cell), so `.kv` / `.values` hand out writable containers as rakudo's do.
+/// Empty for anything that is not a stash.
+// Cost: O(n), n = symbols in the stash.
+pub(crate) fn stash_symbol_entries(value: &Value) -> Vec<(Value, Value)> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = value.view()
+    else {
+        return Vec::new();
+    };
+    if !crate::value::types::is_stash_class_name(&class_name.resolve()) {
+        return Vec::new();
+    }
+    match attributes.as_map().get("symbols").map(Value::view) {
+        Some(ValueView::Hash(symbols)) => symbols
+            .iter()
+            .map(|(key, value)| (symbols.typed_key(key), value.clone()))
+            .collect(),
+        _ => Vec::new(),
+    }
+}

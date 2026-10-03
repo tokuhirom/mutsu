@@ -346,6 +346,7 @@ mod vm_var_assign_element_fast;
 mod vm_var_assign_hash_fast;
 mod vm_var_assign_index_named;
 mod vm_var_assign_local;
+mod vm_sigilless_aggregate_store;
 mod vm_var_assign_local_get;
 mod vm_var_assign_nested_fast;
 mod vm_var_assign_nil_decay;

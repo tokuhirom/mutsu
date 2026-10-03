@@ -468,19 +468,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Instance { class_name, .. }
                     if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
                 {
+                    // A stash entry is the symbol's own container (a root
+                    // `our $x`'s shared cell), so `for OUR::.kv -> \k, \v
+                    // { v = Nil }` writes the variable, as in rakudo (P5reset).
                     let mut kv = Vec::new();
-                    for pair in crate::runtime::utils::value_to_list(target) {
-                        match pair.view() {
-                            ValueView::Pair(key, value) => {
-                                kv.push(Value::str(key.clone()));
-                                kv.push(value.clone());
-                            }
-                            ValueView::ValuePair(key, value) => {
-                                kv.push(key.clone());
-                                kv.push(value.clone());
-                            }
-                            _ => {}
-                        }
+                    for (key, value) in crate::runtime::utils::stash_symbol_entries(target) {
+                        kv.push(key);
+                        kv.push(value);
                     }
                     Some(Ok(Value::seq(kv)))
                 }
