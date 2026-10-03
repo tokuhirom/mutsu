@@ -1749,18 +1749,21 @@ impl Interpreter {
         }
         crate::vm::vm_stats::record_regex_parse_cache(false);
 
-        let parsed = lower_static_execution_tree(&pattern, tree)
-            .map(std::sync::Arc::new)
-            .or_else(|| self.parse_regex(&pattern));
-        if let Some(ref p) = parsed {
-            REGEX_PARSE_CACHE.with(|c| {
-                c.borrow_mut()
-                    .entry(cache_key)
-                    .or_default()
-                    .insert(pattern, (tok_gen, std::sync::Arc::clone(p)));
-            });
-        }
-        parsed
+        // Only a direct tree plan may be cached under the tree fingerprint:
+        // its VarInterp atoms read the lexical at match time. The parser
+        // fallback interpolates the current value into the plan, so it goes
+        // through `parse_regex`, whose caches key by the interpolated text.
+        let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
+        else {
+            return self.parse_regex(&pattern);
+        };
+        REGEX_PARSE_CACHE.with(|c| {
+            c.borrow_mut()
+                .entry(cache_key)
+                .or_default()
+                .insert(pattern, (tok_gen, std::sync::Arc::clone(&parsed)));
+        });
+        Some(parsed)
     }
 }
 
