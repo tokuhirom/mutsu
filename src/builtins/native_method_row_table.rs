@@ -1334,6 +1334,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),
     ("Instant", "Bridge", 1, 16),
+    ("Instant", "rand", 1, 16),
     ("Instant", "Complex", 1, 16),
     ("Instant", "FatRat", 3, 16),
     ("Instant", "Instant", 1, 16),
