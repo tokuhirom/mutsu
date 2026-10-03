@@ -654,38 +654,10 @@ impl Interpreter {
         // Value variants and the declared_type metadata is not always
         // available (e.g., in set operator internals). The Mix check below
         // is kept because Mix operations are less commonly used internally.
-        // Sync OS environment and $*HOME when deleting from %*ENV
+        // Sync $*HOME when deleting from %*ENV
         if var_name == "%*ENV" {
-            // Remove from OS environment
-            #[cfg(not(target_family = "wasm"))]
-            match idx.view() {
-                ValueView::Array(keys, ..) => {
-                    for k in keys.iter() {
-                        let key_str = k.to_string_value();
-                        // SAFETY: std::env::remove_var is unsafe because mutating
-                        // the process environment races with concurrent env
-                        // access on another thread. mutsu deletes %*ENV keys from
-                        // the executing thread; a spawned worker reading env
-                        // concurrently would be a latent race (tracked with the
-                        // cross-thread container work, see aliased_mut.rs).
-                        unsafe {
-                            std::env::remove_var(&key_str);
-                        }
-                    }
-                }
-                _ => {
-                    let key_str = idx.to_string_value();
-                    // SAFETY: std::env::remove_var is unsafe because mutating the
-                    // process environment races with concurrent env access on
-                    // another thread. mutsu deletes %*ENV keys from the executing
-                    // thread; a spawned worker reading env concurrently would be a
-                    // latent race (tracked with the cross-thread container work,
-                    // see aliased_mut.rs).
-                    unsafe {
-                        std::env::remove_var(&key_str);
-                    }
-                }
-            }
+            // `%*ENV` is never mirrored into the process environment
+            // (#11241); only `$*HOME` follows a deleted `%*ENV<HOME>`.
             let deletes_home = match idx.view() {
                 ValueView::Array(keys, ..) => keys.iter().any(|k| k.to_string_value() == "HOME"),
                 _ => idx.to_string_value() == "HOME",

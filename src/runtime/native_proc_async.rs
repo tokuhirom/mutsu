@@ -428,19 +428,9 @@ impl Interpreter {
                 }
                 // No `:ENV` override: explicitly apply mutsu's own `%*ENV`
                 // rather than relying on `Command::spawn()`'s default (inherit
-                // the OS process environment as `std::env` sees it right now).
-                // `%*ENV<k> = v` does mirror into `std::env::set_var` (see
-                // `vm_var_assign_element.rs`/`vm_var_assign_index_named.rs`),
-                // but that mutation is not reliably visible to a `spawn()` on
-                // this thread once ANY other OS thread has ever been spawned in
-                // this process (confirmed with a plain `Supply.interval(...)
-                // .tap()` before a later default-env `run()` on unmodified
-                // main — a std::env::set_var + threads + fork hazard, not
-                // specific to Proc::Async; see the ADR-worthy
-                // `todo/deep/env-var-write-invisible-to-spawn-after-a-thread.md`
-                // finding). Reading mutsu's own `%*ENV` value directly sidesteps
-                // the hazard entirely and is what `%*ENV` is authoritatively
-                // supposed to mean anyway.
+                // the OS process environment). `%*ENV` is an ordinary hash that
+                // is never mirrored into the process environment (#11241), as
+                // in rakudo, so it is the child's whole environment.
                 if !env_override
                     && let Some(env_hash) = self.env.get("%*ENV")
                     && let ValueView::Hash(map) = env_hash.view()

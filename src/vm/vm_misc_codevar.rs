@@ -637,15 +637,9 @@ impl Interpreter {
         let key = Self::const_str(code, key_idx);
         let val = if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view)
         {
-            env_hash.get(key).cloned().unwrap_or_else(|| {
-                std::env::var_os(key)
-                    .map(|v| {
-                        crate::runtime::builtins_collection::builtin_val(&[Value::str(
-                            v.to_string_lossy().to_string(),
-                        )])
-                    })
-                    .unwrap_or(Value::NIL)
-            })
+            // `%*ENV` is authoritative once it exists: a key deleted from it
+            // must not reappear from the process environment (#11241).
+            env_hash.get(key).cloned().unwrap_or(Value::NIL)
         } else if let Some(value) = std::env::var_os(key) {
             crate::runtime::builtins_collection::builtin_val(&[Value::str(
                 value.to_string_lossy().to_string(),
@@ -660,7 +654,7 @@ impl Interpreter {
         let key = Self::const_str(code, key_idx);
         let exists =
             if let Some(ValueView::Hash(env_hash)) = self.env().get("%*ENV").map(Value::view) {
-                env_hash.contains_key(key) || std::env::var_os(key).is_some()
+                env_hash.contains_key(key)
             } else {
                 std::env::var_os(key).is_some()
             };

@@ -322,12 +322,9 @@ impl Interpreter {
                 // All checks passed — commit to fast path
                 self.stack.pop();
                 let val = self.stack.pop().unwrap();
-                // `key` is moved into the insert below. `%*ENV` is the one
-                // destination that needs it afterwards, so only that
-                // destination pays the clone -- an ordinary hash store keeps
-                // the single `String` it built at the peek above.
-                #[cfg(not(target_family = "wasm"))]
-                let os_env_key = (var_name == "%*ENV").then(|| key.clone());
+                // `key` is moved into the insert below; `%*ENV<HOME>` is the
+                // one store that needs to know it afterwards.
+                let stores_env_home = var_name == "%*ENV" && key == "HOME";
                 // ADR-0040 slice 1: itemize the stored value, not the rvalue
                 // pushed below (that push is a pre-existing, separate
                 // scalar-context-itemization concern).
@@ -339,26 +336,17 @@ impl Interpreter {
                     key,
                     Self::itemize_value_for_element_store(val.clone()),
                 );
-                // Sync OS environment when %*ENV is modified
-                #[cfg(not(target_family = "wasm"))]
-                if let Some(key) = os_env_key {
-                    // SAFETY: std::env::set_var is unsafe because mutating the
-                    // process environment races with any concurrent env access
-                    // on another thread. mutsu writes %*ENV from the executing
-                    // thread during normal evaluation; a spawned worker that
-                    // concurrently reads env would be a latent race (tracked
-                    // with the cross-thread container work, see aliased_mut.rs).
-                    unsafe {
-                        std::env::set_var(&key, val.to_string_value());
-                    }
-                    // Sync $*HOME when %*ENV<HOME> changes
-                    if key == "HOME" {
-                        let home_str = val.to_string_value();
-                        let home_val = self.make_io_path_instance(&home_str);
-                        self.env_mut()
-                            .insert("$*HOME".to_string(), home_val.clone());
-                        self.env_mut().insert("*HOME".to_string(), home_val);
-                    }
+                // `%*ENV` is an ordinary hash, as in rakudo: a write is never
+                // mirrored into the C-level process environment (#11241);
+                // children see it because `run`/`shell`/`Proc::Async` pass the
+                // hash as their environment. Only `$*HOME` follows
+                // `%*ENV<HOME>`.
+                if stores_env_home {
+                    let home_str = val.to_string_value();
+                    let home_val = self.make_io_path_instance(&home_str);
+                    self.env_mut()
+                        .insert("$*HOME".to_string(), home_val.clone());
+                    self.env_mut().insert("*HOME".to_string(), home_val);
                 }
                 // A single hash-key assignment names one scalar slot, so the
                 // rvalue is itemized (`@z = (%h<x> = 1, 2)` => `@z.elems == 1`).
@@ -377,25 +365,14 @@ impl Interpreter {
                 map.insert(key.clone(), Self::itemize_value(val.clone()));
                 self.env_mut()
                     .insert(var_name.to_string(), Value::hash(map));
-                // Sync OS environment when %*ENV is modified
-                #[cfg(not(target_family = "wasm"))]
-                if var_name == "%*ENV" {
-                    // SAFETY: std::env::set_var is unsafe because mutating the
-                    // process environment races with any concurrent env access
-                    // on another thread. mutsu writes %*ENV from the executing
-                    // thread during normal evaluation; a spawned worker that
-                    // concurrently reads env would be a latent race (tracked
-                    // with the cross-thread container work, see aliased_mut.rs).
-                    unsafe {
-                        std::env::set_var(&key, val.to_string_value());
-                    }
-                    if key == "HOME" {
-                        let home_str = val.to_string_value();
-                        let home_val = self.make_io_path_instance(&home_str);
-                        self.env_mut()
-                            .insert("$*HOME".to_string(), home_val.clone());
-                        self.env_mut().insert("*HOME".to_string(), home_val);
-                    }
+                // `%*ENV` is never mirrored into the process environment
+                // (#11241); only `$*HOME` follows `%*ENV<HOME>`.
+                if var_name == "%*ENV" && key == "HOME" {
+                    let home_str = val.to_string_value();
+                    let home_val = self.make_io_path_instance(&home_str);
+                    self.env_mut()
+                        .insert("$*HOME".to_string(), home_val.clone());
+                    self.env_mut().insert("*HOME".to_string(), home_val);
                 }
                 self.stack.push(Self::itemize_value(val));
                 Some(Ok(()))

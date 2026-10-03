@@ -182,15 +182,9 @@ impl Interpreter {
         (vol.replace('/', "\\"), rest)
     }
 
-    /// Win32 `.path` method: reads PATH (or Path), splits on `;`,
-    /// strips `"` characters from each entry, always prepends ".".
-    pub fn win32_path_from_env() -> Vec<Value> {
-        // PATH overrides Path
-        let path_env = if let Ok(v) = std::env::var("PATH") {
-            Some(v)
-        } else {
-            std::env::var("Path").ok()
-        };
+    /// Win32 `.path` method: takes `%*ENV<PATH>` (or `%*ENV<Path>`), splits
+    /// on `;`, strips `"` characters from each entry, always prepends ".".
+    pub fn win32_path_from_env(path_env: Option<String>) -> Vec<Value> {
         let mut result = vec![Value::str_from(".")];
         let raw = match path_env {
             None => return result, // env unset -> (".",)

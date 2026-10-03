@@ -111,21 +111,23 @@ impl Interpreter {
             .clone()
             .or_else(|| self.get_dynamic_string("$*CWD"));
         // No `:env` override: explicitly apply mutsu's own `%*ENV` rather than
-        // relying on `Command::spawn()`'s default OS-level inheritance, which
-        // stops seeing a `%*ENV<k> = v`/`std::env::set_var` write once any OS
-        // thread has ever been spawned in this process — see
-        // `todo/deep/env-var-write-invisible-to-spawn-after-a-thread.md` (and
-        // `native_proc_async.rs`'s `.start()`, which applies the same fix for
-        // `Proc::Async`).
-        let opts_env = if opts.env_explicit {
-            opts.env.clone()
+        // relying on `Command::spawn()`'s default OS-level inheritance —
+        // `%*ENV` is an ordinary hash that is never mirrored into the process
+        // environment (#11241), as in rakudo (`native_proc_async.rs`'s
+        // `.start()` does the same for `Proc::Async`).
+        // The hash is the child's whole environment, as in rakudo: a key
+        // deleted from `%*ENV` must not be inherited from the process
+        // environment, which `%*ENV` writes never touch (#11241).
+        let opts_env: Option<HashMap<String, String>> = if opts.env_explicit {
+            Some(opts.env.clone())
         } else {
             match self.env.get("%*ENV").map(Value::view) {
-                Some(ValueView::Hash(map)) => map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.to_string_value()))
-                    .collect(),
-                _ => HashMap::new(),
+                Some(ValueView::Hash(map)) => Some(
+                    map.iter()
+                        .map(|(k, v)| (k.clone(), v.to_string_value()))
+                        .collect(),
+                ),
+                _ => None,
             }
         };
 
@@ -217,8 +219,9 @@ impl Interpreter {
         if let Some(cwd) = opts_cwd.clone() {
             cmd.current_dir(cwd);
         }
-        for (k, v) in &opts_env {
-            cmd.env(k, v);
+        if let Some(env) = &opts_env {
+            cmd.env_clear();
+            cmd.envs(env);
         }
 
         match cmd.spawn() {
@@ -374,8 +377,9 @@ impl Interpreter {
                         if let Some(cwd) = opts_cwd {
                             retry.current_dir(cwd);
                         }
-                        for (k, v) in &opts_env {
-                            retry.env(k, v);
+                        if let Some(env) = &opts_env {
+                            retry.env_clear();
+                            retry.envs(env);
                         }
                         if let Ok(mut child) = retry.spawn() {
                             let pid = child.id() as i64;
@@ -503,12 +507,14 @@ impl Interpreter {
         }
         // See the matching comment in `builtin_run` above: no `:env` override
         // means explicitly apply mutsu's own `%*ENV` rather than relying on
-        // default OS-level inheritance.
+        // default OS-level inheritance; either hash is the whole environment.
         if opts.env_explicit {
+            command.env_clear();
             for (k, v) in opts.env {
                 command.env(k, v);
             }
         } else if let Some(ValueView::Hash(map)) = self.env.get("%*ENV").map(Value::view) {
+            command.env_clear();
             for (k, v) in map.iter() {
                 command.env(k, v.to_string_value());
             }

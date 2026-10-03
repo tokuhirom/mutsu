@@ -7,10 +7,9 @@ use Test;
 # SUBSEQUENTLY spawned child that relies on default OS-level env inheritance
 # (no explicit :ENV/:env passed to run/shell/Proc::Async).
 #
-# `%*ENV` writes also call std::env::set_var, which is documented as
-# UB-hazardous once other threads exist -- so `run()`/`shell()`/`Proc::Async`
-# stop relying on that inheritance and explicitly rebuild the child's
-# environment from mutsu's own %*ENV hash instead. This test exercises two
+# `%*ENV` writes are never mirrored into the process environment (#11241), so
+# `run()`/`shell()`/`Proc::Async` do not rely on that inheritance: they build
+# the child's environment from mutsu's own %*ENV hash. This test exercises two
 # independent ways to get a second OS thread running (Proc::Async and
 # Supply.interval) and confirms both `run()` and `shell()` still see a
 # %*ENV write made afterward.
