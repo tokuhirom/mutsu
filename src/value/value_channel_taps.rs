@@ -22,12 +22,21 @@ pub(crate) enum ChannelEnd {
 }
 
 impl SharedChannel {
+    /// The channel state, locked. A lock poisoned by a panicking holder still
+    /// guards consistent tap bookkeeping (no tap update spans a panic point),
+    /// so it is recovered rather than propagated as a second panic.
+    // Cost: O(1).
+    fn tap_state(&self) -> std::sync::MutexGuard<'_, ChannelState> {
+        let (lock, _) = &*self.inner;
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// Attach a tap's emitter as a consumer of this channel; returns the id
     /// that detaches it.
     // Cost: O(1).
     pub(crate) fn attach_tap(&self, emitter: Value) -> u64 {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = self.tap_state();
         let id = state.next_tap_id;
         state.next_tap_id += 1;
         state.taps.push(ChannelTap {
@@ -43,8 +52,7 @@ impl SharedChannel {
     /// it runs, to find the taps it attached.
     // Cost: O(1).
     pub(crate) fn next_tap_id(&self) -> u64 {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().next_tap_id
+        self.tap_state().next_tap_id
     }
 
     /// A `.tap` call on this thread has finished registering: mark the taps
@@ -52,8 +60,7 @@ impl SharedChannel {
     /// still setting up are left alone.
     // Cost: O(t), t = attached taps.
     pub(crate) fn mark_taps_ready_since(&self, first_id: u64) {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = self.tap_state();
         let me = std::thread::current().id();
         for tap in state.taps.iter_mut() {
             if tap.id >= first_id && tap.thread == me {
@@ -66,23 +73,20 @@ impl SharedChannel {
     /// remaining consumers.
     // Cost: O(t), t = attached taps.
     pub(crate) fn detach_tap(&self, id: u64) {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().taps.retain(|t| t.id != id);
+        self.tap_state().taps.retain(|t| t.id != id);
     }
 
     /// Whether any `Channel.Supply` tap is attached: without one, a value
     /// only has to be queued.
     // Cost: O(1).
     pub(crate) fn has_taps(&self) -> bool {
-        let (lock, _) = &*self.inner;
-        !lock.lock().unwrap().taps.is_empty()
+        !self.tap_state().taps.is_empty()
     }
 
     /// Every attached tap, as `(id, emitter, marked ready)`.
     // Cost: O(t), t = attached taps.
     pub(crate) fn tap_emitters(&self) -> Vec<(u64, Value, bool)> {
-        let (lock, _) = &*self.inner;
-        let state = lock.lock().unwrap();
+        let state = self.tap_state();
         state
             .taps
             .iter()
@@ -95,8 +99,7 @@ impl SharedChannel {
     /// the `ready` taps is still attached.
     // Cost: O(t * r), t = attached taps, r = `ready.len()`.
     pub(crate) fn take_for_tap(&self, ready: &[u64]) -> Option<(Value, Value)> {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = self.tap_state();
         if state.queue.is_empty() {
             return None;
         }
@@ -122,8 +125,7 @@ impl SharedChannel {
     /// can still produce values.
     // Cost: O(1).
     pub(crate) fn end_state(&self) -> Option<ChannelEnd> {
-        let (lock, _) = &*self.inner;
-        let state = lock.lock().unwrap();
+        let state = self.tap_state();
         Self::end_of(&state)
     }
 
@@ -133,8 +135,7 @@ impl SharedChannel {
     /// completed by the pump that runs once it is.
     // Cost: O(t * r), t = attached taps, r = `ready.len()`.
     pub(crate) fn take_ended_taps(&self, ready: &[u64]) -> Option<(Vec<Value>, ChannelEnd)> {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = self.tap_state();
         let end = Self::end_of(&state)?;
         let mut ended = Vec::new();
         state.taps.retain(|t| {
