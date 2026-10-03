@@ -1116,6 +1116,12 @@ impl Interpreter {
         if !self.subrule_names_user_method(spec, pkg) {
             return None;
         }
+        // An exception already raised in this match (an earlier `<.panic>`)
+        // ends it; a later `||` branch the engine still tries must not call
+        // its methods (see `eval_regex_inline_code`).
+        if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+            return Some(Vec::new());
+        }
         // Else the walked rule invocation this call is in the body of.
         let published = published.or_else(|| self.walk_rule_cursor(chars, pos, pkg));
         // Run the method in the grammar's package over an isolated copy of the
@@ -1152,8 +1158,11 @@ impl Interpreter {
         match called {
             Err(e) => {
                 // Propagate the method's exception (e.g. `die`) out of the parse.
+                // The FIRST exception is the one the parse dies with: a later
+                // `||` branch the engine still tries (`'%' <.panic: "a"> ||
+                // <.panic: "b">`) must not replace it.
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
-                    *slot.borrow_mut() = Some(e);
+                    slot.borrow_mut().get_or_insert(e);
                 });
                 Some(Vec::new())
             }

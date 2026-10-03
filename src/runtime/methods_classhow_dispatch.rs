@@ -1021,6 +1021,25 @@ impl Interpreter {
                     .split_once('[')
                     .map(|(base, _)| base)
                     .unwrap_or(owner.as_str());
+                // A role is parameterized by its argument *values*, exactly as
+                // `R[$v]` is (`Value::parametric_role`): spelling them into a
+                // package name lost them, so `R.^parameterize($signature)`
+                // named a role `R[Int $a]` whose parameter matched no
+                // candidate (Badger's `does SignatureOverload.^parameterize($sig)`).
+                if self.is_role(base) {
+                    let type_args: Vec<Value> = args[1..]
+                        .iter()
+                        .filter(|a| {
+                            !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                        })
+                        .cloned()
+                        .collect();
+                    return Ok(if type_args.is_empty() {
+                        Value::package(Symbol::intern(base))
+                    } else {
+                        Value::parametric_role(Symbol::intern(base), type_args)
+                    });
+                }
                 let param_args = args[1..]
                     .iter()
                     .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))

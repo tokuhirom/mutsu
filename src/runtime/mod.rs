@@ -4129,6 +4129,12 @@ pub struct Interpreter {
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
     my_scoped_package_items: std::sync::Arc<HashSet<String>>,
+    /// Qualified names of lexical types declared under an already-namespaced
+    /// spelling (`my class AST::Param {}` at file scope), as opposed to a
+    /// `my class Param {}` written inside `module AST { }`. The former keeps
+    /// its qualified name visible in its own compilation unit even when the
+    /// leading package is a `module`/`package` (Badger's `my module AST {}`).
+    namespaced_lexical_types: std::sync::Arc<HashSet<String>>,
     /// Names of classes/roles/enums registered while loading a foreign
     /// compunit via runtime `require` (`require_load_from_file`). Unlike a
     /// plain `class`/`role`/`enum` declaration -- which always installs into

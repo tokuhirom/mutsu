@@ -966,6 +966,7 @@ impl Interpreter {
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),
+            namespaced_lexical_types: self.namespaced_lexical_types.clone(),
             require_loaded_type_names: self.require_loaded_type_names.clone(),
             our_scoped_package_items: self.our_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),

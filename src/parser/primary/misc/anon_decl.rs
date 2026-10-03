@@ -36,6 +36,7 @@ fn parse_qualified_ident_with_hyphens(input: &str) -> PResult<'_, String> {
 /// Named classes in expression context register the class AND return the type object.
 pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     // Accept optional declarator prefixes used in expression context (e.g. `my class ...`).
+    let is_lexical = keyword("my", input).is_some();
     let input = if let Some(r) = keyword("my", input).or_else(|| keyword("our", input)) {
         let (r, _) = ws1(r)?;
         r
@@ -109,7 +110,8 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             parents,
             class_is_rw: false,
             is_hidden: false,
-            is_lexical: false,
+            // A named `my class Foo { ... }.new` keeps its lexical scope.
+            is_lexical: is_lexical && !name.starts_with("__ANON_CLASS_"),
             hidden_parents: Vec::new(),
             does_parents: does_roles,
             repr: None,

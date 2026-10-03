@@ -3384,6 +3384,7 @@ impl Interpreter {
             poisoned_enum_aliases: Default::default(),
             enum_scope_names: vec![Vec::new()],
             my_scoped_package_items: Default::default(),
+            namespaced_lexical_types: Default::default(),
             require_loaded_type_names: Default::default(),
             our_scoped_package_items: Default::default(),
             lexical_class_scopes: Vec::new(),

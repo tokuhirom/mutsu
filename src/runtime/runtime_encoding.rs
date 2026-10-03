@@ -431,6 +431,12 @@ impl Interpreter {
 
     /// Mark a fully-qualified name as `my`-scoped within its parent package.
     /// Items in this set are excluded from the parent package's stash.
+    /// Record that the lexical type `fq_name` was declared under that
+    /// namespaced spelling itself (see `namespaced_lexical_types`).
+    pub(crate) fn mark_namespaced_lexical_type(&mut self, fq_name: String) {
+        crate::runtime::cow_table_mut(&mut self.namespaced_lexical_types).insert(fq_name);
+    }
+
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
         crate::runtime::cow_table_mut(&mut self.my_scoped_package_items).insert(fq_name);
     }
@@ -542,7 +548,9 @@ impl Interpreter {
         // package-kind table distinguishes this from a namespaced lexical
         // declaration at file scope (`my class M::C {}`), whose qualified name
         // remains visible within its own compilation unit.
-        if type_package.is_some_and(|package| self.registry().package_kinds.contains_key(package)) {
+        if type_package.is_some_and(|package| self.registry().package_kinds.contains_key(package))
+            && !self.namespaced_lexical_types.contains(fq_name)
+        {
             return false;
         }
         if type_package.is_some_and(|package| {
