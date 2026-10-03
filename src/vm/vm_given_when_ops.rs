@@ -13,6 +13,10 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let topic = self.stack.pop().unwrap();
+        // A topic expression the compiler cannot see is an lvalue (a method
+        // call) may still hand back a container -- `@a.tail`, an `is rw`
+        // accessor -- and then the topic aliases it rw, as in raku.
+        let topic_readonly = topic_readonly && !matches!(topic.view(), ValueView::ContainerRef(_));
         // For a pointy block (`given @a -> @p { ... }`), the writeback reads the
         // bound parameter's final value rather than `$_` (Raku binds `@p` to the
         // topic but leaves `$_` undefined). `is copy` is not recorded here, so it
