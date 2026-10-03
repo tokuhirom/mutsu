@@ -862,13 +862,19 @@ impl Interpreter {
         self.async_state.gather_take_limits.pop();
     }
 
-    /// The package currently in scope, read out of the shared `Arc<RwLock>`
-    /// handle as an owned `String`. Returns owned (not `&str`) because the value
-    /// lives behind a lock guard that must not escape the call — the guard is
-    /// dropped before returning, so no lock is held across the caller's work
-    /// (re-entry safe, mirroring the registry accessors).
+    /// The package currently in scope, as an owned `String`. Prefer
+    /// [`Self::current_package_str`] or [`Self::current_package_sym`] on a hot
+    /// path: this one allocates.
+    // Cost: O(n), n = package name length (one allocation).
     pub(crate) fn current_package(&self) -> String {
-        self.current_package.read().unwrap().clone()
+        self.current_package_str().to_owned()
+    }
+
+    /// The package currently in scope, borrowed from the symbol table.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn current_package_str(&self) -> &'static str {
+        self.current_package_sym().as_str()
     }
 
     /// Switch `current_package` to the package a gather body was WRITTEN in
@@ -941,9 +947,16 @@ impl Interpreter {
     pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
         debug_assert_eq!(Symbol::lookup(&pkg), Some(sym));
+        let _ = pkg;
+        self.set_current_package_sym(sym);
+    }
+
+    /// Switch `current_package` to the package `sym` names.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn set_current_package_sym(&mut self, sym: Symbol) {
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
-        *self.current_package.write().unwrap() = pkg;
     }
 
     /// Switch `current_package` to `sym`'s package, returning an RAII guard
@@ -990,10 +1003,9 @@ impl Interpreter {
     pub(crate) fn enter_package_guarded_sym(&mut self, sym: Symbol) -> CurrentPackageGuard {
         let saved_sym_id = self.current_package_sym().id();
         if sym.id() != saved_sym_id {
-            self.set_current_package_with_sym(sym.as_str().to_owned(), sym);
+            self.set_current_package_sym(sym);
         }
         CurrentPackageGuard {
-            pkg_lock: std::sync::Arc::clone(&self.current_package),
             pkg_sym: std::sync::Arc::clone(&self.current_package_sym),
             saved_sym_id,
         }
@@ -1139,7 +1151,7 @@ impl Interpreter {
     }
 
     /// Interior-mutable variant for the `&self` regex matcher: the package is
-    /// stored behind a RwLock, so a temporary switch (e.g. into a cross-package
+    /// an atomic symbol id, so a temporary switch (e.g. into a cross-package
     /// grammar subrule's defining package while parsing its body) does not need
     /// `&mut self`.
     ///
@@ -1150,49 +1162,29 @@ impl Interpreter {
     pub(crate) fn set_current_package_shared_sym(&self, sym: Symbol) {
         self.current_package_sym
             .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
-        *self.current_package.write().unwrap() = sym.as_str().to_owned();
     }
 }
 
 /// RAII guard returned by [`Interpreter::enter_package_guarded_sym`]. Restores
 /// `current_package` on drop, including on a Rust panic unwind.
 ///
-/// `current_package`/`current_package_sym` are already interior-mutable
-/// (`Arc<RwLock<String>>` / `Arc<AtomicU32>`, the same handles
-/// [`Interpreter::set_current_package_shared_sym`] uses), so this guard just
-/// holds cloned `Arc` handles and writes through them directly on drop -- no
+/// `current_package_sym` is interior-mutable (an `Arc<AtomicU32>`, the same
+/// handle [`Interpreter::set_current_package_shared_sym`] uses), so this guard
+/// just holds a cloned `Arc` and writes through it on drop -- no
 /// `&mut Interpreter` borrow is needed, so it stays fully safe (no raw
 /// pointers) even though it is typically constructed deep inside a large
 /// `&mut self` dispatch function and lives across many further `self.*`
-/// calls before being dropped.
-/// Only the saved package's `Symbol` id is held, not its text: the two are kept
-/// in lockstep by every writer (`set_current_package_with_sym` asserts it,
-/// `set_current_package_shared_sym` derives the text *from* the symbol, and the
-/// `Interpreter` clones that build a fresh pair — a thread snapshot, a regex
-/// scratch — copy both together, which [#7576](https://github.com/tokuhirom/mutsu/issues/7576)
-/// is the record of), so the string is recoverable from the id and does not
-/// need saving. That is what lets the guard be free to *construct*: it used to
-/// clone the package out from behind its `RwLock` on every guarded call.
+/// calls before being dropped. The package is a `Symbol` id, so saving and
+/// restoring it allocates nothing.
 pub(crate) struct CurrentPackageGuard {
-    pkg_lock: std::sync::Arc<std::sync::RwLock<String>>,
     pkg_sym: std::sync::Arc<std::sync::atomic::AtomicU32>,
     saved_sym_id: u32,
 }
 
 impl Drop for CurrentPackageGuard {
     fn drop(&mut self) {
-        // Restore only if something actually moved. The `swap` both reads and
-        // writes the mirror in one operation, so the guarded region ends with
-        // the saved package current either way; the `RwLock` write and the
-        // `String` allocation behind it are what the check is for, and they are
-        // skipped for every guard whose region never left its own package.
-        let previous = self
-            .pkg_sym
-            .swap(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
-        if previous != self.saved_sym_id {
-            *self.pkg_lock.write().unwrap() =
-                Symbol::from_id(self.saved_sym_id).as_str().to_owned();
-        }
+        self.pkg_sym
+            .store(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

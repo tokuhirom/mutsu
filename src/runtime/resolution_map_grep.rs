@@ -533,12 +533,16 @@ impl Interpreter {
                     // parameter binds the missing slot to its default / `Any`.
                     last_call_args = Some(chunk.clone());
                     let callable = Value::sub_value(data.clone());
-                    let value =
-                        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
-                            self.vm_call_on_value(callable, chunk, None)?
-                        } else {
-                            self.call_sub_value(callable, chunk, false)?
-                        };
+                    // A block with its own parameters runs its compiled body
+                    // as any closure call does (see the rw twin of this loop).
+                    let value = if !data.assumed_positional.is_empty()
+                        || !data.assumed_named.is_empty()
+                        || super::resolution_map_grep::block_keeps_outer_topic(&data)
+                    {
+                        self.vm_call_on_value(callable, chunk, None)?
+                    } else {
+                        self.call_sub_value(callable, chunk, false)?
+                    };
                     let value = self.reify_finite_pipe_value(value)?;
                     match value.view() {
                         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),

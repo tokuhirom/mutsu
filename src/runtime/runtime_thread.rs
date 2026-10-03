@@ -642,7 +642,6 @@ impl Interpreter {
             program_path_sym: self.program_path_sym,
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
-            current_package: Arc::new(RwLock::new(self.current_package())),
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
                 self.current_package_sym().id(),
             )),

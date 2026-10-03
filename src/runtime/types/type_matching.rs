@@ -615,21 +615,54 @@ impl Interpreter {
         // shadows the name (then the full checker below must run its predicate),
         // so it is gated on the subset registry. This skips the long string-
         // compare gauntlet for the ubiquitous `Int $n` / `Point $p` params.
-        let tag_match = if value.is_lazy_match_value() {
+        //
+        // A `WrapVarRef` bind source (`my Str $chunk := @ch[$i]`, the element
+        // usually already promoted to a shared cell) is accepted by the plain
+        // value it carries, which is what the general checker below ends up
+        // testing for it too; only the accept is taken early.
+        let carried;
+        let value_for_tag = if value.is_varref() {
+            let inner = value.unwrap_varref();
+            carried = if matches!(
+                inner.view(),
+                ValueView::ContainerRef(_) | ValueView::ContainerView(_)
+            ) {
+                inner.deref_container()
+            } else {
+                inner.clone()
+            };
+            if !carried.is_lazy_match_value()
+                && matches!(
+                    carried.view(),
+                    ValueView::Int(_)
+                        | ValueView::Num(_)
+                        | ValueView::Str(_)
+                        | ValueView::Bool(_)
+                        | ValueView::Instance { .. }
+                )
+            {
+                &carried
+            } else {
+                value
+            }
+        } else {
+            value
+        };
+        let tag_match = if value_for_tag.is_lazy_match_value() {
             // A lazy Match answers the ubiquitous constraints without
             // materializing. `Match` holds for a grammar cursor too (raku:
             // `Grammar` IS a `Match` subclass), as does the cursor's own class.
             // Unlisted constraints (subsets, roles) fall through to the full
             // checker below, which materializes through `view()` as an Instance.
             matches!(constraint, "Match" | "Any" | "Mu")
-                || constraint == value.match_dispatch_class()
+                || constraint == value_for_tag.match_dispatch_class()
         } else {
             // The lowercase native aliases are accepted alongside the boxed
             // names exactly as the general checker below does for them (an
             // `int` constraint admits any Int; see `type_matches`): the
             // vendored `Test.rakumod` counts its tests in `my int` lexicals,
             // so every assertion paid the full gauntlet for `int` twice.
-            match value.view() {
+            match value_for_tag.view() {
                 // Sized native int constraints (`uint32`, `int8`, `atomicint`,
                 // ...) match an Int/Bool value exactly as `type_matches`'s
                 // general checker does at its `is_native_int_type` arm --
@@ -652,7 +685,8 @@ impl Interpreter {
                 // and `NFKD` all derive from it), and `unjsonify-string`'s
                 // `Uni:D \codes` binds one per escaped JSON string.
                 ValueView::Uni(_) => {
-                    constraint == "Uni" || constraint == crate::runtime::value_type_name(value)
+                    constraint == "Uni"
+                        || constraint == crate::runtime::value_type_name(value_for_tag)
                 }
                 // `LazyList` can present as `Array`, `List`, or `Seq` depending
                 // on context markers (`.List`/`.Array`/`.cache`) and whether it
@@ -660,7 +694,9 @@ impl Interpreter {
                 // the single authoritative oracle for this (ADR-0038 S2); defer
                 // to it here instead of re-deriving a partial answer, so this
                 // fast-accept never disagrees with the general checker below.
-                ValueView::LazyList(_) => constraint == crate::runtime::value_type_name(value),
+                ValueView::LazyList(_) => {
+                    constraint == crate::runtime::value_type_name(value_for_tag)
+                }
                 ValueView::Array(_, kind) if kind.is_itemized() => constraint == "Scalar",
                 _ => false,
             }

@@ -1573,6 +1573,14 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Per attribute (same order as `class_attrs`): the value its seed
+    /// default (`default_is_seed`, the declared type's type object for a
+    /// `has Str $.x` with no initializer) evaluated to, once it has evaluated
+    /// to a type object that passed the attribute's type check. A type name
+    /// resolves the same way in the declaring scope every time and a type
+    /// object is immutable, so the memo is exact for as long as this plan
+    /// lives (it is dropped at every class-shape mutation).
+    pub(crate) seed_defaults: Box<[std::sync::OnceLock<Value>]>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
@@ -1679,6 +1687,27 @@ pub(crate) struct NativeCtorPlan {
     /// the MRO for them on every construction cost ~400 instructions of each
     /// `.new` (#9291), almost always to find none.
     pub(crate) alias_attributes: Arc<[String]>,
+}
+
+impl NativeCtorPlan {
+    /// Whether constructing the class evaluates no declaration expression
+    /// any more: every initializer is absent, a literal, or a seed default
+    /// already memoized in `seed_defaults`, and no attribute has a `where`.
+    /// Such a construction neither reads nor temporarily rebinds the caller's
+    /// env (see `try_ctor_lane`).
+    // Cost: O(a), a = attributes.
+    pub(crate) fn evaluates_no_decl_expr(&self) -> bool {
+        self.class_attrs.iter().enumerate().all(|(i, a)| {
+            a.where_constraint.is_none()
+                && match &a.default {
+                    None | Some(crate::opcode::DeclTraitArg::Literal(_)) => true,
+                    Some(_) => {
+                        a.default_is_seed
+                            && self.seed_defaults.get(i).is_some_and(|c| c.get().is_some())
+                    }
+                }
+        })
+    }
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class
@@ -2449,18 +2478,11 @@ pub struct Interpreter {
     pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
-    /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
-    /// can read/write it through its own handle (mirroring `io_handles` /
-    /// `registry`) rather than bouncing through `self.interpreter`. Snapshot-cloned
-    /// per thread (see `clone_for_thread`). Accessed only via
-    /// `current_package()` / `set_current_package()`, which read-clone / write the
-    /// lock and never hold the guard across user-code re-entry.
-    current_package: Arc<RwLock<String>>,
-    /// Interned-symbol mirror of `current_package`, kept in lockstep by the two
-    /// setters. Reading the `RwLock<String>` clones a `String` (one malloc), which
-    /// is far too expensive for per-call use; the name-keyed call caches need the
-    /// package identity on every hit to stay package-scoped, so they read this
-    /// relaxed atomic instead.
+    /// declaration, held as its interned `Symbol` id. A relaxed atomic (not a
+    /// `Cell`) so the `&self` regex matcher can switch it
+    /// (`set_current_package_shared_sym`); snapshot-copied per thread (see
+    /// `clone_for_thread`). It used to be an `Arc<RwLock<String>>` with this
+    /// atomic as a mirror, which made every package switch and read allocate.
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,

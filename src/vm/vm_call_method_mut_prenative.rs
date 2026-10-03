@@ -221,4 +221,39 @@ impl Interpreter {
         self.shadow_check_native_row_candidate(target, method, method_sym, args.len(), true);
         Some(native_result)
     }
+
+    /// `.elems` / `.end` on an `Array` value (the stack top), answered by the
+    /// native method the general `CallMethodMut` path would reach for it.
+    ///
+    /// Every branch between that opcode's top and its native probe is keyed on
+    /// an argument, a modifier, a method name other than these two, or a
+    /// receiver kind an `Array` is not -- except the lazy-list guard, which is
+    /// why a lazy array (`my @a = 1..*`, whose count is not known) is left to
+    /// it. A user `^find_method` or an augmented `Array.elems` (lever A) also
+    /// keeps the full path. Neither method writes to its receiver, so the
+    /// dispatch is env-pure.
+    // Cost: O(1) to decide; the native method's own cost.
+    pub(super) fn try_array_count_lane(
+        &mut self,
+        method: &str,
+        method_sym: crate::symbol::Symbol,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "elems" | "end")
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
+            return None;
+        }
+        let target = self.stack.last()?;
+        if !matches!(target.view(), ValueView::Array(_, kind) if !kind.is_lazy()) {
+            return None;
+        }
+        let target = target.clone();
+        if self.native_lever_a_user_override_sym(&target, method_sym) {
+            return None;
+        }
+        let native_result = self.try_native_method(&target, method_sym, &[])?;
+        self.method_dispatch_pure = true;
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+        Some(native_result)
+    }
 }

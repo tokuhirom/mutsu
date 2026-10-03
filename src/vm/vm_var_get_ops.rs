@@ -95,6 +95,22 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // `self` reaches here only from a block nested in a method (the method
+        // body itself reads its `self` slot). It is the invocant the block
+        // closed over, held under the env's `self` key — the innermost lexical
+        // `self`, which in Raku outranks a file- or package-scope
+        // `constant self` exactly as any inner lexical does. Answering it here
+        // also keeps the term-namespace and package-chain probes below (a
+        // `format!` per enclosing package) off a name every closure in a
+        // method reads. Without an invocant in scope it falls through to the
+        // ordinary resolution (a `constant self`, or the undeclared error).
+        if name == "self"
+            && let Some(v) = self.env().get_sym(crate::symbol::wk::self_())
+        {
+            let v = v.clone();
+            self.stack.push(v);
+            return Ok(());
+        }
         // An in-scope sigilless `_` is canonicalized by the parser to its
         // private storage name. Keep the topic spelling out of bareword
         // lookup, since `_` without that declaration is still undeclared.

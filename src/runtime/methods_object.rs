@@ -521,7 +521,11 @@ impl Interpreter {
                 .flat_map(|cd| cd.alias_attributes.iter().map(|a| a.to_string()))
                 .collect()
         };
+        let seed_defaults = (0..class_attrs.len())
+            .map(|_| std::sync::OnceLock::new())
+            .collect();
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
+            seed_defaults,
             alias_attributes,
             is_cunion,
             eligible,

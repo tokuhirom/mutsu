@@ -590,11 +590,12 @@ impl Interpreter {
             false
         };
         let is_builtin_seq = matches!(value.view(), ValueView::Seq(body) if !body.is_lazy());
-        let is_positional_bind_failover =
-            is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
+        // Only an `@` parameter binds through `PositionalBindFailover`, so the
+        // role check (a full type walk for an object argument) is asked of
+        // those alone.
         if pd.name.starts_with('@')
             && !seq_list_array_context
-            && is_positional_bind_failover
+            && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {
             value = self.coerce_positional_bind_failover(value)?;

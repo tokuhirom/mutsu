@@ -56,7 +56,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && let Some(exc) = attributes.as_map().get("exception").cloned()
         {
             exc
@@ -2183,7 +2183,7 @@ impl Interpreter {
                             // When assigning an unhandled Failure to a typed variable
                             // that can't hold it, explode the Failure first (Raku behavior)
                             if let ValueView::Instance { class_name, .. } = val.view()
-                                && class_name.resolve() == "Failure"
+                                && class_name.as_str() == "Failure"
                                 && !val.is_failure_handled()
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
@@ -3228,7 +3228,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name.resolve() == "IO::Path::Parts" => {
+                    } if class_name.as_str() == "IO::Path::Parts" => {
                         let attrs = attributes.as_map();
                         // ADR-0021 I2: a data-minted pair defaults positional.
                         Value::array(
@@ -4529,7 +4529,7 @@ impl Interpreter {
                         && val.is_mixin_value()
                         && !matches!(val.view(), ValueView::Mixin(inner, _)
                             if matches!(inner.view(), ValueView::Instance { class_name, .. }
-                                if self.has_user_method(&class_name.resolve(), "STORE")))
+                                if self.has_user_method(class_name.as_str(), "STORE")))
                         && self.mixin_composes_method(&val, "sink");
                     let sink_class = if !user_sink || mixin_sink {
                         None
@@ -4638,7 +4638,7 @@ impl Interpreter {
                                 attributes,
                                 ..
                             } = val.view()
-                                && class_name.resolve() == "Proc"
+                                && class_name.as_str() == "Proc"
                             {
                                 let exitcode =
                                     match attributes.as_map().get("exitcode").map(Value::view) {
@@ -5903,7 +5903,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = val.view()
-                    && class_name.resolve() == "Failure"
+                    && class_name.as_str() == "Failure"
                 {
                     if let Some(exc) = attributes.as_map().get("exception") {
                         exc.clone()
