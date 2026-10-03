@@ -145,6 +145,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         NamePartSimple => &[("name", Absent::Required)],
         NamePartExpression => &[("expr", Absent::Required)],
         TermName => &[("name", Absent::Required)],
+        TermNamed => &[("name", Absent::Required)],
         TermTopicCall => &[("call", Absent::Required)],
         CallName | CallNameWithoutParentheses | CallMethod => &[
             ("name", Absent::Required),
@@ -325,7 +326,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarLexical | VarDynamic => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
-        TermName | ParameterTargetTerm => "name",
+        TermName | TermNamed | ParameterTargetTerm => "name",
         TermTopicCall => "call",
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional => "lexical-name",
