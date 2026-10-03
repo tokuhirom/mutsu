@@ -412,11 +412,14 @@ pub(crate) fn max_threads() -> usize {
 ///
 /// Every blocking point passes through here, so it is also where a consumer
 /// held for this thread's in-flight declaration is released: it must not wait
-/// on what this thread is about to wait for (`decl_gate`, #9590).
+/// on what this thread is about to wait for (`decl_gate`, #9590) -- and where
+/// the reacts whose events it is handling stop holding their producers back
+/// (`waker::park_dispatching`, #11268): they cannot progress until it wakes.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn enter_blocking() -> native::BlockingGuard {
+pub(crate) fn enter_blocking() -> (native::BlockingGuard, crate::value::waker::ParkGuard) {
     crate::runtime::decl_gate::release_all();
-    native::enter_blocking()
+    let parked = crate::value::waker::park_dispatching();
+    (native::enter_blocking(), parked)
 }
 
 /// wasm32: there is no pool to account to.

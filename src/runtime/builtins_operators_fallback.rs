@@ -1324,16 +1324,36 @@ impl Interpreter {
     /// that package substituted (`Meta::index` -> `A::Meta::index`).
     // Cost: O(n) in the length of `name`, one env lookup.
     pub(crate) fn resolve_package_alias_prefix(&self, name: &str) -> Option<String> {
+        self.package_alias_prefix(name, false)
+    }
+
+    /// [`Self::resolve_package_alias_prefix`] restricted to a head that is a
+    /// `constant` term. A bareword reaches this before any other resolution,
+    /// so a head that is a declared type itself (a lexical `my role Tuxic`,
+    /// whose env binding is its mangled storage name) must not be rewritten:
+    /// `Tuxic::Legacy` names the nested role, not an alias.
+    // Cost: O(n) in the length of `name`, one env lookup.
+    pub(crate) fn resolve_constant_package_alias_prefix(&self, name: &str) -> Option<String> {
+        self.package_alias_prefix(name, true)
+    }
+
+    fn package_alias_prefix(&self, name: &str, constants_only: bool) -> Option<String> {
         use crate::qualified::{package_ancestors, package_parent, qualified};
         let name_sym = Symbol::intern(name);
         // The outermost enclosing package of `name` is its leading component.
         let head = package_ancestors(package_parent(name_sym)?).last()?;
         // A `constant` is a term (#9962), reached through `type_name_binding`.
-        let pkg = match self.type_name_binding(head.as_str()) {
+        let binding = if constants_only {
+            self.term_binding_sym(head)
+        } else {
+            self.type_name_binding(head.as_str())
+        };
+        let pkg = match binding {
             Some(value) => match value.view() {
                 ValueView::Package(pkg) => pkg,
                 _ => return None,
             },
+            None if constants_only => return None,
             // A module-scope short name a `use` installed for a package declared
             // under a longer name (`unit module A::B::Fac is export`), which the
             // module's own routines keep after the load restores the importer.
