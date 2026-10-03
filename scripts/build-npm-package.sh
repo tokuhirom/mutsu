@@ -4,6 +4,8 @@ set -euo pipefail
 
 wasm-pack build --target web --no-default-features --features wasm
 cp site/assets/embed.js pkg/embed.js
+cp site/assets/worker-client.js pkg/worker-client.js
+cp site/assets/wasm-worker.js pkg/wasm-worker.js
 cp docs/browser-embedding.md pkg/README.md
 
 # wasm-pack supplies mutsu.js, mutsu.d.ts, mutsu_bg.wasm, package.json, and the

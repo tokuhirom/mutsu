@@ -43,10 +43,12 @@ function assert(condition, message) {
 /** Feed one line to the REPL and return the text it logged (may be ''). */
 async function replEval(page, line) {
   const before = await page.locator('#repl-log > div').count();
+  const echoesBefore = await page.locator('#repl-log > div.echo').count();
   await page.fill('#repl-input', line);
   await page.press('#repl-input', 'Enter');
-  // evalLine runs synchronously inside the keydown handler, so by the time the
-  // press resolves the log already has the echo (+ output, when there is any).
+  await page.waitForFunction(count =>
+    document.querySelectorAll('#repl-log > div.echo').length > count
+      && !document.getElementById('repl-input').disabled, echoesBefore);
   const after = await page.locator('#repl-log > div').count();
   if (after <= before + 1) return '';   // echo only: no output (e.g. continuation)
   return (await page.locator('#repl-log > div').last().textContent()).trim();
@@ -607,6 +609,13 @@ try {
   assert(editedOut === 'edited', `an edited lesson runs (got: ${JSON.stringify(editedOut)})`);
   assert(await page.locator('.verdict.differs').count() === 1,
          'output that differs from the expectation says so');
+  await page.fill('.editor-wrap textarea', 'loop {}');
+  await page.click('.run-btn');
+  await page.locator('.stop-btn').click({ timeout: 5000 });
+  assert((await page.locator('.output').first().textContent()).trim() === 'Execution stopped.',
+         'a tutorial snippet can stop a non-terminating run');
+  await page.fill('.editor-wrap textarea', 'say "again";');
+  assert(await runSnippet(page) === 'again', 'the snippet runs after Stop');
   await page.click('.reset-btn');
   assert((await page.inputValue('.editor-wrap textarea')).trim() === deep.code.trim(),
          'Reset restores the lesson code');
@@ -660,6 +669,17 @@ try {
   await runEditor(page, 'my $shared = 40; say "set";');
   assert(await runEditor(page, 'say $shared.defined') === 'False',
          'the previous run left nothing behind');
+
+  // The loop runs in a worker: Stop must remain clickable, and the next run
+  // must use a fresh WASM instance rather than the terminated one.
+  console.log('Test: playground stop and restart');
+  await page.fill('#code', 'loop {}');
+  await page.click('#run-btn');
+  await page.locator('#stop-btn').click({ timeout: 5000 });
+  assert((await page.textContent('#output')).trim() === 'Execution stopped.',
+         'Stop terminates a non-terminating program without freezing the page');
+  assert(await runEditor(page, 'say 42;') === '42',
+         'a fresh worker runs the next program after Stop');
 
   // --- Test: FizzBuzz example button ---
   console.log('Test: FizzBuzz example');
@@ -773,6 +793,16 @@ try {
   assert((await component.locator('output').textContent()).trim() === '42',
          'the Run button evaluates edited source');
 
+  await component.locator('textarea').fill('loop {}');
+  await component.locator('.run').click();
+  await component.locator('.stop').click({ timeout: 5000 });
+  await component.locator('textarea').fill('say 43;');
+  await component.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('mutsu-code').shadowRoot.querySelector('.run').disabled);
+  assert((await component.locator('output').textContent()).trim() === '43',
+         'an embedded example runs after its worker is stopped');
+
   await component.locator('.reset').click();
   assert((await component.locator('textarea').inputValue()).includes('Hello from an embedded mutsu!'),
          'Reset restores the original source');
@@ -864,6 +894,8 @@ try {
   // --- Test: Reset session ---
   console.log('Test: Reset session');
   await page.click('#reset-btn');
+  await page.waitForFunction(() => document.querySelector('#repl-log > div.note')
+    ?.textContent.includes('Session reset') && !document.getElementById('repl-input').disabled);
   const afterReset = await replEval(page, 'say $x.defined');
   assert(afterReset === 'False', `reset clears declarations (got: ${JSON.stringify(afterReset)})`);
 

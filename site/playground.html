@@ -37,6 +37,7 @@
 
   <div class="run-row">
     <button id="run-btn" class="btn"></button>
+    <button id="stop-btn" class="btn-ghost" disabled></button>
     <span class="hint" id="run-hint"></span>
     <span class="grow"></span>
     <button id="share-btn" class="btn-ghost"></button>
@@ -58,12 +59,13 @@
 <script type="module">
 import { renderChrome, t, currentLang, langHref } from './assets/i18n.js';
 import { createEditor } from './assets/editor.js';
-import { runIsolated, looksLikeError, isReady, boot } from './assets/runner.js';
+import { runIsolated, stopIsolated, looksLikeError, isReady, boot } from './assets/runner.js';
 import { PROGRAMS } from './content/examples.js';
 
 renderChrome('playground');
 
 const runBtn = document.getElementById('run-btn');
+const stopBtn = document.getElementById('stop-btn');
 const shareBtn = document.getElementById('share-btn');
 const resetBtn = document.getElementById('reset-btn');
 const outEl = document.getElementById('output');
@@ -151,6 +153,7 @@ let original = DEFAULT_CODE;
  * ------------------------------------------------------------------ */
 
 let busy = false;
+let runId = 0;
 
 function clearOutput() {
   outEl.className = 'output output-pane muted';
@@ -163,15 +166,15 @@ async function run() {
   const code = editor.getCode();
   if (!code.trim()) return;
   busy = true;
+  const currentRun = ++runId;
   runBtn.disabled = true;
+  stopBtn.disabled = false;
   runBtn.textContent = isReady() ? t('run.running') : t('run.loading');
-  // Let the button repaint before the VM blocks this thread.
-  await new Promise(r => setTimeout(r, 0));
-
   // Each run gets a clean interpreter: this page is "run a program and read
   // its output", so nothing may leak in from the run before it.  The REPL page
   // is where a session that remembers things lives.
   const res = await runIsolated(code);
+  if (currentRun !== runId) return;
   outEl.className = 'output output-pane';
   outEl.dataset.ran = '1';
   if (!res.output) {
@@ -183,7 +186,21 @@ async function run() {
   }
   busy = false;
   runBtn.disabled = false;
+  stopBtn.disabled = true;
   runBtn.textContent = t('run');
+}
+
+function stop() {
+  if (!busy) return;
+  ++runId;
+  stopIsolated();
+  busy = false;
+  runBtn.disabled = false;
+  stopBtn.disabled = true;
+  runBtn.textContent = t('run');
+  outEl.className = 'output output-pane muted';
+  outEl.dataset.ran = '1';
+  outEl.textContent = t('run.stopped');
 }
 
 function toast(msg) {
@@ -193,6 +210,7 @@ function toast(msg) {
 }
 
 runBtn.addEventListener('click', run);
+stopBtn.addEventListener('click', stop);
 resetBtn.addEventListener('click', () => {
   editor.setCode(original);
   clearOutput();
@@ -255,6 +273,7 @@ function paintText() {
   shareBtn.textContent = t('pg.share');
   resetBtn.textContent = t('reset');
   if (!busy) runBtn.textContent = t('run');
+  stopBtn.textContent = t('run.stop');
   const cta = document.getElementById('repl-cta');
   cta.textContent = t('pg.repl-cta');
   cta.href = langHref('repl.html');

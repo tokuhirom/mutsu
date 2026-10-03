@@ -6,24 +6,7 @@
  * elsewhere.
  */
 
-// The source file lives under site/assets/, while the same file is copied next
-// to mutsu.js in the npm package. Resolve the binding for both layouts so the
-// exact component tested on the project site is the one users install.
-const packaged = !new URL(import.meta.url).pathname.includes('/assets/');
-const bindingsUrl = new URL(packaged ? './mutsu.js' : '../pkg/mutsu.js', import.meta.url);
-let Repl;
-
-let wasmReady;
-
-function boot() {
-  if (!wasmReady) {
-    wasmReady = import(bindingsUrl).then(async bindings => {
-      Repl = bindings.Repl;
-      await bindings.default();
-    });
-  }
-  return wasmReady;
-}
+import { WorkerClient } from './worker-client.js';
 
 const stylesheet = `
   :host {
@@ -98,6 +81,7 @@ class MutsuCode extends HTMLElement {
         <textarea aria-label="Raku code" spellcheck="false"></textarea>
         <div class="toolbar">
           <button type="button" class="run">Run</button>
+          <button type="button" class="stop" disabled>Stop</button>
           <button type="button" class="reset">Reset</button>
           <span class="status" aria-live="polite">Loading mutsu…</span>
         </div>
@@ -108,18 +92,22 @@ class MutsuCode extends HTMLElement {
     this.output = root.querySelector('output');
     this.status = root.querySelector('.status');
     this.runButton = root.querySelector('.run');
+    this.stopButton = root.querySelector('.stop');
+    this.runId = 0;
     this.initialSource = source;
     this.editor.value = source;
     this.editor.readOnly = this.hasAttribute('readonly');
     this.runButton.disabled = true;
 
     this.runButton.addEventListener('click', () => this.run());
+    this.stopButton.addEventListener('click', () => this.stop());
     root.querySelector('.reset').addEventListener('click', () => this.reset());
     this.editor.addEventListener('keydown', event => {
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') this.run();
     });
 
-    boot().then(() => {
+    this.session = new WorkerClient();
+    this.session.boot().then(() => {
       this.status.textContent = 'Ready';
       this.runButton.disabled = false;
       if (this.hasAttribute('autorun')) this.run();
@@ -130,16 +118,17 @@ class MutsuCode extends HTMLElement {
   }
 
   async run() {
+    const runId = ++this.runId;
     this.runButton.disabled = true;
+    this.stopButton.disabled = false;
     this.status.textContent = 'Running…';
-    await new Promise(resolve => setTimeout(resolve, 0));
     try {
-      await boot();
-      if (!this.session || !this.hasAttribute('session')) this.session = new Repl();
-      const raw = this.hasAttribute('session')
-        ? this.session.evalLine(this.editor.value)
-        : this.session.evalBlock(this.editor.value);
-      const result = JSON.parse(raw);
+      if (!this.session) this.session = new WorkerClient();
+      await this.session.boot();
+      if (!this.hasAttribute('session')) await this.session.reset();
+      const result = await this.session.evaluate(
+        this.editor.value, this.hasAttribute('session') ? 'line' : 'block');
+      if (runId !== this.runId) return;
       const text = (result.output || '').replace(/\n+$/, '');
       this.show(text || '(no output)', /(^|\n)Error:/.test(text));
       this.status.textContent = 'Ready';
@@ -148,17 +137,30 @@ class MutsuCode extends HTMLElement {
         detail: { output: text },
       }));
     } catch (error) {
+      if (runId !== this.runId) return;
       this.session = null;
       this.show(`WASM error: ${error.message}`, true);
       this.status.textContent = 'Execution failed';
     } finally {
-      this.runButton.disabled = false;
+      if (runId === this.runId) {
+        this.runButton.disabled = false;
+        this.stopButton.disabled = true;
+      }
     }
   }
 
-  reset() {
-    this.editor.value = this.initialSource;
+  stop() {
+    ++this.runId;
+    this.session?.stop();
     this.session = null;
+    this.runButton.disabled = false;
+    this.stopButton.disabled = true;
+    this.status.textContent = 'Stopped';
+  }
+
+  reset() {
+    this.stop();
+    this.editor.value = this.initialSource;
     this.show('Output will appear here.', false);
     this.status.textContent = 'Ready';
   }
@@ -166,6 +168,11 @@ class MutsuCode extends HTMLElement {
   show(text, error) {
     this.output.textContent = text;
     this.output.classList.toggle('error', error);
+  }
+
+  disconnectedCallback() {
+    this.session?.stop();
+    this.session = null;
   }
 }
 

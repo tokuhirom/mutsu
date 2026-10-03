@@ -1,23 +1,17 @@
-/**
- * WASM lifecycle for the whole site.
- *
- * The module is a few megabytes, so it is loaded once per page and shared by
- * every snippet on it.  `runIsolated` gives each run a clean interpreter (the
- * tutorial's lessons must not leak declarations into each other, and a
- * playground run is a program run), while `createSession` hands out the
- * long-lived session the REPL page is built around.
- */
-
-import init, { Repl } from '../pkg/mutsu.js';
+/** Worker-backed WASM lifecycle for the site. */
+import { WorkerClient } from './worker-client.js';
 
 let bootPromise = null;
-let scratchRepl = null;
+let scratch = null;
+let runTail = Promise.resolve();
 
 /** Start loading the WASM module.  Safe to call repeatedly. */
 export function boot() {
   if (!bootPromise) {
-    bootPromise = init().then(() => {
-      document.body.dataset.wasmReady = '1';
+    if (!scratch) scratch = new WorkerClient();
+    const client = scratch;
+    bootPromise = client.boot().then(() => {
+      if (scratch === client) document.body.dataset.wasmReady = '1';
     });
     // boot() is also kicked off speculatively, with nobody awaiting it yet, so
     // a failure (an offline visitor, or a navigation that aborts the fetch)
@@ -34,36 +28,39 @@ export function isReady() {
 
 /** A fresh long-lived session (the REPL page). */
 export async function createSession() {
-  await boot();
-  return new Repl();
+  const session = new WorkerClient();
+  await session.boot();
+  return session;
 }
 
-/**
- * Run a snippet with no state carried over from previous runs.
- *
- * A Rust panic poisons the wasm instance, so a failed run throws away the
- * scratch interpreter rather than reusing a corrupt one.
- *
- * @returns {Promise<{output: string, crashed: boolean}>}
- */
+/** Stop an isolated run and discard its WASM instance. */
+export function stopIsolated() {
+  scratch?.stop();
+  scratch = null;
+  bootPromise = null;
+  delete document.body.dataset.wasmReady;
+}
+
+/** Run a snippet with no state carried over from previous runs. */
 export async function runIsolated(code) {
+  // A shared scratch interpreter must reset and run one snippet at a time.
+  const previous = runTail;
+  let release;
+  runTail = new Promise(resolve => { release = resolve; });
+  await previous;
+  let client;
   try {
-    await boot();
-  } catch (e) {
-    return { output: `Failed to load the interpreter: ${e.message}`, crashed: true };
-  }
-  if (!scratchRepl) scratchRepl = new Repl();
-  try {
-    scratchRepl.reset();
-  } catch {
-    scratchRepl = new Repl();
-  }
-  try {
-    const res = JSON.parse(scratchRepl.evalBlock(code));
+    const loading = boot();
+    client = scratch;
+    await loading;
+    await client.reset();
+    const res = await client.evaluate(code);
     return { output: (res.output || '').replace(/\n+$/, ''), crashed: false };
   } catch (e) {
-    scratchRepl = null;
+    if (!client || scratch === client) stopIsolated();
     return { output: `WASM error: ${e.message}`, crashed: true };
+  } finally {
+    release();
   }
 }
 
