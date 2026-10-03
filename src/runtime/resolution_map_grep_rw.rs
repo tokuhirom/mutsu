@@ -143,8 +143,16 @@ impl Interpreter {
                             list_items[i..(i + arity).min(list_items.len())].to_vec()
                         };
                         self.env.remove_sym(topic_key);
-                        let v =
-                            self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                        // A block with its own parameters binds the element to
+                        // them, never to `$_`, so no topic write-back is read
+                        // from it: run its compiled body as any closure call
+                        // does instead of the carrier, which re-evaluates the
+                        // body from its AST under a rebuilt env per element.
+                        let v = if keeps_outer_topic {
+                            self.vm_call_on_value(Value::sub_value(data.clone()), chunk, None)?
+                        } else {
+                            self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?
+                        };
                         if arity == 1
                             && !keeps_outer_topic
                             && let Some(mutated) = self.env.get_sym(topic_key).cloned()
