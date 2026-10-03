@@ -241,6 +241,7 @@ impl Interpreter {
 
     fn build_distribution_from_meta(json_content: &str, dist_prefix: &str) -> Option<Value> {
         let mut meta_hash = Self::parse_meta6_json(json_content)?;
+        Self::normalize_meta_identity(&mut meta_hash);
         // Store the distribution prefix in meta so %?RESOURCES can build absolute paths.
         meta_hash.insert("prefix".to_string(), Value::str(dist_prefix.to_string()));
         let mut attrs = HashMap::new();
@@ -316,42 +317,6 @@ impl Interpreter {
             }
         }
         Value::hash_with_data(Value::hash_arc(files))
-    }
-
-    fn parse_meta6_json(content: &str) -> Option<ValueMap> {
-        let json: serde_json::Value = serde_json::from_str(content).ok()?;
-        let obj = json.as_object()?;
-        let mut meta = ValueMap::default();
-        for (key, val) in obj {
-            meta.insert(key.clone(), Self::json_to_value(val));
-        }
-        Some(meta)
-    }
-
-    fn json_to_value(val: &serde_json::Value) -> Value {
-        use serde_json::Value as Json;
-        match val {
-            Json::Null => Value::NIL,
-            Json::Bool(b) => Value::truth(*b),
-            Json::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Value::int(i)
-                } else if let Some(f) = n.as_f64() {
-                    Value::num(f)
-                } else {
-                    Value::str(n.to_string())
-                }
-            }
-            Json::String(s) => Value::str(s.clone()),
-            Json::Array(arr) => Value::array(arr.iter().map(Self::json_to_value).collect()),
-            Json::Object(obj) => {
-                let mut map = ValueMap::default();
-                for (k, v) in obj {
-                    map.insert(k.clone(), Self::json_to_value(v));
-                }
-                Value::hash_with_data(Value::hash_arc(map))
-            }
-        }
     }
 
     /// Check for unresolved package/class stubs at program end.

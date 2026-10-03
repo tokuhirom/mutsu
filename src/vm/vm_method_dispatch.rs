@@ -926,6 +926,7 @@ impl Interpreter {
             method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
+            method_callable_id,
         );
 
         // Execute bytecode
@@ -2412,6 +2413,7 @@ impl Interpreter {
             method_def.source_file_sym(),
             method_def.is_submethod,
             method_def.is_hidden_from_backtrace,
+            method_callable_id,
         );
 
         // Execute bytecode (same as slow path)
