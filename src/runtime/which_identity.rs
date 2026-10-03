@@ -116,6 +116,23 @@ impl Interpreter {
         crate::runtime::utils::value_which_key(value)
     }
 
+    /// `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`
+    /// (`builtins::quanthash_mutators`), with each key's user `WHICH` resolved
+    /// first so the pure mutator keys such an object by it.
+    // Cost: O(k + m), k = keys passed (one user `WHICH` call each), m = the
+    // mutator's own cost.
+    pub(crate) fn apply_quanthash_mutator_keyed(
+        &mut self,
+        receiver: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, crate::value::RuntimeError> {
+        if matches!(method, "set" | "unset") {
+            self.warm_which_identity_all(args);
+        }
+        crate::builtins::quanthash_mutators::apply_quanthash_mutator(receiver, method, args)
+    }
+
     /// As [`Self::warm_which_identity`], for each of `values`.
     pub(crate) fn warm_which_identity_all(&mut self, values: &[Value]) {
         for v in values {

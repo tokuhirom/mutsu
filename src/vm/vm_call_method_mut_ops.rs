@@ -2463,9 +2463,7 @@ impl Interpreter {
                         args.clone(),
                         |f, a| self.vm_call_sub_value(f, a, false),
                     )?;
-                    let result = crate::builtins::quanthash_mutators::apply_quanthash_mutator(
-                        &receiver, method, &args,
-                    )?;
+                    let result = self.apply_quanthash_mutator_keyed(&receiver, method, &args)?;
                     if !target_name.is_empty() {
                         self.env_mut()
                             .insert(target_name.to_string(), target.clone());

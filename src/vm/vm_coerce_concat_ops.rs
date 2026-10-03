@@ -196,6 +196,14 @@ impl Interpreter {
                     })
                     .collect()
             }
+            // A QuantHash's `.Slip` is its `.list`, i.e. its Pairs, as positional
+            // items (`%b = |$counts.BagHash` refills a BagHash from them; CRDT).
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                crate::runtime::utils::value_to_list(&val)
+                    .into_iter()
+                    .map(Self::containerize_pair_item)
+                    .collect()
+            }
             ValueView::LazyList(ll) => {
                 let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
                 items

@@ -2294,9 +2294,7 @@ impl Interpreter {
                         args.clone(),
                         |f, a| self.vm_call_sub_value(f, a, false),
                     )?;
-                    let result = crate::builtins::quanthash_mutators::apply_quanthash_mutator(
-                        &receiver, method, &args,
-                    )?;
+                    let result = self.apply_quanthash_mutator_keyed(&receiver, method, &args)?;
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethod",
                         "quanthash-mutator",

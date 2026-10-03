@@ -246,6 +246,18 @@ impl Interpreter {
         Err(err)
     }
 
+    /// The container a `%` variable names now: its env binding, or for an
+    /// attribute (`%!v`, `%.v`) the value in `self`'s attribute cell, which is
+    /// where a method body's `%!v = ...` finds its `is BagHash` container.
+    // Cost: O(1).
+    fn hash_var_current_value(&self, name: &str) -> Option<Value> {
+        self.env()
+            .get(name)
+            .cloned()
+            .or_else(|| self.read_self_attr_cell(name))
+            .map(|v| v.deref_container())
+    }
+
     /// Identity-preserving STORE for a declared QuantHash variable:
     /// `%s = <a b>` on a `my %s is SetHash` writes the coerced contents INTO
     /// the variable's existing container node (keeping the node's embedded
@@ -260,50 +272,10 @@ impl Interpreter {
         // Through the capture cell, like the caller: the existing QuantHash
         // whose backing node the new contents are written into may be held
         // inside a shared `ContainerCell`.
-        let existing = self.env().get(name).map(|v| v.deref_container());
-        match (existing.as_ref().map(Value::view), coerced.view()) {
-            (Some(ValueView::Set(old, mutable)), ValueView::Set(new, _))
-                if !crate::gc::Gc::ptr_eq(&old, &new) =>
-            {
-                let mut data = (**new).clone();
-                data.value_type = old.value_type.clone();
-                data.key_type = old.key_type.clone();
-                data.declared_type = old.declared_type.clone();
-                // SAFETY: audited aliased in-place container write; see
-                // `value::aliased_mut` (no other borrow live, single write).
-                unsafe {
-                    *crate::value::gc_contents_mut(&old) = data;
-                }
-                Value::set_parts(old.clone(), mutable)
-            }
-            (Some(ValueView::Bag(old, mutable)), ValueView::Bag(new, _))
-                if !crate::gc::Gc::ptr_eq(&old, &new) =>
-            {
-                let mut data = (**new).clone();
-                data.value_type = old.value_type.clone();
-                data.key_type = old.key_type.clone();
-                data.declared_type = old.declared_type.clone();
-                // SAFETY: as above.
-                unsafe {
-                    *crate::value::gc_contents_mut(&old) = data;
-                }
-                Value::bag_parts(old.clone(), mutable)
-            }
-            (Some(ValueView::Mix(old, mutable)), ValueView::Mix(new, _))
-                if !crate::gc::Gc::ptr_eq(&old, &new) =>
-            {
-                let mut data = (**new).clone();
-                data.value_type = old.value_type.clone();
-                data.key_type = old.key_type.clone();
-                data.declared_type = old.declared_type.clone();
-                // SAFETY: as above.
-                unsafe {
-                    *crate::value::gc_contents_mut(&old) = data;
-                }
-                Value::mix_parts(old.clone(), mutable)
-            }
-            _ => coerced,
-        }
+        let existing = self.hash_var_current_value(name);
+        existing
+            .and_then(|old| old.store_quanthash_in_place(&coerced))
+            .unwrap_or(coerced)
     }
 
     /// True when a `%` variable stores plain `Str` keys — no object-hash key
@@ -369,7 +341,7 @@ impl Interpreter {
         // below can see a `ContainerRef`. Without this a whole-container
         // re-assignment (`%h = <e e e f g>`) fell through to the plain-hash
         // initializer and died on the odd element count.
-        let current = self.env().get(name).map(|v| v.deref_container());
+        let current = self.hash_var_current_value(name);
         // `declared_type` is where an `is BagHash`/`is SetHash`/`is MixHash`
         // trait records the container's own type (`element_constraint_for`
         // reports the ELEMENT type, and answers `None` for a QuantHash whose
@@ -433,6 +405,19 @@ impl Interpreter {
             if let Some(tn) = trait_name {
                 return self.try_compiled_method_or_interpret(value, tn, vec![]);
             }
+        }
+        // A `%` variable that holds a mutable QuantHash IS that container,
+        // whether a trait made it (an attribute's `has %!v is BagHash` carries
+        // no declared-type tag) or a bind did (`%h := SetHash.new`): storing
+        // into it coerces through the container's own type, in place.
+        if let Some(coercer) = match current.as_ref().map(Value::view) {
+            Some(ValueView::Set(_, true)) => Some("SetHash"),
+            Some(ValueView::Bag(_, true)) => Some("BagHash"),
+            Some(ValueView::Mix(_, true)) => Some("MixHash"),
+            _ => None,
+        } {
+            let coerced = self.try_compiled_method_or_interpret(value, coercer, vec![])?;
+            return Ok(self.quanthash_store_preserving_identity(name, coerced));
         }
         if let Some(constraint) = loan_env!(self, var_type_constraint(name))
             && constraint.starts_with("SetHash")

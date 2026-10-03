@@ -597,9 +597,7 @@ impl Interpreter {
                 args,
                 |f, a| self.call_sub_value(f, a, false),
             )?;
-            return crate::builtins::quanthash_mutators::apply_quanthash_mutator(
-                &receiver, method, &args,
-            );
+            return self.apply_quanthash_mutator_keyed(&receiver, method, &args);
         }
 
         if let ValueView::Instance {
