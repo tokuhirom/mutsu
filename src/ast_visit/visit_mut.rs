@@ -235,7 +235,8 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
-        | RegexNode::CharClassDigit => {}
+        | RegexNode::CharClassDigit
+        | RegexNode::InternalModifier { .. } => {}
     }
 }
 

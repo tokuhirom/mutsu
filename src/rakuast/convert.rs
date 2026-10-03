@@ -15,7 +15,7 @@ use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
-use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
+use crate::regex_tree::{RegexModifierKind, RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn unsupported(what: &str) -> RuntimeError {
@@ -1228,10 +1228,10 @@ fn var_decl_statement(
         custom_traits,
         where_constraint,
     } = parts;
-    // Dynamic (`$*x`), `where` constraints, parameterised/definite/coercion
-    // types, and real `is`/`does` traits carry richer shape, deferred.
-    if is_dynamic || where_constraint {
-        return Err(unsupported("dynamic / where-constrained declaration"));
+    // `where` constraints, parameterised/definite/coercion types, and real
+    // `is`/`does` traits carry richer shape, deferred.
+    if where_constraint {
+        return Err(unsupported("where-constrained declaration"));
     }
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
     // mutsu marks it with a `__constant` pseudo-trait (plus a
@@ -1266,7 +1266,16 @@ fn var_decl_statement(
             .any(|(name, _)| name == "__has_initializer")
             .then_some(Initializer::Assign(expr))
     };
-    let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
+    // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
+    // front); raku renders the `*` as the declaration's `twigil`.
+    let dynamic_name;
+    let (name, twigil) = if is_dynamic {
+        dynamic_name = name.replacen('*', "", 1);
+        (dynamic_name.as_str(), Some("*"))
+    } else {
+        (name, None)
+    };
+    let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
     decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
     Ok(Some(statement_expression(decl)))
 }
@@ -2814,6 +2823,27 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
         RegexNode::AnchorEndOfString => (RakuAstClass::RegexAnchorEndOfString, Vec::new()),
         RegexNode::AnchorEndOfLine => (RakuAstClass::RegexAnchorEndOfLine, Vec::new()),
         RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
+        RegexNode::InternalModifier {
+            kind,
+            long,
+            negated,
+        } => {
+            let class = match kind {
+                RegexModifierKind::IgnoreCase => RakuAstClass::RegexInternalModifierIgnoreCase,
+                RegexModifierKind::IgnoreMark => RakuAstClass::RegexInternalModifierIgnoreMark,
+            };
+            let mut fields = Vec::new();
+            if *long {
+                fields.push(leaf_field(
+                    Some("modifier"),
+                    Value::str(kind.spellings().1.to_string()),
+                ));
+            }
+            if *negated {
+                fields.push(leaf_field(Some("negated"), Value::truth(true)));
+            }
+            (class, fields)
+        }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,
             vec![node_field(None, regex_node(child)?)],

@@ -83,7 +83,7 @@ tag ruleset lets only the maintainer create these tags.
 | `verify-tag` | Refuses a tag whose version differs from the tagged commit's `Cargo.toml`, or whose commit is not on `main`. Nothing builds or publishes past it. |
 | `build` | Builds `mutsu` + `mzef` for all four targets (Linux x64/arm64, macOS x64/arm64) and packages `bin/` + `share/mutsu/zef` tarballs. **All four are required**; none is `continue-on-error`. |
 | `batteries` | Release gate: every bundled library's upstream test suite must still pass at its recorded baseline against the shipped library and this mutsu (`scripts/battery-testsuite.sh`). |
-| `npm` | Builds the browser/WASM package and publishes `@tokuhirom/mutsu` via OIDC trusted publishing, in the `release` environment. npm records provenance automatically. **Do not add a long-lived npm token.** |
+| `npm` | Builds the browser/WASM package and publishes `@tokuhirom/mutsu` via OIDC trusted publishing, in the `release` environment. That environment has **required reviewers**: the job waits until the maintainer approves the deployment. npm records provenance automatically. **Do not add a long-lived npm token.** |
 | `release` | Downloads the artifacts, writes `mutsu-vX.Y.Z-SHA256SUMS.txt`, attests build provenance for every tarball, and creates the GitHub Release with `generate_release_notes: true`. |
 
 `docker.yml` also fires on the tag and pushes `ghcr.io/tokuhirom/mutsu:X.Y.Z` and `:latest`.
@@ -91,7 +91,16 @@ tag ruleset lets only the maintainer create these tags.
 `mutsu --version` reports `env!("CARGO_PKG_VERSION")`, so the version written in step 2 is the
 version that ships.
 
-## 5. Verify the release actually landed
+## 5. Hand the npm approval to the maintainer
+
+The `npm` job pauses at "Waiting for review" until someone approves the `release` deployment, and
+the `release` job (the GitHub Release) waits for it. Tell the user the run is waiting for their
+approval: Actions → the run → **Review deployments** → `release` → Approve.
+
+**Never approve it yourself.** Through the maintainer's account a session *could* call the
+pending-deployments API, but the reviewer gate exists precisely so a human sees each publish.
+
+## 6. Verify the release actually landed
 
 Do not stop at "the tag was pushed".
 
@@ -134,6 +143,9 @@ Changes". The bump PR's own `chore(release):` title lands in Maintenance.
 - **Tag ruleset for `v*`.** Creation, update and deletion are restricted, and only the maintainer
   (repository admin) may bypass. This is what keeps a stray push from publishing a release
   (docs/security.md, "Repository settings these rules rely on").
+- **Environment `release`.** Deployment branches and tags are limited to `main` and `v*`, and the
+  maintainer is a required reviewer. npm's trusted publisher names this environment, so a
+  `release.yml` edited on a branch cannot publish.
 - **npm bootstrap.** npm only allows trusted publishers on a package that already exists. The
   first `@tokuhirom/mutsu` version was published interactively with 2FA
   (`npm publish --access public <tarball>`). Its GitHub Actions trusted publisher was then

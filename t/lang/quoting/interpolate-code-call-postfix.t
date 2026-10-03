@@ -6,7 +6,7 @@ use Test;
 # with `"&short-name($identity).subst('::','-',:g)-..."`, which mutsu left as
 # literal `.subst(...)` text.
 
-plan 7;
+plan 10;
 
 sub f($x) { "a::b$x" }
 sub g($a, $b) { "$a|$b" }
@@ -18,3 +18,10 @@ is "&g('x,y', 2)", 'x,y|2', 'a comma inside a quoted argument does not split it'
 is "&g(f(1), 2)", 'a::b1|2', 'a nested call is one argument';
 is "mail&f(3).", 'maila::b3.', 'a trailing dot is literal text';
 is "x&y", 'x&y', 'an & without a call is literal text';
+
+# `"&code.method()"` is a method call on the code object itself (Needle::Compile
+# names a subtest `"all named arguments for &code.name()"`).
+my &code = &f;
+is "for &code.name()!", 'for f!', 'a parenthesized method call on a code variable';
+is "for &code.name().uc()!", 'for F!', 'a chained method call on a code variable';
+is "for &code.name!", 'for &code.name!', 'without parens it stays literal';
