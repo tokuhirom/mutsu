@@ -153,14 +153,14 @@ impl Interpreter {
         // clone per `gather` evaluation): install its id so `state`
         // declarations in the body cannot collide with a sibling gather's
         // separately-compiled (ip-identical) body.
-        let saved_state_scope = self.state_scope_id.get();
+        let saved_state_scope = self.lexicals.state_scope_id.get();
         let gather_scope_id = list
             .coroutine
             .as_ref()
             .map(|m| m.lock().unwrap().state_scope_id)
             .unwrap_or(0);
         if gather_scope_id != 0 {
-            self.state_scope_id.set(Some(gather_scope_id));
+            self.lexicals.state_scope_id.set(Some(gather_scope_id));
         }
 
         // Determine starting IP and locals from coroutine state or fresh start
@@ -375,7 +375,7 @@ impl Interpreter {
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         // Restore Interpreter state
-        self.state_scope_id.set(saved_state_scope);
+        self.lexicals.state_scope_id.set(saved_state_scope);
         self.locals.pop_frame(saved_locals_base);
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;

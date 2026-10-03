@@ -142,13 +142,13 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
     ) {
         for sym in &code.needs_cell_escaping_our_sub {
-            crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+            crate::runtime::cow_table_mut(&mut self.lexicals.escaping_our_lexical_names)
                 .insert(sym.resolve());
         }
         for sym in &code.escaping_our_env_params {
-            crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+            crate::runtime::cow_table_mut(&mut self.lexicals.escaping_our_lexical_names)
                 .insert(sym.resolve());
-            crate::runtime::cow_table_mut(&mut self.escaping_our_env_param_names)
+            crate::runtime::cow_table_mut(&mut self.lexicals.escaping_our_env_param_names)
                 .insert(sym.resolve());
         }
         for nested in &code.closure_compiled_codes {
@@ -168,16 +168,17 @@ impl Interpreter {
     ///     (a bare top-level reference must not see the closure's private lexical):
     ///     the caller resolves normally.
     pub(crate) fn escaping_our_read(&self, name: &str) -> Option<Value> {
-        if self.escaping_our_lexical_names.is_empty()
+        if self.lexicals.escaping_our_lexical_names.is_empty()
             || self.routine_stack.is_empty()
             || name.contains("::")
-            || !self.escaping_our_lexical_names.contains(name)
+            || !self.lexicals.escaping_our_lexical_names.contains(name)
             || !self.in_escaped_our_sub()
         {
             return None;
         }
         Some(
-            self.escaped_our_lexical_cells
+            self.lexicals
+                .escaped_our_lexical_cells
                 .get(name)
                 .cloned()
                 .unwrap_or(Value::NIL),
@@ -197,11 +198,11 @@ impl Interpreter {
     fn in_escaped_our_sub(&self) -> bool {
         for frame in self.routine_stack.iter().rev() {
             let name = frame.name.as_str();
-            if self.escaped_our_sub_names.contains(name)
+            if self.lexicals.escaped_our_sub_names.contains(name)
                 || name
                     .rsplit("::")
                     .next()
-                    .is_some_and(|bare| self.escaped_our_sub_names.contains(bare))
+                    .is_some_and(|bare| self.lexicals.escaped_our_sub_names.contains(bare))
             {
                 return true;
             }
@@ -233,7 +234,7 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
         name: &str,
     ) -> Option<Value> {
-        if self.escaping_our_lexical_names.is_empty() {
+        if self.lexicals.escaping_our_lexical_names.is_empty() {
             return None;
         }
         if code.locals.iter().any(|n| n == name)
@@ -330,52 +331,54 @@ impl Interpreter {
     }
 
     pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
-        self.our_vars.get(key)
+        self.lexicals.our_vars.get(key)
     }
 
     /// Mutable counterpart of [`Self::get_our_var`], for the container
     /// write chokepoint (`env_root_descended_mut`): a package's `our @a`/`our
     /// %h` is mutated in place through its stored `Gc`, not replaced.
     pub(crate) fn get_our_var_mut(&mut self, key: &str) -> Option<&mut Value> {
-        self.our_vars.get_mut(key)
+        self.lexicals.our_vars.get_mut(key)
     }
 
     pub(crate) fn our_vars_iter(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.our_vars.iter()
+        self.lexicals.our_vars.iter()
     }
 
     pub(crate) fn our_vars_is_empty(&self) -> bool {
-        self.our_vars.is_empty()
+        self.lexicals.our_vars.is_empty()
     }
 
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
-        self.our_var_unqualified
+        self.lexicals
+            .our_var_unqualified
             .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));
-        self.our_vars.insert(key, value);
+        self.lexicals.our_vars.insert(key, value);
     }
 
     /// A runtime-written process-level dynamic, keyed by its env spelling
-    /// (`*name`/`@*name`/`%*name`). See [`Interpreter::process_dynamics`].
+    /// (`*name`/`@*name`/`%*name`). See [`LexicalState::process_dynamics`](crate::runtime::lexical_state::LexicalState::process_dynamics).
     pub(crate) fn get_process_dynamic(&self, key: &str) -> Option<Value> {
-        self.process_dynamics.get(key)
+        self.lexicals.process_dynamics.get(key)
     }
 
     /// Whether any process-level dynamic was ever written at run time.
     // Cost: O(1), one relaxed load.
     #[inline]
     pub(crate) fn process_dynamics_published(&self) -> bool {
-        self.process_dynamics.is_populated()
+        self.lexicals.process_dynamics.is_populated()
     }
 
     pub(crate) fn process_dynamics_contains(&self, key: &str) -> bool {
-        self.process_dynamics.contains(key)
+        self.lexicals.process_dynamics.contains(key)
     }
 
-    /// `nqp::gethllsym($hll, $name)` — see [`Interpreter::hll_syms`]. Absent
+    /// `nqp::gethllsym($hll, $name)` — see [`LexicalState::hll_syms`](crate::runtime::lexical_state::LexicalState::hll_syms). Absent
     /// on real MoarVM means the native-null sentinel; mutsu has no separate
     /// representation from `Nil`, matching `nqp::ifnull`'s own simplification.
     pub(crate) fn get_hll_sym(&self, hll: &str, name: &str) -> Value {
-        self.hll_syms
+        self.lexicals
+            .hll_syms
             .get(&(hll.to_string(), name.to_string()))
             .cloned()
             .unwrap_or(Value::NIL)
@@ -383,7 +386,7 @@ impl Interpreter {
 
     /// `nqp::bindhllsym($hll, $name, $value)`.
     pub(crate) fn set_hll_sym(&mut self, hll: String, name: String, value: Value) {
-        self.hll_syms.insert((hll, name), value);
+        self.lexicals.hll_syms.insert((hll, name), value);
     }
 
     /// Seeds the one HLL symbol mutsu itself relies on: Rakudo's core setting
@@ -411,11 +414,13 @@ impl Interpreter {
     /// ([`crate::qualified::unqualified_part`]: sigil, if any, plus the
     /// segment after the last `::`), so this interns `name` to ask.
     pub(crate) fn our_var_unqualified_exists(&self, name: &str) -> bool {
-        self.our_var_unqualified.contains(&Symbol::intern(name))
+        self.lexicals
+            .our_var_unqualified
+            .contains(&Symbol::intern(name))
     }
 
     pub(crate) fn get_state_var(&self, key: (Symbol, Option<u64>)) -> Option<&Value> {
-        self.state_vars.get(&key)
+        self.lexicals.state_vars.get(&key)
     }
 
     /// Drop a `state` variable's stored value so the next `StateVarInit`
@@ -432,7 +437,7 @@ impl Interpreter {
     /// `Cro.compose` recursed on a `state $split` that never restarted at 1 and
     /// blew the stack once a `Cro::Service.start` had run.
     pub(crate) fn remove_state_var(&mut self, key: (Symbol, Option<u64>)) {
-        self.state_vars.remove(&key);
+        self.lexicals.state_vars.remove(&key);
         self.threads
             .shared_vars
             .remove(&Self::shared_state_cell_key(key));
@@ -489,13 +494,14 @@ impl Interpreter {
         // ever been spawned (deterministic: `%h<k>++` returned 1,1,1... —
         // t/state-aggregate-shared-cell.t). Writing a cell over a cell (the
         // StateVarInit path itself) keeps the plain insert.
-        if let Some(ValueView::ContainerRef(cell)) = self.state_vars.get(&key).map(Value::view)
+        if let Some(ValueView::ContainerRef(cell)) =
+            self.lexicals.state_vars.get(&key).map(Value::view)
             && !value.is_container_ref()
         {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
             return;
         }
-        if self.state_vars.insert(key, value).is_none() {
+        if self.lexicals.state_vars.insert(key, value).is_none() {
             self.note_unmigrated_state_key(key);
         }
     }
@@ -506,9 +512,10 @@ impl Interpreter {
     /// entries), it is rebuilt from the store's live keys.
     fn note_unmigrated_state_key(&mut self, key: (Symbol, Option<u64>)) {
         self.reap_dead_state_scopes();
-        self.state_vars_unmigrated.push(key);
-        if self.state_vars_unmigrated.len() > 2 * self.state_vars.len() + 16 {
-            self.state_vars_unmigrated = self.state_vars.keys().copied().collect();
+        self.lexicals.state_vars_unmigrated.push(key);
+        if self.lexicals.state_vars_unmigrated.len() > 2 * self.lexicals.state_vars.len() + 16 {
+            self.lexicals.state_vars_unmigrated =
+                self.lexicals.state_vars.keys().copied().collect();
         }
     }
 
@@ -519,7 +526,7 @@ impl Interpreter {
     // Cost: O(1) amortized per dead clone; a sweep is O(n), n = state entries.
     fn reap_dead_state_scopes(&mut self) {
         let dead = crate::value::state_scope_reaper::dead_scope_count();
-        if dead < 64.max(self.state_vars.len() / 4) {
+        if dead < 64.max(self.lexicals.state_vars.len() / 4) {
             return;
         }
         let ids: std::collections::HashSet<u64> =
@@ -528,7 +535,7 @@ impl Interpreter {
                 .collect();
         let is_dead = |key: &(Symbol, Option<u64>)| key.1.is_some_and(|id| ids.contains(&id));
         let mut removed = Vec::new();
-        self.state_vars.retain(|key, _| {
+        self.lexicals.state_vars.retain(|key, _| {
             if is_dead(key) {
                 removed.push(*key);
                 false
@@ -539,7 +546,9 @@ impl Interpreter {
         if removed.is_empty() {
             return;
         }
-        self.state_vars_unmigrated.retain(|key| !is_dead(key));
+        self.lexicals
+            .state_vars_unmigrated
+            .retain(|key| !is_dead(key));
         if self.threads.shared_vars_active {
             for key in removed {
                 self.threads
@@ -566,8 +575,8 @@ impl Interpreter {
         &mut self,
         shared: &crate::runtime::shared_store::SharedStore,
     ) {
-        for skey in std::mem::take(&mut self.state_vars_unmigrated) {
-            let Some(sval) = self.state_vars.get(&skey) else {
+        for skey in std::mem::take(&mut self.lexicals.state_vars_unmigrated) {
+            let Some(sval) = self.lexicals.state_vars.get(&skey) else {
                 continue;
             };
             // A value that is already a cell (every `state` container is
@@ -609,7 +618,7 @@ impl Interpreter {
 
     /// Read per-closure-instance captured-variable state (hot closure-call path).
     pub(crate) fn get_closure_captured_state(&self, id: u64, name: Symbol) -> Option<&Value> {
-        self.closure_captured_state.get(&(id, name))
+        self.lexicals.closure_captured_state.get(&(id, name))
     }
 
     /// Persist per-closure-instance captured-variable state (hot closure-call path).
@@ -622,7 +631,9 @@ impl Interpreter {
         if crate::qualified::is_package_var(name) {
             return;
         }
-        self.closure_captured_state.insert((id, name), value);
+        self.lexicals
+            .closure_captured_state
+            .insert((id, name), value);
     }
 
     /// Drop all per-closure-instance captured-variable state for a closure id.
@@ -744,7 +755,8 @@ impl Interpreter {
     }
 
     pub(crate) fn clear_closure_captured_state_for(&mut self, id: u64) {
-        self.closure_captured_state
+        self.lexicals
+            .closure_captured_state
             .retain(|(entry_id, _), _| *entry_id != id);
     }
 

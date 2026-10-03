@@ -1147,7 +1147,7 @@ impl Interpreter {
             // every clone of the block instead of restarting with each. Handed
             // across `run_nested`'s register reset via `pending_nested_state_scope`,
             // which is what actually installs it (see `with_nested_registers`).
-            self.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
+            self.lexicals.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
             // ADR-0059 Slice 2: an `is rw`/`is raw` code object's bare tail is
             // its lvalue return, on this recompile path exactly as on the
             // compiled one (`compile_routine_closure_body`'s `is_rw`).
@@ -1170,7 +1170,7 @@ impl Interpreter {
                 .as_deref()
                 .map(super::resolution_eval::BlockRoutineness::of_code);
             let body_result = self.eval_block_value_cached_for_site(&data.body, routineness);
-            self.pending_nested_state_scope = None;
+            self.lexicals.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;
             self.pending_supply_authoritative_free_vars = Vec::new();

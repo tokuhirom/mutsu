@@ -992,7 +992,10 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
     // that spawn's binding to be seeded — and frozen — on the name lane
     // (`todo/tickets/shared-var-lane-freezes-a-reused-array-name.md`).
     if name.starts_with(['@', '%']) && Interpreter::is_plain_lexical_name(name) {
-        interpreter.param_bound_aggregates.note(name, &value);
+        interpreter
+            .lexicals
+            .param_bound_aggregates
+            .note(name, &value);
     }
     interpreter.env.insert(name.to_string(), value);
 }

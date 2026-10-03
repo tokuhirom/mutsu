@@ -85,8 +85,8 @@ impl Interpreter {
             // (mutsu#10391).
             // Cost: O(1) unless a routine-nested sub of this name exists,
             // then O(c), c = latest-cell entries.
-            if self.lexsub_free_aliases.contains_key(&sub) {
-                crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+            if self.lexicals.lexsub_free_aliases.contains_key(&sub) {
+                crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                     .retain(|(name, _), _| *name != sub);
             }
             return;
@@ -120,8 +120,12 @@ impl Interpreter {
                 // pass before its `my` ran, or a variable that cannot be
                 // boxed): a stale entry from an earlier activation or the
                 // static seed must not answer for it instead of the env.
-                if self.lexsub_latest_cells.contains_key(&(sub, a.var)) {
-                    crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+                if self
+                    .lexicals
+                    .lexsub_latest_cells
+                    .contains_key(&(sub, a.var))
+                {
+                    crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                         .remove(&(sub, a.var));
                 }
                 continue;
@@ -131,7 +135,7 @@ impl Interpreter {
             }
             self.env_mut().insert_sym(a.alias, cell.clone());
             if let Some(owner) = owner {
-                crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+                crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                     .insert((sub, a.var), LexSubLatestCell { owner, cell });
             }
             self.note_lexsub_alias(sub, a);
@@ -142,11 +146,12 @@ impl Interpreter {
     /// `a.alias`, once.
     fn note_lexsub_alias(&mut self, sub: Symbol, a: &LexSubFreeAlias) {
         let known = self
+            .lexicals
             .lexsub_free_aliases
             .get(&sub)
             .is_some_and(|list| list.contains(&(a.var, a.alias)));
         if !known {
-            crate::runtime::cow_table_mut(&mut self.lexsub_free_aliases)
+            crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_free_aliases)
                 .entry(sub)
                 .or_default()
                 .push((a.var, a.alias));
@@ -209,14 +214,14 @@ impl Interpreter {
     /// routine-nested sub that declared one for it.
     #[inline]
     fn lexsub_alias_sym(&self, name: &str) -> Option<Symbol> {
-        if self.lexsub_free_aliases.is_empty() {
+        if self.lexicals.lexsub_free_aliases.is_empty() {
             return None;
         }
         let frame = self.routine_stack().last()?;
         if frame.is_block {
             return None;
         }
-        let list = self.lexsub_free_aliases.get(&frame.name)?;
+        let list = self.lexicals.lexsub_free_aliases.get(&frame.name)?;
         list.iter()
             .filter(|(var, _)| var.as_str() == name)
             .map(|(_, alias)| *alias)
@@ -227,12 +232,12 @@ impl Interpreter {
     /// aliases, i.e. while [`Self::lexsub_alias_slot`] may answer.
     #[inline]
     pub(crate) fn lexsub_alias_frame_active(&self) -> bool {
-        if self.lexsub_free_aliases.is_empty() {
+        if self.lexicals.lexsub_free_aliases.is_empty() {
             return false;
         }
         self.routine_stack()
             .last()
-            .is_some_and(|f| !f.is_block && self.lexsub_free_aliases.contains_key(&f.name))
+            .is_some_and(|f| !f.is_block && self.lexicals.lexsub_free_aliases.contains_key(&f.name))
     }
 
     /// The running routine-nested sub's own binding of its free variable
@@ -258,7 +263,7 @@ impl Interpreter {
     // Cost: O(1) expected; two hash probes.
     #[inline]
     fn lexsub_latest_cell(&self, name: &str) -> Option<&Value> {
-        if self.lexsub_latest_cells.is_empty() {
+        if self.lexicals.lexsub_latest_cells.is_empty() {
             return None;
         }
         let frame = self.routine_stack().last()?;
@@ -266,6 +271,7 @@ impl Interpreter {
             return None;
         }
         let entry = self
+            .lexicals
             .lexsub_latest_cells
             .get(&(frame.name, Symbol::intern(name)))?;
         (entry.owner == (frame.package, frame.def_file) || self.env().get(name).is_none())
@@ -279,7 +285,7 @@ impl Interpreter {
             None => {
                 self.lexsub_latest_cell(name)?;
                 let frame = self.routine_stack().last()?.name;
-                crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+                crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                     .get_mut(&(frame, Symbol::intern(name)))
                     .map(|entry| &mut entry.cell)
             }
@@ -297,17 +303,18 @@ impl Interpreter {
         owner: LexSubOwner,
         name: &str,
     ) -> bool {
-        if self.lexsub_free_aliases.is_empty() {
+        if self.lexicals.lexsub_free_aliases.is_empty() {
             return false;
         }
         let callee = Symbol::intern(callee);
-        let Some(list) = self.lexsub_free_aliases.get(&callee) else {
+        let Some(list) = self.lexicals.lexsub_free_aliases.get(&callee) else {
             return false;
         };
         list.iter().any(|(var, alias)| {
             var.as_str() == name
                 && (self.env().get_sym(*alias).is_some()
                     || self
+                        .lexicals
                         .lexsub_latest_cells
                         .get(&(callee, *var))
                         .is_some_and(|entry| {
@@ -325,15 +332,16 @@ impl Interpreter {
         owner: LexSubOwner,
         name: &str,
     ) -> Option<Value> {
-        if self.lexsub_free_aliases.is_empty() {
+        if self.lexicals.lexsub_free_aliases.is_empty() {
             return None;
         }
-        let list = self.lexsub_free_aliases.get(&callee)?;
+        let list = self.lexicals.lexsub_free_aliases.get(&callee)?;
         list.iter()
             .filter(|(var, _)| var.as_str() == name)
             .find_map(|(_, alias)| self.env().get_sym(*alias).cloned())
             .or_else(|| {
                 let entry = self
+                    .lexicals
                     .lexsub_latest_cells
                     .get(&(callee, Symbol::intern(name)))?;
                 (entry.owner == owner || self.env().get(name).is_none()).then(|| entry.cell.clone())
@@ -372,7 +380,7 @@ impl Interpreter {
             // variables resolve here, on the write paths too.
             self.note_lexsub_alias(plan.name, a);
             let key = (plan.name, a.var);
-            if self.lexsub_latest_cells.contains_key(&key) {
+            if self.lexicals.lexsub_latest_cells.contains_key(&key) {
                 continue;
             }
             let cell = statics
@@ -386,7 +394,7 @@ impl Interpreter {
                     .into_container_ref()
                 })
                 .clone();
-            crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+            crate::runtime::cow_table_mut(&mut self.lexicals.lexsub_latest_cells)
                 .insert(key, LexSubLatestCell { owner, cell });
         }
     }

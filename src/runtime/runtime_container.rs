@@ -630,7 +630,7 @@ impl Interpreter {
     /// dynamic-writeback walk over the caller env.
     #[inline]
     pub(crate) fn var_dynamic_flags_is_empty(&self) -> bool {
-        self.var_dynamic_flags.is_empty()
+        self.lexicals.var_dynamic_flags.is_empty()
     }
 
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
@@ -641,7 +641,13 @@ impl Interpreter {
         if matches!(bare, "_" | "/" | "!") {
             return true;
         }
-        if self.var_dynamic_flags.get(bare).copied().unwrap_or(false) {
+        if self
+            .lexicals
+            .var_dynamic_flags
+            .get(bare)
+            .copied()
+            .unwrap_or(false)
+        {
             return true;
         }
         // A builtin dynamic materialized lazily (`$*TOLERANCE`, `$*RAT-OVERFLOW`,

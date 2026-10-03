@@ -1723,7 +1723,7 @@ impl Interpreter {
             }
             owners.push(module.to_string());
             for owner in owners {
-                let class_static_names = self.class_body_static_names.get(&owner);
+                let class_static_names = self.lexicals.class_body_static_names.get(&owner);
                 if !module_type_aliases.is_empty() {
                     crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                         .entry(owner.clone())
@@ -1774,7 +1774,7 @@ impl Interpreter {
 
     /// The env keys of a `unit` compunit's own file-scope `my`/`state` variables.
     /// These are lexical to the compunit, so they must not be left sharing an env
-    /// key with the loading scope — see [`Interpreter::unit_lexicals`].
+    /// key with the loading scope — see [`LexicalState::unit_lexicals`](crate::runtime::lexical_state::LexicalState::unit_lexicals).
     ///
     /// Only top-level declarations qualify: anything nested in a block already has
     /// its own scope. `our` variables are package variables (legitimately shared),

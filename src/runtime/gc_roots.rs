@@ -242,19 +242,19 @@ impl Interpreter {
         visit_opt(visitor, &self.trait_mod_writeback_value);
         visit_opt(visitor, &self.trait_mod_attr_writeback_value);
         visit_opt(visitor, &self.trait_mod_default_writeback);
-        visit_map_values(visitor, &self.our_vars);
-        for inner in self.package_lexicals.values() {
+        visit_map_values(visitor, &self.lexicals.our_vars);
+        for inner in self.lexicals.package_lexicals.values() {
             visit_map_values(visitor, inner);
         }
         for inner in self.module_scope_lexicals.values() {
             visit_map_values(visitor, inner);
         }
-        for inner in self.unit_lexicals.values() {
+        for inner in self.lexicals.unit_lexicals.values() {
             visit_map_values(visitor, inner);
         }
-        visit_map_values(visitor, &self.escaped_our_lexical_cells);
-        visit_map_values(visitor, &self.state_vars);
-        visit_map_values(visitor, &self.closure_captured_state);
+        visit_map_values(visitor, &self.lexicals.escaped_our_lexical_cells);
+        visit_map_values(visitor, &self.lexicals.state_vars);
+        visit_map_values(visitor, &self.lexicals.closure_captured_state);
         self.control
             .once_values
             .visit_done_values(|v| visitor.visit_value(v));

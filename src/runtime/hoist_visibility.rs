@@ -132,9 +132,11 @@ impl Interpreter {
         }
         let record_key = self.hoisted_decl_key(name);
         if entries.is_empty() {
-            self.hoisted_unreached_decls.remove(&record_key);
+            self.lexicals.hoisted_unreached_decls.remove(&record_key);
         } else {
-            self.hoisted_unreached_decls.insert(record_key, entries);
+            self.lexicals
+                .hoisted_unreached_decls
+                .insert(record_key, entries);
         }
     }
 
@@ -142,23 +144,29 @@ impl Interpreter {
     /// `RegisterDecl` is executing, so it is visible to any later BEGIN-time
     /// evaluation exactly as rakudo's compile-time pad install would be.
     pub(crate) fn mark_hoisted_decl_reached(&mut self, name: &str) {
-        if self.hoisted_unreached_decls.is_empty() {
+        if self.lexicals.hoisted_unreached_decls.is_empty() {
             return;
         }
         let key = self.hoisted_decl_key(name);
-        self.hoisted_unreached_decls.remove(&key);
+        self.lexicals.hoisted_unreached_decls.remove(&key);
     }
 
     /// Enter a BEGIN-time region (`CheckPhaserStart`). At the outermost level
     /// this hides every hoisted-but-not-yet-reached declaration; a nested
     /// region only keeps the depth aligned.
     pub(crate) fn begin_time_enter(&mut self) {
-        if !self.control.begin_time_hidden.is_empty() || self.hoisted_unreached_decls.is_empty() {
+        if !self.control.begin_time_hidden.is_empty()
+            || self.lexicals.hoisted_unreached_decls.is_empty()
+        {
             self.control.begin_time_hidden.push(Vec::new());
             return;
         }
-        let records: Vec<HoistedDeclRecord> =
-            self.hoisted_unreached_decls.values().cloned().collect();
+        let records: Vec<HoistedDeclRecord> = self
+            .lexicals
+            .hoisted_unreached_decls
+            .values()
+            .cloned()
+            .collect();
         let mut undo: RegistryUndo = Vec::new();
         for entry in records.into_iter().flatten() {
             let live = self.registry().functions.get(&entry.key).cloned();

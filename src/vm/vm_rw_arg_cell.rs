@@ -43,7 +43,7 @@ impl Interpreter {
         if let Some(top) = self.stack.last()
             && matches!(top.view(), ValueView::Hash(..) | ValueView::Array(..))
         {
-            self.readonly_rw_tail = Some(top.clone());
+            self.lexicals.readonly_rw_tail = Some(top.clone());
         }
     }
 }

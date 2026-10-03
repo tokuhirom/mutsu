@@ -1014,7 +1014,7 @@ impl Interpreter {
                             if matches!(last.view(), ValueView::Instance { .. }) {
                                 let method = if *step >= 0.0 { "succ" } else { "pred" };
                                 let saved = self.env.clone();
-                                let saved_vb = self.var_bindings.clone();
+                                let saved_vb = self.lexicals.var_bindings.clone();
                                 let v = match self.call_method_with_values(
                                     last.clone(),
                                     method,
@@ -1024,7 +1024,7 @@ impl Interpreter {
                                     Err(_) => Self::seq_add(last, *step),
                                 };
                                 self.env = saved;
-                                self.var_bindings = saved_vb;
+                                self.lexicals.var_bindings = saved_vb;
                                 v
                             } else if let Some((sn, sd)) = rat_step {
                                 Self::seq_add_rat(last, sn, sd)

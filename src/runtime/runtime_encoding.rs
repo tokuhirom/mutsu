@@ -273,7 +273,7 @@ impl Interpreter {
         if let Some(scope) = self.lexical_class_scopes.last_mut() {
             scope.push(name.clone());
         }
-        if let Some(set) = self.block_declared_vars.last_mut() {
+        if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
             set.insert(crate::symbol::Symbol::intern(&name));
         }
     }

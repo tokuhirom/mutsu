@@ -461,7 +461,7 @@ impl Interpreter {
             let scope = if self.state_scope_belongs_to_routine() {
                 self.enclosing_routine_invocation_id() | ROUTINE_INVOCATION_SCOPE
             } else {
-                self.state_scope_id.get().unwrap_or(0)
+                self.lexicals.state_scope_id.get().unwrap_or(0)
             };
             Some((
                 Symbol::intern(&format!("__anon_state::{name}")),
@@ -490,7 +490,7 @@ impl Interpreter {
     /// routine's scope without pushing a block frame; direct map callbacks set
     /// the scope to their own fresh `SubData` identity instead.
     fn state_scope_belongs_to_routine(&self) -> bool {
-        let Some(scope) = self.state_scope_id.get() else {
+        let Some(scope) = self.lexicals.state_scope_id.get() else {
             return false;
         };
         let Some(frame) = self.routine_stack().iter().rev().find(|f| !f.is_block) else {

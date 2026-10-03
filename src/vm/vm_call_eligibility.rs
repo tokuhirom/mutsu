@@ -97,9 +97,9 @@ impl Interpreter {
         }
         let key = crate::meta_ns::MetaNs::CallableId.key_pair_for_strs(&cf.package, fn_name);
         let id = self.registration_callable_id(key).map(|i| i as u64);
-        let saved = self.state_scope_id.get();
+        let saved = self.lexicals.state_scope_id.get();
         if id.is_some() {
-            self.state_scope_id.set(id);
+            self.lexicals.state_scope_id.set(id);
         }
         Some(saved)
     }
@@ -107,7 +107,7 @@ impl Interpreter {
     /// Restore the scope saved by [`Self::enter_routine_state_scope`].
     pub(super) fn leave_routine_state_scope(&mut self, saved: Option<Option<u64>>) {
         if let Some(prev) = saved {
-            self.state_scope_id.set(prev);
+            self.lexicals.state_scope_id.set(prev);
         }
     }
 

@@ -34,7 +34,7 @@ impl Interpreter {
             return true;
         }
         let key = chunk.id;
-        let cache_gen = self.unit_lexical_gen;
+        let cache_gen = self.lexicals.unit_lexical_gen;
         // A package lexical is found by the CURRENT package, which is the
         // routine's own only when it has one (`trir_body_package`); a
         // binding resolved under one package is not another's.
@@ -73,7 +73,7 @@ impl Interpreter {
         // soon as a named sub reads it, so this is the uncommon shape.)
         // A routine-nested sub's aliases are per activation of its declaring
         // routine (mutsu#9111): a cell from one call is not the next call's.
-        if all_stable && !self.lexsub_free_aliases.contains_key(&chunk.name) {
+        if all_stable && !self.lexicals.lexsub_free_aliases.contains_key(&chunk.name) {
             self.trir_outer_cache
                 .insert(key, (cache_gen, pkg, bindings));
         }
@@ -93,7 +93,7 @@ impl Interpreter {
         let base = frame.outer_base as usize;
         let key = chunk.id;
         if let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
-            && *g == self.unit_lexical_gen
+            && *g == self.lexicals.unit_lexical_gen
             && *p == self.current_package_sym()
         {
             for (i, v) in bindings.iter().enumerate() {
@@ -159,8 +159,12 @@ impl Interpreter {
         if let Some(v) = self.lexsub_alias_binding_for(callee, owner, name) {
             return Some(celled(v));
         }
-        if let Some(bucket) = self.mainline_lexical_subs.get(callee.as_str())
-            && let Some(v) = self.unit_lexicals.get(bucket).and_then(|m| m.get(name))
+        if let Some(bucket) = self.lexicals.mainline_lexical_subs.get(callee.as_str())
+            && let Some(v) = self
+                .lexicals
+                .unit_lexicals
+                .get(bucket)
+                .and_then(|m| m.get(name))
         {
             return Some(celled(v.clone()));
         }
@@ -175,7 +179,8 @@ impl Interpreter {
         // every `nom-ws` call from another module routine bailed (#9072).
         let pkg = self.current_package_sym();
         if !crate::qualified::is_global_package(pkg) {
-            if let Some(v) = Self::lookup_in_package_chain(&self.unit_lexicals, pkg.as_str(), name)
+            if let Some(v) =
+                Self::lookup_in_package_chain(&self.lexicals.unit_lexicals, pkg.as_str(), name)
             {
                 return Some(celled(v.clone()));
             }

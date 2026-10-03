@@ -298,7 +298,8 @@ impl Interpreter {
         let saved_when_matched = self.when_matched();
         self.push_loop_local_scope(Default::default(), Default::default());
         // Track `my` declarations made directly in this branch.
-        self.block_declared_vars
+        self.lexicals
+            .block_declared_vars
             .push(crate::runtime::NameSet::default());
         let res = self.run_range(code, body_start, body_end, compiled_fns);
         // A `when`/`default` succeed exits its innermost enclosing block — this
@@ -323,7 +324,7 @@ impl Interpreter {
             }
             other => other,
         };
-        let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+        let block_declared = self.lexicals.block_declared_vars.pop().unwrap_or_default();
         // Fold the branch's writes back into the enclosing env. Everything the
         // branch wrote by name stays (this scope only takes back fresh `my`s,
         // below), and a removal of an enclosing binding is a removal there too.

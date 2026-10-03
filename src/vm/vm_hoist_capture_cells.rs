@@ -74,9 +74,10 @@ impl Interpreter {
         // seed's declaration ran (`my $x;` without an initializer never
         // adopts): the new cell supersedes it, which keeps this list bounded
         // by the distinct names awaiting a declaration.
-        self.hoist_pending_cells
+        self.lexicals
+            .hoist_pending_cells
             .retain(|p| !(p.name == name && p.unit_key == unit_key));
-        self.hoist_pending_cells.push(HoistPendingCell {
+        self.lexicals.hoist_pending_cells.push(HoistPendingCell {
             cell: (*cell).clone(),
             unit_key: unit_key.to_string(),
             name: name.to_string(),
@@ -93,7 +94,8 @@ impl Interpreter {
         let ValueView::ContainerRef(cell) = cur.view() else {
             return None;
         };
-        self.hoist_pending_cells
+        self.lexicals
+            .hoist_pending_cells
             .iter()
             .any(|p| Gc::ptr_eq(&p.cell, &cell))
             .then(|| cur.clone())
@@ -108,10 +110,11 @@ impl Interpreter {
             return None;
         };
         let pos = self
+            .lexicals
             .hoist_pending_cells
             .iter()
             .position(|p| Gc::ptr_eq(&p.cell, &cur))?;
-        Some(self.hoist_pending_cells.swap_remove(pos))
+        Some(self.lexicals.hoist_pending_cells.swap_remove(pos))
     }
 
     /// A declaration's binding reset (`SetVarDynamic`) of `slot`: when the
@@ -128,6 +131,7 @@ impl Interpreter {
             return false;
         };
         let Some(pending) = self
+            .lexicals
             .hoist_pending_cells
             .iter()
             .find(|p| Gc::ptr_eq(&p.cell, &cur))
@@ -200,7 +204,7 @@ impl Interpreter {
     /// half ran first and the prologue's subs captured that.
     // Cost: O(1), one hash probe of the mainline capture bucket.
     pub(super) fn mainline_capture_at(&self, code: &CompiledCode, slot: usize) -> Option<Value> {
-        if self.unit_lexicals.is_empty()
+        if self.lexicals.unit_lexicals.is_empty()
             || !self.vardecl_context().get()
             || !self.routine_stack().is_empty()
             || self.block_scope_depth() != 0
@@ -213,6 +217,7 @@ impl Interpreter {
         };
         let name = code.locals.get(slot)?;
         let captured = self
+            .lexicals
             .unit_lexicals
             .get(crate::runtime::MAINLINE_UNIT_KEY)?
             .get(name)?;

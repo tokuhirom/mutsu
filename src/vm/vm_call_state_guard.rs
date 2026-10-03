@@ -94,7 +94,7 @@
 use super::*;
 use std::cell::Cell;
 
-/// RAII guard restoring [`Interpreter::state_scope_id`] on drop. Used by
+/// RAII guard restoring [`LexicalState::state_scope_id`](crate::runtime::lexical_state::LexicalState::state_scope_id) on drop. Used by
 /// `call_compiled_closure_with_topic` and `call_compiled_function_named_inner`,
 /// which switch it to the callee's `state` scope for the call's duration.
 pub(crate) struct StateScopeGuard {
@@ -106,10 +106,10 @@ pub(crate) struct StateScopeGuard {
 
 impl StateScopeGuard {
     pub(crate) fn new(interp: &Interpreter, new_value: Option<u64>) -> Self {
-        let saved = interp.state_scope_id.get();
-        interp.state_scope_id.set(new_value);
+        let saved = interp.lexicals.state_scope_id.get();
+        interp.lexicals.state_scope_id.set(new_value);
         StateScopeGuard {
-            cell: &*interp.state_scope_id as *const Cell<Option<u64>>,
+            cell: &*interp.lexicals.state_scope_id as *const Cell<Option<u64>>,
             saved,
         }
     }
@@ -371,11 +371,11 @@ impl ReadonlyFrameGuard {
     pub(crate) fn new(interp: &mut Interpreter) -> Self {
         let mark = interp.enter_readonly_frame();
         ReadonlyFrameGuard {
-            vars_cell: &*interp.readonly_vars
+            vars_cell: &*interp.lexicals.readonly_vars
                 as *const std::cell::RefCell<crate::runtime::ReadonlySet>,
-            undo_cell: &*interp.readonly_undo
+            undo_cell: &*interp.lexicals.readonly_undo
                 as *const std::cell::RefCell<Vec<crate::runtime::ReadonlyUndo>>,
-            frames_cell: &*interp.readonly_frames as *const Cell<u32>,
+            frames_cell: &*interp.lexicals.readonly_frames as *const Cell<u32>,
             mark,
         }
     }

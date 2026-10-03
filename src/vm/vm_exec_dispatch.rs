@@ -424,7 +424,7 @@ impl Interpreter {
                         && !(self.process_dynamics_published()
                             && (b0 == Some(b'*') || name.starts_with("PROCESS::")))
                         && (name == "_" || !name.contains('_'))
-                        && self.escaping_our_lexical_names.is_empty()
+                        && self.lexicals.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
                         && !self.lexsub_alias_frame_active()
                         && self.current_package_is_global()
@@ -1413,7 +1413,7 @@ impl Interpreter {
                 // store is never redirected.
                 if !is_rebind
                     && (self.regex_state.in_regex_code_block
-                        || (!self.nested_capture_owners.is_empty()
+                        || (!self.lexicals.nested_capture_owners.is_empty()
                             && !is_bind_ctx
                             && !raw_mode
                             && !self.vardecl_context().get()))
@@ -6204,7 +6204,7 @@ impl Interpreter {
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 let name_sym = code.const_sym(*name_idx);
-                if let Some(set) = self.block_declared_vars.last_mut() {
+                if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
                     set.insert(name_sym);
                 }
                 // A `my package`/`my module` is lexical exactly like `my class` —

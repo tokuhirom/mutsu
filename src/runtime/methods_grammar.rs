@@ -273,7 +273,7 @@ impl Interpreter {
         );
         let mut saved: Vec<(String, Option<Value>)> = Vec::new();
         for pkg in &packages {
-            let Some(statics) = self.package_lexicals.get(pkg) else {
+            let Some(statics) = self.lexicals.package_lexicals.get(pkg) else {
                 continue;
             };
             let entries: Vec<(String, Value)> = statics

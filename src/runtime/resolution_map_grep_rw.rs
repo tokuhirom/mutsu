@@ -230,7 +230,7 @@ impl Interpreter {
                 // Scope `state` variables to the closure instance — the body was
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
-                vm.state_scope_id.set(Some(data.id));
+                vm.lexicals.state_scope_id.set(Some(data.id));
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {

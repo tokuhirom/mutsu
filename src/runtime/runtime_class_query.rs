@@ -389,7 +389,8 @@ impl Interpreter {
     /// class — so method dispatch must set `current_package` to the class when
     /// this returns true (mirrors the `has_class_scoped_subs` gate).
     pub(crate) fn class_has_package_lexicals(&self, class_name: &str) -> bool {
-        self.class_body_static_names
+        self.lexicals
+            .class_body_static_names
             .get(class_name)
             .is_some_and(|m| !m.is_empty())
     }
@@ -413,7 +414,7 @@ impl Interpreter {
     /// calling frame — visible here only because the env is flattened — must never
     /// shadow them.
     pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
-        let Some(statics) = self.package_lexicals.get(class_name) else {
+        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
             return;
         };
         if statics.is_empty() {

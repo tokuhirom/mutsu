@@ -230,14 +230,16 @@ impl Interpreter {
     /// integer ops total.
     #[inline]
     pub(crate) fn enter_readonly_frame(&mut self) -> usize {
-        self.readonly_frames.set(self.readonly_frames.get() + 1);
+        self.lexicals
+            .readonly_frames
+            .set(self.lexicals.readonly_frames.get() + 1);
         // The scope sentinel bounds the cancellation peephole in
         // `unmark_readonly_sym`: an unmark may only cancel a mark journaled by
         // the *same* frame — cancelling across the sentinel would erase an
         // outer frame's rollback entry (e.g. an `is copy` param transiently
         // unmarking the caller's same-named readonly param would eat the
         // caller's own mark, leaving it writable after the inner call).
-        let mut undo = self.readonly_undo.borrow_mut();
+        let mut undo = self.lexicals.readonly_undo.borrow_mut();
         undo.push(ReadonlyUndo::Scope);
         undo.len()
     }
@@ -255,9 +257,9 @@ impl Interpreter {
     /// through raw pointers into these fields' own boxed allocations.
     pub(crate) fn exit_readonly_frame(&mut self, mark: usize) {
         super::replay_readonly_undo(
-            &self.readonly_vars,
-            &self.readonly_undo,
-            &self.readonly_frames,
+            &self.lexicals.readonly_vars,
+            &self.lexicals.readonly_undo,
+            &self.lexicals.readonly_frames,
             mark,
         );
     }
@@ -281,9 +283,9 @@ impl Interpreter {
     /// allocation out from under it.
     pub(crate) fn take_readonly_state(&mut self) -> super::SavedReadonlyState {
         super::SavedReadonlyState {
-            vars: std::mem::take(&mut *self.readonly_vars.borrow_mut()),
-            undo: std::mem::take(&mut *self.readonly_undo.borrow_mut()),
-            frames: self.readonly_frames.replace(0),
+            vars: std::mem::take(&mut *self.lexicals.readonly_vars.borrow_mut()),
+            undo: std::mem::take(&mut *self.lexicals.readonly_undo.borrow_mut()),
+            frames: self.lexicals.readonly_frames.replace(0),
         }
     }
 
@@ -291,9 +293,9 @@ impl Interpreter {
     /// See that method's doc comment for why this writes into the existing
     /// boxed cells' contents instead of replacing the `Box`es.
     pub(crate) fn restore_readonly_state(&mut self, saved: super::SavedReadonlyState) {
-        *self.readonly_vars.borrow_mut() = saved.vars;
-        *self.readonly_undo.borrow_mut() = saved.undo;
-        self.readonly_frames.set(saved.frames);
+        *self.lexicals.readonly_vars.borrow_mut() = saved.vars;
+        *self.lexicals.readonly_undo.borrow_mut() = saved.undo;
+        self.lexicals.readonly_frames.set(saved.frames);
     }
 
     /// Check if a variable is readonly.
@@ -304,7 +306,7 @@ impl Interpreter {
     /// Check if an already-interned name is readonly.
     #[inline]
     pub(crate) fn is_readonly_sym(&self, sym: Symbol) -> bool {
-        self.readonly_vars.borrow().contains_key(&sym)
+        self.lexicals.readonly_vars.borrow().contains_key(&sym)
     }
 
     /// Why `name` is readonly, or `None` when it is writable.
@@ -316,7 +318,7 @@ impl Interpreter {
     /// [`Self::readonly_kind`] for an already-interned name.
     #[inline]
     pub(crate) fn readonly_kind_sym(&self, sym: Symbol) -> Option<ReadonlyKind> {
-        self.readonly_vars.borrow().get(&sym).copied()
+        self.lexicals.readonly_vars.borrow().get(&sym).copied()
     }
 
     /// True when the `$`-sigil (or sigilless) name `name` is bound **directly
@@ -405,20 +407,22 @@ impl Interpreter {
         // insert would overwrite a value with itself and the journal arm below
         // would be `Some(_) => {}`. Answering that from the set's direct-mapped
         // cache turns a hash insert into one array load on the hottest path.
-        let already = self.readonly_vars.borrow().marked_with(sym, kind);
+        let already = self.lexicals.readonly_vars.borrow().marked_with(sym, kind);
         if already {
             return;
         }
-        let previous = self.readonly_vars.borrow_mut().insert(sym, kind);
-        if self.readonly_frames.get() == 0 {
+        let previous = self.lexicals.readonly_vars.borrow_mut().insert(sym, kind);
+        if self.lexicals.readonly_frames.get() == 0 {
             return;
         }
         match previous {
             None => self
+                .lexicals
                 .readonly_undo
                 .borrow_mut()
                 .push(ReadonlyUndo::Marked(sym)),
             Some(old) if old != kind => self
+                .lexicals
                 .readonly_undo
                 .borrow_mut()
                 .push(ReadonlyUndo::Rekinded(sym, old)),
@@ -431,7 +435,7 @@ impl Interpreter {
     /// [`Self::unmark_readonly`] would need just to miss.
     #[inline]
     pub(crate) fn no_readonly_vars(&self) -> bool {
-        self.readonly_vars.borrow().is_empty()
+        self.lexicals.readonly_vars.borrow().is_empty()
     }
 
     /// Remove a variable from the readonly set.
@@ -452,7 +456,7 @@ impl Interpreter {
     pub(crate) fn unmark_readonly_topic(&mut self) {
         // Bind first: the `borrow()` must end before `unmark_readonly_sym`
         // takes a `borrow_mut()`.
-        let marked = self.readonly_vars.borrow().topic_marked();
+        let marked = self.lexicals.readonly_vars.borrow().topic_marked();
         if marked {
             self.unmark_readonly_sym(crate::symbol::wk::topic());
         }
@@ -467,11 +471,11 @@ impl Interpreter {
     /// an outer frame's mark stays journaled so its exit re-marks the name.
     #[inline]
     pub(crate) fn unmark_readonly_sym(&mut self, sym: Symbol) {
-        let removed = self.readonly_vars.borrow_mut().remove(&sym);
+        let removed = self.lexicals.readonly_vars.borrow_mut().remove(&sym);
         if let Some(kind) = removed
-            && self.readonly_frames.get() > 0
+            && self.lexicals.readonly_frames.get() > 0
         {
-            let mut undo = self.readonly_undo.borrow_mut();
+            let mut undo = self.lexicals.readonly_undo.borrow_mut();
             if undo.last() == Some(&ReadonlyUndo::Marked(sym)) {
                 undo.pop();
             } else {
@@ -820,7 +824,7 @@ impl Interpreter {
     /// directly.
     pub(crate) fn note_param_bound_aggregate(&mut self, name: &str, value: &Value) {
         if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
-            self.param_bound_aggregates.note(name, value);
+            self.lexicals.param_bound_aggregates.note(name, value);
         }
     }
 

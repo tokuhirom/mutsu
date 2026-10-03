@@ -257,7 +257,7 @@ impl Interpreter {
             let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance (see
                 // `eval_map_over_items`).
-                vm.state_scope_id.set(Some(data.id));
+                vm.lexicals.state_scope_id.set(Some(data.id));
                 let mut i = 0usize;
                 let mut stop = false;
                 loop {

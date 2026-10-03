@@ -129,7 +129,7 @@ impl Interpreter {
             // bindings outwards and a same-named outer symbol stayed clobbered
             // for the rest of the program (`{ my enum E <Zed> }; Zed` answered
             // the enum value rather than the file-scope `class Zed`).
-            if *is_my && let Some(set) = self.block_declared_vars.last_mut() {
+            if *is_my && let Some(set) = self.lexicals.block_declared_vars.last_mut() {
                 set.insert(*name);
                 for (variant, _) in variants {
                     set.insert(crate::symbol::Symbol::intern(variant));

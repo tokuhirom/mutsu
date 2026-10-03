@@ -1710,13 +1710,15 @@ impl Interpreter {
             // `run_role_deferred_use_stmt`.
             let import_mark = self.deferred_body_import_mark();
             // See the twin in `run_composed_role_deferred_body`.
-            self.nested_capture_owners.push(Symbol::intern(type_owner));
+            self.lexicals
+                .nested_capture_owners
+                .push(Symbol::intern(type_owner));
             let r = if is_use_or_need {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
                 run_one(self)
             };
-            self.nested_capture_owners.pop();
+            self.lexicals.nested_capture_owners.pop();
             if body_pkg.is_some() {
                 self.set_current_package(saved_pkg.clone());
             }

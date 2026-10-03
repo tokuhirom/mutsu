@@ -105,7 +105,8 @@ impl Interpreter {
     /// checks already do.
     #[inline]
     pub(super) fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
-        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains_key(name)
+        !self.lexicals.mainline_lexical_subs.is_empty()
+            && self.lexicals.mainline_lexical_subs.contains_key(name)
     }
 
     /// Names of builtin listops/functions that a same-named user-defined
@@ -346,7 +347,9 @@ impl Interpreter {
             if let Some(bare) = pd.name.strip_prefix('&')
                 && !bare.is_empty()
             {
-                self.amp_param_shadowed_names.insert(Symbol::intern(bare));
+                self.lexicals
+                    .amp_param_shadowed_names
+                    .insert(Symbol::intern(bare));
             }
             if let Some(sub) = &pd.sub_signature {
                 self.note_amp_param_shadowed_names(sub);
@@ -411,8 +414,9 @@ impl Interpreter {
         // both fall back to the materializing slow path).
         if !frame_lexical
             && self.stack.len() >= arity_usize
-            && (self.amp_param_shadowed_names.is_empty()
+            && (self.lexicals.amp_param_shadowed_names.is_empty()
                 || !self
+                    .lexicals
                     .amp_param_shadowed_names
                     .contains(&code.const_sym(name_idx)))
         {
@@ -717,12 +721,12 @@ impl Interpreter {
         // sub of the same name forever, never re-checking the installed
         // override.
         let name_sym = code.const_sym(name_idx);
-        let skip_name_caches = if self.amp_param_shadowed_names.is_empty()
+        let skip_name_caches = if self.lexicals.amp_param_shadowed_names.is_empty()
             && self.export_amp_override_names.is_empty()
         {
             self.is_unit_scoped_routine_sym(name_sym)
         } else {
-            self.amp_param_shadowed_names.contains(&name_sym)
+            self.lexicals.amp_param_shadowed_names.contains(&name_sym)
                 || self.export_amp_override_names.contains(&name_sym)
                 || self.is_unit_scoped_routine_sym(name_sym)
         };
@@ -3245,7 +3249,7 @@ impl Interpreter {
         pkg: Symbol,
         name: Symbol,
     ) -> Result<Value, RuntimeError> {
-        let saved_scope = self.state_scope_id.take();
+        let saved_scope = self.lexicals.state_scope_id.take();
         // Prefer the routine's own nested-sub table over the caller's
         // (ADR-0019 C6e-3c, mirrors `compile_and_call_function_def`): a
         // module sub with a nested declaration (e.g. a `proto ... {*}`
@@ -3264,7 +3268,7 @@ impl Interpreter {
         if pushed_samewith {
             self.pop_samewith_context();
         }
-        self.state_scope_id.set(saved_scope);
+        self.lexicals.state_scope_id.set(saved_scope);
         result
     }
 
