@@ -251,6 +251,10 @@ where
 /// Cost: O(e), e = elements (or pairs) of the invocant, one hash insert each;
 /// O(1) on a plain Hash (identity).
 pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
+    // A stash is a Map of its symbols (`Test::EXPORT::ALL::.Hash`).
+    if let Some(symbols) = stash_symbols(&target) {
+        return to_hash(symbols, check_odd);
+    }
     match target.view() {
         ValueView::Hash(map) => {
             // A Map (a Hash carrying the `Map` declared-type) coerces to a fresh
@@ -344,6 +348,10 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
 /// Cost: O(e), e = pairs of the invocant (one decont + insert each); O(1)
 /// on an existing Map (identity).
 pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
+    // A stash is a Map of its symbols: `sub EXPORT(--> Map()) { Mod::EXPORT::ALL:: }`.
+    if let Some(symbols) = stash_symbols(&target) {
+        return to_map(symbols);
+    }
     let mut result = 'hash: {
         if let ValueView::Hash(map) = target.view() {
             // Already a Map (embedded declared-type): identity, no re-tag.

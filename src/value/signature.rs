@@ -623,7 +623,9 @@ fn collect_named_names(p: &ParamDef, name: &str, is_capture: bool) -> Vec<String
     if !p.named || is_capture || name.is_empty() {
         return Vec::new();
     }
-    let mut names = vec![name.to_string()];
+    // A twigil names the variable, not the argument: `:$*bli` / `:$!x` are
+    // passed as `bli` / `x`.
+    let mut names = vec![name.trim_start_matches(['*', '!', '.']).to_string()];
     if let Some(subs) = &p.sub_signature
         && subs.len() == 1
     {
@@ -648,7 +650,7 @@ fn collect_named_names_recursive(pd: &ParamDef, names: &mut Vec<String>) {
     // the innermost one (`:@regex` in `:r(:@regex)`) included; a positional
     // inner param (`$a` in `:x($a)`) is only the variable.
     if pd.named {
-        names.push(inner_name);
+        names.push(inner_name.trim_start_matches(['*', '!', '.']).to_string());
         if let Some(ref subs) = pd.sub_signature
             && subs.len() == 1
         {
