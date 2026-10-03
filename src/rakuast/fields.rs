@@ -190,6 +190,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("dwim-right", Absent::False),
         ],
         TraitReturns | TraitOf | TraitDoes => &[("type", Absent::Required)],
+        TraitIs => &[
+            ("name", Absent::TypeObject("RakuAST::Name")),
+            ("argument", Absent::TypeObject("RakuAST::Expression")),
+            ("type", Absent::TypeObject("RakuAST::Type")),
+        ],
         Parameter => &[
             ("default-rw", Absent::False),
             ("type", Absent::TypeObject("RakuAST::Type")),

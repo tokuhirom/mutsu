@@ -7,35 +7,94 @@
 //! default is also the `initializer`, and the gist omits the implicit
 //! `WillBuild` (only `.traits` shows it).
 //!
-//! The parser records `is rw` / `is readonly` / `is required` as flags on
-//! `Stmt::HasDecl`, not in source order, so an attribute with more than one of
-//! them is refused rather than rendered in an invented order. `is default(…)`
-//! (whose value the parser also copies into the initializer) and `is built`
-//! (whose argument it does not keep) are refused by the caller.
+//! `is default(EXPR)` and `is built(False)` carry their argument as
+//! `argument => Circumfix::Parentheses(SemiList(Statement::Expression(EXPR)))`;
+//! a bare `is built` has none. A scalar attribute with `is default(EXPR)` and
+//! no initializer starts with that value, which the parser also stores as its
+//! `default` (flagged `default_is_trait`), and rakudo shows no initializer.
+//!
+//! The parser records these traits as fields on `Stmt::HasDecl`, not in
+//! source order, so an attribute with more than one of them is refused rather
+//! than rendered in an invented order. The parser keeps `is built`'s argument
+//! as a `Bool`, so `is built(True)` comes back as the bare `is built` it means.
 
-use super::convert::{name_from_identifier, node_field, unsupported};
-use super::lower::{named_child, positional_leaf};
+use super::convert::{
+    convert_expr, name_from_identifier, node_field, statement_expression, unsupported,
+};
+use super::lower::{lower_expr, named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// The flag-valued attribute traits, as `HasDecl` records them.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+/// The `is` traits of an attribute, as `HasDecl` records them.
+#[derive(Debug, Default, Clone)]
 pub(super) struct AttributeTraits {
     pub(super) is_rw: bool,
     pub(super) is_readonly: bool,
     pub(super) is_required: bool,
+    /// `is default(EXPR)`.
+    pub(super) is_default: Option<Expr>,
+    /// `is built` (`true`) or `is built(False)`.
+    pub(super) is_built: Option<bool>,
 }
 
 impl AttributeTraits {
-    fn names(self) -> impl Iterator<Item = &'static str> {
-        [
+    /// Each written trait's name and, when it has one, its argument.
+    fn written(&self) -> Vec<(&'static str, Option<Expr>)> {
+        let mut written: Vec<(&'static str, Option<Expr>)> = [
             (self.is_rw, "rw"),
             (self.is_readonly, "readonly"),
             (self.is_required, "required"),
         ]
         .into_iter()
-        .filter_map(|(on, name)| on.then_some(name))
+        .filter_map(|(on, name)| on.then_some((name, None)))
+        .collect();
+        if let Some(value) = &self.is_default {
+            written.push(("default", Some(value.clone())));
+        }
+        match self.is_built {
+            Some(true) => written.push(("built", None)),
+            Some(false) => written.push(("built", Some(Expr::Literal(Value::truth(false))))),
+            None => {}
+        }
+        written
     }
+}
+
+/// `(EXPR)` as a trait argument.
+// Cost: O(e), e = size of the expression.
+fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let semilist = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(None, semilist)],
+    })
+}
+
+/// The expression inside a `(EXPR)` trait argument.
+// Cost: O(e), e = size of the expression.
+fn lower_paren_argument(owner: &RakuAstNode, argument: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let refuse = || super::lower::unsupported(owner);
+    if argument.class != RakuAstClass::CircumfixParentheses {
+        return Err(refuse());
+    }
+    let semilist = named_child_or_positional(argument)?;
+    let [statement] = semilist.fields.as_slice() else {
+        return Err(refuse());
+    };
+    let RakuAstFieldValue::Node(statement) = &statement.value else {
+        return Err(refuse());
+    };
+    let ValueView::RakuAst(statement) = statement.view() else {
+        return Err(refuse());
+    };
+    if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+        return Err(refuse());
+    }
+    lower_expr(named_child(statement, "expression")?)
 }
 
 /// Put the attribute's written traits at the front of `decl`'s `traits` list,
@@ -46,21 +105,23 @@ pub(super) fn add_traits(
     decl: &mut RakuAstNode,
     traits: AttributeTraits,
 ) -> Result<(), RuntimeError> {
-    let written: Vec<&str> = traits.names().collect();
+    let written = traits.written();
     if written.len() > 1 {
         return Err(unsupported(
             "attribute with several traits (their source order is not kept)",
         ));
     }
-    let mut items: Vec<Value> = written
-        .into_iter()
-        .map(|name| {
-            Value::rakuast(Box::new(RakuAstNode {
-                class: RakuAstClass::TraitIs,
-                fields: vec![node_field(Some("name"), name_from_identifier(name))],
-            }))
-        })
-        .collect();
+    let mut items = Vec::with_capacity(written.len());
+    for (name, argument) in written {
+        let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+        if let Some(argument) = argument {
+            fields.push(node_field(Some("argument"), paren_argument(&argument)?));
+        }
+        items.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitIs,
+            fields,
+        })));
+    }
     if items.is_empty() {
         return Ok(());
     }
@@ -107,15 +168,29 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
         };
         match t.class {
             RakuAstClass::TraitWillBuild if has_initializer => {}
-            RakuAstClass::TraitIs if t.fields.len() == 1 => {
+            RakuAstClass::TraitIs => {
                 let name = positional_leaf(named_child(t, "name")?)?;
-                let flag = match name.view() {
-                    ValueView::Str(s) if s.as_str() == "rw" => &mut traits.is_rw,
-                    ValueView::Str(s) if s.as_str() == "readonly" => &mut traits.is_readonly,
-                    ValueView::Str(s) if s.as_str() == "required" => &mut traits.is_required,
-                    _ => return Err(refuse()),
+                let ValueView::Str(name) = name.view() else {
+                    return Err(refuse());
                 };
-                *flag = true;
+                let argument = match named_child(t, "argument") {
+                    Ok(argument) => Some(lower_paren_argument(node, argument)?),
+                    Err(_) if t.fields.len() == 1 => None,
+                    Err(_) => return Err(refuse()),
+                };
+                match (name.as_str(), argument) {
+                    ("rw", None) => traits.is_rw = true,
+                    ("readonly", None) => traits.is_readonly = true,
+                    ("required", None) => traits.is_required = true,
+                    ("default", Some(value)) => traits.is_default = Some(value),
+                    ("built", None) => traits.is_built = Some(true),
+                    ("built", Some(Expr::Literal(value)))
+                        if matches!(value.view(), ValueView::Bool(_)) =>
+                    {
+                        traits.is_built = Some(value.truthy());
+                    }
+                    _ => return Err(refuse()),
+                }
             }
             _ => return Err(refuse()),
         }

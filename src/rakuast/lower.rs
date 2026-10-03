@@ -1761,9 +1761,28 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         ValueView::Str(s) => s.to_string(),
         _ => return Err(unsupported(node)),
     };
-    let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
+    let type_name = match node.fields.iter().find(|f| f.name == Some("type")) {
         Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
         None => None,
+    };
+    // `Int:D` comes back as the parser's base type plus its smiley.
+    let (type_constraint, type_smiley) = match type_name.as_deref() {
+        Some(name) => match name.rsplit_once(':') {
+            Some((base, smiley @ ("D" | "U"))) => {
+                (Some(base.to_string()), Some(smiley.to_string()))
+            }
+            _ => (type_name.clone(), None),
+        },
+        None => (None, None),
+    };
+    // A scalar `is default(EXPR)` attribute without an initializer starts
+    // with the trait's value, as the parser records it.
+    let default_is_trait =
+        initializer.is_none() && traits.is_default.is_some() && matches!(sigil_char, '$' | '&');
+    let initializer = if default_is_trait {
+        traits.is_default.clone()
+    } else {
+        initializer
     };
     Ok(Stmt::HasDecl {
         name: crate::symbol::Symbol::intern(&desigil),
@@ -1773,6 +1792,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // and the converter skips it on the way out, so re-plant the same one
         // here to keep the two sides symmetric.
         default_is_seed: initializer.is_none() && type_constraint.is_some(),
+        default_is_trait,
         default: initializer.or_else(|| {
             type_constraint
                 .as_deref()
@@ -1782,7 +1802,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: traits.is_rw,
         is_readonly: traits.is_readonly,
         type_constraint,
-        type_smiley: None,
+        type_smiley,
         is_required: traits.is_required.then_some(None),
         sigil: sigil_char,
         where_constraint: None,
@@ -1790,10 +1810,10 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_embedded: false,
         is_our: false,
         is_my: false,
-        is_default: None,
+        is_default: traits.is_default,
         is_type: None,
         deprecated_message: None,
-        is_built: None,
+        is_built: traits.is_built,
         unknown_traits: Vec::new(),
         // RakuAST models an attribute's initializer as an assignment; rakudo
         // has no `:=` attribute-declaration node to lower from.

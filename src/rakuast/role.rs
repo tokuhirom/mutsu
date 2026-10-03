@@ -11,7 +11,8 @@
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
 use super::convert::{
-    blockoid, build_type_node, name_from_identifier, node_field, signature, unsupported,
+    MY_SCOPED, blockoid, build_type_node, lexical_scope_field, name_from_identifier, node_field,
+    signature, unsupported,
 };
 use super::lower::{
     call_name_str, lower_package_body, lower_signature_parameters, lower_stmts, named_child,
@@ -38,7 +39,10 @@ pub(super) struct RoleDecl<'a> {
 /// The `RakuAST::Role` node for a role declaration.
 // Cost: O(n), n = size of the role's body.
 pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
-    if !role.custom_traits.is_empty() || role.is_export != !role.export_tags.is_empty() {
+    let is_lexical = role.custom_traits.iter().any(|(t, _)| t == MY_SCOPED);
+    if role.custom_traits.iter().any(|(t, _)| t != MY_SCOPED)
+        || role.is_export != !role.export_tags.is_empty()
+    {
         return Err(unsupported("role with custom traits"));
     }
     // The fallback parameter parser (defaults such as `::T = my role { }`)
@@ -94,10 +98,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .into_iter()
             .map(|t| Value::rakuast(Box::new(t))),
     );
-    let mut fields = vec![node_field(
+    let mut fields = lexical_scope_field(is_lexical);
+    fields.push(node_field(
         Some("name"),
         name_from_identifier(&role.name.resolve()),
-    )];
+    ));
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),
@@ -149,6 +154,17 @@ fn parent_clause(
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
+    let mut custom_traits = Vec::new();
+    match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => {}
+        Some(RakuAstField {
+            value: RakuAstFieldValue::Node(scope),
+            ..
+        }) if matches!(scope.view(), ValueView::Str(s) if s.as_str() == "my") => {
+            custom_traits.push((MY_SCOPED.to_string(), None));
+        }
+        Some(_) => return Err(unsupported_node(node)),
+    }
     let mut header = Vec::new();
     let mut flags = IsTraits::default();
     if let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) {
@@ -197,7 +213,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         body: header,
         is_rw: flags.is_rw,
         language_version: crate::parser::current_language_version(),
-        custom_traits: Vec::new(),
+        custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
     })
 }

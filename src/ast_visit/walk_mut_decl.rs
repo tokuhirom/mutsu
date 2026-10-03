@@ -63,6 +63,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             unknown_traits,
             default_is_bind: _,
             default_is_seed: _,
+            default_is_trait: _,
         } => {
             for e in [default, is_default].into_iter().flatten() {
                 v.visit_expr_mut(e);
