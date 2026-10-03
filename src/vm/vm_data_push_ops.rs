@@ -497,7 +497,7 @@ impl Interpreter {
         }
     }
 
-    /// The native integer element type of the array variable `name`, if any.
+    /// The native integer (or `num32`) element type of the array variable `name`, if any.
     ///
     /// ADR-0042 slice 1: routed through `element_constraint_for` (see
     /// `check_push_element_type`), so the container's own metadata answers
@@ -505,7 +505,8 @@ impl Interpreter {
     pub(crate) fn native_int_element_constraint(&mut self, name: &str) -> Option<String> {
         let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
         let constraint = self.element_constraint_for(name, &target)?;
-        crate::runtime::native_types::is_native_int_type(&constraint).then_some(constraint)
+        (crate::runtime::native_types::is_native_int_type(&constraint) || constraint == "num32")
+            .then_some(constraint)
     }
 
     /// Wrap every element of a multi-argument push/append onto a native integer
