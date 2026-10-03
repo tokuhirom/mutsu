@@ -9,10 +9,12 @@
 use super::*;
 
 /// The per-hash facts every promoted cell carries: the value constraint of a
-/// typed hash, and the name of the container the cell is an element of.
+/// typed hash, the name of the container the cell is an element of, and the
+/// hash's `is default(...)` (what a `Nil` store through the cell decays to).
 struct PromotionTag {
     value_type: Option<String>,
     owner: String,
+    default: Option<Value>,
 }
 
 impl PromotionTag {
@@ -28,6 +30,7 @@ impl PromotionTag {
         PromotionTag {
             value_type: data.value_type.clone(),
             owner,
+            default: data.default.as_deref().cloned(),
         }
     }
 }
@@ -50,6 +53,9 @@ fn promote_leaf(elem: &mut Value, tag: &PromotionTag) -> Value {
     // names the container (`retag_element_owner`).
     if let Some(tc) = tag.value_type.as_deref() {
         crate::value::register_element_constraint(&cell, tc, &tag.owner);
+    }
+    if let Some(def) = &tag.default {
+        cell.set_default(def.clone());
     }
     *elem = Value::ContainerRef(cell.clone());
     Value::ContainerRef(cell)

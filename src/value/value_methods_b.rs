@@ -276,6 +276,9 @@ impl Value {
             // (ADR-0036 slice 4), so a write through the cell — an lvalue
             // return, a `:=` alias — is checked exactly like `@a[i] = v`.
             let value_type = data.value_type.clone();
+            // ... as does its `is default(...)`: a `Nil` stored through an
+            // element alias decays to the array's default (#9831).
+            let default = data.default.as_deref().cloned();
             // ... and so does the name of the container it is an element of.
             // rakudo blames the DECLARING variable, which is exactly what the
             // container descriptor records (ADR-0064) and which travels with the
@@ -316,6 +319,9 @@ impl Value {
             // failure blames `@a` the way a direct store does.
             if let Some(tc) = value_type.as_deref() {
                 crate::value::register_element_constraint(&cell, tc, &owner);
+            }
+            if let Some(def) = default {
+                cell.set_default(def);
             }
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))

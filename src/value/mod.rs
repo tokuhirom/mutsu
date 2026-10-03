@@ -966,6 +966,12 @@ pub struct ContainerCell {
     /// "Cannot assign to an immutable value". The flag lives on the cell so it
     /// travels with the entry and disappears with it on delete/reassign.
     readonly: std::sync::atomic::AtomicBool,
+    /// The container's `is default(...)` value, when it has one: what a `Nil`
+    /// store through this cell decays to (ADR-0049). Like the `of`-type, it is
+    /// part of rakudo's `$!descriptor`, so it belongs to the container rather
+    /// than to whichever name -- the declared variable, an `is rw` parameter, a
+    /// `for` alias -- a write happens to arrive through (#9831).
+    default: Mutex<Option<Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1007,6 +1013,7 @@ impl ContainerCell {
             constraint: Mutex::new(None),
             quanthash_weight: Mutex::new(None),
             readonly: std::sync::atomic::AtomicBool::new(false),
+            default: Mutex::new(None),
         }
     }
 
@@ -1030,6 +1037,18 @@ impl ContainerCell {
 
     pub fn get_mut(&mut self) -> std::sync::LockResult<&mut Value> {
         self.value.get_mut()
+    }
+
+    /// Record the container's `is default(...)` value (see `default`).
+    // Cost: O(1).
+    pub fn set_default(&self, value: Value) {
+        *self.default.lock().unwrap() = Some(value);
+    }
+
+    /// The container's `is default(...)` value, if it has one.
+    // Cost: O(1).
+    pub fn default_value(&self) -> Option<Value> {
+        self.default.lock().unwrap().clone()
     }
 }
 

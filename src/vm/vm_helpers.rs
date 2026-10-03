@@ -123,6 +123,41 @@ impl Interpreter {
             };
             crate::value::register_container_constraint_named(&cell, &constraint, &display);
         }
+        self.register_container_cell_default_for_name(&cell, name);
+    }
+
+    /// The `is default(...)` of the container `slot` aliases, when `slot`
+    /// holds a shared cell that carries one.
+    // Cost: O(1).
+    pub(crate) fn container_cell_default(slot: &Value) -> Option<Value> {
+        match slot.view() {
+            ValueView::ContainerRef(cell) => cell.default_value(),
+            _ => None,
+        }
+    }
+
+    /// Carry a declared scalar's `is default(...)` onto the cell it was just
+    /// promoted to, for the same reason the `of`-type travels
+    /// ([`Self::register_container_cell_constraint_for_name`]): once the
+    /// scalar is boxed, a `Nil` stored through an alias of it (an `is rw`
+    /// parameter, a `for` alias, a `:=` binding) must decay to the
+    /// container's default, which no alias name carries (#9831).
+    // Cost: O(1) expected (at most two env probes, none when no lexical
+    // `is default` was ever declared).
+    pub(crate) fn register_container_cell_default_for_name(
+        &self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+        name: &str,
+    ) {
+        if !self.has_var_defaults() {
+            return;
+        }
+        let def = self
+            .var_default(name)
+            .or_else(|| self.var_default(name.trim_start_matches('$')));
+        if let Some(def) = def {
+            cell.set_default(def.clone());
+        }
     }
 
     /// Materialize a deferred vivification token's terminal slot into a fresh

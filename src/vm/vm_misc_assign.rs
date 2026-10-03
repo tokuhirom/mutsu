@@ -478,6 +478,13 @@ impl Interpreter {
             && let Some(def) = self.var_default(&name)
         {
             val = def.clone();
+        } else if val.is_nil()
+            && !name.starts_with(['@', '%', '&'])
+            && let Some(def) = self.env().get(&name).and_then(Self::container_cell_default)
+        {
+            // An alias of another container: its default, carried on the cell,
+            // is what the Nil decays to (#9831).
+            val = def;
         }
         if self.fatal_mode
             && !name.contains("__mutsu_")
