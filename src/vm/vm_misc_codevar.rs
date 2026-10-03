@@ -247,15 +247,20 @@ impl Interpreter {
         // by walking the call stack, which the stash snapshot built below does
         // not hold (AkeTester's `$cwd //= CALLERS::('$_')`). Move the sigil
         // off the last component and take the sigiled CALLERS path.
-        let (sigil, name) = match name.rsplit_once("::") {
-            Some((prefix, last))
-                if sigil.is_empty()
-                    && last.starts_with(['$', '@', '%'])
-                    && prefix.split("::").all(|part| part == "CALLERS") =>
-            {
-                (last[..1].to_string(), format!("{prefix}::{}", &last[1..]))
+        let (sigil, name) = {
+            let mut rest = name.as_str();
+            let mut depth = 0usize;
+            while let Some(after) = rest.strip_prefix("CALLERS::") {
+                depth += 1;
+                rest = after;
             }
-            _ => (sigil, name),
+            if sigil.is_empty() && depth > 0 && rest.starts_with(['$', '@', '%']) {
+                let mut unsigiled = "CALLERS::".repeat(depth);
+                unsigiled.push_str(&rest[1..]);
+                (rest[..1].to_string(), unsigiled)
+            } else {
+                (sigil, name)
+            }
         };
         if sigil.is_empty() {
             let mut parts = name.split("::").filter(|part| !part.is_empty());
