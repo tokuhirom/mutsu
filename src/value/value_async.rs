@@ -245,8 +245,9 @@ impl SharedChannel {
                     drained_closed: false,
                     failure: None,
                     closed_promise,
-                    supplier_ids: Vec::new(),
-                    supply_turn: 0,
+                    taps: Vec::new(),
+                    tap_turn: 0,
+                    next_tap_id: 1,
                     wakers: Vec::new(),
                 }),
                 Condvar::new(),
@@ -267,7 +268,7 @@ impl SharedChannel {
         }
     }
 
-    fn finish_if_drained(state: &mut ChannelState) {
+    pub(super) fn finish_if_drained(state: &mut ChannelState) {
         if state.send_closed && state.queue.is_empty() && !state.drained_closed {
             state.drained_closed = true;
             if let Some(err) = state.failure.clone() {
@@ -381,26 +382,6 @@ impl SharedChannel {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.wakers.retain(|w| w.id() != waker_id);
-    }
-
-    pub(crate) fn add_supplier(&self, supplier_id: u64) {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().supplier_ids.push(supplier_id);
-    }
-
-    pub(crate) fn supplier_ids(&self) -> Vec<u64> {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().supplier_ids.clone()
-    }
-
-    /// Take the next round-robin turn over this channel's competing tap
-    /// consumers, advancing the cursor. See `ChannelState::supply_turn`.
-    pub(crate) fn next_supply_turn(&self) -> usize {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        let turn = state.supply_turn;
-        state.supply_turn = state.supply_turn.wrapping_add(1);
-        turn
     }
 }
 

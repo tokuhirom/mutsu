@@ -196,7 +196,7 @@ impl Interpreter {
     /// so `has_type_direct` accepted it as a real type and a self-referential
     /// parametric-role attribute (`role Box[::T] { has Box[T] $.child }`) was
     /// type-checked against the doubled name.
-    pub(super) fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
+    pub(crate) fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
         // `ends_with` is O(1) and rejects every unparameterized name, so it
         // runs before the `[` scan rather than after it (#7696).
         if !name.ends_with(']') {

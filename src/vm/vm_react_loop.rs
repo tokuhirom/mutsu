@@ -135,7 +135,7 @@ impl Interpreter {
 
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
-        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default();
+        let subscriptions = self.supply_emit_buffer.pop().unwrap_or_default().values;
         if subscriptions.is_empty() {
             return Ok(());
         }
@@ -257,11 +257,13 @@ impl Interpreter {
                             continue;
                         }
                         // A `Channel.Supply` carries the channel itself. Drain
-                        // it here rather than through the send-time supplier
-                        // bridge: rakudo's `Channel.Supply` is pumped, so values
-                        // sent BEFORE the tap existed are still on the queue and
-                        // must be delivered, and a value sent after the tap does
-                        // not count as emitted until the loop actually runs.
+                        // it here, as one more consumer of the queue, rather
+                        // than tapping its on-demand producer
+                        // (`native_methods::channel_supply`): rakudo's
+                        // `Channel.Supply` is pumped, so values sent BEFORE the
+                        // tap existed are still on the queue and must be
+                        // delivered, and a value sent after the tap does not
+                        // count as emitted until the loop actually runs.
                         if let Some(ValueView::Channel(ch)) =
                             attributes.as_map().get("channel").map(Value::view)
                         {

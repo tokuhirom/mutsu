@@ -1274,42 +1274,29 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "multi" => {
-            // multi sub name(...) { ... } in expression context:
-            // Parse as a sub declaration and wrap it so the current candidate
-            // is returned as a value (just that candidate, not the full multi).
+            // `multi sub name(...) { ... }` / `multi name(...) { ... }` in
+            // expression context: a `DoStmt(SubDecl)`, which declares the
+            // candidate in the current scope and evaluates to it (see the
+            // compiler's `compile_expr_do_stmt`) -- upstream NativeCall's
+            // `my $t := multi trait_mod:<is>(...) { ... }; ... $t.dispatcher`.
             let (r, _) = ws(rest)?;
-            // Only handle `multi sub` in expression context.
-            // Use sub_decl_with_semicolon_mode directly to avoid infinite recursion
-            // (statement_pub -> expr_stmt -> expression -> "multi" -> statement_pub).
-            if keyword("sub", r).is_some() {
+            let names_routine = keyword("sub", r).is_some()
+                || (r.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                    && keyword("method", r).is_none()
+                    && keyword("submethod", r).is_none());
+            if names_routine {
+                // Call the declaration parser directly to avoid infinite
+                // recursion (statement_pub -> expr_stmt -> expression ->
+                // "multi" -> statement_pub).
                 if let Ok((r2, stmt)) =
                     crate::parser::stmt::sub_decl_with_semicolon_mode_pub(input, false)
-                    && let Stmt::SubDecl {
-                        ref params,
-                        ref param_defs,
-                        ref body,
-                        is_rw,
-                        is_raw,
-                        ..
-                    } = stmt
+                    && matches!(stmt, Stmt::SubDecl { .. })
                 {
-                    // Create an anonymous sub expression representing just this candidate
-                    let anon_sub = Expr::AnonSubParams {
-                        params: params.clone(),
-                        param_defs: param_defs.clone(),
-                        return_type: None,
-                        body: body.clone(),
-                        is_rw,
-                        is_raw,
-                        custom_traits: Default::default(),
-                        is_whatever_code: false,
-                        // One candidate of an anonymous `multi sub` -- still a sub.
-                        declarator: crate::ast::RoutineDeclarator::Sub,
-                    };
-                    return Ok((r2, Expr::desugar_block(vec![stmt, Stmt::Expr(anon_sub)])));
+                    return Ok((r2, Expr::DoStmt(Box::new(stmt))));
                 }
+            }
+            if let Some(after_sub) = keyword("sub", r) {
                 // Check for anonymous multi sub
-                let after_sub = keyword("sub", r).unwrap();
                 let after_sub_ws = ws(after_sub).map(|(r2, _)| r2).unwrap_or(after_sub);
                 if after_sub_ws.starts_with('{') || after_sub_ws.starts_with('(') {
                     return Err(PError::fatal(

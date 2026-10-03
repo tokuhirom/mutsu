@@ -1624,7 +1624,21 @@ impl Interpreter {
                     if self.vardecl_context().get() {
                         self.unmark_readonly_sym(name_sym);
                     } else {
-                        self.check_readonly_for_modify_sym(&name, name_sym)?;
+                        // The binding a free-variable store resolves to answers
+                        // first, as in `CheckReadOnly` (ADR-11142, #11165).
+                        let decision = if crate::value::readonly_binding_cells_possible() {
+                            self.free_var_binding_decision(code, &name, name_sym)
+                        } else {
+                            None
+                        };
+                        match decision {
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
+                                kind,
+                                bound,
+                            )) => return Err(Self::readonly_binding_error(kind, &bound)),
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Writable) => {}
+                            None => self.check_readonly_for_modify_sym(&name, name_sym)?,
+                        }
                     }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant
@@ -1966,7 +1980,17 @@ impl Interpreter {
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
-                    val = self.coerce_typed_container_assignment(&name, val, false)?;
+                    val = if is_attr_twigil {
+                        self.coerce_typed_container_assignment(&name, val, false)?
+                    } else {
+                        // `%h = ...` reached by name (a closure writing a
+                        // captured typed hash): coerce AND keep the container's
+                        // `Hash[T]` identity, the `%` twin of the `@` branch
+                        // below (Data::Reshapers' `my Hash %r; lives-ok { %r =
+                        // f() }`).
+                        let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
+                        self.hash_container_writethrough_value(&name, val, &old)?
+                    };
                 } else if name.starts_with('@')
                     && name.len() > 1
                     && !name.contains("__")
@@ -7106,9 +7130,16 @@ impl Interpreter {
                     )
                 });
                 if !writable {
+                    let name = name_sym.resolve();
                     self.env_mut().insert_sym_noting(
-                        crate::runtime::sigilless_readonly_key(&name_sym.resolve()),
+                        crate::runtime::sigilless_readonly_key(&name),
                         Value::TRUE,
+                    );
+                    // A writer in another frame asks the binding (#11165).
+                    self.record_readonly_on_own_binding(
+                        code,
+                        &name,
+                        crate::ast::ReadonlyKind::ImmutableValue,
                     );
                 }
                 *ip += 1;
@@ -7117,6 +7148,7 @@ impl Interpreter {
             OpCode::MarkVarReadonly(name_idx, kind) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.mark_readonly_with(&name, *kind);
+                self.record_readonly_on_own_binding(code, &name, *kind);
                 *ip += 1;
             }
 

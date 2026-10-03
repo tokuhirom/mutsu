@@ -46,16 +46,23 @@ impl Interpreter {
         // cell's kind is the answer: the registry below is keyed by name and
         // may hold a same-named mark of whichever frame called this one
         // (ADR-11142, #11142). Gated on any such cell existing at all.
-        if crate::value::readonly_binding_cells_possible()
-            && let Some((kind, bound)) = self.free_var_readonly_binding(code, name_idx)
-        {
-            return Err(Self::readonly_binding_error(kind, &bound));
+        // A binding its declaring frame decided is writable answers too: the
+        // registry is then not asked at all (#11165).
+        let mut binding_decided_writable = false;
+        if crate::value::readonly_binding_cells_possible() {
+            match self.free_var_readonly_binding(code, name_idx) {
+                Some(FreeVarBinding::Readonly(kind, bound)) => {
+                    return Err(Self::readonly_binding_error(kind, &bound));
+                }
+                Some(FreeVarBinding::Writable) => binding_decided_writable = true,
+                None => {}
+            }
         }
         // Probe through the pre-interned constant Symbol:
         // `check_readonly_for_modify(name)` would re-intern the name on each
         // execution just to miss the set. The error construction (readonly
         // hit) is the cold path.
-        if self.is_readonly_sym(code.const_sym(name_idx)) {
+        if !binding_decided_writable && self.is_readonly_sym(code.const_sym(name_idx)) {
             let name = Self::const_str(code, name_idx);
             // A term that IS its value (`constant term:<$x> =
             // Obj.new`, `constant x = ...`) bound to an object with a
@@ -97,11 +104,58 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Refuse an in-place `++`/`--`/`OP=` on the named variable `name`
+    /// (`code`'s constant-pool name, interned as `name_sym`) when its binding
+    /// is readonly. A free variable whose binding was decided by its declaring
+    /// frame answers from that decision, as in `CheckReadOnly`; anything else
+    /// asks the registry and the sigilless marker (#11165).
+    // Cost: as `free_var_readonly_binding` when a decided binding cell exists;
+    // O(1) otherwise.
+    pub(super) fn check_named_incdec_readonly(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+        op: &str,
+    ) -> Result<(), RuntimeError> {
+        let decision = if crate::value::readonly_binding_cells_possible() {
+            self.free_var_binding_decision(code, name, name_sym)
+        } else {
+            None
+        };
+        match decision {
+            Some(FreeVarBinding::Readonly(..)) => {
+                Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name))
+            }
+            // Still ask the sigilless marker: it is a separate mechanism the
+            // decision does not cover.
+            Some(FreeVarBinding::Writable) => {
+                if crate::env::sigilless_readonly_keys_possible()
+                    && matches!(
+                        self.env()
+                            .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
+                            .map(Value::view),
+                        Some(ValueView::Bool(true))
+                    )
+                {
+                    return Err(
+                        crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name),
+                    );
+                }
+                Ok(())
+            }
+            None => self.check_readonly_for_incdec_for(name, Some(name_sym), op),
+        }
+    }
+
     /// The error an assignment through a binding readonly for the reason
     /// `kind` raises, worded from the value `bound` the binding holds (not
     /// from a by-name lookup, which may see another frame's same-named
     /// variable).
-    fn readonly_binding_error(kind: crate::ast::ReadonlyKind, bound: &Value) -> RuntimeError {
+    pub(super) fn readonly_binding_error(
+        kind: crate::ast::ReadonlyKind,
+        bound: &Value,
+    ) -> RuntimeError {
         use crate::ast::ReadonlyKind;
         match kind {
             ReadonlyKind::Alias => RuntimeError::readonly_variable(),
@@ -122,26 +176,43 @@ impl Interpreter {
         }
     }
 
-    /// The readonly kind of the binding the free variable
-    /// `code.constants[name_idx]` resolves to, with the value it is bound to,
-    /// when that binding is a readonly binding cell. `None` for one of
-    /// `code`'s own locals (the registry still answers for those) and for any
-    /// binding without a recorded kind.
+    /// What the binding the free variable `code.constants[name_idx]` resolves
+    /// to says about its own writability. `None` for one of `code`'s own
+    /// locals (the registry still answers for those) and for a binding no
+    /// frame decided for.
+    ///
+    /// A readonly kind anywhere on the binding-cell chain wins over a writable
+    /// decision: a decided `my $x` container rebound by `$x := 42` sits behind
+    /// the binding cell that now leads to the readonly cell instead.
     // Cost: O(d), d = env tiers walked to resolve the name (the by-name read's
     // cost); the cell chain is bounded by `MAX_BINDING_CHAIN`.
     fn free_var_readonly_binding(
         &self,
         code: &CompiledCode,
         name_idx: u32,
-    ) -> Option<(crate::ast::ReadonlyKind, Value)> {
-        let sym = code.const_sym(name_idx);
+    ) -> Option<FreeVarBinding> {
+        self.free_var_binding_decision(
+            code,
+            Self::const_str(code, name_idx),
+            code.const_sym(name_idx),
+        )
+    }
+
+    /// [`Self::free_var_readonly_binding`] for a caller that holds the
+    /// (possibly rewritten) name itself: a by-name `SetGlobal` store.
+    // Cost: as `free_var_readonly_binding`.
+    pub(super) fn free_var_binding_decision(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        sym: crate::symbol::Symbol,
+    ) -> Option<FreeVarBinding> {
         if !code.local_slots_of(sym).is_empty() {
             return None;
         }
         // The order a by-name read resolves a scalar in (a unit lexical the
         // running routine captured, then the env chain), but on the raw
         // binding: the read itself derefs the unit lexical's cell.
-        let name = Self::const_str(code, name_idx);
         let binding = match self.unit_lexical_slot(name) {
             Some(v) => v.clone(),
             None => self.env().get_sym(sym)?.clone(),
@@ -151,19 +222,31 @@ impl Interpreter {
         // Bounded: no Raku container contains itself, but a cell cycle left by
         // a bug elsewhere must not hang a store (see `value_is_defined`).
         let mut cur = binding;
+        let mut writable = false;
         for _ in 0..MAX_BINDING_CHAIN {
             let ValueView::ContainerRef(cell) = cur.view() else {
-                return None;
+                break;
             };
             let inner = cell
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
-            if let Some(kind) = cell.readonly_kind() {
-                return Some((kind, inner));
+            match cell.binding_decision() {
+                Some(Some(kind)) => return Some(FreeVarBinding::Readonly(kind, inner)),
+                Some(None) => writable = true,
+                None => {}
             }
             cur = inner;
         }
-        None
+        writable.then_some(FreeVarBinding::Writable)
     }
+}
+
+/// See [`Interpreter::free_var_readonly_binding`].
+pub(super) enum FreeVarBinding {
+    /// Refused for this reason; the value is what the binding holds, for the
+    /// error's wording.
+    Readonly(crate::ast::ReadonlyKind, Value),
+    /// Its declaring frame decided it is writable.
+    Writable,
 }

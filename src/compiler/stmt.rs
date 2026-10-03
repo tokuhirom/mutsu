@@ -1426,6 +1426,13 @@ impl Compiler {
                     reset,
                 });
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
+                // The static half of a `:D` scalar holds its type object, which
+                // the constraint rejects: register the constraint after the
+                // store, as for an `is default` trait.
+                let defer_type_constraint = has_default_trait
+                    || custom_traits
+                        .iter()
+                        .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");
                 let preapply_container_default = has_default_trait
@@ -1444,7 +1451,7 @@ impl Compiler {
                 // Register type constraint early (for assignment checking) unless
                 // `is default` trait is present — in that case defer until after
                 // the trait is applied so the default value can be set first.
-                if !has_default_trait && let Some(tc) = type_constraint {
+                if !defer_type_constraint && let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }
@@ -1760,7 +1767,7 @@ impl Compiler {
                 let mut deferred_bind_type_check = None;
                 if let Some(tc) = type_constraint
                     && !is_hash
-                    && !has_default_trait
+                    && !defer_type_constraint
                     && !(has_explicit_initializer
                         && matches!(expr, Expr::Literal(lit) if lit.is_nil())
                         && !is_native_type)
@@ -2182,7 +2189,7 @@ impl Compiler {
                     });
                 }
                 // Deferred type constraint registration after traits are applied
-                if has_default_trait && let Some(tc) = type_constraint {
+                if defer_type_constraint && let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                     self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }

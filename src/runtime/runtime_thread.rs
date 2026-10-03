@@ -333,9 +333,7 @@ impl Interpreter {
             let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
-                if let Some(id) = Self::handle_id_from_value(val) {
-                    referenced_handle_ids.insert(id);
-                }
+                Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
                 // Skip internal variables and topic variables.
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
                 // are thread-local; mutations inside `start` blocks must not
@@ -938,10 +936,7 @@ impl Interpreter {
             dispatch_ambiguous: false,
             dispatcher_wrap_bypass: None,
             role_pun_construction: Vec::new(),
-            rakuseen_active: Vec::new(),
-            rakuseen_cycle_hit: std::collections::HashSet::new(),
-            raku_leaf_active: Vec::new(),
-            raku_leaf_cycle_hit: std::collections::HashSet::new(),
+            raku_cycle_guards: self.raku_cycle_guards.fork_for_thread(),
             pending_proxy_subclass_attr: None,
             pending_declare_new_type: None,
             classes_composing_accessors: std::collections::HashSet::new(),

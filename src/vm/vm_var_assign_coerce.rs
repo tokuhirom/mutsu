@@ -1009,12 +1009,18 @@ impl Interpreter {
     /// whole reassignment (`$n = 5`) replaces the slot instead of mutating the
     /// shared cell. Does NOT set the bound-decont marker: the scalar stays
     /// itemized (`@a = $n` itemizes, unlike a `:=` bind which flattens).
+    ///
+    /// `binds_value` is set for a sigilless declaration (`my \x = %h`): it
+    /// binds the aggregate itself rather than a `Scalar` holding it, so the
+    /// target word stays plain (raku: `x.raku` is `{:a(1)}` and `(x,)` flattens
+    /// in a hash initializer) while still sharing the source's cell.
     pub(crate) fn array_share_assign(
         &mut self,
         code: &CompiledCode,
         idx: usize,
         val: Value,
         source_name: String,
+        binds_value: bool,
     ) -> Result<(), RuntimeError> {
         let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
         let name = code.locals[idx].clone();
@@ -1024,7 +1030,7 @@ impl Interpreter {
         // user-visible scalar bindings. Keep their historical bare cell shape so
         // internal binding paths such as `if $cond -> @items` still decontainerize
         // the temporary before binding the pointy block's `@` parameter.
-        let itemized_container = if Self::name_is_itemize_exempt(&name) {
+        let itemized_container = if binds_value || Self::name_is_itemize_exempt(&name) {
             container
         } else {
             Value::container_ref_itemized(cell)

@@ -40,6 +40,39 @@ impl Interpreter {
         }
     }
 
+    /// Collect the ids of the IO handles `value` reaches: the value itself, or
+    /// a handle held in an object's attributes, `depth` objects deep. A
+    /// worker thread is handed a clone of every handle its spawning env
+    /// references (`clone_for_thread_excluding`); a handle an object keeps in
+    /// an attribute (`has IO::Handle $!log-h`, Log::Dispatch::File) is
+    /// referenced just as much, and without this the worker's
+    /// `$!log-h.print` died "Invalid IO::Handle". Only objects are descended:
+    /// a list or hash in `env` can be arbitrarily large, and this runs per
+    /// spawn.
+    // Cost: O(a^depth), a = attributes per object reached (depth is small).
+    pub(crate) fn collect_handle_ids(
+        value: &Value,
+        depth: u32,
+        out: &mut std::collections::HashSet<usize>,
+    ) {
+        if let Some(id) = Self::handle_id_from_value(value) {
+            out.insert(id);
+            return;
+        }
+        match value.view() {
+            ValueView::Scalar(inner) => Self::collect_handle_ids(inner, depth, out),
+            ValueView::ContainerRef(_) => {
+                Self::collect_handle_ids(&value.deref_container(), depth, out)
+            }
+            ValueView::Instance { attributes, .. } if depth > 0 => {
+                for attr in attributes.as_map().values() {
+                    Self::collect_handle_ids(attr, depth - 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let ValueView::Instance {
             class_name,

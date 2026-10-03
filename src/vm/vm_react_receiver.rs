@@ -129,10 +129,11 @@ impl Interpreter {
                     } => {
                         // Capture values the whenever block `emit`s so a
                         // later `done` resolves the promise with the last one.
-                        self.supply_emit_buffer.push(Vec::new());
+                        self.supply_emit_buffer
+                            .push(crate::runtime::EmitFrame::default());
                         let cb_result =
                             self.call_react_callback(&sub.callback.clone(), vec![value]);
-                        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+                        let emitted = self.supply_emit_buffer.pop().unwrap_or_default().values;
                         for item in emitted {
                             // A `whenever` nested in this body registered
                             // its subscription marker into the same

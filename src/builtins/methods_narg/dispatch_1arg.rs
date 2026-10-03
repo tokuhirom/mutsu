@@ -39,6 +39,10 @@ pub(crate) fn native_method_1arg(
     {
         return Some(result);
     }
+    // Cost: O(n), n = bytes of the invocant.
+    if method == "naive-word-wrapper" {
+        return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[arg]);
+    }
     if method == "add-statement"
         && let Some(result) = target.rakuast_add_statement(arg.clone())
     {
@@ -2534,6 +2538,16 @@ pub(crate) fn native_method_1arg(
                     crate::value::types::what_type_name(arg)
                 }
             };
+            // A parameterized type (`Array[Hash]`, `Hash[Int,Str]`) is the
+            // typed container's own type: `my Hash @a; @a.isa(Array[Hash])`.
+            // `isa_check` knows only nominal names, so compare the receiver's
+            // full type name.
+            if type_name.contains('[') {
+                return Some(Ok(Value::truth(
+                    crate::runtime::embedded_container_type_name(target).as_deref()
+                        == Some(type_name.as_str()),
+                )));
+            }
             Some(Ok(Value::truth(target.isa_check(&type_name))))
         }
         _ => None,

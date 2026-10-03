@@ -629,7 +629,7 @@ fn save_scan_to_disk(path: &str, source: &str, result: &ModuleScanResult) {
     scan_cache::save(std::path::Path::new(path), result, &result.deps, stamp);
 }
 
-/// Search lib_paths and program directory for a `.rakumod` / `.pm6` / `.pm` file
+/// Search lib_paths for a `.rakumod` / `.pm6` / `.pm` file
 /// matching the module name.
 fn find_module_file(module: &str) -> Option<String> {
     let base_name = module.replace("::", "/");
@@ -641,7 +641,9 @@ fn find_module_file(module: &str) -> Option<String> {
     // entry names an installed repository, not a directory; the runtime resolves
     // those through the dist metadata, which this scan does not do yet, so skip
     // them rather than probing a path that can never exist.
-    let result = LIB_PATHS.with(|paths| {
+    // No implicit fallback to the script's directory or the current
+    // directory: the runtime searches neither (#11213), and the two must agree.
+    LIB_PATHS.with(|paths| {
         let paths = paths.borrow();
         for base in paths.iter() {
             if base.starts_with("inst#") {
@@ -659,30 +661,6 @@ fn find_module_file(module: &str) -> Option<String> {
                 if candidate.exists() {
                     return Some(candidate.to_string_lossy().into_owned());
                 }
-            }
-        }
-        None
-    });
-    if result.is_some() {
-        return result;
-    }
-    // Fall back: search relative to program file (same as runtime's load_module)
-    PROGRAM_PATH.with(|pp| {
-        let pp = pp.borrow();
-        for ext in &extensions {
-            let filename = format!("{}{}", base_name, ext);
-            if let Some(path) = pp.as_ref()
-                && let Some(parent) = std::path::Path::new(path).parent()
-            {
-                let candidate = parent.join(&filename);
-                if candidate.exists() {
-                    return Some(candidate.to_string_lossy().into_owned());
-                }
-            }
-            // Last resort: current directory
-            let candidate = std::path::Path::new(".").join(&filename);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().into_owned());
             }
         }
         None
@@ -856,11 +834,23 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         .map(|(name, _)| name.as_str())
         .filter(|name| !enum_values.iter().any(|n| n == name))
         .collect();
+    // A package-qualified value (`WS::Msg::Ping`, from `package WS::Msg {
+    // enum Opcode is export (...) }` in a module this one used) is not a
+    // lexical import: the package is global, so the name resolves in every
+    // file that has (transitively) loaded it — Cro::WebSocket's Handler says
+    // `when Cro::WebSocket::Message::Ping` having only used the module that
+    // used the enum's. Keep those; drop only the bare and enum-type-qualified
+    // (`Opcode::Ping`) forms, which do need the import.
+    let is_global_package = |pkg: &str| pkg.contains("::") || type_names.iter().any(|t| t == pkg);
     let scanned_enum_values: Vec<String> = scanned_enum_values
         .into_iter()
         .filter(|name| {
             !restricted.contains(name.as_str())
-                && (declares_export_hook || !imported_enum_values.contains(name))
+                && (declares_export_hook
+                    || !imported_enum_values.contains(name)
+                    || name
+                        .rsplit_once("::")
+                        .is_some_and(|(pkg, _)| is_global_package(pkg)))
         })
         .collect();
     enum_values.extend(scanned_enum_values);

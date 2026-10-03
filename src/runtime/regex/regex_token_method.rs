@@ -328,36 +328,29 @@ impl Interpreter {
         Ok(m)
     }
 
-    /// Apply a `.wrap()` chain while a regex subrule is being matched. This is
-    /// the regex-engine counterpart of `run_token_method_at`: the ordinary
-    /// parser path evaluates token patterns directly instead of calling the
-    /// first-class Regex value, so it needs to turn the wrapped token result
-    /// back into the engine's `(end, captures)` representation here.
-    pub(super) fn try_wrapped_token_subrule_dispatch(
+    /// Run `pkg::name`'s `.wrap` chain at `pos` and read the token's end and
+    /// captures back. `None`: `name` is not wrapped. `Some(None)`: wrapped and
+    /// it did not match (or raised, recorded as the pending regex error).
+    // Cost: O(m) for the caller package's MRO of m classes, plus the wrapped call.
+    pub(super) fn run_wrapped_token_candidate(
         &mut self,
-        spec: &NamedRegexLookupSpec,
+        name: &str,
         chars: &[char],
         pos: usize,
         pkg: Symbol,
         arg_values: &[Value],
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        let chain = self.token_method_wrap_chain(pkg.as_str(), &spec.lookup_name)?;
+    ) -> Option<Option<(usize, RegexCaptures)>> {
+        let chain = self.token_method_wrap_chain(pkg.as_str(), name)?;
         let text: String = chars.iter().collect();
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        let result = match self.call_wrapped_token_method(
-            pkg,
-            &spec.lookup_name,
-            arg_values,
-            &text,
-            pos,
-            &chain,
-        ) {
+        let result = match self.call_wrapped_token_method(pkg, name, arg_values, &text, pos, &chain)
+        {
             Ok(result) => result,
             Err(error) => {
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
                     *slot.borrow_mut() = Some(error);
                 });
-                return Some(Vec::new());
+                return Some(None);
             }
         };
         let side = LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
@@ -376,12 +369,12 @@ impl Interpreter {
             .filter(|&to| to >= pos as i64 && to <= chars.len() as i64)
             .map(|to| to as usize);
         let Some(to_abs) = to_abs else {
-            return Some(Vec::new());
+            return Some(None);
         };
         let inner_caps = match side {
             Some(token)
                 if token.pkg == pkg.as_str()
-                    && token.name == spec.lookup_name
+                    && token.name == name
                     && token.from == pos
                     && token.to == to_abs =>
             {
@@ -392,6 +385,76 @@ impl Interpreter {
                 to: to_abs,
                 ..RegexCaptures::default()
             },
+        };
+        Some(Some((to_abs, inner_caps)))
+    }
+
+    /// Whether `rule:sym<sym_key>` carries a `.wrap` chain (any spelling).
+    // Cost: O(m) for the caller package's MRO of m classes.
+    pub(super) fn proto_candidate_has_wrap_chain(
+        &self,
+        pkg: Symbol,
+        rule: &str,
+        sym_key: &str,
+    ) -> bool {
+        Self::proto_candidate_spellings(rule, sym_key)
+            .iter()
+            .any(|name| self.token_method_has_wrap_chain(pkg.as_str(), name))
+    }
+
+    fn proto_candidate_spellings(rule: &str, sym_key: &str) -> [String; 3] {
+        [
+            format!("{rule}:sym<{sym_key}>"),
+            format!("{rule}:sym\u{ab}{sym_key}\u{bb}"),
+            format!("{rule}:{sym_key}"),
+        ]
+    }
+
+    /// The wrapped form of a proto candidate (`token p:sym<a>`, `.wrap`ped
+    /// through `^find_method`): its end and captures, or `None` when no wrapper
+    /// is installed on that candidate.
+    // Cost: O(m) for the caller package's MRO of m classes, plus the wrapped call.
+    pub(super) fn run_wrapped_proto_candidate(
+        &mut self,
+        rule: &str,
+        sym_key: &str,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        arg_values: &[Value],
+    ) -> Option<Option<(usize, RegexCaptures)>> {
+        if !self.has_any_wrap_chains() {
+            return None;
+        }
+        let spellings = Self::proto_candidate_spellings(rule, sym_key);
+        spellings
+            .iter()
+            .find(|name| self.token_method_has_wrap_chain(pkg.as_str(), name))
+            .and_then(|name| self.run_wrapped_token_candidate(name, chars, pos, pkg, arg_values))
+    }
+
+    /// Apply a `.wrap()` chain while a regex subrule is being matched. This is
+    /// the regex-engine counterpart of `run_token_method_at`: the ordinary
+    /// parser path evaluates token patterns directly instead of calling the
+    /// first-class Regex value, so it needs to turn the wrapped token result
+    /// back into the engine's `(end, captures)` representation here.
+    pub(super) fn try_wrapped_token_subrule_dispatch(
+        &mut self,
+        spec: &NamedRegexLookupSpec,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        arg_values: &[Value],
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
+        let (to_abs, inner_caps) = match self.run_wrapped_token_candidate(
+            &spec.lookup_name,
+            chars,
+            pos,
+            pkg,
+            arg_values,
+        )? {
+            Some(hit) => hit,
+            None => return Some(Vec::new()),
         };
         let sym = inner_caps.sym();
         Some(self.build_named_candidates_from_inner(vec![(to_abs, inner_caps)], pos, spec, sym))

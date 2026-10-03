@@ -2778,11 +2778,14 @@ impl Interpreter {
                     '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
                         // Quoted literal string in Raku regex: 'foo-bar' matches literally
                         // In single-quoted regex strings, \\ matches a literal backslash
-                        // and \' matches a literal single quote.
+                        // and \' matches a literal single quote. A corner-bracket
+                        // `｢...｣` is the raw form (Q): it has no escapes at all, so
+                        // `｢\\｣` matches two backslashes.
+                        let raw = c == '\u{FF62}';
                         let mut literal = String::new();
                         loop {
                             match chars.next() {
-                                Some('\\') => match chars.peek() {
+                                Some('\\') if !raw => match chars.peek() {
                                     Some(&next_ch)
                                         if next_ch == '\\'
                                             || regex_single_quote_closes(c, next_ch) =>
@@ -3738,18 +3741,15 @@ impl Interpreter {
                                     {
                                         // <:!PropName> or <-:PropName> — negated Unicode property
                                         let prop_name = &trimmed[2..];
-                                        if top_level_combine_is_subtractive(prop_name) {
-                                            // `<-:C-[:;,"]>` — a negated property followed by a
-                                            // top-level `-[...]`/`-name` set *subtraction*. The
+                                        if has_top_level_combine_op(prop_name) {
+                                            // `<-:C-[:;,"]>` / `<-:Cc +[\t]>` — a negated
+                                            // property followed by top-level set operators. The
                                             // whole class starts from the full character set
                                             // (leading `-`), so route it to the combined-class
-                                            // parser as a leading *negative* item (`-:C-[:;,"]`);
-                                            // its purely-subtractive terms fold into a single
-                                            // negated char class. Both `:!P` and `-:P` normalise
-                                            // to the `-:P` form. (A tail containing a top-level
-                                            // `+` union is left to the plain-property path: the
-                                            // combined-class parser's positive-item semantics do
-                                            // not match Raku's full-set base there.)
+                                            // parser as a leading *negative* item: subtractions
+                                            // fold into a single negated char class, and a `+`
+                                            // union joins the complement (`union_with_negated_lead`).
+                                            // Both `:!P` and `-:P` normalise to the `-:P` form.
                                             if let Some(atom) = self.parse_combined_class(
                                                 &format!("-:{prop_name}"),
                                                 mode,

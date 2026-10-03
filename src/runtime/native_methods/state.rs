@@ -442,6 +442,15 @@ pub(crate) fn supplier_sinks_register_batch(
     sink_ids
 }
 
+/// Whether a push sink (a react `whenever` subscribed to the supplier) is
+/// listening on it.
+// Cost: O(1).
+pub(in crate::runtime) fn supplier_has_sinks(supplier_id: u64) -> bool {
+    supplier_state_map()
+        .lock()
+        .is_ok_and(|map| map.get(&supplier_id).is_some_and(|s| !s.sinks.is_empty()))
+}
+
 pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
     if let Ok(mut map) = supplier_state_map().lock()
         && let Some(state) = map.get_mut(&supplier_id)

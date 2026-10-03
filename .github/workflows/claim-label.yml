@@ -82,6 +82,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The claim-log parser is the fragile part (it has to survive the prose
       # agents append after the keyword line), so it pins itself before running.

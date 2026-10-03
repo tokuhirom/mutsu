@@ -542,6 +542,30 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__ChannelSupply".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The per-tap producer of a `Channel.Supply`, and the closer
+                // that detaches the tap -- see `native_methods::channel_supply`.
+                native_methods: [
+                    "__mutsu_channel_supply_start",
+                    "__mutsu_channel_supply_close",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__ChannelSupply"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        classes.insert(
             "__SupplyDerive".to_string(),
             ClassDef {
                 parents: Vec::new(),
@@ -3356,10 +3380,7 @@ impl Interpreter {
             dispatch_ambiguous: false,
             dispatcher_wrap_bypass: None,
             role_pun_construction: Vec::new(),
-            rakuseen_active: Vec::new(),
-            rakuseen_cycle_hit: std::collections::HashSet::new(),
-            raku_leaf_active: Vec::new(),
-            raku_leaf_cycle_hit: std::collections::HashSet::new(),
+            raku_cycle_guards: Default::default(),
             pending_proxy_subclass_attr: None,
             pending_declare_new_type: None,
             classes_composing_accessors: std::collections::HashSet::new(),
@@ -3585,6 +3606,10 @@ impl Interpreter {
             attrs.insert("prefix".to_string(), interpreter.make_io_path_instance("."));
             attrs.insert("short-id".to_string(), Value::str_from("file"));
             attrs.insert("__mutsu_precomp_enabled".to_string(), Value::TRUE);
+            attrs.insert(
+                super::run_modules_bound_repo::DEFAULT_REPO_HEAD_ATTR.to_string(),
+                Value::TRUE,
+            );
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);

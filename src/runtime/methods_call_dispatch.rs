@@ -932,17 +932,14 @@ impl Interpreter {
         if method == "rakuseen" && args.len() >= 2 {
             let id = args[0].to_string_value();
             let code = args[1].clone();
-            if self.rakuseen_active.iter().any(|x| x == &id) {
-                self.rakuseen_cycle_hit.insert(id.clone());
+            if self.raku_cycle_guards.rakuseen.revisit(&id) {
                 return Ok(Value::str(Self::rakuseen_backref_name(&id)));
             }
-            self.rakuseen_active.push(id.clone());
+            self.raku_cycle_guards.rakuseen.enter(id.clone());
             let result = self.call_sub_value(code, vec![], true);
-            if let Some(pos) = self.rakuseen_active.iter().rposition(|x| x == &id) {
-                self.rakuseen_active.remove(pos);
-            }
+            let cycle_hit = self.raku_cycle_guards.rakuseen.leave(&id);
             let rendered = result?;
-            if self.rakuseen_cycle_hit.remove(&id) {
+            if cycle_hit {
                 return Ok(Value::str(format!(
                     "(my \\{} = {})",
                     Self::rakuseen_backref_name(&id),

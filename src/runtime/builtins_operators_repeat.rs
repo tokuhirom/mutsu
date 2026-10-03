@@ -110,6 +110,23 @@ impl Interpreter {
                     .as_ref()
                     .map_or(0usize, |v| v.len()) as i64,
             )),
+            // The count is numified like any other numeric operand: a Set or
+            // Hash counts its elements, a Bag/Mix its total weight, a Bool or
+            // enum its value, a Range its size (`'x' xx Set(<a b>)` is two
+            // `x`s -- Data::Reshapers fills missing keys with
+            // `$missing-value xx $allKeys`).
+            ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Bool(_)
+            | ValueView::Enum { .. }
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..) => Self::parse_repeat_count(
+                &crate::value::radix_numeric::coerce_to_numeric(current.clone()),
+            ),
             ValueView::Package(_) => Ok(Some(0)),
             _ => Ok(Some(0)),
         }

@@ -348,6 +348,59 @@ impl Interpreter {
         entries
     }
 
+    /// The `PROCESS::` stash's entries: the process-level dynamics, keyed by
+    /// their stash spelling (`$OUT`, `@ARGS`, `%ENV`). That is the
+    /// interpreter-seeded base tier, every binding a caller frame made without
+    /// declaring it lexically (`$*OUT = $fh`), and the durable
+    /// `PROCESS::<$name> = ...` installs -- but never a frame's own
+    /// `my $*OUT`, which shadows the process value only for `$*OUT` lookups
+    /// (Tee reads `PROCESS::<$OUT>` while a caller holds `my $*OUT`).
+    // Cost: O(f * e), f = caller frames, e = entries of a frame's env chain.
+    pub(crate) fn process_stash_entries(&self) -> ValueMap {
+        fn stash_key(env_key: &str) -> Option<String> {
+            if let Some(n) = env_key.strip_prefix("@*") {
+                Some(format!("@{n}"))
+            } else if let Some(n) = env_key.strip_prefix("%*") {
+                Some(format!("%{n}"))
+            } else {
+                env_key.strip_prefix('*').map(|n| format!("${n}"))
+            }
+        }
+        let mut entries: ValueMap = ValueMap::default();
+        if let Some(base) = self.env.dyn_base() {
+            for (k, v) in base.iter() {
+                if let Some(key) = stash_key(&k.resolve()) {
+                    entries.insert(key, v.clone().into_deref());
+                }
+            }
+        }
+        let frames = self
+            .caller_env_stack
+            .iter()
+            .chain(std::iter::once(&self.env));
+        for env in frames {
+            let merged = env.filtered_flat(&|_, _| true);
+            for (k, v) in merged.iter() {
+                let env_key = k.resolve();
+                let Some(key) = stash_key(&env_key) else {
+                    continue;
+                };
+                if merged
+                    .contains_key(crate::meta_ns::MetaNs::LexicalDynamic.str_key_for_str(&env_key))
+                {
+                    continue;
+                }
+                entries.insert(key, v.clone().into_deref());
+            }
+        }
+        for (env_key, v) in &self.process_dynamics {
+            if let Some(key) = stash_key(env_key) {
+                entries.insert(key, v.clone().into_deref());
+            }
+        }
+        entries
+    }
+
     /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.
     pub(crate) fn get_dynamic_var(&self, name: &str) -> Result<Value, RuntimeError> {
         // Search from the most recent caller to the oldest

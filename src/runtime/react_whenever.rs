@@ -202,7 +202,7 @@ impl Interpreter {
     /// Enter react mode: whenever blocks will register subscriptions
     /// instead of executing immediately.
     pub(crate) fn enter_react(&mut self) {
-        self.supply_emit_buffer.push(Vec::new()); // Use supply_emit_buffer as react subscription storage marker
+        self.supply_emit_buffer.push(EmitFrame::default()); // Use supply_emit_buffer as react subscription storage marker
     }
 
     pub(crate) fn value_array_items(value: &Value) -> Option<Vec<Value>> {

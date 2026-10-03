@@ -1228,6 +1228,31 @@ impl Compiler {
             {
                 self.compile_anon_named_sub_decl(stmt);
             }
+            // A `multi` declaration in expression position (`my $t := multi
+            // foo(...) {...}`, `do multi sub ...`) registers the candidate and
+            // evaluates to that CANDIDATE, not to the whole multi: a copy of
+            // the declaration is built through the `anon sub NAME` path
+            // (named, not registered, its traits not applied a second time)
+            // and marked as a multi candidate, so it runs only this
+            // candidate, answers `.multi`, and its `.dispatcher` is the multi
+            // it joined. Like `.candidates`, it is a fresh value for the
+            // candidate.
+            Stmt::SubDecl {
+                name,
+                name_expr: None,
+                multi: true,
+                ..
+            } if !name.resolve().is_empty() => {
+                self.compile_stmt(stmt);
+                let mut value = stmt.clone();
+                if let Stmt::SubDecl { custom_traits, .. } = &mut value {
+                    *custom_traits = vec![
+                        ("__anon_decl".to_string(), None),
+                        (crate::ast::MULTI_CANDIDATE_VALUE_MARKER.to_string(), None),
+                    ];
+                }
+                self.compile_anon_named_sub_decl(&value);
+            }
             Stmt::SubDecl {
                 name,
                 name_expr: None,

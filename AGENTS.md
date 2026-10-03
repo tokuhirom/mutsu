@@ -31,6 +31,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 | [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass, or working a red/`blocked_load` `ecosystem/` record |
 | [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution and locking it on the board so parallel agents do not collide |
+| [`ecosystem-sweep-landing`](.agents/skills/ecosystem-sweep-landing/SKILL.md) | The nightly landing routine fires, or an `ecosystem/sweep-*` branch has no pull request: verify it, open and merge its PR, file new failure clusters |
 | [`ecosystem-lock-board-rotation`](.agents/skills/ecosystem-lock-board-rotation/SKILL.md) | The lock board passed ~250 comments or a `get_comments` read of it overflows: moving it to a fresh issue |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass for wasted `.clone()` calls |
 | [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
@@ -401,6 +402,10 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    run between wakes. A red run: fix forward on the same branch and push. Aggregator
    jobs report a cancelled run on a superseded commit as red — judge by the current head
    (`docs/ci-pipeline.md`).
+   A PR touching a path in `.github/CODEOWNERS` (workflows, `.claude/`, `.agents/`, `AGENTS.md`,
+   privileged CI scripts) also waits for the maintainer's review — report it and move on. You act
+   under the maintainer's admin account, so **never merge a PR yourself or bypass the ruleset**:
+   auto-merge is the only way your PRs land.
 6. **A PR is done when GitHub reports it `MERGED`** and its merge commit is reachable from
    `origin/main` — not when checks pass or auto-merge was requested.
 7. **Before going idle, decide the next slice** from `PLAN.md` / `TODO_roast/BLOCKERS.md` / the

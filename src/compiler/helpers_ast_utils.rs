@@ -642,7 +642,9 @@ impl Compiler {
                 custom_traits,
                 ..
             } = stmt
-                && !custom_traits.iter().any(|(n, _)| n == "default")
+                && !custom_traits.iter().any(|(n, _)| {
+                    n == "default" || n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT
+                })
             {
                 let pragma_tc = self.variables_pragma_constraint(
                     name,

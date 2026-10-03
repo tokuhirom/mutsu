@@ -301,6 +301,9 @@ impl Interpreter {
                         promise.keep(result, String::new(), String::new());
                     }
                 }
+                SupplierEmitAction::ChannelSend { channel, value } => {
+                    self.channel_send_value(&channel, value);
+                }
                 _ => {}
             }
         }

@@ -621,7 +621,9 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
+mod value_channel_taps;
 pub(crate) use buf_bytes::BufBytes;
+pub(crate) use value_channel_taps::ChannelEnd;
 pub(crate) mod value_buf;
 pub(crate) mod value_buf_repr;
 pub(crate) mod value_carray;
@@ -976,7 +978,9 @@ pub struct ContainerCell {
     /// readonly kind has to reach a writer in another frame, so it travels
     /// with the binding instead of living in a name-keyed registry. Either way
     /// the kind lives on the cell, so it travels with every holder of the cell
-    /// and disappears with it on delete/rebind.
+    /// and disappears with it on delete/rebind. A captured variable's cell may
+    /// also hold [`DECIDED_WRITABLE`]: its declaring frame decided the binding
+    /// is writable (see [`Self::set_binding_decision`]).
     readonly: std::sync::atomic::AtomicU8,
     /// The container's `is default(...)` value, when it has one: what a `Nil`
     /// store through this cell decays to (ADR-0049). Like the `of`-type, it is
@@ -984,6 +988,11 @@ pub struct ContainerCell {
     /// than to whichever name -- the declared variable, an `is rw` parameter, a
     /// `for` alias -- a write happens to arrive through (#9831).
     default: Mutex<Option<Value>>,
+    /// The variable the container was declared as (`$a`), when a promotion
+    /// site knew it: rakudo's `$!descriptor.name`, which `.VAR.name` reports
+    /// through every alias of the container -- an `is rw` / `is raw` / `\x`
+    /// parameter included (#11196). Set once, by the first site that names it.
+    name: std::sync::OnceLock<crate::symbol::Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -1026,7 +1035,22 @@ impl ContainerCell {
             quanthash_weight: Mutex::new(None),
             readonly: std::sync::atomic::AtomicU8::new(0),
             default: Mutex::new(None),
+            name: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Record the declared name of the variable this cell is the container of,
+    /// unless an earlier site already did (the original declaration wins over
+    /// any alias it later reaches).
+    // Cost: O(1).
+    pub fn name_once(&self, name: crate::symbol::Symbol) {
+        let _ = self.name.set(name);
+    }
+
+    /// The declared name of the variable this cell is the container of.
+    // Cost: O(1).
+    pub fn descriptor_name(&self) -> Option<crate::symbol::Symbol> {
+        self.name.get().copied()
     }
 
     /// A cell holding a bare value bound into an element (see `readonly`).
@@ -1056,7 +1080,31 @@ impl ContainerCell {
     /// Whether assignment through this cell must be refused.
     // Cost: O(1).
     pub fn is_readonly(&self) -> bool {
-        self.readonly.load(std::sync::atomic::Ordering::Relaxed) != 0
+        self.readonly_kind().is_some()
+    }
+
+    /// Record that this cell is a variable's binding whose writability its
+    /// declaring frame has decided: `None` means writable, `Some(kind)` refused
+    /// for that reason (ADR-11142 §2.3). A cell no frame decided for answers
+    /// nothing, and a free-variable write through it still asks the registry.
+    // Cost: O(1).
+    pub(crate) fn set_binding_decision(&self, kind: Option<crate::ast::ReadonlyKind>) {
+        READONLY_BINDING_CELL_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let code = kind.map_or(DECIDED_WRITABLE, encode_readonly_kind);
+        self.readonly
+            .store(code, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The writability this cell's declaring frame decided for the binding:
+    /// `None` when nobody decided, `Some(None)` writable, `Some(Some(kind))`
+    /// readonly for `kind`. See [`Self::set_binding_decision`].
+    // Cost: O(1).
+    pub(crate) fn binding_decision(&self) -> Option<Option<crate::ast::ReadonlyKind>> {
+        match self.readonly.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => None,
+            DECIDED_WRITABLE => Some(None),
+            code => Some(decode_readonly_kind(code)),
+        }
     }
 
     /// Why assignment through this cell is refused, or `None` when it is
@@ -1113,6 +1161,11 @@ pub fn readonly_binding_cells_possible() -> bool {
     READONLY_BINDING_CELL_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// [`ContainerCell::readonly`]'s code for a binding its declaring frame
+/// decided is writable (see [`ContainerCell::set_binding_decision`]). Not a
+/// `ReadonlyKind`: [`decode_readonly_kind`] maps it to `None`.
+const DECIDED_WRITABLE: u8 = 6;
+
 fn encode_readonly_kind(kind: crate::ast::ReadonlyKind) -> u8 {
     use crate::ast::ReadonlyKind;
     match kind {
@@ -1132,7 +1185,8 @@ fn decode_readonly_kind(code: u8) -> Option<crate::ast::ReadonlyKind> {
         2 => ReadonlyKind::Immutable,
         3 => ReadonlyKind::ImmutableValue,
         4 => ReadonlyKind::ImmutableDeep,
-        _ => ReadonlyKind::TypeObject,
+        5 => ReadonlyKind::TypeObject,
+        _ => return None,
     })
 }
 
@@ -3769,15 +3823,32 @@ struct ChannelState {
     drained_closed: bool,
     failure: Option<Value>,
     closed_promise: SharedPromise,
-    supplier_ids: Vec<u64>,
-    /// Round-robin cursor over the live taps of this channel's Supplies. A
-    /// `Channel` is a queue, not a broadcast point, so each sent value goes to
-    /// exactly one of them; this is what picks which. Bumped once per `send`
-    /// that has a live tap to hand the value to.
-    supply_turn: usize,
+    /// The taps of this channel's `Supply` views, each a competing consumer of
+    /// `queue` (see `SharedChannel::attach_tap`). A value leaves the queue for
+    /// exactly one consumer -- a tap, a `receive`/`poll`, or a react `whenever`
+    /// draining the queue -- never for several.
+    taps: Vec<ChannelTap>,
+    /// Round-robin cursor over `taps`: which tap the next value pumped out of
+    /// the queue goes to.
+    tap_turn: usize,
+    next_tap_id: u64,
     /// Drive-loop wakers to poke on every send/close/fail, so a react
     /// polling this channel wakes immediately instead of on its poll cap.
     wakers: Vec<crate::value::waker::ReactWaker>,
+}
+
+/// One tap of a `Channel.Supply`: the emitter of the on-demand supply that
+/// tap started. Values pumped out of the channel queue for this tap are
+/// emitted on it.
+#[derive(Debug, Clone)]
+struct ChannelTap {
+    id: u64,
+    emitter: Value,
+    /// The thread whose `.tap` call attached it.
+    thread: std::thread::ThreadId,
+    /// Set once that `.tap` call has registered its callback
+    /// (`SharedChannel::mark_taps_ready_since`).
+    ready: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3907,5 +3978,24 @@ mod light_bindable_param_name_tests {
                 "{name:?} must not be light-bindable"
             );
         }
+    }
+}
+
+/// Record `name` (a variable's name; a bare one is a `$` scalar) as the
+/// declared name of the variable whose container `cell` is, unless it already
+/// has one: `.VAR.name` through any alias of the container reports it (#11196).
+// Cost: O(1).
+pub(crate) fn name_container_cell(cell: &Value, name: &str) {
+    if let ValueView::ContainerRef(c) = cell.view()
+        && c.descriptor_name().is_none()
+        && !name.is_empty()
+        && !name.starts_with("__")
+    {
+        let sigiled = if name.starts_with(['$', '@', '%', '&']) {
+            crate::symbol::Symbol::intern(name)
+        } else {
+            crate::symbol::Symbol::intern(&format!("${name}"))
+        };
+        c.name_once(sigiled);
     }
 }

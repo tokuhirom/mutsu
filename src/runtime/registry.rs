@@ -216,6 +216,9 @@ pub(crate) struct Registry {
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
+    /// `native`-declared types and the traits they recorded (`is repr`,
+    /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
+    pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
@@ -398,6 +401,18 @@ pub(crate) struct Registry {
     /// live in this stored object; `^attributes` returns it (topped up with
     /// the standard meta keys) so the mixin state survives introspection.
     pub(crate) class_attribute_trait_objects: HashMap<(String, String), crate::value::Value>,
+    /// A *role* attribute's custom traits (`has $.x is entry(...)`) still to
+    /// apply: (role, attr) -> its compiled declaration. Applied once, at the
+    /// role's first composition — the role body's `use` that imports the
+    /// trait handler runs only then — and removed; see
+    /// `apply_pending_role_attribute_traits`.
+    pub(crate) role_attribute_pending_traits:
+        HashMap<(String, String), crate::opcode::CompiledAttrDecl>,
+    /// Sub-level `proto`s a role body has already registered: (role,
+    /// routine name). A role's body re-runs at every composition, but its
+    /// `proto sub f(|) {*}` declares one routine for the role — registering
+    /// it again would be a redeclaration.
+    pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

@@ -653,6 +653,7 @@ mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
+pub(crate) mod native_decl;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
 mod nqp_create;
@@ -662,6 +663,7 @@ pub(crate) mod nqp_ops;
 mod nqp_ops_bigint;
 mod nqp_ops_builtin;
 pub(crate) mod nqp_ops_list;
+pub(crate) mod nqp_ops_native;
 mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;
@@ -791,6 +793,7 @@ mod methods_instance_ops;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
+pub(crate) use methods_introspect::embedded_container_type_name;
 mod methods_io_dispatch;
 mod methods_list_view_default;
 mod methods_match_dispatch;
@@ -837,7 +840,7 @@ mod methods_string_index;
 mod methods_string_search;
 mod methods_string_subst_repl;
 mod methods_string_substr;
-mod methods_sub;
+pub(crate) mod methods_sub;
 mod methods_sub_rw_proxy;
 mod methods_subscript_protocol;
 mod methods_supply_dispatch;
@@ -893,6 +896,7 @@ mod promise_broken_gist;
 mod promise_errors;
 pub(crate) mod quanthash_store;
 mod quanthash_subclass;
+pub(crate) mod raku_cycle_guards;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
@@ -953,6 +957,7 @@ mod resolution_method;
 mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
+pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
@@ -960,6 +965,7 @@ mod run;
 mod run_dist;
 mod run_main;
 mod run_modules;
+mod run_modules_bound_repo;
 mod run_modules_bundled_repo;
 mod run_modules_scans;
 mod run_pod_declarants;
@@ -999,6 +1005,8 @@ pub(crate) mod stack_budget;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
+mod supply_emit_frame;
+pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_transform;
 mod system;
@@ -3874,7 +3882,7 @@ pub struct Interpreter {
     /// (by generation mismatch) rather than per-package, since a new token
     /// registration is rare and global.
     grammar_dynvar_decls_cache: HashMap<String, (u64, HashMap<String, Vec<String>>)>,
-    pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    pub(super) supply_emit_buffer: Vec<EmitFrame>,
     /// `whenever` subscription markers registered while a react drive loop is
     /// already running (a `whenever` nested inside another `whenever`'s body).
     /// The loop adopts them on its next round; see
@@ -3989,27 +3997,9 @@ pub struct Interpreter {
     /// here for the duration so the re-entry takes the class path instead of
     /// recognising the name as a role again and looping.
     pub(crate) role_pun_construction: Vec<String>,
-    /// Ids currently being rendered by `Mu.rakuseen($id, &code)` — the
-    /// cyclic-structure guard for `.raku`/`.gist`. A repeated id means a cycle:
-    /// `rakuseen` returns a backreference name instead of re-running `&code`
-    /// (which would recurse forever), and the first (outer) occurrence wraps its
-    /// result in `(my \NAME = ...)`.
-    pub(crate) rakuseen_active: Vec<String>,
-    /// Ids for which a cycle backreference was emitted during the current render;
-    /// the outer `rakuseen` for that id consumes the flag to add the `(my \NAME =
-    /// ...)` binding wrapper.
-    pub(crate) rakuseen_cycle_hit: std::collections::HashSet<String>,
-    /// Instance ids whose `.raku` is currently being rendered by the nested-leaf
-    /// walker (`methods_raku_dispatch`). A self-referencing object
-    /// (`$obj.myself[0] = $obj`) would otherwise recurse forever: instance →
-    /// attribute container → the same instance. A repeated id renders as a
-    /// Rakudo-style backreference name (`Bug_48`) instead of dispatching again.
-    pub(crate) raku_leaf_active: Vec<u64>,
-    /// Instance ids for which a cycle backreference was emitted during the
-    /// current native `.raku` render; the frame that pushed the id onto
-    /// `raku_leaf_active` consumes the flag to wrap its rendering in the
-    /// `(my \NAME = ...)` binding (mirroring the user-facing `rakuseen`).
-    pub(crate) raku_leaf_cycle_hit: std::collections::HashSet<u64>,
+    /// Recursion guards for `.raku`/`.gist` renders of self-referencing
+    /// structures (the `guards` subsystem, ADR-10779).
+    pub(crate) raku_cycle_guards: raku_cycle_guards::RakuCycleGuards,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,

@@ -57,7 +57,7 @@ RELEASE_STALE="${RELEASE_STALE:-0}"
 # agents append after it ("Releasing: br - fixed in #8114", a Claude Code
 # attribution footer, a paragraph of findings).
 #
-# `Locking:` / `Unlocking:` (the ecosystem lock board, #10045) are deliberately
+# `Locking:` / `Unlocking:` (the ecosystem lock board, #11256) are deliberately
 # NOT claims: that board locks distributions, not the issue it lives on.
 live_claims() {
   awk -F'\t' '
@@ -67,6 +67,9 @@ live_claims() {
       sub(/^[ \t]+/, "", line)
       n = split(line, f, /[ \t]+/)
       if (n < 2 || f[2] == "") next
+      # A claim names a work branch. One naming a long-lived branch could never
+      # go stale (the stale test below is "no such branch on origin").
+      if (f[2] ~ /^(main|master|HEAD|bench-data|gh-pages)$/) next
       if (f[1] == "Claiming:") {
         if (!(f[2] in seen)) { order[++count] = f[2]; seen[f[2]] = 1 }
         claimed_at[f[2]] = ts
@@ -99,9 +102,13 @@ effective_live_count() { # effective_live_count <state> <raw_live_count>
 
 # ------------------------------------------------------------------- the API
 
+# Only comments by people with write access count: an outsider's
+# `Claiming:` would otherwise set `working` and make every agent skip the
+# issue (docs/security.md, "CI, release and agents").
 comment_log() { # comment_log <issue>
   gh api --paginate "repos/$REPO/issues/$1/comments" \
-    --jq '.[] | [.created_at, ((.body // "") | gsub("\r"; "") | split("\n")[0])] | @tsv'
+    --jq '.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+              | [.created_at, ((.body // "") | gsub("\r"; "") | split("\n")[0])] | @tsv'
 }
 
 issue_labels() { # issue_labels <issue>
@@ -253,6 +260,9 @@ self_test() {
     "$ts	Claiming:" \
     "$ts	Releasing:"
   check 'an empty log has no claims' '' ''
+  check 'a claim naming a long-lived branch is ignored' '' \
+    "$ts	Claiming: main" \
+    "$ts	Claiming: bench-data"
 
   # The two shapes that actually caused this script to exist.
   check '#8033: three slices, the last one still open' 'feat/issue-8033-execution-tree-lowering' \

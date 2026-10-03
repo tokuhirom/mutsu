@@ -64,10 +64,15 @@ pub(super) enum CallTarget {
     /// No rule of that name: a builtin (`<.ws>`, `<wb>`, `<alpha>`, …) the walk's
     /// single-candidate arm decides, with at most one end.
     Single,
-    /// A rule that may re-enter itself at the same position, or one called
-    /// while an evaluation of the same name is live: evaluated eagerly by the
-    /// growing-seed loop (`subrule_seed_ends`), whose re-entries read the seed.
-    Lr(Arc<TokenCandidates>),
+    /// A call evaluated eagerly by the growing-seed loop (`subrule_seed_ends`),
+    /// every end up front, and entered highest priority first; the reason is
+    /// its `MUTSU_VM_STATS` leaf. Taken by a rule that may re-enter itself at
+    /// the same position, or one called while an evaluation of the same name
+    /// is live, whose re-entries read the seed (`lr-seed`); and by a callee
+    /// with no program of its own (`declined-callee`), most often a `:m` rule,
+    /// whose ends the all-ends entry finds by running its mark-stripped
+    /// program (anything it does walk, that entry counts as walked).
+    Eager(Arc<TokenCandidates>, &'static str),
 }
 
 impl Interpreter {
@@ -131,7 +136,7 @@ impl Interpreter {
             Ok(CallTarget::Plain(..) | CallTarget::Proto(_)) if lr_name_active(spec.lookup_sym) => {
                 let (candidates, _) =
                     self.parsed_subrule_candidates(spec, pkg, args.as_deref().unwrap_or(&[]));
-                Ok(CallTarget::Lr(candidates))
+                Ok(CallTarget::Eager(candidates, "lr-seed"))
             }
             verdict => verdict,
         };
@@ -143,7 +148,7 @@ impl Interpreter {
             }
             // The seed loop pushes the routine frame itself, around each
             // candidate's evaluation (`subrule_candidate_ends_with_frame`).
-            (Ok(CallTarget::Lr(_)), window) => self
+            (Ok(CallTarget::Eager(..)), window) => self
                 .rx_call_rule_frame(name, pkg, window)
                 .map(|w| CallWindow { routine: None, ..w }),
             (_, Some(saved)) => {
@@ -324,15 +329,26 @@ impl Interpreter {
         if candidates.is_empty() {
             return Err("no-candidates");
         }
-        // `:m` remaps positions across the whole result set.
+        // `:m` remaps positions across the whole result set, which the all-ends
+        // entry does over the mark-stripped subject.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
-            return Err("ignoremark");
+            return Ok(CallTarget::Eager(candidates, "ignoremark-callee"));
         }
         // Several candidates without a proto dedup their ends across each
         // other; a mix of both is not a shape the walk's proto dispatch names.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
             return Err("multi-candidate");
+        }
+        // A wrapped proto candidate (`^find_method('p:sym<a>').wrap(..)`) is
+        // user code around that candidate's invocation, like a wrapped rule.
+        if proto
+            && candidates
+                .iter()
+                .filter_map(|(_, _, sym)| sym.as_deref())
+                .any(|k| self.proto_candidate_has_wrap_chain(pkg, &spec.lookup_name, k))
+        {
+            return Err("wrapped");
         }
         // The walk's eager arm scopes the caller's `:i` over a proto candidate's
         // body (`subrule_candidate_ends`), which needs the body compiled under it:
@@ -345,13 +361,13 @@ impl Interpreter {
             return Err("qq-thunks");
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
-            return Ok(CallTarget::Lr(candidates));
+            return Ok(CallTarget::Eager(candidates, "lr-seed"));
         }
         if candidates
             .iter()
             .any(|(parsed, _, _)| program_for(parsed).is_none())
         {
-            return Err("callee-declined");
+            return Ok(CallTarget::Eager(candidates, "declined-callee"));
         }
         if proto {
             return Ok(CallTarget::Proto(candidates));
@@ -363,7 +379,7 @@ impl Interpreter {
         ))
     }
 
-    /// Evaluate a [`CallTarget::Lr`] call: every end of the callee at `pos`
+    /// Evaluate a [`CallTarget::Eager`] call: every end of the callee at `pos`
     /// through the growing-seed loop, with the call's `window` installed for
     /// the evaluation only (it is eager, so nothing resumes in it), and the
     /// window's final values filed on each end's Match for its action, as the

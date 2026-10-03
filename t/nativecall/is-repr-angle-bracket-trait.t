@@ -20,25 +20,28 @@ class Uninstantiable is repr<Uninstantiable> { }
 is Uninstantiable.^name, 'Uninstantiable', 'class: is repr<Uninstantiable> parses (non-C repr name)';
 
 # --- trait_mod:<is> dispatch: an angle-bracket argument reaches user code
-# exactly like a parenthesized one, both for classes and for roles. `ctype`
-# has no dedicated AST field (unlike `repr`), so it is only observable
-# through the custom_traits -> trait_mod:<is> dispatch mechanism.
+# exactly like a parenthesized one, both for classes and for roles. The
+# trait is a made-up one (`flavour`) with no dedicated AST field (unlike
+# `repr`), so it is only observable through the custom_traits ->
+# trait_mod:<is> dispatch mechanism. (`ctype` cannot serve here: it is a core
+# NativeHOW trait with its own core candidate, so a user candidate of the same
+# shape is a redeclaration in rakudo -- see native-type-repr-and-traits.t.)
+# Traits apply at compile time in rakudo, so @log is never reset between
+# declarations; each check greps for its own type's entry.
 
 my @log;
-multi sub trait_mod:<is>(Mu:U $t, :$ctype!) { @log.push("{$t.^name}:ctype:{$ctype}") }
+multi sub trait_mod:<is>(Mu:U $t, :$flavour!) { @log.push("{$t.^name}:flavour:{$flavour}") }
 
-class WithCtype is ctype<long> { }
-ok @log.grep('WithCtype:ctype:long'),
-    'class: is ctype<long> (angle form, no dedicated field) reaches trait_mod:<is>';
+class WithFlavour is flavour<long> { }
+ok @log.grep('WithFlavour:flavour:long'),
+    'class: is flavour<long> (angle form, no dedicated field) reaches trait_mod:<is>';
 
-@log = ();
 role RoleWithRepr is repr<CStruct> { }
-is +@log, 0, 'role: is repr<...> does not spuriously dispatch an unrelated trait';
+nok @log.grep(/RoleWithRepr/), 'role: is repr<...> does not spuriously dispatch an unrelated trait';
 
-@log = ();
-role RoleWithCtype is ctype<long> { }
-ok @log.grep('RoleWithCtype:ctype:long'),
-    'role: is ctype<long> (angle form) reaches trait_mod:<is>, same as class';
+role RoleWithFlavour is flavour<long> { }
+ok @log.grep('RoleWithFlavour:flavour:long'),
+    'role: is flavour<long> (angle form) reaches trait_mod:<is>, same as class';
 
 # --- sanity: the pre-existing parenthesized form keeps working unchanged.
 
@@ -47,10 +50,9 @@ class ParenStruct is repr('CStruct') {
 }
 is ParenStruct.REPR, 'CStruct', 'sanity: is repr(\'CStruct\') (paren form) still works';
 
-@log = ();
-class ParenCtype is ctype('long') { }
-ok @log.grep('ParenCtype:ctype:long'),
-    'sanity: is ctype(\'long\') (paren form) still reaches trait_mod:<is>';
+class ParenFlavour is flavour('long') { }
+ok @log.grep('ParenFlavour:flavour:long'),
+    'sanity: is flavour(\'long\') (paren form) still reaches trait_mod:<is>';
 
 class Ordinary { has $.x }
 is Ordinary.REPR, 'P6opaque', 'sanity: an ordinary class is still P6opaque';

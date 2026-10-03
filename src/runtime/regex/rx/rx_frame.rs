@@ -120,6 +120,8 @@ pub(super) struct ProtoChoice {
     pub(super) mark: Mark,
     /// The call's binding window, which every candidate runs in.
     pub(super) window: Option<usize>,
+    /// The call site is ratcheted: a candidate keeps only its first end.
+    pub(super) commit: bool,
 }
 
 /// A point to resume from on failure.

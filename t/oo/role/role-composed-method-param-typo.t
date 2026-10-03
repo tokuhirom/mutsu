@@ -2,21 +2,16 @@ use v6;
 use lib 't/lib';
 use Test;
 
-plan 1;
+plan 2;
 
-# #8083: a role method whose parameter names a GENUINELY mistyped type is
-# silently accepted at role-registration time whenever the role body has a
-# `use` of a module that has not loaded yet -- the not-yet-loaded module
-# MIGHT have supplied the type, so `role_body_method_decl` defers the check
-# optimistically. But nothing ever re-validates the deferred check once the
-# module actually loads, so a truly bogus name is accepted forever and the
-# method that names it silently disappears once the role is composed,
-# instead of raising X::Parameter::InvalidType the way an immediately
-# unresolvable name already does.
+# #8083: a role method whose parameter names a GENUINELY mistyped type must
+# not be silently accepted just because the role body `use`s a module that
+# might have supplied it. The role body's `use` is BEGIN-time, so it has run
+# by the time the method is declared, and the typo is reported when the role
+# is declared -- i.e. when its module loads, as rakudo reports it ("Invalid
+# typename 'TotallyBogusTypeName:U' in parameter declaration").
 
-use RolePendingTypo::R;
-
-throws-like
-    { class Consumer does RolePendingTypo::R { } },
-    X::Parameter::InvalidType,
-    'a genuinely mistyped role-method param type is still caught once the role body\'s use has run';
+try EVAL q[use RolePendingTypo::R];
+ok $!.defined, 'loading the role dies';
+ok $!.message.contains(q[Invalid typename 'TotallyBogusTypeName:U' in parameter declaration]),
+    'with the invalid-typename error for the mistyped role-method param type';

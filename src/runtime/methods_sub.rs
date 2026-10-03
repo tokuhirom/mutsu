@@ -569,14 +569,10 @@ impl Interpreter {
         // Cost: O(n), n = chars of the new name (interned).
         if method == "set_name"
             && let [new_name] = args.as_slice()
-            && let ValueView::Sub(gc) = target.view()
+            && matches!(target.view(), ValueView::Sub(_))
         {
             let name = new_name.to_string_value();
-            // SAFETY: a single write of a `Copy` field of the shared node; no
-            // borrow into this `SubData` is dereferenced across it (`data` is
-            // not read again on this path). Code objects are not structurally
-            // mutated from another thread.
-            unsafe { crate::value::gc_contents_mut(&gc).name = Symbol::intern(&name) };
+            rename_code_object(target, &name);
             return Some(Ok(Value::str(name)));
         }
         // WhateverCode's ACCEPTS is its predicate interface: invoke the
@@ -1461,4 +1457,19 @@ impl Interpreter {
         crate::runtime::cow_table_mut(&mut self.wrap_callable_ids).remove(name);
         self.invalidate_fn_resolution();
     }
+}
+
+/// Rename a code object in place, so every alias of it reports the new name.
+/// The one body behind `Code.set_name` and `nqp::setcodename`. Returns `false`
+/// when `target` is not a code object.
+// Cost: O(n), n = chars of the new name (interned).
+pub(crate) fn rename_code_object(target: &Value, name: &str) -> bool {
+    let ValueView::Sub(gc) = target.view() else {
+        return false;
+    };
+    // SAFETY: a single write of a `Copy` field of the shared node; no borrow
+    // into this `SubData` is dereferenced across it. Code objects are not
+    // structurally mutated from another thread.
+    unsafe { crate::value::gc_contents_mut(&gc).name = Symbol::intern(name) };
+    true
 }

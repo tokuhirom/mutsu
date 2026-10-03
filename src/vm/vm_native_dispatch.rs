@@ -184,8 +184,11 @@ impl Interpreter {
                 ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
+            // A public attribute of that name (`has ObjAt $.WHICH`) is an
+            // override too: its accessor is an ordinary method.
             if let Some(cn) = class_name
-                && self.has_user_method(&cn, method_name)
+                && (self.has_user_method(&cn, method_name)
+                    || self.has_public_accessor(&cn, method_name))
             {
                 return None;
             }

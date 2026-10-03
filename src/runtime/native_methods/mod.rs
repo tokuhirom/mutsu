@@ -1,5 +1,6 @@
 // Native method dispatch submodules, split from the original native_methods.rs
 pub(in crate::runtime) mod attr_publish;
+mod channel_supply;
 mod compiler_config;
 mod concurrency;
 mod encoding;
@@ -87,11 +88,11 @@ pub(in crate::runtime) use state_supplier::{
     supplier_done_call_count, supplier_emit_callbacks, supplier_produce_update_acc,
     supplier_serialize_group, supplier_tap_count, supplier_unique_get_seen,
     supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
-    take_supplier_quit_callbacks, take_supplier_quit_callbacks_via_group,
-    take_supplier_reduce_results, take_supplier_whenever_quit_callbacks,
-    thread_supplier_done_count, update_classify_state, whenever_done_group_decrement,
-    whenever_done_group_increment, zip_buffer_value, zip_latest_buffer_value,
-    zip_latest_source_done, zip_latest_state_info, zip_source_done, zip_state_info,
+    take_supplier_quit_callbacks_via_group, take_supplier_reduce_results,
+    take_supplier_whenever_quit_callbacks, thread_supplier_done_count, update_classify_state,
+    whenever_done_group_decrement, whenever_done_group_increment, zip_buffer_value,
+    zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info, zip_source_done,
+    zip_state_info,
 };
 pub(crate) use state_supplier::{SupplyTicket, reserve_supply_serialize};
 pub(in crate::runtime) use state_supplier_merge::{
@@ -462,6 +463,7 @@ impl Interpreter {
                 | "__SupplyCollector"
                 | "__SupplyQuitForwarder"
                 | "__SupplyDerive"
+                | "__ChannelSupply"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -509,6 +511,7 @@ impl Interpreter {
                             | "__SupplyCollector"
                             | "__SupplyQuitForwarder"
                             | "__SupplyDerive"
+                            | "__ChannelSupply"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -586,6 +589,7 @@ impl Interpreter {
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
             "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
             "__SupplyDerive" => self.native_supply_derive(attributes, method, args),
+            "__ChannelSupply" => self.native_channel_supply(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),

@@ -254,6 +254,20 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if self.spine || *is_export {
                     self.collect_enum_values(variants, *is_export, export_tags);
                 }
+                // An `our` enum's values are also installed in the enclosing
+                // package, so `Pkg::Value` resolves globally, export or not
+                // (`package WS::Msg { enum Opcode is export (:Ping(9)) }` makes
+                // `WS::Msg::Ping` visible to any file that loaded the module).
+                if !*is_my && !self.prefix.is_empty() {
+                    let prefix = self.prefix.clone();
+                    self.out.enum_values.extend(
+                        variants
+                            .iter()
+                            .map(|(value, _)| value)
+                            .filter(|value| *value != "__DYNAMIC__" && !value.is_empty())
+                            .map(|value| compose_type_name(&prefix, value)),
+                    );
+                }
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
             Stmt::VarDecl {

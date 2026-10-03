@@ -149,6 +149,32 @@ impl Compiler {
             ..
         } = expr
         {
+            // Evaluate a non-trivial subscript once (`++@$a[$++]`), since both
+            // the read and the write-back use it.
+            if !matches!(index.as_ref(), Expr::Literal(_) | Expr::Var(_)) {
+                let tmp_key = format!("__mutsu_nested_preincdec_key_{}", self.code.constants.len());
+                let tmp_key_idx = self.code.add_constant(Value::str(tmp_key.clone()));
+                self.compile_expr(index);
+                self.code.emit(OpCode::SetGlobal(tmp_key_idx));
+                let hoisted = Expr::Index {
+                    target: target.clone(),
+                    index: Box::new(Expr::Var(tmp_key)),
+                    is_positional: *is_positional,
+                };
+                return self.compile_nested_prefix_incdec_hoisted(&hoisted, increment);
+            }
+            self.compile_nested_prefix_incdec_hoisted(expr, increment);
+        }
+    }
+
+    fn compile_nested_prefix_incdec_hoisted(&mut self, expr: &Expr, increment: bool) {
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = expr
+        {
             let tmp_val = format!("__mutsu_nested_preincdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
 

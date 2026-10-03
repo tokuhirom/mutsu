@@ -85,10 +85,32 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, mut body) = parse_block_body_no_self(rest)?;
     crate::parser::stmt::nested_block_methods::hoist(&mut body);
     let AnonClassClauses {
-        parents,
+        mut parents,
         does_roles,
         parent_args,
     } = clauses;
+    // Same `also is Parent` / `also is rw` extraction the statement path does:
+    // `PDF::COS.loader = class PDF::Class::Loader { also is PDF::COS::Loader; … }`
+    // otherwise left `also is …` behind as a runtime "Two terms in a row".
+    let mut class_is_rw = false;
+    let mut implicit_grammar_parent = false;
+    let mut body_parents: Vec<String> = Vec::new();
+    body.retain(|stmt| {
+        if crate::parser::stmt::class::stmt_is_also_is_rw(stmt) {
+            class_is_rw = true;
+            false
+        } else if let Some(parent_name) = crate::parser::stmt::class::stmt_also_is_parent(stmt) {
+            crate::parser::stmt::class::push_also_is_parent(
+                &mut parents,
+                &mut body_parents,
+                &mut implicit_grammar_parent,
+                parent_name,
+            );
+            false
+        } else {
+            true
+        }
+    });
     // Insert DoesDecl statements at the beginning of the body for `does` clauses
     // (a parameterized one composes through `parent_args`, as a named class's does)
     for role_name in does_roles.iter().rev().filter(|r| !r.contains('[')) {
@@ -107,7 +129,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
-            class_is_rw: false,
+            class_is_rw,
             is_hidden: false,
             is_lexical: false,
             hidden_parents: Vec::new(),
@@ -121,7 +143,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             is_grammar: false,
             decl_id: crate::ast::next_class_decl_id(),
             parent_args,
-            body_parents: Vec::new(),
+            body_parents,
         })),
     ))
 }

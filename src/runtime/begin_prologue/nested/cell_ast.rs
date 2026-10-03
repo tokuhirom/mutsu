@@ -60,6 +60,7 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
     let mut decl = static_decl.clone();
     if let Stmt::VarDecl {
         name,
+        type_constraint,
         is_export,
         export_tags,
         custom_traits,
@@ -70,6 +71,14 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
         *is_export = false;
         export_tags.clear();
         *custom_traits = without_initializer_markers(custom_traits);
+        // A `:D` variable's cell holds its type object until the run-time
+        // assignment, which the constraint rejects. The cell is storage only;
+        // the variable itself keeps the constraint.
+        let definite = crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT;
+        if custom_traits.iter().any(|(t, _)| t == definite) {
+            custom_traits.retain(|(t, _)| t != definite);
+            *type_constraint = None;
+        }
     }
     decl
 }

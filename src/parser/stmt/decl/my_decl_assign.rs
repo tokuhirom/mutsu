@@ -759,6 +759,17 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             None,
         ));
     }
+    // A typed call (`my Foo $u .= new`) is a real initializer, not the
+    // declaration's default value: the RakuAST boundary must render it (it
+    // rendered a bare `my Foo $u` before). The untyped form already carries
+    // `METHOD_ASSIGN_DECL_TRAIT`; a shaped one (`my @c[2;2] .= new(...)`) keeps
+    // the unmarked shape so the compiler builds the shaped container first.
+    if matches!(target_expr, Expr::BareWord(_))
+        && s.shape_dims.is_none()
+        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
+    {
+        custom_traits.push(("__has_initializer".to_string(), None));
+    }
     let expr = match dynamic_name {
         Some(name_expr) => Expr::DynamicMethodCall {
             target: Box::new(target_expr),

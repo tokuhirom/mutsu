@@ -108,7 +108,7 @@ impl Interpreter {
         // against four Symbol-keyed stores (readonly registry, env, type
         // constraint, native-int constraint), each of which re-hashed the string.
         let name_sym = code.const_sym(name_idx);
-        self.check_readonly_for_increment_for(name, Some(name_sym))?;
+        self.check_named_incdec_readonly(code, name, name_sym, "postfix:<++>")?;
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self

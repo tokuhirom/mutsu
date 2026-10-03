@@ -51,6 +51,10 @@ pub(crate) use traits::{
 
 // Parameter list parsing (param_list.rs, return_type.rs).
 pub(super) use param_list::parse_param_list;
+pub(super) use param_list::{
+    any_callable_param, any_sigilless, has_type_capture, register_body_type_captures,
+    register_callable_param_terms, register_sigilless_terms,
+};
 pub(crate) use param_list::{check_duplicate_params, invalid_param_smiley_error};
 pub(super) use return_type::{
     parse_param_list_with_return, parse_return_type_annotation, skip_return_type_annotation,

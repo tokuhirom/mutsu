@@ -1779,6 +1779,18 @@ impl Interpreter {
             }
             "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
             "pun" if !args.is_empty() => {
+                // A curried role (`R[Int,Str].^pun`) puns to the same class its
+                // `.new` constructs through, so an instance's `.WHAT` is `=:=`
+                // its pun (Rake's tests check exactly that).
+                if let ValueView::ParametricRole {
+                    base_name,
+                    type_args,
+                } = args[0].view()
+                    && let Some(punned) =
+                        self.ensure_parametric_role_pun_class(&base_name.resolve(), type_args)?
+                {
+                    return Ok(Value::package(Symbol::intern(&punned)));
+                }
                 let role_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
@@ -2052,6 +2064,9 @@ impl Interpreter {
             }
             "nativesize" if args.len() == 1 => {
                 let type_name = self.mop_receiver_owner(&args[0]);
+                if let Some(decl) = self.native_decl(&type_name) {
+                    return Ok(decl.nativesize.map_or(Value::NIL, Value::int));
+                }
                 match native_types::native_type_bits(&type_name) {
                     Some(bits) => Ok(Value::int(i64::from(bits))),
                     None => Err(RuntimeError::meta_method_not_found(
@@ -2062,6 +2077,9 @@ impl Interpreter {
             }
             "unsigned" if args.len() == 1 => {
                 let type_name = self.mop_receiver_owner(&args[0]);
+                if let Some(decl) = self.native_decl(&type_name) {
+                    return Ok(Value::int(i64::from(decl.unsigned)));
+                }
                 if native_types::native_type_bits(&type_name).is_some() {
                     Ok(Value::int(i64::from(!native_types::is_signed_native(
                         &type_name,

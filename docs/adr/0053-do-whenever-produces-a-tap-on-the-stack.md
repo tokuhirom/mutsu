@@ -402,7 +402,8 @@ delivers all three.
 Not owned by this ADR, but adjacent and now visible: mutsu's `Channel.send`
 eagerly emits into the bridged Supply, so a channel value counts as emitted at
 `send` time where rakudo still has it in the channel
-(`todo/tickets/channel-supply-bridge-emits-at-send-time.md`). Per-subscriber
+(`todo/tickets/channel-supply-bridge-emits-at-send-time.md`; resolved by
+[ADR-9900](9900-channel-supply-taps-consume-the-queue.md)). Per-subscriber
 `Tap.close` on a channel-backed Supply remains
 [ADR-0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md)'s deliberate
 exclusion.

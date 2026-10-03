@@ -389,6 +389,29 @@ impl Interpreter {
         } else {
             target
         };
+        // `.VAR` reflects the variable's container. When the slot holds a
+        // shared cell (an `is rw` / `is raw` parameter aliasing the caller's
+        // variable), the reflector must see that cell -- it carries the
+        // container's descriptor name (#11196) and identity -- so publish the
+        // slot to the by-name mirror the reflector reads.
+        if method == "VAR" && arity == 0 && !target_name.is_empty() {
+            self.seed_env_from_scalar_slot(code, None, target_name);
+            // A slot that holds a plain value is authoritative over a shared
+            // cell the by-name mirror still holds from an earlier binding of
+            // the same name (a light call reuses its caller's env), so the
+            // reflector must not read that cell's descriptor.
+            if !target_name.starts_with(['@', '%'])
+                && let Some(slot) = self.resolve_local_slot(code, None, target_name)
+                && !self.locals[slot].is_container_ref()
+                && self
+                    .env()
+                    .get(target_name)
+                    .is_some_and(|v| v.is_container_ref())
+            {
+                let current = self.locals[slot].clone();
+                self.set_env_with_main_alias(target_name, current);
+            }
+        }
         // A user `method ^find_method` answers every call on its type
         // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
         // A raw invocant (`multi method handler(Object::Trampoline:D \SELF:
@@ -1375,7 +1398,12 @@ impl Interpreter {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method_memo(cn, method_sym),
+                    _ => {
+                        self.grammar_has_user_method_memo(cn, method_sym)
+                            // `has ObjAt $.WHICH` overrides `.WHICH` (Rake).
+                            || (matches!(method, "WHICH" | "WHY")
+                                && self.has_public_accessor(&cn.resolve(), method))
+                    }
                 }
             {
                 skip_native = true;

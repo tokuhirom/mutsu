@@ -354,6 +354,40 @@ def have_bwrap() -> bool:
     return shutil.which("bwrap") is not None
 
 
+# Environment variables a sandboxed distribution must not see. The sandbox has
+# no network, but what a test prints lands in committed `ecosystem/` records,
+# and on a CI runner `ACTIONS_RUNTIME_TOKEN` / `ACTIONS_ID_TOKEN_REQUEST_*`
+# grant cache and artifact writes (docs/security.md, "Ecosystem sweep").
+_SECRET_ENV = re.compile(
+    r"TOKEN|SECRET|PASSW|PRIVATE|CREDENTIAL|API_?KEY|_KEY$|^ACTIONS_|^GH_|^NPM_|^NODE_AUTH",
+    re.I)
+
+# Credential files the read-only root bind would otherwise expose: directories
+# get an empty tmpfs, files are replaced by /dev/null. Only paths that exist
+# are masked (bwrap cannot mount over a missing path).
+_SECRET_DIRS = ("~/.ssh", "~/.gnupg", "~/.config/gh", "~/.aws", "~/.docker")
+_SECRET_FILES = ("~/.netrc", "~/.git-credentials", "~/.npmrc",
+                 "~/.cargo/credentials", "~/.cargo/credentials.toml")
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _sandbox_secret_masks(environ=None) -> list[str]:
+    environ = os.environ if environ is None else environ
+    args = []
+    for name in sorted(environ):
+        if _SECRET_ENV.search(name):
+            args += ["--unsetenv", name]
+    for d in _SECRET_DIRS:
+        path = os.path.expanduser(d)
+        if os.path.isdir(path):
+            args += ["--tmpfs", path]
+    for f in _SECRET_FILES + (os.path.join(_REPO_ROOT, ".env"),):
+        path = os.path.expanduser(f)
+        if os.path.isfile(path):
+            args += ["--ro-bind", "/dev/null", path]
+    return args
+
+
 def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=()):
     """Wrap `cmd` so untrusted distribution code runs with NO network, a
     read-only filesystem, an isolated throwaway HOME, its own PID namespace,
@@ -390,6 +424,7 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
         "bwrap",
         "--unshare-all",              # user+net+pid+ipc+uts+cgroup+mount (net = offline)
         "--ro-bind", "/", "/",        # whole rootfs, read-only
+        *_sandbox_secret_masks(),     # minus tokens in the env and credential files
         *binds,
         "--dev", "/dev",
         "--proc", "/proc",
@@ -1002,6 +1037,23 @@ def _self_test() -> int:
                 or wrapped[cache_idx + 1] != expected_cache):
             print(f"sandbox_wrap: malformed XDG_CACHE_HOME setenv: {wrapped!r}",
                   file=sys.stderr)
+            failures += 1
+
+    # The sandbox must not hand a distribution the runner's tokens: secret-
+    # looking variables are unset, ordinary ones (PATH, LANG) are kept.
+    masks = _sandbox_secret_masks({
+        "PATH": "/usr/bin", "LANG": "C.UTF-8", "GH_TOKEN": "x", "GITHUB_TOKEN": "x",
+        "ACTIONS_RUNTIME_TOKEN": "x", "ACTIONS_RESULTS_URL": "x", "NPM_CONFIG_TOKEN": "x",
+        "TAGPR_APP_PRIVATE_KEY": "x", "MUTSULIB": "/lib"})
+    unset = {masks[i + 1] for i, a in enumerate(masks) if a == "--unsetenv"}
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "ACTIONS_RUNTIME_TOKEN",
+                 "ACTIONS_RESULTS_URL", "NPM_CONFIG_TOKEN", "TAGPR_APP_PRIVATE_KEY"):
+        if name not in unset:
+            print(f"sandbox_wrap: {name} is not unset", file=sys.stderr)
+            failures += 1
+    for name in ("PATH", "LANG", "MUTSULIB"):
+        if name in unset:
+            print(f"sandbox_wrap: {name} must stay set", file=sys.stderr)
             failures += 1
 
     print(f"ecosystem_common self-test: "
