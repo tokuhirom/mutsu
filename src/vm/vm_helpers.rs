@@ -276,7 +276,7 @@ impl Interpreter {
             }
             None => val,
         };
-        *cell.lock().unwrap() = val;
+        Value::store_through_cell(&cell, &val);
         terminal.insert(Value::container_ref(cell.clone()));
         Ok(cell)
     }
