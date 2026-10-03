@@ -145,14 +145,14 @@ impl Interpreter {
     fn deferral_build_is_context_free(&mut self, receiver_class: &str, method_name: &str) -> bool {
         self.refresh_method_caches_for_generation();
         let key = (Symbol::intern(receiver_class), Symbol::intern(method_name));
-        if let Some(&free) = self.deferral_build_context_free.get(&key) {
+        if let Some(&free) = self.caches.deferral_build_context_free.get(&key) {
             return free;
         }
         let free = self
             .resolve_deferral_expansion(receiver_class, method_name)
             .iter()
             .all(|(_, def)| def.param_defs.iter().all(param_match_is_context_free));
-        self.deferral_build_context_free.insert(key, free);
+        self.caches.deferral_build_context_free.insert(key, free);
         free
     }
 

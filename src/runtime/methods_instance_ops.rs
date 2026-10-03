@@ -965,7 +965,7 @@ impl Interpreter {
                             .insert((owner, attr_name), build);
                         // A build override disqualifies the class from the native
                         // default constructor — drop any cached plan for it.
-                        self.native_ctor_plan_cache.clear();
+                        self.caches.native_ctor_plan_cache.clear();
                         return Ok(target.clone());
                     }
                     "name" => {

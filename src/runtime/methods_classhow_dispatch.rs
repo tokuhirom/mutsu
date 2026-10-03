@@ -1501,7 +1501,7 @@ impl Interpreter {
                 );
                 // Class shape changed (an added BUILD/TWEAK/new flips ctor
                 // eligibility) — drop cached construction plans.
-                self.native_ctor_plan_cache.clear();
+                self.caches.native_ctor_plan_cache.clear();
                 // Return Nil even if the class was not found (e.g. built-in types
                 // like Rat that are not in the user-defined class registry).
                 // Raku's add_method returns the method name; returning Nil is
@@ -1567,7 +1567,7 @@ impl Interpreter {
                         Symbol::intern(&method_name),
                         def,
                     );
-                    self.native_ctor_plan_cache.clear();
+                    self.caches.native_ctor_plan_cache.clear();
                     return Ok(Value::NIL);
                 }
                 Err(RuntimeError::new(format!(
@@ -1630,7 +1630,7 @@ impl Interpreter {
                 // `callsame` reaches: from here on the class's auto-generated
                 // accessors count as installed (`classes_composing_accessors`).
                 self.classes_composing_accessors.remove(&class_name);
-                self.native_ctor_plan_cache.clear();
+                self.caches.native_ctor_plan_cache.clear();
                 // Rakudo returns the composed type object. MOP clients use
                 // that result directly (for example Test::Mock calls
                 // `$mocker.HOW.compose($mocker).CREATE`), so returning Nil
@@ -1675,7 +1675,7 @@ impl Interpreter {
                     if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                         class_def.mro = mro;
                     }
-                    self.native_ctor_plan_cache.clear();
+                    self.caches.native_ctor_plan_cache.clear();
                 }
                 Ok(Value::NIL)
             }
@@ -1747,7 +1747,7 @@ impl Interpreter {
                         }
                     }
                     // Attribute set changed — drop cached construction plans.
-                    self.native_ctor_plan_cache.clear();
+                    self.caches.native_ctor_plan_cache.clear();
                 }
                 Ok(Value::NIL)
             }

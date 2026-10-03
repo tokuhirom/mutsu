@@ -752,6 +752,7 @@ impl Interpreter {
         // first. A cache miss (unregistered / not-yet-planned class) falls through
         // to the full scan, which is safe.
         let skip = self
+            .caches
             .native_ctor_plan_cache
             .get(&crate::symbol::Symbol::intern(class_name))
             .is_some_and(|p| !p.has_container_defaults);

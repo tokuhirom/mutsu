@@ -116,7 +116,7 @@ impl Interpreter {
         compute: impl FnOnce(&mut Self) -> T::Answer,
     ) -> T::Answer {
         let generation = self.registry_write_generation();
-        let memo = &mut self.user_method_probe_memo;
+        let memo = &mut self.caches.user_method_probe_memo;
         if memo.generation != generation {
             memo.generation = generation;
             memo.grammar_has_user_method.clear();
@@ -133,7 +133,8 @@ impl Interpreter {
         // (a role pun, an MRO computed and cached, say): an answer computed
         // across a registry write is not an answer for either generation.
         if self.registry_write_generation() == generation {
-            T::table(&mut self.user_method_probe_memo).insert((class, method), answer.clone());
+            T::table(&mut self.caches.user_method_probe_memo)
+                .insert((class, method), answer.clone());
         }
         answer
     }

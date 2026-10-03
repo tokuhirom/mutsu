@@ -284,7 +284,7 @@ impl Interpreter {
         class_name: Symbol,
     ) -> std::sync::Arc<super::NativeCtorPlan> {
         self.refresh_method_caches_for_generation();
-        if let Some(plan) = self.native_ctor_plan_cache.get(&class_name) {
+        if let Some(plan) = self.caches.native_ctor_plan_cache.get(&class_name) {
             return plan.clone();
         }
         let cn_resolved = class_name.as_str();
@@ -551,7 +551,9 @@ impl Interpreter {
         // role punned to a class on first use would otherwise keep a stale
         // negative plan without passing any invalidation site.
         if registered || is_cunion {
-            self.native_ctor_plan_cache.insert(class_name, plan.clone());
+            self.caches
+                .native_ctor_plan_cache
+                .insert(class_name, plan.clone());
         }
         plan
     }
