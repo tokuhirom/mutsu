@@ -1411,7 +1411,36 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::IndirectTypeLookupStore);
             }
-            Expr::ControlFlow { kind, label } => {
+            Expr::ControlFlow {
+                kind,
+                label: _,
+                value: Some(value),
+                take_value,
+            } => {
+                use crate::ast::ControlFlowKind;
+                self.compile_expr(value);
+                if *take_value {
+                    // A gather-lowered loop: a `Label` value raises the
+                    // labelled signal here; any other value is taken as the
+                    // iteration's result, then the signal ends the iteration.
+                    self.code.emit(OpCode::LoopControlLabelArg(matches!(
+                        kind,
+                        ControlFlowKind::Last
+                    )));
+                    self.code.emit(OpCode::Dup);
+                    self.code.emit(OpCode::Take);
+                }
+                self.code.emit(match kind {
+                    ControlFlowKind::Last => OpCode::LastValue,
+                    _ => OpCode::NextValue,
+                });
+            }
+            Expr::ControlFlow {
+                kind,
+                label,
+                value: None,
+                take_value: _,
+            } => {
                 use crate::ast::ControlFlowKind;
                 let op = match kind {
                     ControlFlowKind::Last => OpCode::Last(label.clone()),

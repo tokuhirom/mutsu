@@ -69,6 +69,22 @@ pub(crate) fn label_method_0arg(
     }
 }
 
+/// v6.e's `last VALUE` / `next VALUE` (`OpCode::LastValue` / `NextValue`): the
+/// loop-control signal carrying `value` as the iteration's contribution to the
+/// loop's result. A `Label` value is the labelled form spelled as an argument
+/// (`last(FOO)`), which carries no value.
+// Cost: O(1).
+pub(crate) fn loop_control_value_signal(control: Control, value: Value) -> RuntimeError {
+    if let Some(name) = label_name(&value) {
+        return crate::runtime::loop_handler_depth::loop_control_signal(control, Some(name));
+    }
+    let mut sig = crate::runtime::loop_handler_depth::loop_control_signal(control, None);
+    if crate::runtime::loop_handler_depth::loop_handler_in_scope() {
+        sig.return_value = Some(value);
+    }
+    sig
+}
+
 /// The routine forms `next(LABEL)` / `last(LABEL)` / `redo(LABEL)` (also what
 /// `next |c` slips into): zero arguments is the plain loop control, one `Label`
 /// the labelled one. Anything else has no candidate, as in Rakudo.
@@ -92,10 +108,13 @@ pub(crate) fn loop_control_call(control: Control, args: &[Value]) -> RuntimeErro
                     _ => format!("{}:D", crate::runtime::utils::value_type_name(a)),
                 })
                 .collect();
-            RuntimeError::new(format!(
-                "Cannot resolve caller {word}({}); none of these signatures matches:\n    ( --> Nil)\n    (Label:D $x --> Nil)",
-                types.join(", ")
-            ))
+            crate::runtime::Interpreter::multi_no_match_exception(
+                word,
+                format!(
+                    "Cannot resolve caller {word}({}); none of these signatures matches:\n    ( --> Nil)\n    (Label:D $x --> Nil)",
+                    types.join(", ")
+                ),
+            )
         }
     }
 }

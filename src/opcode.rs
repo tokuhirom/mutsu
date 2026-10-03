@@ -3143,6 +3143,19 @@ pub(crate) enum OpCode {
     /// never falls through. Same label and `X::ControlFlow::Illegal` rules
     /// as [`Self::Last`].
     Redo(Option<String>),
+    /// v6.e `last VALUE`: pop `VALUE` and raise the `last` signal carrying it
+    /// as the iteration's contribution to the loop's result (`return_value`).
+    /// A `Label` value is instead the labelled `last` (`last(FOO)`). Stack:
+    /// `[value] → []`; never falls through. Same `X::ControlFlow::Illegal`
+    /// rule as [`Self::Last`].
+    LastValue,
+    /// v6.e `next VALUE`: as [`Self::LastValue`], for `next`.
+    NextValue,
+    /// The `Label` check of a valued `last` (`true`) / `next` (`false`) in a
+    /// gather-lowered loop, before its value is taken: a `Label` on top of
+    /// the stack is popped and raises the labelled signal; any other value is
+    /// left in place. Stack: `[value] → [value]`.
+    LoopControlLabelArg(bool),
 
     // -- Given/When control --
     /// `proceed`: leave the current `when`/`default` body and continue with

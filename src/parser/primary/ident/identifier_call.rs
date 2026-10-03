@@ -17,6 +17,7 @@ use crate::parser::primary::ident::listop::{
     operator_term_call, parse_expr_listop_args, parse_listop_arg,
     try_parse_no_paren_invocant_colon_call,
 };
+use crate::parser::primary::ident::loop_control::loop_control_call_form;
 use crate::parser::primary::ident::predicates::{
     balanced_paren_text, is_expr_listop, is_infix_word_op, is_keyword, is_listop,
     is_require_terminator, is_stmt_modifier_ahead, is_unspace_before_postfix,
@@ -1549,6 +1550,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Last,
                     label,
+                    value: None,
+                    take_value: false,
                 },
             ));
         }
@@ -1565,6 +1568,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Next,
                     label,
+                    value: None,
+                    take_value: false,
                 },
             ));
         }
@@ -1581,6 +1586,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Redo,
                     label,
+                    value: None,
+                    take_value: false,
                 },
             ));
         }
@@ -2608,62 +2615,6 @@ fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKin
 /// label rule the statement forms (`next_stmt` and friends) apply. Without it
 /// the label was left behind as a stray bareword and the enclosing labeled
 /// loop failed to parse.
-/// `last |c` / `next |c` / `redo |c`: the loop-control term applied to a slipped
-/// argument list (Rakudo resolves it as `last(|c)`). Returns the slipped term.
-pub(in crate::parser) fn control_flow_slip_args(input: &str) -> PResult<'_, Option<Expr>> {
-    let (after_ws, _) = ws(input)?;
-    if !after_ws.starts_with('|') {
-        return Ok((input, None));
-    }
-    let (rest, slip) = term_expr(after_ws)?;
-    Ok((rest, Some(slip)))
-}
-
-/// The routine forms of `last` / `next` / `redo`: `next(FOO)` with a `Label`
-/// value and `next |c` slipping a capture that may hold one. Both are a call
-/// of the `next` routine, which raises the (labelled) loop-control signal at
-/// run time — see `builtins/label.rs`. An empty `next()` stays the plain
-/// control flow term (the caller's ordinary path), as does every other form.
-fn loop_control_call_form<'a>(name: &str, input: &'a str) -> PResult<'a, Option<Expr>> {
-    if let (rest, Some(slip)) = control_flow_slip_args(input)? {
-        return Ok((rest, Some(loop_control_call(name, vec![slip]))));
-    }
-    let (after_ws, _) = ws(input)?;
-    // `last $res`: a listop argument (v6.e's value-returning `last`; v6.d
-    // rejects it at run time, as rakudo does), not a label.
-    if loop_control_listop_arg_start(input, after_ws) {
-        let (rest, arg) = expression(after_ws)?;
-        return Ok((rest, Some(loop_control_call(name, vec![arg]))));
-    }
-    let Some(after_paren) = after_ws.strip_prefix('(') else {
-        return Ok((input, None));
-    };
-    let (after_ws, _) = ws(after_paren)?;
-    if after_ws.starts_with(')') {
-        return Ok((input, None));
-    }
-    let (rest, args) = crate::parser::primary::parse_call_arg_list(after_ws)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = parse_char(rest, ')')?;
-    Ok((rest, Some(loop_control_call(name, args))))
-}
-
-/// Whether a loop-control keyword is followed, after whitespace, by a term
-/// that can only be its argument: a variable or a literal. A bare word stays
-/// a label (`last OUTER`), and `(` is the parenthesized call form.
-pub(in crate::parser) fn loop_control_listop_arg_start(input: &str, after_ws: &str) -> bool {
-    after_ws.len() < input.len()
-        && (after_ws.starts_with(['$', '@', '%'])
-            || crate::parser::term_boundary::starts_with_unambiguous_term(after_ws))
-}
-
-fn loop_control_call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::Call {
-        name: Symbol::intern(name),
-        args,
-    }
-}
-
 /// `proceed |c` / `succeed |c`, whose control transfer must stay a statement
 /// of the enclosing block: with an empty argument list this is the plain
 /// control transfer; a non-empty one has no candidate, so it is rejected

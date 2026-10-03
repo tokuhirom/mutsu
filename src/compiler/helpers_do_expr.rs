@@ -185,9 +185,13 @@ impl Compiler {
     /// The loop's KEEP/UNDO result capture sees through the trailing `Take`
     /// (see `expand_loop_phasers`). Shared by the `lazy for` lowering and the
     /// `while`/`loop` expression forms.
+    ///
+    /// A v6.e `last VALUE` / `next VALUE` aimed at this loop is marked
+    /// `take_value` too, since a gather-lowered loop collects nothing itself.
     fn wrap_loop_body_last_in_take(body: &[Stmt]) -> Vec<Stmt> {
         use crate::ast::{Expr as AExpr, Stmt as AStmt};
         let mut stmts = body.to_vec();
+        crate::ast_visit::VisitMut::visit_stmts_mut(&mut TakeLoopControlValues, &mut stmts);
         let last_idx = stmts.iter().rposition(|s| !s.is_marker());
         if let Some(idx) = last_idx {
             match stmts[idx].clone() {
@@ -280,5 +284,50 @@ impl Compiler {
             }
         }
         true
+    }
+}
+
+/// Marks every valued `last` / `next` that ends an iteration of the loop whose
+/// body it walks as `take_value` (see [`Expr::ControlFlow`]). It does not
+/// descend into a nested loop, whose own iteration such a node ends, nor into
+/// a closure, routine or `gather`, which run in a scope of their own.
+struct TakeLoopControlValues;
+
+impl crate::ast_visit::VisitMut for TakeLoopControlValues {
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        if matches!(
+            stmt,
+            Stmt::For { .. }
+                | Stmt::While { .. }
+                | Stmt::Loop { .. }
+                | Stmt::SubDecl { .. }
+                | Stmt::MethodDecl { .. }
+        ) {
+            return;
+        }
+        crate::ast_visit::walk_stmt_mut(self, stmt);
+    }
+
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        if matches!(
+            expr,
+            Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+                | Expr::WhateverCurry(_)
+                | Expr::Gather(_)
+        ) {
+            return;
+        }
+        if let Expr::ControlFlow {
+            label: None,
+            value: Some(_),
+            take_value,
+            ..
+        } = expr
+        {
+            *take_value = true;
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
     }
 }
