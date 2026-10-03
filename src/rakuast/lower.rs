@@ -1189,6 +1189,14 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         }
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
+    } else if parameter.fields.iter().any(|f| {
+        f.name == Some("slurpy")
+            && matches!(&f.value, RakuAstFieldValue::Node(v)
+                if super::slurpy_marker_class(v) == Some(RakuAstClass::ParameterSlurpyCapture))
+    }) {
+        // An anonymous capture `|` binds under the parser's placeholder name.
+        sigilless = true;
+        ANONYMOUS_CAPTURE.to_string()
     } else {
         return Err(unsupported(owner));
     };
@@ -1246,6 +1254,13 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         match super::slurpy_marker_class(val) {
             Some(RakuAstClass::ParameterSlurpyFlattened) => def.slurpy = true,
             Some(RakuAstClass::ParameterSlurpyUnflattened) => def.double_slurpy = true,
+            // `+a` and `|c` are the parser's sigilless slurpies, told apart
+            // by `onearg`.
+            Some(RakuAstClass::ParameterSlurpySingleArgument) if def.sigilless => {
+                def.slurpy = true;
+                def.onearg = true;
+            }
+            Some(RakuAstClass::ParameterSlurpyCapture) if def.sigilless => def.slurpy = true,
             _ => return Err(unsupported(owner)),
         }
         def.required = false;
@@ -1306,6 +1321,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     }
     Ok(def)
 }
+
+/// The name the parser gives an anonymous capture parameter (`|`).
+pub(super) const ANONYMOUS_CAPTURE: &str = "_capture";
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
 fn positional_param(name: &str) -> ParamDef {

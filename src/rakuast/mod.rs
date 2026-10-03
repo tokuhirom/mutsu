@@ -230,6 +230,9 @@ pub enum RakuAstClass {
     // Phase 2 slice 32: slurpy parameter markers (`*@a` / `**@a`).
     ParameterSlurpyFlattened,
     ParameterSlurpyUnflattened,
+    // `+a` / `+@a` and `|c` / `|`.
+    ParameterSlurpySingleArgument,
+    ParameterSlurpyCapture,
     // Phase 2 slice 33: array-composer literal (`[1, 2, 3]`).
     CircumfixArrayComposer,
     // A hash composer `{a => 1}` and the `%(…)` hash contextualizer, whose
@@ -455,6 +458,8 @@ impl RakuAstClass {
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
+            ParameterSlurpySingleArgument => "RakuAST::Parameter::Slurpy::SingleArgument",
+            ParameterSlurpyCapture => "RakuAST::Parameter::Slurpy::Capture",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             CircumfixHashComposer => "RakuAST::Circumfix::HashComposer",
             ContextualizerHash => "RakuAST::Contextualizer::Hash",
@@ -536,7 +541,10 @@ impl RakuAstClass {
     pub fn renders_bare(self) -> bool {
         matches!(
             self,
-            RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
+            RakuAstClass::ParameterSlurpyFlattened
+                | RakuAstClass::ParameterSlurpyUnflattened
+                | RakuAstClass::ParameterSlurpySingleArgument
+                | RakuAstClass::ParameterSlurpyCapture
         )
     }
 
@@ -1006,6 +1014,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CircumfixParentheses,
     RakuAstClass::ParameterSlurpyFlattened,
     RakuAstClass::ParameterSlurpyUnflattened,
+    RakuAstClass::ParameterSlurpySingleArgument,
+    RakuAstClass::ParameterSlurpyCapture,
     RakuAstClass::CircumfixArrayComposer,
     RakuAstClass::CircumfixHashComposer,
     RakuAstClass::ContextualizerHash,
@@ -2418,19 +2428,16 @@ pub(crate) fn slurpy_marker_value(class: RakuAstClass) -> Value {
 /// uses. `None` for anything that is not a slurpy marker.
 pub(crate) fn slurpy_marker_class(value: &Value) -> Option<RakuAstClass> {
     match value.view() {
-        ValueView::RakuAst(node)
-            if matches!(
-                node.class,
-                RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
-            ) =>
-        {
-            Some(node.class)
-        }
+        ValueView::RakuAst(node) if node.class.renders_bare() => Some(node.class),
         ValueView::Package(name) => match name.resolve().as_str() {
             "RakuAST::Parameter::Slurpy::Flattened" => Some(RakuAstClass::ParameterSlurpyFlattened),
             "RakuAST::Parameter::Slurpy::Unflattened" => {
                 Some(RakuAstClass::ParameterSlurpyUnflattened)
             }
+            "RakuAST::Parameter::Slurpy::SingleArgument" => {
+                Some(RakuAstClass::ParameterSlurpySingleArgument)
+            }
+            "RakuAST::Parameter::Slurpy::Capture" => Some(RakuAstClass::ParameterSlurpyCapture),
             _ => None,
         },
         _ => None,

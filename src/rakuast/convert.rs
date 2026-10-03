@@ -3288,7 +3288,7 @@ fn signature(
 /// `sub-signature => Signature`, and a basic `::T` type capture becomes the
 /// `type-captures` field. Richer capture forms remain the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
-    if pd.onearg
+    if (pd.onearg && !pd.sigilless)
         || pd.literal_value.is_some()
         || !pd.trait_args.is_empty()
         || !pd.traits.iter().all(|t| is_parameter_is_trait(t))
@@ -3342,10 +3342,16 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     } else {
         pd.type_constraint.as_deref()
     };
-    // A sigilless parameter (`\x`) targets a term, not a variable. Its slurpy
-    // (`+a`, `|c`) and named spellings carry other markers; defer them.
-    if pd.sigilless && (pd.slurpy || pd.double_slurpy || pd.named) {
-        return Err(unsupported("sigilless slurpy / named parameter"));
+    // A sigilless parameter (`\x`) targets a term, not a variable. The
+    // parser's sigilless slurpies are `+a` (`onearg`) and the capture `|c`.
+    if pd.sigilless && (pd.double_slurpy || pd.named) {
+        return Err(unsupported("sigilless named / double-slurpy parameter"));
+    }
+    if pd.sigilless && pd.slurpy {
+        if pd.type_constraint.is_some() || pd.where_constraint.is_some() || pd.default.is_some() {
+            return Err(unsupported("typed sigilless slurpy parameter"));
+        }
+        return Ok(sigilless_slurpy_parameter(pd, type_setting));
     }
     let (sigil, desigil) = split_sigil(&pd.name);
     let mut node = if pd.slurpy || pd.double_slurpy {
@@ -3505,6 +3511,38 @@ fn named_parameter(
         class: RakuAstClass::Parameter,
         fields,
     })
+}
+
+/// `+a` -> `Parameter(target => ParameterTarget::Term, slurpy =>
+/// Slurpy::SingleArgument)`; `|c` -> the same with `Slurpy::Capture`, and the
+/// anonymous `|` has no target at all (measured on rakudo 2026.09).
+fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode {
+    let mut fields = Vec::with_capacity(3);
+    if type_setting {
+        fields.push(node_field(Some("type"), type_setting_any()));
+    }
+    if pd.name != super::lower::ANONYMOUS_CAPTURE {
+        fields.push(node_field(
+            Some("target"),
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetTerm,
+                fields: vec![node_field(None, name_from_identifier(&pd.name))],
+            },
+        ));
+    }
+    let marker = if pd.onearg {
+        RakuAstClass::ParameterSlurpySingleArgument
+    } else {
+        RakuAstClass::ParameterSlurpyCapture
+    };
+    fields.push(leaf_field(
+        Some("slurpy"),
+        super::slurpy_marker_value(marker),
+    ));
+    RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    }
 }
 
 /// Retarget a parameter at the term `name`: a sigilless `\x` binds

@@ -9,7 +9,7 @@ use Test;
 # parameter) a `Term::Name`, and an argument-less redispatch call a
 # `Call::Name::WithoutParentheses`. Each EVALs back to what the name means.
 
-plan 28;
+plan 33;
 
 sub expr(Str $src, Int $i = 0) { $src.AST.statements[$i].expression }
 
@@ -54,6 +54,17 @@ is Q|my @a = 1, 2; sub g(\l) { l.push(3) }; g(@a); @a.elems|.AST.EVAL, 3,
 is expr(Q|-> \v { v }|).signature.parameters[0].target.^name, 'RakuAST::ParameterTarget::Term',
     'a sigilless pointy-block parameter targets a term';
 is Q|my &g = -> \v { v + 1 }; g(1)|.AST.EVAL, 2, 'a sigilless pointy-block parameter EVALs';
+
+# --- sigilless slurpies: `+a` and the capture `|c` -------------------------
+is expr(Q[sub f(|c) { c }]).signature.parameters[0].slurpy.^name,
+    'RakuAST::Parameter::Slurpy::Capture', 'a capture parameter is a Slurpy::Capture';
+is expr(Q[sub f(+a) { a }]).signature.parameters[0].slurpy.^name,
+    'RakuAST::Parameter::Slurpy::SingleArgument', '+a is a Slurpy::SingleArgument';
+is Q[sub f(|c) { c.list.elems ~ "/" ~ c.hash.elems }; f(1, 2, :a)].AST.EVAL, '2/1',
+    'a capture parameter EVALs';
+is Q[sub f(+a) { a.elems }; f([1, 2]) ~ f(1, 2, 3)].AST.EVAL, '23',
+    'a single-argument slurpy EVALs';
+is Q[sub f(|) { "anon" }; f(1, :x)].AST.EVAL, 'anon', 'an anonymous capture EVALs';
 
 # --- redispatch calls without arguments -------------------------------------
 my $call = expr(Q|sub f { callsame }|).body.statement-list.statements[0].expression;
