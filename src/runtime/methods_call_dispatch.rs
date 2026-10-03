@@ -3450,6 +3450,15 @@ impl Interpreter {
         // otherwise. The element type is read off the container
         // (`ArrayData::value_type`), not looked up through the env.
         if let ValueView::Array(items, _) = target.view() {
+            // ADR-0070: an undeclared named argument is swallowed by the
+            // method's implicit `*%_`; counted here it became one more
+            // dimension (`(1,2,3).AT-POS("a", :zzz)` answered Nil where Rakudo
+            // dies on the "a" index). Only declared methods are stripped.
+            if matches!(method, "AT-POS" | "EXISTS-POS")
+                && let Some(stripped) = crate::builtins::strip_undeclared_nameds(method, &args)
+            {
+                args = stripped;
+            }
             // Detect shaped array and native typed array properties
             let shape = crate::runtime::utils::shaped_array_shape(&target);
             let element_type = items.value_type.clone();

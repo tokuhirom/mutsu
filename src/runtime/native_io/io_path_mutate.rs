@@ -227,6 +227,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // ADR-0070: the arms below read the destination positionally, so an
+        // undeclared named argument must not stand in for it
+        // (`"/tmp".IO.link(:zzz)` linked to a file named "zzz\tTrue").
+        let stripped = crate::builtins::strip_undeclared_nameds(method, args);
+        let args: &[Value] = stripped.as_deref().unwrap_or(args);
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
@@ -297,10 +302,9 @@ impl Interpreter {
             "link" => {
                 // IO::Path.link($name): creates a new hard link named $name
                 // pointing to self (the target). Fails with X::IO::Link.
-                let link_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
+                let link_name = args.first().map(|v| v.to_string_value()).ok_or_else(|| {
+                    RuntimeError::new("Too few positionals passed; expected 2 arguments but got 1")
+                })?;
                 let link_buf = self.resolve_path(&link_name);
                 match fs::hard_link(&path_buf, &link_buf) {
                     Ok(()) => Ok(Value::TRUE),
