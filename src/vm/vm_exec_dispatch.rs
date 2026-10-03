@@ -1980,7 +1980,17 @@ impl Interpreter {
                     && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
-                    val = self.coerce_typed_container_assignment(&name, val, false)?;
+                    val = if is_attr_twigil {
+                        self.coerce_typed_container_assignment(&name, val, false)?
+                    } else {
+                        // `%h = ...` reached by name (a closure writing a
+                        // captured typed hash): coerce AND keep the container's
+                        // `Hash[T]` identity, the `%` twin of the `@` branch
+                        // below (Data::Reshapers' `my Hash %r; lives-ok { %r =
+                        // f() }`).
+                        let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
+                        self.hash_container_writethrough_value(&name, val, &old)?
+                    };
                 } else if name.starts_with('@')
                     && name.len() > 1
                     && !name.contains("__")
