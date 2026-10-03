@@ -91,13 +91,12 @@ pub(crate) fn process_line(
     // returned it. Only the REPL re-enters `run` on one interpreter, so this
     // reset belongs here rather than in `run` itself.
     interpreter.last_value.take();
-    interpreter.last_topic_value.take();
+    interpreter.topic_state.last_topic_value.take();
     // The line's final statement is what the prompt displays, so it is a value
     // position rather than sink context — the same rule EVAL follows. Without
     // this, typing `1 + 2 * 3` answers 7 *and* warns "Useless use of ... in
     // sink context"; rakudo's REPL just answers 7.
-    crate::parser::set_eval_value_tail();
-    let display = match interpreter.run(accumulated) {
+    let display = match interpreter.run_value_tail(accumulated) {
         Ok(_) => {
             let output = interpreter.output();
             let had_output = interpreter.has_output_emitted();

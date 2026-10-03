@@ -84,7 +84,29 @@ impl ArrayData {
     // targets the live slice (`[Value]`) since #9121, so they no longer come
     // for free.
 
+    // Cost: O(1) amortized.
     pub(crate) fn push(&mut self, value: Value) {
+        // An appended element is an explicit one (#10360): with holes being
+        // tracked, a pushed `Any` (or a pushed `is default` value) must not
+        // read as a gap.
+        let len = self.len();
+        if let Some(initialized) = self.initialized.as_mut() {
+            initialized.insert(len);
+        }
+        self.push_raw(value);
+    }
+
+    /// Append a hole: the `is default` value or `marker` ([`Self::gap_fill`]),
+    /// left out of `initialized` so it reads as absent.
+    // Cost: O(1) amortized.
+    pub(crate) fn push_gap(&mut self, marker: Value) {
+        let len = self.len();
+        self.initialized.get_or_insert_with(|| (0..len).collect());
+        let fill = self.gap_fill(marker);
+        self.push_raw(fill);
+    }
+
+    fn push_raw(&mut self, value: Value) {
         if self.native.is_none() {
             // Appending never disturbs the dead prefix; no compaction needed.
             self.items.push(value);
@@ -94,6 +116,12 @@ impl ArrayData {
     }
 
     pub(crate) fn pop(&mut self) -> Option<Value> {
+        let len = self.len();
+        if len > 0
+            && let Some(initialized) = self.initialized.as_mut()
+        {
+            initialized.remove(&(len - 1));
+        }
         if self.native.is_some() {
             return self.items_mut().pop();
         }
@@ -108,11 +136,18 @@ impl ArrayData {
         value
     }
 
+    // Cost: O(k) amortized, k = appended elements.
     pub(crate) fn extend<I: IntoIterator<Item = Value>>(&mut self, iter: I) {
+        let before = self.len();
         if self.native.is_none() {
             self.items.extend(iter);
         } else {
             self.items_mut().extend(iter);
+        }
+        // Appended elements are explicit ones (see `push`).
+        let after = self.len();
+        if let Some(initialized) = self.initialized.as_mut() {
+            initialized.extend(before..after);
         }
     }
 
@@ -124,9 +159,20 @@ impl ArrayData {
         if self.native.is_some() {
             self.items_mut().insert(index, value);
         } else if index == 0 {
+            // `unshift_front` shifts the hole bitmap itself.
             self.unshift_front(value);
+            return;
         } else {
             self.items.insert(self.head + index, value);
+        }
+        // The inserted element is explicit; the ones after it moved up one.
+        if let Some(initialized) = self.initialized.as_mut() {
+            let old = std::mem::take(initialized);
+            *initialized = old
+                .into_iter()
+                .map(|i| if i >= index { i + 1 } else { i })
+                .chain(std::iter::once(index))
+                .collect();
         }
     }
 
@@ -310,14 +356,45 @@ impl ArrayData {
         {
             return value;
         }
-        if self.native.is_some() {
-            return self.items_mut().remove(index);
+        let removed = if self.native.is_some() {
+            self.items_mut().remove(index)
+        } else {
+            self.items.remove(self.head + index)
+        };
+        self.note_removed(index, index + 1);
+        removed
+    }
+
+    /// Drop the hole-bitmap entries of the removed range `start..end` and move
+    /// the ones after it down, so they keep naming the same elements.
+    // Cost: O(h), h = explicitly-assigned indices (nothing without holes).
+    fn note_removed(&mut self, start: usize, end: usize) {
+        if let Some(initialized) = self.initialized.as_mut() {
+            let n = end - start;
+            let old = std::mem::take(initialized);
+            *initialized = old
+                .into_iter()
+                .filter_map(|i| {
+                    if i < start {
+                        Some(i)
+                    } else if i < end {
+                        None
+                    } else {
+                        Some(i - n)
+                    }
+                })
+                .collect();
         }
-        self.items.remove(self.head + index)
     }
 
     // Cost: O(|new_len - e| + 1), e = elements.
     pub(crate) fn resize(&mut self, new_len: usize, value: Value) {
+        // Growing leaves the new slots out of `initialized` (they are holes);
+        // shrinking forgets the dropped indices.
+        let len = self.len();
+        if new_len < len {
+            self.note_removed(new_len, len);
+        }
         if self.native.is_some() {
             self.items_mut().resize(new_len, value);
         } else {
@@ -328,6 +405,10 @@ impl ArrayData {
 
     // Cost: O(e - len), e = elements (the dropped elements).
     pub(crate) fn truncate(&mut self, len: usize) {
+        let old_len = self.len();
+        if len < old_len {
+            self.note_removed(len, old_len);
+        }
         if self.native.is_some() {
             self.items_mut().truncate(len);
         } else {
@@ -338,6 +419,10 @@ impl ArrayData {
 
     // Cost: O(e - at), e = elements (the split-off tail).
     pub(crate) fn split_off(&mut self, at: usize) -> Vec<Value> {
+        let len = self.len();
+        if at < len {
+            self.note_removed(at, len);
+        }
         if self.native.is_some() {
             return self.items_mut().split_off(at);
         }
@@ -352,10 +437,6 @@ impl ArrayData {
         range: R,
     ) -> std::vec::Drain<'_, Value> {
         use std::ops::Bound;
-        if self.native.is_some() {
-            return self.items_mut().drain(range);
-        }
-        let head = self.head;
         let start = match range.start_bound() {
             Bound::Included(&s) => s,
             Bound::Excluded(&s) => s + 1,
@@ -364,8 +445,13 @@ impl ArrayData {
         let end = match range.end_bound() {
             Bound::Included(&e) => e + 1,
             Bound::Excluded(&e) => e,
-            Bound::Unbounded => self.items.len() - head,
+            Bound::Unbounded => self.len(),
         };
+        self.note_removed(start, end);
+        if self.native.is_some() {
+            return self.items_mut().drain(start..end);
+        }
+        let head = self.head;
         self.items.drain(head + start..head + end)
     }
 
@@ -386,11 +472,8 @@ impl ArrayData {
     // Cost: O(k), k = trailing holes removed.
     pub fn trim_trailing_holes(&mut self) {
         while !self.is_empty() && self.hole_at(self.len() - 1) {
-            let idx = self.len() - 1;
+            // `pop` forgets the index in `initialized`.
             self.pop();
-            if let Some(s) = self.initialized.as_mut() {
-                s.remove(&idx);
-            }
         }
     }
 }

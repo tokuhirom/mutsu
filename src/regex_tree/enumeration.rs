@@ -26,6 +26,13 @@ pub(crate) enum CharClassElement {
     },
     /// A named rule (`alpha` in `<+alpha>`).
     Rule { name: String, negated: bool },
+    /// A Unicode property (`:Lu` in `<-:Lu>`); `inverted` is its `!`
+    /// (`<:!Lu>`), `negated` the term's `-`.
+    Property {
+        name: String,
+        negated: bool,
+        inverted: bool,
+    },
 }
 
 /// One entry of an enumerated `[...]` class.
@@ -68,11 +75,19 @@ impl CharClassElement {
                 (*negated, format!("[{body}]"))
             }
             Self::Rule { name, negated } => (*negated, name.clone()),
+            Self::Property {
+                name,
+                negated,
+                inverted,
+            } => (
+                *negated,
+                format!(":{}{name}", if *inverted { "!" } else { "" }),
+            ),
         };
         // A leading positive rule needs its `+`: `<alpha>` is a subrule.
         let sign = match (negated, first, self) {
             (true, _, _) => "-",
-            (false, true, Self::Enumeration { .. }) => "",
+            (false, true, Self::Enumeration { .. } | Self::Property { .. }) => "",
             (false, _, _) => "+",
         };
         format!("{sign}{body}")
@@ -93,7 +108,8 @@ pub(crate) fn assertion_source(elements: &[CharClassElement]) -> String {
 impl Parser {
     /// Parse a character-class assertion at `<`. Returns `None`, with the
     /// position restored, for any other angle form and for an unmodelled
-    /// entry (a Unicode property `<:L>`, an unescaped `a-z` range).
+    /// entry (a property with an argument `<:Nv(1)>`, an unescaped `a-z`
+    /// range).
     // Cost: O(k), k = length of the assertion.
     pub(super) fn parse_char_class_assertion(&mut self) -> Option<RegexNode> {
         let start = self.pos;
@@ -121,9 +137,9 @@ impl Parser {
                     self.pos += 1;
                     false
                 }
-                // Only the first term may omit its sign, and only a `[`
-                // (`<alpha>` is a subrule).
-                '[' if elements.is_empty() => false,
+                // Only the first term may omit its sign, and only a `[` or
+                // a property (`<alpha>` is a subrule).
+                '[' | ':' if elements.is_empty() => false,
                 _ => return None,
             };
             self.skip_whitespace();
@@ -132,23 +148,38 @@ impl Parser {
                     negated,
                     elements: self.parse_enumeration()?,
                 });
-            } else {
-                let name_start = self.pos;
-                while self
-                    .chars
-                    .get(self.pos)
-                    .is_some_and(|c| c.is_alphanumeric() || *c == '_')
-                {
-                    self.pos += 1;
-                }
-                if self.pos == name_start {
+            } else if self.consume_if(':') {
+                let inverted = self.consume_if('!');
+                let name = self.parse_class_name()?;
+                // A predicate (`<:Nv(1)>`, `<:Script<Latin>>`) is not modelled.
+                if matches!(self.chars.get(self.pos), Some('(' | '<' | '[')) {
                     return None;
                 }
-                let name = self.chars[name_start..self.pos].iter().collect();
+                elements.push(CharClassElement::Property {
+                    name,
+                    negated,
+                    inverted,
+                });
+            } else {
+                let name = self.parse_class_name()?;
                 elements.push(CharClassElement::Rule { name, negated });
             }
         }
         (!elements.is_empty()).then_some(elements)
+    }
+
+    /// The identifier naming a rule or property term.
+    // Cost: O(k), k = length of the name.
+    fn parse_class_name(&mut self) -> Option<String> {
+        let name_start = self.pos;
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|c| c.is_alphanumeric() || *c == '_')
+        {
+            self.pos += 1;
+        }
+        (self.pos != name_start).then(|| self.chars[name_start..self.pos].iter().collect())
     }
 
     /// The entries of a `[...]` class, after its `[`, through its `]`.

@@ -898,7 +898,29 @@ impl Value {
     }
 
     /// Create an Instant value from the current system time.
+    ///
+    /// Like Rakudo's, the TAI seconds are an exact Rat at nanosecond
+    /// resolution, so the Duration between two `now`s keeps sub-microsecond
+    /// differences (#11273).
+    // Cost: O(1).
     pub(crate) fn make_instant_now() -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            && let Ok(secs) = i64::try_from(d.as_secs())
+        {
+            let tai_secs = secs + crate::value::temporal_core::leap_seconds_at(secs as f64);
+            if let Some(nanos) = tai_secs
+                .checked_mul(1_000_000_000)
+                .and_then(|n| n.checked_add(i64::from(d.subsec_nanos())))
+            {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "value".to_string(),
+                    crate::value::make_rat(nanos, 1_000_000_000),
+                );
+                return Value::make_instance(Symbol::intern("Instant"), attrs);
+            }
+        }
         Self::make_instant_from_posix(current_time_secs_f64())
     }
 

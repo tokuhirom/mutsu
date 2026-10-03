@@ -1,6 +1,6 @@
 # ADR-11276: Built-in methods are handler rows in the one method table
 
-- **Status**: Accepted (user decision 2026-10-03). Slice 1 in progress; see §9. Supersedes
+- **Status**: Accepted (user decision 2026-10-03). Slices 1 and 2 done; see §9. Supersedes
   [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) design decision 1 of its E2
   design ("rows are recognition metadata, not function pointers; invocation stays in the arity
   cascades").
@@ -244,3 +244,27 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
   - Next: slice 2 migrates the first family. Rows that take arguments need the lane to grow
     the argument checks the full path makes (Junction autothreading, `use fatal` Failures).
     The plain `CallMethod` opcode (an inline receiver) does not take the lane yet.
+- 2026-10-03, slice 2 (the `Rational` family): `numerator`, `denominator`, `nude`, `norm` and
+  `isNaN` are rows owned by `Rat` and by `FatRat` (Rakudo composes the `Rational` role into
+  each), all pointing at one handler per method in `method_table/rational.rs` that also covers
+  big components. `Int` and `Complex` have `isNaN` rows. `DispatchShape` gains `Int` (inline,
+  boxed and big), `FatRat` and `Complex`, and a big rational takes the shape its FatRat flag
+  names. `native_method_0arg` now asks the table before its prologue, so every caller of the
+  cascades reaches a row, and the five arms are deleted from `methods_0arg/coercion.rs`. What
+  is left of the `isNaN` arm answers only receivers with no shape (`Bool`, `Instant`,
+  `Duration`, ...). The debug cross-check runs the cascade without the table
+  (`native_method_0arg_cascade`) and accepts a decline, since a migrated method has no arm.
+  - Behaviour change, towards Rakudo: `Int` no longer answers `numerator`, `denominator`,
+    `nude` or `norm` (Rakudo's `Int` does not do `Rational`), so the recognition rows
+    `Int.numerator`/`Int.denominator` are gone too. `.norm` keeps the receiver's type for big
+    components as well: the cascade arm turned a big `FatRat` into a `Rat`, and a big `Rat`
+    whose reduced parts fit a word into a `FatRat`.
+  - The lane tests the method name against the table's bit set before probing the receiver,
+    because an `Int` now has a shape. Without that test, every `Int` call with no row
+    (`$i.abs`) took the memo's lock and missed, which cost +2.0% on that benchmark.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `$f.numerator` (FatRat) 1,785M to 313M (-82.5%), `$i.isNaN` -75.4%,
+    `$c.isNaN` (Complex) -83.5%, `$r.nude` -73.3%. Calls the table does not answer:
+    `$i.abs` +0.2%, `$s.uc` -1.5%, `@a.map(*+1).elems` +0.2%, the empty loop unchanged.
+    `$r.numerator`, already a lane hit, moved +2.3% (~35 Ir per call): the handler now
+    matches three rational views instead of one, and the shape probe has more arms.

@@ -114,8 +114,8 @@ impl NativeRowFlags {
     /// #9869: Rakudo declares `name` directly on `owner` -- the name is a
     /// key of `::(owner).^method_table`, the per-class table `.^can` walks
     /// along the MRO. Distinct from [`Self::INTROSPECTABLE`], which records
-    /// that `owner` *responds to* the name (so it is also set on names the
-    /// owner merely inherits, e.g. `Cool`'s `Str`). Baked once from Rakudo
+    /// that `::(owner).^methods` lists the name locally; inherited names are
+    /// found through the MRO for `.^methods(:all)`. Baked once from Rakudo
     /// by a throwaway generator, like the other flags. Read by
     /// [`native_method_declared`].
     pub(crate) const DECLARED: NativeRowFlags = NativeRowFlags(1 << 4);

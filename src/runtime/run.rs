@@ -546,7 +546,23 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Run `input` as a program: its final statement is in sink context, as
+    /// in Raku (an unhandled `Failure` there throws, a user `sink` runs).
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
+        self.run_unit(input, true)
+    }
+
+    /// Run `input` as a REPL line: its final statement is the line's value
+    /// (reported through `last_value`), not sunk — the rule `EVAL` follows.
+    pub fn run_value_tail(&mut self, input: &str) -> Result<String, RuntimeError> {
+        crate::parser::set_eval_value_tail();
+        self.run_unit(input, false)
+    }
+
+    /// The body of [`Self::run`] / [`Self::run_value_tail`]; `sink_tail`
+    /// selects whether the unit's final statement is sunk
+    /// (`Compiler::unit_tail_sinks`).
+    fn run_unit(&mut self, input: &str, sink_tail: bool) -> Result<String, RuntimeError> {
         // Fresh top-level program: forget which parse warnings were already
         // surfaced by a previous `run()` on this Interpreter (REPL lines,
         // `#[test]` helpers, ... — see `surfaced_parse_warnings`), so this
@@ -777,6 +793,11 @@ impl Interpreter {
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
         compiler.lexical_scope_known = true;
+        compiler.unit_tail_sinks = sink_tail;
+        // A sunk tail expression or call is sunk by its own `SinkPop`; the
+        // checks on `last_value` below are only for the other tail forms.
+        let tail_sunk_by_code =
+            sink_tail && matches!(body_main.last(), Some(Stmt::Expr(_) | Stmt::Call { .. }));
         let (code, compiled_fns) = compiler.compile(&body_main);
         // Seed the escaping-our-sub lexical names from the compiled top-level code
         // (and its nested closures), so a free-variable read inside such an `our`
@@ -787,10 +808,12 @@ impl Interpreter {
         // compiled mainline directly (outermost run → fresh registers) instead of
         // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.
         let outer_prologue_pending =
-            std::mem::replace(&mut self.begin_prologue_pending, begin_prologue);
+            std::mem::replace(&mut self.control.begin_prologue_pending, begin_prologue);
         let body_result = self.run_top(&code, &compiled_fns);
-        let failed_at_begin_time =
-            std::mem::replace(&mut self.begin_prologue_pending, outer_prologue_pending);
+        let failed_at_begin_time = std::mem::replace(
+            &mut self.control.begin_prologue_pending,
+            outer_prologue_pending,
+        );
         // An error the BEGIN prologue raised is a compile-time failure in
         // rakudo: the unit never finished compiling, so neither its END
         // phasers nor the rest of program exit run -- the same as the
@@ -864,7 +887,8 @@ impl Interpreter {
         // an `EVAL`/`do`-block value, so the genuine top-level trips it here. A
         // container-wrapped tail (`my $x = @a.pop`, a bare `$x`) does NOT trip,
         // matching Raku, so only fresh-rvalue tail forms are checked.
-        if Self::tail_stmt_sinks_fresh_rvalue(&body_main)
+        if !tail_sunk_by_code
+            && Self::tail_stmt_sinks_fresh_rvalue(&body_main)
             && let Some(v) = last_value.as_ref()
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(v)
         {
@@ -878,7 +902,7 @@ impl Interpreter {
         // SinkPop/Pop LazyList arms). Restricted to safely-finite sources — a
         // finite-bottomed map/grep pipe or a plain (non-`lazy`) gather
         // coroutine; a `.cache` view or a genuinely-lazy list stays undrained.
-        if Self::tail_stmt_sinks_fresh_rvalue(&body_main) {
+        if !tail_sunk_by_code && Self::tail_stmt_sinks_fresh_rvalue(&body_main) {
             let drain = last_value.as_ref().and_then(|v| match v.view() {
                 crate::value::ValueView::LazyList(ll)
                     if !ll.is_cached_no_sink()
@@ -921,7 +945,7 @@ impl Interpreter {
         // `Usage:` and exited 2 where raku exits 0 silently — which also made
         // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
         // since every dist exporting a MAIN dispatched it.
-        if !self.explicit_run_main && !self.halted {
+        if !self.explicit_run_main && !self.control.halted {
             self.dispatch_main(&compiled_fns)?;
         }
         self.finish()?;
@@ -1194,12 +1218,12 @@ impl Interpreter {
         // LEAVE phasers a top-level `use` attached to the main compunit
         // (`runtime::attach_target`): the mainline is left before END runs.
         // An `exit` leaves no scope in raku, so it skips them.
-        let mainline_leave = if self.halted {
+        let mainline_leave = if self.control.halted {
             Ok(())
         } else {
             self.run_mainline_leave_phasers()
         };
-        if !self.end_phasers.is_empty() {
+        if !self.control.end_phasers.is_empty() {
             // Rakudo latches the process status at the *first* `exit`
             // (`the-end-is-nigh`): an `exit` raised while one is already
             // unwinding still ends the block it runs in, but it neither
@@ -1207,18 +1231,18 @@ impl Interpreter {
             // yet. So `END { exit 7 }` decides the status of a program that ends
             // on its own, and is status-inert in a program that already said
             // `exit 42` — while the *other* END phasers run either way.
-            let exit_already_requested = self.halted;
-            let saved_exit_lock = self.exit_status_locked;
-            self.exit_status_locked = exit_already_requested;
+            let exit_already_requested = self.control.halted;
+            let saved_exit_lock = self.control.exit_status_locked;
+            self.control.exit_status_locked = exit_already_requested;
             // Clear halted flag so END phasers can execute even after exit()
-            self.halted = false;
+            self.control.halted = false;
             // Run in reverse *install* order, which is not the registration
             // order: the main compunit's top-level ENDs are registered eagerly
             // above, before any `use` has loaded a module. `EndPhaser::order`
             // records where rakudo would have installed each one; the sort is
             // stable, so phasers within one class keep their registration
             // order. See `end_order`.
-            let mut phasers = self.end_phasers.clone();
+            let mut phasers = self.control.end_phasers.clone();
             phasers.sort_by_key(|p| p.order);
             // Save the env state before any END phasers run.  This lets us
             // distinguish between variables set by prior END phasers (which
@@ -1278,13 +1302,13 @@ impl Interpreter {
                 let body_result = self.run_block(body);
                 self.current_unit = saved_unit;
                 self.set_current_package(saved_package);
-                if self.halted {
+                if self.control.halted {
                     // This phaser called `exit`. Whatever status it asked for is
                     // settled now (either it was the first `exit` and owns the
                     // status, or the lock already held it); let the remaining
                     // phasers run instead of inheriting the halt.
-                    self.exit_status_locked = true;
-                    self.halted = false;
+                    self.control.exit_status_locked = true;
+                    self.control.halted = false;
                 }
                 if body_result.is_err() {
                     self.restore_warn_suppression(warn_mark);
@@ -1300,8 +1324,8 @@ impl Interpreter {
             // Restore the halt for anything downstream that reads it, then drop
             // the status lock: `finish` also runs for a nested in-process
             // program (`is_run`), whose interpreter goes on being used.
-            self.halted = exit_already_requested || self.exit_status_locked;
-            self.exit_status_locked = saved_exit_lock;
+            self.control.halted = exit_already_requested || self.control.exit_status_locked;
+            self.control.exit_status_locked = saved_exit_lock;
         }
         self.run_pending_instance_destroys()?;
         // Print deprecation report to stderr at program exit

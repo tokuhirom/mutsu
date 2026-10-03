@@ -289,7 +289,7 @@ impl Interpreter {
         let slash = outcome.slash.clone();
         self.env_mut().insert("/".to_string(), slash.clone());
         self.publish_subst_capture_env(&slash);
-        self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+        self.topic_state.substitution_in_smartmatch = self.topic_state.in_smartmatch_rhs;
         // A non-list `s///` that matched nothing is `Nil`, the failed match's
         // value (Rakudo); the smartmatch form (`$x ~~ s///`) turns it into
         // `False` in `exec_smart_match_expr_op`.
@@ -433,8 +433,8 @@ impl Interpreter {
         // (`given $in { $frag ~~ s/^"row="//; }` must not touch `$in`). The
         // smartmatch handler owns every writeback in that case, including
         // `$_ ~~ s///` via its own topic-source mirror.
-        if !self.in_smartmatch_rhs
-            && let Some(source_var) = self.topic_source_var.clone()
+        if !self.topic_state.in_smartmatch_rhs
+            && let Some(source_var) = self.topic_state.topic_source_var.clone()
             && !source_var.starts_with('@')
             && !source_var.starts_with('%')
         {

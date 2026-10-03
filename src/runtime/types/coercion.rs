@@ -69,6 +69,18 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
     } else {
         target
     };
+    // A Str coerces to a numeric type exactly as the `Str.Int`/`.Num`/`.Rat`/
+    // `.Complex` method does (ADR-0117: one implementation per primitive):
+    // radix and rational forms parse through the full numeric grammar, and a
+    // non-numeric string yields the lazy `X::Str::Numeric` Failure rather than
+    // a silent 0 (`sub f(Int() $o)` given "x", #11291).
+    if matches!(base_target, "Int" | "Num" | "Rat" | "Complex")
+        && value.is_str_value()
+        && let Some(Ok(coerced)) =
+            crate::builtins::methods_0arg::native_method_0arg(&value, Symbol::intern(base_target))
+    {
+        return coerced;
+    }
     match base_target {
         "Int" => match value.view() {
             ValueView::Int(_) => value,
@@ -81,14 +93,6 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
                 RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
             }
             ValueView::FatRat(n, d) => Value::int(n / d),
-            ValueView::Str(s) => match s.parse::<i64>() {
-                Ok(n) => Value::int(n),
-                // Past i64: keep the exact big integer, not 0.
-                Err(_) => s
-                    .trim()
-                    .parse::<num_bigint::BigInt>()
-                    .map_or_else(|_| Value::int(0), Value::from_bigint),
-            },
             ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
             _ => value,
         },
@@ -96,7 +100,6 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             ValueView::Num(_) => value,
             ValueView::Int(n) => Value::num(n as f64),
             ValueView::Rat(n, d) => Value::num(n as f64 / d as f64),
-            ValueView::Str(s) => Value::num(s.parse::<f64>().unwrap_or(0.0)),
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
@@ -113,28 +116,6 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
                     let g = gcd_i64(numer.abs(), denom);
                     Value::rat_raw(numer / g, denom / g)
                 }
-                ValueView::Str(s) => {
-                    if s.contains('.') {
-                        let trimmed = s.trim();
-                        let negative = trimmed.starts_with('-');
-                        let abs_str = if negative { &trimmed[1..] } else { trimmed };
-                        if let Some((int_part, frac_part)) = abs_str.split_once('.') {
-                            let frac_digits = frac_part.len() as u32;
-                            let denom = 10i64.pow(frac_digits);
-                            let int_val = int_part.parse::<i64>().unwrap_or(0);
-                            let frac_val = frac_part.parse::<i64>().unwrap_or(0);
-                            let numer = int_val * denom + frac_val;
-                            let numer = if negative { -numer } else { numer };
-                            let g = gcd_i64(numer.abs(), denom);
-                            Value::rat_raw(numer / g, denom / g)
-                        } else {
-                            value
-                        }
-                    } else {
-                        let n = s.trim().parse::<i64>().unwrap_or(0);
-                        Value::rat_raw(n, 1)
-                    }
-                }
                 _ => value,
             }
         }
@@ -148,17 +129,6 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                 Value::complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
             }
-            ValueView::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                Some(parsed) => match parsed.view() {
-                    ValueView::Complex(re, im) => Value::complex(re, im),
-                    ValueView::Int(n) => Value::complex(n as f64, 0.0),
-                    ValueView::Num(n) => Value::complex(n, 0.0),
-                    ValueView::Rat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
-                    ValueView::FatRat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
-                    _ => value,
-                },
-                None => value,
-            },
             _ => value,
         },
         "Bool" => Value::truth(value.truthy()),

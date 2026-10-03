@@ -76,14 +76,14 @@ impl Interpreter {
         for v in &self.upvalues {
             visit_opt(visitor, v);
         }
-        visit_opt(visitor, &self.last_topic_value);
-        visit_slice(visitor, &self.topic_save_stack);
-        if let Some((_, path)) = &self.element_source {
+        visit_opt(visitor, &self.topic_state.last_topic_value);
+        visit_slice(visitor, &self.topic_state.topic_save_stack);
+        if let Some((_, path)) = &self.topic_state.element_source {
             for (v, _) in path {
                 visitor.visit_value(v);
             }
         }
-        for (_, v, _) in &self.for_param_restore_stack {
+        for (_, v, _) in &self.topic_state.for_param_restore_stack {
             visit_opt(visitor, v);
         }
         for frame in &self.call_frames {
@@ -119,7 +119,7 @@ impl Interpreter {
     /// stacks, and closure-capture overrides.
     fn visit_lexical_envs(&self, visitor: &mut dyn RootVisitor) {
         self.env.visit_values(visitor);
-        for phaser in &self.end_phasers {
+        for phaser in &self.control.end_phasers {
             phaser.env.visit_values(visitor);
         }
         for code in self.attached_leave_phasers() {
@@ -135,7 +135,7 @@ impl Interpreter {
         // executing call's scope frames, and every suspended caller below it
         // holds live values in its own loop-local saves. Reading through the
         // window would free them while the program still needs them.
-        for map in self.loop_local_saved_env.all_frames() {
+        for map in self.topic_state.loop_local_saved_env.all_frames() {
             // A `None` entry is a removal marker (the name did not exist before
             // the loop), so it roots nothing.
             for v in map.values().flatten() {
@@ -250,10 +250,11 @@ impl Interpreter {
         visit_map_values(visitor, &self.escaped_our_lexical_cells);
         visit_map_values(visitor, &self.state_vars);
         visit_map_values(visitor, &self.closure_captured_state);
-        self.once_values
+        self.control
+            .once_values
             .visit_done_values(|v| visitor.visit_value(v));
         visit_map_values(visitor, &self.attr_var_defaults);
-        for save in &self.let_saves {
+        for save in &self.control.let_saves {
             visitor.visit_value(&save.value);
             if let Some((container, key)) = &save.elem {
                 visitor.visit_value(container);

@@ -117,25 +117,25 @@ impl Interpreter {
     /// reported first, then END runs). Without one, `run` just returns the
     /// error and the caller prints it.
     pub fn set_uncaught_reporter(&mut self, reporter: super::UncaughtReporter) {
-        self.uncaught_reporter = Some(reporter);
+        self.control.uncaught_reporter = Some(reporter);
     }
 
     /// True when the installed reporter already printed the error `run` returned.
     pub fn uncaught_reported(&self) -> bool {
-        self.uncaught_reported
+        self.control.uncaught_reported
     }
 
     // Cost: O(1) plus the reporter's own rendering.
     pub(crate) fn report_uncaught_early(&mut self, err: &RuntimeError) {
-        if let Some(mut reporter) = self.uncaught_reporter.take() {
+        if let Some(mut reporter) = self.control.uncaught_reporter.take() {
             reporter(self, err);
-            self.uncaught_reported = true;
-            self.uncaught_reporter = Some(reporter);
+            self.control.uncaught_reported = true;
+            self.control.uncaught_reporter = Some(reporter);
         }
     }
 
     pub fn exit_code(&self) -> i64 {
-        self.exit_code
+        self.control.exit_code
     }
 
     /// Return the value of `%*ENV<RAKU_EXCEPTIONS_HANDLER>`, if set.
@@ -168,7 +168,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_halted(&self) -> bool {
-        self.halted
+        self.control.halted
     }
 
     /// True when the program asked to `exit` rather than running off its end.
@@ -176,7 +176,7 @@ impl Interpreter {
     /// outstanding non-`app_lifetime` `Thread`s — see
     /// [`Self::join_outstanding_threads`].
     pub fn exit_requested(&self) -> bool {
-        self.halted
+        self.control.halted
     }
 
     /// Wait for every still-running non-`app_lifetime` `Thread` before the
@@ -278,6 +278,14 @@ impl Interpreter {
         };
         // Read the thread-clone shared stderr Arc out under a scoped guard so it
         // is dropped before `self.warn_output` / `emit` re-borrow self.
+        // Rakudo's default `warn` handler prints through the dynamic `$*ERR`,
+        // so a `my $*ERR = Trap.new` (silently, Test::Output) captures the
+        // warning too. Only the process stderr handle takes the direct path.
+        if self.dynamic_err_redirected() && self.write_to_named_handle("$*ERR", &msg, false).is_ok()
+        {
+            self.warn_output.push_str(&msg);
+            return;
+        }
         let thread_shared_stderr = {
             let sink = self.output_sink();
             if sink.is_thread_clone {
@@ -303,10 +311,28 @@ impl Interpreter {
         }
     }
 
+    /// Whether the dynamic `$*ERR` currently names something other than the
+    /// process stderr: a user object with a `print` method, a file handle, or
+    /// `$*OUT`'s handle.
+    // Cost: O(1) — one dynamic-variable lookup and one handle-table probe.
+    fn dynamic_err_redirected(&mut self) -> bool {
+        let Some(handle) = self.get_dynamic_handle("$*ERR") else {
+            return false;
+        };
+        if handle.is_nil() {
+            return false;
+        }
+        match self.with_handle_mut_opt(&handle, |state| Ok(state.is_stderr_target())) {
+            Ok(Some(is_stderr)) => !is_stderr,
+            Ok(None) => Self::handle_id_from_value(&handle).is_none(),
+            Err(_) => false,
+        }
+    }
+
     pub(crate) fn push_warn_suppression(&mut self) {
         self.warn_suppression_depth += 1;
         self.warn_suppression_boundaries
-            .push(self.control_handlers.len());
+            .push(self.control.control_handlers.len());
     }
 
     pub(crate) fn pop_warn_suppression(&mut self) {

@@ -31,6 +31,7 @@ use super::adverbs::{
 use super::call_args::{
     has_unescaped_statement_boundary, parse_call_arg_list, parse_colon_method_arg,
 };
+use super::rakuast_adverbs::rakuast_regex_adverbs;
 use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_pattern};
 use super::subst::{
     build_topic_subst_compound_expr, parse_subst_replacement_expr, try_strip_subst_compound_assign,
@@ -264,6 +265,29 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         let scan_result = scan_to_delim(r, open_ch, close_ch, is_paired);
         if let Some((pattern, rest)) = scan_result {
             validate_regex_pattern_or_perror(pattern)?;
+            // Rakudo keeps the outer adverbs on the `QuotedRegex` node
+            // (`rx:i/a/` is `adverbs => (ColonPair::True("i"),)` around the
+            // plain body), so the tree is parsed from the written body. The
+            // value still carries the inline `:i ` prefix execution reads.
+            if let Some(tree_adverbs) = rakuast_regex_adverbs(&adverbs, false)
+                && !tree_adverbs.is_empty()
+                && let Some(mut tree) = RegexTree::parse_static_at(
+                    pattern,
+                    false,
+                    crate::parser::primary::fragment_attempts::unit_offset(pattern),
+                )
+            {
+                tree.adverbs = tree_adverbs;
+                let inline = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+                let value = build_regex_with_adverbs(inline, &adverbs);
+                return Ok((
+                    rest,
+                    Expr::RegexLiteral {
+                        value: value.with_regex_source_tree(tree.clone()),
+                        tree,
+                    },
+                ));
+            }
             if adverbs_need_value(&adverbs) {
                 let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                 return Ok((
@@ -964,23 +988,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     } else {
                         Value::regex(pattern)
                     };
-                    let rakuast_adverbs = adverbs.source.iter().all(|(name, argument)| {
-                        argument.is_none()
-                            && matches!(name.as_str(), "i" | "ignorecase" | "g" | "global")
-                    });
-                    if rakuast_adverbs
+                    if let Some(tree_adverbs) = rakuast_regex_adverbs(&adverbs, true)
                         && let Some(mut tree) =
                             RegexTree::parse_static_at(&source_pattern, false, unit_base)
                     {
                         tree.match_immediately = true;
-                        tree.adverbs = adverbs
-                            .source
-                            .iter()
-                            .map(|(name, argument)| crate::regex_tree::RegexAdverb {
-                                name: name.clone(),
-                                argument: argument.clone(),
-                            })
-                            .collect();
+                        tree.adverbs = tree_adverbs;
                         return Ok((
                             rest,
                             Expr::MatchRegexTree {

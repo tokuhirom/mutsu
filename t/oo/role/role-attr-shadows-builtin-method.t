@@ -33,10 +33,11 @@ is WithNum.new.numerator, 42, 'class attr numerator accessor still works';
 is (3/10).numerator, 3, 'Rat numerator';
 is (3/10).denominator, 10, 'Rat denominator';
 is-deeply (3/10).nude.List, (3, 10), 'Rat nude';
-is 7.numerator, 7, 'Int numerator';
-is 7.denominator, 1, 'Int denominator';
-is (2**70).numerator, 2**70, 'BigInt numerator';
-is (2**70).denominator, 1, 'BigInt denominator';
+# Rakudo's Int does not do Rational, so it has no numerator/denominator.
+throws-like { 7.numerator }, X::Method::NotFound, 'Int has no numerator';
+throws-like { 7.denominator }, X::Method::NotFound, 'Int has no denominator';
+throws-like { (2**70).numerator }, X::Method::NotFound, 'big Int has no numerator';
+throws-like { (2**70).denominator }, X::Method::NotFound, 'big Int has no denominator';
 
 # A punned Rational instance is Real: to-json serializes it numerically
 # (JSON::Fast t/04-roundtrip.t), not as an opaque string.

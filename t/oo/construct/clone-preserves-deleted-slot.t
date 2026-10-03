@@ -3,7 +3,7 @@
 # and shaped metadata. (roast/S02-types/array.t test 108, rakudo #1434.)
 use Test;
 
-plan 8;
+plan 9;
 
 # The deleted-slot :exists state is preserved through .clone.
 {
@@ -26,11 +26,15 @@ plan 8;
     is @b[1], 2, 'clone is an independent copy (mutating original leaves clone)';
 }
 
-# `is default` survives .clone.
+# `is default` survives .clone -- the clone itself, bound with `:=`. A list
+# assignment `my @b = @a.clone` copies the elements into @b's own container,
+# which has no default (rakudo: `(Any)`, #10360).
 {
     my @a is default(42) = 1, 2, 3;
-    my @b = @a.clone;
+    my @b := @a.clone;
     is @b[10], 42, 'is default survives .clone';
+    my @c = @a.clone;
+    is-deeply @c[10], Any, 'a list-assignment copy of the clone has no default';
 }
 
 # A fresh delete on the clone does not leak back to the original.

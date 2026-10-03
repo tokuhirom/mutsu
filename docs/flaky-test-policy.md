@@ -32,12 +32,15 @@ an aggregator job that runs no tests). A genuine regression fails in both,
 because the code is broken in every configuration. A test that fails in exactly
 ONE of them, with the other green on the same commit, is most likely
 non-deterministic: same source, same inputs, different verdict. Roast files run
-in one PR job only, so for them only the `push: main` signal below applies. The
+in one PR job only, so for them only the run-on-`main` signal below applies. The
 GC-stress and JIT-stress configurations run nightly in `stress.yml`
 ([ADR-10738](adr/10738-stress-runs-leave-the-pr-gate.md)); a file red there and
 green in the PR jobs on the same tree is configuration- or timing-sensitive.
-A failure on a `push: main` run is stronger still — main is protected, so that
-exact tree passed the full suite minutes earlier on its PR.
+A failure on a run on `main` is stronger still — main is protected, so every PR
+in that tree passed the full suite on its own. (`main` was tested on every push
+until 2026-10-03 and hourly since; an hourly run can cover several merges, so a
+red one can also be two PRs that are each green alone — check whether the
+failure reproduces on each merged PR's head before calling it a flake.)
 
 `scripts/ci-flake-survey.sh [run-count]` mines this and prints a per-test tally
 with `1-JOB` / `N-JOB` / `MAIN-PUSH` columns. High `1-JOB` with zero `N-JOB` is

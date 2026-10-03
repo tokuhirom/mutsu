@@ -187,7 +187,9 @@ impl Value {
             }
             ValueView::BigRat(n, d) => {
                 if !d.is_zero() {
-                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
+                    // One correctly rounded quotient: dividing two separately
+                    // converted operands is Inf-free only while both fit a double.
+                    crate::value::bigrat_to_f64(n, d)
                 } else if n.is_zero() {
                     f64::NAN
                 } else if n.is_positive() {

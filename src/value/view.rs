@@ -1039,6 +1039,31 @@ impl Value {
         fresh.unwrap_or(self)
     }
 
+    /// [`Value::detach_shared_container`] for a list assignment's copy (`my @b
+    /// = @a`, an `@a is copy` parameter): when the array is another holder's
+    /// container, the copy also settles its holes and drops the source's
+    /// `is default(...)` ([`ArrayData::settle_for_list_assignment`], #10360).
+    /// An unshared array is a value built for this very target and is kept as
+    /// is; a hash or any other value is only detached.
+    // Cost: O(1) for an unshared container; O(e), e = elements, for a copy.
+    pub(crate) fn copy_for_list_assignment(self) -> Value {
+        // A shaped array keeps its holes: it is the fixed-size container a
+        // declaration (`my @a[3]`) made, never an element-by-element copy.
+        let shared = matches!(
+            self.view(),
+            ValueView::Array(gc, kind) if gc.strong_count() > 1 && kind != ArrayKind::Shaped
+        );
+        let mut detached = self.detach_shared_container();
+        if shared {
+            detached.with_array_mut(|items, _| {
+                if items.initialized.is_some() || items.default.is_some() {
+                    Gc::make_mut(items).settle_for_list_assignment();
+                }
+            });
+        }
+        detached
+    }
+
     /// Run `f` on the hash payload if this is exactly a `Hash`.
     /// Returns `None` (without calling `f`) otherwise.
     #[inline]

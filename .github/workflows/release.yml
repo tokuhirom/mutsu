@@ -148,6 +148,22 @@ jobs:
           name: mutsu-${{ matrix.archive_name }}
           path: mutsu-${{ github.ref_name }}-${{ matrix.archive_name }}.tar.gz
 
+  # The whole of ci.yml, on the tagged commit, with every job forced on. Two of
+  # its jobs (`wasm-e2e`, `debug-tap`) never run on pull requests and `main` is
+  # only tested hourly, so this is the one place a release is guaranteed to be
+  # checked by all of them, on exactly what it ships. Nothing publishes (npm,
+  # GitHub Release) unless it passes. The nested workflow's token can only
+  # narrow this job's, so grant what ci.yml declares.
+  ci:
+    needs: verify-tag
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      full: true
+
   # Release-time gate: every bundled library's upstream test suite must still
   # pass (at its recorded baseline) against the SHIPPED library + this mutsu.
   # This is the deliberate, thorough check gating a release publish: a release is
@@ -208,7 +224,7 @@ jobs:
         run: scripts/battery-testsuite.sh
 
   npm:
-    needs: batteries
+    needs: [batteries, ci]
     runs-on: ubuntu-24.04
     if: ${{ github.ref_type == 'tag' }}
     # npm trusted publishing is bound to this environment, which only `v*`
@@ -245,7 +261,7 @@ jobs:
         run: npm publish --access public ./pkg
 
   release:
-    needs: [build, batteries, npm]
+    needs: [build, batteries, npm, ci]
     runs-on: ubuntu-24.04
     # Only publish a GitHub Release for a real tag push. workflow_dispatch runs
     # stop after build (artifacts are available for inspection, no release).

@@ -3,9 +3,9 @@ use MONKEY-SEE-NO-EVAL;
 use Test;
 
 # The package-qualified names a module declares at its top level -- its
-# classes, subsets and enum values (`Pkg::Class`, `E::K`, `Pkg::E::K`,
-# `Pkg::K`) -- are package symbols, not lexicals of whatever frame ran the
-# load. ADR-0084 group 2 (#7817) keeps them out of that frame's env; every
+# classes, subsets and enum values (`Pkg::Class`, `Pkg::E::K`, `Pkg::K`) --
+# are package symbols, while a private `E::K` belongs to the module's scope.
+# ADR-0084 group 2 (#7817) keeps them out of that frame's env; every
 # way of reaching them must still see them, from the importer, from the
 # module's own code, from a nested routine, from another thread, and through
 # the package stash.

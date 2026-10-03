@@ -1159,11 +1159,11 @@ pub(super) fn dispatch(
                 }),
                 ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
                 ValueView::FatRat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                // Correctly rounded: converting numerator and denominator to
+                // f64 separately loses the last bit (`Num(0.7777777777777777777771)`
+                // must equal `Num(0.777777777777777777777)`).
                 ValueView::BigRat(n, d) if !d.is_zero() => {
-                    use num_traits::ToPrimitive;
-                    let num = n.to_f64().unwrap_or(0.0);
-                    let den = d.to_f64().unwrap_or(1.0);
-                    Value::num(num / den)
+                    Value::num(crate::value::bigrat_to_f64(n, d))
                 }
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
                 // plus a trimmed copy).
@@ -1425,6 +1425,18 @@ fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, Runtime
         } else {
             Ok(Value::num(f64::INFINITY))
         };
+    }
+    // An Int/BigInt-ended range counts from its endpoints (no expansion cap).
+    if let ValueView::GenericRange { start, end, .. } = target.view()
+        && matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_))
+    {
+        let exact = crate::value::radix_numeric::coerce_to_numeric(target.clone());
+        return Ok(if method == "Num" {
+            Value::num(exact.to_f64())
+        } else {
+            exact
+        });
     }
     let count = match target.view() {
         ValueView::Range(s, e) => (e - s + 1).max(0),

@@ -66,7 +66,7 @@ impl Interpreter {
         // opcode when the body throws. Unlike `check_phaser_depth`, a leaked
         // region keeps sub declarations rolled out of the registry, so close
         // any it left open before the handler resumes ordinary execution.
-        let begin_time_base = self.begin_time_hidden.len() as u32;
+        let begin_time_base = self.control.begin_time_hidden.len() as u32;
         // A `quietly` region opened inside the protected body is closed by a
         // plain `WarnSuppressPop` on its straight-through path only, so an
         // error escaping it (`try { quietly { die } }`) would leave warnings
@@ -148,8 +148,8 @@ impl Interpreter {
             // here). The depth invariant `control_handlers.len() ==
             // control_handler_depth` is preserved so the innermost handler is
             // always `control_handlers.last()`.
-            self.catch_handler_seq += 1;
-            let token = self.catch_handler_seq;
+            self.control.catch_handler_seq += 1;
+            let token = self.control.catch_handler_seq;
             self.push_control_handler(
                 code,
                 (control_begin, end),
@@ -172,8 +172,8 @@ impl Interpreter {
         let has_catch = catch_begin < control_begin;
         let registers_catch = has_catch || traps;
         let catch_token = if registers_catch {
-            self.catch_handler_seq += 1;
-            let token = self.catch_handler_seq;
+            self.control.catch_handler_seq += 1;
+            let token = self.control.catch_handler_seq;
             self.push_catch_handler(
                 code,
                 token,
@@ -218,11 +218,11 @@ impl Interpreter {
             Ok(())
         });
         if has_control {
-            self.control_handler_depth -= 1;
-            self.control_handlers.pop();
+            self.control.control_handler_depth -= 1;
+            self.control.control_handlers.pop();
         }
         if catch_token.is_some() {
-            self.catch_handlers.pop();
+            self.control.catch_handlers.pop();
         }
         match body_result {
             // A lazy-gather take-limit suspension is not an exception: CATCH
@@ -556,11 +556,11 @@ impl Interpreter {
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
                             if catch_token.is_some() {
-                                self.catch_handlers.pop();
+                                self.control.catch_handlers.pop();
                             }
                             if has_control {
-                                self.control_handler_depth -= 1;
-                                self.control_handlers.pop();
+                                self.control.control_handler_depth -= 1;
+                                self.control.control_handlers.pop();
                             }
                             match body_result {
                                 Ok(()) => {
@@ -703,17 +703,19 @@ impl Interpreter {
         let return_target = handler
             .as_ref()
             .and_then(|_| crate::runtime::return_target::return_target_in_env(self.env()));
-        self.catch_handlers.push(crate::vm::CatchHandlerEntry {
-            token,
-            installing_code: self.current_code,
-            installing_base: self.locals.base(),
-            installing_call_depth: self.call_frames.len(),
-            installing_routine_depth: self.routine_stack_len(),
-            installing_method_depth: self.method_class_depth(),
-            return_target,
-            installing_package: self.current_package_sym(),
-            handler,
-        });
+        self.control
+            .catch_handlers
+            .push(crate::vm::CatchHandlerEntry {
+                token,
+                installing_code: self.current_code,
+                installing_base: self.locals.base(),
+                installing_call_depth: self.call_frames.len(),
+                installing_routine_depth: self.routine_stack_len(),
+                installing_method_depth: self.method_class_depth(),
+                return_target,
+                installing_package: self.current_package_sym(),
+                handler,
+            });
     }
 
     /// ADR-0072: register a boundary that catches every exception raised
@@ -721,8 +723,8 @@ impl Interpreter {
     /// the inline handler chain stops there. The caller pops it.
     // Cost: O(1).
     pub(crate) fn push_catch_marker(&mut self) {
-        self.catch_handler_seq += 1;
-        let token = self.catch_handler_seq;
+        self.control.catch_handler_seq += 1;
+        let token = self.control.catch_handler_seq;
         self.push_catch_handler_entry(token, None);
     }
 
@@ -733,7 +735,7 @@ impl Interpreter {
     pub(crate) fn with_catch_marker<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
         self.push_catch_marker();
         let r = f(self);
-        self.catch_handlers.pop();
+        self.control.catch_handlers.pop();
         r
     }
 }

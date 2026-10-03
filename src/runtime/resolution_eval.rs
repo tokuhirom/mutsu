@@ -166,6 +166,11 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+        // Entered before the compiler exists: `Compiler::new` builds the
+        // top-level chunk, which takes its unit stamp from this guard (see
+        // the ADR-0106 note at the compile below).
+        let _unit_file =
+            crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
         let mut compiler = crate::compiler::Compiler::new();
         if is_eval_unit {
             compiler.mark_as_eval_unit();
@@ -232,8 +237,6 @@ impl Interpreter {
         // compile by `builtin_eval`) for an `EVAL`'d one. Deriving it from
         // `?FILE` rather than minting a second identity is what keeps
         // `location_at` agreeing with the file a backtrace reports.
-        let _unit_file =
-            crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
         let (mut code, mut fns) = compiler.compile(body);
         self.inherit_frame_lexical_for_body(body, &mut code, &mut fns);
         // ADR-0037 Slice 4: bake the resolved target callable id onto this

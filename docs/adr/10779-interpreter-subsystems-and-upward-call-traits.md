@@ -208,4 +208,11 @@ these preconditions:
     redeclared set from the block's captured scalars and the parent's parameter shadows,
     shares the two dirty sets and starts the rest fresh; `root()` is the main interpreter's.
     353 → 341 fields.
-  - Next: `io`, `control`, `topic`, `dispatch`, `lexicals`.
+  - `topic`: done. `TopicState` (`src/runtime/topic_state.rs`) holds the 22 `$_`-source,
+    given/when, smartmatch-context and per-loop scope fields, all started fresh in a spawned
+    thread; 340 → 319 fields.
+  - `control`: done. `ControlState` (`src/runtime/control_state.rs`) holds the 25
+    CONTROL/CATCH, `let`/`temp`, phaser, `once` and exit-status fields. `new()` starts `once`
+    ids at 1; `fork_for_thread` shares the `once` store and continues its ids, the rest fresh.
+    `pending_dispatch_error` stayed (a D3 side channel, now classified `handoff`); 319 → 295.
+  - Next: `io`, `dispatch`, `lexicals`.

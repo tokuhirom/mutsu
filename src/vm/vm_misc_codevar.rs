@@ -589,7 +589,7 @@ impl Interpreter {
         // it is read-only with no write-through target, so `.=` must fail with the
         // usual "Cannot modify an immutable value" error rather than silently
         // bypassing the mark.
-        let has_container_source = self.topic_container_source.is_some();
+        let has_container_source = self.topic_state.topic_container_source.is_some();
         let was_ro_kind = self.readonly_kind("_");
         let bypass = was_ro_kind.is_some() && has_container_source;
         if bypass {
@@ -603,7 +603,7 @@ impl Interpreter {
         // Whole-container topic (`given @a`/`with %h`): `$_` aliases the container,
         // so the reassigned value is list-/hash-assigned back to the source. The
         // assignment result (the method value, e.g. `"FOO"`) is on the stack top.
-        if let Some(src) = self.topic_container_source.clone() {
+        if let Some(src) = self.topic_state.topic_container_source.clone() {
             let val = self.stack.last().cloned().unwrap_or(Value::NIL);
             let written = if src.starts_with('@') {
                 if matches!(val.view(), ValueView::Array(..)) {

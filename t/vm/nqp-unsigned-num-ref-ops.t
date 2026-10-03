@@ -48,7 +48,6 @@ is @u.join(','), '1,5', 'a write through atposref_u lands in the array';
 my $s := sub foo { 42 };
 lives-ok { nqp::setcodename(nqp::getattr($s, Code, '$!do'), 'bar') },
     'setcodename renames the code ref behind a routine';
-todo 'Code.name does not follow $!do\'s codename (#11462)';
 is $s.name, 'bar', 'the routine reports the new name';
 is $s(), 42, 'the routine still runs';
 ok nqp::eqaddr(nqp::neverrepossess($s), $s), 'neverrepossess hands back its operand';

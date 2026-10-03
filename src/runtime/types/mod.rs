@@ -867,6 +867,16 @@ impl Interpreter {
         // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
         // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
         self.env.insert_sym_noting(name_sym, value.clone());
+        // A dynamic scalar parameter (`sub f($*OUT)`) binds both env spellings
+        // of the name, as `my $*OUT` does through `set_env_with_main_alias`:
+        // the `say`/`print` builtins resolve their handle through the `$*OUT`
+        // spelling first (#11348). Both are callee-local
+        // (`compute_declared_locals`), so neither leaks to the caller.
+        if name.starts_with('*')
+            && let Some(alias) = crate::runtime::utils::twigil_dynamic_alias(name)
+        {
+            self.env.insert(alias, value.clone());
+        }
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {
             Some(a)
@@ -1341,6 +1351,30 @@ impl Interpreter {
             Symbol::intern(&role_name),
             type_args,
         ))
+    }
+
+    /// The pun class of a role whose type parameters all have defaults,
+    /// bound to those defaults: what `E.new` or `E.method` constructs or
+    /// calls through for `role E[::R = Any] { }`. `None` for anything else.
+    // Cost: binding the defaults, plus `ensure_parametric_role_pun_class_for`.
+    pub(crate) fn default_parametric_role_pun(
+        &mut self,
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let materialized = self.materialize_default_parametric_role(value.clone())?;
+        if &materialized == value {
+            return Ok(None);
+        }
+        if let ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } = materialized.view()
+            && let Some(punned) =
+                self.ensure_parametric_role_pun_class_for(&base_name.resolve(), type_args, true)?
+        {
+            return Ok(Some(Value::package(Symbol::intern(&punned))));
+        }
+        Ok(Some(materialized))
     }
 
     pub(in crate::runtime) fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {

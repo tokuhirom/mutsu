@@ -957,7 +957,8 @@ impl Compiler {
                     OpCode::Add => crate::opcode::CompoundBaseOp::Add,
                     OpCode::Sub => crate::opcode::CompoundBaseOp::Sub,
                     OpCode::Mul => crate::opcode::CompoundBaseOp::Mul,
-                    _ => unreachable!("native integer mode only applies to +, -, and *"),
+                    OpCode::BitShiftLeft => crate::opcode::CompoundBaseOp::BitShiftLeft,
+                    _ => unreachable!("native integer mode only applies to +, -, *, and +<"),
                 };
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
@@ -1149,11 +1150,22 @@ impl Compiler {
     }
 
     /// Select the native machine operation for the small set of arithmetic
-    /// operators whose native candidates wrap (`+`, `-`, `*`). A signed and
+    /// operators whose native candidates wrap (`+`, `-`, `*`, `+<`). A signed and
     /// unsigned operand must not be mixed; the generic path handles that case
     /// as boxed numeric arithmetic.
     fn native_int_binary_mode(&self, left: &Expr, right: &Expr, opcode: &OpCode) -> Option<bool> {
-        if !matches!(opcode, OpCode::Add | OpCode::Sub | OpCode::Mul) {
+        if !matches!(
+            opcode,
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::BitShiftLeft
+        ) {
+            return None;
+        }
+        // A shift of two literals is plain `Int` arithmetic (`1 +< 65` promotes);
+        // only a native-typed variable makes the shift a machine operation.
+        if matches!(opcode, OpCode::BitShiftLeft)
+            && !matches!(left.peel_parens(), Expr::Var(_))
+            && !matches!(right.peel_parens(), Expr::Var(_))
+        {
             return None;
         }
         let left_signed = self.native_int_operand_signedness(left)?;

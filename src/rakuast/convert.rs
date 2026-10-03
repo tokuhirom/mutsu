@@ -2838,6 +2838,8 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
         RegexNode::AnchorLeftWordBoundary => {
             (RakuAstClass::RegexAnchorLeftWordBoundary, Vec::new())
         }
+        RegexNode::MatchFrom => (RakuAstClass::RegexMatchFrom, Vec::new()),
+        RegexNode::MatchTo => (RakuAstClass::RegexMatchTo, Vec::new()),
         RegexNode::AnchorRightWordBoundary => {
             (RakuAstClass::RegexAnchorRightWordBoundary, Vec::new())
         }

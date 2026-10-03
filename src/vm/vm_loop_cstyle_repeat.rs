@@ -81,9 +81,9 @@ impl Interpreter {
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
                 ));
             }
-            self.loop_cond_active = true;
+            self.topic_state.loop_cond_active = true;
             let cond_res = self.run_range_unpolled(code, cond_start, body_start, compiled_fns);
-            self.loop_cond_active = false;
+            self.topic_state.loop_cond_active = false;
             if let Err(e) = cond_res {
                 self.pop_loop_local_scope(code);
                 return Err(e);
@@ -261,9 +261,9 @@ impl Interpreter {
         let mut first = true;
         'repeat_loop: loop {
             if !first {
-                self.loop_cond_active = true;
+                self.topic_state.loop_cond_active = true;
                 let cond_res = self.run_range_unpolled(code, cond_start, loop_end, compiled_fns);
-                self.loop_cond_active = false;
+                self.topic_state.loop_cond_active = false;
                 if let Err(e) = cond_res {
                     self.pop_loop_local_scope(code);
                     return Err(e);

@@ -16,6 +16,7 @@
 mod adverbs;
 mod call_args;
 mod lit;
+mod rakuast_adverbs;
 mod scan;
 mod subst;
 mod trans;

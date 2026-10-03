@@ -126,6 +126,19 @@ impl Interpreter {
         resolved_source: &str,
         val: &Value,
     ) -> crate::gc::Gc<crate::value::ContainerCell> {
+        // The source variable's binding as this frame sees it, before the
+        // promotion below rebinds it: a saved call frame holds the SAME
+        // variable only when its entry is this very binding (a closure's view
+        // of an enclosing lexical). A caller that merely has an unrelated
+        // same-named variable -- a recursive call's own `-> $idx, $item` loop
+        // parameter -- must not be overwritten (#11304). A local slot is the
+        // authority when the name has one: the env entry may still be the
+        // caller's binding inherited by name.
+        let prior_binding: Option<Value> =
+            match code.locals.iter().rposition(|n| n == resolved_source) {
+                Some(idx) => Some(self.locals[idx].clone()),
+                None => self.env().get(resolved_source).cloned(),
+            };
         // A scalar source already has its own holder cell. A chained share
         // takes the aggregate cell *inside* that holder; promoting the holder
         // itself would make the new scalar follow later assignments to the
@@ -237,6 +250,11 @@ impl Interpreter {
             // `self`. An anonymous scalar is never a caller's variable.
             if resolved_source != "__ANON_STATE__"
                 && frame.saved_env.contains_key_own_tier(resolved_source)
+                && frame.saved_env.get(resolved_source).is_some_and(|saved| {
+                    prior_binding
+                        .as_ref()
+                        .is_some_and(|p| p.same_binding(saved))
+                })
             {
                 frame
                     .saved_env

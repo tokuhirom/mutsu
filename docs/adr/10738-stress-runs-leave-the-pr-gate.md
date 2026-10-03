@@ -1,6 +1,8 @@
 # ADR-10738: The GC/JIT stress runs leave the PR gate; the debug-binary TAP pass stays as `debug-tap`
 
-- **Status**: Accepted (user decision 2026-10-02). Supersedes the parts of three ADRs that put the
+- **Status**: Accepted (user decision 2026-10-02); its "`debug-tap` stays on the PR gate" clause
+  is superseded by [ADR-11581](11581-ci-runner-budget.md) (`debug-tap` runs post-merge and in the
+  release gate). Supersedes the parts of three ADRs that put the
   stress runs on the PR gate:
   [ADR-0003](0003-default-on-gc-trigger.md) §2 gate (a), "gc-stress roast made blocking and kept
   green"; [ADR-0004](0004-jit-strategy.md) §2.6, "a `jit-stress` job in CI from J2 onward"; and

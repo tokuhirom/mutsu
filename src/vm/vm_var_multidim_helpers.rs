@@ -271,7 +271,9 @@ impl Interpreter {
             let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
                 let prev = if was_hole { Value::NIL } else { arr[i].clone() };
-                arr[i] = hole_value();
+                // An `is default(...)` array stores its default in the hole
+                // (#10360); the caller records the hole in `initialized`.
+                arr[i] = arr.gap_fill(hole_value());
                 if let Some(shape) = shape.as_deref() {
                     crate::runtime::utils::mark_shaped_array_items(items, Some(shape));
                 }

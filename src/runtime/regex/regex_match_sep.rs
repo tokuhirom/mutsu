@@ -92,17 +92,20 @@ impl Interpreter {
     /// Resolve a separator quantifier's bounds once for the current match
     /// state. Block quantifiers use the same evaluator as their non-separated
     /// counterparts; treating `RepeatCode` as the fallback one-item case
-    /// silently discarded a block's minimum and maximum.
+    /// silently discarded a block's minimum and maximum. The block runs
+    /// through `regex_repeat_count`, recorded as the compiled engine's
+    /// `RepeatCount` is (D6), at the quantifier's start `pos`.
     pub(super) fn separated_quantifier_bounds(
         &mut self,
         token: &RegexToken,
+        pos: usize,
         current_caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
         match &token.quant {
             RegexQuant::OneOrMore => Some((1, None)),
             RegexQuant::ZeroOrMore => Some((0, None)),
             RegexQuant::Repeat(lo, hi) => Some((*lo, *hi)),
-            RegexQuant::RepeatCode(code) => self.eval_regex_repeat_code(code, current_caps),
+            RegexQuant::RepeatCode(code) => self.regex_repeat_count(code, pos, current_caps),
             // `?` / exact-one don't form a separator list; treat as one.
             _ => Some((1, Some(1))),
         }
@@ -131,7 +134,7 @@ impl Interpreter {
             );
         }
         let sep = token.separator.as_ref().expect("separator present");
-        let Some((min, max)) = self.separated_quantifier_bounds(token, current_caps) else {
+        let Some((min, max)) = self.separated_quantifier_bounds(token, start, current_caps) else {
             return Vec::new();
         };
         let atom_stride = count_capture_groups(token);

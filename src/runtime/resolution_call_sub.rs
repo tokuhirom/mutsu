@@ -1001,7 +1001,7 @@ impl Interpreter {
                     _ => None,
                 });
             self.prepare_definite_return_slot(return_spec.as_deref());
-            let let_mark = self.let_saves.len();
+            let let_mark = self.control.let_saves.len();
             // Snapshot the body-entry env so the exit writeback can tell which
             // captured outer scalars the body actually *mutated* (and propagate
             // only those) from those it merely captured a stale snapshot of.

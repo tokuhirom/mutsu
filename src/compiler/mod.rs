@@ -1402,6 +1402,12 @@ pub(crate) struct Compiler {
     /// runs in the env it captured from the enclosing scope, so a `SetTopic`
     /// there overwrote the enclosing `$_` with the body's last value.
     pub(crate) unit_tail_discards: bool,
+    /// Whether a compilation unit's final expression or call statement is in
+    /// sink context, like every other statement (#9766). Set for a program's
+    /// mainline: Raku sinks its last statement, so an unhandled `Failure`
+    /// throws, a failed `shell` dies and a user `sink` method runs. Unset for
+    /// an `EVAL`, a REPL line and a routine body, whose tail is their value.
+    pub(crate) unit_tail_sinks: bool,
     /// Whether the enclosing lexical scope contains a routine (sub/method).
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
@@ -1922,6 +1928,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             unit_tail_discards: false,
+            unit_tail_sinks: false,
             lexically_in_routine: false,
             eval_context_dead_routine: false,
             lexically_in_block: false,
@@ -4452,7 +4459,11 @@ impl Compiler {
         } else {
             for (i, stmt) in stmts.iter().enumerate() {
                 let is_last = i == stmts.len() - 1;
-                if is_last {
+                // A sunk tail expression or call compiles exactly as any other
+                // statement, `SinkPop` included (`unit_tail_sinks`).
+                let sunk_tail =
+                    self.unit_tail_sinks && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. });
+                if is_last && !sunk_tail {
                     match stmt {
                         Stmt::Expr(expr) => {
                             // Tail expression becomes the body value -> escapes.

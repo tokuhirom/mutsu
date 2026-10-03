@@ -1,76 +1,19 @@
 use crate::builtins::primality::{is_prime_bigint, is_prime_i64};
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
-use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
-/// Type coercion and specialized 0-arg methods: numerator, denominator, nude,
-/// is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
+/// Type coercion and specialized 0-arg methods: is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
-        // numerator/denominator/nude exist on Rational types (and Int via
-        // Rational[Int,Int]). Claiming every other invocant here (the old
-        // catch-all 0/1) shadowed same-named attribute accessors on user
-        // role/class instances (e.g. the Rational role prelude's
-        // `$.numerator`); return None so dispatch falls through to them.
-        "numerator" => match target.view() {
-            ValueView::Rat(..) => Some(crate::builtins::method_table::rat_numerator(target, &[])),
-            ValueView::FatRat(n, _) => Some(Ok(Value::int(n))),
-            ValueView::BigRat(n, _) => Some(Ok(Value::bigint(n.clone()))),
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::BigInt(i) => Some(Ok(Value::bigint(i.as_ref().clone()))),
-            _ => None,
-        },
-        "denominator" => match target.view() {
-            ValueView::Rat(..) => Some(crate::builtins::method_table::rat_denominator(target, &[])),
-            ValueView::FatRat(_, d) => Some(Ok(Value::int(d))),
-            ValueView::BigRat(_, d) => Some(Ok(Value::bigint(d.clone()))),
-            ValueView::Int(_) | ValueView::BigInt(_) => Some(Ok(Value::int(1))),
-            _ => None,
-        },
-        "isNaN" => match target.view() {
-            ValueView::Rat(0, 0) => Some(Ok(Value::TRUE)),
-            ValueView::FatRat(0, 0) => Some(Ok(Value::TRUE)),
-            ValueView::Num(_) => Some(crate::builtins::method_table::num_is_nan(target, &[])),
-            // A Complex is NaN when EITHER its real or imaginary part is NaN
-            // (`(NaN+5i).isNaN` is True) — Complex.isNaN is `re.isNaN || im.isNaN`.
-            ValueView::Complex(re, im) => Some(Ok(Value::truth(re.is_nan() || im.is_nan()))),
-            _ => Some(Ok(Value::FALSE)),
-        },
-        "nude" => match target.view() {
-            ValueView::Rat(n, d) => Some(Ok(Value::array(vec![Value::int(n), Value::int(d)]))),
-            ValueView::FatRat(n, d) => Some(Ok(Value::array(vec![Value::int(n), Value::int(d)]))),
-            ValueView::BigRat(n, d) => Some(Ok(Value::array(vec![
-                Value::bigint(n.clone()),
-                Value::bigint(d.clone()),
-            ]))),
-            ValueView::Int(i) => Some(Ok(Value::array(vec![Value::int(i), Value::int(1)]))),
-            ValueView::BigInt(i) => Some(Ok(Value::array(vec![
-                Value::bigint(i.as_ref().clone()),
-                Value::int(1),
-            ]))),
-            _ => None,
-        },
-        "norm" => match target.view() {
-            ValueView::Rat(n, d) => Some(Ok(make_rat(n, d))),
-            ValueView::FatRat(n, d) => Some(Ok({
-                let r = make_rat(n, d);
-                match r.view() {
-                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
-                    _ => r,
-                }
-            })),
-            ValueView::BigRat(n, d) => Some(Ok({
-                let r = make_big_fat_rat(n.clone(), d.clone());
-                match r.view() {
-                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
-                    ValueView::BigRat(nn, dd) => Value::bigrat(nn.clone(), dd.clone()),
-                    _ => r,
-                }
-            })),
-            ValueView::Int(i) => Some(Ok(Value::fat_rat_raw(i, 1))),
-            _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-        },
+        // `isNaN` on a plain `Int`, `Num`, `Rat`, `FatRat` or `Complex` is a
+        // row in `builtins::method_table` (ADR-11276), answered before this
+        // cascade; a receiver with a dispatch shape never reaches this arm.
+        // Every other receiver (`Bool`, `Instant`, `Duration`, ...) is not NaN.
+        // TODO: rows for the remaining owners; Rakudo has no `isNaN` on `Str`
+        // or a `Rat` type object, which this arm answers `False`.
+        "isNaN" if target.dispatch_shape().is_none() => Some(Ok(Value::FALSE)),
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
             ValueView::Complex(r, _) => Some(Ok(Value::num(r))),

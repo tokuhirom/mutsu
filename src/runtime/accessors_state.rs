@@ -747,36 +747,36 @@ impl Interpreter {
             Some(ValueView::Int(id)) if id >= 0 => format!("c{id}::{op_ip}"),
             _ => format!(
                 "r{}::{op_ip}",
-                self.once_scope_stack.last().copied().unwrap_or(0)
+                self.control.once_scope_stack.last().copied().unwrap_or(0)
             ),
         }
     }
 
     /// The shared cross-thread `once` result store (see [`Self::once_scope_key`]).
     pub(crate) fn once_store(&self) -> &std::sync::Arc<crate::runtime::once_store::OnceStore> {
-        &self.once_values
+        &self.control.once_values
     }
 
     pub(crate) fn push_once_scope(&mut self, scope: u64) {
-        self.once_scope_stack.push(scope);
+        self.control.once_scope_stack.push(scope);
     }
 
     pub(crate) fn pop_once_scope(&mut self) {
-        self.once_scope_stack.pop();
+        self.control.once_scope_stack.pop();
     }
 
     pub(crate) fn next_once_scope_id(&mut self) -> u64 {
-        let scope = self.next_once_scope_id;
-        self.next_once_scope_id += 1;
+        let scope = self.control.next_once_scope_id;
+        self.control.next_once_scope_id += 1;
         scope
     }
 
     pub(crate) fn when_matched(&self) -> bool {
-        self.when_matched.get()
+        self.topic_state.when_matched.get()
     }
 
     pub(crate) fn set_when_matched(&self, v: bool) {
-        self.when_matched.set(v);
+        self.topic_state.when_matched.set(v);
     }
 
     pub(crate) fn is_role(&self, name: &str) -> bool {

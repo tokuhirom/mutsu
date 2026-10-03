@@ -930,7 +930,8 @@ impl Interpreter {
             // reads the iteration's value, not the array's later one).
             if sym.with_str(|s| {
                 let bare = s.trim_start_matches('$');
-                self.active_loop_rw_param_names
+                self.topic_state
+                    .active_loop_rw_param_names
                     .iter()
                     .any(|set| set.contains(bare))
             }) {
@@ -969,7 +970,7 @@ impl Interpreter {
         &self,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) -> Vec<Symbol> {
-        if self.loop_local_vars.is_empty() && self.frame_owned.is_empty() {
+        if self.topic_state.loop_local_vars.is_empty() && self.frame_owned.is_empty() {
             return Vec::new();
         }
         let Some(cc) = compiled_code else {
@@ -980,7 +981,7 @@ impl Interpreter {
         cc.free_var_syms
             .iter()
             .filter(|sym| {
-                self.loop_local_vars.iter().any(|set| set.contains(*sym))
+                self.topic_state.loop_local_vars.iter().any(|set| set.contains(*sym))
                     // ADR-0027: cascade an inherited loop-frozen vouch from the
                     // creating frame (a closure created one closure-CALL deep
                     // from the loop body, e.g. an IIFE factory's returned
@@ -1544,7 +1545,7 @@ impl Interpreter {
         if !has_unvouched
             && !has_unvouched_param_container
             && ((code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
-                || (self.loop_local_vars.is_empty()
+                || (self.topic_state.loop_local_vars.is_empty()
                     && code.needs_cell_locals.is_empty()
                     && !dup_shadow_possible
                     && !has_mutated_instance_capture))
@@ -1597,7 +1598,11 @@ impl Interpreter {
             if s.starts_with('&') && !unvouched_escaping {
                 continue;
             }
-            let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(sym));
+            let is_loop_local = self
+                .topic_state
+                .loop_local_vars
+                .iter()
+                .any(|set| set.contains(sym));
             // Emit-point slot (§1.3 slot bake, gated): the creator slot this
             // closure actually captures. Falls back to the rposition name
             // search (byte-identical with the gate off / for hand-built cc).

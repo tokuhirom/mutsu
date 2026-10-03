@@ -1,8 +1,19 @@
 name: Bench
 
-# Measure the benchmarks/ suite on every push to main and append the results
-# to the `bench-data` branch (bench-history.tsv), so performance changes are
-# recorded per merged commit and regressions become visible as a trend.
+# Measure the benchmarks/ suite on `main` and append the results to the
+# `bench-data` branch, so performance changes become visible as a trend. Two
+# series, on two cadences (ADR-11581):
+#
+#   * deterministic (callgrind instruction + heap-allocation counts,
+#     bench-det-history.tsv) on every push to main: reproducible to ~0.1%, so
+#     a per-merge row localizes a change to the PR that made it;
+#   * wall clock (bench-history.tsv, with the rakudo / rakupp ratios) hourly:
+#     its 16-33% commit-to-commit noise means a per-merge row says little a
+#     row an hour later would not, and it was ~half of a job that held one of
+#     the free plan's 20 concurrent runners around the clock. An hourly run
+#     at a commit the series already has is skipped.
+#
+# `workflow_dispatch` measures both.
 #
 # Non-blocking by design (PLAN §1 B1 precedent: report-only, never gates main):
 # shared runners are noisy, so a single red delta is not proof of a regression.
@@ -43,18 +54,63 @@ on:
       - '*.tsv'
       - '*.svg'
       - 'LICENSE'
+  schedule:
+    - cron: '47 * * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Serialize runs so two quick merges don't race their pushes to bench-data.
+# Serialize runs so two quick merges don't race their pushes to bench-data (the
+# append step also retries on a push conflict). One group per series: in a
+# shared group a merge's pending push run would replace the pending hourly
+# wall-clock run, and under steady merge traffic the wall series would starve.
 concurrency:
-  group: bench-history
+  group: bench-${{ github.event_name == 'schedule' && 'wall' || 'det' }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      wall: ${{ steps.plan.outputs.wall }}
+      det: ${{ steps.plan.outputs.det }}
+    steps:
+      - name: Read the wall-clock history's last commit
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: bench-data
+          sparse-checkout: bench-history.tsv
+          sparse-checkout-cone-mode: false
+
+      - name: Decide which series to measure
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          wall=true det=true
+          case "$EVENT" in
+            push) wall=false ;;
+            schedule)
+              det=false
+              last=$(tail -n 1 bench-history.tsv 2>/dev/null | cut -f2 || true)
+              if [ "$last" = "$GITHUB_SHA" ]; then
+                echo "wall clock already measured at $GITHUB_SHA; nothing to do"
+                wall=false
+              fi
+              ;;
+          esac
+          echo "wall=$wall" >> "$GITHUB_OUTPUT"
+          echo "det=$det" >> "$GITHUB_OUTPUT"
+          echo "wall=$wall det=$det"
+
   bench:
+    needs: plan
+    if: needs.plan.outputs.wall == 'true' || needs.plan.outputs.det == 'true'
     runs-on: ubuntu-24.04
     # Raised from 30 when the deterministic instruction-count pass was added
     # (#8085): callgrind is ~90x native, which costs roughly 12 more minutes
@@ -88,6 +144,7 @@ jobs:
           sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
 
       - name: Install rakudo (for the ratio baseline)
+        if: needs.plan.outputs.wall == 'true'
         # Best-effort: if the download is unavailable the script records NA
         # ratios and the absolute mutsu numbers are still appended.
         #
@@ -110,6 +167,7 @@ jobs:
           exit 0
 
       - name: Install rakupp (second reference implementation)
+        if: needs.plan.outputs.wall == 'true'
         # Best-effort, like rakudo above: a failed download leaves `rakupp`
         # off PATH, bench-ci.sh then records NA in the two rakupp columns, and
         # every other number is unaffected. Pinned to a release (and its
@@ -141,15 +199,25 @@ jobs:
         env:
           CARGO_PROFILE_RELEASE_DEBUG: "false"
 
-      - name: Run benchmarks
+      # Both result files exist from here on, empty for a series this run does
+      # not measure, so the summary and append steps below need no per-series
+      # branches: an empty file contributes no rows.
+      - name: Prepare result files
         run: |
           mkdir -p tmp
-          scripts/bench-ci.sh | tee tmp/bench-results.tsv
+          : > tmp/bench-results.tsv
+          : > tmp/bench-det-results.tsv
+
+      - name: Run benchmarks
+        if: needs.plan.outputs.wall == 'true'
+        run: scripts/bench-ci.sh | tee tmp/bench-results.tsv
 
       - name: Install valgrind (deterministic metric)
+        if: needs.plan.outputs.det == 'true'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq valgrind
 
       - name: Run deterministic benchmarks (instruction + allocation counts)
+        if: needs.plan.outputs.det == 'true'
         # The wall-clock series above has a 16-33% median commit-to-commit noise
         # floor, so its own 1.5x alarm is inside its p90 and cannot see an
         # ordinary regression (#8085). This pass simulates instruction counts,

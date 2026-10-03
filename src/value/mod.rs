@@ -415,8 +415,15 @@ pub(crate) enum DispatchShape {
     Str,
     /// A `Num` (an unboxed double, including `NaN` and the infinities).
     Num,
-    /// A `Rat` (not a `FatRat`, and not an arbitrary-precision `BigRat`).
+    /// An `Int`, inline, boxed or arbitrary-precision (not a `Bool`, an
+    /// enum value or an `Int` subclass instance).
+    Int,
+    /// A `Rat`, with machine-word or arbitrary-precision components.
     Rat,
+    /// A `FatRat`, with machine-word or arbitrary-precision components.
+    FatRat,
+    /// A `Complex`.
+    Complex,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -551,6 +558,7 @@ pub(crate) struct MixData {
 mod aliased_mut;
 pub(crate) mod array_coerce;
 mod array_data_ops;
+mod array_holes;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;

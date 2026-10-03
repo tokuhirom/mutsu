@@ -193,10 +193,61 @@ impl Interpreter {
     /// report handled" contract.
     pub(crate) fn our_package_scalar_write(&mut self, name: &str, val: &Value) -> bool {
         let Some((key, cell)) = self.our_package_scalar_cell(name) else {
-            return false;
+            return self.package_alias_scalar_write(name, val);
         };
         Self::cell_store_preserving_container_identity(&key, &cell, val);
         true
+    }
+
+    /// A scalar write through a `constant` alias of the variable's package
+    /// (`$E::v = 1` with `constant E = A::B`, #11315) goes to the real name,
+    /// and the written name is left alone. Not recursive: the real name is
+    /// stored directly, so an alias whose target re-enters its own head
+    /// (`constant E = E::F`) cannot loop.
+    // Cost: O(1) for an unqualified name; else as `package_alias_var_name`
+    // plus the stores of the real name.
+    fn package_alias_scalar_write(&mut self, name: &str, val: &Value) -> bool {
+        if name.starts_with(['@', '%', '&', '*', '!', '?']) {
+            return false;
+        }
+        let Some(real) = self.package_alias_var_name(name) else {
+            return false;
+        };
+        if let Some(ValueView::ContainerRef(cell)) = self.get_our_var(&real).map(Value::view) {
+            let cell = cell.clone();
+            Self::cell_store_preserving_container_identity(&real, &cell, val);
+        } else {
+            self.set_env_with_main_alias(&real, val.clone());
+            self.set_our_var(real, val.clone());
+        }
+        true
+    }
+
+    /// `$E::v` / `@E::a` / `%E::h` where `E` is a `constant` naming a package
+    /// (`constant E = A::B`): the name the variable really has, `$A::B::v`
+    /// (#11315). The sigil is kept; `None` unless the qualifier's head is
+    /// such an alias.
+    // Cost: O(n) in the length of `name`, plus one env lookup for the head.
+    pub(crate) fn package_alias_var_name(&self, name: &str) -> Option<String> {
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'@' | b'%') => name.split_at(1),
+            _ => ("", name),
+        };
+        if !crate::qualified::is_qualified(Symbol::intern(rest)) {
+            return None;
+        }
+        let real = self.resolve_package_alias_prefix(rest)?;
+        Some(format!("{sigil}{real}"))
+    }
+
+    /// A miss-path read of a package variable through a `constant` alias of
+    /// its package (see [`Self::package_alias_var_name`]). The last store
+    /// consulted, so a variable really declared under the written name wins.
+    // Cost: O(n) in the length of `name`, plus the env probes of the real name.
+    pub(crate) fn package_alias_var_read(&self, name: &str) -> Option<Value> {
+        let real = self.package_alias_var_name(name)?;
+        self.get_env_with_main_alias(&real)
+            .or_else(|| self.get_our_var(&real).cloned())
     }
 
     /// The persisted value of a package-qualified name (`$GLOBAL::n`,

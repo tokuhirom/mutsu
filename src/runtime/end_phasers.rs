@@ -75,7 +75,7 @@ impl Interpreter {
     /// all installed up front by `preregister_main_end_phasers`, and reaching
     /// one only re-captures its env (`capture_end_phaser_env`).
     pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>, end_index: Option<u32>) {
-        match self.module_load_order.last().copied() {
+        match self.control.module_load_order.last().copied() {
             // Inside a module body: install order is the load order, and the
             // module's own source numbering says nothing about the main
             // compunit.
@@ -111,14 +111,14 @@ impl Interpreter {
         // Idempotent per index. The walker can reach one declaration twice
         // through an AST node that keeps both a source form and its expansion;
         // installing a second phaser for it would run the body twice.
-        if self.main_end_slots.contains_key(&end_index) {
+        if self.control.main_end_slots.contains_key(&end_index) {
             return;
         }
         // No registration sequence is involved: the source-order index IS the
         // install position for a main-compunit END, which is the whole point
         // of numbering them at parse time.
         let order = super::end_order::MAIN + super::end_order::slot(Some(end_index), 0);
-        let slot = self.end_phasers.len();
+        let slot = self.control.end_phasers.len();
         // Seeded rather than cloned from the pre-run env: rakudo's END is a
         // closure that was never CLONED against a live frame, so every `my`/
         // `state` lexical it mentions reads as that container's *unassigned*
@@ -141,7 +141,7 @@ impl Interpreter {
             // (`my $w = 1; if False { my $w = 2; END { say $w } }` is `Any`).
             dead_keys.insert(sym);
         }
-        self.end_phasers.push(super::EndPhaser {
+        self.control.end_phasers.push(super::EndPhaser {
             body,
             env,
             package,
@@ -150,7 +150,7 @@ impl Interpreter {
             order,
             capture_seq: None,
         });
-        self.main_end_slots.insert(end_index, slot);
+        self.control.main_end_slots.insert(end_index, slot);
     }
 
     /// The value an unassigned lexical container of this sigil reads as: `Any`
@@ -183,15 +183,16 @@ impl Interpreter {
     /// called with 1, 2, 3 prints 3, and a `for` loop's END sees the final
     /// iteration.
     pub(crate) fn capture_end_phaser_env(&mut self, end_index: Option<u32>) -> bool {
-        let Some(slot) = end_index.and_then(|i| self.main_end_slots.get(&i).copied()) else {
+        let Some(slot) = end_index.and_then(|i| self.control.main_end_slots.get(&i).copied())
+        else {
             return false;
         };
         let captured_env = self.env.clone();
         let package = self.current_package();
         let unit = self.executing_unit_sym_for_module_load();
-        let mark = self.end_phaser_capture_seq;
-        self.end_phaser_capture_seq += 1;
-        let phaser = &mut self.end_phasers[slot];
+        let mark = self.control.end_phaser_capture_seq;
+        self.control.end_phaser_capture_seq += 1;
+        let phaser = &mut self.control.end_phasers[slot];
         phaser.env = captured_env;
         phaser.package = package;
         phaser.unit = unit;
@@ -204,11 +205,11 @@ impl Interpreter {
     fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64, index: Option<u32>) {
         let captured_env = self.env.clone();
         let package = self.current_package();
-        let order = order_base + super::end_order::slot(index, self.end_phaser_seq);
-        self.end_phaser_seq += 1;
-        let mark = self.end_phaser_capture_seq;
-        self.end_phaser_capture_seq += 1;
-        self.end_phasers.push(super::EndPhaser {
+        let order = order_base + super::end_order::slot(index, self.control.end_phaser_seq);
+        self.control.end_phaser_seq += 1;
+        let mark = self.control.end_phaser_capture_seq;
+        self.control.end_phaser_capture_seq += 1;
+        self.control.end_phasers.push(super::EndPhaser {
             body,
             env: captured_env,
             package,
@@ -228,12 +229,12 @@ impl Interpreter {
     /// pre-installation the vector no longer grows when a scope registers a
     /// phaser, it only re-captures.
     pub(crate) fn end_phaser_capture_mark(&self) -> u64 {
-        self.end_phaser_capture_seq
+        self.control.end_phaser_capture_seq
     }
 
     /// True when at least one END phaser is registered.
     pub(crate) fn has_end_phasers(&self) -> bool {
-        !self.end_phasers.is_empty()
+        !self.control.end_phasers.is_empty()
     }
 
     /// Freeze the END phasers that captured at or after `since_mark` against a
@@ -253,6 +254,7 @@ impl Interpreter {
         dying: &crate::runtime::NameSet,
     ) {
         for phaser in self
+            .control
             .end_phasers
             .iter_mut()
             .filter(|p| p.capture_seq.is_some_and(|seq| seq >= since_mark))
@@ -283,7 +285,7 @@ impl Interpreter {
     /// module with a wide export list has widened the capture — then costs two
     /// integer-keyed lookups per captured name instead of a whole-env flatten.
     pub(crate) fn end_phasers_watch_any(&self, keys: &[Symbol]) -> bool {
-        self.end_phasers.iter().any(|phaser| {
+        self.control.end_phasers.iter().any(|phaser| {
             keys.iter()
                 .any(|k| !phaser.dead_keys.contains(k) && phaser.env.contains_key_sym(*k))
         })
@@ -325,7 +327,7 @@ impl Interpreter {
     /// exactly the case where the phaser's own entry is that same container and
     /// so already sees the mutation.
     pub(crate) fn update_end_phaser_envs_for_keys(&mut self, keys: &[Symbol], current_env: &Env) {
-        for phaser in self.end_phasers.iter_mut() {
+        for phaser in self.control.end_phasers.iter_mut() {
             for k in keys {
                 if phaser.dead_keys.contains(k) {
                     continue;
@@ -344,7 +346,7 @@ impl Interpreter {
     /// Register an END phaser site_id. Returns true if this is the first
     /// registration (phaser should be pushed), false if already registered.
     pub(crate) fn register_end_phaser_site(&mut self, site_id: u64) -> bool {
-        self.end_phaser_sites.insert(site_id)
+        self.control.end_phaser_sites.insert(site_id)
     }
 }
 

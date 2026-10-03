@@ -68,7 +68,7 @@ impl Interpreter {
         } else {
             self.run_react_event_loop()
         };
-        self.catch_handlers.pop();
+        self.control.catch_handlers.pop();
         // Slice F (react/whenever coherence): the `whenever` callbacks ran as
         // compiled bytecode on *this* VM (synchronous `from-list` emit) and
         // mutated captured-outer caller lexicals (`my $i; whenever ... { $i++ }`)

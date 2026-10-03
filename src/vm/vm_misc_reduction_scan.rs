@@ -270,7 +270,12 @@ impl Interpreter {
             // `CX::Take` (`OpCode::TryCatch::control_handles_take`). Handlers
             // that cannot match it keep the direct path, so the common
             // `gather`+`CATCH`/`CONTROL` combination is unaffected.
-            if self.control_handlers.last().is_some_and(|h| h.handles_take) {
+            if self
+                .control
+                .control_handlers
+                .last()
+                .is_some_and(|h| h.handles_take)
+            {
                 return Err(RuntimeError::take_signal(val));
             }
             self.take_value(val)

@@ -22,9 +22,11 @@
 //! A failure prints the row literals to paste into
 //! `native_method_row_table.rs`.
 //!
-//! Both checks are `#[ignore]`d and off the CI gate (#11405): coupling every
-//! cascade change to a hand-edited shared row kept `main` red on 2026-10-03.
-//! Run them on demand with
+//! The no-denial check and the `DECLARED` false-claim check are `#[ignore]`d
+//! and off the CI gate (#11405): coupling every cascade change to a
+//! hand-edited shared row kept `main` red on 2026-10-03. The
+//! `INTROSPECTABLE` false-claim check is always run: adding a native method
+//! cannot fail it. Run the ignored checks on demand with
 //! `cargo test --lib native_method_row_rakudo_oracle -- --ignored`.
 
 use super::builtin_type_methods::{canonical_builtin_owner, native_method_arities};
@@ -182,9 +184,7 @@ fn only_methods_are_never_unmarked() {
     );
 }
 
-/// `DECLARED` only: `INTROSPECTABLE` deliberately also marks names an owner
-/// inherits (`List.map`, declared on `Any` in Rakudo), so it disagrees with
-/// Rakudo's `.^methods` by design today -- tracked as #11272.
+/// `DECLARED` false claims remain an advisory check until #11405 is resolved.
 #[test]
 #[ignore = "off the CI gate until the check is rebuilt: #11405"]
 fn declared_bits_are_never_false_claims() {
@@ -201,6 +201,26 @@ fn declared_bits_are_never_false_claims() {
     assert!(
         wrong.is_empty(),
         "DECLARED set on a name Rakudo's ^method_table lacks:\n{}",
+        wrong.join("\n")
+    );
+}
+
+#[test]
+fn introspectable_bits_are_never_false_claims() {
+    let tables = rakudo_tables();
+    let mut wrong = Vec::new();
+    for &(owner, name, _, flags) in RAW_ROWS {
+        if introspection_reads_rows(owner)
+            && NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE)
+            && let Some(names) = tables["methods"].get(owner)
+            && !names.contains(name)
+        {
+            wrong.push(format!("{owner}.{name}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "INTROSPECTABLE set on a name Rakudo's .^methods omits:\n{}",
         wrong.join("\n")
     );
 }

@@ -149,16 +149,16 @@ impl Interpreter {
         // write-throughs at their own sites).
         let rhs_names = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
         self.apply_smartmatch_sync(code, &rhs_names);
-        let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
-        self.in_smartmatch_rhs = true;
-        self.transliterate_in_smartmatch = false;
-        self.substitution_in_smartmatch = false;
+        let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
+        self.topic_state.in_smartmatch_rhs = true;
+        self.topic_state.transliterate_in_smartmatch = false;
+        self.topic_state.substitution_in_smartmatch = false;
         let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
-        self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
-        let was_transliterate = self.transliterate_in_smartmatch;
-        let was_substitution = self.substitution_in_smartmatch;
-        self.transliterate_in_smartmatch = false;
-        self.substitution_in_smartmatch = false;
+        self.topic_state.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        let was_transliterate = self.topic_state.transliterate_in_smartmatch;
+        let was_substitution = self.topic_state.substitution_in_smartmatch;
+        self.topic_state.transliterate_in_smartmatch = false;
+        self.topic_state.substitution_in_smartmatch = false;
         // Restore the topic's readonly flag (overridden above for an aliased LHS
         // variable) on every path, including the error path below.
         if let Some(saved) = topic_ro_override {
@@ -285,7 +285,7 @@ impl Interpreter {
             // variable, so the in-place substitution must propagate back to it —
             // mirroring the whole-topic writeback the `$_ = ...` assign path does.
             if lhs_is_topic
-                && let Some(ref source_var) = self.topic_source_var
+                && let Some(ref source_var) = self.topic_state.topic_source_var
                 && !source_var.starts_with('@')
                 && !source_var.starts_with('%')
             {

@@ -8,7 +8,7 @@ use super::super::regex_helpers::{
 };
 use super::RxOp;
 use super::rx_compile::{
-    Compiler, Decline, atom_captures, min_len, pattern_captures, pattern_contains_backref,
+    Compiler, Decline, atom_captures, pattern_captures, pattern_contains_backref,
     pattern_contains_code, pattern_reads_enclosing_state,
 };
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
@@ -49,22 +49,13 @@ impl Compiler {
     /// *k+1* is entered. Each branch ends with an `AltTail` that pads the
     /// alternation's positional slot space and marks its list-valued names
     /// (`alternation_branch_delta`). Under ratchet the alternation commits to
-    /// the first branch that matches and to that branch's first end; the walk
-    /// moves past a branch whose every end is zero-width, so a ratcheted
-    /// alternation with such a branch (other than the last) is declined.
+    /// the first branch that matches and to that branch's first end,
+    /// zero-width or not.
     pub(super) fn seq_alternation(
         &mut self,
         token: &RegexToken,
         alts: &[RegexPattern],
     ) -> Result<(), Decline> {
-        if token.ratchet
-            && alts
-                .iter()
-                .take(alts.len().saturating_sub(1))
-                .any(|a| min_len(a) == 0)
-        {
-            return Err("seqalt-nullable-ratchet");
-        }
         let alt = self.alts.len() as u32;
         self.alts.push(alternation_list_flags(alts));
         let pos_base = self.reg();
@@ -172,14 +163,19 @@ impl Compiler {
         goal: &RegexPattern,
         inner: &RegexPattern,
     ) -> Result<(), Decline> {
-        // Each side is a regex of its own: code and backreferences there read
-        // that side's captures, not the enclosing level's.
-        if [goal, inner]
+        // Both sides are part of the enclosing regex: code, a `$x` lexical
+        // and a backreference in one see the enclosing level's captures (the
+        // walk's outer-captures seed; rakudo's one cursor). A side matched in
+        // place sees them as they are; a side with a level of its own gets an
+        // inline one, which carries that view.
+        let shares_scope = [goal, inner]
             .iter()
-            .any(|p| pattern_contains_backref(p) || pattern_reads_enclosing_state(p))
-        {
-            return Err("goal-match-code");
-        }
+            .any(|p| pattern_contains_backref(p) || pattern_reads_enclosing_state(p));
+        let open_side = if shares_scope {
+            RxOp::OpenInline
+        } else {
+            RxOp::OpenIsolated
+        };
         // `GoalEnd` merges the two sides with the goal's positional slots
         // first and every name in match order (`merge_goal_captures`). When
         // the goal files only names (`'[' ~ ']' <list>`, the grammar case,
@@ -194,7 +190,7 @@ impl Compiler {
         let base = (!in_place).then(|| self.reg());
         if let Some(base) = base {
             self.ops.push(RxOp::SepBase(base));
-            self.ops.push(RxOp::OpenIsolated);
+            self.ops.push(open_side);
         }
         self.pattern(inner)?;
         if base.is_some() {
@@ -207,7 +203,7 @@ impl Compiler {
         let split = self.pc();
         self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
         if base.is_some() {
-            self.ops.push(RxOp::OpenIsolated);
+            self.ops.push(open_side);
         }
         self.pattern(goal)?;
         if let Some(base) = base {
@@ -250,29 +246,27 @@ impl Compiler {
             // An empty conjunction matches zero-width.
             return Ok(());
         };
-        if branches.iter().any(pattern_contains_backref) {
-            // A branch shares the enclosing capture scope, which the first
-            // branch's own level and the other branches' nested runs hide.
-            return Err("conjunction-backref");
-        }
         if rest
             .iter()
             .any(|b| super::rx_entry::program_for(b).is_none())
         {
             return Err("conjunction-branch");
         }
-        // Every branch shares the enclosing regex's scope, so code and a `$x`
-        // lexical in one see the enclosing level's captures and match start
-        // (the walk's outer-captures seed): the first branch's level is an
-        // inline one, and the others' nested runs are seeded with the same view.
-        let seeded = rest.iter().any(pattern_reads_enclosing_state);
+        // Every branch shares the enclosing regex's scope, so code, a `$x`
+        // lexical and a backreference in one see the enclosing level's
+        // captures and match start (the walk's outer-captures seed): the first
+        // branch's level is an inline one, and the others' nested runs are
+        // seeded with the same view.
+        let shares_scope =
+            |p: &RegexPattern| pattern_reads_enclosing_state(p) || pattern_contains_backref(p);
+        let seeded = rest.iter().any(shares_scope);
         let start = self.reg();
         self.ops.push(RxOp::Mark(start));
         let height = token.ratchet.then(|| self.reg());
         if let Some(h) = height {
             self.ops.push(RxOp::Height(h));
         }
-        self.ops.push(if pattern_reads_enclosing_state(first) {
+        self.ops.push(if shares_scope(first) {
             RxOp::OpenInline
         } else {
             RxOp::OpenCapture
@@ -302,9 +296,6 @@ impl Compiler {
         sep: &RegexPattern,
         trailing: bool,
     ) -> Result<(), Decline> {
-        if token.named_capture.is_some() {
-            return Err("separator-alias");
-        }
         if atom_contains_backref(&token.atom) || pattern_contains_backref(sep) {
             // The walk matches each iteration against the captures folded so
             // far (`InlineCaptureScope`); a level of its own would hide them.
@@ -319,7 +310,11 @@ impl Compiler {
         // `SepNames` marks what they filed quantified (ADR-10488 D3). Code in
         // an iteration reads the iterations folded so far (below), which
         // filing in place does not present, so it keeps the levels.
-        let captures = atom_captures(&token.atom) || pattern_captures(sep);
+        // A name on the token itself (`<alpha>+ % ','`, `<x=foo>+ % ','`)
+        // is applied to each atom's span, as the walk's chain applies it per
+        // iteration: one more name filed in place.
+        let named = token.named_capture.is_some();
+        let captures = named || atom_captures(&token.atom) || pattern_captures(sep);
         let code = atom_contains_code(&token.atom) || pattern_contains_code(sep);
         let direct = captures
             && !code
@@ -337,7 +332,8 @@ impl Compiler {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
             RegexQuant::Repeat(min, max) => (min, max),
-            RegexQuant::RepeatCode(_) => return Err("repeat-code"),
+            // Read at run time; see `dyn_bounds` below.
+            RegexQuant::RepeatCode(_) => (0, None),
             RegexQuant::One | RegexQuant::ZeroOrOne => return Err("separator-quant"),
         };
         if max.is_some_and(|max| max == 0 || min > max) {
@@ -347,6 +343,24 @@ impl Compiler {
         else {
             return Err("too-large");
         };
+        // `atom ** { code } % sep`: the count is evaluated where the
+        // quantifier is reached, as `x ** { code }` does (`repeat_code`), and
+        // the bounds are checked against registers: the loop head as
+        // `RepeatDyn` over a zero minimum, the first atom (outside the loop)
+        // against the maximum, and the count at the exits against the minimum.
+        let dyn_bounds = matches!(token.quant, RegexQuant::RepeatCode(_)).then(|| {
+            let (lo, hi, zero) = (self.reg(), self.reg(), self.reg());
+            let tok = self.toks.len() as u32;
+            self.toks.push(token.clone());
+            self.ops.push(RxOp::RepeatCount {
+                tok,
+                min: lo,
+                max: hi,
+            });
+            self.ops.push(RxOp::CtrZero(zero));
+            self.has_code = true;
+            (lo, hi, zero)
+        });
         let ratchet = token.ratchet;
         // Under ratchet a frugal chain still grows on demand; the walk's
         // ratcheted scan grows it eagerly and offers each length, so code in
@@ -366,6 +380,11 @@ impl Compiler {
         if let Some(b) = filed_from {
             self.ops.push(RxOp::CapMark(b));
         }
+        let alias = named.then(|| {
+            let (pos_base, start) = (self.reg(), self.reg());
+            self.ops.push(RxOp::PosBase(pos_base));
+            (pos_base, start)
+        });
         let ctr = self.reg();
         self.ops.push(RxOp::CtrZero(ctr));
         // Greedy ratchet is possessive; a frugal chain stays open to growth.
@@ -375,7 +394,7 @@ impl Compiler {
         }
         // Zero iterations: preferred last, and only reachable when the first
         // atom fails outright under ratchet (the cut at `emit` drops it).
-        let zero_split = (min == 0 || ratchet).then(|| {
+        let zero_split = (min == 0 || ratchet || dyn_bounds.is_some()).then(|| {
             self.ops.push(RxOp::Split { prefer: 0, alt: 0 }); // patched below
             self.pc() - 1
         });
@@ -393,9 +412,12 @@ impl Compiler {
         };
         let (atom_open, sep_open) = (open(atom_view, false), open(sep_view, true));
         self.collected(collect, atom_open, false, |c| {
-            c.committed(ratchet, |c| c.atom(token))
+            c.committed(ratchet, |c| c.separated_item(token, tok, alias))
         })?;
         self.ops.push(RxOp::CtrInc(ctr));
+        if let Some((_, hi, _)) = dyn_bounds {
+            self.ops.push(RxOp::AtMostReg { ctr, max: hi });
+        }
         let head = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let ext = self.pc();
@@ -405,24 +427,34 @@ impl Compiler {
             c.committed(ratchet, |c| c.pattern(sep))
         })?;
         self.collected(collect, atom_open, false, |c| {
-            c.committed(ratchet, |c| c.atom(token))
+            c.committed(ratchet, |c| c.separated_item(token, tok, alias))
         })?;
         self.ops.push(RxOp::Advanced { start: step });
         self.ops.push(RxOp::CtrInc(ctr));
         self.ops.push(RxOp::Jmp(head));
         let emit = self.pc();
-        self.ops[head as usize] = RxOp::Repeat {
-            ctr,
-            min: 0,
-            max,
-            body: ext,
-            exit: emit,
-            greedy: !token.frugal,
+        self.ops[head as usize] = match dyn_bounds {
+            Some((_, hi, zero)) => RxOp::RepeatDyn {
+                ctr,
+                min: zero,
+                max: hi,
+                body: ext,
+                exit: emit,
+                greedy: !token.frugal,
+            },
+            None => RxOp::Repeat {
+                ctr,
+                min: 0,
+                max,
+                body: ext,
+                exit: emit,
+                greedy: !token.frugal,
+            },
         };
         if let Some(h) = whole {
             self.ops.push(RxOp::Cut(h));
         }
-        self.ops.push(RxOp::AtLeast { ctr, min });
+        self.at_least(ctr, min, dyn_bounds);
         let mut to_end = Vec::new();
         if trailing {
             let h = ratchet.then(|| self.reg());
@@ -455,7 +487,7 @@ impl Compiler {
             if let Some(h) = whole {
                 self.ops.push(RxOp::Cut(h));
             }
-            self.ops.push(RxOp::AtLeast { ctr, min });
+            self.at_least(ctr, min, dyn_bounds);
         }
         let end = self.pc();
         for (at, is_split) in to_end {
@@ -473,6 +505,37 @@ impl Compiler {
         }
         if let Some(base) = filed_from {
             self.ops.push(RxOp::SepNames { base, names });
+        }
+        Ok(())
+    }
+
+    /// The minimum-count check at a separated quantifier's exit: static, or
+    /// read from the `** { … }` registers.
+    fn at_least(&mut self, ctr: u16, min: u32, dyn_bounds: Option<(u16, u16, u16)>) {
+        self.ops.push(match dyn_bounds {
+            Some((lo, _, _)) => RxOp::AtLeastReg { ctr, min: lo },
+            None => RxOp::AtLeast { ctr, min },
+        });
+    }
+
+    /// One atom of a separated quantifier, with the token's own name applied
+    /// over its span when `alias` holds the registers for it.
+    fn separated_item(
+        &mut self,
+        token: &RegexToken,
+        tok: u32,
+        alias: Option<(u16, u16)>,
+    ) -> Result<(), Decline> {
+        if let Some((_, start)) = alias {
+            self.ops.push(RxOp::Mark(start));
+        }
+        self.atom(token)?;
+        if let Some((pos_base, start)) = alias {
+            self.ops.push(RxOp::Named {
+                tok,
+                start,
+                pos_base,
+            });
         }
         Ok(())
     }

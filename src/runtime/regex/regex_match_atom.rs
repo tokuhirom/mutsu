@@ -816,13 +816,14 @@ impl Interpreter {
                     && class_name == pkg
                     && !v.is_match_instance()
                 {
-                    let end = attributes
-                        .as_map()
-                        .get("pos")
-                        .and_then(|p| p.as_int())
-                        .filter(|p| *p >= 0)
-                        .map(|p| p as usize)
-                        .unwrap_or(pos);
+                    // A negative `pos` is a failed cursor (what `callsame`
+                    // into a built-in rule answers when it does not match),
+                    // not a zero-width success.
+                    let end = match attributes.as_map().get("pos").and_then(|p| p.as_int()) {
+                        Some(p) if p < 0 => return Some(Vec::new()),
+                        Some(p) => p as usize,
+                        None => pos,
+                    };
                     return (end <= chars.len())
                         .then(|| vec![(end, RegexCaptures::default())])
                         .or(Some(Vec::new()));

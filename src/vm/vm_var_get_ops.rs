@@ -321,6 +321,13 @@ impl Interpreter {
             // the same member spelling without changing what this class's
             // methods mean by that bare term.
             enum_val
+        } else if let Some(own) = self.own_package_type_over_foreign_enum(name) {
+            // A module routine runs in its CALLER's env, so a bare enum
+            // member the caller imported (`LogLevel::Error`) is visible here
+            // although the routine's own scope never saw it. The routine's
+            // package declares a type of that name (`MCP::JSONRPC::Error`),
+            // which is what its source means.
+            own
         } else if let Some(enum_val) = self.enum_bare_value(name).cloned() {
             // An enum key read by its bare spelling. It lives in its own key
             // namespace (`runtime::enum_bare_names`) because `$s` and the enum key
@@ -405,6 +412,11 @@ impl Interpreter {
             // type when resolved at run time: a `constant Int = 5` shadows it
             // only lexically, through the compiler's slot read.
             .filter(|_| !(self.has_type_direct(name) || Self::is_builtin_type(name)))
+            // Nor does an `our` constant whose block has exited outrank a type
+            // declaration that binds the name in this scope (`my class RIS`
+            // after a sibling block's `constant RIS`, #11261): the innermost
+            // declaration of the name is the type.
+            .filter(|_| !self.env_binds_declared_type(name))
         {
             // A sigil-less constant in scope. It lives in the term namespace
             // (`runtime::term_names`, #9962), so the plain `env[name]` probe
@@ -775,6 +787,34 @@ impl Interpreter {
     /// the MAINLINE collision (`my $c` beside an imported `constant c`, both in
     /// `env` under the one key) exactly as it was: that one needs a storage
     /// namespace of the kind #7914 gave enum keys, not a precedence change.
+    /// The type the running package (or an enclosing one) declares under
+    /// `name`, when `name` would otherwise read a bare enum member whose enum
+    /// lives outside that package chain -- see the caller in
+    /// [`Self::push_bare_word_value`]. `None` in GLOBAL and whenever no such
+    /// enum member is in scope, so an ordinary bareword pays one probe.
+    // Cost: O(p), p = enclosing packages of the running one.
+    fn own_package_type_over_foreign_enum(&self, name: &str) -> Option<Value> {
+        if self.current_package_is_global() {
+            return None;
+        }
+        let enum_val = self.enum_bare_value(name)?;
+        let ValueView::Enum { enum_type, .. } = enum_val.view() else {
+            return None;
+        };
+        let own = self.resolve_type_in_current_package(name)?;
+        let own_sym = Symbol::intern(&own);
+        let own_pkg = crate::qualified::package_parent(own_sym)?;
+        // An enum declared in the same package chain is the module's own
+        // member: leave it to the enum branch.
+        let enum_pkg = crate::qualified::package_parent(enum_type);
+        if enum_pkg.is_some_and(|p| {
+            crate::qualified::package_ancestors(own_pkg).any(|a| a == p) || p == own_pkg
+        }) {
+            return None;
+        }
+        Some(Value::package(own_sym))
+    }
+
     fn running_module_bareword(&self, name: &str) -> Option<Value> {
         // A count kept by `RoutineStack`, not a walk of it: this gate opens
         // every bareword read, and the walk grew with nesting depth on a path

@@ -77,13 +77,14 @@ impl Interpreter {
                 Err(exception) => Ok(super::fs_errors::failure_of(exception)),
             },
             "rmdir" => Ok(self.rmdir_op(&path_buf)),
-            // Per raku, `.unlink` returns True on success, False when the file did
-            // not exist, and fails softly (a Failure carrying X::IO::Unlink) for
+            // Per raku, `.unlink` returns True on success and when the file did
+            // not exist (it is already gone, as the `unlink` sub also reports),
+            // and fails softly (a Failure carrying X::IO::Unlink) for
             // any other error (e.g. the path is a directory) so `without`/`try`
             // can handle it rather than the method throwing.
             "unlink" => match fs::remove_file(&path_buf) {
                 Ok(()) => Ok(Value::TRUE),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::FALSE),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::TRUE),
                 Err(err) => {
                     // Rakudo reports libuv's wording ("illegal operation on a
                     // directory" for a directory target).

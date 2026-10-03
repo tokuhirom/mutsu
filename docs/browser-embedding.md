@@ -91,7 +91,10 @@ an input line has an unclosed bracket and needs another line.
 
 ## Building locally
 
-Install `wasm-pack`, then run:
+Install `wasm-pack` and, ideally, a recent binaryen `wasm-opt` on `PATH`
+(`.github/scripts/install-wasm-pack.sh` pins the versions CI uses). Without
+one, wasm-pack downloads binaryen version_117, whose optimisation pass takes
+several times longer on this module. Then run:
 
 ```sh
 scripts/build-npm-package.sh

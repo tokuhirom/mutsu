@@ -58,8 +58,9 @@ impl Interpreter {
     /// Explicitly assigned slots are tracked via the array's own embedded
     /// `initialized` set and are NOT trimmed.
     fn trim_trailing_array_holes(&mut self, var_name: &str) {
-        let env = self.env_mut();
-        let Some(container) = env.get_mut(var_name) else {
+        // The same root `unmark_initialized_indices` recorded the holes on (a
+        // unit lexical slot, or the array inside a `ContainerRef` cell).
+        let Some(container) = self.env_root_descended_mut(var_name) else {
             return;
         };
         container.with_array_mut(|items, kind| {
@@ -82,6 +83,20 @@ impl Interpreter {
             // whose name carries no constraint of its own.
             arr.trim_trailing_holes();
         });
+    }
+
+    /// The bookkeeping every `:delete` of the array slots `idx` addresses on
+    /// `var_name` does once the slots hold the hole marker, shared by the
+    /// plain `:delete` and its adverb companions (`:v:delete`, #11320):
+    /// drop the slots from the `initialized` set and the bound-index set,
+    /// record them as deleted (`:exists`), and trim trailing holes.
+    // Cost: O(k + n), k = addressed indices, n = array length (the first
+    // delete materializes the `initialized` set; the trim walks the tail).
+    pub(crate) fn finish_array_slot_delete(&mut self, var_name: &str, idx: &Value) {
+        self.unmark_initialized_indices(var_name, idx);
+        self.mark_deleted_indices(var_name, idx);
+        self.unmark_bound_indices(var_name, idx);
+        self.trim_trailing_array_holes(var_name);
     }
 
     /// Fast path for simple `%h{$key}:delete` — skip metadata lookups.
@@ -349,7 +364,7 @@ impl Interpreter {
                 container.with_array_mut(|items, _kind| {
                     let arr = crate::value::gc_data_mut(items);
                     while arr.len() < min_len {
-                        arr.push(Value::package(crate::symbol::wk::any()));
+                        arr.push_gap(Value::package(crate::symbol::wk::any()));
                     }
                 });
                 if let Some(padded_val) = self.env().get(&var_name).cloned() {
@@ -783,17 +798,7 @@ impl Interpreter {
         } else {
             Self::delete_from_missing_container(idx)
         };
-        // Remove deleted indices from the initialized-index tracking set
-        // so that trim_trailing_array_holes recognizes them as holes.
-        self.unmark_initialized_indices(&var_name, &idx_for_unmark);
-        // Mark deleted positions so :exists can report them as missing even
-        // though the slot still holds a type-object hole value.
-        self.mark_deleted_indices(&var_name, &idx_for_unmark);
-        // Remove deleted indices from the bound-index tracking set to sever bindings.
-        self.unmark_bound_indices(&var_name, &idx_for_unmark);
-        // Trim trailing holes from arrays after deletion.
-        // A "hole" is either Nil (deleted) or an uninitialized Package("Any") slot.
-        self.trim_trailing_array_holes(&var_name);
+        self.finish_array_slot_delete(&var_name, &idx_for_unmark);
         // If the deleted value is a hole (Nil or type object like Package("Any")),
         // substitute the container's default value if one was set via `is default(...)`.
         // For a SLICE delete (`%h<a b c>:delete`) the result is a list whose
@@ -902,10 +907,7 @@ impl Interpreter {
         if let Some(container) = self.env_mut().get_mut(var_name) {
             let _ = Self::delete_from_container(container, flat_idx.clone(), &hole_type)?;
         }
-        self.unmark_initialized_indices(var_name, &flat_idx);
-        self.mark_deleted_indices(var_name, &flat_idx);
-        self.unmark_bound_indices(var_name, &flat_idx);
-        self.trim_trailing_array_holes(var_name);
+        self.finish_array_slot_delete(var_name, &flat_idx);
         if let Some(container) = self.env().get(var_name).cloned() {
             self.write_local_slot_or_name(code, slot, var_name, container);
         }

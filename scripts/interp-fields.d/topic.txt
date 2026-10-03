@@ -1,0 +1,2 @@
+# ADR-10779 topic subsystem: TopicState (src/runtime/topic_state.rs).
+topic_state

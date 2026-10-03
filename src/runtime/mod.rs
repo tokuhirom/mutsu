@@ -667,6 +667,7 @@ pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
 mod nqp_ops_bigint;
 mod nqp_ops_builtin;
+mod nqp_ops_compare;
 pub(crate) mod nqp_ops_list;
 pub(crate) mod nqp_ops_native;
 mod nqp_ops_numeric;
@@ -689,6 +690,7 @@ pub(crate) mod toplevel_callable_ids;
 pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
 mod attribute_core_traits;
+mod attribute_identity;
 mod builtin_method_wrap;
 mod container_store;
 pub(crate) mod core_infix_names;
@@ -768,6 +770,7 @@ mod methods_call_dispatch;
 mod methods_call_helpers;
 mod methods_classhow;
 mod methods_classhow_attribute;
+mod methods_classhow_attribute_table;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
 mod methods_classhow_grammar_tokens;
@@ -980,6 +983,7 @@ mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) use resolution_sequence::value_is_definite;
+pub(crate) mod control_state;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
@@ -1026,6 +1030,7 @@ mod sprintf_validate;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
 pub(crate) mod thread_sharing;
+pub(crate) mod topic_state;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
@@ -2330,26 +2335,6 @@ pub struct Interpreter {
     /// See [`TapState`] — extracted out of this struct so its ownership can later
     /// move (lever B). Access only through `self.tap`'s methods.
     tap: TapState,
-    halted: bool,
-    /// Prints an uncaught mainline exception; `run` calls it before the END
-    /// phasers, as rakudo's top-level handler does. See [`Self::set_uncaught_reporter`].
-    uncaught_reporter: Option<UncaughtReporter>,
-    /// Set once `uncaught_reporter` has printed the error `run` returns.
-    uncaught_reported: bool,
-    exit_code: i64,
-    /// Set while the END phasers run for a program that is already exiting, and
-    /// once any END phaser has itself called `exit`. A further `exit` still
-    /// unwinds but leaves [`Self::exit_code`] alone — rakudo latches the process
-    /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
-    /// exits 42. See `Interpreter::finish` and `builtin_exit`.
-    exit_status_locked: bool,
-    /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
-    /// still running: `run` raises it before the mainline starts and the
-    /// `EndBeginPrologue` opcode lowers it once the prologue and its
-    /// undeclared-routine guards are done. An error that escapes the mainline
-    /// while it is still raised is a compile-time failure, so `run` skips the
-    /// END phasers for it (#10977).
-    pub(crate) begin_prologue_pending: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
@@ -2703,11 +2688,6 @@ pub struct Interpreter {
     /// one buffer per nesting level in flight; bounded, and cleared before
     /// being returned.
     pub(crate) regex_quant_scratch: Vec<Vec<usize>>,
-    /// Number of active CONTROL handlers in the current VM stack. Tracked
-    /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
-    /// EVAL) can observe handlers installed by the outer VM and propagate
-    /// warn/control signals appropriately.
-    pub(crate) control_handler_depth: u32,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<CodeFrame>,
     doc_comments: HashMap<String, DocComment>,
@@ -2720,15 +2700,6 @@ pub struct Interpreter {
     /// name key would collide for multis and same-named parameters.
     why_object_cache: HashMap<u64, Value>,
     type_metadata: std::sync::Arc<HashMap<String, ValueMap>>,
-    /// `Box<Cell<bool>>`-backed (not a plain `bool`, and not a bare `Cell`):
-    /// read/written through the `when_matched()`/`set_when_matched()`
-    /// accessors below AND directly by `vm_call_state_guard::WhenMatchedGuard`,
-    /// whose `Drop` impl restores it via a raw pointer into this separate heap
-    /// allocation -- immune to Stacked Borrows retags of `Interpreter`'s own
-    /// memory from `&mut self` calls made after the guard was constructed
-    /// (see that module's doc comment for why a bare `Cell` field is not
-    /// enough).
-    pub(crate) when_matched: Box<Cell<bool>>,
     block_scope_depth: usize,
     /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
@@ -2804,34 +2775,6 @@ pub struct Interpreter {
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
     module_export_defs: HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
-    /// Registered END phasers, in registration order (they run in reverse).
-    end_phasers: Vec<EndPhaser>,
-    /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
-    /// [`end_order`] class keep the order they were registered in.
-    end_phaser_seq: u64,
-    /// One entry per module body currently executing, holding the [`end_order`]
-    /// class the END phasers it registers belong to. Empty while the main
-    /// compunit runs. See `load_module` for why a `use` reached from an `EVAL`
-    /// is not `end_order::MODULE`.
-    module_load_order: Vec<u64>,
-    /// Tracks END phaser site_ids to ensure each is registered only once.
-    /// Only consulted for phasers that were NOT pre-installed by
-    /// `preregister_main_end_phasers` (a module's, an `EVAL`'s, an rvalue
-    /// `END`): a pre-installed one owns a fixed slot in `end_phasers`, so
-    /// re-reaching its declaration re-captures into that slot rather than
-    /// adding a phaser.
-    end_phaser_sites: HashSet<u64>,
-    /// `ast::Stmt::Phaser::end_index` -> position in `end_phasers`, for the
-    /// main compunit's ENDs, which `preregister_main_end_phasers` installs in
-    /// source order before the body runs. Reaching such a declaration updates the slot's
-    /// captured env instead of installing a second phaser; never reaching it
-    /// still leaves the phaser installed, which is what makes an END inside a
-    /// never-entered block (or a never-called sub) run at exit, as it does in
-    /// rakudo.
-    main_end_slots: HashMap<u32, usize>,
-    /// Monotonic counter stamped into `EndPhaser::capture_seq` each time a
-    /// phaser captures its declaring scope's env. See that field.
-    end_phaser_capture_seq: u64,
     chroot_root: Option<PathBuf>,
     loaded_modules: std::sync::Arc<HashSet<String>>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
@@ -3335,13 +3278,6 @@ pub struct Interpreter {
     /// It is what `$*R.find-attach-target` resolves a module's EXPORT-time
     /// request against (`runtime::attach_target`).
     use_attach_depth: Option<usize>,
-    /// One frame per module body currently being loaded, innermost last; the
-    /// main program is the implicit frame below them
-    /// (`mainline_leave_phasers`). See `runtime::attach_target`.
-    compunit_leave_frames: Vec<attach_target::CompunitLeaveFrame>,
-    /// LEAVE phasers a `use` attached to the main program's compunit, run when
-    /// the mainline finishes (`Interpreter::finish`).
-    mainline_leave_phasers: Vec<Value>,
     /// Routine aliases installed by an import, keyed by their target package
     /// and name. A local `sub` may shadow such an alias, but two declarations
     /// in the same scope must still be rejected. The set is restored together
@@ -3621,13 +3557,6 @@ pub struct Interpreter {
     /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
     /// String hashing that dominated the closure dispatch profile.
     closure_captured_state: HashMap<(u64, Symbol), Value>,
-    /// Fired `once { ... }` results, keyed by `(routine-clone-id, op-position)`.
-    /// Shared by `Arc` handle into every spawned thread's clone so a `once` in a
-    /// sub run from multiple `start` blocks fires exactly once across threads
-    /// (see [`once_store::OnceStore`]).
-    once_values: Arc<once_store::OnceStore>,
-    once_scope_stack: Vec<u64>,
-    next_once_scope_id: u64,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
     /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
@@ -3695,8 +3624,6 @@ pub struct Interpreter {
     /// share pays the one deep clone via `Arc::make_mut`. Collapses to a plain
     /// VM field once the Interpreter execution path is removed (PLAN.md ④/⑤).
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
-    /// `let`/`temp` save stack; see [`LetSaveEntry`].
-    let_saves: Vec<LetSaveEntry>,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
@@ -3961,56 +3888,6 @@ pub struct Interpreter {
     /// call frames like `frame_authoritative`, emptied on every other frame
     /// push.
     pub(crate) frame_owned: Vec<crate::symbol::Symbol>,
-    pub(crate) in_smartmatch_rhs: bool,
-    pub(crate) transliterate_in_smartmatch: bool,
-    pub(crate) substitution_in_smartmatch: bool,
-    /// How many regexes with a captured `$_` are being matched right now
-    /// (`install_regex_closure_scope`). While non-zero, `$_` inside the regex
-    /// is that captured topic, not the match subject.
-    pub(crate) regex_topic_pinned: u32,
-    pub(crate) last_topic_value: Option<Value>,
-    pub(crate) topic_save_stack: Vec<Value>,
-    /// Saved `$_` + `topic_source_var` for a pointy-topic scope (`if COND -> $_`,
-    /// `with COND -> $_`). The pointy binding introduces a FRESH lexical `$_`
-    /// that shadows an enclosing `given`'s topic, so its writes must NOT flow
-    /// back to the given's source variable — `EnterPointyTopic` saves + clears
-    /// `topic_source_var` for the block, `ExitPointyTopic` restores it.
-    pub(crate) topic_source_save_stack: Vec<(Value, Option<String>)>,
-    /// The named container the current topic/loop source came from
-    /// (`TagContainerRef`), paired with its compile-time-baked local slot
-    /// (§1.5; `None` = non-local or runtime-derived) and the fingerprint of
-    /// the `CompiledCode` that set it (`resume_code_fp`). The slot lets the
-    /// for/given container writeback target the exact `locals` slot when
-    /// shadow slots are active, instead of the by-name `position` search.
-    /// The fingerprint scopes the signal to its own frame: the tag is always
-    /// emitted immediately before the for/given op that consumes it, in the
-    /// SAME code object, so consumers (`take_container_ref_for`) discard a
-    /// tag whose fingerprint does not match — a leftover from a callee frame
-    /// (e.g. a module method's own `for @x` loop) would otherwise be mistaken
-    /// for the caller's loop source and its slot would index the WRONG frame's
-    /// locals (Text::CSV t/90_csv.t 507-508: `method CSV`'s `@in` tag, slot 28
-    /// in the method frame, made the caller's untagged `for in () -> $in` loop
-    /// write its items over the mainline's slot 28).
-    pub(crate) container_ref_var: Option<(String, Option<u32>, usize)>,
-    pub(crate) container_ref_reversed: bool,
-    pub(crate) topic_source_var: Option<String>,
-    /// The `@`/`%` source variable when `$_` is a whole-container topic
-    /// (`given @a` / `with %h`), where `$_` aliases the entire container. A `.=`
-    /// metaop on the topic (`TopicDotAssign`) writes the reassigned `$_` straight
-    /// through to this source with container-assignment coercion. Distinct from
-    /// `topic_source_var`, which a `for @a` element loop also sets but where `$_`
-    /// is a single element (handled by the per-element writeback, not this).
-    pub(crate) topic_container_source: Option<String>,
-    pub(crate) element_source: Option<(String, Vec<(Value, bool)>)>,
-    pub(crate) quanthash_bind_params: Vec<String>,
-    /// Deferred restore of a single named for-loop param's prior binding, applied
-    /// by `RestoreForParam` after the loop's LAST/post phasers. Tuple is
-    /// `(name, saved_env_value, colliding_local_slot)`: the slot is `Some` when
-    /// the loop param shares a compile-time local slot with an enclosing binding
-    /// of the same bare name (`my \x = 10; for ... -> \x { }`), so the restore
-    /// must write the saved value back through that slot too — otherwise a later
-    /// `GetLocal` read of the outer name sees the loop's last iteration value.
-    pub(crate) for_param_restore_stack: Vec<(String, Option<Value>, Option<u32>)>,
     pub(crate) call_frames: Vec<crate::vm::VmCallFrame>,
     /// Calls left before the next ADR-0100 native-stack headroom check.
     ///
@@ -4023,25 +3900,10 @@ pub struct Interpreter {
     /// calls -- which is why the guard's reserve has to absorb a whole
     /// interval's worth of frames. See `vm::vm_stack_guard`.
     pub(crate) stack_check_countdown: u32,
-    /// Active CONTROL handlers on the dynamic call stack (one per executing
-    /// `CONTROL { }` block). Kept in lock-step with `control_handler_depth` so
-    /// a `warn` raised deep inside a protected body can find the innermost
-    /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
-    /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
-    pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
     /// The function table inline CATCH/CONTROL handler entries share while it
     /// is unchanged, keyed by its `CompiledFns::id`. See
     /// `Interpreter::shared_fns_snapshot`.
     pub(crate) handler_fns_snapshot: Option<(u64, std::sync::Arc<crate::opcode::CompiledFns>)>,
-    /// ADR-0072: active exception-absorbing regions on the dynamic call stack —
-    /// every `try` and every block with a `CATCH { }`. A `die` raised deep inside
-    /// a protected body consults `.last()`: when that innermost region's CATCH is
-    /// resume-capable, the handler runs INLINE at the throw site so `.resume`
-    /// returns to the `die`'s own call site with every intervening Rust frame
-    /// still live. See `vm::CatchHandlerEntry`.
-    pub(crate) catch_handlers: Vec<crate::vm::CatchHandlerEntry>,
-    /// Monotonic id source for `CatchHandlerEntry::token`.
-    pub(crate) catch_handler_seq: u64,
     /// Address of the `CompiledCode` of the bytecode frame currently executing
     /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
     /// machinery to reconcile the *caller's* local slots from env after a reify
@@ -4369,68 +4231,6 @@ pub struct Interpreter {
     /// reads them.
     pub(crate) user_declared_classes: std::sync::Arc<std::collections::HashSet<String>>,
     pub(crate) block_declared_vars: ScopeStack<NameSet>,
-    /// Local-frame slot indices of `given`/`with` pointy-topic parameters
-    /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
-    /// `Given`/`With` op still needs the slot's final value after its body
-    /// finishes. The pointy param's own `VarDecl` makes
-    /// `exec_block_local_scope_op` treat it as an ordinary vanishing
-    /// block-local `my`, Nil-ing its slot on block exit (and, when the name
-    /// shadows an outer variable, `pop_loop_local_scope` may instead
-    /// overwrite the slot with the outer binding's restored value) — both of
-    /// which run BEFORE the enclosing op's writeback can read it, and a
-    /// scalar pointy param's live value has NO other home by then (a plain
-    /// scalar lexical skips its env mirror under the `(B)` per-store
-    /// env-write gate, see `docs/lexical-scope-slot-campaign.md`). So
-    /// `exec_block_local_scope_op` captures each protected slot's live value
-    /// into `given_pointy_captured` unconditionally, right after body
-    /// execution finishes and before either of those two exit paths can
-    /// touch it.
-    ///
-    /// Keyed by exact SLOT index, not by name/symbol: two nested `given`s can
-    /// bind the SAME name (`given $a -> $v { given $b -> $v {...} }`), each
-    /// getting its own distinct compiled slot under shadow slots, and a
-    /// pointy param can also shadow an outer variable of the same name
-    /// (`given 5 -> $x {...}` inside `my $x = 1`) — slot identity is the only
-    /// thing that disambiguates either case; name-based matching captured
-    /// from (or reset) the wrong declaration's slot in both. `exec_given_op`
-    /// determines its own pointy param's slot by peeking the compiled body
-    /// for the first `SetLocalDecl`, which is always that param's own
-    /// synthetic declaration (`pointy_topic_bind` always inserts it as the
-    /// body's first statement) — found before any nested construct's own
-    /// declarations, so it is unambiguous even under same-name nesting.
-    pub(crate) given_pointy_capture_slots: Vec<usize>,
-    /// Parallel stack to `given_pointy_capture_slots`: the captured final value for
-    /// each active `given`/`with` pointy param's slot, filled in by
-    /// `exec_block_local_scope_op` (`None` until then) and consumed by
-    /// `exec_given_op`'s writeback.
-    pub(crate) given_pointy_captured: Vec<Option<Value>>,
-    pub(crate) loop_local_vars: ScopeStack<NameSet>,
-    /// Names currently bound as for-loop parameters in this frame chain, one
-    /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
-    /// env keys. Consulted by `block_captured_scalars` only; never persisted.
-    pub(crate) active_loop_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
-    /// Parallel to [`Self::active_loop_param_names`], for the parameters that
-    /// **alias** rather than copy: the bare names the enclosing `for` loops
-    /// currently bind as genuinely rw parameters (`is rw`, a `<->` block, a
-    /// sigilless `\v`, a `.kv` value slot).
-    ///
-    /// An rw parameter is the source element's own container, so a closure over
-    /// it reads *through* it and a later write to the element is visible
-    /// (`for @a -> $x is rw, $y is rw { $c = -> { $x } }; @a[0] = 99; $c()` is
-    /// `99`). `freeze_readonly_owned_captures` consults this to leave such a
-    /// name alone: a MULTI-parameter loop binds through
-    /// `build_for_bind_stmts`' declaration prefix, which registers the name as
-    /// loop-local, and the freeze would otherwise deep-deref the element cell
-    /// into a per-iteration snapshot. A single-parameter rw loop binds natively
-    /// and never registers, so it was always right -- this is what makes the two
-    /// forms agree.
-    ///
-    /// Runtime-scoped, not a per-`CompiledCode` name set: names are reused
-    /// across the loops of one compilation unit, so a compile-time set would let
-    /// one loop's `is rw` exempt an unrelated later loop's same-named *non-rw*
-    /// parameter (measured: `t/for-loop-element-alias.t`'s per-iteration
-    /// identity rows).
-    pub(crate) active_loop_rw_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
     /// Names of every `constant $name = ...` scalar ever declared in this run
     /// (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
     /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
@@ -4446,15 +4246,6 @@ pub struct Interpreter {
     /// pays the removal) or "was once a constant" (pays it — still correct,
     /// just no longer free to skip for THAT name).
     pub(crate) constant_var_names_seen: rustc_hash::FxHashSet<String>,
-    /// Per loop-body scope: what each body-local `my` name must be restored to
-    /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
-    /// binding's value); `None` means the name did not exist before the loop, so
-    /// the entry must be REMOVED — otherwise a body-local `my` outlives its block
-    /// as an env key, which is how `HTTP::HPACK`'s Huffman-table `my int $i`
-    /// stayed visible process-wide and was later merged over an unrelated frame's
-    /// loop variable.
-    pub(crate) loop_local_saved_env: ScopeStack<HashMap<String, Option<Value>>>,
-    pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
     /// Stack of captured ENTER-phaser values for blocks whose textually-last
     /// statement is an ENTER phaser (its entry-time value becomes the block
@@ -4462,10 +4253,6 @@ pub struct Interpreter {
     /// `LoadEnterResult` at the end of the block body.
     pub(crate) enter_result_stack: Vec<Value>,
     pub(crate) pending_alias_bind_names: Vec<(String, String)>,
-    pub(crate) check_phaser_depth: u32,
-    /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
-    /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.
-    pub(crate) check_phaser_kinds: Vec<&'static str>,
     /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
     /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time
     /// region (`constant` initializer, `BEGIN`/`CHECK` body) rolls these back
@@ -4473,10 +4260,6 @@ pub struct Interpreter {
     /// textually reached, as rakudo's compile-time pad install does.
     pub(crate) hoisted_unreached_decls:
         rustc_hash::FxHashMap<Symbol, crate::runtime::hoist_visibility::HoistedDeclRecord>,
-    /// One frame per open BEGIN-time region: the registry entries that region
-    /// hid, and the defs to put back when it closes. Depth-aligned with
-    /// `check_phaser_depth`.
-    pub(crate) begin_time_hidden: Vec<Vec<(Symbol, Option<Arc<FunctionDef>>)>>,
     /// Depth of `with_nested_registers` re-entry (nested VM runs: closure
     /// bodies dispatched from native code, EVAL, dies-ok blocks, ...). The
     /// uncaught-CX::Return -> X::ControlFlow::Return conversion in `run_inner`
@@ -4508,6 +4291,12 @@ pub struct Interpreter {
     /// Cross-thread variable sharing and lock bookkeeping (the `threads`
     /// subsystem, ADR-10779).
     pub(crate) threads: thread_sharing::ThreadSharing,
+    /// Topic, given/when and for/loop bookkeeping (the `topic` subsystem,
+    /// ADR-10779).
+    pub(crate) topic_state: topic_state::TopicState,
+    /// Control flow, exceptions, phasers and program exit (the `control`
+    /// subsystem, ADR-10779).
+    pub(crate) control: control_state::ControlState,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.
@@ -4959,7 +4748,8 @@ mod tests {
     fn last_value_from_expression() {
         use crate::value::Value;
         let mut interp = Interpreter::new();
-        interp.run("3 + 4").unwrap();
+        // A REPL line's tail is its value; a program's tail is sunk.
+        interp.run_value_tail("3 + 4").unwrap();
         assert_eq!(interp.last_value, Some(Value::int(7)));
     }
 

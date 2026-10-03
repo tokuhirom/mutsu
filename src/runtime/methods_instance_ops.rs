@@ -2790,9 +2790,10 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    ValueView::Sub(data) => {
-                        Ok(Value::str(format_operator_name(data.name.as_str())))
-                    }
+                    // The name lives with the routine's `$!do` (#11462).
+                    ValueView::Sub(data) => Ok(Value::str(format_operator_name(
+                        self.code_name(&data).as_str(),
+                    ))),
                     // `Nil` swallows every method call. `Array`/`Hash` answer
                     // with their container descriptor's name in rakudo
                     // (`[1].name` is "element", `(my %h).name` is "%h"),

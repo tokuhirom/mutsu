@@ -332,13 +332,13 @@ impl Interpreter {
         // An `exit` raised while the process is already exiting (an END phaser's
         // own `exit`) still unwinds, but the status was decided by the first
         // one — rakudo's `the-end-is-nigh` latch. See `finish`.
-        let code = if self.exit_status_locked {
-            self.exit_code
+        let code = if self.control.exit_status_locked {
+            self.control.exit_code
         } else {
             code
         };
-        self.halted = true;
-        self.exit_code = code;
+        self.control.halted = true;
+        self.control.exit_code = code;
         // Signal any sleeping threads that the process should exit.
         // This is used when exit() is called from a `start` block or
         // signal handler -- the main thread may be blocked in sleep()
@@ -410,7 +410,7 @@ impl Interpreter {
         // `control_handler_depth == 0` guarantees there is no `CONTROL`/`when
         // CX::Warn` block on the stack, there is no `succeed`/unwind target to
         // honour, so resolving the warn locally is complete and correct here.
-        if self.control_handler_depth == 0 {
+        if self.control.control_handler_depth == 0 {
             if !self.warning_suppressed() {
                 self.write_warn_to_stderr(&message);
             }
@@ -493,7 +493,7 @@ impl Interpreter {
         message: &str,
         resume: Value,
     ) -> Result<Value, RuntimeError> {
-        if self.control_handler_depth == 0 {
+        if self.control.control_handler_depth == 0 {
             if !self.warning_suppressed() {
                 self.write_warn_to_stderr(message);
             }

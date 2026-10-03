@@ -251,13 +251,13 @@ impl Interpreter {
         // phaser evaluated by a subsequent EVAL sharing this Interpreter) in
         // X::Comp::BeginTime too. Snapshot the entry depth so every error
         // exit below can restore it after deciding whether to wrap.
-        let entry_check_phaser_depth = self.check_phaser_depth;
-        let entry_check_phaser_kinds = self.check_phaser_kinds.len();
+        let entry_check_phaser_depth = self.control.check_phaser_depth;
+        let entry_check_phaser_kinds = self.control.check_phaser_kinds.len();
         // ADR-0041 §9: the BEGIN-time visibility frames are pushed by
         // `CheckPhaserStart` AND by the value-position `BEGIN` opcode (which
         // does not raise `check_phaser_depth`), so unwind them by their own
         // entry depth rather than by the phaser depth.
-        let entry_begin_time_depth = self.begin_time_hidden.len() as u32;
+        let entry_begin_time_depth = self.control.begin_time_hidden.len() as u32;
         let mut ip = 0;
         // VM poll (design doc §1.2): between instructions no container borrow
         // is live, so a cycle collect may run here. Fires on worker threads
@@ -286,7 +286,7 @@ impl Interpreter {
                     poll_due = ip <= op_ip;
                     continue;
                 }
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -309,33 +309,49 @@ impl Interpreter {
                 // call-frame handling further up the stack.
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = RuntimeError::controlflow_return(true);
-                    if self.check_phaser_depth > 0 {
+                    if self.control.check_phaser_depth > 0 {
                         let wrapped = Self::wrap_in_begin_time(
                             inner_err,
-                            self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                            self.control
+                                .check_phaser_kinds
+                                .last()
+                                .copied()
+                                .unwrap_or("CHECK"),
                         );
-                        self.check_phaser_depth = entry_check_phaser_depth;
-                        self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                        self.control.check_phaser_depth = entry_check_phaser_depth;
+                        self.control
+                            .check_phaser_kinds
+                            .truncate(entry_check_phaser_kinds);
                         self.begin_time_unwind_to(entry_begin_time_depth);
                         return Err(wrapped);
                     }
-                    self.check_phaser_depth = entry_check_phaser_depth;
-                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                    self.control.check_phaser_depth = entry_check_phaser_depth;
+                    self.control
+                        .check_phaser_kinds
+                        .truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(inner_err);
                 }
-                if self.check_phaser_depth > 0 {
+                if self.control.check_phaser_depth > 0 {
                     let wrapped = Self::wrap_in_begin_time(
                         e,
-                        self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                        self.control
+                            .check_phaser_kinds
+                            .last()
+                            .copied()
+                            .unwrap_or("CHECK"),
                     );
-                    self.check_phaser_depth = entry_check_phaser_depth;
-                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                    self.control.check_phaser_depth = entry_check_phaser_depth;
+                    self.control
+                        .check_phaser_kinds
+                        .truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(wrapped);
                 }
-                self.check_phaser_depth = entry_check_phaser_depth;
-                self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                self.control.check_phaser_depth = entry_check_phaser_depth;
+                self.control
+                    .check_phaser_kinds
+                    .truncate(entry_check_phaser_kinds);
                 self.begin_time_unwind_to(entry_begin_time_depth);
                 return Err(e);
             }
@@ -354,7 +370,7 @@ impl Interpreter {
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
         let last_stack_value = self.stack.last().cloned();
-        let fallback = self.last_topic_value.clone();
+        let fallback = self.topic_state.last_topic_value.clone();
         Ok(last_stack_value.or(fallback))
     }
 
@@ -433,7 +449,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
     ) -> Option<(String, Option<u32>)> {
-        let (name, slot, fp) = self.container_ref_var.take()?;
+        let (name, slot, fp) = self.topic_state.container_ref_var.take()?;
         (fp == Self::resume_code_fp(code)).then_some((name, slot))
     }
 
@@ -452,19 +468,21 @@ impl Interpreter {
         // inline-handled by a CATCH belonging to the outer run, for the same
         // isolation reason `resume_ip` is cleared above. Such a throw keeps the
         // ordinary unwinding path.
-        let saved_catch_handlers = std::mem::take(&mut self.catch_handlers);
-        let saved_last_topic = self.last_topic_value.take();
-        let saved_topic_save_stack = std::mem::take(&mut self.topic_save_stack);
-        let saved_topic_source_var = self.topic_source_var.take();
-        let saved_element_source = self.element_source.take();
-        let saved_container_ref_var = self.container_ref_var.take();
-        let saved_container_ref_reversed = self.container_ref_reversed;
-        let saved_quanthash_bind_params = std::mem::take(&mut self.quanthash_bind_params);
-        let saved_for_param_restore_stack = std::mem::take(&mut self.for_param_restore_stack);
+        let saved_catch_handlers = std::mem::take(&mut self.control.catch_handlers);
+        let saved_last_topic = self.topic_state.last_topic_value.take();
+        let saved_topic_save_stack = std::mem::take(&mut self.topic_state.topic_save_stack);
+        let saved_topic_source_var = self.topic_state.topic_source_var.take();
+        let saved_element_source = self.topic_state.element_source.take();
+        let saved_container_ref_var = self.topic_state.container_ref_var.take();
+        let saved_container_ref_reversed = self.topic_state.container_ref_reversed;
+        let saved_quanthash_bind_params =
+            std::mem::take(&mut self.topic_state.quanthash_bind_params);
+        let saved_for_param_restore_stack =
+            std::mem::take(&mut self.topic_state.for_param_restore_stack);
         let saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
         let saved_block_declared_vars = self.block_declared_vars.push_frame();
-        let saved_loop_local_vars = self.loop_local_vars.push_frame();
-        let saved_loop_local_saved_env = self.loop_local_saved_env.push_frame();
+        let saved_loop_local_vars = self.topic_state.loop_local_vars.push_frame();
+        let saved_loop_local_saved_env = self.topic_state.loop_local_saved_env.push_frame();
         // ADR-0027: a nested run (EVAL, dies-ok/lives-ok block, ...) starts
         // with an empty loop-owned vouch, for the same isolation rationale as
         // `active_loop_param_names` below — its own closures must not
@@ -474,12 +492,12 @@ impl Interpreter {
         // active-loop-param stack, so a spawn inside the callee whose free
         // variable merely shares an OUTER loop's parameter name is not
         // mistaken for that loop's own per-iteration binding.
-        let saved_active_loop_param_names = self.active_loop_param_names.push_frame();
+        let saved_active_loop_param_names = self.topic_state.active_loop_param_names.push_frame();
         let saved_outer_scope_locals = std::mem::take(&mut self.outer_scope_locals);
         let saved_pending_alias_bind_names = std::mem::take(&mut self.pending_alias_bind_names);
-        let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
-        let saved_transliterate = self.transliterate_in_smartmatch;
-        let saved_substitution = self.substitution_in_smartmatch;
+        let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
+        let saved_transliterate = self.topic_state.transliterate_in_smartmatch;
+        let saved_substitution = self.topic_state.substitution_in_smartmatch;
         let saved_method_dispatch_pure = self.method_dispatch_pure;
         // Save AND clear the whole mark-context one-shot flag family in one
         // step (`crate::runtime::mark_context`): they are a single packed
@@ -489,7 +507,7 @@ impl Interpreter {
         // this boundary never isolated, though `MarkContextGuard` (the same
         // isolation for an ordinary call) always did.
         let (saved_mark_flags, saved_mark_share_source) = self.mark_ctx.take_all();
-        let saved_loop_cond_active = self.loop_cond_active;
+        let saved_loop_cond_active = self.topic_state.loop_cond_active;
         let saved_state_scope_id = self.state_scope_id.take();
         // A fallback-dispatched routine body hands its registration clone id
         // across this register reset (see `pending_nested_state_scope`).
@@ -534,13 +552,13 @@ impl Interpreter {
         // `throws-like`/EVAL block ran earlier in the same program).
         let saved_current_code = self.current_code;
 
-        self.in_smartmatch_rhs = false;
-        self.transliterate_in_smartmatch = false;
-        self.substitution_in_smartmatch = false;
+        self.topic_state.in_smartmatch_rhs = false;
+        self.topic_state.transliterate_in_smartmatch = false;
+        self.topic_state.substitution_in_smartmatch = false;
         self.method_dispatch_pure = false;
-        self.container_ref_reversed = false;
+        self.topic_state.container_ref_reversed = false;
         self.accessor_ref_pending = false;
-        self.loop_cond_active = false;
+        self.topic_state.loop_cond_active = false;
         self.nested_run_depth += 1;
 
         let result = f(self);
@@ -553,33 +571,37 @@ impl Interpreter {
         self.upvalues = saved_upvalues;
         self.call_frames = saved_call_frames;
         self.resume_ip = saved_resume_ip;
-        self.catch_handlers = saved_catch_handlers;
-        self.last_topic_value = saved_last_topic;
-        self.topic_save_stack = saved_topic_save_stack;
-        self.topic_source_var = saved_topic_source_var;
-        self.element_source = saved_element_source;
-        self.container_ref_var = saved_container_ref_var;
-        self.container_ref_reversed = saved_container_ref_reversed;
-        self.quanthash_bind_params = saved_quanthash_bind_params;
-        self.for_param_restore_stack = saved_for_param_restore_stack;
+        self.control.catch_handlers = saved_catch_handlers;
+        self.topic_state.last_topic_value = saved_last_topic;
+        self.topic_state.topic_save_stack = saved_topic_save_stack;
+        self.topic_state.topic_source_var = saved_topic_source_var;
+        self.topic_state.element_source = saved_element_source;
+        self.topic_state.container_ref_var = saved_container_ref_var;
+        self.topic_state.container_ref_reversed = saved_container_ref_reversed;
+        self.topic_state.quanthash_bind_params = saved_quanthash_bind_params;
+        self.topic_state.for_param_restore_stack = saved_for_param_restore_stack;
         self.local_bind_pairs = saved_local_bind_pairs;
         self.block_declared_vars
             .pop_frame(saved_block_declared_vars);
-        self.loop_local_vars.pop_frame(saved_loop_local_vars);
-        self.loop_local_saved_env
+        self.topic_state
+            .loop_local_vars
+            .pop_frame(saved_loop_local_vars);
+        self.topic_state
+            .loop_local_saved_env
             .pop_frame(saved_loop_local_saved_env);
         self.frame_owned = saved_frame_owned;
-        self.active_loop_param_names
+        self.topic_state
+            .active_loop_param_names
             .pop_frame(saved_active_loop_param_names);
         self.outer_scope_locals = saved_outer_scope_locals;
         self.pending_alias_bind_names = saved_pending_alias_bind_names;
-        self.in_smartmatch_rhs = saved_in_smartmatch_rhs;
-        self.transliterate_in_smartmatch = saved_transliterate;
-        self.substitution_in_smartmatch = saved_substitution;
+        self.topic_state.in_smartmatch_rhs = saved_in_smartmatch_rhs;
+        self.topic_state.transliterate_in_smartmatch = saved_transliterate;
+        self.topic_state.substitution_in_smartmatch = saved_substitution;
         self.method_dispatch_pure = saved_method_dispatch_pure;
         self.mark_ctx
             .restore_all(saved_mark_flags, saved_mark_share_source);
-        self.loop_cond_active = saved_loop_cond_active;
+        self.topic_state.loop_cond_active = saved_loop_cond_active;
         self.state_scope_id.set(saved_state_scope_id);
         self.async_state.gather_for_loop_resume = saved_gather_for_loop_resume;
         self.async_state.rw_map_topic_capture = saved_rw_map_topic_capture;
@@ -650,7 +672,7 @@ impl Interpreter {
                     poll_due = ip <= op_ip;
                     continue;
                 }
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -971,7 +993,7 @@ impl Interpreter {
                             false,
                         );
                     }
-                    if e.is_warn() && self.control_handler_depth == 0 {
+                    if e.is_warn() && self.control.control_handler_depth == 0 {
                         if !self.warning_suppressed() {
                             self.write_warn_to_stderr(&e.message);
                         }
@@ -1040,7 +1062,7 @@ impl Interpreter {
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -1103,7 +1125,7 @@ impl Interpreter {
                     // LEAVE is collected here, never handled at its throw.
                     self.push_catch_marker();
                     let result = self.run_range(code, ip + 1, guard_next, compiled_fns);
-                    self.catch_handlers.pop();
+                    self.control.catch_handlers.pop();
                     if let Err(e) = result {
                         collected_errors.push(e);
                     }

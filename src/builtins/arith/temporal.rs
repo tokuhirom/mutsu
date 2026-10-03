@@ -3,6 +3,7 @@
 use super::rat::to_big_rat_parts;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView, make_big_rat_arith};
+use num_traits::{FromPrimitive, Zero};
 
 /// A Date-shaped instance always carries `year`/`month`/`day`/`days` (see
 /// `make_date_with_formatter`); DateTime carries `year`/`month`/`day` too but
@@ -212,7 +213,61 @@ pub(crate) fn make_duration_value(secs: f64) -> Value {
 }
 
 pub(crate) fn make_duration(secs: f64) -> Value {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("value".to_string(), Value::num(secs));
-    Value::make_instance(Symbol::intern("Duration"), attrs)
+    make_duration_real(&Value::num(secs))
+}
+
+/// Build a Duration from a Real number of seconds, stored the way Rakudo
+/// stores it: a nanosecond-truncated Rat ([`tai_rat`]).
+// Cost: O(d), see [`tai_rat`].
+pub(crate) fn make_duration_real(secs: &Value) -> Value {
+    make_duration_from_value(tai_rat(secs))
+}
+
+/// The TAI seconds an Instant or Duration stores for the Real `secs`: a Rat
+/// truncated toward zero to whole nanoseconds, as Rakudo stores them
+/// (`Duration.new(1/3).tai` is `333333333/1000000000`). Inf and NaN keep
+/// their degenerate Rats (`1/0`, `-1/0`, `0/0`).
+// Cost: O(d), d = digits of the operand's numerator and denominator.
+pub(crate) fn tai_rat(secs: &Value) -> Value {
+    const NANOS: i64 = 1_000_000_000;
+    let nanos = match to_big_rat_parts(secs) {
+        Some((n, d)) if !d.is_zero() => (n * NANOS) / d,
+        Some(_) => return super::rat::real_to_rat(secs),
+        None => {
+            let f = crate::runtime::to_float_value(secs).unwrap_or(0.0);
+            if !f.is_finite() {
+                return super::rat::real_to_rat(&Value::num(f));
+            }
+            match num_bigint::BigInt::from_f64((f * NANOS as f64).trunc()) {
+                Some(n) => n,
+                None => return super::rat::real_to_rat(&Value::num(f)),
+            }
+        }
+    };
+    crate::value::make_big_rat(nanos, num_bigint::BigInt::from(NANOS))
+}
+
+/// The TAI seconds of the POSIX timestamp `posix` (a Real), stored as
+/// [`tai_rat`] stores them: `Instant.from-posix(1/3)` keeps the exact
+/// fraction (to the nanosecond) instead of going through a Num.
+// Cost: O(d + log L), d as for [`tai_rat`], L = leap-second table entries.
+pub(crate) fn posix_to_tai(posix: &Value) -> Value {
+    let f = crate::runtime::to_float_value(posix).unwrap_or(0.0);
+    let leap = crate::value::temporal_core::leap_seconds_at(f);
+    tai_rat(&value_add(posix.clone(), Value::int(leap)))
+}
+
+/// `a + b` over Real values, exact when both are Rat/Int (as for an Instant
+/// or Duration's stored seconds), else in Num — the Real arithmetic of
+/// Rakudo's `Instant`/`Duration` operators (`$a.tai + $b`).
+// Cost: O(1) for native operands; O(d) for big rationals, d = digits.
+pub(crate) fn value_add(a: Value, b: Value) -> Value {
+    let (l, r) = crate::runtime::coerce_numeric(a, b);
+    if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r)) {
+        return make_big_rat_arith(an * &bd + bn * &ad, ad * bd);
+    }
+    Value::num(
+        crate::runtime::to_float_value(&l).unwrap_or(0.0)
+            + crate::runtime::to_float_value(&r).unwrap_or(0.0),
+    )
 }

@@ -876,13 +876,10 @@ impl Interpreter {
                             // instead of a raw `Value::NIL` -- `Nil` is no
                             // longer a hole sentinel, only
                             // `ArrayData::initialized` is.
-                            Self::autoviv_resize(
-                                data.items_mut(),
-                                i + 1,
-                                Self::native_fill_for_constraint(
-                                    element_constraint_incdec.as_deref(),
-                                ),
-                            )?;
+                            let fill = data.gap_fill(Self::native_fill_for_constraint(
+                                element_constraint_incdec.as_deref(),
+                            ));
+                            Self::autoviv_resize(data.items_mut(), i + 1, fill)?;
                             Value::assign_element_slot(&mut data[i], new_val.clone());
                             // Materialize the "all present" range before
                             // recording `i` as present, so a skipped
@@ -1105,8 +1102,12 @@ impl Interpreter {
                         // Fill holes with the element type's type object for a
                         // typed array (e.g. `my Int @a; @a[4]++` leaves `(Int)`
                         // placeholders), or 0/0.0/"" for native arrays.
-                        let fill =
-                            Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
+                        let fill = a.gap_fill(Self::native_fill_for_constraint(
+                            declared_constraint_incdec.as_deref(),
+                        ));
+                        // Record the write before growing, so only the grown
+                        // gaps read as holes (`store_element`'s rule).
+                        a.mark_initialized(i);
                         Self::autoviv_resize(a.items_mut(), i + 1, fill)?;
                         Value::assign_element_slot(&mut a[i], new_val.clone());
                         Ok(true)

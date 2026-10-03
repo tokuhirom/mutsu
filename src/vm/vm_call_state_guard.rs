@@ -130,7 +130,7 @@ impl Drop for StateScopeGuard {
 }
 
 /// RAII guard restoring the `when_matched` flag (via
-/// [`Interpreter::when_matched`] / `set_when_matched`) on drop. Used by
+/// [`TopicState::when_matched`](crate::runtime::topic_state::TopicState::when_matched) / `set_when_matched`) on drop. Used by
 /// `call_compiled_function_named_inner`, which resets it to `false` for a
 /// routine body so a bare `when` inside it does not leak its match state into
 /// an enclosing `given`/`with`.
@@ -143,10 +143,10 @@ pub(crate) struct WhenMatchedGuard {
 
 impl WhenMatchedGuard {
     pub(crate) fn new(interp: &Interpreter, new_value: bool) -> Self {
-        let saved = interp.when_matched.get();
-        interp.when_matched.set(new_value);
+        let saved = interp.topic_state.when_matched.get();
+        interp.topic_state.when_matched.set(new_value);
         WhenMatchedGuard {
-            cell: &*interp.when_matched as *const Cell<bool>,
+            cell: &*interp.topic_state.when_matched as *const Cell<bool>,
             saved,
         }
     }

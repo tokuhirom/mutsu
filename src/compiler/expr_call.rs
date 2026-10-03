@@ -1200,6 +1200,31 @@ impl Compiler {
                 static_arg_types: false,
             });
             return;
+        } else if (name == "atomic-fetch-sub" || name == "atomic-sub-fetch")
+            && args.len() == 2
+            && let Expr::Var(var_name) = &args[0]
+        {
+            // Subtraction is the add primitive with the delta negated, so the
+            // read-modify-write stays the one atomic implementation.
+            let helper = if name == "atomic-fetch-sub" {
+                "__mutsu_atomic_fetch_add_var"
+            } else {
+                "__mutsu_atomic_add_var"
+            };
+            let call_name_idx = self.code.add_constant(Value::str_from(helper));
+            self.note_atomic_env_sync_target(var_name, true);
+            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
+            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.compile_expr(&args[1]);
+            self.code.emit(OpCode::Negate);
+            self.code.emit(OpCode::CallFunc {
+                name_idx: call_name_idx,
+                arity: 2,
+                arg_sources_idx: None,
+                literal_native_args: 0,
+                static_arg_types: false,
+            });
+            return;
         }
         // Rewrite cas($var, ...) -> __mutsu_cas_var($var_name_str, ...)
         if name == "cas"
