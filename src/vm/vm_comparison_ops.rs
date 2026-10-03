@@ -360,6 +360,9 @@ impl Interpreter {
             if let (Some(a), Some(b)) = (unordered_elems_len(&l), unordered_elems_len(&r)) {
                 return Ok(Value::truth(a == b));
             }
+            // `Baggy.Numeric` / `Mix.Numeric` are the total weight.
+            let l = baggy_total(l);
+            let r = baggy_total(r);
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -747,8 +750,22 @@ impl Interpreter {
     }
 }
 
+/// A `Bag`/`Mix` replaced by its total weight (its `.Numeric`); any other
+/// value is returned unchanged.
+// Cost: O(e), e = entries of a Bag/Mix (one pass summing the weights); O(1) otherwise.
+fn baggy_total(value: Value) -> Value {
+    if matches!(value.view(), ValueView::Bag(..) | ValueView::Mix(..))
+        && let Some(Ok(total)) =
+            crate::builtins::methods_0arg::collection::dispatch(&value, "total")
+    {
+        return total;
+    }
+    value
+}
+
 /// Entry count of a `Hash` or `Set`, the operands whose `.Numeric` is `.elems`.
-/// `None` for anything else (`Bag`/`Mix` numify to their total weight).
+/// `None` for anything else (`Bag`/`Mix` numify to their total weight, see
+/// [`baggy_total`]).
 // Cost: O(1).
 fn unordered_elems_len(value: &Value) -> Option<usize> {
     match value.view() {
