@@ -3583,6 +3583,10 @@ impl Interpreter {
             attrs.insert("prefix".to_string(), interpreter.make_io_path_instance("."));
             attrs.insert("short-id".to_string(), Value::str_from("file"));
             attrs.insert("__mutsu_precomp_enabled".to_string(), Value::TRUE);
+            attrs.insert(
+                super::run_modules_bound_repo::DEFAULT_REPO_HEAD_ATTR.to_string(),
+                Value::TRUE,
+            );
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
