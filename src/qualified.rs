@@ -179,6 +179,9 @@ mod flags {
     pub(super) const PACKAGE_ARRAY: u8 = 1 << 3;
     /// A `%` variable addressed through a real package stash.
     pub(super) const PACKAGE_HASH: u8 = 1 << 4;
+    /// A variable of any sigil (a bare scalar key has none) addressed through
+    /// a real package stash: `P::x`, `@P::a`, `&P::f`.
+    pub(super) const PACKAGE_VAR: u8 = 1 << 5;
 
     pub(super) fn of(sym: Symbol) -> u8 {
         thread_local! {
@@ -199,6 +202,10 @@ mod flags {
             Some(("@", rest)) if names_package_stash(rest) => f |= PACKAGE_ARRAY,
             Some(("%", rest)) if names_package_stash(rest) => f |= PACKAGE_HASH,
             _ => {}
+        }
+        let unsigiled = text.strip_prefix(['$', '@', '%', '&']).unwrap_or(text);
+        if names_package_stash(unsigiled) {
+            f |= PACKAGE_VAR;
         }
         if crate::str_scan::has_routine_scope_marker(text) {
             f |= ROUTINE_SCOPED;
@@ -245,6 +252,15 @@ mod flags {
 /// Whether `name` carries a `::` qualifier, decided once per symbol.
 pub(crate) fn is_qualified(name: Symbol) -> bool {
     flags::of(name) & flags::QUALIFIED != 0
+}
+
+/// Whether a variable key (`P::x`, `@P::a`, ...) addresses a real package
+/// stash -- a global package variable -- rather than a lexical (pseudo-stash
+/// spellings such as `OUTER::x` and the compiler's `__mutsu_outer::` keys are
+/// lexical and answer `false`).
+// Cost: O(1) after the symbol's first classification, O(|name|) on it.
+pub(crate) fn is_package_var(name: Symbol) -> bool {
+    flags::of(name) & flags::PACKAGE_VAR != 0
 }
 
 /// Whether an `@` name addresses a package stash rather than a lexical pseudo-stash.
