@@ -14,6 +14,23 @@ impl Interpreter {
 
     pub(super) fn exec_get_capture_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
+        // A frame that binds its own `$/` (`-> $/ { "$<x>" }`, a
+        // `method foo($/)`) reads the captures through it: the env's `<x>`
+        // entry is whatever match ran last anywhere.
+        if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
+            && let Some(local) = self.locals_get_by_name(code, "/")
+            && local.is_match_instance()
+        {
+            let val = self
+                .try_compiled_method_or_interpret(
+                    local,
+                    "AT-KEY",
+                    vec![Value::str(key.to_string())],
+                )
+                .unwrap_or(Value::NIL);
+            self.stack.push(val);
+            return;
+        }
         let val = if let Some(v) = self.env().get(name).cloned() {
             v
         } else if let Some(key) = name.strip_prefix('<').and_then(|s| s.strip_suffix('>'))

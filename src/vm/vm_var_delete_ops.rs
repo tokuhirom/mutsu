@@ -522,6 +522,21 @@ impl Interpreter {
                 ValueView::Instance { .. } | ValueView::Mixin(..)
             )
         {
+            // A WhateverCode subscript (`$q[*-1]:delete`) is positional by
+            // construction: resolve it against the object's `.elems`, as the
+            // read path does, so it reaches DELETE-POS with the computed index
+            // (POFile's `$po[*-10]:delete` expects DELETE-POS(-8) and its
+            // IncorrectIndex). It used to fall to DELETE-KEY with an empty key.
+            let idx = if let ValueView::Sub(data) = idx.view() {
+                let elems = self.call_method_with_values(target.clone(), "elems", vec![])?;
+                let len = match elems.view() {
+                    ValueView::Int(n) => n,
+                    _ => crate::runtime::value_to_list(&elems).len() as i64,
+                };
+                self.call_subscript_code(&data, len)
+            } else {
+                idx.clone()
+            };
             let (primary, secondary) = if matches!(idx.view(), ValueView::Int(_)) {
                 ("DELETE-POS", "DELETE-KEY")
             } else {

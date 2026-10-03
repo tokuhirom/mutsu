@@ -774,6 +774,16 @@ impl Interpreter {
                 }
             }
         }
+        // An enum value matcher compares numerically, so an object topic with
+        // its own `.Numeric` reaches the interpreter's numeric-ACCEPTS arm
+        // through the enum's underlying value (`$message ~~ Error`).
+        if let ValueView::Instance { class_name, .. } = left.view()
+            && let right_decont = right.deref_container()
+            && let ValueView::Enum { value, .. } = right_decont.descalarize().view()
+            && self.has_user_method(&class_name.resolve(), "Numeric")
+        {
+            return self.vm_smart_match(left, &value.to_value());
+        }
         // Try pure matching first
         if let Some(result) = pure_smart_match(left, right) {
             return result;

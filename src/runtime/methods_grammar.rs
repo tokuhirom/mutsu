@@ -26,6 +26,7 @@ impl Interpreter {
         let token_defs_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
         let cached = self
+            .caches
             .grammar_dynvar_decls_cache
             .get(package)
             .filter(|(cached_gen, _)| *cached_gen == token_defs_gen)
@@ -34,7 +35,8 @@ impl Interpreter {
             Some(decls) => decls,
             None => {
                 let computed = self.compute_grammar_rule_dynvar_decls(package);
-                self.grammar_dynvar_decls_cache
+                self.caches
+                    .grammar_dynvar_decls_cache
                     .insert(package.to_string(), (token_defs_gen, computed.clone()));
                 computed
             }

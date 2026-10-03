@@ -101,8 +101,10 @@ impl Interpreter {
             )
         });
         if let Some(cache_key) = &cache_key
-            && let Some((cached_key, cached_fp, _)) =
-                self.fn_resolve_cache.get(self.fn_resolve_gen, cache_key)
+            && let Some((cached_key, cached_fp, _)) = self
+                .caches
+                .fn_resolve_cache
+                .get(self.caches.fn_resolve_gen, cache_key)
             && let Some(cf) = compiled_fns.get(cached_key)
             && cf.fingerprint == *cached_fp
         {
@@ -158,8 +160,9 @@ impl Interpreter {
         });
         if let Some(memo_key) = &multi_memo_key
             && let Some(hit) = self
+                .caches
                 .multi_compiled_key_cache
-                .get(self.fn_resolve_gen, memo_key)
+                .get(self.caches.fn_resolve_gen, memo_key)
                 .copied()
         {
             let key = hit?;
@@ -318,8 +321,11 @@ impl Interpreter {
             });
         }
         if let Some(memo_key) = multi_memo_key {
-            self.multi_compiled_key_cache
-                .insert(self.fn_resolve_gen, memo_key, found_key);
+            self.caches.multi_compiled_key_cache.insert(
+                self.caches.fn_resolve_gen,
+                memo_key,
+                found_key,
+            );
         }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups
@@ -327,8 +333,8 @@ impl Interpreter {
                 .map(|def| def.package.resolve())
                 .unwrap_or_else(|| self.current_package());
             if let Some(cache_key) = cache_key {
-                self.fn_resolve_cache.insert(
-                    self.fn_resolve_gen,
+                self.caches.fn_resolve_cache.insert(
+                    self.caches.fn_resolve_gen,
                     cache_key,
                     (key, expected_fingerprint, cached_pkg),
                 );

@@ -142,7 +142,7 @@ impl Interpreter {
     /// the same plan once per op execution, and the plan is reused across
     /// every match).
     pub(super) fn subst_replacement_plan(&mut self, src: &str) -> SubstReplPlan {
-        if let Some(plan) = self.subst_repl_plans.get(src) {
+        if let Some(plan) = self.caches.subst_repl_plans.get(src) {
             return plan.clone();
         }
         let expr = crate::parse_dispatch::parse_qq_interpolation(src);
@@ -160,7 +160,9 @@ impl Interpreter {
             // never collide with a closure's carrier-compile-cache entry.
             cache_id: crate::value::next_instance_id(),
         });
-        self.subst_repl_plans.insert(src.to_string(), plan.clone());
+        self.caches
+            .subst_repl_plans
+            .insert(src.to_string(), plan.clone());
         plan
     }
 

@@ -228,7 +228,11 @@ pub(super) fn try_keyword_dispatch(
     // my class Name is Parent { ... }
     if let Some(r) = keyword("class", rest) {
         let (r, _) = ws1(r)?;
-        return class_decl_body(r, !is_our).map(Some);
+        let (r, stmt) = class_decl_body(r, !is_our)?;
+        // `my class T { ... }.new(...)` is a postfix on the type object, as
+        // for the unscoped `class` (see `reject_trailing_postfix`).
+        super::super::class::reject_trailing_postfix(r)?;
+        return Ok(Some((r, stmt)));
     }
     // our native Name is Type is ctype<...> is repr<...> { ... }
     if let Some(r) = keyword("native", rest) {

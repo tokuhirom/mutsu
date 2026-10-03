@@ -68,9 +68,13 @@ impl Interpreter {
         }
         // Tagged per entry with the registry generation, like the family gate's
         // memo, so neither depends on the other having been consulted first.
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         let memo_key = (pkg_sym, name_sym, arg_keys.to_vec());
-        if let Some(&c) = self.func_multi_argkey_cacheable.get(generation, &memo_key) {
+        if let Some(&c) = self
+            .caches
+            .func_multi_argkey_cacheable
+            .get(generation, &memo_key)
+        {
             return c;
         }
         let candidates = self.resolve_all_multi_candidates_indexed(name);
@@ -86,7 +90,8 @@ impl Interpreter {
                 }
             }
         }
-        self.func_multi_argkey_cacheable
+        self.caches
+            .func_multi_argkey_cacheable
             .insert(generation, memo_key, cacheable);
         cacheable
     }

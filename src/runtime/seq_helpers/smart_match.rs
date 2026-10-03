@@ -1730,6 +1730,35 @@ impl Interpreter {
                     false
                 }
             }
+            // `Numeric.ACCEPTS` compares numerically, so an object topic
+            // matches a number (or an enum value) through its own `.Numeric`
+            // (`$message ~~ Error` with `method Numeric { $!level }`,
+            // Lumberjack's Message).
+            (
+                ValueView::Instance { class_name, .. },
+                ValueView::Int(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::Enum { .. },
+            ) if self.has_user_method(&class_name.resolve(), "Numeric") => {
+                match self.try_compiled_method_or_interpret(left.clone(), "Numeric", Vec::new()) {
+                    Ok(n) if !matches!(n.view(), ValueView::Instance { .. }) => {
+                        // `.Numeric` may hand back an enum value (Lumberjack's
+                        // `method Numeric { $!level }`); compare its number.
+                        let n = match n.view() {
+                            ValueView::Enum { value, .. } => value.to_value(),
+                            _ => n.into_descalarized(),
+                        };
+                        let right = match right.view() {
+                            ValueView::Enum { value, .. } => value.to_value(),
+                            _ => right.clone(),
+                        };
+                        self.smart_match_inner(&n, &right)
+                    }
+                    _ => false,
+                }
+            }
             (ValueView::Int(a), ValueView::Int(b)) => a == b,
             (ValueView::Num(a), ValueView::Num(b)) => a == b,
             (ValueView::Int(a), ValueView::Num(b)) => (a as f64) == b,
