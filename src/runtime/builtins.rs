@@ -450,6 +450,28 @@ impl Interpreter {
         false
     }
 
+    // Cost: O(v), v = number of variants.
+    /// The variant of `enum_name` named `name` (a CLI argument spelling such as
+    /// `Rock`), unlike [`Self::coerce_to_enum_variant`], which looks up by value.
+    pub(super) fn enum_variant_by_name(
+        enum_name: &str,
+        variants: &[(String, EnumValue)],
+        name: &str,
+    ) -> Option<Value> {
+        variants
+            .iter()
+            .enumerate()
+            .find(|(_, (key, _))| key == name)
+            .map(|(idx, (key, val))| {
+                Value::enum_parts(
+                    Symbol::intern(enum_name),
+                    Symbol::intern(key),
+                    val.clone(),
+                    idx,
+                )
+            })
+    }
+
     pub(super) fn coerce_to_enum_variant(
         &mut self,
         enum_name: &str,
@@ -504,11 +526,14 @@ impl Interpreter {
                     })
                     .and_then(|(idx, _)| by_index(idx)),
             ),
+            // A Str is matched against each variant's *value* in string form
+            // (`enum ST <A B C>; ST("1")` -> B), as Rakudo's value map does; a
+            // variant's name is not a lookup key (`ST("B")` is a Failure).
             ValueView::Str(name) => Some(
                 variants
                     .iter()
                     .enumerate()
-                    .find(|(_, (key, _))| key.as_str() == name.as_str())
+                    .find(|(_, (_, v))| v.to_value().to_string_value() == name.as_str())
                     .and_then(|(idx, _)| by_index(idx)),
             ),
             // A rational/complex value (e.g. `Mass(1/1000)` for `enum Mass (mg =>
