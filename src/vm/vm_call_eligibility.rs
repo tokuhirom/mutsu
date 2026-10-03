@@ -12,13 +12,13 @@ impl Interpreter {
     /// gate (real, non-mangled, non-GLOBAL package) keeps the hot GLOBAL-function
     /// path (fib, ...) free of any lock/string churn: it returns `None` cheaply.
     ///
-    /// Only the two cheap halves of that gate are inlined here (an emptiness
-    /// test and a 6-byte compare); the `"::&"` substring search and the two
+    /// Only the cheap half of that gate is inlined here (the routine's memoized
+    /// package symbol against the two "no package" ids); the `"::&"` check and the two
     /// `String` clones live in the outlined slow half, so a GLOBAL routine's
     /// call site does not even pay a call.
     #[inline]
     pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
-        if cf.package.is_empty() || cf.package == "GLOBAL" {
+        if crate::qualified::is_global_package(cf.package_sym()) {
             return None;
         }
         self.enter_routine_package_outlined(cf)

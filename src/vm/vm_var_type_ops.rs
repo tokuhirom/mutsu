@@ -84,11 +84,11 @@ impl Interpreter {
         // (3.35G -> 6.91G simulated instructions, 22% of the run in `memcmp`
         // alone) — `news/2026-09/typed-decl-package-probe-regression.md`.
         //
-        // Both probes are byte scans (`str_scan.rs`): `contains("::")` builds a
-        // `StrSearcher` and `contains('[')` a `CharSearcher`, per execution, for
-        // two fixed one- and two-byte needles.
+        // Neither probe builds a searcher per execution: qualification is a
+        // memoized flag of the constraint's symbol (`qualified::is_qualified`),
+        // and the `[` probe is a byte scan (`str_scan.rs`).
         let constraint: std::borrow::Cow<'_, str> = if !plain_builtin
-            && !crate::runtime::utils::has_double_colon(constraint.as_ref())
+            && !crate::qualified::is_qualified(Symbol::intern(&constraint))
             && !crate::runtime::utils::has_bracket(constraint.as_ref())
             && !self.unshadowed_builtin_type_name(&constraint)
         {

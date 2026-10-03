@@ -362,8 +362,7 @@ impl Interpreter {
                 // package (`lexical_closure_package_sym`); the role's `$!attr`s
                 // are its composer's, so that is not a foreign method.
                 let is_foreign = method_pkg != class
-                    && (method_pkg.is_empty()
-                        || method_pkg == "GLOBAL"
+                    && (crate::qualified::is_global_package(data.package)
                         || (!self.has_class(&method_pkg)
                             && !self.registry().roles.contains_key(&method_pkg)));
                 if is_foreign {
@@ -1200,11 +1199,11 @@ impl Interpreter {
             match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
-                    let routine_key = format!("{}::{}", data.package, data.name);
+                    let routine_key = crate::qualified::qualified(data.package, data.name);
                     let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         target_id == data.id
                     } else if let Some(target_routine) = e.leave_routine() {
-                        target_routine == routine_key
+                        target_routine == routine_key.as_str()
                     } else {
                         e.label.is_none()
                     };

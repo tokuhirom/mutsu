@@ -458,7 +458,7 @@ impl Interpreter {
                 if name != "_"
                     && name != "@_"
                     && name != "%_"
-                    && !self.is_unit_lexical_of(&cf.package, name)
+                    && !self.is_unit_lexical_of(cf.package_sym(), name)
                     && !self.is_mainline_lexical_write(fn_name, cf, name)
                 {
                     self.pending_rw_writeback_sources.push(name.to_string());

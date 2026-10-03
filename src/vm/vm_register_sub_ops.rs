@@ -525,7 +525,7 @@ impl Interpreter {
                 .env()
                 .get("__mutsu_in_eval")
                 .is_none_or(|v| !v.truthy())
-                && self.current_package() == "GLOBAL"
+                && self.current_package_sym() == crate::symbol::wk::global_package()
                 && !self.module_load_active()
                 && !self.is_thread_clone()
             {
@@ -805,7 +805,7 @@ impl Interpreter {
                     .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
                 && !*multi
                 && name_chunk.is_none()
-                && !resolved_name.contains("::")
+                // No `:` at all, so in particular no `::` qualifier.
                 && !resolved_name.contains(':')
             {
                 // Carry the plan's bytecode so the stashed Sub still runs after
@@ -816,11 +816,10 @@ impl Interpreter {
                 let installed = self
                     .registry()
                     .functions
-                    .get(&Symbol::intern(&format!(
-                        "{}::{}",
-                        self.current_package(),
-                        resolved_name
-                    )))
+                    .get(&crate::qualified::qualified(
+                        self.current_package_sym(),
+                        Symbol::intern(&resolved_name),
+                    ))
                     .cloned();
                 let sub_val = if let Some(def) = installed {
                     Value::make_sub_for_routine(
@@ -1146,9 +1145,9 @@ impl Interpreter {
         // `pkg::name` key (including `GLOBAL::name`) so
         // `resolve_native_call_spec` can walk `bare_name_packages()` and find
         // this declaration at its own scope even when `pkg == "GLOBAL"`.
-        let pkg = self.current_package();
+        let key = crate::qualified::qualified(self.current_package_sym(), Symbol::intern(name));
         crate::runtime::cow_table_mut(&mut self.native_call_specs)
-            .insert(format!("{pkg}::{name}"), spec.clone());
+            .insert(key.as_str().to_string(), spec.clone());
         crate::runtime::cow_table_mut(&mut self.native_call_specs).insert(name.to_string(), spec);
         Ok(())
     }
@@ -1225,14 +1224,17 @@ impl Interpreter {
         if self.is_native_handle_class(name) {
             return true;
         }
-        name.contains("::") || name.starts_with(|c: char| c.is_ascii_uppercase())
+        crate::qualified::is_qualified(Symbol::intern(name))
+            || name.starts_with(|c: char| c.is_ascii_uppercase())
     }
 
     /// The class name to tag a returned CStruct instance with: the last
     /// component of a package-qualified name (`OpenSSL::Method::SSL_METHOD` ->
     /// `SSL_METHOD`), matching how the class is registered by its short name.
     fn native_struct_class_name(name: &str) -> String {
-        name.rsplit("::").next().unwrap_or(name).to_string()
+        crate::qualified::last_segment(Symbol::intern(name))
+            .as_str()
+            .to_string()
     }
 
     /// The class name a returned native handle should be tagged with so that
@@ -1361,7 +1363,8 @@ impl Interpreter {
         if plan.is_export && !self.suppress_exports {
             let pkg = self.current_package();
             let tags = plan.export_tags.clone();
-            let key = Symbol::intern(&format!("{}::{}", pkg, name));
+            let key =
+                crate::qualified::qualified(self.current_package_sym(), Symbol::intern(&name));
             let defs = self.registry().token_defs.get(&key).cloned();
             if let Some(defs) = defs {
                 self.record_exported_token_defs(&name, defs);

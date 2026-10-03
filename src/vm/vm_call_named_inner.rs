@@ -180,7 +180,7 @@ impl Interpreter {
         // string the symbol already resolves to, and the guard skips both the
         // switch and its restore while the callee's package is the one already
         // current — the shape of every same-package sibling call.
-        let pkg_guard = (!def_package.is_empty() && def_package != "GLOBAL")
+        let pkg_guard = (!crate::qualified::is_global_package(def_package_sym))
             .then(|| self.enter_package_guarded_sym(def_package_sym));
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
@@ -378,11 +378,11 @@ impl Interpreter {
             match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
-                    let routine_key = format!("{fn_package}::{fn_name}");
+                    let routine_key = crate::qualified::qualified(fn_package_sym, fn_name_sym);
                     let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         Some(target_id) == callable_id
                     } else if let Some(target_routine) = e.leave_routine() {
-                        target_routine == routine_key
+                        target_routine == routine_key.as_str()
                     } else {
                         e.label.is_none()
                     };
@@ -494,12 +494,8 @@ impl Interpreter {
             // declaration (`sub ::($name)`) or a just-out-of-scope def falls
             // back to the plan's own compiled routine (below), and only to
             // its AST body if that too is unresolved.
-            let single_key = format!("{}::{}", self.current_package(), plan.name.resolve());
-            let registered = self
-                .registry()
-                .functions
-                .get(&Symbol::intern(&single_key))
-                .cloned();
+            let single_key = crate::qualified::qualified(self.current_package_sym(), plan.name);
+            let registered = self.registry().functions.get(&single_key).cloned();
             ret_val = if let Some(def) = registered {
                 // Flatten: a Sub returned as a value is dispatched cross-scope.
                 let mut captured = self.clone_env();
@@ -962,7 +958,7 @@ impl Interpreter {
             if fname != "_"
                 && fname != "@_"
                 && fname != "%_"
-                && !self.is_unit_lexical_of(&cf.package, &fname)
+                && !self.is_unit_lexical_of(cf.package_sym(), &fname)
                 && !self.is_mainline_lexical_write(fn_name, cf, &fname)
             {
                 self.pending_rw_writeback_sources.push(fname.to_string());

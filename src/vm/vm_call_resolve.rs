@@ -146,18 +146,19 @@ impl Interpreter {
         // fingerprint plus everything else the chain reads, so a hit reproduces
         // the probe result exactly; a positive hit is still re-validated against
         // the table and falls through to a fresh probe if it has gone stale.
-        let multi_memo_key = (is_multi && !name.contains("::")).then(|| MultiCompiledKey {
-            name: name_sym,
-            pkg: self.current_package_sym(),
-            lexical_pkg: self
-                .routine_stack()
-                .last()
-                .and_then(|frame| frame.lexical_package),
-            arity,
-            pos_arity,
-            fingerprint: expected_fingerprint,
-            type_sig: type_sig.clone(),
-        });
+        let multi_memo_key =
+            (is_multi && !crate::qualified::is_qualified(name_sym)).then(|| MultiCompiledKey {
+                name: name_sym,
+                pkg: self.current_package_sym(),
+                lexical_pkg: self
+                    .routine_stack()
+                    .last()
+                    .and_then(|frame| frame.lexical_package),
+                arity,
+                pos_arity,
+                fingerprint: expected_fingerprint,
+                type_sig: type_sig.clone(),
+            });
         if let Some(memo_key) = &multi_memo_key
             && let Some(hit) = self
                 .caches
@@ -190,10 +191,12 @@ impl Interpreter {
                 .filter(|cf| matches_resolved(cf))
                 .map(|_| sym)
         };
-        let pkg = self.current_package();
+        let pkg_sym = self.current_package_sym();
+        let pkg = pkg_sym.as_str();
+        let pkg_is_global = pkg_sym == crate::symbol::wk::global_package();
         // Try all key patterns and remember which one matched for caching
         let mut found_key: Option<Symbol>;
-        if name.contains("::") {
+        if crate::qualified::is_qualified(name_sym) {
             found_key = probe(dispatch_key::arity_types_lookup(name, arity, &type_sig))
                 .or_else(|| {
                     probe(dispatch_key::arity_fingerprint_lookup(
@@ -206,30 +209,31 @@ impl Interpreter {
                 .or_else(|| probe(Symbol::lookup(name)));
             // If not found directly, try qualifying with the current package
             // when the prefix package is visible in the current scope.
-            if found_key.is_none() && pkg != "GLOBAL" {
-                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
-                    self.env().get(pkg_prefix).is_some()
-                        || self
-                            .env()
-                            .get(&format!("{}::{}", pkg, pkg_prefix))
-                            .is_some()
-                } else {
-                    false
-                };
+            if found_key.is_none() && !pkg_is_global {
+                let prefix_visible =
+                    if let Some((pkg_prefix, _)) = crate::qualified::split_qualified(name_sym) {
+                        self.env().get(pkg_prefix.as_str()).is_some()
+                            || self
+                                .env()
+                                .get(crate::qualified::qualified(pkg_sym, pkg_prefix).as_str())
+                                .is_some()
+                    } else {
+                        false
+                    };
                 if prefix_visible {
                     found_key = probe(dispatch_key::qualified_arity_types_lookup(
-                        &pkg, name, arity, &type_sig,
+                        pkg, name, arity, &type_sig,
                     ))
                     .or_else(|| {
                         probe(dispatch_key::qualified_arity_fingerprint_lookup(
-                            &pkg,
+                            pkg,
                             name,
                             arity,
                             expected_fingerprint,
                         ))
                     })
-                    .or_else(|| probe(dispatch_key::qualified_arity_lookup(&pkg, name, arity)))
-                    .or_else(|| probe(dispatch_key::qualified_lookup(&pkg, name)));
+                    .or_else(|| probe(dispatch_key::qualified_arity_lookup(pkg, name, arity)))
+                    .or_else(|| probe(dispatch_key::qualified_lookup(pkg, name)));
                 }
             }
         } else {
@@ -260,10 +264,10 @@ impl Interpreter {
                 // and then discards it (the `else { found_key = None }` below).
                 // Behaviour-preserving — the def-arity fallback re-resolves.
                 let simple_or_pos =
-                    probe(dispatch_key::qualified_lookup(&pkg, name)).or_else(|| {
+                    probe(dispatch_key::qualified_lookup(pkg, name)).or_else(|| {
                         if pos_arity != arity {
                             probe(dispatch_key::qualified_arity_fingerprint_lookup(
-                                &pkg,
+                                pkg,
                                 name,
                                 pos_arity,
                                 expected_fingerprint,
@@ -272,7 +276,7 @@ impl Interpreter {
                             None
                         }
                     });
-                found_key = if simple_or_pos.is_none() && pkg != "GLOBAL" {
+                found_key = if simple_or_pos.is_none() && !pkg_is_global {
                     probe(dispatch_key::qualified_arity_fingerprint_lookup(
                         "GLOBAL",
                         name,
@@ -302,13 +306,13 @@ impl Interpreter {
         // params), try the definition's param count to find the compiled function.
         if found_key.is_none() && def_arity != arity {
             found_key = probe(dispatch_key::qualified_arity_fingerprint_lookup(
-                &pkg,
+                pkg,
                 name,
                 def_arity,
                 expected_fingerprint,
             ))
             .or_else(|| {
-                if pkg != "GLOBAL" {
+                if !pkg_is_global {
                     probe(dispatch_key::qualified_arity_fingerprint_lookup(
                         "GLOBAL",
                         name,

@@ -297,6 +297,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
+        let name_sym = code.const_sym(name_idx);
         let body_end = body_end as usize;
         let saved = self.current_package();
         let saved_env = self.env().clone();
@@ -323,7 +324,10 @@ impl Interpreter {
         // post-body, so the values reflect the block's assignments (e.g. zef's
         // `package Zef::CLI { my $CONFIG = preprocess-args-config-mutate(...); ... }`).
         for (k, v) in current_env.iter() {
-            if !saved_env.contains_key_sym(*k) && !k.contains_str("::") && !k.starts_with("__") {
+            if !saved_env.contains_key_sym(*k)
+                && !crate::qualified::is_qualified(*k)
+                && !k.starts_with("__")
+            {
                 let bare = k.resolve();
                 // Per-frame special variables are never package-block lexicals a
                 // named sub closes over: the topic `$_` (env "_"), `$/` ("/"),
@@ -353,8 +357,8 @@ impl Interpreter {
                 // bare snapshot would not see. Recording it would let the stale
                 // declaration-time snapshot shadow the real `our` value on read
                 // (`package_scope_lexical` is consulted before the `our` fallback).
-                let qualified = format!("{name}::{bare}");
-                if self.get_our_var(&qualified).is_some() || current_env.contains_key(&qualified) {
+                let qualified = crate::qualified::qualified(name_sym, *k).as_str();
+                if self.get_our_var(qualified).is_some() || current_env.contains_key(qualified) {
                     continue;
                 }
                 self.package_lexicals_cow_mut()
@@ -387,7 +391,7 @@ impl Interpreter {
             // condition tighter — the twin must be NEW, so an outer
             // `$M::x = ...` set before the block does not suppress a genuine
             // write-through.
-            if !self.package_block_declared_our(&name, *k, &saved_env, &current_env) {
+            if !self.package_block_declared_our(name_sym, *k, &saved_env, &current_env) {
                 restored_env.insert_sym(*k, v.clone());
             }
         }
@@ -438,17 +442,13 @@ impl Interpreter {
     /// write-through to an outer `my $x`.
     fn package_block_declared_our(
         &self,
-        pkg: &str,
+        pkg: crate::symbol::Symbol,
         key: crate::symbol::Symbol,
         saved_env: &crate::env::Env,
         current_env: &crate::env::Env,
     ) -> bool {
-        let bare = key.resolve();
-        let qualified = match bare.chars().next() {
-            Some(sigil @ ('$' | '@' | '%' | '&')) => format!("{sigil}{pkg}::{}", &bare[1..]),
-            _ => format!("{pkg}::{bare}"),
-        };
-        current_env.contains_key(&qualified) && !saved_env.contains_key(&qualified)
+        let qualified = crate::qualified::qualified_var(pkg, key);
+        current_env.contains_key_sym(qualified) && !saved_env.contains_key_sym(qualified)
     }
 
     pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32, site_id: u64) {

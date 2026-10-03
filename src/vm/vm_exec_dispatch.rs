@@ -1417,28 +1417,18 @@ impl Interpreter {
                             && !is_bind_ctx
                             && !raw_mode
                             && !self.vardecl_context().get()))
-                    && let Some(pos) = name.rfind("::")
+                    && let name_sym = Symbol::intern(&name)
+                    && let Some(split) = crate::qualified::split_qualified_var(name_sym)
                 {
-                    // Split an optional leading sigil, then `Qualifier::tail`.
-                    let sigil = match name.as_bytes().first().copied() {
-                        Some(b @ (b'$' | b'@' | b'%' | b'&')) => Some(b as char),
-                        _ => None,
-                    };
-                    let sig_len = sigil.map(|_| 1).unwrap_or(0);
-                    let qualifier = &name[sig_len..pos];
-                    let bare_after = &name[pos + 2..];
-                    if !qualifier.is_empty()
-                        && !bare_after.is_empty()
-                        && !crate::runtime::utils::has_double_colon(bare_after)
-                    {
-                        let cur = self.current_package();
-                        let bare = match sigil {
-                            Some(s) => format!("{s}{bare_after}"),
-                            None => bare_after.to_string(),
-                        };
-                        if !cur.is_empty()
-                            && cur != "GLOBAL"
-                            && qualifier == cur
+                    // An optional leading sigil, then `Qualifier::tail`.
+                    if !split.pkg.is_empty() && !split.bare.is_empty() {
+                        let cur = self.current_package_sym();
+                        // The bare name keeps the sigil: `$F::z` -> `$z`.
+                        let bare = crate::qualified::unqualified_part(name_sym)
+                            .as_str()
+                            .to_string();
+                        if !crate::qualified::is_global_package(cur)
+                            && split.pkg == cur.as_str()
                             && self.get_our_var(&name).is_none()
                             && !self.env().contains_key(&name)
                             && (if self.regex_state.in_regex_code_block {
@@ -1561,7 +1551,7 @@ impl Interpreter {
                     && !self.vardecl_context().get()
                     && !is_attr_twigil
                     && !is_internal_temp
-                    && !crate::runtime::utils::has_double_colon(&name)
+                    && !crate::qualified::is_qualified(name_sym)
                     && !self.env().contains_key(&name)
                     && !self.has_unit_scope_lexical(&name)
                     && !code.param_bind_names.iter().any(|n| n == &name)
@@ -1646,10 +1636,8 @@ impl Interpreter {
                     // Clear any previous readonly marking so this constant
                     // redeclaration can proceed (e.g., `constant sym` followed
                     // by `constant $sym` which share the same env name).
-                    let bare = name
-                        .rsplit("::")
-                        .next()
-                        .unwrap_or(&name)
+                    let bare = crate::qualified::last_segment(name_sym)
+                        .as_str()
                         .trim_start_matches(['$', '@', '%', '&']);
                     self.unmark_readonly(bare);
                 }
@@ -1718,7 +1706,7 @@ impl Interpreter {
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&')
-                    && !crate::runtime::utils::has_double_colon(&name)
+                    && !crate::qualified::is_qualified(name_sym)
                 {
                     // A bareword that has never been (re)bound to something
                     // else still resolves to the type object it names (an
@@ -2503,11 +2491,13 @@ impl Interpreter {
                         // for bare "x" in class K) so GetGlobal fallback can find
                         // the binding. Only match the exact class from the method
                         // class stack to avoid clobbering unrelated package vars.
-                        if let Some(method_class) = self.method_class_stack_top() {
-                            let qualified = format!("{}::{}", method_class, name);
-                            if self.get_our_var(&qualified).is_some() {
-                                self.set_our_var(qualified.clone(), container.clone());
-                                self.env_mut().insert(qualified, container.clone());
+                        if let Some(method_class) = self.method_class_stack_top_sym() {
+                            let qualified =
+                                crate::qualified::qualified(method_class, name_sym).as_str();
+                            if self.get_our_var(qualified).is_some() {
+                                self.set_our_var(qualified.to_string(), container.clone());
+                                self.env_mut()
+                                    .insert(qualified.to_string(), container.clone());
                             }
                         }
                         *ip += 1;

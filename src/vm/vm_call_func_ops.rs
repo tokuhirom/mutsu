@@ -561,7 +561,7 @@ impl Interpreter {
         // function, so the two chokepoints need the same check independently.
         {
             let name_str = Self::const_str(code, name_idx);
-            if crate::runtime::utils::has_double_colon(name_str)
+            if crate::qualified::is_qualified(code.const_sym(name_idx))
                 && !self.qualified_name_visible_here(name_str)
             {
                 return Err(RuntimeError::new(format!(
@@ -1811,7 +1811,7 @@ impl Interpreter {
         // (see `lexical_amp_var_callable`), for `&f()` written in a routine of
         // the importing compunit.
         if target.is_nil()
-            && !name.contains("::")
+            && !crate::qualified::is_qualified(code.const_sym(name_idx))
             && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
         {
             target = found.into_deref();

@@ -507,7 +507,8 @@ impl Interpreter {
                         // listed `infix:</>` in the pseudo-stash as `infix:<`.
                         let name =
                             crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(rest);
-                        (!name.contains("::") && !name.is_empty()).then(|| name.to_string())
+                        (!name.is_empty() && !crate::qualified::is_qualified(Symbol::intern(name)))
+                            .then(|| name.to_string())
                     })?;
                     let declared_here = def.source_file.is_none()
                         || self.unit_of_declaring_file(def.source_file.as_deref()) == anchor;

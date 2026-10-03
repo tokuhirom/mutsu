@@ -992,10 +992,11 @@ impl Interpreter {
             }
             let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
-            if !pkg.is_empty() && pkg != "GLOBAL" {
-                let fq = format!("{pkg}::{name_str}");
-                if self.has_function(&fq) {
-                    return self.call_function_compiled_first(&fq, args, fns);
+            let pkg_is_global = crate::qualified::is_global_package(package);
+            if !pkg_is_global {
+                let fq = crate::qualified::qualified(package, Symbol::intern(&name_str));
+                if self.has_function(fq.as_str()) {
+                    return self.call_function_compiled_first(fq.as_str(), args, fns);
                 }
             }
             if self.has_declared_function_cached(&name_str)
@@ -1015,7 +1016,7 @@ impl Interpreter {
             }
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
             // Only use this when the package is a known class.
-            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" && self.has_class(&pkg) {
+            if !args.is_empty() && !pkg_is_global && self.has_class(&pkg) {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
                 // Route through the Interpreter's unified compiled-first dispatch (ledger §1):

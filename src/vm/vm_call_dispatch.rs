@@ -337,7 +337,7 @@ impl Interpreter {
                     .or_else(crate::unit_source_file::current),
             );
             let mut compiler = crate::compiler::Compiler::new();
-            if !pkg.is_empty() && pkg != "GLOBAL" {
+            if !crate::qualified::is_global_package(def.package) {
                 compiler.set_current_package(pkg.to_string());
             }
             // Resolve $?DISTRIBUTION from the function's defining package (or an

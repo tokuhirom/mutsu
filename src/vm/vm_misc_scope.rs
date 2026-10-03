@@ -104,14 +104,14 @@ impl Interpreter {
     /// collapses `GLOBAL::x` to the bare `x` — whose lexical scope is the whole
     /// compilation unit, so it is always in scope.
     fn our_link_owner_in_scope(&self, qualified: &str) -> bool {
-        let bare = qualified.trim_start_matches(['$', '@', '%', '&']);
-        let Some((owner, _)) = bare.rsplit_once("::") else {
+        let Some(split) = crate::qualified::split_qualified_var(Symbol::intern(qualified)) else {
             // File-scope `our`: visible throughout the unit, nested packages
             // included.
             return true;
         };
-        let cur = self.current_package();
-        cur == owner || cur.starts_with(&format!("{owner}::"))
+        let owner = split.pkg.trim_start_matches(['$', '@', '%', '&']);
+        // The current package is the owner or nested inside it.
+        crate::qualified::package_ancestors(self.current_package_sym()).any(|p| p.as_str() == owner)
     }
 
     /// What an initializer of `Nil` leaves in the container of `our $x = Nil`:
@@ -763,10 +763,11 @@ impl Interpreter {
             // Sigils may appear before the qualifier (e.g. &Test1::ns, $Foo::var).
             // Skip internal Interpreter metadata keys (which contain `::` but are not
             // user-visible package names, e.g. `__mutsu_var_meta::x`).
-            let is_package_qualified = k.with_str(|s| {
-                let stripped = s.trim_start_matches(['$', '@', '%', '&']);
-                stripped.contains("::") && !stripped.starts_with("__mutsu_")
-            });
+            let is_package_qualified = crate::qualified::is_qualified(k)
+                && !k.with_str(|s| {
+                    s.trim_start_matches(['$', '@', '%', '&'])
+                        .starts_with("__mutsu_")
+                });
             if is_package_qualified {
                 restored_env.insert_sym(k, v);
                 continue;

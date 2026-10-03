@@ -130,10 +130,11 @@ impl Interpreter {
         // $.authority }`) is declared by its short name but registered fully
         // qualified — resolve it so the reset type object dispatches methods.
         if !self.registry().classes.contains_key(&tc) {
+            let tc_sym = Symbol::intern(&tc);
             for cls in mro.iter() {
-                let qualified = format!("{}::{}", cls, tc);
-                if self.registry().classes.contains_key(&qualified) {
-                    return Some(qualified);
+                let qualified = crate::qualified::qualified(*cls, tc_sym).as_str();
+                if self.registry().classes.contains_key(qualified) {
+                    return Some(qualified.to_string());
                 }
             }
         }
