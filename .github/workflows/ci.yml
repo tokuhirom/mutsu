@@ -342,6 +342,14 @@ jobs:
         # matching cannot make the ratchet silently report 0.
         run: make check-name-scans
 
+      - name: No new name-matching method dispatch arm
+        # A ratchet (ADR-11276): a built-in method is a row with a handler in
+        # src/builtins/method_table/, not a new `"name" => ...` arm in the pure
+        # cascades or the slow path. Both counts may only go down. The script
+        # self-tests its pattern first, so a regex that stopped matching
+        # cannot make the ratchet silently report 0.
+        run: make check-method-arms
+
       - name: No new Interpreter construction site
         # A ratchet: an `Interpreter` is a whole runtime, so building one to
         # evaluate a closure (`Buf.subbuf(*-2)` did, per call, until #10118)
