@@ -239,7 +239,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         }
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
-        | Stmt::React { body }
+        | Stmt::React { body, .. }
         | Stmt::Default(body)
         | Stmt::Catch(body)
         | Stmt::Control(body) => super::walk_stmts(v, body),

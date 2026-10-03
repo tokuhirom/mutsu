@@ -652,7 +652,7 @@ impl<'ast> Visit<'ast> for EndWalker<'_> {
             | Stmt::Default(body)
             | Stmt::Catch(body)
             | Stmt::Control(body)
-            | Stmt::React { body } => self.stmts(body),
+            | Stmt::React { body, .. } => self.stmts(body),
             Stmt::Loop {
                 init,
                 cond,

@@ -26,6 +26,7 @@ mod method_assign_decl;
 mod name_parts;
 mod named_param;
 mod proto;
+mod react;
 mod regex_char_class;
 mod regex_enumeration;
 mod regex_quantifier;
@@ -77,6 +78,8 @@ pub enum RakuAstClass {
     StatementList,
     StatementExpression,
     StatementAlso,
+    StatementPrefixReact,
+    StatementWhenever,
     OnlyStar,
     IntLiteral,
     NumLiteral,
@@ -362,6 +365,8 @@ impl RakuAstClass {
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
             StatementAlso => "RakuAST::Statement::Also",
+            StatementPrefixReact => "RakuAST::StatementPrefix::React",
+            StatementWhenever => "RakuAST::Statement::Whenever",
             OnlyStar => "RakuAST::OnlyStar",
             IntLiteral => "RakuAST::IntLiteral",
             NumLiteral => "RakuAST::NumLiteral",
@@ -774,7 +779,15 @@ impl RakuAstClass {
             ColonPairTrue | ColonPairFalse | ColonPairValue => {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
-            Pragma | StatementUse | StatementLanguageVersion | StatementAlso => {
+            StatementPrefixReact => &[
+                "RakuAST::StatementPrefix::Wheneverable",
+                "RakuAST::StatementPrefix::Blorst",
+                "RakuAST::StatementPrefix",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            Pragma | StatementUse | StatementLanguageVersion | StatementAlso | StatementWhenever => {
                 &["RakuAST::Statement"]
             }
             RegexQuantifierZeroOrMore
@@ -1018,6 +1031,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
     RakuAstClass::StatementAlso,
+    RakuAstClass::StatementPrefixReact,
+    RakuAstClass::StatementWhenever,
     RakuAstClass::OnlyStar,
     RakuAstClass::IntLiteral,
     RakuAstClass::NumLiteral,
@@ -2736,6 +2751,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::StatementPrefix::Phaser::Begin", "new") => {
             RakuAstClass::StatementPrefixPhaserBegin
         }
+        ("RakuAST::StatementPrefix::React", "new") => RakuAstClass::StatementPrefixReact,
         ("RakuAST::StatementPrefix::Phaser::Check", "new") => {
             RakuAstClass::StatementPrefixPhaserCheck
         }
@@ -2814,6 +2830,9 @@ fn multi_field_schema(
     Some(match (class_name, method) {
         ("RakuAST::Statement::Expression", "new") => {
             (RakuAstClass::StatementExpression, &["expression"][..])
+        }
+        ("RakuAST::Statement::Whenever", "new") => {
+            (RakuAstClass::StatementWhenever, &["trigger", "body"][..])
         }
         ("RakuAST::ApplyInfix", "new") => {
             (RakuAstClass::ApplyInfix, &["left", "infix", "right"][..])

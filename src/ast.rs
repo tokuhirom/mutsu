@@ -2036,6 +2036,11 @@ pub(crate) enum Stmt {
     },
     React {
         body: Vec<Stmt>,
+        /// Written with a statement rather than a block (`react whenever S
+        /// { … }`, `react foo`): `body` is then that one statement, and
+        /// RakuAST's `StatementPrefix::React` holds it directly.
+        #[serde(default)]
+        blorst: bool,
     },
     Whenever {
         supply: Expr,
