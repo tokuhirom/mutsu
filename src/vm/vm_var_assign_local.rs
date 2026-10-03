@@ -714,7 +714,8 @@ impl Interpreter {
     /// the variable is not a native integer array or wrapping does not apply.
     pub(crate) fn wrap_native_int_for_var(&mut self, var_name: &str, val: Value) -> Value {
         if let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
-            && crate::runtime::native_types::is_native_int_type(&constraint)
+            && (crate::runtime::native_types::is_native_int_type(&constraint)
+                || constraint == "num32")
         {
             return Self::wrap_native_int_by_constraint(&constraint, val.clone()).unwrap_or(val);
         }
