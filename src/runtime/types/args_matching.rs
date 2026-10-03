@@ -969,9 +969,8 @@ impl Interpreter {
                 // unpacks the supplied value, so a value that does not unpack
                 // to it makes the candidate inapplicable (a bare Str does not).
                 if let Some(sub_params) = &pd.sub_signature
-                    && !super::signature::is_named_rename_sub_signature(pd)
                     && let Some(ref val) = arg_val
-                    && !sub_signature_matches_value(self, sub_params, val)
+                    && !super::signature::named_param_parens_accept(self, pd, sub_params, val)
                 {
                     return false;
                 }

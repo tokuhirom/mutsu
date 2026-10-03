@@ -53,6 +53,12 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         | ValueView::Bool(..)
         | ValueView::Rat(..)
         | ValueView::FatRat(..) => Vec::new(),
+        // An object's default `.Capture` (`Mu.Capture`) is its public
+        // attributes as NAMED parts, with no positional part: `-> C (:$a) {}`
+        // takes `C.new` apart by name and leaves nothing positional over.
+        // (A class with its own `.Capture` was already converted by
+        // `coerce_via_user_capture` before this point.)
+        ValueView::Instance { .. } => Vec::new(),
         _ => crate::runtime::value_to_list(value),
     }
 }
@@ -68,7 +74,7 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
 /// the leftover-positional check has to sit this one out.
 fn destructures_pair_by_name(value: &Value, sub_params: &[ParamDef]) -> bool {
     matches!(
-        value.unwrap_varref().view(),
+        value.unwrap_varref().descalarize().view(),
         ValueView::Pair(..) | ValueView::ValuePair(..)
     ) && !sub_params.is_empty()
         && sub_params.iter().all(|p| p.named)
@@ -691,8 +697,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         // positional element it does not have, so a signature that binds fine
         // would be rejected during dispatch matching.
         if let Some(sub) = &pd.sub_signature
-            && !is_named_rename_sub_signature(pd)
-            && !sub_signature_matches_value(interpreter, sub, &candidate)
+            && !named_param_parens_accept(interpreter, pd, sub, &candidate)
         {
             return false;
         }
@@ -746,7 +751,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     // other unconsumed and does not match (rakudo rejects
     // `Pair (:key($k))` against `2 => 'x'` for that reason).
     if matches!(
-        value.unwrap_varref().view(),
+        value.unwrap_varref().descalarize().view(),
         ValueView::Pair(..) | ValueView::ValuePair(..)
     ) {
         let has_named_slurpy = sub_params
@@ -798,6 +803,33 @@ pub(in crate::runtime) fn collect_nested_named_alias_keys(sub_params: &[ParamDef
 /// `:name(:$value)`). An alias may also wrap a positional sub-signature, such
 /// as `:value((:key($k), :value($v)))`; that outer value is an alias, but its
 /// contents still require ordinary destructuring.
+/// Whether a named parameter's parenthesised part accepts `candidate`.
+///
+/// A rename (`:key($k)`) always does. A rename onto a destructuring target
+/// (`:value([$b, $c])`, parsed as a `named_alias` whose one positional target
+/// carries its own sub-signature) hands the value to that target, so the
+/// value must unpack to the TARGET's sub-signature; asking the value itself
+/// for a positional element per target took `[5, 6]` apart one level too
+/// deep. Anything else destructures the value directly (`:$x (Str $a)`).
+pub(in crate::runtime) fn named_param_parens_accept(
+    interpreter: &mut Interpreter,
+    pd: &ParamDef,
+    sub_params: &[ParamDef],
+    candidate: &Value,
+) -> bool {
+    if is_named_rename_sub_signature(pd) {
+        return true;
+    }
+    if pd.named_alias && sub_params.len() == 1 && !sub_params[0].named {
+        return sub_signature_matches_value(
+            interpreter,
+            sub_params,
+            &Value::array(vec![candidate.clone()]),
+        );
+    }
+    sub_signature_matches_value(interpreter, sub_params, candidate)
+}
+
 pub(in crate::runtime) fn is_named_rename_sub_signature(pd: &ParamDef) -> bool {
     pd.named_alias
         && pd.sub_signature.as_ref().is_some_and(|sub| {
