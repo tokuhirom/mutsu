@@ -1187,6 +1187,18 @@ Un-ratcheting the calls exposed a bug in the grammar-method bridge. When a user
 `method ws { nextsame }` deferred to a built-in that failed, it returned a cursor with a negative
 `pos`. The bridge read that cursor as a zero-width success.
 
+Survey (`t/grammar`, `t/regex`, `t/modules`):
+
+- declined patterns: 31 → 10. What remains is `repeat-code` 4, `separator-alias` 3,
+  `repeat-code-nullable` 1, `goal-match-code` 1 and `conjunction-backref` 1;
+- `walked` 488 → 151, of which `declined` is 410 → 81;
+- `bridged` 138 → 181. The newly compiled patterns now reach their calls' bridges instead of walking
+  whole: `grammar-method` 23 → 56, `wrapped` 15 → 22 and `args-method` 10 → 13.
+
+Release builds, best of five, against `main`: `bench-grammar-parse{,-big,-deep}`,
+`bench-grammar-json-tiny` and `bench-yaml-parse{,-big}` are unchanged within noise. These grammars
+use `rule`s, so their calls are now uncommitted wherever whitespace follows them.
+
 ### Reproducing §2
 
 ```raku
