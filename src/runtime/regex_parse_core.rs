@@ -2518,8 +2518,18 @@ impl Interpreter {
                                 items: vec![ClassItem::Char('\t')],
                             }),
                             'r' => RegexAtom::Literal('\r'),
-                            'R' => RegexAtom::Newline, // \R matches any newline sequence
+                            // Every backslash class letter negates by its upper
+                            // case: `\R` is "not a carriage return" (not Perl 5's
+                            // any-newline), `\E` "not ESC" (#11444).
+                            'R' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Char('\r')],
+                            }),
                             'e' => RegexAtom::Literal('\u{001B}'), // escape (ESC)
+                            'E' => RegexAtom::CharClass(CharClass {
+                                negated: true,
+                                items: vec![ClassItem::Char('\u{001B}')],
+                            }),
                             'f' => RegexAtom::Literal('\u{000C}'), // form feed
                             'F' => RegexAtom::CharClass(CharClass {
                                 negated: true,
