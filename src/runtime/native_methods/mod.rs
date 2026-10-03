@@ -59,8 +59,8 @@ pub(in crate::runtime) use state::{
 pub(crate) use state::{
     PromiseCombinator, collect_supplier_values, next_supplier_id, supplier_add_setup_hold,
     supplier_done, supplier_quit, supplier_register_promise, supplier_remove_setup_hold,
-    supplier_sink_register, supplier_sink_unregister,
-    supplier_sinks_register_batch, supplier_snapshot, take_promise_combinator_sources,
+    supplier_sink_register, supplier_sink_unregister, supplier_sinks_register_batch,
+    supplier_snapshot, take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;

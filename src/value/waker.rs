@@ -143,7 +143,9 @@ impl ReactWaker {
         let mut state = lock.lock().unwrap();
         let events: Vec<_> = state.events.drain(..).collect();
         if state.consumer.is_some() {
-            state.in_flight.extend(events.iter().map(|(_, _, seq)| *seq));
+            state
+                .in_flight
+                .extend(events.iter().map(|(_, _, seq)| *seq));
         }
         events
     }

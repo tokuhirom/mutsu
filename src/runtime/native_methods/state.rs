@@ -683,9 +683,8 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
             return;
         }
         let seq = next_emit_seq();
-        let waits = state.push_to_sinks(seq, || {
-            crate::value::waker::SinkEvent::Emit(value.clone())
-        });
+        let waits =
+            state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Emit(value.clone()));
         state.emitted.push(value);
         state.emitted_seq.push(seq);
         drop(map);
@@ -796,9 +795,8 @@ pub(crate) fn supplier_quit(supplier_id: u64, reason: Value) {
         state.quit_reason = Some(reason.clone());
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
-        let waits = state.push_to_sinks(seq, || {
-            crate::value::waker::SinkEvent::Quit(reason.clone())
-        });
+        let waits =
+            state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Quit(reason.clone()));
         let pending = std::mem::take(&mut state.pending_promises);
         drop(map);
         await_sink_delivery(waits, seq);
