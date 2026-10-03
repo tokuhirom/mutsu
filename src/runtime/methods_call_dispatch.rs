@@ -2277,9 +2277,12 @@ impl Interpreter {
                     }
                     "path" => {
                         if is_win32 {
-                            return Ok(Value::seq(Self::win32_path_from_env()));
+                            let path_env = self
+                                .env_hash_var("PATH")
+                                .or_else(|| self.env_hash_var("Path"));
+                            return Ok(Value::seq(Self::win32_path_from_env(path_env)));
                         }
-                        let path_env = std::env::var("PATH").unwrap_or_default();
+                        let path_env = self.env_hash_var("PATH").unwrap_or_default();
                         if path_env.is_empty() {
                             return Ok(Value::seq(Vec::new()));
                         }

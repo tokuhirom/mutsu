@@ -3141,20 +3141,8 @@ impl Interpreter {
                 if elem_is_value_share {
                     self.clear_element_share(&var_name, &encoded_idx);
                 }
-                // Sync OS environment when %*ENV is modified
-                #[cfg(not(target_family = "wasm"))]
-                if var_name == "%*ENV" {
-                    // SAFETY: std::env::set_var is unsafe because mutating the
-                    // process environment races with any concurrent env access
-                    // on another thread. mutsu writes %*ENV from the executing
-                    // thread during normal evaluation; a spawned worker that
-                    // concurrently reads env would be a latent race (tracked
-                    // with the cross-thread container work, see aliased_mut.rs).
-                    unsafe {
-                        std::env::set_var(&key, val.to_string_value());
-                    }
-                }
-                // Sync $*HOME when %*ENV<HOME> changes
+                // `%*ENV` is never mirrored into the process environment
+                // (#11241). Sync $*HOME when %*ENV<HOME> changes.
                 if var_name == "%*ENV" && key == "HOME" {
                     let home_str = val.to_string_value();
                     let home_val = self.make_io_path_instance(&home_str);
