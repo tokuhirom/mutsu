@@ -1609,7 +1609,10 @@ impl Interpreter {
                 }
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
-                match &op.chunk {
+                // The body's `:=` sources are the declaration site's
+                // variables, not the composer's (#11087).
+                let bind_cells = this.enter_role_body_bind_cells(type_owner);
+                let result = match &op.chunk {
                     Some(chunk) => this.run_compiled_block_raw(&chunk.code, &chunk.fns),
                     // See the identical branch in
                     // `run_composed_role_deferred_body`: recompiling a `TokenRule`
@@ -1623,7 +1626,9 @@ impl Interpreter {
                             &op.qq_thunk_chunks,
                         ),
                     None => this.run_block_raw(std::slice::from_ref(&op.raw)),
-                }
+                };
+                this.leave_role_body_bind_cells(bind_cells);
+                result
             };
             // A `use`/`need`'s installed functions must survive an enclosing
             // bare block's routine-registry restore (#8646) — see

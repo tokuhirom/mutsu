@@ -54,6 +54,7 @@ pub(super) fn builtin_role_def() -> RoleDef {
         attribute_conflicts: Vec::new(),
         own_attribute_names: HashSet::new(),
         deferred_body: Vec::new(),
+        body_bind_cells: Vec::new(),
         decl_file: None,
         deferred_custom_traits: Vec::new(),
         pending_param_type_checks: Vec::new(),

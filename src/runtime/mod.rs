@@ -929,6 +929,7 @@ pub(crate) mod registration_class_validate;
 mod registration_method_traits;
 mod registration_private_access;
 mod registration_role;
+mod registration_role_bind_cells;
 mod registration_role_body;
 mod registration_role_body_lexical;
 mod registration_role_decl;
