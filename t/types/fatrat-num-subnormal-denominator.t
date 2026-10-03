@@ -4,7 +4,7 @@ use Test;
 # From SION (zef distribution): its hexfloat decoder builds a Num with
 # `FatRat.new($mant, 2 ** -$e).Num`; for 5e-324 the denominator is 2**1074,
 # which is not a double, and the old `n.to_f64() / d.to_f64()` gave 0.
-plan 8;
+plan 9;
 
 is FatRat.new(1, 2 ** 1074).Num, 5e-324, 'FatRat with a 2**1074 denominator';
 is FatRat.new(3, 2 ** 1076).Num, 5e-324, 'rounds into the subnormal range';
@@ -14,3 +14,7 @@ is FatRat.new(2 ** 1100, 2 ** 1090).Num, 1024, 'both parts beyond a double';
 is FatRat.new(10 ** 400, 3).Num, Inf, 'too large is Inf';
 is Num(FatRat.new(1, 2 ** 1074)), 5e-324, 'Num(...) coercion form';
 is Num(FatRat.new(1, 3)), (1/3).Num, 'Num(FatRat) is not 0';
+
+# A big Rat next to a whole-number range bound is compared exactly, not through
+# its (now correctly rounded) double, which is 5.
+ok 4.99999999999999999999999999999999999999999999 ~~ 0..^5, 'big Rat just below an excluded bound';
