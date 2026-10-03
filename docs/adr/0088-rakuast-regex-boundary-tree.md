@@ -20,7 +20,9 @@
   dynamic-argument, and typed-scalar, defaulted-scalar, typed-defaulted-scalar,
   and named-scalar explicit-signature slices implemented
   2026-09-12 through
-  2026-09-19;
+  2026-09-19; word-only literals, character-class, codepoint-escape,
+  enumerated-class, quantifier-range, backtracking-modifier, separator,
+  sigspace/ratchet-modifier, and word-boundary slices implemented 2026-10-03;
   direct hash interpolation is reserved by Rakudo and mutsu;
   explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
