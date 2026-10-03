@@ -789,10 +789,17 @@ impl Interpreter {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
-        // Split once, memoized per symbol: the interning sits behind the
-        // empty-store gate above, so a program with no unit lexicals never
-        // pays it.
-        let split = crate::qualified::split_qualified_var(Symbol::intern(name));
+        // This resolver only has the name's text, and runs on every
+        // free-variable read once any unit lexical exists, so an unqualified
+        // name is rejected by one scan rather than an intern; only a qualified
+        // one is interned and split (memoized per symbol).
+        // TODO: take the caller's `Symbol` (most read paths hold one) so the
+        // scan goes too (#11507).
+        let split = if crate::runtime::utils::has_double_colon(name) {
+            crate::qualified::split_qualified_var(Symbol::intern(name))
+        } else {
+            None
+        };
         let qualified = split.is_some();
         // ADR-0024: a mainline named sub's free-variable read consults its own
         // captured cells first. Tried before the package-chain candidates
@@ -893,7 +900,12 @@ impl Interpreter {
         // later immutable accessor calls in the same function does not
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
-        let split = crate::qualified::split_qualified_var(Symbol::intern(name));
+        // Same rejection as `unit_lexical_slot`.
+        let split = if crate::runtime::utils::has_double_colon(name) {
+            crate::qualified::split_qualified_var(Symbol::intern(name))
+        } else {
+            None
+        };
         let own_bucket: Option<String> = if split.is_some() {
             None
         } else {
@@ -973,8 +985,10 @@ impl Interpreter {
     /// happens to hold under that key, which is exactly the aliasing this store
     /// removes.
     pub(crate) fn is_unit_lexical_of(&self, pkg: &str, name: &str) -> bool {
-        if self.unit_lexicals.is_empty() || crate::qualified::is_global_package(Symbol::intern(pkg))
-        {
+        // `pkg` is a callee's package text, probed on every call that writes
+        // back free variables, so it is compared rather than interned.
+        // TODO: take the callee's package `Symbol` (#11507).
+        if self.unit_lexicals.is_empty() || pkg.is_empty() || pkg == "GLOBAL" {
             return false;
         }
         Self::lookup_in_package_chain(&self.unit_lexicals, pkg, name).is_some()
@@ -1333,11 +1347,11 @@ impl Interpreter {
     /// qualified name. The key is memoized per symbol pair, so the miss path
     /// of every env read no longer allocates it.
     // Cost: O(1) amortized.
-    fn main_qualified_name(name: &str) -> Option<Symbol> {
+    fn main_qualified_name(name: &str, sym: Option<Symbol>) -> Option<Symbol> {
         if !name.starts_with(['$', '@', '%', '&']) {
             return None;
         }
-        let name = Symbol::intern(name);
+        let name = sym.unwrap_or_else(|| Symbol::intern(name));
         if crate::qualified::is_qualified(name) {
             return None;
         }
@@ -1582,7 +1596,7 @@ impl Interpreter {
         if let Some(alias) = Self::main_unqualified_name(name) {
             return self.env().get(&alias).cloned();
         }
-        if let Some(qualified) = Self::main_qualified_name(name) {
+        if let Some(qualified) = Self::main_qualified_name(name, Some(sym)) {
             return self.env().get(qualified.as_str()).cloned();
         }
         // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
@@ -1800,7 +1814,7 @@ impl Interpreter {
             self.env_mut().insert(alias, value);
             return;
         }
-        if let Some(qualified) = Self::main_qualified_name(name)
+        if let Some(qualified) = Self::main_qualified_name(name, name_sym)
             && self.env().contains_key(qualified.as_str())
         {
             self.env_mut().insert(qualified.resolve(), value);
