@@ -3591,6 +3591,12 @@ pub(crate) struct GatherCoroutineState {
     pub(crate) state_scope_id: u64,
     /// Saved for-loop iteration state when suspended inside a for loop.
     pub(crate) for_loop_resume: Option<ForLoopResumeState>,
+    /// While the body is running, the index of its take collector on the
+    /// interpreter's gather-items stack. A pull that re-enters the SAME
+    /// gather from inside its own body (`my \S := gather { S.iterator ... }`)
+    /// reads the elements taken so far from that collector instead of
+    /// restarting the body. `None` while suspended or finished.
+    pub(crate) running_collector: Option<usize>,
 }
 
 /// Lazy `WALK(method)` invocation state. `$obj.WALK("foo")()` walks the MRO

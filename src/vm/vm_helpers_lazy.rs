@@ -1248,6 +1248,11 @@ impl Interpreter {
             }
         }
 
+        // A full force from inside this gather's own running body.
+        if let Some(prefix) = self.reentrant_gather_pull(list, usize::MAX) {
+            return prefix;
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
@@ -1314,6 +1319,7 @@ impl Interpreter {
         let saved_gather_len = self.gather_items_len();
         self.push_gather_items(Vec::new());
         self.push_gather_take_limit(None);
+        Self::set_gather_running_collector(list, Some(saved_gather_len));
 
         // Initialize locals for the compiled code
         self.locals.refill_slots(cc.locals.len());
@@ -1356,6 +1362,7 @@ impl Interpreter {
         // Collect gather items
         let items = self.pop_gather_items().unwrap_or_default();
         self.pop_gather_take_limit();
+        Self::set_gather_running_collector(list, None);
 
         // Clean up extra gather items if needed
         while self.gather_items_len() > saved_gather_len {
