@@ -2595,6 +2595,8 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexAnchorEndOfString => Ok(RegexNode::AnchorEndOfString),
         RakuAstClass::RegexAnchorEndOfLine => Ok(RegexNode::AnchorEndOfLine),
         RakuAstClass::RegexAnchorLeftWordBoundary => Ok(RegexNode::AnchorLeftWordBoundary),
+        RakuAstClass::RegexMatchFrom => Ok(RegexNode::MatchFrom),
+        RakuAstClass::RegexMatchTo => Ok(RegexNode::MatchTo),
         RakuAstClass::RegexAnchorRightWordBoundary => Ok(RegexNode::AnchorRightWordBoundary),
         _ => Err(unsupported(node)),
     }

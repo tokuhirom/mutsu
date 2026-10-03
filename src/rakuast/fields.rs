@@ -93,6 +93,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("elements", Absent::EmptyList), ("negated", Absent::False)]
         }
         RegexCharClassElementRule => &[("name", Absent::Required), ("negated", Absent::False)],
+        RegexCharClassElementProperty => &[
+            ("property", Absent::Required),
+            ("inverted", Absent::False),
+            ("predicate", Absent::TypeObject("RakuAST::Expression")),
+            ("negated", Absent::False),
+        ],
         RegexCharClassEnumerationElementCharacter => &[("character", Absent::Required)],
         RegexCharClassEnumerationElementRange => {
             &[("from", Absent::Required), ("to", Absent::Required)]

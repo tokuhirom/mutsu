@@ -214,6 +214,10 @@ pub(crate) enum RegexNode {
     AnchorLeftWordBoundary,
     /// `>>` / `»`
     AnchorRightWordBoundary,
+    /// `<(`: the match starts here.
+    MatchFrom,
+    /// `)>`: the match ends here.
+    MatchTo,
     CharClass(CharClassAtom),
     /// `<[a..z]>`, `<-alpha>`, `<[ab]-[b]>`
     CharClassAssertion(Vec<CharClassElement>),
@@ -515,8 +519,11 @@ impl RegexTree {
                     crate::runtime::RegexQuant::One,
                     ratchet,
                 )]),
-                // Word boundaries keep the runtime parser's plan.
-                RegexNode::AnchorLeftWordBoundary | RegexNode::AnchorRightWordBoundary => None,
+                // Word boundaries and match markers keep the runtime parser's plan.
+                RegexNode::AnchorLeftWordBoundary
+                | RegexNode::AnchorRightWordBoundary
+                | RegexNode::MatchFrom
+                | RegexNode::MatchTo => None,
                 RegexNode::AnchorEndOfLine => Some(vec![token(
                     crate::runtime::RegexAtom::EndOfLine,
                     crate::runtime::RegexQuant::One,
@@ -936,6 +943,8 @@ impl RegexNode {
             | Self::AnchorEndOfLine
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
+            | Self::MatchFrom
+            | Self::MatchTo
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => {}
@@ -980,6 +989,8 @@ impl RegexNode {
             | Self::AnchorEndOfLine
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
+            | Self::MatchFrom
+            | Self::MatchTo
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
@@ -1024,6 +1035,8 @@ impl RegexNode {
             | Self::AnchorEndOfLine
             | Self::AnchorLeftWordBoundary
             | Self::AnchorRightWordBoundary
+            | Self::MatchFrom
+            | Self::MatchTo
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
@@ -1054,7 +1067,9 @@ impl RegexNode {
             Self::NamedCapture { regex, .. } => regex.contains_anchor(),
             Self::Lookaround { assertion, .. } => assertion.contains_anchor(),
             Self::NamedLookaround { assertion, .. } => assertion.contains_anchor(),
-            Self::Literal(_)
+            Self::MatchFrom
+            | Self::MatchTo
+            | Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
             | Self::SubruleAlias { .. }
@@ -1087,7 +1102,15 @@ impl RegexNode {
                 })
                 .collect(),
             Self::Quote(text) => {
-                let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
+                // A double-quoted term interpolates `$`, `@` and `{`, so those
+                // are escaped along with the quote and backslash themselves.
+                let escaped: String = text
+                    .chars()
+                    .flat_map(|ch| match ch {
+                        '\\' | '"' | '$' | '@' | '{' | '}' => vec!['\\', ch],
+                        _ => vec![ch],
+                    })
+                    .collect();
                 format!("\"{escaped}\"")
             }
             Self::Sequence(nodes) => {
@@ -1221,6 +1244,8 @@ impl RegexNode {
             Self::AnchorEndOfLine => "$$".to_string(),
             Self::AnchorLeftWordBoundary => "<<".to_string(),
             Self::AnchorRightWordBoundary => ">>".to_string(),
+            Self::MatchFrom => "<(".to_string(),
+            Self::MatchTo => ")>".to_string(),
             Self::CharClass(atom) => atom.to_source(),
             Self::CharClassAssertion(elements) => enumeration::assertion_source(elements),
             Self::InternalModifier {
@@ -1602,7 +1627,9 @@ impl Parser {
                 }
                 break;
             };
-            if stops.contains(&ch) || ch == '|' {
+            // `)>` ends the match, even inside a capturing group.
+            let match_to = ch == ')' && self.chars.get(self.pos + 1) == Some(&'>');
+            if (stops.contains(&ch) && !match_to) || ch == '|' {
                 if saw_whitespace {
                     wrap_last_with_whitespace(&mut nodes);
                 }
@@ -1710,7 +1737,7 @@ impl Parser {
     ) -> Option<RegexNode> {
         let ch = *self.chars.get(self.pos)?;
         match ch {
-            '"' | '\'' => self.parse_quote(ch),
+            '"' | '\'' | '\u{201C}' | '\u{2018}' | '\u{FF62}' => self.parse_quote(ch),
             '\\' => self.parse_escape(),
             '[' => {
                 self.pos += 1;
@@ -1758,6 +1785,10 @@ impl Parser {
                 self.parse_array_interpolation(sequential_interpolation)
             }
             '@' | '%' => None,
+            ')' if self.chars.get(self.pos + 1) == Some(&'>') => {
+                self.pos += 2;
+                Some(RegexNode::MatchTo)
+            }
             ')' | ']' if stops.contains(&ch) => None,
             '.' => {
                 self.pos += 1;
@@ -1771,6 +1802,10 @@ impl Parser {
                 self.pos += 1;
                 Some(RegexNode::AnchorRightWordBoundary)
             }
+            '<' if self.chars.get(self.pos + 1) == Some(&'(') => {
+                self.pos += 2;
+                Some(RegexNode::MatchFrom)
+            }
             '<' if self.chars.get(self.pos + 1) == Some(&'<') => {
                 self.pos += 2;
                 Some(RegexNode::AnchorLeftWordBoundary)
@@ -1783,7 +1818,7 @@ impl Parser {
             '<' if self
                 .chars
                 .get(self.pos + 1)
-                .is_some_and(|next| matches!(next, '[' | '-' | '+')) =>
+                .is_some_and(|next| matches!(next, '[' | '-' | '+' | ':')) =>
             {
                 self.parse_char_class_assertion()
             }
@@ -2238,27 +2273,37 @@ impl Parser {
         Some((code, body))
     }
 
+    /// A quoted term: `"..."` / `“...”` (a `qq` string), `'...'` / `‘...’`
+    /// (a `q` string) or `｢...｣` (no escapes). The node holds the decoded
+    /// text, which is what both rakudo's `StrLiteral` and execution see.
+    // Cost: O(n), n = length of the quoted body.
     fn parse_quote(&mut self, quote: char) -> Option<RegexNode> {
-        self.pos += 1;
-        let mut text = String::new();
-        while let Some(ch) = self.chars.get(self.pos).copied() {
-            self.pos += 1;
-            match ch {
-                c if c == quote => return Some(RegexNode::Quote(text)),
-                // A double-quoted regex term has its own qq interpolation
-                // segments. Keep that form on the explicit follow-up path
-                // until the shared tree can retain those segments instead of
-                // pretending that `$name` was part of one quoted literal.
-                '$' | '@' | '%' if quote == '"' => return None,
-                // Quoted escapes can decode codepoints (`\\x20`) or alter
-                // quoting (`\\"`).  The current Quote node stores only the
-                // decoded-looking text, so it cannot preserve that source
-                // distinction for execution lowering.
-                '\\' => return None,
-                _ => text.push(ch),
+        let (close, escapes, qq) = match quote {
+            '"' => ('"', true, true),
+            '\u{201C}' => ('\u{201D}', true, true),
+            '\'' => ('\'', true, false),
+            '\u{2018}' => ('\u{2019}', true, false),
+            _ => ('\u{FF63}', false, false),
+        };
+        let start = self.pos + 1;
+        let mut end = start;
+        loop {
+            match *self.chars.get(end)? {
+                '\\' if escapes => end += 2,
+                c if c == close => break,
+                _ => end += 1,
             }
         }
-        None
+        let body: String = self.chars.get(start..end)?.iter().collect();
+        let text = if qq {
+            crate::parser::decode_qq_regex_quote(&body)?
+        } else if escapes {
+            crate::parser::decode_q_regex_quote(&body, close)
+        } else {
+            body
+        };
+        self.pos = end + 1;
+        Some(RegexNode::Quote(text))
     }
 
     fn parse_literal(&mut self) -> Option<RegexNode> {
@@ -3058,6 +3103,8 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorEndOfLine
         | RegexNode::AnchorLeftWordBoundary
         | RegexNode::AnchorRightWordBoundary
+        | RegexNode::MatchFrom
+        | RegexNode::MatchTo
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => false,
@@ -3101,6 +3148,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::AnchorEndOfLine
         | RegexNode::AnchorLeftWordBoundary
         | RegexNode::AnchorRightWordBoundary
+        | RegexNode::MatchFrom
+        | RegexNode::MatchTo
         | RegexNode::InternalModifier { .. } => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
             is_supported_lookaround_body(assertion)

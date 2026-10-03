@@ -289,22 +289,9 @@ fn render_leaf(v: &Value) -> String {
     }
 }
 
-/// Render a Raku double-quoted string literal, escaping the characters that
-/// would otherwise be special inside `"..."`.
+/// Render a Raku double-quoted string literal. Rakudo renders a `StrLiteral`
+/// as its string's `.raku`, so this is `Str.raku`'s own escaping.
+// Cost: O(n), n = chars of `s`.
 fn render_str_literal(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '$' => out.push_str("\\$"),
-            '@' => out.push_str("\\@"),
-            '%' => out.push_str("\\%"),
-            '&' => out.push_str("\\&"),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+    crate::value::raku_repr::escape_raku_str(s)
 }

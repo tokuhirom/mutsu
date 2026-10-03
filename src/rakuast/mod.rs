@@ -110,6 +110,8 @@ pub enum RakuAstClass {
     RegexAnchorEndOfLine,
     RegexAnchorLeftWordBoundary,
     RegexAnchorRightWordBoundary,
+    RegexMatchFrom,
+    RegexMatchTo,
     RegexQuantifierRange,
     RegexBacktrackFrugal,
     RegexBacktrackGreedy,
@@ -118,6 +120,7 @@ pub enum RakuAstClass {
     RegexAssertionCharClass,
     RegexCharClassElementEnumeration,
     RegexCharClassElementRule,
+    RegexCharClassElementProperty,
     RegexCharClassEnumerationElementCharacter,
     RegexCharClassEnumerationElementRange,
     RegexInternalModifierIgnoreCase,
@@ -388,6 +391,8 @@ impl RakuAstClass {
             RegexAnchorEndOfLine => "RakuAST::Regex::Anchor::EndOfLine",
             RegexAnchorLeftWordBoundary => "RakuAST::Regex::Anchor::LeftWordBoundary",
             RegexAnchorRightWordBoundary => "RakuAST::Regex::Anchor::RightWordBoundary",
+            RegexMatchFrom => "RakuAST::Regex::MatchFrom",
+            RegexMatchTo => "RakuAST::Regex::MatchTo",
             RegexQuantifierRange => "RakuAST::Regex::Quantifier::Range",
             RegexBacktrackFrugal => "RakuAST::Regex::Backtrack::Frugal",
             RegexBacktrackGreedy => "RakuAST::Regex::Backtrack::Greedy",
@@ -396,6 +401,7 @@ impl RakuAstClass {
             RegexAssertionCharClass => "RakuAST::Regex::Assertion::CharClass",
             RegexCharClassElementEnumeration => "RakuAST::Regex::CharClassElement::Enumeration",
             RegexCharClassElementRule => "RakuAST::Regex::CharClassElement::Rule",
+            RegexCharClassElementProperty => "RakuAST::Regex::CharClassElement::Property",
             RegexCharClassEnumerationElementCharacter => {
                 "RakuAST::Regex::CharClassEnumerationElement::Character"
             }
@@ -576,11 +582,14 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorEndOfLine
                 | RakuAstClass::RegexAnchorLeftWordBoundary
                 | RakuAstClass::RegexAnchorRightWordBoundary
+                | RakuAstClass::RegexMatchFrom
+                | RakuAstClass::RegexMatchTo
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexCharClass(_)
                 | RakuAstClass::RegexAssertionCharClass
                 | RakuAstClass::RegexCharClassElementEnumeration
                 | RakuAstClass::RegexCharClassElementRule
+                | RakuAstClass::RegexCharClassElementProperty
                 | RakuAstClass::RegexCharClassEnumerationElementCharacter
                 | RakuAstClass::RegexCharClassEnumerationElementRange
                 | RakuAstClass::RegexInternalModifierIgnoreCase
@@ -698,6 +707,9 @@ impl RakuAstClass {
                 &["RakuAST::Regex"]
             }
             RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
+            RegexMatchFrom | RegexMatchTo => {
+                &["RakuAST::Regex::Atom", "RakuAST::Regex::Term", "RakuAST::Regex"]
+            }
             RegexCharClass(kind) => regex_char_class::ancestors(kind),
             RegexAssertionCharClass => &[
                 "RakuAST::Regex::Assertion",
@@ -705,7 +717,9 @@ impl RakuAstClass {
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
             ],
-            RegexCharClassElementEnumeration | RegexCharClassElementRule => {
+            RegexCharClassElementEnumeration
+            | RegexCharClassElementRule
+            | RegexCharClassElementProperty => {
                 &["RakuAST::Regex::CharClassElement"]
             }
             RegexInternalModifierIgnoreCase
@@ -1012,6 +1026,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorEndOfLine,
     RakuAstClass::RegexAnchorLeftWordBoundary,
     RakuAstClass::RegexAnchorRightWordBoundary,
+    RakuAstClass::RegexMatchFrom,
+    RakuAstClass::RegexMatchTo,
     RakuAstClass::RegexQuantifierRange,
     RakuAstClass::RegexBacktrackFrugal,
     RakuAstClass::RegexBacktrackGreedy,
@@ -1032,6 +1048,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAssertionCharClass,
     RakuAstClass::RegexCharClassElementEnumeration,
     RakuAstClass::RegexCharClassElementRule,
+    RakuAstClass::RegexCharClassElementProperty,
     RakuAstClass::RegexCharClassEnumerationElementCharacter,
     RakuAstClass::RegexCharClassEnumerationElementRange,
     RakuAstClass::RegexInternalModifierIgnoreCase,
@@ -2560,6 +2577,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorEndOfLine
                     | RakuAstClass::RegexAnchorLeftWordBoundary
                     | RakuAstClass::RegexAnchorRightWordBoundary
+                    | RakuAstClass::RegexMatchFrom
+                    | RakuAstClass::RegexMatchTo
                     | RakuAstClass::RegexCharClass(_)
                     | RakuAstClass::RegexAssertionCharClass
                     | RakuAstClass::RegexInternalModifierIgnoreCase
@@ -2749,6 +2768,8 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Regex::Anchor::RightWordBoundary", "new") => {
             RakuAstClass::RegexAnchorRightWordBoundary
         }
+        ("RakuAST::Regex::MatchFrom", "new") => RakuAstClass::RegexMatchFrom,
+        ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
@@ -3021,6 +3042,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorEndOfLine
             | RakuAstClass::RegexAnchorLeftWordBoundary
             | RakuAstClass::RegexAnchorRightWordBoundary
+            | RakuAstClass::RegexMatchFrom
+            | RakuAstClass::RegexMatchTo
             | RakuAstClass::RegexQuantifierRange
             | RakuAstClass::RegexCharClass(_)
             | RakuAstClass::ColonPairTrue
