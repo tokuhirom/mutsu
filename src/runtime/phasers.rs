@@ -534,13 +534,12 @@ fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<Str
         return None;
     }
     let base = type_constraint?.strip_suffix(":D")?;
-    let plain = !base.is_empty()
-        && base.split("::").all(|part| {
-            !part.is_empty()
-                && part
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-        });
+    // A plain (possibly package-qualified) type name, not a parameterized
+    // or otherwise composite constraint.
+    let plain = base.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        && base
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':'));
     plain.then(|| base.to_string())
 }
 
