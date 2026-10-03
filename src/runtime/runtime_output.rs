@@ -278,6 +278,14 @@ impl Interpreter {
         };
         // Read the thread-clone shared stderr Arc out under a scoped guard so it
         // is dropped before `self.warn_output` / `emit` re-borrow self.
+        // Rakudo's default `warn` handler prints through the dynamic `$*ERR`,
+        // so a `my $*ERR = Trap.new` (silently, Test::Output) captures the
+        // warning too. Only the process stderr handle takes the direct path.
+        if self.dynamic_err_redirected() && self.write_to_named_handle("$*ERR", &msg, false).is_ok()
+        {
+            self.warn_output.push_str(&msg);
+            return;
+        }
         let thread_shared_stderr = {
             let sink = self.output_sink();
             if sink.is_thread_clone {
@@ -300,6 +308,24 @@ impl Interpreter {
             self.output_sink_mut().stderr_output.push_str(&msg);
         } else {
             eprint!("{}", msg);
+        }
+    }
+
+    /// Whether the dynamic `$*ERR` currently names something other than the
+    /// process stderr: a user object with a `print` method, a file handle, or
+    /// `$*OUT`'s handle.
+    // Cost: O(1) — one dynamic-variable lookup and one handle-table probe.
+    fn dynamic_err_redirected(&mut self) -> bool {
+        let Some(handle) = self.get_dynamic_handle("$*ERR") else {
+            return false;
+        };
+        if handle.is_nil() {
+            return false;
+        }
+        match self.with_handle_mut_opt(&handle, |state| Ok(state.is_stderr_target())) {
+            Ok(Some(is_stderr)) => !is_stderr,
+            Ok(None) => Self::handle_id_from_value(&handle).is_none(),
+            Err(_) => false,
         }
     }
 
