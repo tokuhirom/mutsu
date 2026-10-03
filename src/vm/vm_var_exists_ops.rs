@@ -901,12 +901,7 @@ impl Interpreter {
         }
 
         // Multi-index: compute (index, exists_bool) pairs
-        let pairs: Vec<(i64, bool)> = indices
-            .iter()
-            .map(|&i| {
-                (i, slot_present_at(i))
-            })
-            .collect();
+        let pairs: Vec<(i64, bool)> = indices.iter().map(|&i| (i, slot_present_at(i))).collect();
 
         let result = match adverb_bits {
             0 => {

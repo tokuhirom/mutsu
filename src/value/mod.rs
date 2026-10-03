@@ -551,6 +551,7 @@ pub(crate) struct MixData {
 mod aliased_mut;
 pub(crate) mod array_coerce;
 mod array_data_ops;
+mod array_holes;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
