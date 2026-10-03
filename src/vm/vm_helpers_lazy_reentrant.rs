@@ -17,7 +17,10 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn set_gather_running_collector(list: &LazyList, collector: Option<usize>) {
         if let Some(ref coro_mutex) = list.coroutine {
-            coro_mutex.lock().unwrap().running_collector = collector;
+            coro_mutex
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .running_collector = collector;
         }
     }
 
@@ -34,7 +37,12 @@ impl Interpreter {
         list: &LazyList,
         needed: usize,
     ) -> Option<Result<Vec<Value>, RuntimeError>> {
-        let depth = list.coroutine.as_ref()?.lock().unwrap().running_collector?;
+        let depth = list
+            .coroutine
+            .as_ref()?
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .running_collector?;
         let taken = self.gather_items_at(depth)?;
         if needed <= taken.len() {
             return Some(Ok(taken[..needed].to_vec()));
