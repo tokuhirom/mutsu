@@ -20,3 +20,8 @@ Measured with `scripts/bench-det.sh` against current `main`:
 `bench-regex-long-subject` 86.45M → 73.12M Ir, `bench-regex-split-subst`
 477.73M → 442.74M Ir; `grapheme_end` itself drops from 99.4M to 2.2M Ir on the
 latter's callgrind profile.
+
+For scale, the same `main` with the cluster check deleted outright (the
+pre-#10875 behaviour, wrong on clusters) measures 70.51M and 436.58M: the
+correct check now costs 2.6M and 6.2M Ir instead of 15.9M and 41.2M, about 85%
+of the regression recovered.
