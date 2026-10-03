@@ -31,6 +31,14 @@ impl Interpreter {
         let body_start = *ip + 1;
         let end = body_end as usize;
         let stack_base = self.stack.len();
+        // A scalar pointy param's entry value. A param still holding it at
+        // block exit was never written, so there is nothing to write back --
+        // and writing it anyway would undo a `:=` rebind of the source made
+        // inside the block (`given $!line -> $l { $!line := Str }`).
+        let pointy_entry_value = pointy_param
+            .as_ref()
+            .filter(|p| !p.starts_with(['@', '%']))
+            .map(|_| topic.clone());
 
         // Arm capture of the pointy param's final value: its own `VarDecl`
         // makes `exec_block_local_scope_op` treat it as an ordinary vanishing
@@ -197,6 +205,7 @@ impl Interpreter {
                         container_source_slot,
                         &pointy_param,
                         captured,
+                        pointy_entry_value.as_ref(),
                     );
                 }
             }

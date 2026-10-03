@@ -1185,8 +1185,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Duration", "Int", 1, 16),
     ("Duration", "gist", 1, 16),
     ("Duration", "raku", 1, 16),
-    // `rand` reaches Duration/Instant through Real (raku: `Duration.^can("rand")`
-    // is 1); the Rakudo oracle test checks that mutsu has the row.
     ("Duration", "rand", 1, 16),
     ("Backtrace", "list", 1, 16),
     ("Backtrace", "Str", 3, 16),
