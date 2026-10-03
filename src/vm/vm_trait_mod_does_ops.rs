@@ -129,6 +129,11 @@ impl Interpreter {
             }
             .or_else(|| self.get_env_with_main_alias(&var_name))
             .unwrap_or(Value::NIL);
+            // A variable a closure captures is held in a shared cell; the role
+            // composes onto the value the cell holds. Wrapping the cell itself
+            // would store a Mixin around that same cell back into it, a cycle
+            // every later read deadlocks on.
+            let current = current.deref_container();
             let mixed = self.vm_does_values(current, role)?;
             self.set_env_with_main_alias(&var_name, mixed.clone());
             if self.trait_mod_writeback_key.is_some() {

@@ -320,6 +320,16 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // Under `use fatal` -- which a `try` block turns on for its body -- a
+        // Failure is thrown where it is produced into the fatal scope, so
+        // `try { return $s.Num }` with a non-numeric `$s` lands in the try
+        // (Rakudo: the try yields Nil and the routine carries on) instead of
+        // returning the Failure (Template::Jinja2's `float` filter).
+        if self.fatal_mode
+            && let Some(failure) = self.failure_to_runtime_error_if_unhandled(&val)
+        {
+            return Err(failure);
+        }
         let mut err = RuntimeError::return_signal(val);
         // ADR-0037 Slice 4: an EVAL unit whose `context => $ctx` named a live
         // routine bakes that routine's id onto its own `CompiledCode`

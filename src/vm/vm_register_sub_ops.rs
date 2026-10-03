@@ -1415,14 +1415,24 @@ impl Interpreter {
             )?;
         }
         if *is_export {
-            self.register_proto_decl_as_global(
-                &name_str,
-                params,
-                param_defs,
-                return_type.as_ref(),
-                body,
-                compiled.map(|cf| &**cf),
-            )?;
+            // The GLOBAL alias stands in for the default import; a proto
+            // exported only under other tags (`is export(:SUPPORTED)`, Sub::Util)
+            // is installed by the `use` that names its tag, so registering it
+            // here made it visible to `::('&name')` without any import.
+            let exported_by_default = export_tags.is_empty()
+                || export_tags
+                    .iter()
+                    .any(|t| matches!(t.as_str(), "DEFAULT" | "MANDATORY"));
+            if exported_by_default {
+                self.register_proto_decl_as_global(
+                    &name_str,
+                    params,
+                    param_defs,
+                    return_type.as_ref(),
+                    body,
+                    compiled.map(|cf| &**cf),
+                )?;
+            }
             // Record the export so consumers/MAIN-dispatch see the whole multi
             // family. A `proto … is export` exports its candidates too (raku),
             // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.

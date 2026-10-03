@@ -320,19 +320,21 @@ impl Interpreter {
         self.our_vars.insert(key, value);
     }
 
-    /// A runtime-installed `PROCESS::` dynamic, keyed exactly like
-    /// `store_process_dynamic`'s env write (`*name`/`@*name`/`%*name`). See
-    /// [`Interpreter::process_dynamics`].
-    pub(crate) fn get_process_dynamic(&self, key: &str) -> Option<&Value> {
+    /// A runtime-written process-level dynamic, keyed by its env spelling
+    /// (`*name`/`@*name`/`%*name`). See [`Interpreter::process_dynamics`].
+    pub(crate) fn get_process_dynamic(&self, key: &str) -> Option<Value> {
         self.process_dynamics.get(key)
     }
 
-    pub(crate) fn process_dynamics_contains(&self, key: &str) -> bool {
-        self.process_dynamics.contains_key(key)
+    /// Whether any process-level dynamic was ever written at run time.
+    // Cost: O(1), one relaxed load.
+    #[inline]
+    pub(crate) fn process_dynamics_published(&self) -> bool {
+        self.process_dynamics.is_populated()
     }
 
-    pub(crate) fn set_process_dynamic(&mut self, key: String, value: Value) {
-        self.process_dynamics.insert(key, value);
+    pub(crate) fn process_dynamics_contains(&self, key: &str) -> bool {
+        self.process_dynamics.contains(key)
     }
 
     /// `nqp::gethllsym($hll, $name)` — see [`Interpreter::hll_syms`]. Absent

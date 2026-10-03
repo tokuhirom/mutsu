@@ -161,4 +161,4 @@ pub(crate) use sink::{
     parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical,
     rewrite_scalar_assignment_rhs_as_sink, rewrite_scalar_assignment_stmt_as_sink,
 };
-pub(crate) use try_assign::parse_colon_args;
+pub(crate) use try_assign::{parse_colon_args, parse_colon_args_with};

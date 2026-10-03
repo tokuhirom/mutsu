@@ -448,6 +448,9 @@ impl Interpreter {
             base.match_from = outer.match_from;
         }
         let mut store = CapStore::new(base);
+        for &name in super::regex_helpers::pattern_many_names(pattern).iter() {
+            store.insert_named_quantified_sym(name);
+        }
         let ctx = WalkCtx {
             pattern,
             chars,

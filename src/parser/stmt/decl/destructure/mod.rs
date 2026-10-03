@@ -556,6 +556,16 @@ fn parse_named_destructuring(
 ) -> PResult<'_, Stmt> {
     let tmp_name = "%__destructure_tmp__".to_string();
     let hash_bare = "__destructure_tmp__".to_string();
+    // The named targets read the source's named part: `.hash` is the Hash
+    // itself for a Hash/Map and the named arguments of a Capture
+    // (`my (:$path, :@globbers) := @open-list.shift`, IO::Glob).
+    let rhs = Expr::MethodCall {
+        target: Box::new(rhs),
+        name: crate::symbol::Symbol::intern("hash"),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+    };
     let mut stmts = vec![Stmt::VarDecl {
         name: tmp_name,
         expr: rhs,

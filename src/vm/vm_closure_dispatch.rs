@@ -456,7 +456,7 @@ impl Interpreter {
         //
         // The block below is now only the OVERWRITE exceptions, which still
         // have to land in the overlay (above the chain, not below it).
-        let capture_tier = data.env.capture_tier();
+        let capture_tier = data.env.capture_view();
         self.env_mut()
             .set_capture_fallback(std::sync::Arc::clone(&capture_tier));
         // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
@@ -471,7 +471,7 @@ impl Interpreter {
         // it needs no invalidation of its own either — see that memo's own doc
         // comment for why. Ablated, this scan alone was ~1.5-2% of a closure
         // call over a `use Test` capture (#7565).
-        for &k in capture_tier.container_ref_keys() {
+        for k in capture_tier.container_ref_keys() {
             // Superset index: look the key up rather than assume it is still
             // present or still bound to a `ContainerRef` (defensive only —
             // `container_ref_keys`'s doc comment is why this tier can never

@@ -90,7 +90,16 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             let r = r.strip_prefix('!').unwrap_or(r);
             // `:&name` names the tag `name` too (`use CSS::Units :Lengths,
             // :&dimension, :pt;` imports the `:dimension` and `:pt` tags).
-            let r = r.strip_prefix('&').unwrap_or(r);
+            //
+            // So does a variable colonpair `:$name` (`use FontConfig::Defs
+            // :$FC-LIB, :$types`): Rakudo imports by the pair's key whatever
+            // its value, so the (undeclared) variable is never read.
+            let r = r
+                .strip_prefix('&')
+                .or_else(|| r.strip_prefix('$'))
+                .or_else(|| r.strip_prefix('@'))
+                .or_else(|| r.strip_prefix('%'))
+                .unwrap_or(r);
             if let Ok((r, tag_name)) = ident(r) {
                 // The `if` pragma's `:if(EXPR)` adverb (`use Foo:if($cond)`)
                 // loads the module only when EXPR is true. It is NOT an import

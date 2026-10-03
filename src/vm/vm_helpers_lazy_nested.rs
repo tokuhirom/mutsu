@@ -35,6 +35,30 @@ impl Interpreter {
             ValueView::Scalar(inner) => {
                 self.reify_nested_map_grep_for_read_inner(inner, seen)?;
             }
+            // A Pair's value is an item container, so `$k => @seq.map(...)`
+            // built from a variable (or by a `for` loop body) holds the
+            // deferred Seq behind the Pair or a `ContainerRef` cell.
+            ValueView::Pair(_, inner) => {
+                self.reify_nested_map_grep_for_read_inner(inner, seen)?;
+            }
+            ValueView::ValuePair(key, inner) => {
+                self.reify_nested_map_grep_for_read_inner(key, seen)?;
+                self.reify_nested_map_grep_for_read_inner(inner, seen)?;
+            }
+            ValueView::Hash(h) => {
+                if seen.insert((2, crate::gc::Gc::as_ptr(&*h) as *const () as usize)) {
+                    let values: Vec<Value> = h.map.values().cloned().collect();
+                    for item in &values {
+                        self.reify_nested_map_grep_for_read_inner(item, seen)?;
+                    }
+                }
+            }
+            ValueView::ContainerRef(cell) => {
+                let inner = cell.lock().ok().map(|held| held.clone());
+                if let Some(inner) = inner {
+                    self.reify_nested_map_grep_for_read_inner(&inner, seen)?;
+                }
+            }
             _ => {}
         }
         Ok(())

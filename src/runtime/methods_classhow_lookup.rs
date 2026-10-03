@@ -438,6 +438,24 @@ impl Interpreter {
         let mut attrs = attributes.as_map().clone();
         attrs.insert("rw".to_string(), Value::truth(is_rw));
         attrs.insert("readonly".to_string(), Value::truth(!is_rw));
+        // An accessor takes only its invocant (`(Owner:D $:: *%_)` in
+        // Rakudo), so `.count`/`.arity` are 1. The native-method fallback's
+        // raw capture made `.count` Inf, and Template::Jinja2's host-object
+        // attribute lookup (`$obj.can($attr)[0].count <= 1`) refused every
+        // accessor.
+        attrs.insert(
+            "signature".to_string(),
+            crate::value::signature::make_signature_value(
+                crate::value::signature::param_defs_to_sig_info(
+                    &[
+                        Self::make_invocant_param(&format!("{owner}:D")),
+                        Self::implicit_named_slurpy_param(),
+                    ],
+                    None,
+                ),
+                Some(self),
+            ),
+        );
         if !wrap_identity {
             attrs.remove("__mutsu_lookup_class");
             attrs.remove("__mutsu_lookup_method");
@@ -486,6 +504,18 @@ impl Interpreter {
             def.is_rw,
             env,
         )
+    }
+
+    /// The implicit `*%_` every method carries.
+    pub(super) fn implicit_named_slurpy_param() -> crate::ast::ParamDef {
+        crate::ast::ParamDef {
+            name: "%_".to_string(),
+            multi_invocant: true,
+            slurpy: true,
+            is_invocant: false,
+            type_constraint: None,
+            ..Self::make_invocant_param("")
+        }
     }
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {

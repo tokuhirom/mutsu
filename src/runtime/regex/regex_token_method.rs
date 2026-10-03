@@ -117,7 +117,9 @@ impl Interpreter {
         // used for wrapped subs, with a synthetic callable whose terminal
         // invokes this token at the current cursor.
         if let Some(chain) = self.token_method_wrap_chain(pkg.as_str(), name) {
-            return self.call_wrapped_token_method(pkg, name, extra_args, text, pos, &chain);
+            let result =
+                self.call_wrapped_token_method(pkg, name, extra_args, text, pos, &chain)?;
+            return Ok(Self::failed_cursor_as_nil(result));
         }
 
         self.run_token_method_at_unwrapped(pkg, name, extra_args, text, pos)
@@ -166,6 +168,39 @@ impl Interpreter {
         let mut call_args = vec![Self::token_wrap_cursor(text, pos)];
         call_args.extend(extra_args.iter().cloned());
         self.call_wrapped_token_method_with_terminal(pkg, name, call_args, chain, None)
+    }
+
+    /// What a wrapped token's `callsame` hands back to the wrapper: the
+    /// rule's Match, or -- when it did not match -- a failed cursor of the
+    /// grammar (`$!pos == -3`, `.orig`/`.from` of the attempt), as rakudo's
+    /// regex methods return. Grammar::Extractor reads `.orig`/`.from` off a
+    /// failed result to report the unparsed rest.
+    // Cost: O(1) (the cursor's orig is shared, not copied).
+    pub(crate) fn token_wrap_result_or_failure(
+        pkg: &str,
+        cursor: Option<&Value>,
+        result: Value,
+    ) -> Value {
+        if !result.is_nil() {
+            return result;
+        }
+        match cursor.and_then(Self::cursor_call_position) {
+            Some((orig, pos, _)) => Self::cursor_failure(pkg, &orig, pos),
+            None => result,
+        }
+    }
+
+    /// A failed cursor a wrapper returned means "no match" to the engine and
+    /// to `.parse`, which both expect `Nil` for that.
+    // Cost: O(1).
+    pub(crate) fn failed_cursor_as_nil(result: Value) -> Value {
+        if result.is_match_instance()
+            && result.match_to() == Some(super::regex_cursor::CURSOR_FAIL_POS)
+        {
+            Value::NIL
+        } else {
+            result
+        }
     }
 
     /// The cursor a token's wrapper receives: a Match anchored at `pos`.

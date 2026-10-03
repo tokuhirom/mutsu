@@ -343,6 +343,9 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     check_pseudo_package_in_decl(&name)?;
     let (rest, traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
+    // `module FcName is export { ... }` (FontConfig::Raw) publishes the module
+    // to the enclosing compunit's importers, like `class ... is export`.
+    let (rest, export_tags) = super::package_decl::parse_package_is_traits(rest)?;
     let (rest, body) = {
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(rest)?
@@ -369,10 +372,13 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         is_unit: false,
         is_my: false,
     };
-    if stmts.is_empty() {
+    if stmts.is_empty() && export_tags.is_none() {
         return Ok((rest, package_stmt));
     }
     stmts.push(package_stmt);
+    if let Some(tags) = export_tags {
+        stmts.push(super::class_decl::export_type_stmt(&name, &tags));
+    }
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 

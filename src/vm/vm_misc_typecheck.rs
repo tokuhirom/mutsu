@@ -37,6 +37,7 @@ impl Interpreter {
                 None
             } else {
                 self.resolve_type_alias_chain(base)
+                    .or_else(|| self.package_relative_type(base))
                     .map(|target| format!("{}{}", target, smiley.unwrap_or("")))
             };
             match resolved {
@@ -507,5 +508,21 @@ impl Interpreter {
         let name = name_val.to_string_value();
         self.stack
             .push(loan_env!(self, resolve_indirect_type_name(&name)));
+    }
+
+    /// A qualified constraint written relative to the enclosing package
+    /// (`my Globber::Match $m` inside `class IO::Glob`, where the type is
+    /// `IO::Glob::Globber::Match`) that does not name a type on its own.
+    /// Unqualified names resolve elsewhere; this only fills the gap for a
+    /// relative qualified one.
+    // Cost: O(d), d = package nesting depth (memoized ancestor walk).
+    fn package_relative_type(&self, base: &str) -> Option<String> {
+        if !crate::qualified::is_qualified(crate::symbol::Symbol::intern(base))
+            || self.has_type(base)
+        {
+            return None;
+        }
+        self.resolve_type_in_current_package(base)
+            .filter(|resolved| resolved != base && self.has_type(resolved))
     }
 }

@@ -5,7 +5,7 @@ impl Interpreter {
     /// Whether `v` is a `Buf`/`Blob` instance. A `Blob` does NOT do `Iterable`
     /// in rakudo, so a reduction keeps it whole (`[~] $blob` IS the blob) even
     /// though list coercion (`for`, `.rotor`, `.list`) yields its bytes.
-    fn value_is_buf(v: &Value) -> bool {
+    pub(super) fn value_is_buf(v: &Value) -> bool {
         matches!(
             v.view(),
             ValueView::Instance { attributes, .. }
@@ -597,25 +597,12 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
-                // `~` is the same rule on the string side --
-                // `multi sub infix:<~>(Any \a) { a.Str }` -- so `[~] 5` is the
-                // Str "5", not the Int 5, and `[~] Set.new("a","b")` is the
-                // set's `.Str` ("a b"). The one exception is `infix:<~>`'s own
-                // `Blob:D` candidate, which returns the operand unchanged. That
-                // is tested on the ELEMENT, not on the whole operand:
-                // `my @chunks = Blob.new; [~] @chunks` arrives here with an
-                // Array operand holding one Blob, so `operand_is_buf` is false
-                // while the single element still must not be stringified.
+                // `[~] x` is `infix:<~>(x)`: see `reduce_concat_single`.
                 if list.len() == 1
                     && callable.is_none()
                     && base_op == "~"
-                    && !Self::value_is_buf(&list[0])
+                    && let Some(v) = self.reduce_concat_single(&mut list)?
                 {
-                    let v = self.reduction_step_with_args(
-                        crate::compiled_operator::InfixShape::lower("~").as_ref(),
-                        None,
-                        vec![Value::str(String::new()), list[0].clone()],
-                    )?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());

@@ -337,6 +337,14 @@ impl Interpreter {
         keep
     }
 
+    /// Whether `key` is a `GLOBAL::MAIN` candidate key (`GLOBAL::MAIN` or
+    /// `GLOBAL::MAIN/<signature>`), the program's own MAIN slot.
+    // Cost: O(k), k = key length.
+    fn is_global_main_key(key: &str) -> bool {
+        key.strip_prefix("GLOBAL::MAIN")
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    }
+
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
@@ -400,10 +408,23 @@ impl Interpreter {
                 .collect();
             let module_keys = std::mem::take(&mut self.module_registered_functions);
             self.registry_mut().functions_mut().retain(|key, _| {
-                if func_snapshot.contains(key) || module_keys.contains(key) {
+                if func_snapshot.contains(key) {
                     return true;
                 }
                 let ks = key.resolve();
+                // A `MAIN` the block imported (`{ use CLI::Ecosystem; }` -- the
+                // idiom for loading a MAIN-exporting module without running
+                // it) is lexical to the block, so the program's own MAIN
+                // dispatch must not find it once the block is gone. The
+                // module's load keeps it in `module_keys`, which protects
+                // other routines but is not an owner of the importing scope's
+                // MAIN.
+                if Self::is_global_main_key(&ks) {
+                    return false;
+                }
+                if module_keys.contains(key) {
+                    return true;
+                }
                 if !scope_aliases.is_empty() {
                     let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
                     if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {

@@ -96,6 +96,15 @@ or when a field matches no `SUBSYSTEMS` rule. New state goes into the subsystem 
 to. This is what keeps the extraction from being undone by later features, as the
 `check-layer-deps` ratchet does for module edges.
 
+*Amendment (2026-10-03).* The baseline is a list of allowed field **names**, not a count, and it
+is never rewritten. A count was one line that every extraction PR had to rewrite, so any two
+PRs in flight (and every rebase of a stacked one) conflicted on it. `scripts/interp-fields-baseline.txt`
+now holds the names the struct had when it was cut and is frozen; a PR that extracts a subsystem
+allows its new holder field by adding its own file `scripts/interp-fields.d/<subsystem>.txt`.
+A field allowed by neither fails the check, with its name; an allowed name that is no longer a
+field is ignored. No shared file is edited, so parallel PRs cannot conflict. The decision — no
+new direct fields — is unchanged.
+
 ### D5. Upward calls go through traits defined below and implemented above
 
 A lower layer that needs a service from the runtime declares a narrow trait for it. The runtime

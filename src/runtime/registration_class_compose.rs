@@ -678,7 +678,7 @@ impl Interpreter {
         // among them) have registered; the in-place declaration composes for
         // real.
         if cx.is_hoisted_shell != super::registration_class::HoistedShell::Forward {
-            self.apply_pending_role_attribute_traits(base_role_name)?;
+            self.apply_pending_role_attribute_traits(cx, base_role_name)?;
             self.copy_role_attribute_trait_objects(cx, base_role_name, &role);
         }
         self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
@@ -717,7 +717,11 @@ impl Interpreter {
     /// meta-object is stored under (role, attr).
     ///
     /// Cost: O(r * p), r = the role and its ancestors, p = pending entries.
-    fn apply_pending_role_attribute_traits(&mut self, role_name: &str) -> Result<(), RuntimeError> {
+    fn apply_pending_role_attribute_traits(
+        &mut self,
+        cx: &mut RoleCompositionCx<'_>,
+        role_name: &str,
+    ) -> Result<(), RuntimeError> {
         if self.registry().role_attribute_pending_traits.is_empty() {
             return Ok(());
         }
@@ -743,7 +747,25 @@ impl Interpreter {
                 let applied =
                     self.apply_attribute_traits(&decl, &attr, &role, &mut role_level_composes);
                 self.set_current_package(saved_package);
-                applied?;
+                let core_effects = applied?;
+                // A CORE `:rw` / `:built` re-dispatch changes the role's
+                // attribute for every consumer, and the copy this composition
+                // already made of it.
+                if !core_effects.is_empty() {
+                    if let Some(role_def) = self.registry_mut().roles.get_mut(&role) {
+                        core_effects.fold_into(
+                            &mut role_def.attributes,
+                            &mut role_def.attribute_built,
+                            &attr,
+                        );
+                    }
+                    let class_def = &mut *cx.class_def;
+                    core_effects.fold_into(
+                        &mut class_def.attributes,
+                        &mut class_def.attribute_built,
+                        &attr,
+                    );
+                }
             }
         }
         Ok(())

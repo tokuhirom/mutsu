@@ -127,6 +127,12 @@ impl Interpreter {
         {
             return None;
         }
+        // `CALLER::OUR::` is the package stash of the caller frame's package
+        // (P5reset's `reset` walks `CALLER::OUR::.kv` to clear the caller's
+        // `our` variables), not a package literally named `CALLER::OUR`.
+        if let Some(depth) = Self::caller_our_stash_depth(name) {
+            return Some(self.caller_frame_package_at(depth));
+        }
         if let Some(package) = name.strip_suffix("::")
             && !matches!(package, "OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
             && package != "MY"
@@ -304,6 +310,11 @@ impl Interpreter {
                 Some(self.import_scopes().len().checked_sub(skip as usize + 1))
             }
         };
+        // A package block (`module M { use P5chr; MY::.keys }`) imports into
+        // its package but opens no run-time import scope of its own, so its
+        // imports are read from the package's import aliases instead.
+        let package_block_imports = matches!(routines, LexicalStashRoutines::OwnImports { .. })
+            && own_imports == Some(None);
         for (key, display) in &self.imported_env_aliases {
             if let Some(scope) = own_imports
                 && !scope.is_some_and(|i| self.import_scopes()[i].imported_env_keys.contains(key))
@@ -333,6 +344,7 @@ impl Interpreter {
         match own_imports {
             None => self.add_visible_routines_to_pseudo_stash(&mut entries),
             Some(Some(scope)) => self.add_scope_imported_routines(scope, &mut entries),
+            Some(None) if package_block_imports => self.add_package_imported_routines(&mut entries),
             Some(None) => {}
         }
         let stash = self.pseudo_stash_hash(entries);
@@ -351,6 +363,29 @@ impl Interpreter {
             {
                 continue;
             }
+            let name = name.resolve();
+            let value = self.resolve_code_var(&name);
+            if !value.is_nil() {
+                entries.entry(format!("&{name}")).or_insert(value);
+            }
+        }
+    }
+
+    /// Add the routines imported into the current package (`M::chr` for a
+    /// `use` inside `module M { ... }`).
+    // Cost: O(a), a = routine imports recorded in this run.
+    fn add_package_imported_routines(&self, entries: &mut ValueMap) {
+        let package = self.current_package_sym();
+        let names: Vec<Symbol> = self
+            .imported_routine_aliases
+            .iter()
+            .filter(|&&alias| {
+                crate::qualified::qualified(package, crate::qualified::unqualified_part(alias))
+                    == alias
+            })
+            .map(|&alias| crate::qualified::unqualified_part(alias))
+            .collect();
+        for name in names {
             let name = name.resolve();
             let value = self.resolve_code_var(&name);
             if !value.is_nil() {

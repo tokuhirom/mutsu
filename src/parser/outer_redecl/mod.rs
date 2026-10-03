@@ -51,10 +51,7 @@ use crate::ast::{ParamDef, Stmt};
 use crate::ast_visit::VisitMut;
 use std::collections::HashSet;
 
-/// The internal trait marking a declaration initialized by `.=` on its own
-/// (untyped) variable: `my @c .= new(...)` is `my @c = @c.new(...)`, whose
-/// self-read is the invocant, not a use in its own initializer.
-pub(crate) const METHOD_ASSIGN_DECL_TRAIT: &str = "__method_assign_decl";
+pub(crate) use crate::ast::method_assign_decl::METHOD_ASSIGN_DECL_TRAIT;
 
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).

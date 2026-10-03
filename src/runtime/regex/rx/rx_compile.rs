@@ -309,6 +309,14 @@ impl Compiler {
         if pattern.anchor_start {
             self.ops.push(RxOp::AssertStart);
         }
+        // The names this level renders as lists whatever binds them (the
+        // walk's own `pattern_many_names` marking at level entry).
+        let many = crate::runtime::regex::regex_helpers::pattern_many_names(pattern);
+        if !many.is_empty() {
+            self.name_sets.push(many.iter().copied().collect());
+            let names = (self.name_sets.len() - 1) as u32;
+            self.ops.push(RxOp::QuantNames { names });
+        }
         for token in &pattern.tokens {
             self.token(token)?;
         }

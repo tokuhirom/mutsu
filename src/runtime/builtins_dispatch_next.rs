@@ -609,6 +609,13 @@ impl Interpreter {
         // IS the hash's real backing storage, so this is the same "aliased
         // shared write" as that attribute-cell case, just reached through the
         // Mixin's `Arc<Value>` instead of an instance attribute.
+        // A role's `STORE` that `callsame`s reaches the native one, which
+        // re-initializes the inner container in place and keeps the Mixin.
+        if method_name == "STORE"
+            && let Some(stored) = self.native_container_store(&invocant, &args)
+        {
+            return Some(stored);
+        }
         if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY")
             && !args.is_empty()
             && let ValueView::Hash(gc_ref) = inner.view()
