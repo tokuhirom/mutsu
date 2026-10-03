@@ -346,6 +346,11 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             .find(|c: char| !is_raku_identifier_continue(c) && c != '-')
             .unwrap_or(after_dot.len());
         let after_ident = &after_dot[ident_end..];
+        if let Some(call) =
+            super::self_call::longname_self_call(after_ident, &after_dot[..ident_end])
+        {
+            return call;
+        }
         if after_ident.starts_with('(')
             || (after_ident.starts_with(':') && !after_ident.starts_with("::"))
         {

@@ -70,3 +70,50 @@ fn colon_args(input: &str) -> PResult<'_, Vec<Expr>> {
     }
     crate::parser::stmt::assign::parse_colon_args(input)
 }
+
+/// `$.name:sym<x>(args)`: a `.`-twigil variable's name is a *longname*, so a
+/// `:key<value>` colonpair glued to the identifier is part of the method name
+/// (`$.numeric:sym<frac>($/)` in PDF::Grammar's actions calls the method
+/// declared as `method numeric:sym<frac>`). `after_ident` is the input just
+/// past the identifier. Returns `None` unless a `:ident<...>` colonpair
+/// follows; then the call is `self."name:ident<...>"(args)`, with the
+/// arguments taken only from a directly following `(...)`.
+pub(super) fn longname_self_call<'a>(
+    after_ident: &'a str,
+    ident: &str,
+) -> Option<PResult<'a, Expr>> {
+    let after_colon = after_ident.strip_prefix(':')?;
+    let key_len = after_colon
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(after_colon.len());
+    if key_len == 0 || !after_colon.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+        return None;
+    }
+    let value_start = &after_colon[key_len..];
+    let value_body = value_start.strip_prefix('<')?;
+    let close = value_body.find('>')?;
+    let value = &value_body[..close];
+    if value.is_empty() || value.contains(['<', '\n']) {
+        return None;
+    }
+    let name = format!("{ident}:{}<{value}>", &after_colon[..key_len]);
+    let rest = &value_body[close + 1..];
+    let (rest, args) = if rest.starts_with('(') {
+        match paren_args(rest) {
+            Ok(parsed) => parsed,
+            Err(err) => return Some(Err(err)),
+        }
+    } else {
+        (rest, Vec::new())
+    };
+    Some(Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(Expr::BareWord("self".to_string())),
+            name: Symbol::intern(&name),
+            args,
+            modifier: None,
+            quoted: false,
+        },
+    )))
+}
