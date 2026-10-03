@@ -57,6 +57,24 @@ impl Interpreter {
         }
         // `(emitter, is_stamped)`: only a stamped emitter is authoritative.
         let (emitter, stamped) = Self::whenever_tap_emitter(&tap);
+        // Raku runs one `whenever` body of a supply block at a time, and the
+        // block's `emit`s reach its tap inside that body. The emit dispatch
+        // already holds the block's serialize group for a `whenever` registered
+        // when the block was tapped (the group is keyed on its source supplier),
+        // but a `whenever` registered later from inside a body — or one whose
+        // source is another supply block's emitter — has no such entry, so its
+        // body ran beside a sibling's on another thread (#11307). A stamped
+        // callback names its own block, so hold that block's group (the
+        // emitter's supplier id, the same group id) for the whole call.
+        // Re-entrant on this thread, so the existing per-source hold nests.
+        let _serialize_guard = if stamped {
+            emitter
+                .as_ref()
+                .and_then(Self::emitter_supplier_id_of)
+                .map(crate::runtime::native_methods::acquire_supply_serialize)
+        } else {
+            None
+        };
         if let Some(ref e) = emitter {
             self.active_supply_emitters.push(e.clone());
         }
