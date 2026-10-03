@@ -9,6 +9,7 @@
 //! entries.
 
 use super::*;
+use crate::vm::vm_method_call_attrs::CallAttrs;
 
 impl Interpreter {
     /// #10986: arm `pending_skip_constraint_recheck` for a method winner that
@@ -101,10 +102,6 @@ impl Interpreter {
                     ValueView::Instance { attributes, .. } => Some(attributes.clone()),
                     _ => None,
                 };
-                let attributes = match target.view() {
-                    ValueView::Instance { attributes, .. } => attributes.to_map(),
-                    _ => AttrMap::new(),
-                };
                 // The real receiver, never its type object: a deferral candidate
                 // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
                 let invocant_for_dispatch = target.clone();
@@ -122,7 +119,9 @@ impl Interpreter {
                     method_sym,
                     &method_def,
                     &cc,
-                    &attributes,
+                    attrs_cell
+                        .as_ref()
+                        .map_or(CallAttrs::Empty, CallAttrs::Cell),
                     args,
                     invocant,
                     fns_ref,
