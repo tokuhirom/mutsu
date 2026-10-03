@@ -577,6 +577,7 @@ mod identity_hash;
 pub(crate) mod identity_index;
 pub(crate) mod label;
 pub(crate) mod lazy_attrs;
+mod method_site;
 pub mod user_key_map;
 pub use hash_key::HashKey;
 pub use user_key_map::ValueMap;
@@ -682,6 +683,7 @@ pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
 pub(crate) use entry_path::is_container_hole;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
+pub(crate) use method_site::MethodSiteCaches;
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{

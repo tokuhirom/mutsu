@@ -7498,6 +7498,11 @@ pub(crate) struct CompiledCode {
     /// a `GetBareWord` of that constant resolved to, for one registry write
     /// generation (see `Interpreter::exec_get_bare_word_op`).
     pub(crate) bareword_sites: crate::value::BarewordSiteCaches,
+    /// ADR-11276 §2.5: one memo per string constant, remembering the
+    /// built-in method row a `CallMethodMut` naming that constant was answered
+    /// from, for one registry write generation (see
+    /// `Interpreter::try_method_site_lane`).
+    pub(crate) method_sites: crate::value::MethodSiteCaches,
     /// Lazily-built "this slot's read has no name-shaped guard work" bit per
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
@@ -8083,6 +8088,7 @@ impl CompiledCode {
             local_attr_keys: std::sync::OnceLock::new(),
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
+            method_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),

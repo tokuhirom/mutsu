@@ -79,7 +79,7 @@ impl Interpreter {
     /// site (see [`Self::try_native_method`]). Every native result passes
     /// through here, so the common case -- no warning -- is one inlined test.
     #[inline(always)]
-    fn settle_native_warning(
+    pub(super) fn settle_native_warning(
         &mut self,
         result: Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {

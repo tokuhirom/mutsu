@@ -283,7 +283,7 @@ impl Interpreter {
     /// early scalar lane leaves them to the full path. Over-listing only costs
     /// a missed shortcut.
     // Cost: O(1).
-    fn scalar_early_lane_skips(method: &str) -> bool {
+    pub(super) fn scalar_early_lane_skips(method: &str) -> bool {
         matches!(
             method,
             "raku"

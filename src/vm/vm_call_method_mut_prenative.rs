@@ -14,7 +14,7 @@ impl Interpreter {
     /// The list is shared by both opcodes rather than split per opcode: it only
     /// ever makes the gate MORE conservative, and a name that has a dedicated
     /// branch on one path is not worth gating on the other.
-    fn dispatch_branches_before_native_probe(method: &str) -> bool {
+    pub(super) fn dispatch_branches_before_native_probe(method: &str) -> bool {
         matches!(
             method,
             "new"
