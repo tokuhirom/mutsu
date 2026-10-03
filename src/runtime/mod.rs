@@ -686,6 +686,7 @@ pub(crate) mod toplevel_callable_ids;
 pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
 mod attribute_core_traits;
+mod builtin_method_wrap;
 mod container_store;
 pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;

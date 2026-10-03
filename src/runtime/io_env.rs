@@ -466,6 +466,19 @@ impl Interpreter {
         newline: bool,
     ) -> Result<(), RuntimeError> {
         if let Some(handle) = self.get_dynamic_handle(name) {
+            // `print` is `$*OUT.print(...)`, so a wrapped `IO::Handle.print`
+            // sees it (the `say`/`put`/`note` routines have methods of their own).
+            if !newline
+                && matches!(handle.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+                && let Some(wrapped) = self.try_builtin_method_wrap(
+                    "IO::Handle",
+                    &handle,
+                    "print",
+                    &[Value::str(text.to_string())],
+                )
+            {
+                return wrapped.map(|_| ());
+            }
             if Self::handle_id_from_value(&handle).is_some() {
                 return self.write_to_handle_value(&handle, text, newline);
             }

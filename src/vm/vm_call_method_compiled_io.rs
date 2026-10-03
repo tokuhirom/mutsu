@@ -725,6 +725,9 @@ impl Interpreter {
             }
             _ => return None,
         };
+        if let Some(wrapped) = self.try_builtin_method_wrap("IO::Handle", target, method, args) {
+            return Some(wrapped);
+        }
 
         enum Kind {
             Print,
