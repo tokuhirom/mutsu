@@ -1224,17 +1224,12 @@ pub(super) fn rewrite_tilde_tokens(
             if out.is_empty() {
                 return Ok(tokens);
             }
-            // Remove trailing ws-like token from out (before tilde) — inserted
-            // by sigspace between the opener and `~`.
-            // Keep the token itself: it is whatever sigspace inserted (a
-            // grammar's own `ws` override included), and the inner pattern
-            // below must match whitespace the same way.
-            let pre_ws = if out.last().is_some_and(is_ws_like_token) {
-                out.pop()
-            } else {
-                None
-            };
-            // Skip ws-like tokens after the tilde to find the goal (closer)
+            // Sigspace layout, as Rakudo lays it out (#11234): a ws-like token
+            // written between the opener and `~` matches whitespace after the
+            // opener, so it stays where it is in `out`. The one written after
+            // the inner atom belongs inside the construct, before the closer;
+            // the one written after the goal atom matches after the closer.
+            // Whitespace between `~` and the goal means nothing.
             let mut j = i + 1;
             while j < tokens.len() && is_ws_like_token(&tokens[j]) {
                 j += 1;
@@ -1251,17 +1246,12 @@ pub(super) fn rewrite_tilde_tokens(
             if k >= tokens.len() {
                 return Ok(tokens);
             }
-            let inner_token = tokens[k].clone();
-            // Build the inner pattern: the single content token, optionally
-            // surrounded by WsRule so `rule` sigspace allows whitespace between
-            // opener/content and content/closer.
-            let mut inner_tokens = Vec::new();
-            if let Some(ws_tok) = pre_ws {
+            let post_goal_ws = tokens[j + 1..k].last().cloned();
+            let mut inner_tokens = vec![tokens[k].clone()];
+            let mut resume = k + 1;
+            if let Some(ws_tok) = tokens.get(resume).filter(|t| is_ws_like_token(t)) {
                 inner_tokens.push(ws_tok.clone());
-                inner_tokens.push(inner_token);
-                inner_tokens.push(ws_tok);
-            } else {
-                inner_tokens.push(inner_token);
+                resume += 1;
             }
             let inner_pattern = RegexPattern {
                 tokens: inner_tokens,
@@ -1288,12 +1278,10 @@ pub(super) fn rewrite_tilde_tokens(
                 from_runtime_interpolation: false,
                 subrule_call_capture: false,
             });
-            // Resume after the inner token. A sigspace ws-like token written
-            // after it (`rule { '[' ~ ']' <key> <kv>* }`) separates the whole
-            // construct from what follows -- it sits after the closer once the
-            // goal is moved -- so it stays in the stream rather than being
-            // dropped with the construct.
-            i = k + 1;
+            if let Some(ws_tok) = post_goal_ws {
+                out.push(ws_tok);
+            }
+            i = resume;
             continue;
         }
         out.push(tokens[i].clone());
