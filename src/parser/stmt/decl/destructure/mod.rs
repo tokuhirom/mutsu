@@ -345,7 +345,24 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             Box::new(ex),
         ));
     }
-    // No assignment
+    // No assignment. A loose word-logical (`my ($a, $b) andthen ...`) binds
+    // looser than the declaration, with the declared variables, as a list, as
+    // its left operand.
+    let (rest, _) = ws(rest)?;
+    let seed = Expr::ArrayLiteral(
+        vars.iter()
+            .filter(|v| !v.name.starts_with("__"))
+            .map(|v| crate::parser::stmt::word_logical_split::seed_read_expr(&v.name))
+            .collect(),
+    );
+    let has_tail = crate::parser::expr::starts_with_loose_word_logical(rest);
+    let decl_stmt_of = |decl: SignatureDecl| desugar::signature_decl(decl);
+    let (rest, tail) = if has_tail {
+        let (r, tail) = crate::parser::expr::word_logical_tail_pub(rest, seed)?;
+        (r, Some(tail))
+    } else {
+        (rest, None)
+    };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     let decl = SignatureDecl {
@@ -357,7 +374,11 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         has_nested_group,
         init: None,
     };
-    Ok((rest, desugar::signature_decl(decl)))
+    let stmt = decl_stmt_of(decl);
+    match tail {
+        Some(tail) => Ok((rest, Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)]))),
+        None => Ok((rest, stmt)),
+    }
 }
 
 /// Parse the RHS of a destructuring declaration with assignment or binding.
