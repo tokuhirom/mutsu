@@ -767,8 +767,23 @@ impl Interpreter {
             return Ok(value);
         }
 
-        // Plain type constraint (e.g., Str, Int:D)
+        // Plain type constraint (e.g., Str, Int:D). An imported short name of
+        // a parameterized type (`--> Maybe[Int]` with `Definitely::Maybe`
+        // exported) is matched under the name it was declared with, which is
+        // what the value's mixin records; a smartmatch evaluates the type
+        // object and sees that name already.
         if !self.type_matches_value(spec, &checked) {
+            let declared = if spec.contains('[') {
+                Some(self.resolve_declared_type_name(spec))
+            } else {
+                None
+            };
+            if declared
+                .as_deref()
+                .is_some_and(|d| d != spec && self.type_matches_value(d, &checked))
+            {
+                return Ok(value);
+            }
             return Err(self.throw_type_check_return(spec, &checked));
         }
         Ok(value)
