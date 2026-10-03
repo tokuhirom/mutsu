@@ -1375,7 +1375,12 @@ impl Interpreter {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method_memo(cn, method_sym),
+                    _ => {
+                        self.grammar_has_user_method_memo(cn, method_sym)
+                            // `has ObjAt $.WHICH` overrides `.WHICH` (Rake).
+                            || (matches!(method, "WHICH" | "WHY")
+                                && self.has_public_accessor(&cn.resolve(), method))
+                    }
                 }
             {
                 skip_native = true;

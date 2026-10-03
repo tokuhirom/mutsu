@@ -1779,6 +1779,18 @@ impl Interpreter {
             }
             "parents" if !args.is_empty() => self.dispatch_classhow_parents(&args),
             "pun" if !args.is_empty() => {
+                // A curried role (`R[Int,Str].^pun`) puns to the same class its
+                // `.new` constructs through, so an instance's `.WHAT` is `=:=`
+                // its pun (Rake's tests check exactly that).
+                if let ValueView::ParametricRole {
+                    base_name,
+                    type_args,
+                } = args[0].view()
+                    && let Some(punned) =
+                        self.ensure_parametric_role_pun_class(&base_name.resolve(), type_args)?
+                {
+                    return Ok(Value::package(Symbol::intern(&punned)));
+                }
                 let role_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
