@@ -1846,8 +1846,7 @@ impl Interpreter {
             self.register_native_call_sub(name, param_defs, return_type, custom_traits)?;
         }
         // Apply custom trait_mod:<is> for each non-builtin trait
-        let has_trait_mod =
-            self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+        let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
         {
             // `is hidden-from-USAGE` on a `MAIN` candidate keeps it dispatchable
             // but drops it from the generated usage message. Record its body
@@ -1960,7 +1959,7 @@ impl Interpreter {
                         };
                         args.push(arg_val);
                     }
-                    self.call_function("trait_mod:<is>", args)
+                    self.call_trait_mod("trait_mod:<is>", args)
                 } else {
                     let named_val = if let Some(arg_val) = trait_arg_val {
                         Value::pair(trait_name.clone(), arg_val)
@@ -1968,7 +1967,7 @@ impl Interpreter {
                         Value::pair(trait_name.clone(), Value::TRUE)
                     };
                     args.push(named_val);
-                    self.call_function("trait_mod:<is>", args)
+                    self.call_trait_mod("trait_mod:<is>", args)
                 };
                 self.trait_mod_writeback_key = None;
                 // Check if the trait_mod returned a Mixin or if the

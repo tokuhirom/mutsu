@@ -2942,9 +2942,17 @@ impl Interpreter {
                 };
                 let name = data.name.resolve();
                 let qualified = format!("{}::{}", data.package.resolve(), name);
-                if self.resolve_proto_function(&qualified).is_some()
+                if self.has_multi_candidates(&name) {
+                    // The dispatcher captures the candidates visible now, the
+                    // way `&name` of a multi does (`sub_value_from_multi_candidates`).
+                    // A by-name handle dangled once the candidates' scope ended:
+                    // a `multi` declared inside `sub EXPORT` is lexical to it,
+                    // so `'&trait_mod:<is>' => $t.dispatcher` reached the
+                    // importer with no candidates at all (#11530).
+                    let candidates = self.resolve_all_multi_candidates(&name);
+                    Ok(self.sub_value_from_multi_candidates(&name, candidates))
+                } else if self.resolve_proto_function(&qualified).is_some()
                     || self.resolve_proto_function_with_alias(&name).is_some()
-                    || self.has_multi_candidates(&name)
                 {
                     Ok(Value::routine_parts(data.package, data.name, false))
                 } else {
