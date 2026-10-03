@@ -1747,6 +1747,24 @@ fn pattern_name_mult(
     Arc::new(base.keys().map(|&k| (k, NameMult::Many)).collect())
 }
 
+/// The capture names [`pattern_name_mult`] marks `Many` for `pat`, sorted
+/// and memoized on [`PatternDerived::many_names`]. Rakudo decides a name's
+/// list-ness statically (QRegex `capnames`), so a level marks these
+/// quantified before it binds anything: two optional occurrences that both
+/// match nothing still leave the name an empty list.
+// Cost: O(1) after the first call; that one is O(t), t = the pattern's tokens.
+pub(crate) fn pattern_many_names(pat: &RegexPattern) -> Arc<[crate::symbol::Symbol]> {
+    Arc::clone(pat.derived.many_names.get_or_init(|| {
+        let mut names: Vec<crate::symbol::Symbol> = pattern_name_mult(pat, false)
+            .iter()
+            .filter(|(_, m)| **m == NameMult::Many)
+            .map(|(&k, _)| k)
+            .collect();
+        names.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        names.into()
+    }))
+}
+
 fn pattern_name_mult_uncached(pat: &RegexPattern) -> HashMap<crate::symbol::Symbol, NameMult> {
     let mut acc: HashMap<crate::symbol::Symbol, NameMult> = HashMap::default();
     for token in &pat.tokens {
