@@ -1585,7 +1585,7 @@ impl Interpreter {
         let own_names: Vec<Symbol> = new_types
             .iter()
             .filter(|name| {
-                !name.contains("::")
+                !crate::qualified::is_qualified(Symbol::intern(name))
                     && !name.contains('\u{0}')
                     && !explicit_global_types.contains(name.as_str())
                     // A core type a prelude registers lazily (`Enumeration`)
