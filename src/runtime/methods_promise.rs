@@ -444,7 +444,7 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
-                self.channel_send_value(&ch, value);
+                self.channel_send_value(ch, value);
                 Ok(Value::NIL)
             }
             "receive" => match ch.receive_result() {
