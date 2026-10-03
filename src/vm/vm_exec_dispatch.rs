@@ -7182,11 +7182,14 @@ impl Interpreter {
                         }
                         None => bound,
                     };
+                    // An immutable `Map` is a value too: `my \m = Map.new(...);
+                    // m = 3` dies in rakudo.
                     source.is_container_ref()
+                        || (matches!(source.view(), ValueView::Hash(..))
+                            && !source.is_immutable_map())
                         || matches!(
                             source.view(),
                             ValueView::Array(..)
-                                | ValueView::Hash(..)
                                 | ValueView::Proxy { .. }
                                 // A DEFERRED vivification token: the element does
                                 // not exist yet, but the binding still denotes it
@@ -7227,11 +7230,8 @@ impl Interpreter {
                         .unwrap_or(Value::NIL);
                     matches!(
                         bound.view(),
-                        ValueView::ContainerRef(_)
-                            | ValueView::Array(..)
-                            | ValueView::Hash(..)
-                            | ValueView::Proxy { .. }
-                    )
+                        ValueView::ContainerRef(_) | ValueView::Array(..) | ValueView::Proxy { .. }
+                    ) || (matches!(bound.view(), ValueView::Hash(..)) && !bound.is_immutable_map())
                 });
                 if !writable {
                     let name = name_sym.resolve();

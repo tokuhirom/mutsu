@@ -535,10 +535,7 @@ impl Interpreter {
     /// resolved to a value from here.
     pub(crate) fn immutable_value_error(&self, name: &str) -> RuntimeError {
         match self.env().get(name) {
-            Some(value) => RuntimeError::assignment_ro_typename(
-                crate::runtime::utils::value_type_name(value),
-                &value.to_string_value(),
-            ),
+            Some(value) => RuntimeError::assignment_ro_value(value.clone()),
             None => RuntimeError::assignment_ro(Some(name)),
         }
     }

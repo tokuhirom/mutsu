@@ -171,10 +171,7 @@ impl Interpreter {
             ReadonlyKind::Immutable | ReadonlyKind::ImmutableDeep => {
                 RuntimeError::immutable_value()
             }
-            ReadonlyKind::ImmutableValue => RuntimeError::assignment_ro_typename(
-                crate::runtime::utils::value_type_name(bound),
-                &bound.to_string_value(),
-            ),
+            ReadonlyKind::ImmutableValue => RuntimeError::assignment_ro_value(bound.clone()),
             ReadonlyKind::TypeObject => {
                 let type_name = match bound.view() {
                     ValueView::Package(sym) => sym.to_string(),
