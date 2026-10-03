@@ -217,6 +217,7 @@ impl<'a> NfaBuilder<'a> {
         if token.from_runtime_interpolation || matches!(token.quant, RegexQuant::RepeatCode(_)) {
             return self.fate();
         }
+        let mut capped = false;
         let (min, max) = match token.quant {
             RegexQuant::One if token.separator.is_none() => {
                 let open = open && token_keeps_open(token);
@@ -226,14 +227,21 @@ impl<'a> NfaBuilder<'a> {
             RegexQuant::ZeroOrOne => (0, Some(1)),
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
-            RegexQuant::Repeat(min, max) => (min, max.map(|max| bounded_declarative_max(min, max))),
+            RegexQuant::Repeat(min, max) => (
+                min,
+                max.map(|max| {
+                    let bounded = bounded_declarative_max(min, max);
+                    capped = bounded < max;
+                    bounded
+                }),
+            ),
             RegexQuant::RepeatCode(_) => unreachable!("handled above"),
         };
         // `** 2..1` throws when matched for real; it has no prefix.
         if max.is_some_and(|max| min > max) {
             return self.fate();
         }
-        self.build_counted(token, pkg, ic, min, max, next)
+        self.build_counted(token, pkg, ic, min, max, capped, next)
     }
 
     /// `min..max` iterations of `token`'s atom, with its separator between
@@ -245,6 +253,7 @@ impl<'a> NfaBuilder<'a> {
         ic: bool,
         min: usize,
         max: Option<usize>,
+        capped: bool,
         next: u32,
     ) -> u32 {
         let (min, max, cut_short) =
@@ -284,7 +293,11 @@ impl<'a> NfaBuilder<'a> {
         match max {
             Some(max) => {
                 // `after[i]`: the node reached after `i` iterations.
-                let mut after = exit(max);
+                // A maximum capped by `bounded_declarative_max` is not the real
+                // one: the path after the last built copy may still repeat, so
+                // the prefix ends there (a fate) instead of continuing into
+                // `next`, which the unbuilt copies would stand in front of.
+                let mut after = if capped { self.fate() } else { exit(max) };
                 for i in (0..max).rev() {
                     let unit = if i == 0 { Unit::Atom } else { later };
                     let more = self.build_unit(unit, token, pkg, ic, after);
