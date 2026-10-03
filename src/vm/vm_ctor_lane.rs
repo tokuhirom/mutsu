@@ -98,8 +98,11 @@ impl Interpreter {
         // The one non-probe effect of the skipped stretch the constructor can
         // observe: an attribute default expression may read the caller's
         // lexicals, so a transient scoped overlay env is collapsed first, as
-        // the full path does before its dispatch tail.
-        self.flatten_scoped_env();
+        // the full path does before its dispatch tail. A class whose
+        // initializers are all literal evaluates none (#9494).
+        if !installed.evaluates_no_decl_expr() {
+            self.flatten_scoped_env();
+        }
         let result = loan_env!(self, try_native_default_construct(class_sym, args))?;
         // No BUILD/TWEAK (checked on install), so the construction cannot
         // write the caller's env.
@@ -123,7 +126,11 @@ impl Interpreter {
         }
         self.caches.ctor_lane_candidate = None;
         let plan = self.native_ctor_plan(class_sym);
-        if !plan.eligible
+        // A class whose user `new` declined these arguments installs too: the
+        // replay runs the same `try_native_default_construct`, which re-asks
+        // whether the user `new` declines the replay's own arguments and
+        // returns `None` (the whole chain) when one accepts them.
+        if !(plan.eligible || plan.eligible_when_user_new_declines)
             || plan.is_cunion
             || plan.has_build
             || plan.has_tweak

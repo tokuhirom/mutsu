@@ -199,10 +199,11 @@ impl Interpreter {
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
         let mut early_inv: Option<Value> = None;
-        for ((attr, &attr_sym), attr_type_constraint) in class_attrs
+        for (attr_idx, ((attr, &attr_sym), attr_type_constraint)) in class_attrs
             .iter()
             .zip(plan.attr_syms.iter())
             .zip(plan.attr_constraints.iter())
+            .enumerate()
         {
             let attr_name = &attr.name;
             let default_expr = &attr.default;
@@ -241,6 +242,17 @@ impl Interpreter {
                     } else {
                         attrs.insert(attr_sym, val);
                     }
+                }
+                // A seed default already evaluated for this class (see
+                // `NativeCtorPlan::seed_defaults`).
+                None if attr.default_is_seed
+                    && let Some(seed) = plan.seed_defaults.get(attr_idx).and_then(|c| c.get()) =>
+                {
+                    let val = Self::itemize_attr_store_value(
+                        *sigil,
+                        Self::coerce_attr_value_by_sigil(seed.clone(), *sigil),
+                    );
+                    attrs.insert_seed(attr_sym, val);
                 }
                 None if default_expr.is_some() => {
                     let arg = default_expr.as_ref().unwrap();
@@ -292,6 +304,12 @@ impl Interpreter {
                     {
                         typed_default_mismatch = true;
                         break;
+                    }
+                    if attr.default_is_seed
+                        && matches!(val.view(), ValueView::Package(_))
+                        && let Some(cell) = plan.seed_defaults.get(attr_idx)
+                    {
+                        let _ = cell.set(val.clone());
                     }
                     let val = Self::itemize_attr_store_value(
                         *sigil,

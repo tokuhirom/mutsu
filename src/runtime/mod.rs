@@ -1569,6 +1569,14 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// Per attribute (same order as `class_attrs`): the value its seed
+    /// default (`default_is_seed`, the declared type's type object for a
+    /// `has Str $.x` with no initializer) evaluated to, once it has evaluated
+    /// to a type object that passed the attribute's type check. A type name
+    /// resolves the same way in the declaring scope every time and a type
+    /// object is immutable, so the memo is exact for as long as this plan
+    /// lives (it is dropped at every class-shape mutation).
+    pub(crate) seed_defaults: Box<[std::sync::OnceLock<Value>]>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
@@ -1675,6 +1683,27 @@ pub(crate) struct NativeCtorPlan {
     /// the MRO for them on every construction cost ~400 instructions of each
     /// `.new` (#9291), almost always to find none.
     pub(crate) alias_attributes: Arc<[String]>,
+}
+
+impl NativeCtorPlan {
+    /// Whether constructing the class evaluates no declaration expression
+    /// any more: every initializer is absent, a literal, or a seed default
+    /// already memoized in `seed_defaults`, and no attribute has a `where`.
+    /// Such a construction neither reads nor temporarily rebinds the caller's
+    /// env (see `try_ctor_lane`).
+    // Cost: O(a), a = attributes.
+    pub(crate) fn evaluates_no_decl_expr(&self) -> bool {
+        self.class_attrs.iter().enumerate().all(|(i, a)| {
+            a.where_constraint.is_none()
+                && match &a.default {
+                    None | Some(crate::opcode::DeclTraitArg::Literal(_)) => true,
+                    Some(_) => {
+                        a.default_is_seed
+                            && self.seed_defaults.get(i).is_some_and(|c| c.get().is_some())
+                    }
+                }
+        })
+    }
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class
