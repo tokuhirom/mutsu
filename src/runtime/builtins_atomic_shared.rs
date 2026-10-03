@@ -957,7 +957,57 @@ impl Interpreter {
         // binding is boxed above, so every alias (including a later atomic
         // op from a different frame/instance) reads and writes the SAME
         // cell instead of a stale by-value snapshot.
-        self.box_package_scope_lexical_cell(bare)
+        if let Some(cell) = self.box_package_scope_lexical_cell(bare) {
+            return Some(cell);
+        }
+        // A file-scope `my atomicint` of a loaded module, reached from one of
+        // its exported routines, is no local of the running frame and not in
+        // `env` either (that holds the importer's scope): it lives in the
+        // compunit's unit-lexical store, where a plain read finds it. Box it
+        // there so the atomic ops share the binding instead of falling back
+        // to the name-keyed lane, which knows nothing about it and answered
+        // the `atomicint` type object on the first fetch (#11455).
+        self.box_unit_scope_lexical_cell(bare)
+    }
+
+    /// [`Self::box_package_scope_lexical_cell`] for the running routine's
+    /// compunit-level lexical (`unit_lexical_slot`).
+    // Cost: O(1) amortized (one unit-lexical store probe and, the first time,
+    // one replace).
+    fn box_unit_scope_lexical_cell(
+        &mut self,
+        name: &str,
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        let cur = self.unit_lexical_slot(name)?.clone();
+        if let ValueView::ContainerRef(c) = cur.view() {
+            return Some(c.clone());
+        }
+        // The same shape refusal as the two boxing paths above.
+        if !cur.is_any_type_object()
+            && matches!(
+                cur.view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Sub(..)
+                    | ValueView::Instance { .. }
+                    | ValueView::Proxy { .. }
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Slip(..)
+            )
+        {
+            return None;
+        }
+        let container = cur.into_container_ref();
+        if !self.unit_scope_lexical_bind(name, &container) {
+            return None;
+        }
+        match container.view() {
+            ValueView::ContainerRef(c) => Some(c.clone()),
+            _ => None,
+        }
     }
 
     /// [`Self::atomic_scalar_cell`]'s fallback for a package-scoped `my`
