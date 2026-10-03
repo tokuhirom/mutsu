@@ -191,20 +191,6 @@ impl Compiler {
             },
             other => other.var_key().expect("a variable method target"),
         };
-        // `.name` on an array/hash variable returns the sigil'd variable name
-        // (e.g. `%h.name` → "%h", `@a.name` → "@a"), matching Raku's container
-        // `.name`. (`$x.name` operates on the contained value, and `&f.name`
-        // returns the routine name, so those are left to normal dispatch.)
-        if name.resolve() == "name"
-            && args.is_empty()
-            && modifier.is_none()
-            && !quoted
-            && matches!(target, Expr::ArrayVar(_) | Expr::HashVar(_))
-        {
-            let idx = self.code.add_constant(Value::str(target_name));
-            self.code.emit(OpCode::LoadConst(idx));
-            return;
-        }
         // `.dynamic` on an array/hash variable reports whether the *variable* is
         // a dynamic (`@*a`/`%*h`) one — the container's dynamism, exactly like
         // `.VAR.dynamic` (which mutsu already resolves via `is_var_dynamic`).
@@ -213,7 +199,16 @@ impl Compiler {
         // method — are rerouted here; scalars fall to normal dispatch. A literal
         // `[1,2,3].dynamic` (no variable) reaches the value-level `.dynamic`
         // (native, always False), matching raku.
-        if name.resolve() == "dynamic"
+        //
+        // `.name` is the same container property: rakudo answers it from the
+        // container descriptor, so it equals `.VAR.name` -- the declaring
+        // variable, followed through a parameter bind (`sub f(@x) { @x.name }`
+        // reports the caller's `@b`), and the `our`/`state`/attribute name
+        // the `.VAR` path knows. A Hash/Array reached as a value (`$x.name`,
+        // a `\m` param, `self` in a mixed-in role) reads the descriptor
+        // natively (`native_method_0arg`).
+        let method = name.resolve();
+        if (method == "dynamic" || method == "name")
             && args.is_empty()
             && modifier.is_none()
             && !quoted
@@ -227,7 +222,7 @@ impl Compiler {
                     modifier: None,
                     quoted: false,
                 }),
-                name: Symbol::intern("dynamic"),
+                name: *name,
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,

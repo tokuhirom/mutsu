@@ -272,9 +272,12 @@ impl Interpreter {
                 _ => "element access",
             },
         };
-        let source = match source.to_string_value() {
-            s if s.is_empty() => crate::value::what_type_name(target),
-            s => s,
+        let source = match container_descriptor_source(target) {
+            Some(s) => s,
+            None => match source.to_string_value() {
+                s if s.is_empty() => crate::value::what_type_name(target),
+                s => s,
+            },
         };
         Err(RuntimeError::x_adverb(what, &source, &nogo, &unexpected))
     }
@@ -321,4 +324,19 @@ impl Interpreter {
         result?;
         Ok(self.stack.pop().unwrap_or(Value::NIL))
     }
+}
+
+/// The variable a subscripted container was declared as, from its container
+/// descriptor (ADR-0064): what rakudo's `X::Adverb.source` reports, even when
+/// the subscript spells a parameter bound to it (`-> @a { @a[1]:k:v }` called
+/// with `@n` reports `@n`). `None` for a non-container or an unnamed one (the
+/// `"element"` sentinel included), where the spelled name is the fallback.
+// Cost: O(1).
+pub(super) fn container_descriptor_source(target: &Value) -> Option<String> {
+    let (name, sigil) = match target.view() {
+        ValueView::Array(data, _) => (data.descriptor_name.clone()?, '@'),
+        ValueView::Hash(data) => (data.descriptor_name.clone()?, '%'),
+        _ => return None,
+    };
+    name.starts_with(sigil).then(|| name.to_string())
 }
