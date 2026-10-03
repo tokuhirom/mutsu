@@ -177,7 +177,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
-            None => Err(unsupported("source form")),
+            // Only the on-demand lambda opens with a supply record.
+            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
@@ -1616,6 +1617,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     if let Some(node) = subscript_adverb::convert(expr) {
         return node;
     }
+    // `supply { … }`: the parser's on-demand expansion opens its emitter
+    // lambda with the written body.
+    if let Expr::MethodCall { args, .. } = expr
+        && let Some(body) = super::react::supply_record(args)
+    {
+        return super::react::convert_supply(body);
+    }
     match expr {
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -1845,7 +1853,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
                 super::method_assign_decl::convert(decl)
             }
-            None => Err(unsupported("source form")),
+            // Only the on-demand lambda opens with a supply record.
+            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {

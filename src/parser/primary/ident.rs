@@ -5,6 +5,7 @@ mod listop;
 mod loop_control;
 pub(crate) mod predicates;
 mod supply;
+pub(crate) use supply::supply_block;
 mod term_literals;
 
 pub(super) use circumfix::declared_circumfix_op;

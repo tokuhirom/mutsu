@@ -80,6 +80,7 @@ pub enum RakuAstClass {
     StatementExpression,
     StatementAlso,
     StatementPrefixReact,
+    StatementPrefixSupply,
     StatementWhenever,
     OnlyStar,
     IntLiteral,
@@ -369,6 +370,7 @@ impl RakuAstClass {
             StatementExpression => "RakuAST::Statement::Expression",
             StatementAlso => "RakuAST::Statement::Also",
             StatementPrefixReact => "RakuAST::StatementPrefix::React",
+            StatementPrefixSupply => "RakuAST::StatementPrefix::Supply",
             StatementWhenever => "RakuAST::Statement::Whenever",
             OnlyStar => "RakuAST::OnlyStar",
             IntLiteral => "RakuAST::IntLiteral",
@@ -783,7 +785,7 @@ impl RakuAstClass {
             ColonPairTrue | ColonPairFalse | ColonPairValue => {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
-            StatementPrefixReact => &[
+            StatementPrefixReact | StatementPrefixSupply => &[
                 "RakuAST::StatementPrefix::Wheneverable",
                 "RakuAST::StatementPrefix::Blorst",
                 "RakuAST::StatementPrefix",
@@ -1036,6 +1038,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementExpression,
     RakuAstClass::StatementAlso,
     RakuAstClass::StatementPrefixReact,
+    RakuAstClass::StatementPrefixSupply,
     RakuAstClass::StatementWhenever,
     RakuAstClass::OnlyStar,
     RakuAstClass::IntLiteral,
@@ -2758,6 +2761,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
             RakuAstClass::StatementPrefixPhaserBegin
         }
         ("RakuAST::StatementPrefix::React", "new") => RakuAstClass::StatementPrefixReact,
+        ("RakuAST::StatementPrefix::Supply", "new") => RakuAstClass::StatementPrefixSupply,
         ("RakuAST::StatementPrefix::Phaser::Check", "new") => {
             RakuAstClass::StatementPrefixPhaserCheck
         }
