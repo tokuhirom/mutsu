@@ -495,6 +495,9 @@ pub fn call_native_with_out_args(
                     i + 1,
                     spec.symbol
                 )),
+                MarshalError::Unbox(got) => RuntimeError::new(format!(
+                    "This type cannot unbox to a native integer: P6opaque, {got}"
+                )),
                 MarshalError::Repr(repr, got) => RuntimeError::new(format!(
                     "Native call expected argument {} with {repr} representation, but got a \
                      P6opaque ({got})",
@@ -1108,7 +1111,21 @@ fn marshal_arg(
         CType::F32 => (Type::f32(), ArgOwner::F32(num() as f32)),
         CType::F64 => (Type::f64(), ArgOwner::F64(num())),
         CType::Pointer => {
-            // A by-value `Pointer` passes its current address as `void*`.
+            // A by-value `Pointer` passes its current address as `void*`. A
+            // defined plain value (a `Str`, a `Num`, a `Hash`) carries no
+            // address at all: rakudo refuses it, and passing NULL in its place
+            // let a callee that reads its argument crash (#11529).
+            if crate::runtime::types::value_is_defined(v)
+                && !matches!(
+                    v.view(),
+                    ValueView::Int(_)
+                        | ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Array(..)
+                )
+            {
+                return Err(MarshalError::Unbox(crate::value::types::what_type_name(v)));
+            }
             let addr = pointer_address(v) as *const std::ffi::c_void;
             (Type::pointer(), ArgOwner::Ptr(addr))
         }
@@ -1204,6 +1221,9 @@ enum MarshalError {
     /// The argument's representation is not one the parameter can take:
     /// (the parameter's REPR, the argument's type name).
     Repr(&'static str, String),
+    /// A `Pointer` parameter was handed a value with no address: the
+    /// argument's type name.
+    Unbox(String),
 }
 
 #[cfg(feature = "libffi")]

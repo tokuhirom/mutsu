@@ -1,7 +1,7 @@
 use Test;
 use NativeCall;
 
-plan 8;
+plan 11;
 
 # A defined argument the native marshaller cannot represent as the declared
 # CArray / Blob parameter used to become an empty per-call buffer, whose
@@ -12,6 +12,7 @@ plan 8;
 
 sub frexp(num64, CArray[int32] --> num64) is native { * }
 sub memchr(Blob, int32, size_t --> Pointer) is native { * }
+sub memchr-ptr(Pointer, int32, size_t --> Pointer) is native is symbol('memchr') { * }
 sub memchr-carray(CArray[uint8], int32, size_t --> Pointer) is native is symbol('memchr') { * }
 
 my $str = 'abc';
@@ -32,3 +33,13 @@ ok memchr('abc'.encode, 98, 3).defined, 'a filled Blob still passes its storage'
 nok memchr-carray(CArray[uint8].new, 98, 0).defined, 'an empty CArray passes NULL';
 ok memchr-carray(CArray[uint8].new(1, 98, 3), 98, 3).defined,
     'a filled CArray still passes its storage';
+
+# A `Pointer` parameter given a plain value with no address passed NULL, and
+# a callee that reads its argument crashed. Rakudo refuses it.
+throws-like { memchr-ptr($str, 98, 3) }, Exception,
+    message => 'This type cannot unbox to a native integer: P6opaque, Str',
+    'a Str for a Pointer parameter is refused';
+throws-like { memchr-ptr(%hash, 98, 3) }, Exception,
+    message => 'This type cannot unbox to a native integer: P6opaque, Hash',
+    'a Hash for a Pointer parameter is refused';
+nok memchr-ptr(Pointer, 98, 0).defined, 'a Pointer type object passes NULL';
