@@ -1495,9 +1495,7 @@ impl Interpreter {
         }
 
         // Check wrap chain for named function calls
-        if self.wrap_sub_id_for_name(&name).is_some()
-            && let Some(sub_val) = self.get_wrapped_sub(&name)
-        {
+        if let Some(sub_val) = self.wrapped_sub_for_call(&name) {
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             // Slice F (multi-frame coherence): a wrapper closure (`&f.wrap(-> {
             // $seen = True; callsame })`) mutates a captured caller lexical by name.

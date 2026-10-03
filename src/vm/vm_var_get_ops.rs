@@ -537,9 +537,7 @@ impl Interpreter {
             // current package's qualified entry, not fall through to the Str
             // fallback.
             enum_val
-        } else if self.wrap_sub_id_for_name(name).is_some()
-            && let Some(sub_val) = self.get_wrapped_sub(name)
-        {
+        } else if let Some(sub_val) = self.wrapped_sub_for_call(name) {
             // A wrapped sub used as a bareword term must dispatch through its
             // wrap chain. The `&name` env entry is a fresh Sub whose id differs
             // from the wrap-chain key, so it would bypass the wrappers — check
