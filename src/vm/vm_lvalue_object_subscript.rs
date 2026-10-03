@@ -125,6 +125,27 @@ impl Interpreter {
         }
     }
 
+    /// The container an element store through a LOCATION an rw method handed
+    /// back must land in, flagged `true`; the store then writes into it in
+    /// place. `method el() is rw { %!h<a> }` returns the element's cell (or,
+    /// for a missing key, a deferred hash-entry token): when the location
+    /// holds an Array/Hash that container is the location's own -- writing
+    /// into it is `%!h<a><k> = v` -- and when it holds nothing yet the
+    /// container the subscript addresses is vivified into it, as raku does
+    /// (`$d.el[0] = 5` gives `{:a($[5])}`). Anything else -- a location holding
+    /// a value, or no location at all -- comes back unchanged with `false`.
+    // Cost: O(1).
+    pub(crate) fn rw_location_container(step: Value, next_positional: bool) -> (Value, bool) {
+        if matches!(
+            step.view(),
+            ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
+        ) && let Some(container) = Self::lvalue_object_step_container(&step, next_positional)
+        {
+            return (container, true);
+        }
+        (step, false)
+    }
+
     /// The Array/Hash inside a location's held value, looking through the
     /// `Scalar` an itemized element store leaves behind.
     pub(crate) fn held_container(held: &Value) -> Option<Value> {

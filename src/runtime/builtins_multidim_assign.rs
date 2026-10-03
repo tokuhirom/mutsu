@@ -195,6 +195,10 @@ impl Interpreter {
         } else {
             current
         };
+        // A hash-entry location (vivified when empty) is stored into in place
+        // (#11355); see `rw_location_container`.
+        let (current, in_place) =
+            Self::rw_location_container(current, matches!(index.view(), ValueView::Int(_)));
         // Slice 2a: the accessor may return a shared `ContainerRef` cell (e.g. a
         // Pair value aliasing a `=`-array-shared scalar `my $a = @src`). Deref it
         // for the element modify; the shared-Arc propagation below
@@ -600,8 +604,10 @@ impl Interpreter {
         // `.clone`) the store lands in the discarded temporary and the
         // receiver is unchanged (#9208). An immutable `List` (and any
         // non-container return) falls through and is refused, as raku does.
+        // The container an rw method's location holds is stored into the same
+        // way: it is the location's own.
         let plain_receiver = Self::is_plain_method_receiver(&target);
-        if plain_receiver && Self::is_mutable_store_container(&current) {
+        if (plain_receiver || in_place) && Self::is_mutable_store_container(&current) {
             match current.view() {
                 ValueView::Hash(h) if h.key_type.is_none() => {
                     let key = index.to_string_value();
