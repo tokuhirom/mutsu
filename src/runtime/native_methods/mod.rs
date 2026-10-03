@@ -438,6 +438,14 @@ impl Interpreter {
         // parameter is never at risk here.
         let stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let args = stripped.unwrap_or(args);
+        if let Some(wrapped) = self.try_builtin_method_wrap(
+            class_name,
+            &Value::make_instance(Symbol::intern(class_name), attributes.clone()),
+            method,
+            &args,
+        ) {
+            return wrapped;
+        }
         let dispatch_class = if matches!(
             class_name,
             "IO::Path"
