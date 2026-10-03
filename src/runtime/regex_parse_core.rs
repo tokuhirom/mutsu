@@ -1505,6 +1505,7 @@ impl Interpreter {
             }
             break;
         }
+        let had_modifier = source.len() != interpolated.trim_start().len();
         source = if sigspace {
             source.trim_start()
         } else {
@@ -1520,6 +1521,19 @@ impl Interpreter {
         // with X::Syntax::Regex::NullRegex (e.g. `/ /`, `s//b/`, an empty
         // `regex foo { }` body, or an empty `()`/`[]` group).
         if source.trim().is_empty() {
+            // A body made only of internal modifiers (`/ :i /`) is not null:
+            // the modifiers are an atom-less construct that matches the empty
+            // string.
+            if had_modifier {
+                return Some(RegexPattern {
+                    tokens: Vec::new(),
+                    anchor_start: false,
+                    anchor_end: false,
+                    ignore_case,
+                    ignore_mark,
+                    derived: Default::default(),
+                });
+            }
             PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(make_null_regex_error()));
             return None;
         }
