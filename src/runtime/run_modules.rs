@@ -18,7 +18,6 @@ impl Interpreter {
         // Raku's repository chain. Resolving every `inst#` entry up front — as
         // this used to — inverts that chain, so an installed module shadowed an
         // explicit `-I` path, which is the one thing the flag exists to prevent.
-        let mut had_plain_lib_path = false;
         for base in self.lib_paths.iter() {
             if let Some(prefix) = base.strip_prefix("inst#") {
                 if let Some(found) = self.resolve_in_inst_repo(prefix, module) {
@@ -26,7 +25,6 @@ impl Interpreter {
                 }
                 continue; // Don't try inst# path as a filesystem path
             }
-            had_plain_lib_path = true;
             let base_path = Path::new(base.as_str());
             for ext in &extensions {
                 let filename = format!("{}{}", base_name, ext);
@@ -44,58 +42,15 @@ impl Interpreter {
             }
         }
 
+        // Nothing implicit sits between the explicit chain and the bundled
+        // batteries: like Rakudo, neither the script's own directory nor a
+        // `packages/` tree above it is searched (#11213). Either would let a
+        // stray file next to — or anywhere above — a script silently shadow a
+        // bundled module. Roast's `Test::Util` is reached through the test
+        // files' own `use lib $?FILE.IO.parent(2).add('packages/Test-Helpers')`.
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-        if !had_plain_lib_path
-            && let Some(path) = &self.program_path
-            && let Some(parent) = Path::new(path).parent()
-            && !parent.as_os_str().is_empty()
-            && parent.is_dir()
-        {
-            for ext in &extensions {
-                let filename = format!("{}{}", base_name, ext);
-                candidates.push(parent.join(&filename));
-            }
-        }
-        if let Some(path) = &self.program_path {
-            let top_module = module.split("::").next().unwrap_or(module);
-            // The roast test suite's Test-Helpers package lives under
-            // `roast/packages/Test-Helpers/lib/` (NOT `Test/lib/`).  Build
-            // both the bare top_module name AND the `{top_module}-Helpers`
-            // variant so that `use Test::Util` resolves to
-            // `roast/packages/Test-Helpers/lib/Test/Util.rakumod`.
-            let top_module_variants: Vec<String> = {
-                let mut v = vec![top_module.to_string()];
-                v.push(format!("{}-Helpers", top_module));
-                v
-            };
-            for ancestor in Path::new(path).ancestors() {
-                if ancestor.as_os_str().is_empty() {
-                    continue;
-                }
-                for top in &top_module_variants {
-                    for ext in &extensions {
-                        let filename = format!("{}{}", base_name, ext);
-                        candidates.push(
-                            ancestor
-                                .join("packages")
-                                .join(top)
-                                .join("lib")
-                                .join(&filename),
-                        );
-                        candidates.push(
-                            ancestor
-                                .join("roast")
-                                .join("packages")
-                                .join(top)
-                                .join("lib")
-                                .join(&filename),
-                        );
-                    }
-                }
-            }
-        }
         // Bundled batteries are the lowest-priority source: append their
-        // candidates last so an explicit `-I`/`MUTSULIB`/project-local module or
+        // candidates last so an explicit `use lib`/`-I`/`MUTSULIB` module or
         // an `mzef`-installed (site-repo) version always shadows the bundled copy
         // (BATTERIES.md §3/§6).
         for base in self.bundled_lib_paths.iter() {
