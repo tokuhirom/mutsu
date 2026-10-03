@@ -137,7 +137,7 @@ impl Interpreter {
         // A leading constant that names a package is a valid qualifier
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.
-        if let Some(real) = self.resolve_package_alias_prefix(name) {
+        if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
             return self.push_bare_word_value(&real, compiled_fns);
         }
         // An imported routine may share its short spelling with a type
