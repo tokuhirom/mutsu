@@ -3234,6 +3234,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     // into the postcircumfix's `assignee`; the parser keeps it
                     // as `IndexAssign`.
                     if let Ok(assignee) = named_child(postfix, "assignee") {
+                        if list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty()) {
+                            return Err(unsupported(postfix));
+                        }
                         return Ok(Expr::IndexAssign {
                             target: Box::new(operand),
                             index: Box::new(index),
@@ -3241,11 +3244,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             is_positional,
                         });
                     }
-                    Ok(Expr::Index {
-                        target: Box::new(operand),
-                        index: Box::new(index),
-                        is_positional,
-                    })
+                    super::subscript_adverb::lower(
+                        Expr::Index {
+                            target: Box::new(operand),
+                            index: Box::new(index),
+                            is_positional,
+                        },
+                        postfix,
+                    )
                 }
                 _ => Err(unsupported(node)),
             }
