@@ -48,7 +48,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Exception Handling | 3 / 15 | 12 | #11497 |
 | Processes | 0 / 4 | 4 | #11501 |
 | File / Directory / Network | 9 / 25 | 16 | #11501 |
-| Hash | 5 / 15 | 10 | #11494 |
+| Hash | 8 / 8 | 0 | #11494 |
 | HLL-Specific | 3 / 13 | 10 | #11504 |
 | Input/Output | 6 / 14 | 8 | #11501 |
 | Relational / Logic | 40 / 40 | 0 | #11491 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 3 / 8 | 5 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 1 / 26 | 25 | #11505 |
-| **Total** | **331 / 585** | **254** | |
+| **Total** | **334 / 578** | **244** | |
 
 ## Missing ops by category
 
@@ -81,7 +81,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Exception Handling** (#11497): `backtracestrings`, `die`, `die_s`, `exception`, `getextype`, `newexception`, `resume`, `rethrow`, `setextype`, `setmessage`, `setpayload`, `throw`
 - **Processes** (#11501): `execname`, `exit`, `getpid`, `getppid`
 - **File / Directory / Network** (#11501): `chdir`, `chmod`, `chown`, `copy`, `cwd`, `fileexecutable`, `filewritable`, `getport`, `link`, `lstat_time`, `mkdir`, `rename`, `rmdir`, `stat_time`, `symlink`, `unlink`
-- **Hash** (#11494): `atkey_i`, `atkey_n`, `atkey_s`, `atkey_u`, `bindkey_i`, `bindkey_n`, `bindkey_s`, `iterator`, `iterkey_s`, `iterval`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **Input/Output** (#11501): `eoffh`, `filenofh`, `flushfh`, `print`, `say`, `seekfh`, `tellfh`, `writefh`
 - **NativeCall** (#11504): `nativecallinvoke`
@@ -103,4 +102,11 @@ Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `ad
 
 ## Not applicable
 
+- `atkey_i`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `atkey_n`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `atkey_s`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `atkey_u`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `bindkey_i`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `bindkey_n`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `bindkey_s`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
 - `list_b`: Rakudo rejects every Raku call at compile time ("The 'list_b' op needs a list of blocks, got QAST::Op"): a Raku block literal never compiles to the bare QAST::Block the op requires.

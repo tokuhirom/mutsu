@@ -49,6 +49,16 @@ NOT_APPLICABLE = {
               "needs a list of blocks, got QAST::Op\"): a Raku block literal "
               "never compiles to the bare QAST::Block the op requires.",
 }
+# The native-typed hash slots: no associative REPR a Raku program can reach
+# stores natives -- MoarVM's VMHash (`nqp::hash`, a Hash's `$!storage`) dies
+# "MVMHash representation does not support native type storage" and a CStruct
+# "does not support associative access" -- so every Raku call dies in Rakudo.
+_NATIVE_HASH = ("Rakudo dies on every reachable REPR: VMHash \"does not support "
+                "native type storage\", CStruct \"does not support associative "
+                "access\".")
+for _op in ("atkey_i", "atkey_n", "atkey_s", "atkey_u",
+            "bindkey_i", "bindkey_n", "bindkey_s"):
+    NOT_APPLICABLE[_op] = _NATIVE_HASH
 
 # Tracking issue per category (the campaign's sub-issues). Several small
 # categories share one issue.

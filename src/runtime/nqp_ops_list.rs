@@ -151,6 +151,10 @@ impl Interpreter {
     /// Shared by the dispatch table and TRIR's typed `ShiftIO`, so the two
     /// cannot drift.
     pub(crate) fn nqp_shift(op: &str, target: &Value) -> Result<Value, RuntimeError> {
+        // An `nqp::iterator` advances instead (`nqp_iter`).
+        if super::nqp_iter::is_boot_iter(target) {
+            return super::nqp_iter::iter_shift(target);
+        }
         let elem = Self::nqp_shift_elem(op, target)?;
         Ok(coerce_like(op, elem))
     }

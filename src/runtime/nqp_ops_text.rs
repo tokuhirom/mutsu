@@ -316,6 +316,9 @@ impl Interpreter {
                 )
             }
 
+            // nqp::iterator / iterkey_s / iterval (`nqp_iter.rs`).
+            // Cost: O(e) at worst, e = hash entries (each op states its own).
+            _ if let Some(result) = super::nqp_iter::call_nqp_iter_op(op, args) => result,
             _ => return self.call_nqp_op_str(op, args),
         })
     }
