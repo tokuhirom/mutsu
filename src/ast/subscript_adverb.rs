@@ -428,8 +428,28 @@ pub(crate) fn adverbs(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
     (structural_hash(&rebuilt) == structural_hash(expr)).then_some((subscript, adverbs))
 }
 
-/// A candidate reading of `expr` for [`adverbs`] to verify.
+/// A candidate reading of `expr` for [`adverbs`] to verify. A `:delete(COND)`
+/// is a ternary whose else-branch is the read the other adverbs build.
 fn read_back(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
+    let Expr::Ternary {
+        cond, else_expr, ..
+    } = expr
+    else {
+        return read_back_read(expr);
+    };
+    let (subscript, mut adverbs) = match else_expr.as_ref() {
+        index @ Expr::Index { .. } => (index.clone(), Vec::new()),
+        read => read_back_read(read)?,
+    };
+    if adverbs.iter().any(|(key, _)| key == "delete") {
+        return None;
+    }
+    adverbs.push(("delete".to_string(), cond.as_ref().clone()));
+    Some((subscript, adverbs))
+}
+
+/// A candidate reading of a read that is not a `:delete(COND)` ternary.
+fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
     let truth = |on: bool| Expr::Literal(Value::truth(on));
     match expr {
         Expr::Exists {
@@ -511,21 +531,6 @@ fn read_back(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
                 target.as_ref().clone(),
                 vec![("delete".to_string(), truth(true))],
             ))
-        }
-        Expr::Ternary {
-            cond,
-            then_expr: _,
-            else_expr,
-        } => {
-            let (subscript, mut adverbs) = match else_expr.as_ref() {
-                index @ Expr::Index { .. } => (index.clone(), Vec::new()),
-                read => read_back(read)?,
-            };
-            if adverbs.iter().any(|(key, _)| key == "delete") {
-                return None;
-            }
-            adverbs.push(("delete".to_string(), cond.as_ref().clone()));
-            Some((subscript, adverbs))
         }
         _ => None,
     }
