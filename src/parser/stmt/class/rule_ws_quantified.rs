@@ -32,7 +32,7 @@ pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, 
         return;
     };
     if let Some(start) = last_atom_start(&out[..atom_end])
-        && is_sigil_alias_target(&out[..start])
+        && (is_sigil_alias_target(&out[..start]) || is_separator_atom(&out[..start]))
     {
         return;
     }
@@ -107,6 +107,18 @@ fn is_backtrackable_assertion(body: &str) -> bool {
         return false;
     }
     name.starts_with(|c: char| c.is_alphabetic() || matches!(c, '_' | '$' | '@'))
+}
+
+/// Whether the text before an atom ends in a `%` / `%%`, so the atom is a
+/// separated quantifier's separator: part of the quantifier, not a term of the
+/// sequence, and `inject_separator_ws` still has to recognize its shape.
+fn is_separator_atom(before_atom: &str) -> bool {
+    let trimmed = before_atom.trim_end();
+    if !trimmed.ends_with('%') {
+        return false;
+    }
+    let chars: Vec<(usize, char)> = trimmed.char_indices().collect();
+    !is_escaped(&chars, chars.len() - 1)
 }
 
 /// Whether the text before an atom ends in a sigil alias's `=` (`$<x>=`,

@@ -6,7 +6,7 @@ use Test;
 # `[term <.ws>]`, and the ratchet lands on that wrapper, so the term itself
 # stays backtrackable. Every expected value below is rakudo 2026.09's.
 
-plan 26;
+plan 28;
 
 # A ratcheted `||` commits to its first matching branch, zero-width or not
 # (#11162).
@@ -73,3 +73,9 @@ grammar SigilAliasSubrule { rule TOP { $<x>=<b> '!' }; regex b { <[x!]>+ } }
 nok SigilAliasSubrule.parse('x!!'), 'rule: $<x>=<subrule> stays ratcheted';
 grammar SigilAliasGroup { rule TOP { $<a>=[ '!' || '!!' ] '?' } }
 nok SigilAliasGroup.parse('!!?'), 'rule: $<a>=[ || ] stays ratcheted';
+
+# A separator (the atom after `%` / `%%`) is part of its quantifier, not a
+# term of the sequence; whitespace after it changes nothing about it.
+grammar SepTerm { rule TOP { <e> +%% ';' }; rule e { <v> +% [ <op> ] | '(' ~ ')' <e> }; rule v { \d+ }; rule op { < + - > } }
+ok SepTerm.parse('1 + 2; (3)'), 'a bracketed separator followed by whitespace still separates';
+ok SepTerm.parse('1'), '... and a single item still parses';
