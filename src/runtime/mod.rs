@@ -800,6 +800,7 @@ mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 pub(crate) mod methods_instance_ops;
 pub(crate) mod module_merge;
+mod pragma_monkey_eval;
 pub(crate) mod process_stash;
 mod str_subclass_stringy;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};

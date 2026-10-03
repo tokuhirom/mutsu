@@ -377,6 +377,7 @@ impl Interpreter {
                 &matched_so_far,
             );
             if let Some(ref pat_str) = pattern_str
+                && !interp.monkey_see_no_eval()
                 && Interpreter::contains_dangerous_regex_code(pat_str)
             {
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {

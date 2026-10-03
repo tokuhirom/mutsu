@@ -626,6 +626,66 @@ impl Compiler {
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
+            && let Expr::Binary { left, op, right } = &args[0]
+            && matches!(
+                op,
+                crate::token_kind::TokenKind::SlashSlash
+                    | crate::token_kind::TokenKind::OrOr
+                    | crate::token_kind::TokenKind::AndAnd
+            )
+        {
+            // `A // B = v` (`//` binds tighter than `=`), `(A || B) = v`,
+            // `(A && B) = v`: the operator yields the selected operand's
+            // container, so the assignment writes to whichever side it
+            // picked. `A` is evaluated once for the decision; a non-lvalue `A`
+            // that gets picked is refused like `(cond ?? 9 !! $x) = v`.
+            let tmp = format!("__mutsu_logical_lvalue_{}", self.code.constants.len());
+            let tmp_var = Expr::Var(tmp.clone());
+            let left_assign = Self::assign_expr_for_lvalue(left, &args[2]).unwrap_or_else(|| {
+                Expr::desugar_block(vec![
+                    Stmt::Expr(args[2].clone()),
+                    Stmt::Expr(Expr::Call {
+                        name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
+                        args: Vec::new(),
+                    }),
+                ])
+            });
+            let right_assign = Self::ternary_branch_assign(right, &args[2]);
+            let (cond, then_assign, else_assign) = match op {
+                crate::token_kind::TokenKind::SlashSlash => (
+                    Expr::Call {
+                        name: crate::symbol::Symbol::intern("defined"),
+                        args: vec![tmp_var],
+                    },
+                    left_assign,
+                    right_assign,
+                ),
+                crate::token_kind::TokenKind::OrOr => (tmp_var, left_assign, right_assign),
+                _ => (tmp_var, right_assign, left_assign),
+            };
+            let desugared = Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp,
+                    expr: (**left).clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::Ternary {
+                    cond: Box::new(cond),
+                    then_expr: Box::new(then_assign),
+                    else_expr: Box::new(else_assign),
+                }),
+            ]);
+            self.compile_expr(&desugared);
+            return;
+        } else if name == "__mutsu_assign_callable_lvalue"
+            && args.len() == 3
             && let Expr::ArrayLiteral(targets) = &args[0]
             && targets.iter().all(|t| {
                 matches!(

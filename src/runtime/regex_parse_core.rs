@@ -3985,6 +3985,7 @@ impl Interpreter {
                                         // Security check: reject dangerous patterns (skipped
                                         // for a genuine Regex value — see above)
                                         if !is_regex_value
+                                            && !self.monkey_see_no_eval()
                                             && Self::contains_dangerous_regex_code(&pat_str)
                                         {
                                             PENDING_REGEX_ERROR.with(|e| {

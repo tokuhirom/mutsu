@@ -90,6 +90,11 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 /// `Debug`, and nothing needs to format the registry.
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
+    /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
+    /// MONKEY`). A routine of such a unit keeps the pragma when it is called
+    /// from another unit, whose env (the one the call runs in) does not carry
+    /// it -- see `runtime::pragma_monkey_eval`.
+    pub(crate) monkey_eval_units: std::collections::HashSet<crate::symbol::Symbol>,
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
     pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,

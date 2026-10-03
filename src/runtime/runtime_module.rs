@@ -784,6 +784,9 @@ impl Interpreter {
             if module == "MONKEY-TYPING" || module == "MONKEY" {
                 self.monkey_typing = true;
             }
+            if module == "MONKEY-SEE-NO-EVAL" || module == "MONKEY" {
+                self.set_monkey_see_no_eval(true);
+            }
             Ok(())
         } else if module.starts_with("Test::") && !self.require_propagates_missing_module {
             // Load Test:: submodules from source as regular modules.

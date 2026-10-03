@@ -1063,6 +1063,7 @@ impl Interpreter {
                 .filter(|key| !key.resolve().contains("::"))
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
+            let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
             let saved_imports = std::mem::take(&mut self.module_imported_names);
             let saved_export_terms = std::mem::take(&mut self.module_export_terms);
             let saved_imported_routine_aliases = std::mem::take(&mut self.imported_routine_aliases);
@@ -1141,6 +1142,7 @@ impl Interpreter {
             // this: `sub EXPORT` is part of the module's own closure and must
             // resolve everything the mainline could (see its doc comment).
             let module_body_env = self.env.clone();
+            self.restore_monkey_see_no_eval(saved_monkey_see_no_eval);
             self.pending_rw_writeback_sources
                 .truncate(saved_pending_rw_writeback_len);
             self.strict_mode = saved_strict_mode;
