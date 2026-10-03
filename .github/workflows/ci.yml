@@ -1,26 +1,38 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
+  # `main` is tested hourly, not on every push. Each PR already ran this whole
+  # workflow before it merged; the run on `main` is the post-merge net for what
+  # parallel merges can break between them, and the job that saves the cargo
+  # caches every PR restores. At ~100 merges a day a run per push kept one full
+  # run (seven jobs, ~40 runner-minutes) in flight around the clock on the free
+  # plan's 20 concurrent hosted runners, in front of the PR runs that gate
+  # merges. Hourly, one run covers every merge
+  # of the past hour, and the `changes` job skips the build entirely when
+  # nothing but documentation landed since the last green run on `main`.
+  # `workflow_dispatch` (on `main`) tests the current head at once.
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
 
 # One in-flight CI run per ref. A PR that gets several pushes in a row (a
 # fixup, a rebase, a force-push) used to leave every superseded run grinding
 # through the full ~25 min roast suite for a commit nobody will merge, which is
 # pure runner-slot waste on a repo that lands many small PRs per hour. Cancel
-# those; never cancel a `push: main` run (its result is the post-merge safety
+# those; never cancel a run on `main` (its result is the post-merge safety
 # net and is what the bench/history tooling reads).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only token: CI reads the repository and, in `changes`, the PR's file
-# list (scripts/ci-docs-only.sh). Nothing here writes back to GitHub.
+# list (scripts/ci-docs-only.sh) and, on `main`, this workflow's last green
+# run. Nothing here writes back to GitHub.
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -125,9 +137,40 @@ jobs:
         # workflow other than this one is docs-only and skips `test-check`.
         run: make check-runner-pins
 
+      - name: Last commit main was tested at
+        # A scheduled or dispatched run on `main` has no "before" of its own.
+        # Give it the head of this workflow's last green non-PR run, so the
+        # classifier below reads the diff since then exactly as it reads a
+        # push: nothing new skips every build job, and a documentation-only
+        # stretch of merges skips them the way a docs-only PR does. Empty (no
+        # such run, or the API failed) classifies as "run everything".
+        id: base
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=30" \
+            --jq '[.workflow_runs[] | select(.event != "pull_request")][0].head_sha // empty' \
+            2>/dev/null || true)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "last green run on main tested: ${sha:-<none>}"
+
       - name: Detect documentation-only change
         id: detect
         run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            if [ -n "$LAST_TESTED" ] && [ "$LAST_TESTED" = "$GITHUB_SHA" ]; then
+              # Already green at this exact commit: nothing to build or test.
+              # `docs-only=true` is the one output every build job and the
+              # aggregator already read as "skip, and that is success".
+              echo "main is unchanged since its last green run; skipping"
+              echo "docs-only=true" >> "$GITHUB_OUTPUT"
+              echo "gc-value=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            export GITHUB_EVENT_NAME=push GITHUB_EVENT_BEFORE="$LAST_TESTED"
+          fi
           result=$(scripts/ci-docs-only.sh)
           echo "docs-only=$result" >> "$GITHUB_OUTPUT"
           echo "docs-only=$result"
@@ -143,6 +186,7 @@ jobs:
           # runner; these two do not.
           GITHUB_EVENT_BEFORE: ${{ github.event.before }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          LAST_TESTED: ${{ steps.base.outputs.sha }}
 
   # ── The one release build the rest of the workflow shares ────────────────
   #
@@ -194,7 +238,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux-release"
-          # Only PRs restore; only main pushes save. This keeps the cache warm
+          # Only PRs restore; only runs on main save. This keeps the cache warm
           # from main without every PR writing its own entry and evicting others.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -747,7 +791,7 @@ jobs:
       # v0.19.0 release run down with it. The pin tests in `t/` only cover bugs
       # already found; this is the net for the unknown ones.
       #
-      # It runs on EVERY run of this job — every PR and every push to `main`.
+      # It runs on EVERY run of this job — every PR and every run on `main`.
       #
       # It used to run only post-merge and on a PR that touched the batteries
       # themselves, on the reasoning that an ordinary PR's merge path should not

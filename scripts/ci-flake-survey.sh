@@ -18,8 +18,11 @@
 # ADR-10738 also carry `gc-stress-tap` / `jit-stress-tap` and the two stress
 # roast halves; roast files now run in one PR job only, so their spread is
 # always 1 and only the MAIN-PUSH column says anything about them.)
-# A failure on a `push: main` run is an even stronger signal: main is protected,
-# so that exact tree already passed the full suite on its PR minutes earlier.
+# A failure on a run on `main` (a `push` run before 2026-10-03, the hourly
+# `schedule` run since) is an even stronger signal: main is protected, so every
+# PR in that tree already passed the full suite on its own. (Since the hourly
+# schedule one run can cover several merges, so a red one can also be two PRs
+# that are each green alone.)
 #
 # Raw per-failure rows are written to tmp/ci-flake-survey.tsv for follow-up.
 # Job logs are cached under tmp/ci-flake-logs/ so re-runs are cheap.
@@ -105,7 +108,7 @@ awk -F'\t' '
   key = $6
   runs[key "\x1f" $1] = 1
   jobs[key "\x1f" $1 "\x1f" $4] = 1
-  if ($2 == "push" && $3 == "main") mainfail[key]++
+  if ($2 != "pull_request" && $3 == "main") mainfail[key]++
   seen[key] = 1
 }
 END {
@@ -133,7 +136,7 @@ echo "Legend:"
 echo "  1-JOB     failed in exactly one of the jobs that ran it on that run"
 echo "            -> same binary, same inputs, different verdict = non-deterministic"
 echo "  N-JOB     failed in several jobs of the same run -> almost always a real regression"
-echo "  MAIN-PUSH failed on a push to main, i.e. on a tree that had just passed CI"
+echo "  MAIN-PUSH failed on a run on main, i.e. on a tree whose PRs had just passed CI"
 echo
 echo "Quarantine candidates are rows with a high 1-JOB or MAIN-PUSH count and a"
 echo "low N-JOB count. Confirm each one with scripts/flake-repro.sh before adding"

@@ -59,7 +59,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux-release"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       - name: Install mold
@@ -142,7 +142,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       # Link with mold instead of GNU ld — see the `build` job for why it comes
@@ -439,7 +439,7 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
-          # Restore only: ci.yml's main pushes own these entries.
+          # Restore only: ci.yml's runs on main own these entries.
           save-if: false
 
       # Link with mold instead of GNU ld — see the `build` job for why it comes
