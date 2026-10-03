@@ -12,6 +12,7 @@ mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;
 pub(crate) mod regex_grammar_cursor;
+mod regex_grammar_method;
 pub(crate) mod regex_helpers;
 mod regex_ignoremark;
 mod regex_interpolate;

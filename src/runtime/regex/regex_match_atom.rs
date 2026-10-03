@@ -1,7 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{
-    AlternationListFlags, LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, alternation_list_flags,
-    merge_goal_captures, merge_regex_captures,
+    AlternationListFlags, LTM_DECLARATIVE_MODE, alternation_list_flags, merge_goal_captures,
+    merge_regex_captures,
 };
 use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
@@ -720,137 +720,6 @@ impl Interpreter {
             )
             .into_iter()
             .collect()
-        }
-    }
-
-    /// Dispatch a subrule that names a plain grammar METHOD (not a token/regex/rule).
-    /// `rule TOP { <.panic> }` where `method panic { die ... }` calls the method;
-    /// its exception propagates via `PENDING_REGEX_ERROR` (checked by the grammar
-    /// parse driver) instead of being swallowed as a silent non-match. Returns:
-    /// - `None` — not a method subrule; caller falls through to the normal path.
-    /// - `Some(vec![])` — dispatched but produced no match (method died → pending
-    ///   error set, or returned an undefined/false cursor).
-    /// - `Some(vec![(end, caps)])` — the method returned a defined Match/Cursor.
-    fn try_regex_subrule_as_method(
-        &mut self,
-        spec: &NamedRegexLookupSpec,
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-        args: &[Value],
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        // The cursor the engine published for this one call, if any: taken at
-        // once so a call nested inside the method never sees it.
-        let published = self.regex_state.rx_cursor.take();
-        if !self.subrule_names_user_method(spec, pkg) {
-            return None;
-        }
-        // An exception already raised in this match (an earlier `<.panic>`)
-        // ends it; a later `||` branch the engine still tries must not call
-        // its methods (see `eval_regex_inline_code`).
-        if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-            return Some(Vec::new());
-        }
-        // Else the walked rule invocation this call is in the body of.
-        let published = published.or_else(|| self.walk_rule_cursor(chars, pos, pkg));
-        // Run the method in the grammar's package over an isolated copy of the
-        // env (`run_regex_sub_call_here`: only dynamic-variable writes reach
-        // the caller).
-        //
-        // The invocant is an INSTANCE of the grammar carrying the cursor state
-        // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
-        // method the in-progress cursor, which is what makes the documented
-        // `method mark(--> ::?CLASS:D) { $!invalid = True; self }` idiom work. A
-        // type object made every attribute touch die with "Cannot look up
-        // attributes in a G type object", and returning `self` (a type object) read
-        // as "no match", which failed the whole parse. Method resolution still
-        // finds the grammar's own method because the instance's class IS the
-        // grammar.
-        //
-        // When the compiled engine published the calling rule invocation's own
-        // cursor, that instance IS the invocant (Rakudo's cursor is the grammar
-        // instance): the method's attribute writes land on it and travel onto
-        // the rule's Match (#9803). Its positional state moves to this call.
-        let invocant = match published {
-            Some(cursor) => {
-                if let ValueView::Instance { attributes, .. } = cursor.view() {
-                    attributes.insert("from", Value::int(pos as i64));
-                    attributes.insert("pos", Value::int(pos as i64));
-                    attributes.insert("to", Value::int(pos as i64));
-                }
-                cursor
-            }
-            None => self.new_grammar_cursor(chars, pos, pkg),
-        };
-        let called = self.run_regex_sub_call_here(Some(pkg), |interp| {
-            interp.call_method_with_values(invocant, &spec.lookup_name, args.to_vec())
-        });
-        match called {
-            Err(e) => {
-                // Propagate the method's exception (e.g. `die`) out of the parse.
-                // The FIRST exception is the one the parse dies with: a later
-                // `||` branch the engine still tries (`'%' <.panic: "a"> ||
-                // <.panic: "b">`) must not replace it.
-                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
-                    slot.borrow_mut().get_or_insert(e);
-                });
-                Some(Vec::new())
-            }
-            Ok(v) => {
-                // A returned grammar INVOCANT (typically `self`) reports an
-                // ABSOLUTE position in `pos`, so the parse resumes there — the
-                // idiomatic `{ …; self }` is a zero-width success at `pos`.
-                //
-                // The class-name test alone is not enough: a grammar's parse
-                // cursors report the grammar's own class too (raku: `Grammar`
-                // IS a `Match` subclass), so a method that returns a real
-                // sub-match (`return self.subparse(...)`, `$str ~~ /re/`) would
-                // be misread as a zero-width `self` and swallow its extent.
-                // A Match carries its own from/to and belongs to the extent
-                // branch below; only a non-Match instance of the grammar is the
-                // invocant.
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = v.view()
-                    && class_name == pkg
-                    && !v.is_match_instance()
-                {
-                    // A negative `pos` is a failed cursor (what `callsame`
-                    // into a built-in rule answers when it does not match),
-                    // not a zero-width success.
-                    let end = match attributes.as_map().get("pos").and_then(|p| p.as_int()) {
-                        Some(p) if p < 0 => return Some(Vec::new()),
-                        Some(p) => p as usize,
-                        None => pos,
-                    };
-                    return (end <= chars.len())
-                        .then(|| vec![(end, RegexCaptures::default())])
-                        .or(Some(Vec::new()));
-                }
-                // A defined Match/Cursor return advances the parse by its extent.
-                // (Match goes through the seam; a non-Match cursor-like instance
-                // with a `to` attribute also counts.)
-                if let Some(to) = v
-                    .match_to()
-                    .or_else(|| {
-                        if let ValueView::Instance { attributes, .. } = v.view() {
-                            attributes.as_map().get("to").and_then(|t| t.as_int())
-                        } else {
-                            None
-                        }
-                    })
-                    .filter(|&t| t >= 0)
-                {
-                    let end = pos + to as usize;
-                    if end <= chars.len() {
-                        return Some(vec![(end, RegexCaptures::default())]);
-                    }
-                }
-                // Undefined / non-cursor return → treated as a non-match.
-                Some(Vec::new())
-            }
         }
     }
 }
