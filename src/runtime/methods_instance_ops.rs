@@ -3174,64 +3174,21 @@ impl Interpreter {
                         return Ok(Value::truth(Self::sub_body_is_yada_stub(&data.body)));
                     }
                 }
-                // Method calls on callables compose by applying the method to the
-                // callable's return value, e.g. `(*-*).abs`.
+                // A Block/Sub has no method of this name. Raku curries a method
+                // call only on a WhateverCode *expression*, and the compiler does
+                // that (`(* - *).abs` is one WhateverCode, `whatever_curry`); a
+                // runtime Code value just lacks the method (#11445).
                 if matches!(target.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
-                    // ADR-0070: composing is the LAST resort, so an adverb the
-                    // method does not accept must not be what pushes the call
-                    // into it. `{ $_ }.arity(:zzz)` answered a
-                    // `<composed-method:arity>` Sub (the `args.is_empty()` guard
-                    // on the real `.arity` arm had already declined) where raku
-                    // answers 0. Drop the undeclared nameds and re-dispatch;
+                    // ADR-0070: an adverb the method does not accept must not be
+                    // what makes the call miss. `{ $_ }.arity(:zzz)` answers 0 in
+                    // raku (the `args.is_empty()` guard on the real `.arity` arm
+                    // had declined). Drop the undeclared nameds and re-dispatch;
                     // `strip_undeclared_nameds` answers `Some` only when it
                     // actually removed something, so the retry cannot loop.
                     if let Some(stripped) = crate::builtins::strip_undeclared_nameds(method, &args)
                     {
                         return self.call_method_with_values(target, method, stripped);
                     }
-                    use crate::ast::{Expr, Stmt};
-                    use std::sync::atomic::{AtomicU64, Ordering};
-
-                    static COMPOSE_METHOD_ID: AtomicU64 = AtomicU64::new(2_000_000);
-
-                    let callable = match target.view() {
-                        ValueView::Sub(data) => Value::sub_value(data.clone()),
-                        ValueView::WeakSub(weak) => weak
-                            .upgrade()
-                            .map(Value::sub_value)
-                            .ok_or_else(|| RuntimeError::new("Callable has been freed"))?,
-                        _ => Value::NIL,
-                    };
-                    let params = match callable.view() {
-                        ValueView::Sub(data) if !data.params.is_empty() => data.params.to_vec(),
-                        _ => vec!["_".to_string()],
-                    };
-
-                    let mut env = crate::env::Env::new();
-                    env.insert("__method_compose_target__".to_string(), callable);
-                    let call_args = params.iter().cloned().map(Expr::Var).collect();
-                    let method_args = args.into_iter().map(Expr::Literal).collect();
-                    let body = vec![Stmt::Expr(Expr::MethodCall {
-                        target: Box::new(Expr::Call {
-                            name: Symbol::intern("__method_compose_target__"),
-                            args: call_args,
-                        }),
-                        name: Symbol::intern(method),
-                        args: method_args,
-                        modifier: None,
-                        quoted: false,
-                    })];
-                    let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
-                    return Ok(Value::make_sub_with_id(
-                        Symbol::intern(""),
-                        Symbol::intern(&format!("{COMPOSED_METHOD_PREFIX}{method}>")),
-                        params,
-                        Vec::new(),
-                        body,
-                        false,
-                        env,
-                        id,
-                    ));
                 }
 
                 // Before giving up, check if this is a mutating array method
@@ -4011,22 +3968,5 @@ pub(super) fn format_operator_name(name: &str) -> String {
         format!("{}:\u{ab}{}\u{bb}", category, symbol)
     } else {
         name.to_string()
-    }
-}
-
-/// The name prefix of the Sub that a method call on a callable composes into
-/// when no method of that name exists (`(*-*).abs`, the fallback in
-/// `call_method_with_values`).
-const COMPOSED_METHOD_PREFIX: &str = "<composed-method:";
-
-/// Whether `v` is that composed Sub. A `.?method` call reads it as "no such
-/// method" and answers Nil: composing is the last resort for a method the
-/// callable does not have, and `.?` asks precisely whether it has one
-/// (`self.?native_call_convention` on a plain routine is Nil in rakudo).
-// Cost: O(1).
-pub(crate) fn is_composed_method_stub(v: &Value) -> bool {
-    match v.view() {
-        ValueView::Sub(data) => data.name.resolve().starts_with(COMPOSED_METHOD_PREFIX),
-        _ => false,
     }
 }
