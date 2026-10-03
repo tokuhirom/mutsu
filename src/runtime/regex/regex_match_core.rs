@@ -451,13 +451,7 @@ impl Interpreter {
             caps.set_outer_backref(None);
             sink.accept(interp, end, caps)
         };
-        self.walk_tokens(
-            &ctx,
-            0,
-            start,
-            &mut store,
-            &mut MatchSink::Cont(&mut strip),
-        )
+        self.walk_tokens(&ctx, 0, start, &mut store, &mut MatchSink::Cont(&mut strip))
     }
 
     /// Apply a `$<name>=` / `$N=` capture alias for `token` to the store.

@@ -91,7 +91,8 @@ fn backtrackable_term_atom_end(text: &str) -> Option<usize> {
 /// classes, code assertions and `<.ws>` itself have a single end.
 fn is_backtrackable_assertion(body: &str) -> bool {
     let name = body.trim_start_matches(['.', '&']);
-    if matches!(name, "ws" | "?" | "!") || name.starts_with(['?', '!', '[', '-', '+', ':', '(', '{', '~'])
+    if matches!(name, "ws" | "?" | "!")
+        || name.starts_with(['?', '!', '[', '-', '+', ':', '(', '{', '~'])
     {
         return false;
     }
