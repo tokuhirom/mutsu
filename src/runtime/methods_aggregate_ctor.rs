@@ -115,7 +115,31 @@ impl Interpreter {
                     }
                     flat
                 } else {
+                    // A row given as a Range or Seq (`my @r[1;3] = [1..3,]`) is
+                    // that row's list of values, as any iterable row is.
                     data_items
+                        .into_iter()
+                        .map(|item| match item.view() {
+                            ValueView::Scalar(inner)
+                                if inner.is_range()
+                                    || matches!(inner.view(), ValueView::Seq(_)) =>
+                            {
+                                inner.clone()
+                            }
+                            _ => item,
+                        })
+                        .map(|item| match item.view() {
+                            ValueView::Seq(_)
+                            | ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. } => {
+                                Value::real_array(crate::runtime::value_to_list(&item))
+                            }
+                            _ => item,
+                        })
+                        .collect()
                 };
                 if let ValueView::Array(items, is_arr) = shaped.view() {
                     let dim_size = dims[0];
@@ -155,7 +179,10 @@ impl Interpreter {
                         // List/Seq row (e.g. `<a b>`) to `ArrayKind::Array` so it
                         // renders as `[...]` and behaves like the `[a, b]` form.
                         use crate::value::ArrayKind;
-                        let val = if matches!(val.view(), ValueView::Array(_, ArrayKind::List)) {
+                        let val = if matches!(
+                            val.view(),
+                            ValueView::Array(_, ArrayKind::List | ArrayKind::ItemList)
+                        ) {
                             let (items, _) = val.into_array().unwrap();
                             Value::array_with_kind(items, ArrayKind::Array)
                         } else {

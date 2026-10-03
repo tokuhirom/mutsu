@@ -1079,6 +1079,15 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Past any user `postcircumfix:<[ ]>` (which sees the raw index), a
+        // single non-integer real subscript addresses the element its `Int`
+        // names, whatever the target (`$range[6.0]`; Rakudo's CORE
+        // `postcircumfix:<[ ]>` calls `AT-POS(pos.Int)`).
+        // A type object's `[ ]` is parameterization (`R[True]`, `Array[Int]`),
+        // whose arguments bind as given.
+        if is_positional && !matches!(target.view(), ValueView::Package(_)) {
+            index = Self::positional_index_as_int(index);
+        }
         // A not-yet-read `IO::Handle.lines`/`.words` Seq (ADR-0034's
         // `SeqSource::IoLines`, formerly the separate `LazyIoLines`) must be
         // reified before indexing can read its elements. When the subscript's
