@@ -27,5 +27,8 @@ They now work on the symbols the bytecode already holds:
 - Package classification is done with `is_global_package` /
   `is_routine_scoped_package` on the symbol, not by string comparison.
 
-This removes 30 `check-name-scans` sites (#11507): 2 `qualify`, 9
-`global-cmp` and 19 `scan`.
+This removes 27 `check-name-scans` sites (#11507): 2 `qualify`, 8
+`global-cmp` and 17 `scan`. The unit-lexical resolvers, which only hold a
+name's text, keep their scan for now: interning there would cost more than
+the scan it replaces (a `Test` assertion went from 9 to 38 interns). They
+carry TODOs to take the caller's `Symbol` instead.
