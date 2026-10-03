@@ -2400,7 +2400,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 return Err(unsupported(node));
             }
             let name = &name[sigil.len_utf8()..];
-            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+            if name.is_empty() || name.starts_with(['?', '^', '.', '!']) || name == "*" {
                 return Err(unsupported(node));
             }
             Ok(RegexNode::RegexValueInterpolation {
@@ -2500,7 +2500,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             } else {
                 return Err(unsupported(node));
             };
-            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+            if name.is_empty() || name.starts_with(['?', '^', '.', '!']) || name == "*" {
                 return Err(unsupported(node));
             }
             if array {

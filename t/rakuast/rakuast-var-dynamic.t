@@ -6,7 +6,7 @@ use Test;
 # GH #11331: a dynamic variable read (`$*x`) is a `RakuAST::Var::Dynamic` of
 # the whole spelling, not a `Var::Lexical`. Shapes measured on Rakudo 2026.09.
 
-plan 21;
+plan 22;
 
 sub expr($src) { $src.AST.statements[*-1].expression }
 
@@ -57,3 +57,5 @@ is EVAL(RakuAST::Var::Dynamic.new('@*vda')).elems, 3, 'a dynamic array lowers';
 is EVAL(Q|my $*z = 5; $*z|.AST), 5, 'a dynamic read round-trips';
 is EVAL(Q|my $*z = 'abc'; 'xabcx' ~~ /$*z/ ?? ~$/ !! 'no'|.AST), 'abc',
     'a regex interpolation round-trips';
+is EVAL(Q|my @*z = <x y>; 'aay' ~~ /<@*z>/ ?? ~$/ !! 'no'|.AST), 'y',
+    'an interpolated dynamic array round-trips';
