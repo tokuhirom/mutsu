@@ -968,6 +968,9 @@ pub(crate) fn native_method_1arg(
                                 | ValueView::LazyThunk(_)
                         ) || matches!(inner.descalarize().view(), ValueView::Seq(s) if s.awaits_vm_reify())
                     })
+                    // A nested list holding an instance: the inner list's
+                    // `.Str` stringifies its elements with their own `.Str`.
+                    || crate::value::gist::str_needs_dispatch(v)
                 }) {
                     return None;
                 }

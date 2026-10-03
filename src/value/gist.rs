@@ -70,6 +70,38 @@ fn contains_instance_seen(
     }
 }
 
+/// Whether stringifying `value` with `.Str` needs the interpreter: it is, or
+/// (through nested lists and hashes, at any position) contains, an instance or
+/// mixin whose `.Str` may be user-defined. Unlike [`collection_contains_instance`]
+/// this walks every element, because `.Str`/`.join` render all of them, not
+/// just a gist's head. Cycle-guarded like the gist probe.
+// Cost: O(t), t = nodes reachable from `value`.
+pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
+    fn walk(v: &Value, seen: &mut std::collections::HashSet<usize>, depth: usize) -> bool {
+        if depth > GIST_PROBE_MAX_DEPTH {
+            return false;
+        }
+        let inner = v.deref_container();
+        let v = inner.descalarize();
+        if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+            return true;
+        }
+        if let Some(id) = container_id(v)
+            && !seen.insert(id)
+        {
+            return false;
+        }
+        if let Some(items) = v.as_list_items() {
+            return items.iter().any(|x| walk(x, seen, depth + 1));
+        }
+        match v.view() {
+            ValueView::Hash(map) => map.values().any(|x| walk(x, seen, depth + 1)),
+            _ => false,
+        }
+    }
+    walk(value, &mut std::collections::HashSet::new(), 0)
+}
+
 /// Whether `value` reaches itself — some `Gc`-backed container is its own
 /// ancestor, as in `my @c; @c = 42, @c`.
 ///
