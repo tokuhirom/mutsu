@@ -1371,15 +1371,22 @@ impl Interpreter {
     /// memo on its own: a construction path that puns a role only to build one
     /// instance drops the pun class again afterwards, which would re-run the
     /// body on the next `R.new`.
+    // Cost: O(n) on a memo hit, n = role_name.len() (one key build and a
+    // read-locked set probe); the first call also runs the bodies.
     pub(crate) fn run_pun_role_bodies(&mut self, role_name: &str) -> Result<(), RuntimeError> {
+        let memo_key = format!("pun:{role_name}");
+        // Probe the memo under the READ lock first: `registry_mut()` bumps the
+        // registry write generation, which flushes every generation-keyed
+        // resolution cache (`user_method_probe_memo`, ...), so taking it on
+        // every method call on a role type object made each such call redo
+        // those caches' full MRO and class-table walks (#11115).
+        if self.registry().composed_role_bodies.contains(&memo_key) {
+            return Ok(());
+        }
         let Some(role_def) = self.registry().roles.get(role_name).cloned() else {
             return Ok(());
         };
-        if !self
-            .registry_mut()
-            .composed_role_bodies
-            .insert(format!("pun:{role_name}"))
-        {
+        if !self.registry_mut().composed_role_bodies.insert(memo_key) {
             return Ok(());
         }
         let decl_file = role_def.decl_file.clone();
