@@ -165,9 +165,8 @@ impl Interpreter {
     // such class exists).
     pub(crate) fn uninstantiable_error(&self, class_name: &str) -> Option<RuntimeError> {
         let reg = self.registry();
-        (!reg.uninstantiable_classes.is_empty()
-            && reg.uninstantiable_classes.contains(class_name))
-        .then(|| RuntimeError::constrained_type_instantiation(class_name))
+        (!reg.uninstantiable_classes.is_empty() && reg.uninstantiable_classes.contains(class_name))
+            .then(|| RuntimeError::constrained_type_instantiation(class_name))
     }
 
     /// [`CreateKind`] for the type named `name` (short name `short`).
