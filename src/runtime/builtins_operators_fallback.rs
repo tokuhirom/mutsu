@@ -1320,9 +1320,21 @@ impl Interpreter {
         // The outermost enclosing package of `name` is its leading component.
         let head = package_ancestors(package_parent(name_sym)?).last()?;
         // A `constant` is a term (#9962), reached through `type_name_binding`.
-        let value = self.type_name_binding(head.as_str())?;
-        let ValueView::Package(pkg) = value.view() else {
-            return None;
+        let pkg = match self.type_name_binding(head.as_str()) {
+            Some(value) => match value.view() {
+                ValueView::Package(pkg) => pkg,
+                _ => return None,
+            },
+            // A module-scope short name a `use` installed for a package declared
+            // under a longer name (`unit module A::B::Fac is export`), which the
+            // module's own routines keep after the load restores the importer.
+            None => {
+                let target = self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
+                if !self.is_declared_package(target) {
+                    return None;
+                }
+                Symbol::intern(target)
+            }
         };
         if pkg == head {
             return None;

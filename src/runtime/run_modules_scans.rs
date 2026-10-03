@@ -72,6 +72,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
             if !short.is_empty() {
                 self.0.insert(short.to_string());
             }
+            if name.contains("::") {
+                self.0.insert(name);
+            }
         }
         crate::ast_visit::walk_expr(self, expr);
     }

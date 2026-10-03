@@ -887,6 +887,12 @@ impl Interpreter {
                 })
             })
             .or_else(|| self.enum_bare_value(name).cloned())
+            // A qualified package exported as itself (`unit module A::B::C is
+            // export`) is registered under its full name, not under `module::`.
+            .or_else(|| {
+                (sigil.is_none() && name.contains("::") && self.is_declared_package(name))
+                    .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+            })
             .or_else(|| {
                 self.package_lexicals
                     .get(module)
@@ -1509,8 +1515,29 @@ impl Interpreter {
                     self.module_imported_names
                         .push((env_target.clone(), value.clone(), previous));
                 }
+                // A qualified package exported as itself is also reachable by its
+                // last name part (`Fac::make` for `unit module P::Q::Fac is
+                // export`); `resolve_package_alias_prefix` maps it back.
+                let short_pkg = (!target.starts_with(['$', '@', '%', '&'])
+                    && matches!(value.view(), ValueView::Package(_)))
+                .then(|| target.rsplit_once("::").map(|(_, short)| short.to_string()))
+                .flatten()
+                .filter(|short| !short.is_empty());
                 self.record_import_env_key(&env_target);
-                self.env.insert(env_target, value);
+                self.env.insert(env_target, value.clone());
+                if let Some(short) = short_pkg
+                    && self.env.get(&short).is_none()
+                {
+                    self.unsuppress_name(&short);
+                    // Part of the loading module's own lexical scope too (see
+                    // `module_imported_names`).
+                    if !self.module_load_stack.is_empty() {
+                        self.module_imported_names
+                            .push((short.clone(), value.clone(), None));
+                    }
+                    self.record_import_env_key(&short);
+                    self.env.insert(short, value);
+                }
             }
         }
         Ok(())
