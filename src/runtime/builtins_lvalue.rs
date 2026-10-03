@@ -38,6 +38,7 @@ impl Interpreter {
 
     /// Auto-FETCH a Proxy value. If the value is a Proxy, call its FETCH callback.
     /// Used when a Proxy-bound variable is read in value context.
+    // Cost: O(1) + the FETCH body's own work, per chained Proxy level (at most 16).
     pub(crate) fn auto_fetch_proxy(&mut self, value: &Value) -> Result<Value, RuntimeError> {
         // Tag probe first: a `view()` on a lazy Match would materialize it
         // just to see it is not a Proxy.
@@ -58,15 +59,18 @@ impl Interpreter {
             if fetcher.is_nil() {
                 return Ok(Value::NIL);
             }
-            // merge_all=true gives the FETCH body caller-priority inputs (it
-            // must see the CURRENT value of a captured lexical the STORE side
-            // mutates — substr-rw's `$str`). But its post-call whole-env merge
-            // would leak the body's captures into the caller: two map-produced
-            // Proxies sharing a captured `$v` name would both freeze to the
-            // first FETCHed value. FETCH is a READ, so run with caller-priority
-            // inputs and DISCARD every env effect afterwards.
+            // FETCH is an ordinary closure call (as in Rakudo): dispatch it
+            // through the VM's value-call path, which runs a compiled block
+            // against its own captures (shared cells for a lexical the STORE
+            // side mutates — substr-rw's `$str`) in O(1) of the caller's frame
+            // size. The interpreter carrier (`call_sub_value` with
+            // `merge_all`) rebuilt a copy of the whole caller env on every
+            // read, an O(L) cost in the reading frame's locals (#9385).
+            // FETCH is a READ, so DISCARD every env effect afterwards: a
+            // leaked capture would let two map-produced Proxies sharing a
+            // captured `$v` name both freeze to the first FETCHed value.
             let saved_env = self.env.clone();
-            let result = self.call_sub_value(fetcher.clone(), vec![current.clone()], true);
+            let result = self.vm_call_on_value(fetcher.clone(), vec![current.clone()], None);
             self.env = saved_env;
             // A FETCH that ends in a call to an `is rw` routine answers that
             // routine's container (`FETCH => method { $obj.rw-accessor }`,

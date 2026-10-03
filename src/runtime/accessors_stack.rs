@@ -149,7 +149,8 @@ impl Interpreter {
     /// over whichever method happens to be running it: a `Proxy` FETCH
     /// `method () { $SELF!state }` declared in a role keeps its access to the
     /// role's private methods when some other class's `ACCEPTS` reads the
-    /// Proxy (Tinky's `State.ACCEPTS(Object)`).
+    /// Proxy (Tinky's `State.ACCEPTS(Object)`). That holds whether the closure
+    /// is a block or an anonymous routine.
     pub(crate) fn private_calling_package(&self) -> Option<String> {
         let is_type = |package: &Symbol| {
             let package = package.as_str();
@@ -160,7 +161,11 @@ impl Interpreter {
             if let Some(package) = frame.lexical_package.filter(is_type) {
                 return Some(package.resolve());
             }
-            if frame.is_block && is_type(&frame.package) {
+            // An anonymous routine (`method () { ... }` held in a value and
+            // called through it) is a closure too: no by-name dispatch pushed
+            // a `method_class_stack` entry for it, so the class below would be
+            // whichever method happens to be calling it.
+            if (frame.is_block || frame.name.with_str(str::is_empty)) && is_type(&frame.package) {
                 return Some(frame.package.resolve());
             }
         }
