@@ -442,7 +442,13 @@ pub(crate) fn enter_blocking() -> BlockingGuard {
 /// diagnostic on stderr; a task whose waiter must hear about that uses
 /// [`submit_or_reject`].
 pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
-    submit_task(Box::new(task), None);
+    submit_task(Box::new(on_new_stack(task)), None);
+}
+
+/// `task` run as a call stack of its own: `$*STACK-ID` inside it is a fresh
+/// id, whichever worker picks it up.
+fn on_new_stack(task: impl FnOnce() + Send + 'static) -> impl FnOnce() + Send + 'static {
+    move || crate::runtime::with_new_stack_id(task)
 }
 
 /// [`submit`], calling `reject` (on the submitting thread, or on the worker
@@ -453,7 +459,7 @@ pub(crate) fn submit_or_reject(
     task: impl FnOnce() + Send + 'static,
     reject: impl FnOnce(&SpawnError) + Send + 'static,
 ) {
-    submit_task(Box::new(task), Some(Box::new(reject)));
+    submit_task(Box::new(on_new_stack(task)), Some(Box::new(reject)));
 }
 
 #[cfg(not(target_arch = "wasm32"))]

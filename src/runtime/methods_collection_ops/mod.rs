@@ -169,6 +169,32 @@ thread_local! {
     static MUTSU_THREAD_ID: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
 }
 
+// `$*STACK-ID`: the id of the call stack running right now. The mainline is
+// 0; every `start` block, pooled task and `Thread` body is a stack of its
+// own and draws a fresh id (rakudo 2022.06+), so two tasks a pool worker runs
+// one after the other never share one, unlike `$*THREAD.id`.
+static NEXT_STACK_ID: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1);
+thread_local! {
+    static CURRENT_STACK_ID: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The current call stack's `$*STACK-ID`.
+// Cost: O(1).
+pub(crate) fn current_stack_id() -> i64 {
+    CURRENT_STACK_ID.with(|c| c.get())
+}
+
+/// Run `f` as a new call stack (see [`current_stack_id`]), restoring the
+/// enclosing stack's id afterwards.
+// Cost: O(1) plus `f`.
+pub(crate) fn with_new_stack_id<R>(f: impl FnOnce() -> R) -> R {
+    let id = NEXT_STACK_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let saved = CURRENT_STACK_ID.with(|c| c.replace(id));
+    let result = f();
+    CURRENT_STACK_ID.with(|c| c.set(saved));
+    result
+}
+
 // The `Thread` object `$*THREAD` returns on this OS thread, built on first
 // access. One object per thread (rakudo: `$*THREAD` is the thread's own
 // `Thread`), so `$*THREAD does R` mixes `R` into the object every later

@@ -1079,7 +1079,8 @@ pub(crate) use utils::*;
 
 // Re-export thread utility functions for VM access
 pub(crate) use methods_collection_ops::{
-    current_mutsu_thread_id, current_thread_object, is_initial_thread,
+    current_mutsu_thread_id, current_stack_id, current_thread_object, is_initial_thread,
+    with_new_stack_id,
 };
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 

@@ -272,6 +272,8 @@ impl Interpreter {
             // its own value in the scope that runs it; everywhere else it is
             // the default line feed.
             "?NL" => Value::str_from("\n"),
+            // `$*STACK-ID`: see `current_stack_id`.
+            "$*STACK-ID" | "*STACK-ID" => Value::int(crate::runtime::current_stack_id()),
             "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
             // `$*TOLERANCE` is a plain `Num` constant, not an expensive instance,
             // but it belongs here rather than in the `Interpreter::new` env seed
