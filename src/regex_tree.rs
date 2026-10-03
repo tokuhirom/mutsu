@@ -1645,7 +1645,11 @@ impl Parser {
                 .parse_lookaround(sequential_interpolation)
                 .or_else(|| self.parse_subrule()),
             '{' => self.parse_code_block(),
-            ':' => self.parse_internal_modifier(),
+            // Another adverb (`:s`, `:r`) keeps the literal path it took
+            // before modifiers were modelled.
+            ':' => self
+                .parse_internal_modifier()
+                .or_else(|| self.parse_literal()),
             _ => self.parse_literal(),
         }
     }
