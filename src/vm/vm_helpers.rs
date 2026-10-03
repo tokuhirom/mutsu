@@ -204,7 +204,10 @@ impl Interpreter {
                 None => break,
             }
         }
-        if root.starts_with(['@', '%', '&']) {
+        // A `:=` to an element (`my $r := @a[0]`) records an internal temp as
+        // its alias root, not a variable: the element's cell is the container
+        // there, and carries its own default (#9831).
+        if root.starts_with(['@', '%', '&']) || root.contains("__mutsu") {
             return None;
         }
         if let Some(def) = self.var_default(&root) {
