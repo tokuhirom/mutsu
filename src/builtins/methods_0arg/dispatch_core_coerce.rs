@@ -1159,6 +1159,9 @@ pub(super) fn dispatch(
                 }),
                 ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
                 ValueView::FatRat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
+                // Correctly rounded: converting numerator and denominator to
+                // f64 separately loses the last bit (`Num(0.7777777777777777777771)`
+                // must equal `Num(0.777777777777777777777)`).
                 ValueView::BigRat(n, d) if !d.is_zero() => {
                     Value::num(crate::value::bigrat_to_f64(n, d))
                 }

@@ -5,9 +5,12 @@ impl Interpreter {
     /// The container-type coercion calls `Array(...)` / `List(...)` / `Hash(...)`.
     /// Each argument becomes one element (Raku does not deep-flatten these:
     /// `Array((1,2), 3).elems` is 2), so the args list is materialized directly.
+    /// A lone argument instead coerces like the method form (`List(x)` is
+    /// `x.List`), per the single-argument rule.
     /// A single type-object argument (`Array(Int)`) is a parametric type request
     /// rather than a value coercion, so it passes through as a `Type(Type)`
     /// package rendering, mirroring [`Self::builtin_coerce`].
+    // Cost: O(n), n = elements of the result (one argument: as its `.List` / `.Array`).
     pub(super) fn builtin_container_coerce(
         &mut self,
         name: &str,
@@ -23,11 +26,23 @@ impl Interpreter {
                 sym.resolve()
             ))));
         }
+        // A lone argument follows the single-argument rule: `List(x)` and
+        // `Array(x)` coerce it like the method form (`x.List` / `x.Array`), so
+        // an Iterable -- itemized or not -- contributes its elements
+        // (`List((1, 2))` is `(1 2)`, #11299).
+        // A value already of the target type is returned as is, like any
+        // coercion type (`List([1, 2])` stays the Array `[1 2]`).
+        if args.len() == 1 && matches!(name, "Array" | "List") {
+            if self.type_matches_value(name, args[0].descalarize()) {
+                return Ok(args[0].descalarize().clone());
+            }
+            return self.call_method_with_values(args[0].clone(), name, vec![]);
+        }
         // `Hash(...)` consumes its arguments in list context, so an Array or
         // List supplied as the sole argument contributes its elements. This
         // is what makes `Hash(@pairs)` and `Hash(do for ...)` useful for the
-        // common list-of-Pairs construction. `Array(...)` and `List(...)`
-        // intentionally keep each call argument as one element.
+        // common list-of-Pairs construction. Several `Array(...)` / `List(...)`
+        // arguments keep one element each (`Array(1, (2, 3))` is `[1 (2 3)]`).
         let items: Vec<Value> = if name == "Hash" {
             args.iter().flat_map(Self::value_to_list).collect()
         } else {
@@ -59,6 +74,7 @@ impl Interpreter {
         self.try_native_hash_construct(Symbol::intern("Map"), &None, args)
     }
 
+    // Cost: O(1) dispatch plus the delegated method's cost (`Int(x)` is `x.Int`).
     pub(super) fn builtin_coerce(
         &mut self,
         name: &str,
@@ -98,96 +114,17 @@ impl Interpreter {
             // `Real($x)` / `Numeric($x)` likewise delegate to the method form
             // (`$x.Real` / `$x.Numeric`), which handles every numeric variant
             // and string parsing with Failure semantics.
-            "Rat" | "FatRat" | "Complex" | "Real" | "Numeric" => {
+            //
+            // `Int($x)` / `Num($x)` do the same, so a List or Seq numifies to
+            // its element count (`Int((1, 2))` is 2, #11299).
+            // A value already of the target type is returned unchanged, as a
+            // coercion type does (`Int(True)` is `True`).
+            "Int" | "Num" | "Rat" | "FatRat" | "Complex" | "Real" | "Numeric" => {
+                if self.type_matches_value(name, &value) {
+                    return Ok(value);
+                }
                 return self.call_method_with_values(value, name, vec![]);
             }
-            "Int" => match value.view() {
-                ValueView::Int(i) => Value::int(i),
-                ValueView::Num(f) => Value::int(f as i64),
-                ValueView::Rat(_, 0) => {
-                    return Ok(RuntimeError::divide_by_zero_failure_for_method(
-                        "Int", "Rational",
-                    ));
-                }
-                ValueView::Rat(n, d) => Value::int(n / d),
-                ValueView::FatRat(_, 0) => {
-                    return Ok(RuntimeError::divide_by_zero_failure_for_method(
-                        "Int", "Rational",
-                    ));
-                }
-                ValueView::FatRat(n, d) => Value::int(n / d),
-                ValueView::Complex(r, _) => Value::int(r as i64),
-                // Delegate to `Str.Int` so an invalid string yields the same
-                // X::Str::Numeric Failure as the method form (`"abc".Int`),
-                // rather than silently coercing to 0.
-                ValueView::Str(_) => {
-                    return self.call_method_with_values(value.clone(), name, vec![]);
-                }
-                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                _ => Value::int(0),
-            },
-            "Num" => match value.view() {
-                ValueView::Int(i) => Value::num(i as f64),
-                ValueView::Num(f) => Value::num(f),
-                ValueView::Rat(n, d) => {
-                    if d == 0 {
-                        Value::num(if n == 0 {
-                            f64::NAN
-                        } else if n > 0 {
-                            f64::INFINITY
-                        } else {
-                            f64::NEG_INFINITY
-                        })
-                    } else {
-                        Value::num(n as f64 / d as f64)
-                    }
-                }
-                ValueView::Complex(r, im) => {
-                    let tolerance = self
-                        .get_dynamic_var("*TOLERANCE")
-                        .ok()
-                        .and_then(|v| match v.view() {
-                            ValueView::Num(n) => Some(n),
-                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                            ValueView::Int(n) => Some(n as f64),
-                            _ => None,
-                        })
-                        .unwrap_or(crate::runtime::DEFAULT_TOLERANCE);
-                    if im.abs() > tolerance {
-                        let msg = format!(
-                            "Cannot convert {}{}{}i to Num: imaginary part not zero",
-                            r,
-                            if im >= 0.0 { "+" } else { "" },
-                            im
-                        );
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        attrs.insert(
-                            "target".to_string(),
-                            Value::package(crate::symbol::Symbol::intern("Num")),
-                        );
-                        attrs.insert("source".to_string(), value.clone());
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::Numeric::Real"),
-                            attrs,
-                        );
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(ex));
-                        return Err(err);
-                    }
-                    Value::num(r)
-                }
-                // Delegate to `Str.Num` so an invalid string yields the same
-                // X::Str::Numeric Failure as the method form, not a silent 0.
-                ValueView::Str(_) => {
-                    return self.call_method_with_values(value.clone(), name, vec![]);
-                }
-                ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
-                ValueView::FatRat(..) | ValueView::BigRat(..) | ValueView::BigInt(..) => {
-                    Value::num(value.to_f64())
-                }
-                _ => Value::num(0.0),
-            },
             "Str" => self.call_method_with_values(value, "Str", vec![])?,
             "Bool" => Value::truth(value.truthy()),
             "Uni" => {
