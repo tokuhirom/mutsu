@@ -741,6 +741,7 @@ t/io/nil-and-type-object-io.t
 t/io/note-with-parens.t
 t/io/open-failure-print-nomatch.t
 t/io/open-io-special.t
+t/io/platform-library-name-path.t
 t/io/proc-run-merge-captures-output.t
 t/io/proc-signal-exitcode.t
 t/io/proc-unsuccessful-names-program.t
@@ -792,6 +793,7 @@ t/lang/operators/andthen-orelse-instance-rhs.t
 t/lang/operators/caret-sequence-operator.t
 t/lang/operators/categorical-operator-term-call.t
 t/lang/operators/chained-colonpairs-in-parens.t
+t/lang/operators/circumfix-operand-is-one-positional.t
 t/lang/operators/compound-assign-indexed-lvalue.t
 t/lang/operators/compound-assign-item-precedence.t
 t/lang/operators/compound-assign-ops.t
@@ -806,6 +808,7 @@ t/lang/operators/dotplus-type-object.t
 t/lang/operators/fat-arrow-associativity.t
 t/lang/operators/fat-arrow-autoquotes-so-and-not.t
 t/lang/operators/fat-arrow-loose-logical-precedence.t
+t/lang/operators/fat-arrow-qualified-name-precedence.t
 t/lang/operators/hyper-array-mutators.t
 t/lang/operators/hyper-assign.t
 t/lang/operators/hyper-func-op.t
@@ -980,6 +983,7 @@ t/modules/import-export/exported-multi-code-value-inside-module.t
 t/modules/import-export/exported-multi-lexical-role-param.t
 t/modules/import-export/exported-proto-multi-family.t
 t/modules/import-export/exported-wrapper-same-name-imported-proto.t
+t/modules/import-export/exporthow-class-aspects.t
 t/modules/import-export/import-only-sub-hides-outer-family.t
 t/modules/import-export/import-then-local-class-shadows-short-name.t
 t/modules/import-export/imported-call-expression-prefix.t
@@ -987,6 +991,7 @@ t/modules/import-export/imported-constant-nested-frame-indirect-call.t
 t/modules/import-export/imported-constant-visible-via-code-ref.t
 t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-my-type-does-not-shadow.t
+t/modules/import-export/imported-statement-call-leaves-no-value.t
 t/modules/import-export/imported-sub-can-be-shadowed.t
 t/modules/import-export/imported-sub-shadows-builtin-in-sink-position.t
 t/modules/import-export/imported-sub-shadows-builtin.t
@@ -1130,6 +1135,7 @@ t/nativecall/native-array-backed-instance.t
 t/nativecall/native-array-decl.t
 t/nativecall/native-array-mut.t
 t/nativecall/native-array-push-after-start.t
+t/nativecall/native-array-push-defer-fallback.t
 t/nativecall/native-array-slice-assign-after-scalar-arg.t
 t/nativecall/native-array-splice.t
 t/nativecall/native-buf-construct.t
@@ -1190,6 +1196,7 @@ t/nativecall/native-typed-attr-ctor.t
 t/nativecall/nativecall-constant-type-alias.t
 t/nativecall/nativecall-cpointer-class-in-module.t
 t/nativecall/nested-module-native-prelude-not-visible-to-user.t
+t/nativecall/new-callsame-native-mu-fallback.t
 t/nativecall/nqp-native-num-arith.t
 t/nativecall/sigilless-param-named-like-native-type.t
 t/nativecall/slip-native-constructor-flatten.t
@@ -1211,6 +1218,7 @@ t/oo/attribute/attr-bind-reconcile-many-attrs.t
 t/oo/attribute/attr-default-construction-itemizes.t
 t/oo/attribute/attr-default-trailing-comma.t
 t/oo/attribute/attr-type-constraint-memo.t
+t/oo/attribute/attribute-defaults-and-set-build.t
 t/oo/attribute/attribute-sigil-collision.t
 t/oo/attribute/attribute-table.t
 t/oo/attribute/attributive-param-nested-sub.t
@@ -1279,6 +1287,7 @@ t/oo/class/uniprop-decomposition-type-number-forms.t
 t/oo/class/uniprop-decomposition-type-small.t
 t/oo/class/uniprop-decomposition-type-super-font.t
 t/oo/class/user-class-shadows-so-not-with-user-bool.t
+t/oo/class/wrap-mid-mro-callsame.t
 t/oo/comment-does-not-load-provider.t
 t/oo/construct/bless-attr-seed-plan.t
 t/oo/construct/bless-build-owns-named-attr.t
@@ -1297,6 +1306,7 @@ t/oo/construct/new-ignores-undeclared-named-args.t
 t/oo/construct/parameter-signature-new-construction.t
 t/oo/construct/set-quant-family-and-constructors.t
 t/oo/construct/tweak-fail-returns-failure.t
+t/oo/construct/version-subclass-constructor.t
 t/oo/eval-does-not-leak-use-fatal.t
 t/oo/fatal-mode-does-not-leak-into-callee.t
 t/oo/forward-declaration.t
@@ -1349,6 +1359,7 @@ t/oo/method/method-captured-var-writeback-coherence.t
 t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-direct-underscore-rejected.t
+t/oo/method/method-dispatch-colon-question-syntax.t
 t/oo/method/method-leave-tail-if-value.t
 t/oo/method/method-lookup-signature-parameter-identity.t
 t/oo/method/method-new-dispatcher-under-outer-multi.t
@@ -1401,6 +1412,7 @@ t/oo/method/sprintf-method-form-arg-count.t
 t/oo/method/sprintf-method-form-flatten.t
 t/oo/method/str-sprintf-method.t
 t/oo/method/submethod-defer.t
+t/oo/method/submethod-wrap.t
 t/oo/method/superscript-method-power.t
 t/oo/method/topic-quoted-method-call.t
 t/oo/method/which-method.t
@@ -1760,6 +1772,7 @@ t/routines/closure/whatevercode-pair-arg-arity.t
 t/routines/closure/wrap-chain-foreign-wrapper-not-shadowed.t
 t/routines/closure/wrap-closure-capture.t
 t/routines/closure/wrap-closure-container-capture.t
+t/routines/closure/wrap-invocant-arg-source.t
 t/routines/closure/wrap-original-runs-compiled-body.t
 t/routines/closure/wrap.t
 t/routines/core-postcircumfix-routine.t
@@ -1774,6 +1787,7 @@ t/routines/dispatch/defer-multi-cross-level-proto-block.t
 t/routines/dispatch/defer-multi-plain-cross-level.t
 t/routines/dispatch/defer-multi-single-class.t
 t/routines/dispatch/dispatch-control.t
+t/routines/dispatch/lastcall-in-wrapper-callsame-dies.t
 t/routines/dispatch/lastcall-then-nextsame.t
 t/routines/dispatch/lexical-sub-dispatch-cache-survival.t
 t/routines/dispatch/lexical-sub-dispatch-memo.t
@@ -1796,6 +1810,7 @@ t/routines/dispatch/multi-subset-predicate-runs-once.t
 t/routines/dispatch/multi-where-runs-once-when-nothing-binds.t
 t/routines/dispatch/multi-where-subset-tie.t
 t/routines/dispatch/multiline-pod-declarator.t
+t/routines/dispatch/nextsame-in-block-wrapper-returns-lexically.t
 t/routines/dispatch/nextsame-in-the-only-candidate.t
 t/routines/dispatch/nextsame-rw-redispatch.t
 t/routines/dispatch/nextwith-fewer-args-arity-mismatch.t
@@ -1958,6 +1973,7 @@ t/tooling/test-util-test-iter-opt.t
 t/tooling/test-util-throws-like-any.t
 t/tooling/testing-is-approx.t
 t/types/any-are.t
+t/types/any-list-derived-methods-use-user-list.t
 t/types/any-serial.t
 t/types/base64-battery.t
 t/types/blob-comparison-across-types.t

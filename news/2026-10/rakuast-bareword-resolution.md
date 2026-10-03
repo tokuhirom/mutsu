@@ -22,6 +22,9 @@ and the converter now re-derives the node rakudo picks (measured on 2026.09):
   The parameter itself now renders as `ParameterTarget::Term`. Before, it
   became a `ParameterTarget::Var("$x")`, which lowered back to an ordinary
   scalar parameter.
+- **Sigilless slurpies.** `+a` and the capture `|c` (or the anonymous `|`)
+  render as `Slurpy::SingleArgument` / `Slurpy::Capture` with a term target.
+  Before, `|c` rendered as a flattening `*$c` and lowered back to one.
 - **Redispatch without arguments.** `callsame`, `nextsame`, `lastcall` and
   `nextcallee` render as `Call::Name::WithoutParentheses`.
 
@@ -41,5 +44,6 @@ silent miscompiles in lowering:
 - A typed `my Foo $u .= new(...)` did not mark its call as an initializer.
   The converter therefore rendered a bare `my Foo $u` and dropped the call.
 
-Pinned by `t/rakuast/rakuast-bareword-resolution.t`, which passes under both
+The round-trip ratchet grows from 1910 to 2425 of 5919 `t/` files. Pinned by
+`t/rakuast/rakuast-bareword-resolution.t`, which passes under both
 mutsu and raku.
