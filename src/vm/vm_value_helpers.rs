@@ -190,7 +190,7 @@ impl Interpreter {
             || name.starts_with('*')
             || name.starts_with('?')
             || name.starts_with("__")
-            || name.contains("::")
+            || crate::qualified::is_qualified(Symbol::intern(name))
             || name == "!"
             || name == "/"
             || name.bytes().all(|b| b.is_ascii_digit())

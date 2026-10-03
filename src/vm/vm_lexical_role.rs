@@ -40,9 +40,10 @@ impl Interpreter {
         }
         let written_compound = has_source_compound_name
             || (crate::qualified::is_qualified(Symbol::intern(name))
-                && !name
-                    .strip_prefix(current_package)
-                    .is_some_and(|rest| rest.starts_with("::")));
+                && !crate::qualified::is_inside_package(
+                    Symbol::intern(name),
+                    Symbol::intern(current_package),
+                ));
         if !is_my_scoped || decl_id == 0 || written_compound {
             return (qualified.to_string(), false);
         }

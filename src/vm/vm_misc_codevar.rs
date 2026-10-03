@@ -130,6 +130,7 @@ impl Interpreter {
         slot: Option<usize>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        let name_is_qualified = crate::qualified::is_qualified(code.const_sym(name_idx));
         if let Some(val) = self.frame_amp_callable_at(code, name, slot) {
             self.stack.push(val);
             return Ok(());
@@ -146,7 +147,7 @@ impl Interpreter {
         // `env` entry only in `module_scope_lexicals`, so `&f()` written in a
         // routine of the importing compunit needs it too, not just `f()`.
         if val.is_nil()
-            && !name.contains("::")
+            && !name_is_qualified
             && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
         {
             val = found.into_deref();
@@ -176,7 +177,7 @@ impl Interpreter {
         // to avoid breaking code that relies on &name returning Nil for
         // non-existent routines (e.g. custom EXPORT mechanisms).
         if val.is_nil()
-            && !name.contains("::")
+            && !name_is_qualified
             && !name.starts_with('?')
             && !name.starts_with('*')
             && matches!(
@@ -204,7 +205,7 @@ impl Interpreter {
         // former for `&A::b.assuming($a)`, where `b` is a *method* and so is not
         // in `A`'s `&`-symbols). Unqualified `&name` keeps returning Nil — custom
         // `EXPORT` routines probe it that way.
-        if val.is_nil() && name.contains("::") {
+        if val.is_nil() && name_is_qualified {
             val = Value::package(crate::symbol::wk::any());
         }
         self.stack.push(val);
@@ -212,7 +213,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_indirect_code_lookup_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        let func_name = Self::const_str(code, name_idx).to_string();
+        let func_name = code.const_sym(name_idx);
         // Pop the package name from the stack (result of evaluating the package expr)
         let package = self.stack.pop().unwrap_or(Value::NIL);
         // Construct a qualified name: "SETTING::OUTER::...::not"
@@ -221,9 +222,9 @@ impl Interpreter {
         let qualified = if pkg_str.is_empty() {
             func_name
         } else {
-            format!("{}::{}", pkg_str, func_name)
+            crate::qualified::qualified(Symbol::intern(&pkg_str), func_name)
         };
-        let val = loan_env!(self, resolve_code_var(&qualified));
+        let val = loan_env!(self, resolve_code_var(qualified.as_str()));
         self.stack.push(val);
     }
 
@@ -263,7 +264,10 @@ impl Interpreter {
             }
         };
         if sigil.is_empty() {
-            let mut parts = name.split("::").filter(|part| !part.is_empty());
+            let mut parts = crate::qualified::segments(Symbol::intern(&name))
+                .iter()
+                .map(|part| part.as_str())
+                .filter(|part| !part.is_empty());
             let val = if let Some(first) = parts.next()
                 && Self::is_pseudo_package_name(first)
             {

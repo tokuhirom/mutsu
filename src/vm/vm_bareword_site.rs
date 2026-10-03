@@ -54,7 +54,7 @@ impl Interpreter {
             return Ok(());
         }
         let name = Self::const_str(code, name_idx);
-        self.push_bare_word_value(name, compiled_fns)?;
+        self.push_bare_word_value(code.const_sym(name_idx), compiled_fns)?;
         if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
             && sym == name
             && bareword_memoizable(name)

@@ -105,7 +105,7 @@ impl crate::runtime::Interpreter {
         {
             return Ok(Value::package(sym));
         }
-        self.push_bare_word_value(site.name.as_str(), compiled_fns)?;
+        self.push_bare_word_value(site.name, compiled_fns)?;
         let v = self.stack.pop().unwrap_or(Value::NIL);
         if let ValueView::Package(sym) = v.view()
             && site.rememberable(sym)

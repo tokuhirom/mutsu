@@ -50,7 +50,11 @@
 
 use crate::symbol::{Symbol, wk};
 
+mod split;
 mod var;
+pub(crate) use split::{
+    is_inside_package, is_type_capture, last_segment, segments, split_qualified,
+};
 pub(crate) use var::{QualifiedVar, qualified_var, split_qualified_var};
 
 /// `<pkg>::<name>` as an interned `Symbol`, built once per pair.

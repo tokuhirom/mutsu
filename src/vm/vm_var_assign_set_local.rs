@@ -3372,8 +3372,8 @@ impl Interpreter {
         }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
             self.env_mut().insert(symbol.to_string(), val.clone());
-            let pkg = self.current_package();
-            if pkg != "GLOBAL" {
+            if !self.current_package_is_global() {
+                let pkg = self.current_package_str();
                 self.env_mut()
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }

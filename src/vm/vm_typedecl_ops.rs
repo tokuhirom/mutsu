@@ -224,17 +224,19 @@ impl Interpreter {
             // `class GLOBAL::void`, so it is excluded by construction. Covers
             // `grammar`, which registers through this same op.
             crate::value::note_user_declared_type_name(&resolved_name);
-            let current_package = self.current_package();
+            let current_package_sym = self.current_package_sym();
+            let current_package = current_package_sym.as_str();
+            let resolved_sym = Symbol::intern(&resolved_name);
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
-            } else if current_package == "GLOBAL"
-                || resolved_name.starts_with(&format!("{current_package}::"))
+            } else if current_package_sym == crate::symbol::wk::global_package()
+                || crate::qualified::is_inside_package(resolved_sym, current_package_sym)
                 // `require "Foo.rakumod"` runs the file with the package set to
                 // `Foo` before `class Foo` is declared; only a class that is
                 // already registered (we are inside its body) makes a same-named
                 // declaration a nested `Foo::Foo`.
-                || (resolved_name == current_package && !self.has_class(&current_package))
+                || (resolved_name == current_package && !self.has_class(current_package))
             {
                 resolved_name.clone()
             } else {
@@ -244,8 +246,13 @@ impl Interpreter {
                 // under the bare `A::B` both leaked it into GLOBAL and left
                 // `M::A::B.new` unable to find its own ClassDef (`.^name` already
                 // reported the qualified name).
-                format!("{current_package}::{resolved_name}")
+                crate::qualified::qualified(current_package_sym, resolved_sym)
+                    .as_str()
+                    .to_string()
             };
+            let qualified_sym = Symbol::intern(&qualified_name);
+            let resolved_is_qualified = crate::qualified::is_qualified(resolved_sym);
+            let qualified_parent = crate::qualified::package_parent(qualified_sym);
             // A lexical (`my`) class is stored in the registry under a *storage
             // name* distinct from its source `qualified_name` (ADR-0047 D1/P1):
             // every `my`-scoped declaration site with a nonzero `decl_id` mangles
@@ -591,7 +598,7 @@ impl Interpreter {
             // (`t/imported-exception-when.t`, the shape Zef uses). Register the
             // written name as an alias for the qualified declaration rather than
             // modelling that installation rule, and never over an existing entry.
-            if resolved_name != qualified_name && resolved_name.contains("::") {
+            if resolved_name != qualified_name && resolved_is_qualified {
                 let storage = storage_name.clone();
                 env.entry_or_insert_with(resolved_name.clone(), || {
                     Value::package(Symbol::intern(&storage))
@@ -605,11 +612,9 @@ impl Interpreter {
             // Only suppress when the parent package is itself a class, not a module.
             // Also register the short name in the lexical env so it is available
             // within the enclosing class body and its methods.
-            let parent_is_class = qualified_name
-                .rsplit_once("::")
-                .map(|(parent, _)| self.has_class(parent))
-                .unwrap_or(false);
-            if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_class {
+            let parent_is_class =
+                qualified_parent.is_some_and(|parent| self.has_class(parent.as_str()));
+            if qualified_name != resolved_name && !resolved_is_qualified && parent_is_class {
                 self.suppress_name(&resolved_name);
                 // ... and remember the short name permanently, so a later
                 // same-named type in an unrelated module (which clears the
@@ -633,11 +638,9 @@ impl Interpreter {
             // running method's class. Unlike the class case the name is NOT
             // suppressed: a role body is not a package boundary that hides an
             // outer same-named type from the rest of the file.
-            let parent_is_role = qualified_name
-                .rsplit_once("::")
-                .map(|(parent, _)| self.is_role(parent))
-                .unwrap_or(false);
-            if qualified_name != resolved_name && !resolved_name.contains("::") && parent_is_role {
+            let parent_is_role =
+                qualified_parent.is_some_and(|parent| self.is_role(parent.as_str()));
+            if qualified_name != resolved_name && !resolved_is_qualified && parent_is_role {
                 self.register_class_scoped_short_name(&resolved_name);
             }
             // When a class is declared with an already-qualified name
@@ -681,11 +684,10 @@ impl Interpreter {
             // by `load_module_inner`/`import_module` copying this same alias
             // into the *importer's* own package_type_aliases entry at `use`
             // time (see `package_type_aliases` doc comment).
-            if qualified_name.contains("::") && !parent_is_class {
-                let (parent, short) = qualified_name
-                    .rsplit_once("::")
-                    .map(|(p, s)| (p.to_string(), s.to_string()))
-                    .unwrap_or_else(|| (String::new(), qualified_name.clone()));
+            if let Some((parent, short)) = crate::qualified::split_qualified(qualified_sym)
+                && !parent_is_class
+            {
+                let (parent, short) = (parent.as_str().to_string(), short.as_str().to_string());
                 // Do not shadow built-in types (e.g. `my class X::Roast::Channel`
                 // must not make the bare name `Channel` resolve to the user class).
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
@@ -1111,12 +1113,15 @@ impl Interpreter {
             // See the class arm: a `role void { }` shadows NativeCall's `void`
             // for display purposes just as a class does.
             crate::value::note_user_declared_type_name(&name_str);
+            let name_sym = *name;
+            let name_is_qualified = crate::qualified::is_qualified(name_sym);
             let current_package = self.current_package();
+            let current_package_sym = self.current_package_sym();
             let qualified_name = if let Some(stripped) = name_str.strip_prefix("GLOBAL::") {
                 stripped.to_string()
-            } else if current_package == "GLOBAL"
+            } else if current_package_sym == crate::symbol::wk::global_package()
                 || name_str == current_package
-                || name_str.starts_with(&format!("{current_package}::"))
+                || crate::qualified::is_inside_package(name_sym, current_package_sym)
             {
                 name_str.clone()
             } else {
@@ -1127,7 +1132,9 @@ impl Interpreter {
                 // compound name bare registered `TAP.rakumod`'s `my role
                 // Entry::Handler` as a global `Entry::Handler`, so its own
                 // `my class State does TAP::Entry::Handler` found no such role.
-                format!("{current_package}::{name_str}")
+                crate::qualified::qualified(current_package_sym, name_sym)
+                    .as_str()
+                    .to_string()
             };
             // A `my role` is stored under its declaration-site storage name
             // (ADR-0047 P1, #9894); see `lexical_role_storage_name`.
@@ -1205,7 +1212,7 @@ impl Interpreter {
             // exactly this five times).
             if self.env().contains_key("__mutsu_in_eval")
                 && !self.module_load_active()
-                && !name_str.contains("::")
+                && !name_is_qualified
                 && custom_traits
                     .iter()
                     .any(|(trait_name, _)| trait_name == "__my_scoped")
@@ -1237,7 +1244,7 @@ impl Interpreter {
             // the short name so `resolve_suppressed_type` resolves it through the
             // owner package chain from the class's own methods — the bare env
             // alias does not outlive the class body.
-            if !name_str.contains("::") && self.has_class(&current_package) {
+            if !name_is_qualified && self.has_class(&current_package) {
                 self.register_class_scoped_short_name(&name_str);
             }
             if *is_export && !self.suppress_exports {
@@ -1246,8 +1253,8 @@ impl Interpreter {
                 // `unit module`. Exports use the short bare name and
                 // the originating package, so split the qualified name.
                 let (export_pkg, export_short) =
-                    if let Some((pkg, short)) = name_str.rsplit_once("::") {
-                        (pkg.to_string(), short.to_string())
+                    if let Some((pkg, short)) = crate::qualified::split_qualified(name_sym) {
+                        (pkg.as_str().to_string(), short.as_str().to_string())
                     } else {
                         (current_package, name_str.clone())
                     };
@@ -1276,7 +1283,7 @@ impl Interpreter {
                     Value::package(Symbol::intern(&qualified_name)),
                 );
             }
-            if !is_mangled && qualified_name != name_str && !name_str.contains("::") {
+            if !is_mangled && qualified_name != name_str && !name_is_qualified {
                 self.env_mut().insert(
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
@@ -1294,11 +1301,13 @@ impl Interpreter {
             // short name `R1`, package-scoped to the declaring package
             // rather than global (mirrors the class path above — see
             // todo/tickets/package-short-name-alias-is-global.md).
-            if !is_mangled && qualified_name.contains("::") && qualified_name == name_str {
-                let (parent, short) = qualified_name
-                    .rsplit_once("::")
-                    .map(|(p, s)| (p.to_string(), s.to_string()))
-                    .unwrap_or_else(|| (String::new(), qualified_name.clone()));
+            // `qualified_name == name_str`, so the name's own split is the
+            // qualified name's.
+            if !is_mangled
+                && qualified_name == name_str
+                && let Some((parent, short)) = crate::qualified::split_qualified(name_sym)
+            {
+                let (parent, short) = (parent.as_str().to_string(), short.as_str().to_string());
                 // Do not shadow built-in types (e.g. `role Cro::HTTP::Middleware::Pair`
                 // must not make the bare name `Pair` resolve to the user role, which
                 // would break every `when Pair` in the process). Mirrors the same
@@ -1439,7 +1448,8 @@ impl Interpreter {
             // through the owner package chain from the class's own methods and
             // during construction — the bare env alias `register_subset_decl`
             // leaves behind does not outlive the class body.
-            if !resolved_name.contains("::") && self.has_class(&subset_package) {
+            let name_split = crate::qualified::split_qualified(*name);
+            if name_split.is_none() && self.has_class(&subset_package) {
                 self.register_class_scoped_short_name(&resolved_name);
             }
             // When a subset is declared `is export` inside a module, record it
@@ -1448,12 +1458,11 @@ impl Interpreter {
             // in the global env by `register_subset_decl`, so importing only
             // needs to make `import M` succeed (and validate export tags).
             if *is_export && !self.suppress_exports {
-                let (export_pkg, export_short) =
-                    if let Some((pkg, short)) = resolved_name.rsplit_once("::") {
-                        (pkg.to_string(), short.to_string())
-                    } else {
-                        (self.current_package(), resolved_name)
-                    };
+                let (export_pkg, export_short) = if let Some((pkg, short)) = name_split {
+                    (pkg.as_str().to_string(), short.as_str().to_string())
+                } else {
+                    (self.current_package(), resolved_name)
+                };
                 self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }
             Ok(())

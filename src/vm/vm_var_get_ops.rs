@@ -101,9 +101,13 @@ impl Interpreter {
 
     pub(crate) fn push_bare_word_value(
         &mut self,
-        name: &str,
+        name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let name: &'static str = name_sym.as_str();
+        // `Pkg::tail` split once per symbol; `None` for an unqualified name.
+        let name_split = crate::qualified::split_qualified(name_sym);
+        let name_is_qualified = name_split.is_some();
         // A no-paren 0-arg `nqp::`-op term (`my $t = nqp::time;`, written that
         // way all over rakudo's own Test.rakumod) dispatches straight to the op
         // table. The `nqp::` namespace is reserved, so none of the bareword
@@ -167,7 +171,7 @@ impl Interpreter {
         // `Bool::True`, a pseudo-package like `OUR::foo`, a same-compunit
         // `package Foo { }` block) is unaffected — see
         // `Interpreter::qualified_name_visible_here`.
-        if crate::runtime::utils::has_double_colon(name)
+        if name_is_qualified
             && if self.is_my_scoped_type_name(name) {
                 !self.my_scoped_type_visible_here(name)
             } else {
@@ -183,7 +187,7 @@ impl Interpreter {
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.
         if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
-            return self.push_bare_word_value(&real, compiled_fns);
+            return self.push_bare_word_value(Symbol::intern(&real), compiled_fns);
         }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
@@ -295,12 +299,14 @@ impl Interpreter {
             // unrelated `Cro::HTTP::Router::Header` role registration cleared the
             // suppression).
             Value::package(Symbol::intern(&qualified))
-        } else if let Some((pkg, sym)) = name.rsplit_once("::")
-            && let Some(stripped_sym) = sym.strip_prefix('&')
+        } else if let Some((pkg, sym)) = name_split
+            && let Some(stripped_sym) = sym.as_str().strip_prefix('&')
         {
-            let qualified_name = format!("{pkg}::{stripped_sym}");
-            if self.has_function(&qualified_name) || self.has_multi_function(&qualified_name) {
-                Value::routine_parts(Symbol::intern(pkg), Symbol::intern(&qualified_name), false)
+            let qualified_name = crate::qualified::qualified(pkg, Symbol::intern(stripped_sym));
+            if self.has_function(qualified_name.as_str())
+                || self.has_multi_function(qualified_name.as_str())
+            {
+                Value::routine_parts(pkg, qualified_name, false)
             } else {
                 Value::str(name.to_string())
             }
@@ -462,7 +468,7 @@ impl Interpreter {
                 // the current package. In type-parameterization syntax the
                 // bareword is the role, not the same-named parameter value.
                 Value::package(Symbol::intern(&qualified))
-            } else if crate::runtime::utils::has_double_colon(name)
+            } else if name_is_qualified
                 && !name.starts_with('$')
                 && !name.starts_with('@')
                 && !name.starts_with('%')
@@ -493,13 +499,13 @@ impl Interpreter {
             // A module's top-level enum value under a package-qualified name
             // (ADR-0084 §2 group 2): kept off the frame env.
             v
-        } else if let Some(enum_val) = self.resolve_qualified_enum_alias(name) {
+        } else if let Some(enum_val) = self.resolve_qualified_enum_alias(name_sym) {
             // A qualified name `Alias::variant` where `Alias` is a constant (or
             // `my`/`our` symbol) bound to an enum type object. Raku resolves the
             // prefix through the alias and then looks up the enum variant, e.g.
             // `my constant G = F::B; G::c === F::B::c`.
             enum_val
-        } else if crate::runtime::utils::has_double_colon(name)
+        } else if name_is_qualified
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
             let name_sym = crate::symbol::Symbol::intern(name);
@@ -618,12 +624,11 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
-        } else if crate::runtime::utils::has_double_colon(name) {
+        } else if let Some((pkg_sym, last_sym)) = name_split {
+            let (pkg, sym) = (pkg_sym.as_str(), last_sym.as_str());
+            let (pkg_prefix, last_seg) = (pkg, sym);
             // Check if this is an access to a non-existent enum variant
-            if let Some((pkg, sym)) = name.rsplit_once("::")
-                && self.has_enum_type(pkg)
-                && !self.has_enum_variant(pkg, sym)
-            {
+            if self.has_enum_type(pkg) && !self.has_enum_variant(pkg, sym) {
                 return Err(RuntimeError::new(format!(
                     "Could not find symbol '&{}' in '{}'",
                     sym, pkg,
@@ -638,15 +643,14 @@ impl Interpreter {
                 our_val
             // Try resolving as a package-qualified function call (e.g.
             // `Module::func` used as a term without parens).
-            } else if let Some((_pkg, short)) = name.rsplit_once("::")
-                && self.has_function(&format!("GLOBAL::{}", short))
-            {
+            } else if self.has_function(
+                crate::qualified::qualified(crate::symbol::wk::global_package(), last_sym).as_str(),
+            ) {
                 // Route the package-qualified term fork through the Interpreter's unified
                 // compiled-first function dispatch (ledger §2): interpreter remains
                 // only as the terminal fallback.
                 self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
-            } else if let Some((pkg_prefix, last_seg)) = name.rsplit_once("::")
-                && !last_seg.is_empty()
+            } else if !last_seg.is_empty()
                 && last_seg.starts_with(|c: char| c.is_ascii_lowercase())
                 && !self.has_type(name)
                 && !Self::is_builtin_type(name)
@@ -948,11 +952,12 @@ impl Interpreter {
     /// For example, after `enum F::B <c d e>; my constant G = F::B;`, the name
     /// `G::c` resolves by mapping the prefix `G` to its package `F::B` and then
     /// looking up the already-registered variant under `F::B::c`.
-    pub(super) fn resolve_qualified_enum_alias(&self, name: &str) -> Option<Value> {
-        if name.starts_with(['$', '@', '%', '&']) {
+    pub(super) fn resolve_qualified_enum_alias(&self, name: Symbol) -> Option<Value> {
+        if name.as_str().starts_with(['$', '@', '%', '&']) {
             return None;
         }
-        let (prefix, variant) = name.rsplit_once("::")?;
+        let (prefix, variant_sym) = crate::qualified::split_qualified(name)?;
+        let (prefix, variant) = (prefix.as_str(), variant_sym.as_str());
         // The prefix must resolve through the lexical env to an enum type object.
         // The prefix is most often a `constant`, a term (#9962).
         let Some(ValueView::Package(pkg)) =
@@ -960,20 +965,21 @@ impl Interpreter {
         else {
             return None;
         };
-        let pkg = pkg.resolve();
+        let pkg_sym = pkg;
+        let pkg = pkg_sym.as_str();
         // Avoid infinite identity: the prefix must alias a *different* package
         // (otherwise `F::B::c` would already have been found by direct lookup).
         if pkg == prefix {
             return None;
         }
-        if !self.has_enum_variant(&pkg, variant) {
+        if !self.has_enum_variant(pkg, variant) {
             return None;
         }
         // The enum registration stores variants under `{enum_type}::{variant}`.
-        let key = format!("{pkg}::{variant}");
+        let key = crate::qualified::qualified(pkg_sym, variant_sym).as_str();
         self.env()
-            .get(&key)
-            .or_else(|| self.toplevel_package_symbol(&key))
+            .get(key)
+            .or_else(|| self.toplevel_package_symbol(key))
             .cloned()
     }
 

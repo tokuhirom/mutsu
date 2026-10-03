@@ -30,7 +30,7 @@ impl Interpreter {
             self.stack.push(stash);
             return Ok(());
         }
-        if name.strip_suffix("::") == Some("OUTER") {
+        if name == "OUTER::" {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
             let mut entries: ValueMap = ValueMap::default();
@@ -46,20 +46,19 @@ impl Interpreter {
             self.stack.push(stash);
             return Ok(());
         }
-        if name.strip_suffix("::") == Some("OUR") {
+        if name == "OUR::" {
             let stash = self.our_pseudo_stash();
             self.stack.push(stash);
             return Ok(());
         }
-        if name.strip_suffix("::") == Some("DYNAMIC") {
+        if name == "DYNAMIC::" {
             let entries = self.dynamic_pseudo_stash_entries();
             let stash = self.pseudo_stash_hash(entries);
             self.stack.push(stash);
             return Ok(());
         }
-        if let Some(kind) = name.strip_suffix("::")
-            && kind == "CALLERS"
-        {
+        if name == "CALLERS::" {
+            let kind = "CALLERS";
             // `CALLER::` is only useful as an `EVAL` context here, and that use
             // needs the package of the frame it was taken from — which is gone
             // by the time EVAL runs. Record it on the value itself.
@@ -133,7 +132,11 @@ impl Interpreter {
         if let Some(depth) = Self::caller_our_stash_depth(name) {
             return Some(self.caller_frame_package_at(depth));
         }
-        if let Some(package) = name.strip_suffix("::")
+        // `Name::` is the stash spelling: the qualifier with an empty last
+        // segment.
+        if let Some((package, _)) = crate::qualified::split_qualified(Symbol::intern(name))
+            .filter(|(_, tail)| tail.as_str().is_empty())
+            && let package = package.as_str()
             && !matches!(package, "OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
             && package != "MY"
             && package != "LEXICAL"

@@ -290,7 +290,7 @@ impl Interpreter {
         !name.is_empty()
             && !name.starts_with(['$', '@', '%', '&', '.', '!', '^', '*'])
             && name != "_"
-            && !name.contains("::")
+            && !crate::qualified::is_qualified(Symbol::intern(name))
             && !name.starts_with("__mutsu_")
             && !name.starts_with("__ANON")
     }

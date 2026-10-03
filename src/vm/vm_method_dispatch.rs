@@ -467,7 +467,9 @@ impl Interpreter {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
             self.set_current_package_sym(owner_sym);
-        } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
+        } else if crate::qualified::is_qualified(owner_sym)
+            || self.package_has_deferred_use_imports(owner_class)
+        {
             // The class is declared inside a package (`class Searcher` inside
             // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
             // (non-namespaced) role/class whose own deferred `use` body
@@ -609,7 +611,7 @@ impl Interpreter {
                 if let Some(pd) = method_def.param_defs.get(idx)
                     && let Some(constraint) = &pd.type_constraint
                 {
-                    if constraint.starts_with("::") {
+                    if crate::qualified::is_type_capture(constraint) {
                         // `::?CLASS` / `::?ROLE` / `::(expr)`: bound above, not a
                         // nominal constraint.
                     } else {
@@ -973,12 +975,12 @@ impl Interpreter {
             match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
-                    let routine_key = format!("{}::{}", owner_class, method_name);
+                    let routine_key = crate::qualified::qualified(owner_sym, method_sym);
                     let matches_frame = if let Some(_target_id) = e.leave_callable_id() {
                         // Methods don't have callable IDs, so this won't match
                         false
                     } else if let Some(target_routine) = e.leave_routine() {
-                        target_routine == routine_key
+                        target_routine == routine_key.as_str()
                     } else {
                         e.label.is_none()
                     };
@@ -1174,8 +1176,9 @@ impl Interpreter {
                     self.rw_param_detached_by_name(cc, param_name)
                         .or_else(|| self.env().get(param_name).cloned())
                         .or_else(|| {
-                            let qualified = format!("{}::{}", owner_class, param_name);
-                            self.env().get(&qualified).cloned()
+                            let qualified =
+                                crate::qualified::qualified(owner_sym, Symbol::intern(param_name));
+                            self.env().get(qualified.as_str()).cloned()
                         })
                         .map(|val| {
                             // A SIGILLESS param aliasing an `@`/`%` variable
@@ -1861,7 +1864,9 @@ impl Interpreter {
             let saved = self.current_package_sym();
             self.set_current_package_sym(owner_sym);
             Some(saved)
-        } else if owner_class.contains("::") || self.package_has_deferred_use_imports(owner_class) {
+        } else if crate::qualified::is_qualified(owner_sym)
+            || self.package_has_deferred_use_imports(owner_class)
+        {
             // The class is declared inside a package (`class Searcher` inside
             // `unit module NL` registers as `NL::Searcher`), OR it is a FLAT
             // (non-namespaced) role/class whose own deferred `use` body
@@ -2477,11 +2482,11 @@ impl Interpreter {
             match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
-                    let routine_key = format!("{}::{}", owner_class, method_name);
+                    let routine_key = crate::qualified::qualified(owner_sym, method_sym);
                     let matches_frame = if let Some(_target_id) = e.leave_callable_id() {
                         false
                     } else if let Some(target_routine) = e.leave_routine() {
-                        target_routine == routine_key
+                        target_routine == routine_key.as_str()
                     } else {
                         e.label.is_none()
                     };

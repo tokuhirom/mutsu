@@ -283,7 +283,7 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro(None));
             }
         }
-        if name.starts_with('&') && !name.contains("::") {
+        if name.starts_with('&') && !crate::qualified::is_qualified(code.const_sym(name_idx)) {
             let bare = name.trim_start_matches('&');
             let has_variable_slot = self.env().contains_key(&name);
             let is_routine_symbol = self.has_function(bare)

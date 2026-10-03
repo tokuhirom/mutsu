@@ -5796,11 +5796,13 @@ impl Interpreter {
                     } else {
                         format!("${key}")
                     };
-                    let pkg = package.trim_end_matches("::");
-                    let fq = if pkg.is_empty() || pkg == "GLOBAL" {
+                    let pkg = Symbol::intern(package.trim_end_matches("::"));
+                    let fq = if crate::qualified::is_global_package(pkg) {
                         key_name
                     } else {
-                        format!("{pkg}::{key_name}")
+                        crate::qualified::qualified(pkg, Symbol::intern(&key_name))
+                            .as_str()
+                            .to_string()
                     };
                     self.env_mut().insert(fq, val.clone());
                     // An unsigiled key (`Pkg::{$k} = v`) is the package variable
