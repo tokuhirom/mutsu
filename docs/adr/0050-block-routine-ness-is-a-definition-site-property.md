@@ -1,6 +1,6 @@
 # ADR-0050: A Block's routine-ness is a definition-site lexical property, not a re-derived dynamic one
 
-- Status: Accepted — Slices 1 and 2 implemented ([#9892](https://github.com/tokuhirom/mutsu/issues/9892), see §7); Slice 3 residue open
+- Status: Accepted — Slices 1 and 2 implemented ([#9892](https://github.com/tokuhirom/mutsu/issues/9892), see §7); Slice 3 residue open as [#11675](https://github.com/tokuhirom/mutsu/issues/11675)
 - Date: 2026-08-20
 - Origin: `todo/deep/nextsame-in-wrap-closure-lexical-return-target.md` (the
   architectural half; the small half became
@@ -298,4 +298,4 @@ and a `return` from a map block). The roast files §5 names (`S04-statements/ret
 `S06-advanced/return.t`, `S06-advanced/wrap.t`) stay green.
 
 Slice 3 (auditing the other ambient facts the carrier re-derives — `scope`/`enclosing_package`
-foremost) is still open.
+foremost) is [#11675](https://github.com/tokuhirom/mutsu/issues/11675).
