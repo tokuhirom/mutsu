@@ -236,3 +236,49 @@ fn is_operator_routine_name(name: &str) -> bool {
     .iter()
     .any(|category| name.starts_with(category))
 }
+
+/// A sixth idiom: the returned `Map` names an operator or a term by a string
+/// literal key, `Map.new('&term:<today>' => &today)` (the Today dist), so the
+/// exported name exists only as that key. `&term:<today>` makes the bareword
+/// `today` a term -- the importer's parse must know it, or `today + 1`
+/// parses as the listop call `today(+1)`.
+pub(super) fn collect_export_hook_literal_keys(
+    stmts: &[Stmt],
+    exports: &mut HashMap<String, InlineModuleExport>,
+) {
+    let Some(body) = find_export_sub_body(stmts) else {
+        return;
+    };
+    let mut keys = LiteralPairKeys::default();
+    for stmt in body {
+        crate::ast_visit::Visit::visit_stmt(&mut keys, stmt);
+    }
+    for name in keys.names {
+        exports
+            .entry(name.clone())
+            .or_insert_with(|| super::sub_export_entry(name, None, None, false));
+    }
+}
+
+/// The `'&category:<sym>' => ...` pair keys an `EXPORT` body spells out.
+#[derive(Default)]
+struct LiteralPairKeys {
+    names: Vec<String>,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for LiteralPairKeys {
+    fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+        if let crate::ast::Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            ..
+        } = expr
+            && let crate::ast::Expr::Literal(key) = left.as_ref()
+            && let Some(name) = key.as_str().and_then(|k| k.strip_prefix('&'))
+            && (is_operator_routine_name(name) || name.starts_with("term:<"))
+        {
+            self.names.push(name.to_string());
+        }
+        crate::ast_visit::walk_expr(self, expr);
+    }
+}
