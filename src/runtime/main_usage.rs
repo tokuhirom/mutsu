@@ -219,10 +219,8 @@ impl Interpreter {
             // An enum shows as its `.^name`, which rakudo leaves unqualified
             // (`<E>` for `module M { enum E }`).
             let shown_type = if self.resolve_enum_type_key(&type_name).is_some() {
-                type_name
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(&type_name)
+                crate::qualified::unqualified_part(crate::symbol::Symbol::intern(&type_name))
+                    .as_str()
                     .to_string()
             } else {
                 type_name.clone()
@@ -420,7 +418,11 @@ fn usage_constraints(pd: &ParamDef, sp: &SigParam, ty: &ParamType) -> (String, u
         total += 1;
         // Rakudo shows a subset constraint by its short name (`[=S]` for
         // `M::S`, the spelling an `import M` leaves in scope).
-        parts.push(subset.rsplit("::").next().unwrap_or(subset).to_string());
+        parts.push(
+            crate::qualified::unqualified_part(crate::symbol::Symbol::intern(subset))
+                .as_str()
+                .to_string(),
+        );
     }
     if let Some(lit) = &pd.literal_value {
         total += 1;
