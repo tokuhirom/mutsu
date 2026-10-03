@@ -117,10 +117,7 @@ impl OpScanIndex {
                     block_facts.insert(ip, BlockRangeFacts::scan(code, ip + 1, *end as usize));
                 }
                 OpCode::BlockLocalScope { body_end, .. } => {
-                    block_facts.insert(
-                        ip,
-                        BlockRangeFacts::scan(code, ip + 1, *body_end as usize),
-                    );
+                    block_facts.insert(ip, BlockRangeFacts::scan(code, ip + 1, *body_end as usize));
                 }
                 OpCode::Label(name_idx) => {
                     let name = label_name(code, *name_idx);
@@ -273,7 +270,8 @@ mod tests {
             body_end: 3,
             succeed_boundary: false,
         });
-        code.ops.push(OpCode::StateVarInit(4, Symbol::intern("$n@1").id()));
+        code.ops
+            .push(OpCode::StateVarInit(4, Symbol::intern("$n@1").id()));
         code.ops.push(OpCode::SetTopic);
         code.ops.push(OpCode::Pop);
         let facts = code.block_range_facts(0, 3);

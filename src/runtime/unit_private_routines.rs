@@ -179,7 +179,8 @@ impl Interpreter {
                 continue;
             };
             if own_export && let Some(module) = module {
-                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions).remove(&key);
+                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                    .remove(&key);
                 self.registry_mut()
                     .functions_mut()
                     .entry(crate::qualified::qualified(
@@ -299,7 +300,8 @@ impl Interpreter {
                 let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
                     continue;
                 };
-                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions).remove(&key);
+                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                    .remove(&key);
                 def
             };
             crate::runtime::cow_table_mut(&mut self.unit_private_routines)
