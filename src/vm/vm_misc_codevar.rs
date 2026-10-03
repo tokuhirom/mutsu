@@ -242,6 +242,21 @@ impl Interpreter {
         let sigil = Self::const_str(code, sigil_idx).to_string();
         let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
+        // `CALLERS::('$_')` names the caller's `$_` exactly as `$::('CALLERS::_')`
+        // and the literal `CALLERS::<$_>` do: a caller frame's variable, found
+        // by walking the call stack, which the stash snapshot built below does
+        // not hold (AkeTester's `$cwd //= CALLERS::('$_')`). Move the sigil
+        // off the last component and take the sigiled CALLERS path.
+        let (sigil, name) = match name.rsplit_once("::") {
+            Some((prefix, last))
+                if sigil.is_empty()
+                    && last.starts_with(['$', '@', '%'])
+                    && prefix.split("::").all(|part| part == "CALLERS") =>
+            {
+                (last[..1].to_string(), format!("{prefix}::{}", &last[1..]))
+            }
+            _ => (sigil, name),
+        };
         if sigil.is_empty() {
             let mut parts = name.split("::").filter(|part| !part.is_empty());
             let val = if let Some(first) = parts.next()

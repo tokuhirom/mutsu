@@ -243,6 +243,15 @@ impl Interpreter {
         if !var_name.starts_with('%') {
             return None;
         }
+        // A module routine's own `our %h` lives in the package mirror, which
+        // every read resolves before env; the commit below writes env, so it
+        // would store into the loading scope's binding and lose the key
+        // (Ake's `%TASKS{$name} = ...`). The slow path writes through the
+        // mirror (`env_root_descended_mut_tracked`). Same guard as the early
+        // lane's `fast_hash_lane_root_is_env`.
+        if self.our_package_container_key(var_name).is_some() {
+            return None;
+        }
         // Resolved once through the chunk's memoized constant-symbol table and
         // threaded through every env probe below (`get_sym`/`get_mut_sym`/
         // `is_readonly_sym`). This path re-interned `var_name` at each of them
@@ -820,15 +829,6 @@ impl Interpreter {
             Some(ValueView::ContainerRef(cell)) => cell.clone(),
             _ => return None,
         };
-        // A module routine's own `our %h` / `our @a` resolves to the package
-        // mirror before env, on the read side and at the write chokepoint
-        // (`env_root_descended_mut_tracked`). The routine's captured env cell
-        // is only the declaring scope's alias of it; storing into that cell
-        // would copy the container away from the mirror every read sees
-        // (Ake's `%TASKS{$name} = ...` in `make-task`).
-        if var_sym.with_str(|n| self.our_package_container_key(n).is_some()) {
-            return None;
-        }
         let slots = code.local_slots_of(var_sym);
         if slots.is_empty() {
             return Some(cell);
