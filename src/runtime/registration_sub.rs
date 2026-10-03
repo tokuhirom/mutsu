@@ -2627,7 +2627,7 @@ impl Interpreter {
             // A qualified declaration (`enum LogP6::Level is export`) exports
             // its type too, whose last name part (`Level`) the importer can
             // then use, as for a qualified class.
-            if enum_type_name != name || name.contains("::") {
+            if enum_type_name != name || crate::qualified::is_qualified(Symbol::intern(name)) {
                 self.register_exported_var(pkg, name.to_string(), export_tags.to_vec());
             }
         }
