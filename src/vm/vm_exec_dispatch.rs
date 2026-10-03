@@ -416,6 +416,11 @@ impl Interpreter {
                 let fast_hit = {
                     let b0 = name.as_bytes().first().copied();
                     if !matches!(b0, Some(b'@' | b'%'))
+                        // A dynamic or a `PROCESS::` name may resolve to the
+                        // process stash instead (ADR-11318); the slow chain
+                        // asks it first.
+                        && !(self.process_dynamics_published()
+                            && (b0 == Some(b'*') || name.starts_with("PROCESS::")))
                         && (name == "_" || !name.contains('_'))
                         && self.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
@@ -594,7 +599,7 @@ impl Interpreter {
                     // has it, but `process_dynamics` outlives every frame
                     // (#8682). Also last resort — a live `env`/dynamic-scope
                     // binding for the same name always wins.
-                    .or_else(|| self.get_process_dynamic(name).cloned())
+                    .or_else(|| self.get_process_dynamic(name))
                     .map(Ok)
                     .unwrap_or_else(|| {
                         if name.starts_with('^') {
@@ -2532,17 +2537,15 @@ impl Interpreter {
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
-                    let proxy_val = match self
-                        .unit_lexical_slot(&name)
-                        .or_else(|| self.env().get(&name))
-                        // A `PROCESS::<$name> := Proxy.new(...)` install that ran
-                        // in a since-exited frame: `env` no longer has it, but
-                        // `process_dynamics` does (#8682) — without this, a
-                        // `$*name = value` reaching this opcode from a LATER,
-                        // unrelated frame would fall through to a plain rebind
-                        // below instead of firing the Proxy's `STORE`.
-                        .or_else(|| self.get_process_dynamic(&name))
-                    {
+                    let proxy_val = match self.unit_lexical_slot(&name).cloned().or_else(|| {
+                        // A `PROCESS::<$name> := Proxy.new(...)` install lives
+                        // only in the process stash, never in a frame's env
+                        // (#8682, ADR-11318) — without the redirect, a
+                        // `$*name = value` reaching this opcode would fall
+                        // through to a plain rebind below instead of firing
+                        // the Proxy's `STORE`.
+                        self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
+                    }) {
                         Some(v) if v.is_proxy_value() => Some(v.clone()),
                         Some(v) if v.is_container_ref() => {
                             let inner = v.deref_container();
@@ -2559,6 +2562,19 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
+                }
+                // A `$*name = ...` whose binding is the process one (no `my
+                // $*name` in scope) is published to the process stash, which
+                // every thread reads (ADR-11318). Done here, ahead of the
+                // `ContainerRef` write-through below, which returns without
+                // reaching `set_env_with_main_alias`'s own publish.
+                if !is_rebind
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !fresh_binding_decl
+                    && name.starts_with('*')
+                {
+                    self.publish_process_dynamic_write(&name, &val);
                 }
                 // ADR-0024: a mainline named sub's write to one of its OWN
                 // captured lexicals must route through the shared cell in
@@ -2871,15 +2887,6 @@ impl Interpreter {
                 // slot, e.g. a built-in like `$*OUT` that lives only in `env`).
                 if name.starts_with('*') {
                     self.pending_rw_writeback_sources.push(name.clone());
-                }
-                // A plain `$*name = val` (as opposed to `PROCESS::<$name> :=
-                // ...`) to a name previously installed via `PROCESS::`: keep
-                // the durable store in sync so a read from a LATER, unrelated
-                // frame sees the fresh value instead of the one recorded at
-                // install time (#8682). No-op for an ordinary dynamic
-                // variable that was never installed that way.
-                if self.process_dynamics_contains(&name) {
-                    self.set_process_dynamic(name.clone(), val.clone());
                 }
                 // Persist anonymous state variable (`$`) so it survives
                 // across closure calls (e.g. `$ ~= $_` in classify block).
