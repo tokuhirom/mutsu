@@ -858,17 +858,18 @@ impl Interpreter {
                     .as_ref()
                     .is_some_and(|(data, _)| !data.hole_at(i as usize))
         };
+        // `hole_at` is the whole answer: a `:delete` records the hole in the
+        // array's own `initialized` set, which -- unlike the name-keyed
+        // deleted-index table the lazy branch above consults -- moves with
+        // `shift`/`unshift`/`splice` and forgets the hole when an element
+        // write fills it (#10360).
 
         let is_multi = index_is_slice;
 
         if !is_multi {
             // Single index
             let i = indices[0];
-            let slot_present = slot_present_at(i);
-            let is_deleted = array_var_name
-                .as_deref()
-                .is_some_and(|n| self.is_deleted_index(n, i));
-            let exists = slot_present && !is_deleted;
+            let exists = slot_present_at(i);
             let result_bool = exists ^ effective_negated;
             let key = Value::int(i);
             let result = match adverb_bits {
@@ -900,16 +901,7 @@ impl Interpreter {
         }
 
         // Multi-index: compute (index, exists_bool) pairs
-        let pairs: Vec<(i64, bool)> = indices
-            .iter()
-            .map(|&i| {
-                let slot_present = slot_present_at(i);
-                let is_deleted = array_var_name
-                    .as_deref()
-                    .is_some_and(|n| self.is_deleted_index(n, i));
-                (i, slot_present && !is_deleted)
-            })
-            .collect();
+        let pairs: Vec<(i64, bool)> = indices.iter().map(|&i| (i, slot_present_at(i))).collect();
 
         let result = match adverb_bits {
             0 => {

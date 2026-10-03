@@ -364,7 +364,7 @@ impl Interpreter {
                 container.with_array_mut(|items, _kind| {
                     let arr = crate::value::gc_data_mut(items);
                     while arr.len() < min_len {
-                        arr.push(Value::package(crate::symbol::wk::any()));
+                        arr.push_gap(Value::package(crate::symbol::wk::any()));
                     }
                 });
                 if let Some(padded_val) = self.env().get(&var_name).cloned() {

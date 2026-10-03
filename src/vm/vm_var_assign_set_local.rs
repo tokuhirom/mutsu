@@ -3198,7 +3198,13 @@ impl Interpreter {
             // already holds an array/hash goes through the in-place branches above
             // and keeps its identity.)
             let cur = std::mem::replace(&mut self.locals[idx], Value::NIL);
-            self.locals[idx] = Self::detach_shared_container(cur);
+            // The copy is a list assignment's result: no holes and none of the
+            // source's `is default` (#10360).
+            self.locals[idx] = if name.starts_with('@') {
+                cur.copy_for_list_assignment()
+            } else {
+                Self::detach_shared_container(cur)
+            };
         }
         // A typed scalar declaration owns a scalar container even when nothing
         // else (closure capture, `:=`, `.VAR`) would have forced boxing.  Its

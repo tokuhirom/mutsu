@@ -1595,11 +1595,8 @@ impl Interpreter {
                         .and_then(|container| {
                             container.with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                 let arr = crate::value::gc_data_mut(items);
-                                Self::autoviv_resize(
-                                    arr.items_mut(),
-                                    idx_usize + 1,
-                                    native_fill.clone(),
-                                )?;
+                                let fill = arr.gap_fill(native_fill.clone());
+                                Self::autoviv_resize(arr.items_mut(), idx_usize + 1, fill)?;
                                 arr[idx_usize] = v;
                                 Ok(())
                             })
@@ -1641,11 +1638,8 @@ impl Interpreter {
                         container
                             .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                 let arr = crate::value::gc_data_mut(items);
-                                Self::autoviv_resize(
-                                    arr.items_mut(),
-                                    max_idx + 1,
-                                    native_fill.clone(),
-                                )?;
+                                let fill = arr.gap_fill(native_fill.clone());
+                                Self::autoviv_resize(arr.items_mut(), max_idx + 1, fill)?;
                                 Ok(())
                             })
                             .transpose()?;
@@ -1837,7 +1831,8 @@ impl Interpreter {
                                     // Container identity (§3): resize in place.
                                     let arr = crate::value::gc_data_mut(items);
                                     let old_len = arr.len();
-                                    Self::autoviv_resize(arr.items_mut(), max_idx + 1, native_fill.clone())?;
+                                    let fill = arr.gap_fill(native_fill.clone());
+                                    Self::autoviv_resize(arr.items_mut(), max_idx + 1, fill)?;
                                     if arr.len() > old_len
                                         && arr.initialized.is_none()
                                         && !crate::runtime::native_types::is_native_array_element_type(
@@ -1873,11 +1868,8 @@ impl Interpreter {
                                 // Container identity (§3): resize in place.
                                 let arr = crate::value::gc_data_mut(items);
                                 let old_len = arr.len();
-                                Self::autoviv_resize(
-                                    arr.items_mut(),
-                                    max_idx + 1,
-                                    native_fill.clone(),
-                                )?;
+                                let fill = arr.gap_fill(native_fill.clone());
+                                Self::autoviv_resize(arr.items_mut(), max_idx + 1, fill)?;
                                 if arr.len() > old_len
                                     && arr.initialized.is_none()
                                     && !crate::runtime::native_types::is_native_array_element_type(
@@ -2814,11 +2806,9 @@ impl Interpreter {
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
                                     {
-                                        Self::autoviv_resize(
-                                            arr.items_mut(),
-                                            max_idx + 1,
-                                            Value::package(crate::symbol::wk::any()),
-                                        )?;
+                                        let fill = arr
+                                            .gap_fill(Value::package(crate::symbol::wk::any()));
+                                        Self::autoviv_resize(arr.items_mut(), max_idx + 1, fill)?;
                                     }
                                     // Preserve the existing prefix when a
                                     // bulk-constructed array grows for a
@@ -2878,7 +2868,8 @@ impl Interpreter {
                                         crate::gc::Gc::make_mut(items)
                                     };
                                     let old_len = arr.len();
-                                    Self::autoviv_resize(arr.items_mut(), i + 1, native_fill.clone())?;
+                                    let fill = arr.gap_fill(native_fill.clone());
+                                    Self::autoviv_resize(arr.items_mut(), i + 1, fill)?;
                                     // `initialized == None` means every slot in
                                     // a bulk-constructed boxed array exists.
                                     // Once this write grows it, preserve that
@@ -4501,6 +4492,7 @@ impl Interpreter {
         fill: Value,
     ) -> Result<(), RuntimeError> {
         let old_len = arr.len();
+        let fill = arr.gap_fill(fill);
         Self::autoviv_resize(arr.items_mut(), idx + 1, fill)?;
         if arr.len() > old_len && arr.initialized.is_none() {
             arr.initialized = Some((0..old_len).collect());
@@ -5721,8 +5713,10 @@ impl Interpreter {
                     // SAFETY: aliased in-place mutation of a shared array so the
                     // change is visible to all holders of the same Arc; see
                     // `gc_contents_mut`.
-                    let v = unsafe { crate::value::gc_contents_mut(&arc) }.items_mut();
-                    Self::autoviv_resize(v, i + 1, Value::package(crate::symbol::wk::any()))?;
+                    let data = unsafe { crate::value::gc_contents_mut(&arc) };
+                    let fill = data.gap_fill(Value::package(crate::symbol::wk::any()));
+                    let v = data.items_mut();
+                    Self::autoviv_resize(v, i + 1, fill)?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;
                         // the same cell is written back to the source var
