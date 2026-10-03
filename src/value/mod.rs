@@ -984,6 +984,11 @@ pub struct ContainerCell {
     /// than to whichever name -- the declared variable, an `is rw` parameter, a
     /// `for` alias -- a write happens to arrive through (#9831).
     default: Mutex<Option<Value>>,
+    /// The variable the container was declared as (`$a`), when a promotion
+    /// site knew it: rakudo's `$!descriptor.name`, which `.VAR.name` reports
+    /// through every alias of the container -- an `is rw` / `is raw` / `\x`
+    /// parameter included (#11196). Set once, by the first site that names it.
+    name: std::sync::OnceLock<crate::symbol::Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -1026,7 +1031,22 @@ impl ContainerCell {
             quanthash_weight: Mutex::new(None),
             readonly: std::sync::atomic::AtomicU8::new(0),
             default: Mutex::new(None),
+            name: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Record the declared name of the variable this cell is the container of,
+    /// unless an earlier site already did (the original declaration wins over
+    /// any alias it later reaches).
+    // Cost: O(1).
+    pub fn name_once(&self, name: crate::symbol::Symbol) {
+        let _ = self.name.set(name);
+    }
+
+    /// The declared name of the variable this cell is the container of.
+    // Cost: O(1).
+    pub fn descriptor_name(&self) -> Option<crate::symbol::Symbol> {
+        self.name.get().copied()
     }
 
     /// A cell holding a bare value bound into an element (see `readonly`).
@@ -3907,5 +3927,24 @@ mod light_bindable_param_name_tests {
                 "{name:?} must not be light-bindable"
             );
         }
+    }
+}
+
+/// Record `name` (a variable's name; a bare one is a `$` scalar) as the
+/// declared name of the variable whose container `cell` is, unless it already
+/// has one: `.VAR.name` through any alias of the container reports it (#11196).
+// Cost: O(1).
+pub(crate) fn name_container_cell(cell: &Value, name: &str) {
+    if let ValueView::ContainerRef(c) = cell.view()
+        && c.descriptor_name().is_none()
+        && !name.is_empty()
+        && !name.starts_with("__")
+    {
+        let sigiled = if name.starts_with(['$', '@', '%', '&']) {
+            crate::symbol::Symbol::intern(name)
+        } else {
+            crate::symbol::Symbol::intern(&format!("${name}"))
+        };
+        c.name_once(sigiled);
     }
 }

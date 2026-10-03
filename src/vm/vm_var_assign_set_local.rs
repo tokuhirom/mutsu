@@ -3402,6 +3402,12 @@ impl Interpreter {
         // execution.
         let name_sym = code.const_sym(name_idx);
         loan_env!(self, set_var_dynamic(name, dynamic));
+        // A `my $*name` is this frame's own binding of the dynamic, not the
+        // process-level one `PROCESS::<$name>` reports (`process_stash_entries`).
+        if dynamic && (name.starts_with('*') || name.starts_with("@*") || name.starts_with("%*")) {
+            self.env_mut()
+                .insert(MetaNs::LexicalDynamic.owned_key_for_str(name), Value::TRUE);
+        }
         // While the cross-thread shared store is active, a re-declaration is a
         // fresh binding shadowing the captured outer lexical: mark the name so
         // subsequent writes stay thread-local instead of leaking to the parent

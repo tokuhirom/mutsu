@@ -473,8 +473,13 @@ impl Interpreter {
         slot_hint: Option<u32>,
     ) -> Value {
         let box_references = !name.starts_with(['@', '%', '&']);
-        self.capture_var_cell_with(code, name, inner, true, box_references, slot_hint)
-            .0
+        let cell = self
+            .capture_var_cell_with(code, name, inner, true, box_references, slot_hint)
+            .0;
+        // The parameter aliases the caller's container, whose descriptor names
+        // the caller's variable: `$x.VAR.name` in the callee is `$a` (#11196).
+        crate::value::name_container_cell(&cell, &self.resolve_alias_root(name));
+        cell
     }
 
     // Cost: O(l), l = locals of the frame (the by-name slot fallback).

@@ -210,6 +210,10 @@ pub(crate) enum MetaNs {
     /// `__mutsu_var_source_name::<name>` — the variable a `$_`-ish alias was
     /// derived from, so a write can be routed back to it.
     VarSourceName,
+    /// `__mutsu_lexical_dynamic::<*name>` — set in the frame that declared a
+    /// lexical `my $*name`: that binding is the frame's own, not the
+    /// process-level dynamic `PROCESS::<$name>` reports.
+    LexicalDynamic,
     /// `__mutsu_attr_alias::<attr>` — the public accessor name a private
     /// attribute is also reachable under.
     AttrAlias,
@@ -300,6 +304,7 @@ impl MetaNs {
         MetaNs::VarMeta,
         MetaNs::VarDefault,
         MetaNs::VarSourceName,
+        MetaNs::LexicalDynamic,
         MetaNs::AttrAlias,
         MetaNs::Role,
         MetaNs::RoleSeq,
@@ -360,6 +365,7 @@ impl MetaNs {
             MetaNs::VarMeta => "__mutsu_var_meta::",
             MetaNs::VarDefault => "__mutsu_var_default::",
             MetaNs::VarSourceName => "__mutsu_var_source_name::",
+            MetaNs::LexicalDynamic => "__mutsu_lexical_dynamic::",
             MetaNs::AttrAlias => "__mutsu_attr_alias::",
             MetaNs::Role => "__mutsu_role__",
             MetaNs::RoleSeq => "__mutsu_role_seq__",
@@ -624,6 +630,7 @@ mod tests {
             (MetaNs::VarMeta, "__mutsu_var_meta::@a"),
             (MetaNs::VarDefault, "__mutsu_var_default::@a"),
             (MetaNs::VarSourceName, "__mutsu_var_source_name::@a"),
+            (MetaNs::LexicalDynamic, "__mutsu_lexical_dynamic::@a"),
             (MetaNs::AttrAlias, "__mutsu_attr_alias::@a"),
             (MetaNs::Role, "__mutsu_role__@a"),
             (MetaNs::RoleSeq, "__mutsu_role_seq__@a"),

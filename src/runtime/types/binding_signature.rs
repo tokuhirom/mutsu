@@ -2531,6 +2531,7 @@ impl Interpreter {
                                 });
                             if let Some(src) = source_name {
                                 rw_bindings.push((pd.name.clone(), src.clone()));
+                                let descriptor = src.clone();
                                 let existing = self
                                     .env
                                     .get(&src)
@@ -2553,6 +2554,9 @@ impl Interpreter {
                                         cell
                                     }
                                 };
+                                // As in the positional arm: the parameter is
+                                // the caller's container (#11196).
+                                crate::value::name_container_cell(&bound_value, &descriptor);
                             } else if matches!(bound_value.view(), ValueView::ContainerRef(_)) {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
@@ -3014,6 +3018,17 @@ impl Interpreter {
                                 && !raw_readonly_source
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
+                            }
+                            // A dynamic variable (`f(my $*OUT)`) is not boxed
+                            // into a shared cell here, but the parameter still
+                            // aliases its container, whose descriptor names it:
+                            // record the name for `.VAR.name` (#11196; Tee's
+                            // `Tee($file, my $*OUT)` keys on it).
+                            if param_is_plain_scalar && source_name.starts_with('*') {
+                                self.env.insert(
+                                    MetaNs::VarSourceName.owned_key_for_str(&pd.name),
+                                    Value::str(format!("${source_name}")),
+                                );
                             }
                             // Set up a sigilless alias so that subsequent `:=`
                             // bindings (e.g. `$a := $arg`) can transitively
@@ -3547,6 +3562,7 @@ impl Interpreter {
                         // one write (the wrap-chain relay no longer depends on
                         // same-name env-merge coincidence).
                         if let Some(cell_key) = rw_shared_cell_key.take() {
+                            let descriptor = cell_key.clone();
                             // ADR-0040 §9 states the `Proxy` boundary from the
                             // store side: a `Proxy` is FETCHed when it lands
                             // INSIDE a container. An `is rw`/`is raw` parameter
@@ -3592,6 +3608,10 @@ impl Interpreter {
                                         cell
                                     }
                                 };
+                                // The parameter IS the caller's container,
+                                // whose descriptor names the caller's variable
+                                // (`$x.VAR.name` is `$a`, #11196).
+                                crate::value::name_container_cell(&value, &descriptor);
                             }
                         }
                         // Plain `$` params are item bindings (raku: `f([1,2])`
