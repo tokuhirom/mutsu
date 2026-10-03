@@ -1582,6 +1582,9 @@ impl Interpreter {
                     self.invalidate_fn_resolution_for_keys([Symbol::intern(&fq)]);
                 }
             }
+            if crate::qualified::is_global_package(self.current_package_sym()) {
+                self.scope_main_family_if_contested(name, def.source_file.as_deref());
+            }
         } else {
             let pkg = self.current_package().to_string();
             let fq = format!("{}::{}", pkg, name);
