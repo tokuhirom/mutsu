@@ -781,7 +781,7 @@ impl crate::runtime::Interpreter {
         // `^parameterize` builds with `.^mixin`, #11209) leaves its storage
         // and so its REPR alone.
         if let ValueView::Mixin(inner, _) = target.view() {
-            let inner = Value::clone(&inner);
+            let inner = Value::clone(inner);
             return self.try_native_handle_repr_where(&inner, method);
         }
         if let ValueView::Array(data, _) = target.view()

@@ -133,7 +133,7 @@ impl Interpreter {
     pub(crate) fn type_array_type(&mut self, ty: &Value) -> Result<Option<Value>, RuntimeError> {
         if let ValueView::Mixin(inner, mixins) = ty.view() {
             // The last role composed wins, as each application re-sets it.
-            for (role_name, args) in Self::mixin_role_applications(&mixins).into_iter().rev() {
+            for (role_name, args) in Self::mixin_role_applications(mixins).into_iter().rev() {
                 if !self
                     .registry()
                     .role_array_type_args
@@ -151,7 +151,7 @@ impl Interpreter {
                     return Ok(Some(value));
                 }
             }
-            return self.type_array_type(&inner);
+            return self.type_array_type(inner);
         }
         let owner = self.mop_receiver_owner(ty);
         Ok(self.recorded_array_type(&owner))

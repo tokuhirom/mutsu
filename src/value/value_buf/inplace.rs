@@ -151,7 +151,7 @@ pub(crate) fn buf_target(
             attributes,
             ..
         } if node_in(&attributes.as_map()).is_some() => Some((class_name, (*attributes).clone())),
-        crate::value::ValueView::Mixin(inner, _) => buf_target(&inner),
+        crate::value::ValueView::Mixin(inner, _) => buf_target(inner),
         _ => None,
     }
 }

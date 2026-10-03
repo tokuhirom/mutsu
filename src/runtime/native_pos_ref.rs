@@ -174,7 +174,7 @@ mod tests {
             vec![Value::int(1), Value::int(2)],
         );
         let r = native_pos_ref(buf.clone(), 1, NativeRefKind::Int);
-        assert_eq!(fetch(&[r.clone()]).unwrap(), Value::int(2));
+        assert_eq!(fetch(std::slice::from_ref(&r)).unwrap(), Value::int(2));
         store(&[r.clone(), Value::int(-9)]).unwrap();
         assert_eq!(fetch(&[r]).unwrap(), Value::int(-9));
         // Past the end reads as zero.

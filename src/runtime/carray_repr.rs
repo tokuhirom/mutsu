@@ -149,7 +149,7 @@ impl Interpreter {
         } else {
             self.nqp_create(Value::package(class))
         };
-        Some(base.and_then(|base| self.compose_mixin_type_roles_unbuilt(base, &mixins)))
+        Some(base.and_then(|base| self.compose_mixin_type_roles_unbuilt(base, mixins)))
     }
 }
 
