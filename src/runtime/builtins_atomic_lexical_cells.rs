@@ -39,10 +39,10 @@ impl Interpreter {
         &mut self,
         bare: &str,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
-        let pkg = self.current_package();
-        if pkg.is_empty() || pkg == "GLOBAL" {
+        if crate::qualified::is_global_package(self.current_package_sym()) {
             return None;
         }
+        let pkg = self.current_package();
         let cur = self.package_lexicals.get(&pkg)?.get(bare)?.clone();
         if let ValueView::ContainerRef(c) = cur.view() {
             return Some(c.clone());
