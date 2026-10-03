@@ -1964,7 +1964,7 @@ impl Interpreter {
                     } else {
                         raw_val
                     };
-                    Self::itemize_scalar_store(&name, raw_val)
+                    self.itemize_named_scalar_store(&name, raw_val)
                 } else {
                     raw_val
                 };

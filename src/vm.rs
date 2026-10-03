@@ -335,6 +335,7 @@ pub(crate) mod vm_subst_apply;
 pub(crate) mod vm_subst_exec;
 pub(crate) mod vm_subst_repl;
 mod vm_take_deferring_op;
+mod vm_topic_itemize;
 mod vm_trait_mod_does_ops;
 mod vm_trait_mod_export_ops;
 mod vm_try_catch_gather;

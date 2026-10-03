@@ -495,7 +495,7 @@ impl Interpreter {
             }
             assigned
         } else {
-            Self::itemize_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_val))
+            self.itemize_named_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_val))
         };
         val = self.apply_attr_container_element_type(&name, val, false)?;
         if val.is_nil()
