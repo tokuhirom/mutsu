@@ -583,7 +583,7 @@ impl Interpreter {
             && self.mixin_composes_method(&target, assign_method)
             // A role that only `handles` the method forwards it to an
             // attribute; the mixin delegation path owns that write.
-            && self.delegated_mixin_attr_key(&mixins, assign_method).is_none()
+            && self.delegated_mixin_attr_key(mixins, assign_method).is_none()
             && !matches!(
                 self.stack.last().map(Value::view),
                 Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
