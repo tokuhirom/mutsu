@@ -2,7 +2,7 @@
 //! packages that enclose the running code.
 
 use super::*;
-use crate::qualified::{package_ancestors, qualified};
+use crate::qualified::{is_global_package, package_ancestors, package_parent, qualified};
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -21,15 +21,14 @@ impl Interpreter {
     /// current package and of the running method's class.
     // Cost: O(d), d = nesting depth of the current package and method class.
     pub(crate) fn enclosing_qualified_routine_name(&mut self, name: &str) -> Option<String> {
-        let (pkg_prefix, _) = name.rsplit_once("::")?;
         let name_sym = Symbol::intern(name);
-        let prefix_sym = Symbol::intern(pkg_prefix);
+        let prefix_sym = package_parent(name_sym)?;
         let mut bases: Vec<Symbol> = package_ancestors(self.current_package_sym()).collect();
         if let Some(class) = self.method_class_stack_top_str() {
             bases.extend(package_ancestors(Symbol::intern(class)));
         }
         for anc in bases {
-            if anc.as_str() == "GLOBAL" {
+            if is_global_package(anc) {
                 continue;
             }
             if !self.is_known_package(qualified(anc, prefix_sym).as_str()) {
