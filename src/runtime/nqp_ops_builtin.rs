@@ -577,6 +577,18 @@ impl Interpreter {
                     _ => None,
                 };
             }
+            // A Capture's `@!list` is its positionals and `%!hash` its
+            // nameds. Upstream NativeCall reads `@!list` off the `|c` of its
+            // replacement body and hands it to `nqp::nativecall`. The answer
+            // is a fresh list, as rakudo's is one the caller may rebind
+            // elements of without touching the Capture.
+            ValueView::Capture { positional, named } => {
+                return match bare {
+                    "list" => Some(Value::array(positional.to_vec())),
+                    "hash" => Some(Value::hash((*named).clone())),
+                    _ => None,
+                };
+            }
             _ => {}
         }
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,

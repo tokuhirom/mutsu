@@ -1020,35 +1020,7 @@ impl Interpreter {
         if type_args.is_empty() {
             return Ok(None);
         }
-        let pun_name = format!(
-            "{}[{}]",
-            base_name,
-            type_args
-                .iter()
-                .map(super::registration_class::type_value_name)
-                .collect::<Vec<_>>()
-                .join(",")
-        );
-        // The pun class is cached under its name, so the name must tell apart
-        // every pair of argument lists that bind the role differently. The
-        // spelling above does so for type objects and plain values (`R[Int]`,
-        // `R[3]`, `R[More]`), but not for a value whose text is not its
-        // identity: every Block renders the same, so `R[{ 1 }].new` and a later
-        // `R[{ 2 }].new` shared one class and the second silently ran the first
-        // block (MergeOrderedSeqs' `:before{...}` comparators). Such an argument
-        // adds its `.WHICH` after a `\u{0}`, the storage-name mangling
-        // `user_facing_type_name` already strips, so `.^name` is unchanged.
-        let identity_suffix: Vec<String> = type_args
-            .iter()
-            .filter(|arg| !Self::pun_arg_spelling_is_identity(arg))
-            .map(crate::runtime::utils::value_which_key)
-            .collect();
-        let role_spelling = pun_name;
-        let pun_name = if identity_suffix.is_empty() {
-            role_spelling.clone()
-        } else {
-            format!("{role_spelling}\u{0}{}", identity_suffix.join(","))
-        };
+        let (role_spelling, pun_name) = Self::parametric_role_pun_name(base_name, type_args);
         let pun_name = if from_defaults {
             format!("{base_name}\u{0}default{}", &pun_name[base_name.len()..])
         } else {
@@ -1128,6 +1100,46 @@ impl Interpreter {
     /// identifies it: a type object, a nested curried role, a named argument,
     /// or a value type whose text is its value. Anything else (a Block, an
     /// object instance, a container) needs its `.WHICH` to stay distinct.
+    /// The name of the class a parameterised role `base_name[type_args]` puns
+    /// to, and its user-facing spelling. The class is cached under the name, so
+    /// the name must tell apart every pair of argument lists that bind the role
+    /// differently. The spelling does so for type objects and plain values
+    /// (`R[Int]`, `R[3]`, `R[More]`), but not for a value whose text is not its
+    /// identity: every Block renders the same, so `R[{ 1 }].new` and a later
+    /// `R[{ 2 }].new` shared one class and the second silently ran the first
+    /// block (MergeOrderedSeqs' `:before{...}` comparators). Such an argument
+    /// adds its `.WHICH` after a `\u{0}`, the storage-name mangling
+    /// `user_facing_type_name` already strips, so `.^name` is unchanged.
+    ///
+    /// The role body's lexicals are persisted under this name, so a role
+    /// method's dispatch must look them up under the same name (#11528).
+    // Cost: O(a), a = total length of the arguments' spellings.
+    pub(crate) fn parametric_role_pun_name(
+        base_name: &str,
+        type_args: &[Value],
+    ) -> (String, String) {
+        let role_spelling = format!(
+            "{}[{}]",
+            base_name,
+            type_args
+                .iter()
+                .map(super::registration_class::type_value_name)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let identity_suffix: Vec<String> = type_args
+            .iter()
+            .filter(|arg| !Self::pun_arg_spelling_is_identity(arg))
+            .map(crate::runtime::utils::value_which_key)
+            .collect();
+        let pun_name = if identity_suffix.is_empty() {
+            role_spelling.clone()
+        } else {
+            format!("{role_spelling}\u{0}{}", identity_suffix.join(","))
+        };
+        (role_spelling, pun_name)
+    }
+
     fn pun_arg_spelling_is_identity(arg: &Value) -> bool {
         matches!(
             arg.view(),

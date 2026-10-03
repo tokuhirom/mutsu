@@ -4921,7 +4921,11 @@ impl Interpreter {
 
         // Mixin fallback: check __mutsu_attr__ and delegate to inner
         if let ValueView::Mixin(inner, mixins) = target.view() {
-            if args.is_empty() {
+            // A private role attribute (`has $!name`) has no accessor: on a
+            // routine with such a role mixed in, `.name` is the routine's own
+            // name, not the attribute (upstream NativeCall's `Native` role
+            // keeps `has str $!name`).
+            if args.is_empty() && !self.mixin_role_attr_is_private_only(mixins, method) {
                 let attr_key = MetaNs::Attr.owned_key_for_str(method);
                 if let Some(value) = mixins
                     .role_attribute_by_name(method)
