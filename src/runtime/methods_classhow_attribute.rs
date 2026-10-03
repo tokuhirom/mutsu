@@ -74,52 +74,6 @@ impl Interpreter {
         }
     }
 
-    /// Create a list of BOOTSTRAPATTR instances for the Attribute class's own attributes.
-    fn make_bootstrapattr_list() -> Vec<Value> {
-        // Raku's Attribute class has these well-known attributes (in order).
-        // We model a subset that matches what the roast tests check.
-        let bootstrapattrs: &[(&str, &str)] = &[
-            ("name", "str"),
-            ("type", "Mu"),
-            ("build", "Mu"),
-            ("package", "Mu"),
-            ("inlined", "int"),
-            ("has_accessor", "int"),
-            ("rw", "int"),
-            ("is_built", "int"),
-            ("is_bound", "int"),
-            ("required", "Mu"),
-            ("container_descriptor", "Mu"),
-            ("auto_viv_container", "Mu"),
-            ("positional_delegate", "int"),
-            ("associative_delegate", "int"),
-            ("why", "Mu"),
-            ("container_initializer", "Mu"),
-            ("original", "Mu"),
-            ("compose_order", "int"),
-            ("composed", "int"),
-            ("is_required", "int"),
-            ("dimensions", "Mu"),
-        ];
-        bootstrapattrs
-            .iter()
-            .map(|(attr_name, type_name)| {
-                let mut meta = HashMap::new();
-                meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-                meta.insert(
-                    "type".to_string(),
-                    Value::package(Symbol::intern(type_name)),
-                );
-                meta.insert(
-                    "__mutsu_attr_name".to_string(),
-                    Value::str(attr_name.to_string()),
-                );
-                meta.insert("__mutsu_is_bootstrapattr".to_string(), Value::TRUE);
-                Value::make_instance(Symbol::intern("Attribute"), meta)
-            })
-            .collect()
-    }
-
     /// Map an attribute's `is required` state to the value `.required` reports:
     /// `Mu` (not required), `1` (bare `is required`), or the reason string
     /// (`is required("reason")`).
@@ -129,33 +83,6 @@ impl Interpreter {
             Some(None) => Value::int(1),
             Some(Some(reason)) => Value::str(reason.clone()),
         }
-    }
-
-    /// Build an Attribute introspection object for a modelled built-in type
-    /// attribute (private `$!name`, no accessor, read-only).
-    fn make_builtin_attribute_object(attr_name: &str, type_name: &str, owner: &str) -> Value {
-        let has_accessor =
-            crate::builtins::builtin_type_methods::builtin_type_attr_has_accessor(owner, attr_name);
-        let mut meta = HashMap::new();
-        meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
-        meta.insert(
-            "__mutsu_attr_name".to_string(),
-            Value::str(attr_name.to_string()),
-        );
-        meta.insert(
-            "__mutsu_attr_owner".to_string(),
-            Value::str(owner.to_string()),
-        );
-        meta.insert("is_public".to_string(), Value::truth(has_accessor));
-        meta.insert("is_rw".to_string(), Value::FALSE);
-        meta.insert("sigil".to_string(), Value::str("$".to_string()));
-        meta.insert(
-            "type".to_string(),
-            Value::package(Symbol::intern(type_name)),
-        );
-        meta.insert("has_accessor".to_string(), Value::truth(has_accessor));
-        meta.insert("required".to_string(), Value::package(Symbol::intern("Mu")));
-        Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
     /// The storage name a lexical (`my class P`) type is registered under,
@@ -353,7 +280,14 @@ impl Interpreter {
                 }
                 stored
             }
-            None => Value::make_instance(Symbol::intern("Attribute"), meta),
+            None => super::attribute_identity::attribute_meta_object(
+                super::attribute_identity::AttributeIdentity {
+                    owner: Symbol::intern(owner),
+                    sigil,
+                    name: Symbol::intern(attr_name),
+                },
+                meta,
+            ),
         }
     }
 
