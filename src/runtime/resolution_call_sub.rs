@@ -604,7 +604,22 @@ impl Interpreter {
                                 )
                             },
                         );
-                    if self.resolve_function(&name).is_some() || captured_match {
+                    // A live single routine of that name is the same family
+                    // only when it is one of the captured candidates: a
+                    // same-named routine imported later into the caller
+                    // (`my $ok = do { use Test; &ok }; use Monad::Result
+                    // :subs`) must not take the call from them.
+                    let live_single_is_captured =
+                        self.resolve_function(&name).is_some_and(|live| {
+                            candidates.iter().any(|captured| {
+                                matches!(
+                                    captured.view(),
+                                    ValueView::Sub(data)
+                                        if data.package == live.package && data.name == live.name
+                                )
+                            })
+                        });
+                    if live_single_is_captured || captured_match {
                         return self.call_user_family_by_name(&name, call_args);
                     }
                     // A compunit-scoped family (#11004) that the calling unit

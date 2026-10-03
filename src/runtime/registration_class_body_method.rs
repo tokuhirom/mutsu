@@ -457,8 +457,11 @@ impl Interpreter {
             self.invalidate_fn_resolution();
         }
         // `my method` registers as a lexically-scoped function
-        // (callable as `name(invocant)` inside the class body)
-        if decl.is_my {
+        // (callable as `name(invocant)` inside the class body). A submethod
+        // carries `is_my` too but is no function: registering it took the
+        // name from a same-named `our sub` in the class body (Monad::Result's
+        // `submethod ok` next to `our sub ok`).
+        if decl.is_my && !decl.is_submethod {
             let (my_params, my_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
             let func_def = crate::ast::FunctionDef {
