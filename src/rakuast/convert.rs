@@ -9,13 +9,13 @@
 use super::bareword::simple_type_node;
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
-    hash_literal, name_parts, routine_traits,
+    hash_literal, name_parts, routine_traits, subscript_adverb,
 };
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
-use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
+use crate::regex_tree::{RegexModifierKind, RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn unsupported(what: &str) -> RuntimeError {
@@ -1228,10 +1228,10 @@ fn var_decl_statement(
         custom_traits,
         where_constraint,
     } = parts;
-    // Dynamic (`$*x`), `where` constraints, parameterised/definite/coercion
-    // types, and real `is`/`does` traits carry richer shape, deferred.
-    if is_dynamic || where_constraint {
-        return Err(unsupported("dynamic / where-constrained declaration"));
+    // `where` constraints, parameterised/definite/coercion types, and real
+    // `is`/`does` traits carry richer shape, deferred.
+    if where_constraint {
+        return Err(unsupported("where-constrained declaration"));
     }
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
     // mutsu marks it with a `__constant` pseudo-trait (plus a
@@ -1266,7 +1266,16 @@ fn var_decl_statement(
             .any(|(name, _)| name == "__has_initializer")
             .then_some(Initializer::Assign(expr))
     };
-    let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
+    // A dynamic `my $*x` is named `*x` (`@*a` / `%*h` keep their sigil in
+    // front); raku renders the `*` as the declaration's `twigil`.
+    let dynamic_name;
+    let (name, twigil) = if is_dynamic {
+        dynamic_name = name.replacen('*', "", 1);
+        (dynamic_name.as_str(), Some("*"))
+    } else {
+        (name, None)
+    };
+    let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
     decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
     Ok(Some(statement_expression(decl)))
 }
@@ -1490,11 +1499,12 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 
 /// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,
 /// with the assigned value as the postcircumfix's `assignee` when there is one.
-fn subscript_node(
+pub(super) fn subscript_node(
     target: &Expr,
     index: &Expr,
     is_positional: bool,
     assignee: Option<&Expr>,
+    colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
@@ -1508,6 +1518,12 @@ fn subscript_node(
         },
         fields: vec![node_field(Some("index"), semilist)],
     };
+    if !colonpairs.is_empty() {
+        index_node.fields.push(RakuAstField {
+            name: Some("colonpairs"),
+            value: RakuAstFieldValue::List(colonpairs),
+        });
+    }
     if let Some(value) = assignee {
         index_node
             .fields
@@ -1534,6 +1550,9 @@ fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
 }
 
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(node) = subscript_adverb::convert(expr) {
+        return node;
+    }
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
@@ -2121,7 +2140,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             target,
             index,
             is_positional,
-        } => subscript_node(target, index, *is_positional, None),
+        } => subscript_node(target, index, *is_positional, None, Vec::new()),
         // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
         // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
         // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
@@ -2132,7 +2151,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             value,
             is_positional: true,
-        } => subscript_node(target, index, true, Some(value)),
+        } => subscript_node(target, index, true, Some(value), Vec::new()),
         Expr::IndexAssign {
             target,
             index,
@@ -2141,7 +2160,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyInfix,
             fields: vec![
-                node_field(Some("left"), subscript_node(target, index, false, None)?),
+                node_field(
+                    Some("left"),
+                    subscript_node(target, index, false, None, Vec::new())?,
+                ),
                 node_field(
                     Some("infix"),
                     RakuAstNode {
@@ -2801,6 +2823,27 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
         RegexNode::AnchorEndOfString => (RakuAstClass::RegexAnchorEndOfString, Vec::new()),
         RegexNode::AnchorEndOfLine => (RakuAstClass::RegexAnchorEndOfLine, Vec::new()),
         RegexNode::CharClassDigit => (RakuAstClass::RegexCharClassDigit, Vec::new()),
+        RegexNode::InternalModifier {
+            kind,
+            long,
+            negated,
+        } => {
+            let class = match kind {
+                RegexModifierKind::IgnoreCase => RakuAstClass::RegexInternalModifierIgnoreCase,
+                RegexModifierKind::IgnoreMark => RakuAstClass::RegexInternalModifierIgnoreMark,
+            };
+            let mut fields = Vec::new();
+            if *long {
+                fields.push(leaf_field(
+                    Some("modifier"),
+                    Value::str(kind.spellings().1.to_string()),
+                ));
+            }
+            if *negated {
+                fields.push(leaf_field(Some("negated"), Value::truth(true)));
+            }
+            (class, fields)
+        }
         RegexNode::WithWhitespace(child) => (
             RakuAstClass::RegexWithWhitespace,
             vec![node_field(None, regex_node(child)?)],
@@ -4179,7 +4222,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// of the measured read-direction shape, even though the internal AST stores
 /// only the value expression. A bare block is the exception: Rakudo keeps it as
 /// a direct `RakuAST::Block` value rather than wrapping it in parentheses.
-fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
         op: crate::token_kind::TokenKind::FatArrow,
