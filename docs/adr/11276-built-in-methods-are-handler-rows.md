@@ -1,6 +1,7 @@
 # ADR-11276: Built-in methods are handler rows in the one method table
 
-- **Status**: Accepted (user decision 2026-10-03). Slices 1 and 2 done; see §9. Supersedes
+- **Status**: Accepted (user decision 2026-10-03). Slices 1 and 2 done, slice 3 under way; see
+  §9. Supersedes
   [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) design decision 1 of its E2
   design ("rows are recognition metadata, not function pointers; invocation stays in the arity
   cascades").
@@ -268,3 +269,19 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     `$i.abs` +0.2%, `$s.uc` -1.5%, `@a.map(*+1).elems` +0.2%, the empty loop unchanged.
     `$r.numerator`, already a lane hit, moved +2.3% (~35 Ir per call): the handler now
     matches three rational views instead of one, and the shape probe has more arms.
+- 2026-10-03, slice 3, first family (the text methods): `codes`, `ord`, `uc`, `lc`, `fc`,
+  `tc`, `tclc`, `wordcase`, `flip`, `trim`, `trim-leading`, `trim-trailing`, `chomp` and
+  `chop` are rows owned by `Str` and again by `Cool`, as in Rakudo, where `Cool`'s candidate
+  stringifies the invocant and calls `Str`'s. Both owners' rows point at one handler per
+  method in `method_table/str.rs`, which reads the receiver through
+  `grapheme_index::with_str`, so every shape whose MRO has `Cool` (all of them but `Str`)
+  finds the `Cool` row. The cascade arms stay for receivers with no shape (`Bool`, `Cool`
+  subclass instances, type objects) and call the same handlers.
+  - The `Cool` rows are what keeps the shapes other than `Str` from paying for the new names.
+    With only `Str` rows, `42.flip` passed the name bit test, missed for the `Int` shape and
+    ran the lane's resolve on every call: +7.2% on that benchmark.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `$s.codes` 1,376M to 332M (-75.9%), `$s.ord` -75.0%, `$s.chomp` -74.5%,
+    `$s.trim` -72.2%, `$s.flip` -68.1%, `$s.uc` -25.3% (the case map itself dominates),
+    `$i.flip` (Int, through `Cool`) -60.8%, `@a.flip` -63.4%. Calls the table does not
+    answer: `$i.abs` +0.2%, `$s.comb` 0.0%, the empty loop unchanged.
