@@ -549,6 +549,27 @@ fn static_definite_type(name: &str, type_constraint: Option<&str>) -> Option<Str
 /// effect observes (ADR-0134 §2.1.2), while the assignment stays at the
 /// declaration's source position. `None` for any other statement, and for a
 /// `constant`, whose initializer is itself a BEGIN-time effect.
+/// Whether a declaration's initializer builds a shaped container: the parser
+/// marks one with an explicit initializer `__shaped_decl`, and a bare `my
+/// @a[2;2]` is `Array.new(:shape(2, 2))`.
+// Cost: O(a), a = the initializer call's arguments.
+fn is_shaped_decl(init_expr: &Expr, custom_traits: &[(String, Option<Expr>)]) -> bool {
+    if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+        return true;
+    }
+    let Expr::MethodCall { name, args, .. } = init_expr else {
+        return false;
+    };
+    name.with_str(|n| n == "new") && args.iter().any(|arg| {
+        matches!(
+            arg,
+            Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
+                if matches!(left.as_ref(), Expr::Literal(v)
+                    if matches!(v.view(), crate::value::ValueView::Str(s) if s.as_str() == "shape"))
+        )
+    })
+}
+
 pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     let Stmt::VarDecl {
         name,
@@ -566,6 +587,12 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
         return None;
     };
     if custom_traits.iter().any(|(t, _)| t == "__constant") {
+        return None;
+    }
+    // A shaped declaration (`my @a[2;2]`, `my @a[2;2] = (1,2;3,4)`) builds its
+    // container with the shape: an empty static half plus a plain `@a = ...`
+    // assignment would lose the shape. It stays whole, at its own position.
+    if is_shaped_decl(init_expr, custom_traits) {
         return None;
     }
     // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is

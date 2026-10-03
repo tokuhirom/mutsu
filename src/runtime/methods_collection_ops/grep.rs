@@ -131,6 +131,18 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
+            // A multi-dimensional shaped array is grepped over its leaves, as
+            // `map`, `sort` and iteration see it -- not over its rows, and
+            // without the promoting path below, which rebuilt the outer level
+            // and so lost the shape of the array itself.
+            ValueView::Array(items, crate::value::ArrayKind::Shaped)
+                if items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Array(..))) =>
+            {
+                let leaves = crate::runtime::utils::shaped_array_leaves(&target);
+                self.eval_grep_with_adverb(args.first().cloned(), leaves, &grep_adverb)
+            }
             ValueView::Array(items, _arr_kind) => {
                 // ADR-0058 step 3b: with the default `:v` adverb the callback
                 // runs when the Seq is CONSUMED, not here. The adverbed forms

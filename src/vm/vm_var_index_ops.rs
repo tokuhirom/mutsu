@@ -837,6 +837,12 @@ impl Interpreter {
         {
             index = inner.as_ref().clone();
         }
+        // A single non-integer real subscript addresses the element its `Int`
+        // names, whatever the target (`$range[6.0]`; Rakudo's
+        // `postcircumfix:<[ ]>` calls `AT-POS(pos.Int)`).
+        if is_positional {
+            index = Self::positional_index_as_int(index);
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice

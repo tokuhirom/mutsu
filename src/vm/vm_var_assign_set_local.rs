@@ -2055,6 +2055,25 @@ impl Interpreter {
                 if let Some(info) = self.container_type_metadata(&lhs_current) {
                     assigned = self.tag_container_metadata(assigned, info);
                 }
+            } else if let Some(shape) = lhs_shape.as_ref().filter(|shape| shape.len() > 1)
+                && !assigned_has_own_shape
+                && !is_bind
+                && !is_shaped_decl
+            {
+                // `@d = (5,6;7,8)` on a multi-dimensional shaped array: the
+                // array keeps its shape and takes the rows elementwise, exactly
+                // as its declaration's initializer was built (`Array.new(
+                // :shape(...), ...)`, with the same X::Assignment checks).
+                let dims = Value::array(shape.iter().map(|&d| Value::int(d as i64)).collect());
+                assigned = self.try_native_array_construct(
+                    crate::symbol::Symbol::intern("Array"),
+                    "Array",
+                    &None,
+                    &[
+                        Value::pair("shape".to_string(), dims),
+                        Value::pair("data".to_string(), assigned),
+                    ],
+                )?;
             } else if !is_bind
                 && !is_shaped_decl
                 && (has_explicit_initializer || !is_vardecl)
