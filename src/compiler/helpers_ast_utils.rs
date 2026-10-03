@@ -847,27 +847,35 @@ impl Compiler {
         let keep_trait =
             |t: &str| t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED");
         let mut shell = self.qualify_decl_name(stmt);
-        let idx = match &mut shell {
+        let (decl_id, idx) = match &mut shell {
             Stmt::ClassDecl {
                 body,
                 custom_traits,
+                decl_id,
                 ..
             } => {
+                let decl_id = *decl_id;
                 *body = Self::type_decl_shell_body(body);
                 custom_traits.retain(|(t, _)| keep_trait(t));
                 custom_traits.push(("__hoisted".to_string(), None));
                 if nested {
                     custom_traits.push(("__hoisted_nested".to_string(), None));
                 }
-                self.add_class_decl_plan(&shell)
+                (decl_id, self.add_class_decl_plan(&shell))
             }
-            Stmt::RoleDecl { custom_traits, .. } => {
+            Stmt::RoleDecl {
+                custom_traits,
+                decl_id,
+                ..
+            } => {
+                let decl_id = *decl_id;
                 custom_traits.retain(|(t, _)| keep_trait(t));
                 custom_traits.push(("__hoisted".to_string(), None));
-                self.add_role_decl_plan(&shell)
+                (decl_id, self.add_role_decl_plan(&shell))
             }
             _ => return,
         };
+        self.hoisted_type_shells.push((decl_id, idx));
         self.code.emit(OpCode::RegisterDecl(idx));
     }
 
