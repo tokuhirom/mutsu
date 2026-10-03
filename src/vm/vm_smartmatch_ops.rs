@@ -54,6 +54,47 @@ impl Interpreter {
         rhs_is_bare_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // A routine whose `$/` is a (readonly) parameter -- the action-method
+        // idiom `method term($/) { ... when $s ~~ /.../ ... make ... }` -- keeps
+        // that `$/` across a regex smartmatch: rakudo answers the match but
+        // leaves `$/`, and so `$0` / `$<name>`, alone.
+        let saved_slash = self
+            .is_readonly("/")
+            .then(|| self.env().get("/").cloned())
+            .flatten();
+        let result = self.exec_smart_match_expr_op_inner(
+            code,
+            ip,
+            rhs_end,
+            negate,
+            lhs,
+            rhs_is_match_regex,
+            lhs_is_literal,
+            rhs_pure_regex,
+            rhs_is_bare_topic,
+            compiled_fns,
+        );
+        if let Some(slash) = saved_slash {
+            self.env_mut().insert("/".to_string(), slash.clone());
+            self.update_local_if_exists(code, "/", &slash);
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exec_smart_match_expr_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        rhs_end: u32,
+        negate: bool,
+        lhs: Option<&crate::opcode::SmartMatchLhs>,
+        rhs_is_match_regex: bool,
+        lhs_is_literal: bool,
+        rhs_pure_regex: bool,
+        rhs_is_bare_topic: bool,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
         use crate::opcode::SmartMatchLhs;
         let lhs_var: Option<&String> = match lhs {
             Some(SmartMatchLhs::Var { name, .. }) => Some(name),
