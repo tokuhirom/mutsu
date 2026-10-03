@@ -70,7 +70,7 @@ impl Interpreter {
     }
 
     #[cfg(feature = "libffi")]
-    fn cglobal_fetch(
+    pub(crate) fn cglobal_fetch(
         &mut self,
         library: &Value,
         symbol: &str,
@@ -145,7 +145,7 @@ impl Interpreter {
     }
 
     #[cfg(not(feature = "libffi"))]
-    fn cglobal_fetch(
+    pub(crate) fn cglobal_fetch(
         &mut self,
         _library: &Value,
         _symbol: &str,

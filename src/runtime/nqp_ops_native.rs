@@ -6,7 +6,9 @@
 //! `NativeCall/Types.rakumod` use (ADR-11203, #11206): `unbox_n`/`unbox_u` and
 //! `atpos_u`/`bindpos_u` for typed `CArray` element traffic, `atposref_{i,n,u}` for an
 //! element's lvalue, and `setcodename`/`neverrepossess` for the routine body
-//! NativeCall's backend-neutral path installs.
+//! NativeCall's backend-neutral path installs. The FFI ops themselves
+//! (`nqp::buildnativecall` and kin, #11211) are the next link, in
+//! `nativecall_nqp.rs`.
 
 use super::*;
 use crate::value::ValueView;
@@ -129,7 +131,8 @@ impl Interpreter {
             // modules, so there is nothing to exempt it from.
             // Cost: O(1).
             "neverrepossess" => Ok(operand(args, 0)),
-            _ => return None,
+            // The FFI ops (`nativecall_nqp.rs`).
+            _ => return self.call_nqp_op_ffi(op, args),
         })
     }
 }

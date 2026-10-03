@@ -3216,7 +3216,7 @@ impl Interpreter {
                     let id = COMPOSE_METHOD_ID.fetch_add(1, Ordering::Relaxed);
                     return Ok(Value::make_sub_with_id(
                         Symbol::intern(""),
-                        Symbol::intern(&format!("<composed-method:{}>", method)),
+                        Symbol::intern(&format!("{COMPOSED_METHOD_PREFIX}{method}>")),
                         params,
                         Vec::new(),
                         body,
@@ -4003,5 +4003,22 @@ pub(super) fn format_operator_name(name: &str) -> String {
         format!("{}:\u{ab}{}\u{bb}", category, symbol)
     } else {
         name.to_string()
+    }
+}
+
+/// The name prefix of the Sub that a method call on a callable composes into
+/// when no method of that name exists (`(*-*).abs`, the fallback in
+/// `call_method_with_values`).
+const COMPOSED_METHOD_PREFIX: &str = "<composed-method:";
+
+/// Whether `v` is that composed Sub. A `.?method` call reads it as "no such
+/// method" and answers Nil: composing is the last resort for a method the
+/// callable does not have, and `.?` asks precisely whether it has one
+/// (`self.?native_call_convention` on a plain routine is Nil in rakudo).
+// Cost: O(1).
+pub(crate) fn is_composed_method_stub(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Sub(data) => data.name.resolve().starts_with(COMPOSED_METHOD_PREFIX),
+        _ => false,
     }
 }

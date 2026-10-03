@@ -88,7 +88,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 217] = [
+static NQP_OPS: [(&str, NqpOpTable); 223] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -131,6 +131,7 @@ static NQP_OPS: [(&str, NqpOpTable); 217] = [
     ("bitxor_i", NqpOpTable::Value),
     ("box_i", NqpOpTable::Builtin),
     ("box_s", NqpOpTable::Text),
+    ("buildnativecall", NqpOpTable::Native),
     ("can", NqpOpTable::Process),
     ("chars", NqpOpTable::Value),
     ("chr", NqpOpTable::List),
@@ -237,6 +238,11 @@ static NQP_OPS: [(&str, NqpOpTable); 217] = [
     ("mul_I", NqpOpTable::Value),
     ("mul_i", NqpOpTable::Value),
     ("mul_n", NqpOpTable::Value),
+    ("nativecall", NqpOpTable::Native),
+    ("nativecallcast", NqpOpTable::Native),
+    ("nativecallglobal", NqpOpTable::Native),
+    ("nativecallrefresh", NqpOpTable::Native),
+    ("nativecallsizeof", NqpOpTable::Native),
     ("neg_I", NqpOpTable::Value),
     ("neg_i", NqpOpTable::Value),
     ("neg_n", NqpOpTable::Value),

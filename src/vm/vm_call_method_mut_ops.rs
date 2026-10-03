@@ -3162,6 +3162,13 @@ impl Interpreter {
                 };
                 match modifier {
                     Some("?") => match call_result {
+                        Ok(val)
+                            if crate::runtime::methods_instance_ops::is_composed_method_stub(
+                                &val,
+                            ) =>
+                        {
+                            self.stack.push(Value::NIL);
+                        }
                         Ok(val) => {
                             self.stack.push(val);
                         }
