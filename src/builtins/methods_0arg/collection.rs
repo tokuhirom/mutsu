@@ -227,7 +227,7 @@ pub(crate) fn permutations_seq(items: Vec<Value>) -> Value {
 }
 
 /// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
-pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
         "hash" => {
             match target.view() {
@@ -789,29 +789,36 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         },
-        "total" => match target.view() {
-            ValueView::Set(s, _) => Some(Ok(Value::int(s.len() as i64))),
-            ValueView::Bag(b, _) => Some(Ok(Value::from_bigint(
-                b.values().sum::<num_bigint::BigInt>(),
-            ))),
-            ValueView::Mix(m, _) => {
-                // Sort values before summing to ensure deterministic results
-                // regardless of HashMap iteration order: a weight that only
-                // decodes to `Num` still sums non-associatively (e.g.
-                // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
-                let mut vals: Vec<f64> = m.values().copied().collect();
-                vals.sort_by(|a, b| a.total_cmp(b));
-                // Sum under the numeric tower and decode the total the same way
-                // every other weight read-out does, so `.total` is `Int` for a
-                // whole total and an exact `Rat` for a decimal one. The old
-                // `f64_to_rat` reconstruction snapped anything within 1e-10 of a
-                // whole number, turning `(a => 1.00000000001).Mix.total` into 1.
-                Some(Ok(crate::value::mix_weight_to_value(
-                    crate::builtins::mix_weight::sum(vals),
-                )))
+        // `Baggy.Numeric` / `Mix.Numeric` are the total weight, i.e. `.total`.
+        // Cost: O(e), e = entries of the invocant (one pass over the weights).
+        "total" | "Numeric"
+            if matches!(method, "total")
+                || matches!(target.view(), ValueView::Bag(..) | ValueView::Mix(..)) =>
+        {
+            match target.view() {
+                ValueView::Set(s, _) => Some(Ok(Value::int(s.len() as i64))),
+                ValueView::Bag(b, _) => Some(Ok(Value::from_bigint(
+                    b.values().sum::<num_bigint::BigInt>(),
+                ))),
+                ValueView::Mix(m, _) => {
+                    // Sort values before summing to ensure deterministic results
+                    // regardless of HashMap iteration order: a weight that only
+                    // decodes to `Num` still sums non-associatively (e.g.
+                    // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
+                    let mut vals: Vec<f64> = m.values().copied().collect();
+                    vals.sort_by(|a, b| a.total_cmp(b));
+                    // Sum under the numeric tower and decode the total the same way
+                    // every other weight read-out does, so `.total` is `Int` for a
+                    // whole total and an exact `Rat` for a decimal one. The old
+                    // `f64_to_rat` reconstruction snapped anything within 1e-10 of a
+                    // whole number, turning `(a => 1.00000000001).Mix.total` into 1.
+                    Some(Ok(crate::value::mix_weight_to_value(
+                        crate::builtins::mix_weight::sum(vals),
+                    )))
+                }
+                _ => None,
             }
-            _ => None,
-        },
+        }
         // Cost: O(e), e = elements of the invocant (Range elements contribute their
         // two endpoints; one pass, two comparisons per candidate).
         "minmax" => match target.view() {

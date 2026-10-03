@@ -333,26 +333,109 @@ impl Value {
         Value::RakuAst(node)
     }
 
-    pub(crate) fn rakuast_add_statement(
+    /// The in-place child appenders of the RakuAST model:
+    /// `StatementList.add-statement` / `.unshift-statement` and
+    /// `ArgList.push`. They mutate the node shared by every holder, as
+    /// rakudo's do. `None` when `method` is not one of them or the invocant is
+    /// not a RakuAST node.
+    // Cost: O(1) to append; O(n) to prepend, n = statements in the list.
+    pub(crate) fn rakuast_add_child(
         &self,
-        statement: Value,
+        method: &str,
+        child: Value,
     ) -> Option<Result<Value, RuntimeError>> {
+        use crate::rakuast::RakuAstClass;
+        let (class, owner, front) = match method {
+            "add-statement" => (RakuAstClass::StatementList, "RakuAST::StatementList", false),
+            "unshift-statement" => (RakuAstClass::StatementList, "RakuAST::StatementList", true),
+            "push" => (RakuAstClass::ArgList, "RakuAST::ArgList", false),
+            _ => return None,
+        };
         self.0.with_rakuast_inplace(|node| {
-            if node.class != crate::rakuast::RakuAstClass::StatementList {
-                return Err(RuntimeError::new(
-                    "add-statement is only available on RakuAST::StatementList",
-                ));
+            if node.class != class {
+                return Err(RuntimeError::new(format!(
+                    "{method} is only available on {owner}"
+                )));
             }
-            if !matches!(statement.view(), ValueView::RakuAst(_)) {
-                return Err(RuntimeError::new(
-                    "RakuAST::StatementList.add-statement expects a RakuAST node",
-                ));
+            let is_node = match child.view() {
+                ValueView::RakuAst(_) => true,
+                ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::RakuAst(_)),
+                _ => false,
+            };
+            if !is_node {
+                return Err(RuntimeError::new(format!(
+                    "{owner}.{method} expects a RakuAST node"
+                )));
             }
-            node.fields.push(crate::rakuast::RakuAstField {
+            let field = crate::rakuast::RakuAstField {
                 name: None,
-                value: crate::rakuast::RakuAstFieldValue::Node(statement.clone()),
-            });
-            Ok(statement)
+                value: crate::rakuast::RakuAstFieldValue::Node(child.clone()),
+            };
+            if front {
+                node.fields.insert(0, field);
+            } else {
+                node.fields.push(field);
+            }
+            Ok(child)
+        })
+    }
+    /// The in-place field setters of the RakuAST model:
+    /// `CompUnit.replace-statement-list($statement-list)` and
+    /// `Statement::Expression.set-expression($expression)`. They mutate the
+    /// node shared by every holder, as rakudo's do. `None` when `method` is
+    /// not one of them or the invocant is not a RakuAST node.
+    // Cost: O(f), f = fields of the node (a handful).
+    pub(crate) fn rakuast_set_field(
+        &self,
+        method: &str,
+        value: Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        use crate::rakuast::RakuAstClass;
+        let (class, field, owner) = match method {
+            "replace-statement-list" => (
+                RakuAstClass::CompUnit,
+                "statement-list",
+                "RakuAST::CompUnit",
+            ),
+            "set-expression" => (
+                RakuAstClass::StatementExpression,
+                "expression",
+                "RakuAST::Statement::Expression",
+            ),
+            _ => return None,
+        };
+        self.0.with_rakuast_inplace(|node| {
+            if node.class != class {
+                return Err(RuntimeError::new(format!(
+                    "{method} is only available on {owner}"
+                )));
+            }
+            let accepted = match value.view() {
+                ValueView::RakuAst(n) => {
+                    class != RakuAstClass::CompUnit || n.class == RakuAstClass::StatementList
+                }
+                ValueView::Mixin(inner, _) => {
+                    class != RakuAstClass::CompUnit && matches!(inner.view(), ValueView::RakuAst(_))
+                }
+                _ => false,
+            };
+            if !accepted {
+                return Err(RuntimeError::new(format!(
+                    "{owner}.{method} expects a RakuAST node"
+                )));
+            }
+            let new_value = crate::rakuast::RakuAstFieldValue::Node(value.clone());
+            match node.fields.iter_mut().find(|f| f.name == Some(field)) {
+                Some(slot) => slot.value = new_value,
+                None => node.fields.insert(
+                    0,
+                    crate::rakuast::RakuAstField {
+                        name: Some(field),
+                        value: new_value,
+                    },
+                ),
+            }
+            Ok(value)
         })
     }
     pub fn mixin(inner: Value, overrides: ValueMap) -> Self {

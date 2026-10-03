@@ -26,7 +26,7 @@ only transport. Everything the server has to say about itself goes to stderr,
 because stdout is the protocol channel.
 
 The server is not part of the release tarball yet, and is versioned
-independently of the interpreter (`tag-release.yml` bumps only the root
+independently of the interpreter (the release bump PR changes only the root
 `Cargo.toml`). Shipping it is a decision for when it is worth shipping.
 
 ## What it does

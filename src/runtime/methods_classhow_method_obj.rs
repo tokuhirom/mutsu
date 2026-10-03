@@ -920,15 +920,28 @@ impl Interpreter {
                     let candidate_idx = defs.iter().position(|d| std::ptr::eq(d, def));
                     // Prepend "self" to params so the method can be called
                     // as $meth($invocant) — the first argument binds as self.
-                    let mut params = vec!["self".to_string()];
-                    params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
-                    let mut param_defs = vec![Self::make_invocant_param(cn)];
-                    param_defs.extend(
-                        def.param_defs
-                            .iter()
-                            .filter(|p| p.name.as_str() != "self")
-                            .cloned(),
-                    );
+                    // Code handed to `^add_method` (`sub ($a, $b = 5) {...}`)
+                    // already carries its invocant as the first positional,
+                    // so it keeps its own signature instead of gaining a
+                    // second synthetic one (arity 1, not 2).
+                    let has_explicit_invocant = def
+                        .param_defs
+                        .iter()
+                        .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+                    let (params, param_defs) = if has_explicit_invocant {
+                        (def.params.clone(), def.param_defs.to_vec())
+                    } else {
+                        let mut params = vec!["self".to_string()];
+                        params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
+                        let mut param_defs = vec![Self::make_invocant_param(cn)];
+                        param_defs.extend(
+                            def.param_defs
+                                .iter()
+                                .filter(|p| p.name.as_str() != "self")
+                                .cloned(),
+                        );
+                        (params, param_defs)
+                    };
                     let mut env = crate::env::Env::new();
                     env.insert(
                         "__mutsu_lookup_class".to_string(),
@@ -938,7 +951,21 @@ impl Interpreter {
                         "__mutsu_lookup_method".to_string(),
                         Value::str(method_name.to_string()),
                     );
-                    if let Some(idx) = candidate_idx {
+                    if def.body.is_empty() && def.compiled_code.is_some() {
+                        // The method's code lives only in its compiled form
+                        // (`^add_method` of a declared `sub`), so this Sub has
+                        // no AST body to run: shape it like a dispatcher,
+                        // which re-dispatches by name with the first argument
+                        // as the invocant.
+                        env.insert(
+                            "__mutsu_callable_type".to_string(),
+                            Value::str_from(if def.is_submethod {
+                                "Submethod"
+                            } else {
+                                "Method"
+                            }),
+                        );
+                    } else if let Some(idx) = candidate_idx {
                         env.insert(
                             "__mutsu_lookup_candidate_idx".to_string(),
                             Value::int(idx as i64),

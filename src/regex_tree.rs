@@ -204,6 +204,32 @@ pub(crate) enum RegexNode {
     AnchorEndOfLine,
     CharClassDigit,
     WithWhitespace(Box<RegexNode>),
+    /// An internal modifier (`:i`, `:ignorecase`, `:!m`) that switches a
+    /// matching mode for the rest of its enclosing group. `long` records the
+    /// spelling (`:ignorecase` rather than `:i`), which RakuAST keeps.
+    InternalModifier {
+        kind: RegexModifierKind,
+        long: bool,
+        negated: bool,
+    },
+}
+
+/// The matching mode an internal regex modifier switches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum RegexModifierKind {
+    IgnoreCase,
+    IgnoreMark,
+}
+
+impl RegexModifierKind {
+    /// The short and long adverb spellings (`i` / `ignorecase`).
+    // Cost: O(1).
+    pub(crate) fn spellings(self) -> (&'static str, &'static str) {
+        match self {
+            Self::IgnoreCase => ("i", "ignorecase"),
+            Self::IgnoreMark => ("m", "ignoremark"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
@@ -444,6 +470,9 @@ impl RegexTree {
                             .collect(),
                     )
                 }
+                // A modifier switches the mode for the rest of its group,
+                // which the runtime parser tracks; keep such a pattern on it.
+                RegexNode::InternalModifier { .. } => None,
                 RegexNode::CharClassDigit => Some(vec![token(
                     crate::runtime::RegexAtom::CharClass(crate::runtime::CharClass {
                         negated: false,
@@ -876,7 +905,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit => {}
+            | Self::CharClassDigit
+            | Self::InternalModifier { .. } => {}
         }
     }
 
@@ -910,7 +940,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit => false,
+            | Self::CharClassDigit
+            | Self::InternalModifier { .. } => false,
         }
     }
 
@@ -945,7 +976,8 @@ impl RegexNode {
             | Self::AnchorBeginningOfLine
             | Self::AnchorEndOfString
             | Self::AnchorEndOfLine
-            | Self::CharClassDigit => false,
+            | Self::CharClassDigit
+            | Self::InternalModifier { .. } => false,
         }
     }
 
@@ -977,7 +1009,8 @@ impl RegexNode {
             | Self::CodeAssertion { .. }
             | Self::CodeBlock { .. }
             | Self::InterpolatedBlock { .. }
-            | Self::CharClassDigit => false,
+            | Self::CharClassDigit
+            | Self::InternalModifier { .. } => false,
         }
     }
 
@@ -1132,6 +1165,15 @@ impl RegexNode {
             Self::AnchorEndOfString => "$".to_string(),
             Self::AnchorEndOfLine => "$$".to_string(),
             Self::CharClassDigit => "\\d".to_string(),
+            Self::InternalModifier {
+                kind,
+                long,
+                negated,
+            } => {
+                let (short, long_name) = kind.spellings();
+                let name = if *long { long_name } else { short };
+                format!(":{}{name}", if *negated { "!" } else { "" })
+            }
             Self::WithWhitespace(child) => child.to_source(),
         }
     }
@@ -1163,7 +1205,12 @@ fn collapse_alternation(nodes: Vec<RegexNode>) -> RegexNode {
 }
 
 fn has_whitespace_after(node: &RegexNode) -> bool {
-    matches!(node, RegexNode::WithWhitespace(_))
+    // A modifier is never wrapped, but its source needs a separator so the
+    // following atom does not run into its name (`:i foo`, not `:ifoo`).
+    matches!(
+        node,
+        RegexNode::WithWhitespace(_) | RegexNode::InternalModifier { .. }
+    )
 }
 
 /// Render the small expression subset needed when a hand-built RakuAST
@@ -1471,7 +1518,10 @@ impl Parser {
                 }
                 break;
             }
-            let mut atom = self.parse_atom(stops, nodes.is_empty(), sequential_interpolation)?;
+            let at_start = nodes
+                .iter()
+                .all(|n| matches!(n, RegexNode::InternalModifier { .. }));
+            let mut atom = self.parse_atom(stops, at_start, sequential_interpolation)?;
             // Rakudo marks only the first interpolation after `||`; nested
             // groups and later atoms retain their ordinary non-sequential
             // interpolation shape.
@@ -1513,7 +1563,9 @@ impl Parser {
                     wrap_last_with_whitespace(&mut nodes);
                 }
             } else if saw_whitespace
-                && !nodes.is_empty()
+                && nodes
+                    .last()
+                    .is_some_and(|n| !matches!(n, RegexNode::InternalModifier { .. }))
                 && let Some(previous) = nodes.pop()
             {
                 nodes.push(RegexNode::WithWhitespace(Box::new(previous)));
@@ -1593,8 +1645,51 @@ impl Parser {
                 .parse_lookaround(sequential_interpolation)
                 .or_else(|| self.parse_subrule()),
             '{' => self.parse_code_block(),
+            // Another adverb (`:s`, `:r`) keeps the literal path it took
+            // before modifiers were modelled.
+            ':' => self
+                .parse_internal_modifier()
+                .or_else(|| self.parse_literal()),
             _ => self.parse_literal(),
         }
+    }
+
+    /// `:i` / `:ignorecase` / `:m` / `:ignoremark`, optionally negated
+    /// (`:!i`). Any other adverb stays outside the tree.
+    // Cost: O(k), k = length of the adverb name.
+    fn parse_internal_modifier(&mut self) -> Option<RegexNode> {
+        let start = self.pos;
+        self.pos += 1;
+        let negated = self.consume_if('!');
+        let name_start = self.pos;
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        {
+            self.pos += 1;
+        }
+        let name: String = self.chars[name_start..self.pos].iter().collect();
+        let (kind, long) = match name.as_str() {
+            "i" => (RegexModifierKind::IgnoreCase, false),
+            "ignorecase" => (RegexModifierKind::IgnoreCase, true),
+            "m" => (RegexModifierKind::IgnoreMark, false),
+            "ignoremark" => (RegexModifierKind::IgnoreMark, true),
+            _ => {
+                self.pos = start;
+                return None;
+            }
+        };
+        // An argument (`:i(0)`) is not modelled.
+        if matches!(self.chars.get(self.pos), Some('(' | '<' | '[')) {
+            self.pos = start;
+            return None;
+        }
+        Some(RegexNode::InternalModifier {
+            kind,
+            long,
+            negated,
+        })
     }
 
     /// Parse lookaround forms whose source and execution shapes are currently
@@ -2842,7 +2937,8 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
         | RegexNode::AnchorEndOfLine
-        | RegexNode::CharClassDigit => false,
+        | RegexNode::CharClassDigit
+        | RegexNode::InternalModifier { .. } => false,
     }
 }
 
@@ -2870,7 +2966,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::AnchorBeginningOfString
         | RegexNode::AnchorBeginningOfLine
         | RegexNode::AnchorEndOfString
-        | RegexNode::AnchorEndOfLine => false,
+        | RegexNode::AnchorEndOfLine
+        | RegexNode::InternalModifier { .. } => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
             is_supported_lookaround_body(assertion)
         }
@@ -2878,8 +2975,13 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
 }
 
 fn wrap_last_with_whitespace(nodes: &mut [RegexNode]) {
+    // An internal modifier is never wrapped: the whitespace after it is not
+    // significant (rakudo's tree shows a bare `InternalModifier`).
     if let Some(last) = nodes.last_mut()
-        && !matches!(last, RegexNode::WithWhitespace(_))
+        && !matches!(
+            last,
+            RegexNode::WithWhitespace(_) | RegexNode::InternalModifier { .. }
+        )
     {
         let node = std::mem::replace(last, RegexNode::Sequence(Vec::new()));
         *last = RegexNode::WithWhitespace(Box::new(node));
