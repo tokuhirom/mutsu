@@ -42,7 +42,7 @@ CASES=(
     '~~ junction of regexes vs frame locals|250|1|LOCALS my $w = "b"; my $r = 0;|for ^5000 { $r++ if "ab" ~~ any(/zz/, /a$w/) }'
     '~~ regex with EVAL in code vs frame locals|1000|1|use MONKEY-SEE-NO-EVAL; LOCALS my $x = "ab"; my $w = "b"; my $r = 0;|for ^300 { $r++ if $x ~~ / (.) <?{ $0 eq EVAL(q[$w]) }> / }'
     '~~ regex with ::($n) in code vs frame locals|250|1|LOCALS my $x = "ab"; my $w = "b"; my $n = q[$w]; my $r = 0;|for ^5000 { $r++ if $x ~~ / (.) <?{ $0 eq ::($n) }> / }'
-    # The Proxy case's residual growth is the FETCH itself, not ~~ -- see #9385.
+    # Covers the FETCH too: it runs as an O(1) closure call (#9385).
     '~~ Proxy RHS vs frame locals|250|1|my $re = /b/; my $p := Proxy.new(FETCH => -> $ { $re }, STORE => -> $, $ { }); LOCALS my $r = 0;|for ^5000 { $r++ if "ab" ~~ $p }'
     '~~ lazy list RHS vs frame locals|250|1|my @l = lazy (/zz/, /b/); LOCALS my $r = 0;|for ^5000 { $r++ if "ab" ~~ @l }'
     '$outer = $_ (SetGlobal) vs env|2000|1|LOCALS my $s = 0;|for ^20000 { $s += (my $z = $_) }'

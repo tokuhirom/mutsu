@@ -204,16 +204,22 @@ impl Interpreter {
             None
         };
         // -- committed --
-        // Moving the value out is what makes the buffer unique; cloning it
-        // here would defeat the whole opcode. `Value::NIL` is never observable
-        // in the slot (or its mirror): nothing runs between the take and the
-        // store.
         let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
-        let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
         let Some(sym) = mirror_sym else {
-            self.locals[idx] = lhs.str_appended_nfc(&plan);
+            // The slot is the buffer's only holder in the steady state of an
+            // accumulation, so it is grown where it stands; a buffer another
+            // value shares (`my $b = $a`) is copied by `str_appended_nfc`.
+            if !self.locals[idx].try_append_str_nfc_in_place(&plan) {
+                let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
+                self.locals[idx] = lhs.str_appended_nfc(&plan);
+            }
             return Ok(true);
         };
+        // Moving the value out is what makes the buffer unique once the
+        // mirror's reference is dropped below; cloning it here would defeat
+        // the whole opcode. `Value::NIL` is never observable in the slot (or
+        // its mirror): nothing runs between the take and the store.
+        let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
         if let Some(entry) = self.env_mut().get_mut_sym(sym) {
             *entry = Value::NIL;
         }

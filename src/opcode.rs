@@ -1595,6 +1595,13 @@ pub(crate) enum OpCode {
     /// bare aggregate and an `is rw` parameter would reject it (#11077). A
     /// value that is not a `VarRef` passes through untouched.
     CaptureRwArgCell,
+    /// The `return-rw` / `is rw` tail operand on top of the stack is a
+    /// READONLY `$` parameter (`sub w($p) is rw { $p }`): it hands back a
+    /// value, not a container. When that value is a Hash/Array, record it in
+    /// `Interpreter::readonly_rw_tail` so assigning to the call refuses
+    /// instead of storing into the caller's aggregate (#11108). The stack is
+    /// left untouched.
+    MarkReadonlyRwTail,
     /// ADR-0067: the `is rw` tail of a method whose body is a bare private
     /// attribute (`method acc is rw { $!v }`) hands its caller the
     /// *attribute's* container, not a copy of its value.
@@ -7011,13 +7018,20 @@ pub(crate) struct CompiledCode {
     /// `news/2026-08/class-method-in-block-free-var-capture.md`.
     pub(crate) nested_routine_free_reads: Vec<Vec<Symbol>>,
     /// Declaration plans (`decl_plans` indices — the `RegisterDecl` operand)
-    /// of a named sub (#10960) or a class (#10999) whose by-name reads are all
-    /// folded into [`Self::lazy_body_env_sync_slots`], so their `RegisterDecl`
-    /// does not force `compute_needs_env_sync`'s every-local fold (see
-    /// `compiler/lazy_body_env_sync.rs`).
+    /// of a named sub (#10960), a class (#10999) or a role (#11078) whose
+    /// by-name reads are all folded into [`Self::lazy_body_env_sync_slots`],
+    /// so their `RegisterDecl` does not force `compute_needs_env_sync`'s
+    /// every-local fold (see `compiler/lazy_body_env_sync.rs`).
     pub(crate) bounded_lazy_decl_plans: Vec<u32>,
     /// This frame's local slots a bounded declaration reads by name.
     pub(crate) lazy_body_env_sync_slots: Vec<u32>,
+    /// Every name a bounded class/role declaration of this code reads by
+    /// name, whether or not it is one of this frame's locals: a declaration
+    /// nested in a routine body can reach the ENCLOSING frame's lexicals, and
+    /// unlike a nested sub its reads are not part of this code's
+    /// `free_var_syms`, so the enclosing declaration's bound folds these in
+    /// (#11116).
+    pub(crate) lazy_decl_reads: Vec<Symbol>,
     /// The variables each lexically visible nested sub called (or fetched as
     /// `&name`) from this code WRITES, one entry per call site. Kept apart from
     /// `nested_routine_free_reads` (reads and writes together) and from
@@ -7265,6 +7279,15 @@ pub(crate) struct CompiledCode {
     /// (a per-call `free_at_entry` cost), so only names matching a declared
     /// `&`-lexical count.
     pub(crate) outer_code_var_names: std::collections::HashSet<String>,
+    /// `&name` reads (`GetCodeVar`, `CallOnCodeVar`) whose read site the
+    /// compiler proved has NO `&name` lexical binding in scope -- no `my &name`,
+    /// `&name` parameter or role `&name` type parameter in any scope it can
+    /// see -- so the name denotes the routine declared for it, never an env
+    /// `&name` entry that only a CALLER's frame bound (#10997). Recorded only
+    /// when the compiler saw the read site's whole scope chain
+    /// (`Compiler::lexical_scope_known`); empty otherwise, which keeps the
+    /// by-name resolution. Read by `Interpreter::imported_amp_over_inherited`.
+    pub(crate) unscoped_amp_reads: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -7429,35 +7452,10 @@ pub(crate) struct CompiledCode {
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
     /// inline read (ADR-0004 J4d).
     pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
-    /// Raw slots ever recorded as the compile-time-resolved target of an
-    /// `OpCode::TagContainerRef`/`TagContainerRefReversed` emission anywhere
-    /// in this chunk (see [`Self::note_rebind_target`]). Populated at every
-    /// call site that already computes `self.local_map.get(name).copied()`
-    /// for that opcode — `:=` binds (declaration and expression-context
-    /// rebind), `for`-loop `is rw` source aliasing, and
-    /// `given`/`when`/tail-position topic container writeback all funnel
-    /// through it. Not deduplicated: a slot may be pushed more than once,
-    /// which only wastes a few bytes of `Vec` capacity, never correctness.
-    ///
-    /// #8748 (ADR-0097 §11): this is the raw material for a per-slot answer
-    /// to "could this local ever become a `ContainerRef`/`Proxy` word",
-    /// which the Tier B `GetLocal` fast path and its interpreter twin
-    /// currently answer with one process-global monotonic latch
-    /// ([`crate::vm::vm_jit::LOCAL_READ_SPOILERS`]) — so a single `:=`
-    /// anywhere in the process disables the fast local read for every slot,
-    /// in every frame, forever. **Not yet consumed by that gate**: closures
-    /// that capture and rebind an outer lexical are a second, distinct
-    /// source of celling this Vec does not yet cover (see the ADR section),
-    /// so wiring a per-slot memo built from this field into the fast path
-    /// ahead of that investigation would be unsound. This slice is
-    /// data-collection only, exactly like ADR-0097 slice 1 — no behaviour
-    /// change; see `opcode::local_may_be_celled_tests` for how a consumer
-    /// derives the per-slot answer from these raw slots.
-    pub(crate) rebind_target_slots: Vec<u32>,
     /// Raw slots that a *statement- or expression-level* `:=` REBINDS after
     /// their declaration (`$a := 2`, `if $a := f() {}`), recorded by
-    /// [`Self::note_rebound_slot`]. Unlike [`Self::rebind_target_slots`] it
-    /// holds no declaration binds and no plain-assignment tags: it answers
+    /// [`Self::note_rebound_slot`]. It holds no declaration binds and no
+    /// plain-assignment tags: it answers
     /// exactly "can this lexical's *binding* change after a closure captured
     /// it". `box_captured_lexicals` reads it to give such a capture a binding
     /// cell (a cell whose content is the variable's container), so a later
@@ -7999,6 +7997,7 @@ impl CompiledCode {
             nested_routine_free_reads: Vec::new(),
             bounded_lazy_decl_plans: Vec::new(),
             lazy_body_env_sync_slots: Vec::new(),
+            lazy_decl_reads: Vec::new(),
             nested_routine_free_writes: Vec::new(),
             nested_sub_written_free: Vec::new(),
             needs_cell_named_sub: Vec::new(),
@@ -8019,6 +8018,7 @@ impl CompiledCode {
             self_capture_decl_locals: Vec::new(),
             captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
+            unscoped_amp_reads: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             upvalue_syms: Vec::new(),
@@ -8028,7 +8028,6 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
-            rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),
             outer_captures: Vec::new(),
@@ -8095,18 +8094,6 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().unwrap_or(false)
-    }
-
-    /// Record `slot` (when present) as a compile-time-resolved
-    /// `TagContainerRef`/`TagContainerRefReversed` target — see
-    /// [`Self::rebind_target_slots`]. Called from every compiler site that
-    /// already resolves `self.local_map.get(name).copied()` for one of those
-    /// opcodes, so this is a pure side record with no new resolution of its
-    /// own.
-    pub(crate) fn note_rebind_target(&mut self, slot: Option<u32>) {
-        if let Some(slot) = slot {
-            self.rebind_target_slots.push(slot);
-        }
     }
 
     /// Record `slot` (when present) as rebound after its declaration — see
@@ -13297,81 +13284,5 @@ mod compiled_fns_identity {
         // the table size is a power of two.
         assert!(CALL_IC_WAYS.is_power_of_two());
         assert!(CallIcSlot::way(crate::symbol::Symbol::intern("anything")) < CALL_IC_WAYS);
-    }
-}
-
-/// #8748 (ADR-0097 §11): `rebind_target_slots` is a pure data-collection
-/// slice — not yet read by any execution path — so these tests pin what it
-/// collects rather than any observable interpreter behavior. They compile
-/// real source and inspect the resulting `CompiledCode` directly, the same
-/// technique `compiler::declaration_plan_tests` uses. `may_be_celled` here
-/// is test-local: it stands in for the per-slot memo a follow-up wiring
-/// slice would build from `rebind_target_slots` (see the ADR section) —
-/// keeping that memo out of production code until it has a real consumer
-/// avoids leaving genuinely dead code behind (`scripts/check-panic-surface.py`'s
-/// `#[allow(` ratchet, #8186).
-#[cfg(test)]
-mod local_may_be_celled_tests {
-    use super::CompiledCode;
-    use crate::compiler::Compiler;
-
-    fn slot_of(code: &CompiledCode, name: &str) -> usize {
-        code.locals
-            .iter()
-            .position(|n| n.as_str() == name)
-            .unwrap_or_else(|| panic!("no local slot named {name:?} (locals: {:?})", code.locals))
-    }
-
-    fn compile(source: &str) -> CompiledCode {
-        let (stmts, _) = crate::parse_dispatch::parse_source(source).expect("source parses");
-        Compiler::new().compile(&stmts).0
-    }
-
-    fn may_be_celled(code: &CompiledCode, idx: usize) -> bool {
-        code.rebind_target_slots.contains(&(idx as u32))
-    }
-
-    #[test]
-    fn declaration_bind_marks_only_its_own_slot() {
-        // The exact #8748 repro shape: an unrelated `:=` must not mark the
-        // plain locals a hot loop actually reads.
-        let code = compile("my @unused := (1, 2, 3); my $s = 0; my $i = 1;");
-        assert!(may_be_celled(&code, slot_of(&code, "@unused")));
-        assert!(!may_be_celled(&code, slot_of(&code, "s")));
-        assert!(!may_be_celled(&code, slot_of(&code, "i")));
-    }
-
-    #[test]
-    fn scalar_declaration_bind_marks_its_slot() {
-        let code = compile("my $y = 1; my $x := $y; say $x;");
-        assert!(may_be_celled(&code, slot_of(&code, "x")));
-        assert!(!may_be_celled(&code, slot_of(&code, "y")));
-    }
-
-    #[test]
-    fn statement_level_rebind_with_no_my_is_still_tracked() {
-        // `$x := $y;` with no `my` at all -- a rebind of an already-declared
-        // lexical -- has no `TagContainerRef` of its own (it falls straight
-        // to `SetLocal`/`SetGlobal`); this is the gap the stmt.rs `AssignOp::Bind`
-        // arm closes.
-        let code = compile("my $x; my $y = 1; $x := $y;");
-        assert!(may_be_celled(&code, slot_of(&code, "x")));
-        assert!(!may_be_celled(&code, slot_of(&code, "y")));
-    }
-
-    #[test]
-    fn expression_context_rebind_is_tracked() {
-        let code = compile("my $c; my $y = 1; if $c := $y { 1 }");
-        assert!(may_be_celled(&code, slot_of(&code, "c")));
-    }
-
-    #[test]
-    fn plain_program_with_no_binds_marks_nothing() {
-        let code = compile("my $a = 1; my $b = 2; say $a + $b;");
-        assert!(
-            code.rebind_target_slots.is_empty(),
-            "no `:=` anywhere in the program, but recorded targets: {:?}",
-            code.rebind_target_slots
-        );
     }
 }

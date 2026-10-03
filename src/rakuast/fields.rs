@@ -264,6 +264,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     Some(match class {
         IntLiteral | NumLiteral | RatLiteral | StrLiteral => "value",
         FunctionInfix => "function",
+        Infix | Prefix => "operator",
         VarLexical => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
@@ -282,7 +283,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         RegexBlock => "block",
         StatementLanguageVersion => "version",
         CircumfixHashComposer => "expression",
-        ContextualizerHash => "target",
+        ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
         ColonPairTrue | ColonPairFalse => "key",
         StatementModifierGiven
         | StatementModifierIf

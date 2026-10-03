@@ -207,7 +207,7 @@ impl Interpreter {
                 return Some(text.to_string_value());
             }
             if let Some(formatted) =
-                crate::builtins::exception_message::format_exception_message(&cn, &map)
+                crate::value::exception_message::format_exception_message(&cn, &map)
             {
                 return Some(formatted);
             }

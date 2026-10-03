@@ -165,7 +165,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         // #8507), recursing on `&arc.lock().unwrap()` directly would try to
         // lock the SAME `std::sync::Mutex` again from this thread while the
         // outer guard is still alive and hang forever (`Mutex` is not
-        // reentrant) instead of erroring. `gist_value` (`runtime/utils/gist.rs`)
+        // reentrant) instead of erroring. `gist_value` (`value/gist.rs`)
         // hits the identical hazard for its `ContainerRef` arm and fixes it the
         // same way: clone the contents out and drop the lock BEFORE recursing,
         // and track which cells are currently being unwound on this thread so

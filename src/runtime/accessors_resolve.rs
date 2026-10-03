@@ -242,6 +242,7 @@ impl Interpreter {
         // compiled code instead of re-compiling the AST body copied below
         // (ADR-0019 C6c).
         let compiled_routine = def.compiled.clone();
+        let declared_readonly = def.captured_readonly.clone();
         let mut sub_val = Value::make_sub_for_routine(
             def.package,
             def.name,
@@ -256,13 +257,18 @@ impl Interpreter {
         // enclosing routine's own variables, whose readonly state is decided
         // HERE, in the frame that mentions `&name` -- not by whoever calls the
         // code object later (#10389). A top-level routine's captured variables
-        // belong to no running frame, so the mentioning frame says nothing
-        // about them and nothing is recorded.
-        let captured_readonly = def
-            .compiled
-            .as_ref()
-            .filter(|cf| cf.code.declared_in_routine)
-            .and_then(|cf| self.capture_readonly_state(&cf.code));
+        // belong to no running routine frame, so the mentioning frame says
+        // nothing about them: they take the snapshot of the frame the
+        // declaration registered in instead (#11070).
+        let captured_readonly = def.compiled.as_ref().and_then(|cf| {
+            if cf.code.declared_in_routine {
+                self.capture_readonly_state(&cf.code)
+            } else if writes_free_vars || !cf.code.nested_sub_written_free.is_empty() {
+                declared_readonly
+            } else {
+                None
+            }
+        });
         // Preserve empty_sig from the FunctionDef (arity checks, e.g. sort
         // rejecting 0-arity callables) and stabilize the id, in one rewrap.
         if (empty_sig || stable_id.is_some() || captured_readonly.is_some())

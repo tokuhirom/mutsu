@@ -8,7 +8,9 @@
 
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
+use crate::ast::{
+    ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
+};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
@@ -282,6 +284,17 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             Some(assign) => Ok(Stmt::Expr(assign)),
             None => lower_assign(node),
         },
+        // `$x := EXPR` is an `ApplyInfix` with a plain `:=` infix -- the
+        // parser's `Stmt::Assign` with a `Bind` op.
+        RakuAstClass::ApplyInfix if infix_is_bind_to_variable(node) => {
+            let (name, expr) = lower_assign_parts(node)?;
+            Ok(Stmt::Assign {
+                name,
+                expr,
+                op: crate::ast::AssignOp::Bind,
+                target_is_sigilless: false,
+            })
+        }
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
         RakuAstClass::CallName if call_name_stash(node).is_some() => {
@@ -1407,6 +1420,18 @@ fn infix_is_assignment(node: &RakuAstNode) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether an `ApplyInfix` is `VAR := …`: a plain `:=` infix whose left side
+/// is a variable. Any other bind target (a subscript, an attribute) stays the
+/// boundary, as the converter never renders one.
+fn infix_is_bind_to_variable(node: &RakuAstNode) -> bool {
+    let is_bind = named_child(node, "infix").is_ok_and(|infix| {
+        infix.class == RakuAstClass::Infix
+            && positional_leaf(infix)
+                .is_ok_and(|op| matches!(op.view(), ValueView::Str(s) if s.as_str() == ":="))
+    });
+    is_bind && named_child(node, "left").is_ok_and(|left| variable_spelling(left).is_ok())
+}
+
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
 fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
@@ -1571,10 +1596,12 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     // The initializer field is present only for `= EXPR`; without it a plain
     // `my $x` declares an undefined value.
+    let mut is_binding = false;
     let (expr, has_initializer) = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         Some(_) => {
             let init = named_child(node, "initializer")?;
-            (lower_expr(named_child_or_positional(init)?)?, true)
+            is_binding = init.class == RakuAstClass::InitializerBind;
+            (lower_expr(named_child_or_positional(init)?)?, !is_binding)
         }
         // The same sigil-aware default the parser gives an uninitialized
         // declaration: `my @a` is an empty Array and `my %h` an empty Hash,
@@ -1590,6 +1617,34 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     if has_initializer {
         custom_traits.push(("__has_initializer".to_string(), None));
+    }
+    // `:=`: the same declaration the parser builds, expanded by the same
+    // function (`ast::bind_decl`). A natively typed scalar cannot be bound;
+    // the parser rejects it, and this path stays the boundary for it.
+    if is_binding {
+        if crate::ast::bind_decl::is_scalar_bind_name(&name) {
+            if type_constraint
+                .as_deref()
+                .is_some_and(crate::native_types::is_native_array_element_type)
+            {
+                return Err(unsupported(node));
+            }
+            custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
+        } else if name.starts_with('&') {
+            return Err(unsupported(node));
+        }
+        return Ok(crate::ast::bind_decl::expand(Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits,
+            where_constraint: None,
+        }));
     }
     Ok(Stmt::VarDecl {
         name,
@@ -2713,7 +2768,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(lowered)
         }
         RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),
-        RakuAstClass::ContextualizerHash => super::hash_literal::lower_contextualizer(node),
+        RakuAstClass::ContextualizerHash => super::contextualizer::lower(node, ContextKind::Hash),
+        RakuAstClass::ContextualizerItem => super::contextualizer::lower(node, ContextKind::Item),
+        RakuAstClass::ContextualizerList => super::contextualizer::lower(node, ContextKind::List),
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {
@@ -2891,6 +2948,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 name,
                 expr: Box::new(expr),
                 is_bind: false,
+            })
+        }
+        // `($x := EXPR)` in expression position -> a binding expression.
+        RakuAstClass::ApplyInfix if infix_is_bind_to_variable(node) => {
+            let (name, expr) = lower_assign_parts(node)?;
+            Ok(Expr::AssignExpr {
+                name,
+                expr: Box::new(expr),
+                is_bind: true,
             })
         }
         // `@a >>+<< @b` -> the hyper operator, keeping both dwim flags.

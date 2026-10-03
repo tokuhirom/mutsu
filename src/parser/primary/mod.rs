@@ -792,11 +792,10 @@ mod tests {
         let (rest, expr) = primary("$(1,2)").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::MethodCall { name, args, .. } => {
-                assert_eq!(name, "item");
-                assert!(args.is_empty());
+            Expr::Contextualizer { kind, .. } => {
+                assert_eq!(kind, crate::ast::ContextKind::Item);
             }
-            _ => panic!("expected MethodCall(.item)"),
+            _ => panic!("expected Contextualizer(Item)"),
         }
     }
 

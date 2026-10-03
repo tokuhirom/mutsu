@@ -24,8 +24,11 @@ fn make_odd_number_error(items: &[Value]) -> RuntimeError {
 
 /// How rakudo's `X::Hash::Store::OddNumber` shows the element it stopped at:
 /// `Nil`, `type object 'Any'` for a type object, else its `.raku`
-/// (`"a"`, `1.5`, `$[1]`).
+/// (`"a"`, `1.5`, `$[1]`). An element container is rendered as the value it
+/// reads as — an itemized holder's hash as `${:a(1)}` (ADR-0079) — never as the
+/// container's string form.
 fn odd_element_repr(v: &Value) -> String {
+    let v = &v.deref_container();
     match v.view() {
         ValueView::Nil => "Nil".to_string(),
         ValueView::Package(name) => format!(

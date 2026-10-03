@@ -724,7 +724,7 @@ impl RuntimeError {
     pub(crate) fn with_parameter_object(
         self,
         pd: &crate::ast::ParamDef,
-        interp: Option<&crate::runtime::Interpreter>,
+        interp: Option<&dyn crate::value::signature::SubsetBases>,
     ) -> Self {
         if let Some(ValueView::Instance { attributes, .. }) =
             self.exception.as_deref().map(Value::view)

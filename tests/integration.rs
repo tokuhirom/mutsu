@@ -56,3 +56,4 @@ mod routine_package_switch_budget;
 mod stash_bind_key;
 mod statement_call_resolves_once;
 mod static_operator_intern_budget;
+mod unrelated_bind_keeps_local_read_fast_path;

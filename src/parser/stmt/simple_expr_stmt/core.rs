@@ -835,9 +835,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // (`($(EXPR) = a), b`) -- unlike a bare `@a[0] = a, b` list assignment. Parse
     // the RHS comma-blind and leave any trailing comma list for the enclosing
     // (statement-level) comma expression.
+    let item_form =
+        matches!(expr, Expr::Contextualizer { .. }).then(|| expr.clone().contextualizer_call());
     if let Expr::MethodCall {
         target, name, args, ..
-    } = &expr
+    } = item_form.as_ref().unwrap_or(&expr)
         && name == "item"
         && args.is_empty()
         && rest.starts_with('=')

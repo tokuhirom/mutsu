@@ -26,6 +26,7 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::SavedDynParams;
 use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dynvar_scope_push};
 use crate::runtime::seq_helpers::RegexClosureBinding;
+use crate::symbol::Symbol;
 use crate::value::{Value, ValueMap};
 
 /// Register-trail tag: undo an install (uninstall).
@@ -53,6 +54,9 @@ enum ScopeSave {
         /// The rule's `:my $*x` declarations, marked as owned by a live rule
         /// frame while the window is installed.
         scope_keys: Option<Vec<String>>,
+        /// The routine frame `(caller package, rule)` on the routine stack
+        /// while the window is installed.
+        routine: Option<(Symbol, Symbol)>,
     },
 }
 
@@ -66,6 +70,12 @@ pub(super) struct CallWindow {
     /// The rule's own `:my $*x` declarations, when it has any. Not marked yet:
     /// [`Interpreter::rx_window_adopt`] marks them.
     pub(super) scope_keys: Option<Vec<String>>,
+    /// A routine frame `(caller package, rule)` for the callee, while some
+    /// method carries a `.wrap`: a wrapper reads its caller's rule name from
+    /// a Backtrace (#9151), as from the frame the walk's eager arm pushes
+    /// around each call (`subrule_candidate_ends_with_frame`). Not pushed
+    /// yet: [`Interpreter::rx_window_adopt`] pushes it.
+    pub(super) routine: Option<(Symbol, Symbol)>,
 }
 
 /// The bindings of one run, indexed by the handle an install returns (and the
@@ -91,22 +101,34 @@ impl Interpreter {
     /// has just installed (`saved` is what it shadowed); the index is its
     /// handle.
     // Cost: O(1).
-    pub(super) fn rx_window_adopt(scopes: &mut Scopes, window: CallWindow) -> usize {
+    pub(super) fn rx_window_adopt(&mut self, scopes: &mut Scopes, window: CallWindow) -> usize {
         let CallWindow {
             saved,
             attach,
             scope_keys,
+            routine,
         } = window;
         if let Some(keys) = &scope_keys {
             grammar_dynvar_scope_push(keys.iter().cloned());
+        }
+        if let Some((pkg, name)) = routine {
+            self.rx_push_rule_routine(pkg, name);
         }
         scopes.saves.push(ScopeSave::Window {
             live: Vec::new(),
             saved: Some(saved),
             attach,
             scope_keys,
+            routine,
         });
         scopes.saves.len() - 1
+    }
+
+    /// Push the routine frame of a rule invoked from `pkg`.
+    // Cost: O(1).
+    fn rx_push_rule_routine(&mut self, pkg: Symbol, name: Symbol) {
+        let (line, file) = (self.current_source_line(), self.executing_source_file_sym());
+        self.push_routine_with_location(pkg, name, line, file, None);
     }
 
     /// The current values of the call window `k`'s bindings, while it is
@@ -141,6 +163,7 @@ impl Interpreter {
                 live,
                 saved,
                 scope_keys,
+                routine,
                 ..
             }) => {
                 let Some(shadowed) = saved.take() else {
@@ -148,6 +171,9 @@ impl Interpreter {
                 };
                 if scope_keys.is_some() {
                     grammar_dynvar_scope_pop();
+                }
+                if routine.is_some() {
+                    self.routine_stack.pop();
                 }
                 live.clear();
                 live.extend(
@@ -179,6 +205,7 @@ impl Interpreter {
                 live,
                 saved,
                 scope_keys,
+                routine,
                 ..
             }) => {
                 if saved.is_some() {
@@ -186,6 +213,11 @@ impl Interpreter {
                 }
                 if let Some(keys) = scope_keys {
                     grammar_dynvar_scope_push(keys.iter().cloned());
+                }
+                if let Some((pkg, name)) = *routine {
+                    let (line, file) =
+                        (self.current_source_line(), self.executing_source_file_sym());
+                    self.push_routine_with_location(pkg, name, line, file, None);
                 }
                 let mut shadowed = Vec::with_capacity(live.len());
                 for (key, value) in live.iter() {

@@ -560,6 +560,7 @@ impl Interpreter {
             compiled: None,
             dispatchee: None,
             body_fp_cache: std::sync::OnceLock::new(),
+            captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
         };
         self.otf_compile_function_def(&tmp_def)

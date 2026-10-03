@@ -1396,8 +1396,25 @@ impl Interpreter {
                 // updated in place instead of stranding a stray `G::x` package var.
                 // Confined to embedded regex code blocks so ordinary `our`/
                 // package-qualified writes are never redirected.
-                if self.in_regex_code_block
-                    && !is_rebind
+                //
+                // A class/role body statement takes the same redirect when the
+                // bare name holds a shared `ContainerRef` cell (#11086):
+                // `class F { $z = 4 }` compiles to `SetGlobal("F::z")`, and a
+                // write to `F::z` would leave the outer `$z`'s cell — which a
+                // method of another class captured — at its old value, and the
+                // class-body copy-back would then replace the cell in env with
+                // the plain value, severing the capture. Redirected, the store
+                // reaches the generic cell write-through below. Gated on the
+                // cell so a bare name that is not a shared container keeps the
+                // old qualified store, and on a class/role body being walked
+                // (`nested_capture_owners`) so a routine's explicit `$Pkg::x`
+                // store is never redirected.
+                if !is_rebind
+                    && (self.in_regex_code_block
+                        || (!self.nested_capture_owners.is_empty()
+                            && !is_bind_ctx
+                            && !raw_mode
+                            && !self.vardecl_context().get()))
                     && let Some(pos) = name.rfind("::")
                 {
                     // Split an optional leading sigil, then `Qualifier::tail`.
@@ -1422,7 +1439,14 @@ impl Interpreter {
                             && qualifier == cur
                             && self.get_our_var(&name).is_none()
                             && !self.env().contains_key(&name)
-                            && self.env().contains_key(&bare)
+                            && (if self.in_regex_code_block {
+                                self.env().contains_key(&bare)
+                            } else {
+                                matches!(
+                                    self.env().get(&bare).map(Value::view),
+                                    Some(ValueView::ContainerRef(_))
+                                )
+                            })
                         {
                             name = bare;
                         }
@@ -2020,6 +2044,17 @@ impl Interpreter {
                 // with no local slot, so without this the raw Nil went into the
                 // shared cell (#9488: `lives-ok { $a = Nil }`).
                 if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !self.vardecl_context().get()
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(decayed) = self.sigilless_alias_nil_decay_by_name(&name)
+                {
+                    // A sigilless alias of another variable: the Nil decays
+                    // against that variable's container (#11110).
+                    val = decayed;
+                } else if val.is_nil()
                     && !raw_mode
                     && !is_bind_ctx
                     && !is_rebind
@@ -3306,6 +3341,11 @@ impl Interpreter {
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
             OpCode::CaptureRwArgCell => {
                 self.exec_capture_rw_arg_cell_op(code);
+                *ip += 1;
+            }
+            // Cost: O(1).
+            OpCode::MarkReadonlyRwTail => {
+                self.exec_mark_readonly_rw_tail_op();
                 *ip += 1;
             }
             // Cost: O(1) (attribute map probes).

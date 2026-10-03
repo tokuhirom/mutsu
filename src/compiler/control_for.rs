@@ -267,7 +267,6 @@ impl Compiler {
                 .unwrap_or(source_name);
             let source_slot = self.local_map.get(source_name.as_str()).copied();
             let source_idx = self.code.add_constant(Value::str(source_name));
-            self.code.note_rebind_target(source_slot);
             if Self::for_iterable_is_reversed(iterable) {
                 self.code
                     .emit(OpCode::TagContainerRefReversed(source_idx, source_slot));
@@ -596,7 +595,6 @@ impl Compiler {
             if let Some(name) = Self::collected_tail_container_name(&loop_body, param, params) {
                 let source_slot = self.local_map.get(name.as_str()).copied();
                 let name_idx = self.code.add_constant(Value::str(name));
-                self.code.note_rebind_target(source_slot);
                 self.code
                     .emit(OpCode::TagContainerRef(name_idx, source_slot));
             }

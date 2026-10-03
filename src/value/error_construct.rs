@@ -403,7 +403,7 @@ impl RuntimeError {
     pub(crate) fn match_bool(routine: &str) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("type".to_string(), Value::str(routine.to_string()));
-        let message = crate::builtins::exception_message::format_exception_message(
+        let message = crate::value::exception_message::format_exception_message(
             "X::Match::Bool",
             &attrs.clone().into(),
         )
@@ -491,7 +491,7 @@ impl RuntimeError {
             format!(
                 "Cannot modify an immutable {} ({})",
                 typename,
-                crate::runtime::utils::gist_value(&value)
+                crate::value::gist::gist_value(&value)
             )
         };
         let mut attrs = ValueMap::default();

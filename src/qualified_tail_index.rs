@@ -8,10 +8,12 @@
 //! stash by scanning all of them.
 //!
 //! Every such key is a [`Symbol`], and every `Symbol` is created by exactly one
-//! function, `Symbol::intern_global`. Recording each qualified name here at
-//! that choke point makes this index a guaranteed *superset* of the qualified
-//! keys any store can hold, with no hook at the (many) insert sites — the same
-//! argument that keeps the capture-shape registry in `symbol.rs` sound. A
+//! function, `Symbol::intern_global`, which assigns ids in an append-only
+//! sequence. Folding every id of that sequence into the index (lazily, on the
+//! first read after new ids appeared) makes it a guaranteed *superset* of the
+//! qualified keys any store can hold, with no hook at the (many) insert sites
+//! — the same argument that keeps the capture-shape registry in `symbol.rs`
+//! sound. A
 //! consumer asks for the names ending in `x` and probes only those, then
 //! re-checks each one exactly as the full scan would; a name that was interned
 //! but never stored (or has since been removed) is simply a probe that misses.
@@ -26,42 +28,70 @@
 
 use crate::symbol::Symbol;
 use rustc_hash::FxHashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::RwLock;
 
 type TailMap = FxHashMap<&'static str, Vec<Symbol>>;
 
-static TAIL_INDEX: OnceLock<RwLock<TailMap>> = OnceLock::new();
-
-fn tail_index() -> &'static RwLock<TailMap> {
-    TAIL_INDEX.get_or_init(|| RwLock::new(FxHashMap::default()))
+/// A map folded from the symbol table's append-only id sequence on demand.
+///
+/// Both indexes here are built lazily (#10228): almost no program reads a
+/// package stash, yet every process interns thousands of qualified names at
+/// startup, so maintaining either map eagerly from the intern choke point cost
+/// startup instructions (~12% for the package index, ~10% for the tail index)
+/// for a lookup that rarely happens. Instead a reader catches the map up:
+/// `scanned` is the first id not yet folded in. Because ids are never reused
+/// or remapped, the caught-up map is exactly what eager recording at
+/// `Symbol::intern_global` would have built — the index is still a superset of
+/// every qualified key any store can hold.
+struct LazyIndex {
+    map: TailMap,
+    scanned: usize,
 }
+
+impl LazyIndex {
+    const fn new() -> RwLock<Self> {
+        RwLock::new(LazyIndex {
+            map: FxHashMap::with_hasher(rustc_hash::FxBuildHasher),
+            scanned: 0,
+        })
+    }
+}
+
+/// The member-name index: a member's bare spelling to every interned
+/// qualified name that ends in it (#9171).
+static TAIL_INDEX: RwLock<LazyIndex> = LazyIndex::new();
 
 /// The companion index: a package spelling to every interned qualified name
 /// that has a member under it (#9845). Keyed by each contiguous run of
 /// package components, so `Outer::P::x` is found under `Outer`, `Outer::P`
 /// and `P` -- the same suffix rule `stash_member_tail` applies.
-///
-/// Built lazily (#10228): almost no program reads a package stash, yet every
-/// process interns thousands of qualified names at startup, so maintaining
-/// this map from [`record`] cost ~12% of startup instructions for a lookup
-/// that rarely happens. Instead [`names_under_package`] catches the map up
-/// from the symbol table's append-only id sequence: `scanned` is the first id
-/// not yet folded in. Because ids are never reused or remapped, the caught-up
-/// map is exactly what eager recording would have built.
-struct PackageIndex {
-    map: TailMap,
-    scanned: usize,
-}
+static PACKAGE_INDEX: RwLock<LazyIndex> = LazyIndex::new();
 
-static PACKAGE_INDEX: OnceLock<RwLock<PackageIndex>> = OnceLock::new();
-
-fn package_index() -> &'static RwLock<PackageIndex> {
-    PACKAGE_INDEX.get_or_init(|| {
-        RwLock::new(PackageIndex {
-            map: FxHashMap::default(),
-            scanned: 0,
-        })
-    })
+/// `index.map[key]` after folding every symbol interned since the previous
+/// read into it with `fold`.
+// Cost: O(k + m), k = names recorded under `key`, m = symbols interned since
+// the previous read (amortized O(1) per symbol over the process).
+fn caught_up_lookup(
+    index: &RwLock<LazyIndex>,
+    key: &str,
+    fold: fn(&mut TailMap, Symbol, &'static str),
+) -> Vec<Symbol> {
+    {
+        let idx = index.read().unwrap();
+        if idx.scanned == crate::symbol::interned_count() {
+            return idx.map.get(key).cloned().unwrap_or_default();
+        }
+    }
+    let mut idx = index.write().unwrap();
+    let LazyIndex { map, scanned } = &mut *idx;
+    // Lock order: index -> symbol table read. The intern path takes the
+    // table write lock and never this one, so there is no cycle.
+    *scanned = crate::symbol::for_each_interned_since(*scanned, |sym, text| {
+        if crate::str_scan::has_double_colon(text) {
+            fold(map, sym, strip_sigil(text));
+        }
+    });
+    map.get(key).cloned().unwrap_or_default()
 }
 
 fn strip_sigil(s: &str) -> &str {
@@ -76,20 +106,14 @@ fn bare_member(rest: &'static str) -> Option<&'static str> {
     (!bare.is_empty() && !bare.contains("::")).then_some(bare)
 }
 
-/// Record a newly interned name. Called once per symbol, from the single place
-/// a symbol id is assigned, so it must intern nothing.
-// Cost: O(n), n = bytes of `text`; paid once per qualified symbol, ever.
-pub(crate) fn record(sym: Symbol, text: &'static str) {
-    if !text.contains("::") {
-        return;
-    }
-    let body = strip_sigil(text);
-    let mut index = tail_index().write().unwrap();
+/// Record `sym` under the bare member spelling of every split point of `body`.
+// Cost: O(n), n = bytes of `body`.
+fn record_members(map: &mut TailMap, sym: Symbol, body: &'static str) {
     let mut from = 0;
     while let Some(off) = body[from..].find("::") {
         from += off + 2;
         if let Some(bare) = bare_member(&body[from..]) {
-            let names = index.entry(bare).or_default();
+            let names = map.entry(bare).or_default();
             if names.last() != Some(&sym) {
                 names.push(sym);
             }
@@ -131,23 +155,7 @@ fn record_packages(map: &mut TailMap, sym: Symbol, body: &'static str) {
 // Cost: O(k + m), k = interned qualified names under `package`, m = symbols
 // interned since the previous call (amortized O(1) per symbol over the process).
 pub(crate) fn names_under_package(package: &str) -> Vec<Symbol> {
-    let index = package_index();
-    {
-        let idx = index.read().unwrap();
-        if idx.scanned == crate::symbol::interned_count() {
-            return idx.map.get(package).cloned().unwrap_or_default();
-        }
-    }
-    let mut idx = index.write().unwrap();
-    let PackageIndex { map, scanned } = &mut *idx;
-    // Lock order: package index -> symbol table read. The intern path takes
-    // the table write lock and never this one, so there is no cycle.
-    *scanned = crate::symbol::for_each_interned_since(*scanned, |sym, text| {
-        if text.contains("::") {
-            record_packages(map, sym, strip_sigil(text));
-        }
-    });
-    map.get(package).cloned().unwrap_or_default()
+    caught_up_lookup(&PACKAGE_INDEX, package, record_packages)
 }
 
 /// Every interned qualified name with a member spelled `bare` (see the module
@@ -155,15 +163,11 @@ pub(crate) fn names_under_package(package: &str) -> Vec<Symbol> {
 ///
 /// Returns an owned list so no lock is held while the caller probes its
 /// stores (a probe may intern, which takes the symbol-table write lock).
-// Cost: O(k), k = interned qualified names ending in `bare` -- independent of the
-// size of any env, package or registry.
+// Cost: O(k + m), k = interned qualified names ending in `bare`, m = symbols
+// interned since the previous call (amortized O(1) per symbol) -- independent
+// of the size of any env, package or registry.
 pub(crate) fn names_ending_in(bare: &str) -> Vec<Symbol> {
-    tail_index()
-        .read()
-        .unwrap()
-        .get(bare)
-        .cloned()
-        .unwrap_or_default()
+    caught_up_lookup(&TAIL_INDEX, bare, record_members)
 }
 
 #[cfg(test)]
@@ -198,6 +202,21 @@ mod tests {
         }
         assert!(names_under_package("PkgIdxP::pkgx/2").is_empty());
         assert!(names_under_package("pkgx").is_empty());
+    }
+
+    #[test]
+    fn tail_index_catches_up_with_later_interns() {
+        // The member index is folded in lazily too: a name interned after a
+        // read must still be found by the next one, exactly once.
+        let early = Symbol::intern("TailLateP::tail_late_m");
+        assert!(names_ending_in("tail_late_m").contains(&early));
+        let late = Symbol::intern("&TailLateQ::tail_late_m/1");
+        let found = names_ending_in("tail_late_m");
+        assert!(found.contains(&early) && found.contains(&late));
+        assert_eq!(found.iter().filter(|s| **s == late).count(), 1);
+        // An unqualified spelling is never a member of anything.
+        let bare = Symbol::intern("tail_late_m");
+        assert!(!names_ending_in("tail_late_m").contains(&bare));
     }
 
     #[test]

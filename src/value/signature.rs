@@ -1,7 +1,6 @@
 use super::Value;
 use super::ValueView;
 use crate::ast::{Expr, ParamDef, Stmt};
-use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueMap;
@@ -9,6 +8,17 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 pub(crate) use super::signature_smartmatch::{signature_smartmatch, signature_smartmatch_with};
+
+/// What building a `Parameter`/`Signature` value needs from the running
+/// program: the declared base type of a `subset`. The interpreter implements
+/// it (`runtime::decl_types`); a parse-time signature literal passes `None`.
+/// A trait rather than `&Interpreter` so `value` does not name the runtime
+/// (#10779).
+pub(crate) trait SubsetBases {
+    /// The base type `name` was declared `of`, or `None` when `name` is not a
+    /// registered subset.
+    fn subset_base(&self, name: &str) -> Option<String>;
+}
 
 /// Lightweight representation of a signature parameter for runtime use.
 ///
@@ -213,7 +223,7 @@ pub(crate) fn sig_param_from_named_args(args: &[Value]) -> SigParam {
 /// id, so a later `Signature.new(:@params, ...)` naming this exact Parameter
 /// recovers the same `SigParam` rather than re-deriving an approximation from
 /// the Parameter's own rendered attrs.
-pub(crate) fn make_parameter_value(param: SigParam, interp: Option<&Interpreter>) -> Value {
+pub(crate) fn make_parameter_value(param: SigParam, interp: Option<&dyn SubsetBases>) -> Value {
     let val = sig_param_to_parameter_instance(&param, interp);
     if let ValueView::Instance { id, .. } = val.view() {
         register_param_info(id, param);
@@ -673,7 +683,7 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
 /// user-declared subset parameter types (see `resolve_subset_base`); pass
 /// `None` when no interpreter is available (e.g. parse-time signature
 /// literals), which leaves subset types unresolved as before.
-pub(crate) fn make_signature_value(info: SigInfo, interp: Option<&Interpreter>) -> Value {
+pub(crate) fn make_signature_value(info: SigInfo, interp: Option<&dyn SubsetBases>) -> Value {
     make_signature_value_with_owner(info, None, interp)
 }
 
@@ -682,7 +692,7 @@ pub(crate) fn make_signature_value(info: SigInfo, interp: Option<&Interpreter>) 
 pub(crate) fn make_signature_value_with_owner(
     info: SigInfo,
     owner_key: Option<String>,
-    interp: Option<&Interpreter>,
+    interp: Option<&dyn SubsetBases>,
 ) -> Value {
     let raku_str = render_signature(&info);
     // .gist is like .raku but without the leading ':'
@@ -711,7 +721,10 @@ pub(crate) fn make_signature_value_with_owner(
     val
 }
 
-fn make_params_value_from_sig_params(params: &[SigParam], interp: Option<&Interpreter>) -> Value {
+fn make_params_value_from_sig_params(
+    params: &[SigParam],
+    interp: Option<&dyn SubsetBases>,
+) -> Value {
     let values: Vec<Value> = params
         .iter()
         .map(|p| sig_param_to_parameter_instance(p, interp))
@@ -722,7 +735,7 @@ fn make_params_value_from_sig_params(params: &[SigParam], interp: Option<&Interp
 fn make_params_value_with_owner(
     params: &[SigParam],
     owner_key: &Option<String>,
-    interp: Option<&Interpreter>,
+    interp: Option<&dyn SubsetBases>,
 ) -> Value {
     let values: Vec<Value> = params
         .iter()
@@ -734,7 +747,7 @@ fn make_params_value_with_owner(
 fn sig_param_to_parameter_instance_with_owner(
     p: &SigParam,
     owner_key: &Option<String>,
-    interp: Option<&Interpreter>,
+    interp: Option<&dyn SubsetBases>,
 ) -> Value {
     // Build the base parameter attrs
     let mut attrs = build_parameter_attrs(p, interp);
@@ -745,7 +758,7 @@ fn sig_param_to_parameter_instance_with_owner(
     Value::make_instance(parameter_class_for(p), attrs)
 }
 
-fn sig_param_to_parameter_instance(p: &SigParam, interp: Option<&Interpreter>) -> Value {
+fn sig_param_to_parameter_instance(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Value {
     let attrs = build_parameter_attrs(p, interp);
     Value::make_instance(parameter_class_for(p), attrs)
 }
@@ -758,7 +771,7 @@ fn sig_param_to_parameter_instance(p: &SigParam, interp: Option<&Interpreter>) -
 pub(crate) fn make_parameter_value_for_owner(
     param: &SigParam,
     owner_key: &str,
-    interp: Option<&Interpreter>,
+    interp: Option<&dyn SubsetBases>,
 ) -> Value {
     sig_param_to_parameter_instance_with_owner(param, &Some(owner_key.to_string()), interp)
 }
@@ -787,16 +800,12 @@ fn builtin_subset_base(name: &str) -> Option<&'static str> {
 /// `Interpreter::nominalize_type_name`, this does not also strip `:D`/`:U`/
 /// `:_` or unwrap coercion types — those are unrelated to subset resolution
 /// and changing that behavior here is out of scope.
-fn resolve_subset_base(name: &str, interp: Option<&Interpreter>) -> Option<String> {
+fn resolve_subset_base(name: &str, interp: Option<&dyn SubsetBases>) -> Option<String> {
     let interp = interp?;
     let mut current = name.to_string();
     let mut resolved = false;
     loop {
-        let next_base = interp
-            .registry()
-            .subsets
-            .get(&current)
-            .map(|s| s.base.clone());
+        let next_base = interp.subset_base(&current);
         match next_base {
             Some(base) if !base.is_empty() && base != current => {
                 current = base;
@@ -808,7 +817,7 @@ fn resolve_subset_base(name: &str, interp: Option<&Interpreter>) -> Option<Strin
     resolved.then_some(current)
 }
 
-fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap {
+fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> ValueMap {
     let mut attrs = ValueMap::default();
     // The sigil of the variable itself: `:r(:@regex)` is an `@` parameter.
     let sigil = variable_param(p).sigil;
@@ -1222,7 +1231,7 @@ fn extract_twigil(name: &str) -> &str {
 /// time to hand a custom parameter trait (`:$x is query`) to `trait_mod:<is>`.
 pub(crate) fn make_parameter_value_from_param_def(
     p: &ParamDef,
-    interp: Option<&Interpreter>,
+    interp: Option<&dyn SubsetBases>,
 ) -> Value {
     sig_param_to_parameter_instance(&param_def_to_sig_param(p), interp)
 }
@@ -1441,7 +1450,7 @@ fn render_param(p: &SigParam) -> String {
         && let Expr::Literal(lit) = de.as_ref()
     {
         result.push_str(" = ");
-        result.push_str(&crate::builtins::methods_0arg::raku_repr::raku_value(lit));
+        result.push_str(&crate::value::raku_repr::raku_value(lit));
     } else if p.name == "_"
         && let Some(Expr::Var(name)) = p.default_expr.as_deref()
         && name == "$_"

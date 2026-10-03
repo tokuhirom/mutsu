@@ -315,12 +315,12 @@ mod tests {
     #[test]
     fn lines_match_split_lines() {
         for text in ["a\nb\r\nc\rd", "a\n", "\n\n", "", "x"] {
-            let expected = crate::builtins::split_lines_with_chomp(text, true);
+            let expected = crate::value::split_lines::split_lines_with_chomp(text, true);
             assert_eq!(
                 all(text, StrIterMode::Lines { chomp: true }, None),
                 expected
             );
-            let raw = crate::builtins::split_lines_with_chomp(text, false);
+            let raw = crate::value::split_lines::split_lines_with_chomp(text, false);
             assert_eq!(all(text, StrIterMode::Lines { chomp: false }, None), raw);
         }
     }

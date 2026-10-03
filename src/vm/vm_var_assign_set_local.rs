@@ -79,6 +79,23 @@ impl Interpreter {
     ///
     /// The aliasing these binds exist for is untouched: only the whole-value
     /// `=` is refused, so `$x.push(9)`, `$x<k> = 2` and `$x[0]` keep working.
+    /// True when a `$`-sigil `:=` bind SOURCE is an itemized aggregate
+    /// (`$(%h)`, `$(@a)`, `(1, 2).item`): the value sits in a `Scalar`, so the
+    /// name binds that Scalar -- `.VAR.^name` is `Scalar` and `=:=` sees a
+    /// container -- but the Scalar is readonly, and an assignment is rakudo's
+    /// "Cannot assign to a readonly variable or a value" (#11129).
+    // Cost: O(1).
+    fn bind_source_is_itemized_aggregate(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Hash(_) => v.hash_is_itemized(),
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Scalar(inner) => {
+                matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(_))
+            }
+            _ => false,
+        }
+    }
+
     fn bind_source_is_non_scalar_container(v: &Value) -> bool {
         matches!(
             v.view(),
@@ -1166,8 +1183,16 @@ impl Interpreter {
         let synthetic_index_source = bind_source
             .as_deref()
             .is_some_and(|n| n.starts_with("__mutsu_bind_index_ref_"));
+        let unnamed_bind_source = bind_source.is_none() || synthetic_index_source;
+        // An itemized aggregate (`$(%h)`, `(1, 2).item`) sits in a readonly
+        // Scalar of its own; it is none of the container-less shapes below.
+        let bind_marks_itemized_scalar = is_vardecl
+            && scalar_bind
+            && unnamed_bind_source
+            && Self::bind_source_is_itemized_aggregate(&raw_popped);
         let bind_marks_immutable = scalar_bind
-            && (bind_source.is_none() || synthetic_index_source)
+            && unnamed_bind_source
+            && !bind_marks_itemized_scalar
             && Self::bind_source_has_no_container(&raw_popped);
         // The same container-less shape, but for a TYPE OBJECT source — see
         // `bind_source_is_type_object` for why it needs its own kind rather
@@ -1188,7 +1213,8 @@ impl Interpreter {
         // stay assignable.
         let bind_marks_non_scalar_container = is_vardecl
             && scalar_bind
-            && (((bind_source.is_none() || synthetic_index_source)
+            && ((unnamed_bind_source
+                && !bind_marks_itemized_scalar
                 && Self::bind_source_is_non_scalar_container(&raw_popped))
                 || bind_source
                     .as_deref()
@@ -1203,7 +1229,7 @@ impl Interpreter {
         // Scoped to a declaration: a parameter bind reaches this store too, and
         // a non-`is rw` parameter DOES own a container (rakudo reports `Scalar`).
         let bind_marks_no_container =
-            is_vardecl && scalar_bind && (bind_source.is_none() || synthetic_index_source);
+            is_vardecl && scalar_bind && unnamed_bind_source && !bind_marks_itemized_scalar;
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -1404,6 +1430,13 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
+        } else if bind_marks_itemized_scalar {
+            // A readonly Scalar holds the itemized aggregate: the name owns a
+            // container (so `.VAR` is `Scalar`), but cannot be assigned through.
+            let bare = code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .to_string();
+            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later
@@ -2021,6 +2054,15 @@ impl Interpreter {
             val = self.fetch_proxy_container_elements(val)?;
         }
         if val.is_nil()
+            && !is_bind
+            && !is_rebind
+            && !is_vardecl
+            && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
+        {
+            // A sigilless alias of another variable: the Nil decays against
+            // that variable's container, not this name (#11110).
+            val = decayed;
+        } else if val.is_nil()
             && !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {
@@ -2409,13 +2451,24 @@ impl Interpreter {
             // chain env at all could hit it, which is why the same routine
             // behaved correctly with a signature of plain scalars (those take
             // the slot-only light call path).
+            let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+            // A class/role body statement runs as its own chunk through
+            // `run_nested`, which starts with an empty `call_frames`: the
+            // enclosing scope's `my $z` is then visible only through `env`, so
+            // no saved frame env can vouch for it. It is still an outer
+            // lexical, and `class E { my $w := $z }` must share its cell, or
+            // the alias degrades to a by-name write that a later `$z = 5`
+            // never reaches (#11086).
+            let source_in_enclosing_decl_scope = !self.nested_capture_owners.is_empty()
+                && !source_in_same_scope
+                && self.env().contains_key(&resolved_source);
             let source_in_outer_frame = !is_percall_pseudo_var
                 && !synthetic_index_source
-                && self
-                    .call_frames
-                    .iter()
-                    .any(|f| f.saved_env.contains_key(&resolved_source));
-            let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
+                && (source_in_enclosing_decl_scope
+                    || self
+                        .call_frames
+                        .iter()
+                        .any(|f| f.saved_env.contains_key(&resolved_source)));
             // `my @a := @$n` deref-bind (Slice 2c): the parser conflates `@$n`
             // (deref of a scalar `$n` that holds an array by reference) with the
             // array variable `@n`. When no `@n`/`%n` container value exists at
@@ -2751,6 +2804,12 @@ impl Interpreter {
                         resolved_source_is_own_lexical,
                         &container,
                     );
+                    // No ancestor frame is on the stack for a class-body
+                    // chunk: the declaring frame's slot adopts the cell when
+                    // the registration op drains the caller-var writeback.
+                    if source_in_enclosing_decl_scope {
+                        self.record_caller_var_writeback(&resolved_source);
+                    }
                 }
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).

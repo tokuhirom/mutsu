@@ -576,6 +576,12 @@ pub(crate) struct FunctionDef {
     /// `Interpreter::routine_body_facts`. Derived state, like `body_fp_cache`.
     #[serde(skip)]
     pub(crate) body_facts_cache: std::sync::OnceLock<RoutineBodyFacts>,
+    /// The readonly marks of the frame this declaration registered in, for a
+    /// code value of a routine whose free variables belong to no running
+    /// routine frame (#11070); see `Interpreter::capture_declaring_readonly_state`.
+    /// `None` (synthetic defs, a deserialized def) records nothing.
+    #[serde(skip)]
+    pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
 }
 
 /// Properties of a routine body that the on-the-fly compilation gates ask about.
@@ -847,6 +853,45 @@ pub(crate) enum HashSpelling {
     Contextualizer,
 }
 
+/// Which contextualizer an [`Expr::Contextualizer`] spells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ContextKind {
+    /// `$(...)`: raku's `Contextualizer::Item`.
+    Item,
+    /// `@(...)`: raku's `Contextualizer::List`.
+    List,
+    /// `%(...)` with non-pair contents: raku's `Contextualizer::Hash`.
+    Hash,
+}
+
+impl Expr {
+    /// A [`Expr::Contextualizer`] as the `.item` / `.list` / `.hash` call it
+    /// compiles to, for the assignment paths that decide on the call's shape.
+    pub(crate) fn contextualizer_call(self) -> Expr {
+        match self {
+            Expr::Contextualizer { kind, inner } => Expr::MethodCall {
+                target: inner,
+                name: Symbol::intern(kind.method()),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+            other => other,
+        }
+    }
+}
+
+impl ContextKind {
+    /// The method the compiler lowers the contextualizer to.
+    pub(crate) fn method(self) -> &'static str {
+        match self {
+            Self::Item => "item",
+            Self::List => "list",
+            Self::Hash => "hash",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -1010,6 +1055,15 @@ pub(crate) enum Expr {
         complement: bool,
         squash: bool,
         non_destructive: bool,
+    },
+    /// `$(...)`, `@(...)`, `%(...)`: a contextualizer. It compiles exactly as
+    /// the `.item` / `.list` / `.hash` call on `inner` that rakudo lowers it
+    /// to, but is its own node so a user-written `.list` call still renders as
+    /// a call across the RakuAST boundary. `inner` is the parenthesized
+    /// expression (`Grouped`), or the nested contextualizer of `$@(...)`.
+    Contextualizer {
+        kind: ContextKind,
+        inner: Box<Expr>,
     },
     MethodCall {
         target: Box<Expr>,
@@ -2426,6 +2480,7 @@ pub(crate) enum AssignOp {
     MatchAssign,
 }
 
+pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
 mod lvalue;

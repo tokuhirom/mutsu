@@ -101,10 +101,17 @@ impl Compiler {
             }
             _ => {
                 let cell_name = self.return_rw_container_name(arg);
+                // A readonly `$` parameter operand has no container to hand
+                // out (#11108); flag its value for the call assignment.
+                let readonly_param = Self::scalar_container_alias_name(arg)
+                    .is_some_and(|n| self.readonly_scalar_params.contains(n));
                 self.compile_expr(arg);
                 if let Some(name) = cell_name {
                     self.emit_wrap_var_ref(&name);
                     self.code.emit(OpCode::CaptureVarCell);
+                }
+                if readonly_param {
+                    self.code.emit(OpCode::MarkReadonlyRwTail);
                 }
             }
         }

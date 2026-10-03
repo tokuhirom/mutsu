@@ -1,10 +1,10 @@
 use crate::value::{Value, ValueView};
 
-use super::raku_repr::raku_value;
 use crate::value::AttrMap;
+use crate::value::raku_repr::raku_value;
 
 /// Produce Raku-compatible `.raku` representation for a Match object.
-pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
+pub(crate) fn match_raku_repr(attributes: &AttrMap) -> String {
     let orig = attributes
         .get("orig")
         .map(|v| v.to_string_value())
@@ -85,12 +85,12 @@ fn value_raku_repr(val: &Value) -> String {
 }
 
 /// Extract the `from` position from a Match object value.
-pub(super) fn match_value_from(val: &Value) -> i64 {
+pub(crate) fn match_value_from(val: &Value) -> i64 {
     match_visible_pos(val, val.match_from().unwrap_or(0))
 }
 
 /// Extract the `to` position from a Match object value.
-pub(super) fn match_value_to(val: &Value) -> i64 {
+pub(crate) fn match_value_to(val: &Value) -> i64 {
     match_visible_pos(val, val.match_to().unwrap_or(0))
 }
 
@@ -98,7 +98,7 @@ pub(super) fn match_value_to(val: &Value) -> i64 {
 /// `.from` / `.to` / `.pos` report (Raku counts characters, so `\r\n` is one).
 // Cost: O(n), n = chars of `.orig` for the ASCII/CRLF scan; a non-trivial
 // subject also pays an O(p) grapheme count, p = chars of the prefix.
-pub(super) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
+pub(crate) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
     use unicode_segmentation::UnicodeSegmentation;
     let Some(orig) = val.match_orig() else {
         return cp;
@@ -114,7 +114,7 @@ pub(super) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
 /// Collect all captures from a Match object sorted by position.
 /// Positional captures use `ValuePair(Int => Match)` and named captures use
 /// `Pair(Str => Match)` to preserve the Raku-visible key types.
-pub(super) fn match_caps(attributes: &AttrMap) -> Value {
+pub(crate) fn match_caps(attributes: &AttrMap) -> Value {
     let mut pairs: Vec<(i64, i64, Value)> = Vec::new();
 
     // Collect named capture positions to filter out shadowed positional captures
@@ -188,7 +188,7 @@ fn expand_capture_items(val: &Value) -> Vec<Value> {
 }
 
 /// Like `.caps` but also includes non-captured text between captures as `~ => text` pairs.
-pub(super) fn match_chunks(attributes: &AttrMap) -> Value {
+pub(crate) fn match_chunks(attributes: &AttrMap) -> Value {
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {

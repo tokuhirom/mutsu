@@ -107,7 +107,9 @@ impl Interpreter {
             return None;
         }
         let name_sym = Symbol::lookup(name)?;
-        if !self.unit_private_names.contains(&name_sym) {
+        if !self.unit_private_names.contains(&name_sym)
+            || self.imported_in_open_unit_scope(name_sym)
+        {
             return None;
         }
         self.unit_private_routine_from(self.current_unit, name_sym)

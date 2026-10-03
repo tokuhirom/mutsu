@@ -1768,22 +1768,24 @@ impl Interpreter {
         // transitive flattening) exists.
         let mut register_x_does: Vec<(String, Vec<String>)> = Vec::new();
         let mut register_x = |name: &str, parent: &str, does: &[&str]| {
-            let mut mro = vec![name.to_string()];
-            // Walk up through existing classes to build full MRO
-            let mut cur = parent.to_string();
+            // Walk up through existing classes to build full MRO, borrowing
+            // each name from the class table rather than cloning it per step
+            // (this closure runs for every built-in `X::` class at startup).
+            let mut mro: Vec<&str> = vec![name];
+            let mut cur = parent;
             loop {
-                mro.push(cur.clone());
-                if let Some(cls) = classes.get(&cur)
+                mro.push(cur);
+                if let Some(cls) = classes.get(cur)
                     && let Some(p) = cls.parents.first()
-                    && p != &cur
+                    && p != cur
                 {
-                    cur = p.clone();
+                    cur = p;
                     continue;
                 }
                 break;
             }
-            if !mro.contains(&"Exception".to_string()) {
-                mro.push("Exception".to_string());
+            if !mro.contains(&"Exception") {
+                mro.push("Exception");
             }
             let mro: std::sync::Arc<[Symbol]> = mro.iter().map(|s| Symbol::intern(s)).collect();
             classes.insert(
@@ -2651,6 +2653,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    body_bind_cells: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
                     pending_param_type_checks: Vec::new(),
@@ -2676,6 +2679,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        body_bind_cells: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
                         pending_param_type_checks: Vec::new(),
@@ -2696,6 +2700,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    body_bind_cells: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
                     pending_param_type_checks: Vec::new(),
@@ -2715,6 +2720,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    body_bind_cells: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
                     pending_param_type_checks: Vec::new(),
@@ -2734,6 +2740,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    body_bind_cells: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
                     pending_param_type_checks: Vec::new(),
@@ -2753,6 +2760,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    body_bind_cells: Vec::new(),
                     decl_file: None,
                     deferred_custom_traits: Vec::new(),
                     pending_param_type_checks: Vec::new(),
@@ -2832,6 +2840,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        body_bind_cells: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
                         pending_param_type_checks: Vec::new(),
@@ -2892,6 +2901,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        body_bind_cells: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
                         pending_param_type_checks: Vec::new(),
@@ -2954,6 +2964,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        body_bind_cells: Vec::new(),
                         decl_file: None,
                         deferred_custom_traits: Vec::new(),
                         pending_param_type_checks: Vec::new(),
@@ -2988,26 +2999,19 @@ impl Interpreter {
         // walk `role_parents` here to pull in roles reached
         // transitively through a composed role's own `does` (a class
         // doing `X::Syntax` also does `X::Comp`).
-        for (class_name, does) in &register_x_does {
+        for (class_name, does) in register_x_does {
             let mut flattened: Vec<String> = does.clone();
-            let mut seen: HashSet<String> = flattened.iter().cloned().collect();
             let mut i = 0;
             while i < flattened.len() {
-                if let Some(parents) = registry.role_parents.get(&flattened[i]).cloned() {
+                if let Some(parents) = registry.role_parents.get(flattened[i].as_str()) {
                     for p in parents {
-                        if seen.insert(p.clone()) {
-                            flattened.push(p);
+                        if !flattened.contains(p) {
+                            flattened.push(p.clone());
                         }
                     }
                 }
                 i += 1;
             }
-            registry
-                .class_composed_roles
-                .insert(class_name.clone(), flattened);
-            registry
-                .class_direct_composed_roles
-                .insert(class_name.clone(), does.clone());
             // `does`-ONLY: a role that is ALSO this class's declared PARENT is
             // a role-as-superclass pun, not a pure composition, and must stay
             // in the class's MRO. rakudo has exactly one in this vocabulary --
@@ -3016,33 +3020,37 @@ impl Interpreter {
             // `(X::TooLateForREPR X::Comp Exception Any Mu)` there. Recording
             // it here dropped `X::Comp` from `.^mro_unhidden` (and, once
             // `.^mro` started consulting this set, from `.^mro` too).
-            let parents = registry
+            let parents: &[String] = registry
                 .classes
-                .get(class_name)
-                .map(|c| c.parents.clone())
-                .unwrap_or_default();
+                .get(&class_name)
+                .map_or(&[], |c| c.parents.as_slice());
             let does_only: Vec<String> = does
                 .iter()
-                .filter(|r| !parents.iter().any(|p| p == *r))
+                .filter(|r| !parents.contains(r))
                 .cloned()
                 .collect();
             registry
-                .class_does_only_roles
-                .insert(class_name.clone(), does_only);
+                .class_composed_roles
+                .insert(class_name.clone(), flattened);
+            registry
+                .class_direct_composed_roles
+                .insert(class_name.clone(), does);
+            registry.class_does_only_roles.insert(class_name, does_only);
         }
         // Only a class with attributes has accessor rows to add, and a fresh
         // registry has none to clear, so attribute-less classes (most of the
         // built-in `X::` tree) are skipped rather than interned for a no-op
-        // sync (#10961).
+        // sync (#10961). The rest are interned straight from the borrowed
+        // keys, with no `String` copy of each name.
         debug_assert!(registry.owner_accessor_names.is_empty());
-        let class_names: Vec<String> = registry
+        let class_syms: Vec<Symbol> = registry
             .classes
             .iter()
             .filter(|(_, class_def)| !class_def.attributes.is_empty())
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| Symbol::intern(name))
             .collect();
-        for class_name in class_names {
-            registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
+        for class_sym in class_syms {
+            registry.sync_accessor_entries(class_sym);
         }
         Self::seed_builtin_enum_types(&mut registry);
         registry
@@ -3446,6 +3454,7 @@ impl Interpreter {
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
+            readonly_rw_tail: None,
             otf_compile_cache: HashMap::new(),
             imported_compiled_fns: HashMap::new(),
             state_scope_id: Box::new(std::cell::Cell::new(None)),

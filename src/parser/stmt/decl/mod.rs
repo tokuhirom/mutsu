@@ -158,10 +158,6 @@ pub(in crate::parser::stmt) fn default_decl_expr(
     }
 }
 
-fn scalar_binding_rhs_is_readonly(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(_))
-}
-
 fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stmt> {
     let (r, _) = ws(input)?;
     if !r.starts_with(',') {

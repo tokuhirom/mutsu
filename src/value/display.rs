@@ -1022,6 +1022,7 @@ impl Value {
                 attributes,
                 ..
             } if class_name == "Method"
+                || class_name == "Submethod"
                 || class_name == "Sub"
                 || class_name == "Routine"
                 || class_name == "Attribute" =>

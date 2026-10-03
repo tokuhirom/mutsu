@@ -6,7 +6,7 @@
 # put the match there.
 use Test;
 
-plan 14;
+plan 16;
 
 sub walk-line(Str $code, *%extra-env) {
     my %env = %*ENV;
@@ -55,6 +55,14 @@ sub walk-line(Str $code, *%extra-env) {
     is $out, "ab\n", 'a grammar whose rules declare `:my $*x` parses';
     like $line, /'walked=0 () bridged=0 ()'/,
         'rule declarations keep neither the match nor its calls off the compiled engine';
+}
+
+{
+    my ($out, $line) = walk-line(
+        'grammar G { token TOP { <w>+ % "," <.ws>* }; token w { \\w+ } }; say G.parse("ab,cd")<w>.elems');
+    is $out, "2\n", 'a quantified call parses';
+    like $line, /'walked=0 () bridged=0 ()'/,
+        'a quantified call is a loop of frame calls (no scan, no single-candidate arm)';
 }
 
 {

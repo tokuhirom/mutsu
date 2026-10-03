@@ -27,6 +27,33 @@ impl Value {
         }
     }
 
+    /// Append `plan`'s suffix to this `Str` where it stands, when this value
+    /// holds the only reference to its buffer: `true` when appended, `false`
+    /// with `self` untouched (not a `Str`, or a shared buffer — the caller
+    /// then takes the copying path of [`Self::str_appended_nfc`]).
+    ///
+    /// The same append as `str_appended_nfc`'s unique arm, without moving the
+    /// value out of its slot and re-encoding it afterwards: the buffer's
+    /// allocation, and so the word pointing at it, does not change.
+    // Cost: amortized O(m), m = bytes of the suffix (a strand list is
+    // flattened first, once: O(n), n = bytes already held).
+    pub(crate) fn try_append_str_nfc_in_place(&mut self, plan: &StrAppendPlan<'_>) -> bool {
+        let Some(body) = self.0.str_body_mut() else {
+            return false;
+        };
+        match body {
+            super::StrBody::Flat(buf) => append_nfc(buf, plan),
+            // As in `str_appended_nfc`: a unique strand list is flattened
+            // first (ADR-0120 §2.6), and the appends after it are in place.
+            super::StrBody::Lazy(_) => {
+                let mut buf = body.take_flat();
+                append_nfc(&mut buf, plan);
+                *body = super::StrBody::Flat(buf);
+            }
+        }
+        true
+    }
+
     /// `self ~ suffix` for a `Str`, growing `self`'s existing buffer when this
     /// `Value` is its only holder.
     ///
@@ -105,6 +132,28 @@ mod tests {
         // The alias still holds the pre-append text: the shared buffer was
         // copied rather than grown.
         assert_eq!(alias.to_string_value(), "ab");
+    }
+
+    #[test]
+    fn appends_where_it_stands_when_unique() {
+        let mut v = Value::str("ab".to_string());
+        assert!(v.try_append_str_nfc_in_place(&StrAppendPlan::for_suffix("cd")));
+        assert_eq!(v.to_string_value(), "abcd");
+        // A composing suffix still normalizes across the join.
+        let mut e = Value::str("e".to_string());
+        assert!(e.try_append_str_nfc_in_place(&StrAppendPlan::for_suffix("\u{301}")));
+        assert_eq!(e.to_string_value(), "\u{e9}");
+    }
+
+    #[test]
+    fn declines_in_place_append_when_shared_or_not_a_str() {
+        let mut original = Value::str("ab".to_string());
+        let alias = original.clone();
+        assert!(!original.try_append_str_nfc_in_place(&StrAppendPlan::for_suffix("cd")));
+        assert_eq!(original.to_string_value(), "ab");
+        assert_eq!(alias.to_string_value(), "ab");
+        let mut n = Value::int(1);
+        assert!(!n.try_append_str_nfc_in_place(&StrAppendPlan::for_suffix("cd")));
     }
 
     #[test]

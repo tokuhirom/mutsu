@@ -24,16 +24,23 @@
 //! mentions. [`Compiler::note_class_decl_env_sync`] bounds the plan only when
 //! every one of them is enumerable. A role (#11078) adds its type-parameter
 //! signatures and the deferred body statements each composition runs; see
-//! [`Compiler::note_role_decl_env_sync`].
+//! [`Compiler::note_role_decl_env_sync`]. Expressions still evaluated from
+//! raw AST at registration (a computed method name, a fallback trait
+//! argument) are enumerated from an analysis compile of the same expression,
+//! a static `token`/`rule` body from its pattern text, and a `__hoisted`
+//! shell is bounded together with its source-order declaration (#11116).
 
 use super::Compiler;
-use crate::ast::ParamDef;
+use super::lazy_body_reads::{
+    chunk_reads, collect_by_name_reads, lazy_body_reads_bounded, push_type_name_tokens,
+    push_unique, token_body_reads,
+};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::opcode::{
-    ClassBodyOp, CompiledAttrDecl, CompiledClassDeclPlan, CompiledCode, CompiledDeclExpr,
-    CompiledMethodDecl, CompiledRoleDeclPlan, DeclTraitArg, DeferredBodyOpKind, OpCode,
+    ClassBodyOp, CompiledAttrDecl, CompiledClassDeclPlan, CompiledDeclExpr, CompiledMethodDecl,
+    CompiledRoleDeclPlan, DeclTraitArg, DeferredBodyOpKind,
 };
 use crate::symbol::Symbol;
-use crate::value::{Value, ValueView};
 use std::collections::{HashMap, HashSet};
 
 impl Compiler {
@@ -73,9 +80,8 @@ impl Compiler {
     /// env-sync slots. The channels are the compiled method bodies, their
     /// signatures' declaration-time expressions, the attribute descriptors,
     /// the trait and parent-argument chunks, the class-body statement chunks,
-    /// and the type names the header and signatures mention. Anything
-    /// evaluated from raw AST at registration, a computed class or method
-    /// name, and a `token`/`rule` body leave the plan unbounded.
+    /// and the type names the header and signatures mention. A `token`/`rule`
+    /// body that is not static leaves the plan unbounded.
     // Cost: O(b), b = total ops and constants of the class's compiled method
     // bodies and declaration chunks, nested closures included.
     pub(super) fn note_class_decl_env_sync(&mut self, decl_idx: u32) {
@@ -87,10 +93,11 @@ impl Compiler {
         let Some(plan) = self.code.class_decl_plans.get(*plan_idx as usize) else {
             return;
         };
+        let decl_id = plan.decl_id;
         let Some(names) = self.class_plan_by_name_reads(plan) else {
             return;
         };
-        self.record_bounded_lazy_decl(&[decl_idx], names);
+        self.record_bounded_type_decl(decl_idx, decl_id, names);
     }
 
     /// Every name the registration of `plan` (and each method it installs)
@@ -98,10 +105,10 @@ impl Compiler {
     /// of them is beyond enumeration.
     // Cost: O(b), b as in `note_class_decl_env_sync`.
     fn class_plan_by_name_reads(&self, plan: &CompiledClassDeclPlan) -> Option<Vec<Symbol>> {
-        if plan.name_chunk.is_some() {
-            return None;
-        }
         let mut names: Vec<Symbol> = Vec::new();
+        if let Some(chunk) = &plan.name_chunk {
+            chunk_reads(chunk, &mut names)?;
+        }
         for type_name in plan
             .parents
             .iter()
@@ -115,14 +122,14 @@ impl Compiler {
             sym.with_str(|s| push_type_name_tokens(s, &mut names));
         }
         for (_, arg) in &plan.custom_traits {
-            decl_arg_reads(arg.as_ref(), &mut names)?;
+            self.decl_arg_reads(arg.as_ref(), &mut names)?;
         }
         for (_, args) in &plan.parent_arg_chunks {
             for arg in args {
-                decl_arg_reads(Some(arg), &mut names)?;
+                self.decl_arg_reads(Some(arg), &mut names)?;
             }
         }
-        attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
+        self.attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
         self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
         for op in &plan.body_plan {
             match op {
@@ -130,22 +137,32 @@ impl Compiler {
                 ClassBodyOp::Does { name, args } => {
                     name.with_str(|s| push_type_name_tokens(s, &mut names));
                     for arg in args.iter().flatten() {
-                        decl_arg_reads(Some(arg), &mut names)?;
+                        self.decl_arg_reads(Some(arg), &mut names)?;
                     }
                 }
                 ClassBodyOp::ClassSub {
-                    chunk, hoist_chunk, ..
+                    chunk,
+                    hoist_chunk,
+                    raw,
+                    ..
                 } => {
-                    chunk_reads(chunk.as_ref()?, &mut names)?;
+                    self.stmt_chunk_reads(chunk.as_ref(), raw, &mut names)?;
                     if let Some(hoist) = hoist_chunk {
                         chunk_reads(hoist, &mut names)?;
                     }
                 }
-                ClassBodyOp::CodeAlias { chunk, .. }
-                | ClassBodyOp::ProtoMethod { chunk, .. }
-                | ClassBodyOp::LeavePhaser { chunk, .. }
-                | ClassBodyOp::Other { chunk, .. } => chunk_reads(chunk.as_ref()?, &mut names)?,
-                ClassBodyOp::TokenRule { .. } => return None,
+                ClassBodyOp::CodeAlias { chunk, raw, .. }
+                | ClassBodyOp::ProtoMethod { chunk, raw, .. }
+                | ClassBodyOp::LeavePhaser { chunk, raw, .. }
+                | ClassBodyOp::Other { chunk, raw, .. } => {
+                    self.stmt_chunk_reads(chunk.as_ref(), raw, &mut names)?
+                }
+                ClassBodyOp::TokenRule { plan } => self.token_decl_reads(
+                    &plan.param_defs,
+                    &plan.raw_body,
+                    &plan.qq_thunk_chunks,
+                    &mut names,
+                )?,
             }
         }
         Some(names)
@@ -173,10 +190,34 @@ impl Compiler {
         let Some(plan) = self.code.role_decl_plans.get(*plan_idx as usize) else {
             return;
         };
+        let decl_id = plan.decl_id;
         let Some(names) = self.role_plan_by_name_reads(plan) else {
             return;
         };
-        self.record_bounded_lazy_decl(&[decl_idx], names);
+        self.record_bounded_type_decl(decl_idx, decl_id, names);
+    }
+
+    /// Mark the class/role plan `decl_idx` bounded with its reads `names`,
+    /// together with any `__hoisted` shell of the same declaration
+    /// (`decl_id`) this compiler emitted: the shell registers a subset of the
+    /// same body, so it reads no name the full declaration does not. The
+    /// shell's own plan is never bounded on its own (its methods are compiled
+    /// only on demand, so there are no bodies to scan). The names are also
+    /// kept in `lazy_decl_reads` for an enclosing declaration's bound.
+    // Cost: O(n * s + h), n = names.len(), s = slots already recorded,
+    // h = hoisted shells of this compiler.
+    fn record_bounded_type_decl(&mut self, decl_idx: u32, decl_id: u64, names: Vec<Symbol>) {
+        let mut idxs = vec![decl_idx];
+        idxs.extend(
+            self.hoisted_type_shells
+                .iter()
+                .filter(|(id, idx)| *id == decl_id && *idx != decl_idx)
+                .map(|(_, idx)| *idx),
+        );
+        for sym in &names {
+            push_unique(&mut self.code.lazy_decl_reads, *sym);
+        }
+        self.record_bounded_lazy_decl(&idxs, names);
     }
 
     /// Every name the registration and compositions of the role `plan` may
@@ -187,7 +228,7 @@ impl Compiler {
         let mut names: Vec<Symbol> = Vec::new();
         self.param_defs_by_name_reads(&plan.type_param_defs, &mut names)?;
         for (_, arg) in &plan.custom_traits {
-            decl_arg_reads(arg.as_ref(), &mut names)?;
+            self.decl_arg_reads(arg.as_ref(), &mut names)?;
         }
         for parent in &plan.parent_ops {
             // A bracketed parent whose arguments did not parse as an
@@ -199,62 +240,179 @@ impl Compiler {
                 .name
                 .with_str(|s| push_type_name_tokens(s, &mut names));
             for arg in parent.args.iter().flatten() {
-                decl_arg_reads(Some(arg), &mut names)?;
+                self.decl_arg_reads(Some(arg), &mut names)?;
             }
         }
-        attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
+        self.attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
         self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
         let package = self.qualified_role_decl_name(&plan.name.resolve());
         for op in &plan.deferred_body_ops {
             match (op.kind, &op.chunk) {
-                (DeferredBodyOpKind::TokenRule, _) => return None,
-                (_, Some(chunk)) => chunk_reads(chunk, &mut names)?,
-                (_, None) => {
-                    let chunk = self.compile_decl_stmts_chunk_in_package(
-                        std::slice::from_ref(&op.raw),
-                        &package,
-                        &HashSet::new(),
-                        &HashMap::new(),
-                        &HashSet::new(),
-                    );
-                    chunk_reads(&chunk, &mut names)?;
+                (DeferredBodyOpKind::TokenRule, _) => {
+                    let (Stmt::TokenDecl {
+                        param_defs, body, ..
+                    }
+                    | Stmt::RuleDecl {
+                        param_defs, body, ..
+                    }) = &op.raw
+                    else {
+                        return None;
+                    };
+                    self.token_decl_reads(param_defs, body, &op.qq_thunk_chunks, &mut names)?;
                 }
+                (_, Some(chunk)) => chunk_reads(chunk, &mut names)?,
+                (_, None) => self.raw_stmt_reads(&op.raw, &package, &mut names)?,
             }
         }
         Some(names)
     }
 
     /// Fold the by-name reads of a type's top-level `method`/`submethod`
-    /// declarations: each compiled body, its signature's declaration-time
-    /// expressions and its return type. `None` for a computed method name,
-    /// a trait argument, or a body that was not compiled.
-    // Cost: O(b), b = total ops and constants of the method bodies.
+    /// declarations: each computed name, trait argument, compiled body, its
+    /// signature's declaration-time expressions and its return type.
+    // Cost: O(b), b = total ops and constants of the method bodies and
+    // their declaration-time expressions.
     fn methods_by_name_reads(
         &self,
         name_chunks: &[Option<CompiledDeclExpr>],
         methods: &[CompiledMethodDecl],
         out: &mut Vec<Symbol>,
     ) -> Option<()> {
-        if name_chunks.iter().any(Option::is_some) {
-            return None;
+        for chunk in name_chunks.iter().flatten() {
+            chunk_reads(chunk, out)?;
         }
         for method in methods {
-            if method.name_expr.is_some()
-                || method.custom_traits.iter().any(|(_, arg)| arg.is_some())
-            {
+            let exprs = method.name_expr.iter().chain(
+                method
+                    .custom_traits
+                    .iter()
+                    .filter_map(|(_, arg)| arg.as_ref()),
+            );
+            for expr in exprs {
+                self.ast_expr_reads(expr, out)?;
+            }
+            // A method of a computed class name, or one with a computed name
+            // itself, is compiled only at registration: enumerate its reads
+            // from an analysis compile of the same body instead.
+            let analysis;
+            let (code, param_defs) = match method.compiled_routine_key {
+                Some(key) => {
+                    let cf = self.compiled_functions.get(&key)?;
+                    (&cf.code, &cf.param_defs)
+                }
+                None => {
+                    let params: Vec<String> =
+                        method.param_defs.iter().map(|p| p.name.clone()).collect();
+                    analysis = self.new_decl_chunk_compiler().compile_closure_body(
+                        &params,
+                        &method.param_defs,
+                        &method.body,
+                    );
+                    (&analysis, &method.param_defs)
+                }
+            };
+            if !lazy_body_reads_bounded(code) {
                 return None;
             }
-            let cf = self.compiled_functions.get(&method.compiled_routine_key?)?;
-            if !lazy_body_reads_bounded(&cf.code) {
-                return None;
-            }
-            collect_by_name_reads(&cf.code, out);
-            self.param_defs_by_name_reads(&cf.param_defs, out)?;
+            collect_by_name_reads(code, out);
+            self.param_defs_by_name_reads(param_defs, out)?;
             if let Some(ret) = &method.return_type {
                 push_type_name_tokens(ret, out);
             }
         }
         Some(())
+    }
+
+    /// Fold the by-name reads of a type's attribute descriptors: their
+    /// `default`/`where`/`is default` arguments, unknown-trait arguments and
+    /// type names.
+    // Cost: O(b), b = total ops and constants of the attribute expressions.
+    fn attr_decls_by_name_reads(
+        &self,
+        attrs: &[(Symbol, CompiledAttrDecl)],
+        out: &mut Vec<Symbol>,
+    ) -> Option<()> {
+        for (_, attr) in attrs {
+            for (_, _, arg) in &attr.unknown_traits {
+                if let Some(expr) = arg {
+                    self.ast_expr_reads(expr, out)?;
+                }
+            }
+            for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
+                self.decl_arg_reads(arg.as_ref(), out)?;
+            }
+            for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
+                push_type_name_tokens(type_name, out);
+            }
+        }
+        Some(())
+    }
+
+    /// Fold the by-name reads of a `token`/`rule` declaration: its
+    /// signature, its `"..."` thunk chunks and its (static) pattern.
+    // Cost: O(p + b), p = pattern length, b = signature and thunk size.
+    fn token_decl_reads(
+        &self,
+        params: &[ParamDef],
+        body: &[Stmt],
+        qq_thunk_chunks: &[(Symbol, CompiledDeclExpr)],
+        out: &mut Vec<Symbol>,
+    ) -> Option<()> {
+        self.param_defs_by_name_reads(params, out)?;
+        for (_, chunk) in qq_thunk_chunks {
+            chunk_reads(chunk, out)?;
+        }
+        token_body_reads(body, out)
+    }
+
+    /// Fold the by-name reads of a class-body statement: its precompiled
+    /// chunk, or — when the statement still runs from raw AST at
+    /// registration (a computed class name has no package to compile it
+    /// against) — an analysis compile of the same statement.
+    // Cost: O(b), b = size of the statement's compiled form.
+    fn stmt_chunk_reads(
+        &self,
+        chunk: Option<&CompiledDeclExpr>,
+        raw: &Stmt,
+        out: &mut Vec<Symbol>,
+    ) -> Option<()> {
+        match chunk {
+            Some(chunk) => chunk_reads(chunk, out),
+            None => self.raw_stmt_reads(raw, &self.current_package, out),
+        }
+    }
+
+    /// Fold the by-name reads of a statement run from raw AST, through an
+    /// analysis compile of it under `package`: the package changes how a
+    /// name qualifies, not which lexicals it reads.
+    // Cost: O(b), b = size of the statement's compiled form.
+    fn raw_stmt_reads(&self, stmt: &Stmt, package: &str, out: &mut Vec<Symbol>) -> Option<()> {
+        let chunk = self.compile_decl_stmts_chunk_in_package(
+            std::slice::from_ref(stmt),
+            package,
+            &HashSet::new(),
+            &HashMap::new(),
+            &HashSet::new(),
+        );
+        chunk_reads(&chunk, out)
+    }
+
+    /// Fold the by-name reads of one declaration-time argument.
+    // Cost: O(b), b = ops and constants of the argument's chunk.
+    fn decl_arg_reads(&self, arg: Option<&DeclTraitArg>, out: &mut Vec<Symbol>) -> Option<()> {
+        match arg {
+            None | Some(DeclTraitArg::Literal(_)) => Some(()),
+            Some(DeclTraitArg::Compiled(chunk)) => chunk_reads(chunk, out),
+            Some(DeclTraitArg::Ast(expr)) => self.ast_expr_reads(expr, out),
+        }
+    }
+
+    /// Fold the by-name reads of an expression evaluated from raw AST at
+    /// registration, through an analysis compile of the same expression:
+    /// evaluating it reads exactly the names its compiled form reads.
+    // Cost: O(e), e = size of `expr`.
+    fn ast_expr_reads(&self, expr: &Expr, out: &mut Vec<Symbol>) -> Option<()> {
+        chunk_reads(&self.compile_decl_expr(expr), out)
     }
 
     /// Fold the by-name reads of a signature's declaration-time expressions
@@ -275,8 +433,7 @@ impl Compiler {
                 .chain(pd.trait_args.iter().map(|(_, e)| e))
                 .chain(pd.shape_constraints.iter().flatten());
             for expr in exprs {
-                let chunk = self.compile_decl_expr(expr);
-                chunk_reads(&chunk, out)?;
+                self.ast_expr_reads(expr, out)?;
             }
             for nested in pd
                 .sub_signature
@@ -315,139 +472,5 @@ impl Compiler {
                 self.code.bounded_lazy_decl_plans.push(idx);
             }
         }
-    }
-}
-
-/// Fold the by-name reads of a type's attribute descriptors: their
-/// `default`/`where`/`is default` chunks and type names. `None` for an
-/// unknown trait with an argument (evaluated from raw AST).
-// Cost: O(b), b = total ops and constants of the attribute chunks.
-fn attr_decls_by_name_reads(
-    attrs: &[(Symbol, CompiledAttrDecl)],
-    out: &mut Vec<Symbol>,
-) -> Option<()> {
-    for (_, attr) in attrs {
-        if attr.unknown_traits.iter().any(|(_, _, arg)| arg.is_some()) {
-            return None;
-        }
-        for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
-            decl_arg_reads(arg.as_ref(), out)?;
-        }
-        for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
-            push_type_name_tokens(type_name, out);
-        }
-    }
-    Some(())
-}
-
-/// Fold the by-name reads of one declaration-time argument; `None` when it is
-/// evaluated from raw AST (no compiled body to scan).
-// Cost: O(b), b = ops and constants of the argument's chunk.
-fn decl_arg_reads(arg: Option<&DeclTraitArg>, out: &mut Vec<Symbol>) -> Option<()> {
-    match arg {
-        None | Some(DeclTraitArg::Literal(_)) => Some(()),
-        Some(DeclTraitArg::Compiled(chunk)) => chunk_reads(chunk, out),
-        Some(DeclTraitArg::Ast(_)) => None,
-    }
-}
-
-/// Fold the by-name reads of a compiled declaration chunk; `None` when it
-/// reads names no op scan can bound.
-// Cost: O(b), b = ops and constants of `chunk` and its nested closures.
-fn chunk_reads(chunk: &CompiledDeclExpr, out: &mut Vec<Symbol>) -> Option<()> {
-    if !lazy_body_reads_bounded(&chunk.code) {
-        return None;
-    }
-    collect_by_name_reads(&chunk.code, out);
-    Some(())
-}
-
-/// Push every identifier in a type-name spelling (`Foo::Bar[Int]:D`, a
-/// parent string with bracketed arguments) as a by-name read: a lexical type
-/// or constant the declaration names (`my constant T = Int; class C is T`)
-/// is looked up by name at registration. Over-approximating with unrelated
-/// tokens only keeps an extra mirror live.
-// Cost: O(n), n = type_name.len().
-fn push_type_name_tokens(type_name: &str, out: &mut Vec<Symbol>) {
-    let mut push = |token: &str| {
-        if token.is_empty() {
-            return;
-        }
-        let sym = Symbol::intern(token);
-        if !out.contains(&sym) {
-            out.push(sym);
-        }
-    };
-    let is_name_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':');
-    for raw in type_name.split(|c: char| !is_name_char(c)) {
-        push(raw.trim_matches(':'));
-        for part in raw.split(':') {
-            push(part);
-        }
-    }
-}
-
-/// Whether every by-name read of `code` (and of each closure nested in it)
-/// is visible to [`collect_by_name_reads`]. An interpolating or indirect
-/// regex, a dynamic substitution replacement, a deferred phaser, and a
-/// nested declaration that is not itself a bounded sub all resolve names the
-/// op scan cannot enumerate.
-// Cost: O(b), b = total ops and constants of `code` and its nested closures.
-fn lazy_body_reads_bounded(code: &CompiledCode) -> bool {
-    let own = code.ops.iter().all(|op| match op {
-        // Only a bounded SUB: a nested class's body-statement and type-name
-        // reads are not folded into the enclosing body's `free_var_syms`, so
-        // they would be lost on the way out.
-        OpCode::RegisterDecl(idx) => {
-            matches!(
-                code.decl_plans.get(*idx as usize),
-                Some(crate::opcode::CompiledDeclPlanRef::Sub(_))
-            ) && code.bounded_lazy_decl_plans.contains(idx)
-        }
-        OpCode::PhaserEnd { .. } | OpCode::CheckPhaser { .. } => false,
-        _ => true,
-    }) && !code.holds_interpolating_regex()
-        && !code.holds_dynamic_substitution()
-        && !code.holds_indirect_regex_lookup();
-    own && code
-        .closure_compiled_codes
-        .iter()
-        .all(|c| lazy_body_reads_bounded(c))
-}
-
-/// Every name `code` may resolve by name in an enclosing frame's env: its
-/// free reads and writes (which already include its nested closures', nested
-/// routines' and `gather`/`whenever` bodies'), the rw-arg-sink targets, and —
-/// at any closure depth — the scalars it mutates in place and the bare
-/// callee names (a call `e()` colliding with an outer `my $e` reads `env[e]`).
-// Cost: O(b), b = total ops of `code` and its nested closures.
-fn collect_by_name_reads(code: &CompiledCode, out: &mut Vec<Symbol>) {
-    let mut push = |sym: Symbol| {
-        if !out.contains(&sym) {
-            out.push(sym);
-        }
-    };
-    for sym in code
-        .free_var_syms
-        .iter()
-        .chain(&code.free_var_writes)
-        .chain(&code.free_var_container_writes)
-        .chain(&code.rw_arg_env_sync_syms)
-    {
-        push(*sym);
-    }
-    for op in &code.ops {
-        let idx = code
-            .op_container_mutate_const_idx(op)
-            .or_else(|| CompiledCode::op_callee_name_const_idx(op));
-        if let Some(idx) = idx
-            && let Some(ValueView::Str(name)) = code.constants.get(idx as usize).map(Value::view)
-            && !code.locals.iter().any(|l| l.as_str() == name.as_str())
-        {
-            push(Symbol::intern(name.as_str()));
-        }
-    }
-    for nested in &code.closure_compiled_codes {
-        collect_by_name_reads(nested, out);
     }
 }

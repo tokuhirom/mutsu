@@ -38,6 +38,7 @@ impl Interpreter {
 
     /// Auto-FETCH a Proxy value. If the value is a Proxy, call its FETCH callback.
     /// Used when a Proxy-bound variable is read in value context.
+    // Cost: O(1) + the FETCH body's own work, per chained Proxy level (at most 16).
     pub(crate) fn auto_fetch_proxy(&mut self, value: &Value) -> Result<Value, RuntimeError> {
         // Tag probe first: a `view()` on a lazy Match would materialize it
         // just to see it is not a Proxy.
@@ -58,15 +59,18 @@ impl Interpreter {
             if fetcher.is_nil() {
                 return Ok(Value::NIL);
             }
-            // merge_all=true gives the FETCH body caller-priority inputs (it
-            // must see the CURRENT value of a captured lexical the STORE side
-            // mutates — substr-rw's `$str`). But its post-call whole-env merge
-            // would leak the body's captures into the caller: two map-produced
-            // Proxies sharing a captured `$v` name would both freeze to the
-            // first FETCHed value. FETCH is a READ, so run with caller-priority
-            // inputs and DISCARD every env effect afterwards.
+            // FETCH is an ordinary closure call (as in Rakudo): dispatch it
+            // through the VM's value-call path, which runs a compiled block
+            // against its own captures (shared cells for a lexical the STORE
+            // side mutates — substr-rw's `$str`) in O(1) of the caller's frame
+            // size. The interpreter carrier (`call_sub_value` with
+            // `merge_all`) rebuilt a copy of the whole caller env on every
+            // read, an O(L) cost in the reading frame's locals (#9385).
+            // FETCH is a READ, so DISCARD every env effect afterwards: a
+            // leaked capture would let two map-produced Proxies sharing a
+            // captured `$v` name both freeze to the first FETCHed value.
             let saved_env = self.env.clone();
-            let result = self.call_sub_value(fetcher.clone(), vec![current.clone()], true);
+            let result = self.vm_call_on_value(fetcher.clone(), vec![current.clone()], None);
             self.env = saved_env;
             // A FETCH that ends in a call to an `is rw` routine answers that
             // routine's container (`FETCH => method { $obj.rw-accessor }`,
@@ -365,6 +369,21 @@ impl Interpreter {
         Err(RuntimeError::assignment_ro_value(result))
     }
 
+    /// Refuse assigning to a routine-call result that is the aggregate its
+    /// `is rw` tail handed back through a readonly binding (see
+    /// `Interpreter::readonly_rw_tail`): `sub w($p) is rw { $p }; w(%r) = 1`
+    /// must not store into `%r` (#11108). The identity check keeps a mark
+    /// left by some inner call from refusing an unrelated result.
+    // Cost: O(1).
+    fn refuse_readonly_rw_tail(&mut self, result: &Value) -> Result<(), RuntimeError> {
+        match self.readonly_rw_tail.take() {
+            Some(tail) if crate::runtime::values_identical(&tail, result) => {
+                Err(RuntimeError::readonly_variable())
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for
     /// `sub f(\x) is raw { x }` is a *list assignment into it* — the same rule
     /// `@a = (7, 8)` follows — not a rebinding of the routine's result.
@@ -655,10 +674,12 @@ impl Interpreter {
             let rw_capable = Self::routine_is_rw_capable(&def);
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
+            self.readonly_rw_tail = None;
             let result = self.call_function(name, call_args);
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
             if rw_capable {
+                self.refuse_readonly_rw_tail(&result)?;
                 return self.assign_through_rw_result(result, value);
             }
             // Rakudo names the value the routine returned: `sub f { 10 }; f() = 3`
@@ -699,10 +720,12 @@ impl Interpreter {
                 let rw_capable = Self::sub_is_rw_capable(&data);
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
+                self.readonly_rw_tail = None;
                 let result = self.call_sub_value(Value::sub_value(data), call_args, true);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
                 if rw_capable {
+                    self.refuse_readonly_rw_tail(&result)?;
                     return self.assign_through_rw_result(result, value);
                 }
                 Err(RuntimeError::assignment_ro_value(result))

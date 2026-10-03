@@ -210,44 +210,6 @@ impl Interpreter {
         table
     }
 
-    /// Build the class's own private method table (`.^private_method_table`):
-    /// private methods AND private submethods declared directly on
-    /// `class_name`, keyed by name — the counterpart `class_method_table`
-    /// deliberately excludes (#8836). A public attribute has no accessor
-    /// here regardless of composition state: only `!`-twigil declarations
-    /// (`method !foo`) and their `submethod` equivalent are private methods.
-    pub(super) fn class_private_method_table(&self, class_name: &str) -> ValueMap {
-        let mut table = ValueMap::default();
-        let registry = self.registry();
-        if !registry.classes.contains_key(class_name) {
-            return table;
-        }
-        for method_name in registry.owner_method_names(class_name) {
-            let method_name = method_name.resolve();
-            let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
-                continue;
-            };
-            let Some(first) = overloads.first() else {
-                continue;
-            };
-            if !first.is_private {
-                continue;
-            }
-            table.insert(
-                method_name.clone(),
-                self.mark_method_table_entry(self.make_method_object_with_owner(
-                    &method_name,
-                    first,
-                    overloads.len() > 1,
-                    first.return_type.clone(),
-                    Some(&overloads),
-                    Some(class_name),
-                )),
-            );
-        }
-        table
-    }
-
     /// Collect methods from a runtime-mixed-in role definition.
     pub(super) fn collect_role_methods(
         &self,
@@ -487,7 +449,7 @@ impl Interpreter {
     /// private NQP cursor methods carry the same lookup metadata but their
     /// first argument is a cursor, not the object on which the method name
     /// should be redispatched.
-    fn mark_method_table_entry(&self, value: Value) -> Value {
+    pub(super) fn mark_method_table_entry(&self, value: Value) -> Value {
         match value.view() {
             ValueView::Instance {
                 class_name,
@@ -532,13 +494,16 @@ impl Interpreter {
     ) -> Value {
         let mut attrs = std::collections::HashMap::new();
 
-        // Store the display name (with ! prefix for private methods)
-        let display_name = if method_def.is_private {
-            format!("!{}", name)
-        } else {
-            name.to_string()
-        };
-        attrs.insert("name".to_string(), Value::str(display_name));
+        // A private method's `.name` is its bare name (`method !z` reports
+        // `z`, verified against `raku`); the `!` is call syntax, not part of
+        // the name.
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
+        // Privacy is recorded separately, since the name no longer says it:
+        // `CALL-ME` on a `.^private_method_table` entry re-dispatches as a
+        // private call (`self!name`) only when this is set.
+        if method_def.is_private {
+            attrs.insert("__mutsu_private_method".to_string(), Value::TRUE);
+        }
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
         attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
         attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));

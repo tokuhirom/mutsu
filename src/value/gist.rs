@@ -1,5 +1,6 @@
-use super::*;
 use crate::value::AttrMap;
+use crate::value::{Value, ValueMap, ValueView};
+use num_bigint::BigInt;
 
 /// Depth cap for the gist-dispatch probe. Cycles are caught by container
 /// identity (below); this only keeps a pathologically deep structure from
@@ -391,9 +392,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // to `to_string_value`, which answers the Str-context form.
         ValueView::Enum { key, .. } => key.resolve(),
         // Promise has no custom gist, so it gists in the default `.raku` form.
-        ValueView::Promise(p) => {
-            crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&p.status())
-        }
+        ValueView::Promise(p) => crate::value::raku_repr::promise_raku_repr(&p.status()),
         // Channel likewise; its bare string value reads as a type object.
         ValueView::Channel(_) => "Channel.new".to_string(),
         ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
@@ -439,7 +438,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // Shaped arrays join their rows with a newline (`say my @a[2,2]`
             // prints one row per line), matching the fast-path gist.
             let sep = if kind == crate::value::ArrayKind::Shaped
-                && crate::runtime::utils::shaped_array_has_rows(value)
+                && crate::value::shaped_array::shaped_array_has_rows(value)
             {
                 "\n "
             } else {
@@ -541,9 +540,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)
         | ValueView::RangeExclBoth(..)
-        | ValueView::GenericRange { .. } => {
-            crate::builtins::methods_0arg::raku_repr::raku_value(value)
-        }
+        | ValueView::GenericRange { .. } => crate::value::raku_repr::raku_value(value),
         // A Match nested inside a container (e.g. the values of `$/.caps` or a
         // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
         // captures, matching `Match.gist`. The generic Instance fall-through
@@ -586,7 +583,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // Int / Num.
         ValueView::Instance { attributes, .. }
             if let Some(payload) =
-                crate::builtins::numeric_subclass::numeric_payload_of(&attributes) =>
+                crate::value::numeric_payload::numeric_payload_of(&attributes) =>
         {
             payload.to_string_value()
         }
@@ -755,7 +752,7 @@ pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
                 }
             }
             ValueView::Seq(_) | ValueView::Slip(_) => {
-                let items = crate::runtime::utils::value_to_list(value);
+                let items = crate::value::to_list::value_to_list(value);
                 for item in items.iter() {
                     if let ValueView::Instance { attributes, .. } = item.view()
                         && item.is_match_instance()

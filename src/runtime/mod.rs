@@ -762,6 +762,7 @@ mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
 mod methods_classhow_parents;
+mod methods_classhow_private_methods;
 mod methods_collection;
 pub(crate) mod methods_collection_ops;
 mod methods_definitehow;
@@ -928,6 +929,7 @@ pub(crate) mod registration_class_validate;
 mod registration_method_traits;
 mod registration_private_access;
 mod registration_role;
+mod registration_role_bind_cells;
 mod registration_role_body;
 mod registration_role_body_lexical;
 mod registration_role_decl;
@@ -4498,6 +4500,13 @@ pub struct Interpreter {
     /// may rebind with `:=`, each with the value it held when first rebound
     /// (#10361; see `vm_rw_param_rebind`). Saved per call frame.
     pub(crate) rw_param_rebinds: Vec<(u32, Option<Value>)>,
+    /// The aggregate an `is rw` routine's tail handed back through a READONLY
+    /// binding (`sub w($p) is rw { $p }` with `w(%r)`), set by
+    /// `OpCode::MarkReadonlyRwTail`. The routine-call assignment checks the call result
+    /// against it by identity and refuses the store (#11108): such a tail is
+    /// a value, while an `@`/`%`/sigilless tail aliasing the same aggregate
+    /// would be a container.
+    pub(crate) readonly_rw_tail: Option<Value>,
     pub(crate) otf_compile_cache: HashMap<u64, Arc<CompiledFunction>>,
     /// Compiled bodies of subs defined in `use`d modules, captured at module-load
     /// time and keyed by the sub's body/signature fingerprint. Unlike the per-call
@@ -5407,6 +5416,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
+    /// The compilation unit whose code opened this scope (`current_unit` at
+    /// the push). An import made here shadows that unit's own top-level
+    /// routines, but not another unit's (#11103).
+    pub(crate) unit: Symbol,
 }
 
 impl Default for Interpreter {

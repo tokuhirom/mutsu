@@ -80,6 +80,13 @@ pub(crate) struct RoleDef {
     /// this used to mirror (`deferred_body_stmts`) was dropped in D8-4 once
     /// D8-2 made every execution site read this field instead.
     pub(crate) deferred_body: Vec<crate::opcode::DeferredBodyOp>,
+    /// The declaring scope's shared cells for the variables the body's `:=`
+    /// declarations bind (`role R { my $w := $z }`), keyed by their env name.
+    /// `deferred_body` runs at composition, in the COMPOSING scope, where the
+    /// name may denote another variable (or none); each composition run puts
+    /// these cells in scope for the body so the bind reaches the declaration
+    /// site's variable (#11087). Set by the role registration op.
+    pub(crate) body_bind_cells: Vec<(crate::symbol::Symbol, Value)>,
     /// The file this role's body was WRITTEN in (`None` = the main script).
     ///
     /// `deferred_body` is re-run at every composition, from the composing
@@ -251,7 +258,7 @@ pub(crate) struct MethodDef {
     /// in, so method entry can undo a caller's same-named readonly parameter
     /// on an outer variable the body writes (#11054). `None` (synthetic
     /// methods) leaves the registry alone. See
-    /// `Interpreter::reconcile_method_readonly`.
+    /// `Interpreter::reconcile_captured_readonly`.
     pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
     /// The parameter names and source file above, interned on first dispatch
     /// (see [`super::method_def_syms`]).
@@ -544,4 +551,11 @@ pub(crate) struct SquishIteratorMeta {
     pub(crate) with_func: Option<Value>,
     pub(crate) revert_values: ValueMap,
     pub(crate) revert_remove: Vec<String>,
+}
+
+impl crate::value::signature::SubsetBases for crate::runtime::Interpreter {
+    // Cost: O(1) expected, one registry hash probe.
+    fn subset_base(&self, name: &str) -> Option<String> {
+        self.registry().subsets.get(name).map(|s| s.base.clone())
+    }
 }

@@ -901,22 +901,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     {
         expr = Expr::HashVar(var_name.clone());
     }
-    let mark_scalar_readonly =
-        !s.is_array && !bound_name.starts_with('%') && super::scalar_binding_rhs_is_readonly(&expr);
-    let bind_to_var = matches!(expr, Expr::Var(_));
-    // A multi-dimensional subscript RHS (`my $x := @a[0;0;3]`) binds the leaf
-    // element's container exactly like the single-dimension form, so it takes
-    // the same `MarkBind` route: the compiler then emits `MultiDimIndexBindRef`
-    // (via `compile_call_arg`) instead of a plain read, and a later `$x = v`
-    // writes through to the real nested slot.
-    let bind_to_index = matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. });
     // A `$` scalar bound (`:=`) to a value is NOT a Scalar container, so
     // `@a = $bound` must flatten a Positional value rather than itemize it.
     // Mark the VarDecl with an internal trait the compiler reads to emit
     // MarkScalarBindContext (instead of wrapping in a SyntheticBlock, which
     // would change the value when the bind is used as an expression).
-    let is_scalar_bind =
-        !s.is_array && !bound_name.starts_with('%') && !bound_name.starts_with('&');
+    let is_scalar_bind = crate::ast::bind_decl::is_scalar_bind_name(&bound_name);
     // A natively-typed variable (`my int $x`, `my num $n`, `my str $s`) is not a
     // container, so it cannot be bound with `:=` — Raku raises X::Bind::NativeType.
     if is_scalar_bind
@@ -936,9 +926,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     }
     let mut custom_traits = s.custom_traits.clone();
     if is_scalar_bind {
-        custom_traits.push(("__scalar_bind".to_string(), None));
+        custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
     }
-    let stmt = Stmt::VarDecl {
+    // The bookkeeping around the declaration (`MarkBind`, `MarkReadonly`, the
+    // bound-array records) is built by `ast::bind_decl::expand`, which the
+    // RakuAST lowerer shares.
+    let stmt = crate::ast::bind_decl::expand(Stmt::VarDecl {
         name: s.name,
         expr,
         type_constraint: s.type_constraint,
@@ -949,65 +942,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         export_tags: s.export_tags.clone(),
         custom_traits,
         where_constraint: s.where_constraint.clone(),
-    };
-    let stmt = if s.is_array || bound_name.starts_with('%') {
-        let mut stmts = Vec::new();
-        let hash_bind = bound_name.starts_with('%');
-        if hash_bind {
-            // Record a dedicated bound-container marker so a later whole
-            // reassignment (`%a = (...)`) is allowed (it propagates to the bound
-            // source), while a `constant %M` — also readonly — stays immutable.
-            stmts.push(Stmt::MarkBoundContainer(bound_name.clone()));
-            stmts.push(Stmt::MarkBind);
-        }
-        stmts.push(stmt);
-        if hash_bind {
-            // AFTER the declaration: the declaration resets this bare name's
-            // readonly state (so a stale marking from an earlier same-named
-            // binding cannot poison it), which would erase a marking emitted
-            // before it. See `vm_var_assign_set_local.rs`'s `is_vardecl` block.
-            stmts.push(Stmt::MarkReadonly(
-                bound_name.clone(),
-                crate::ast::ReadonlyKind::ImmutableValue,
-            ));
-            // A `SyntheticBlock` yields its LAST statement's value, so re-read
-            // the now-bound hash to keep `my %h := %src` usable in expression
-            // position (mirrors the array branch's trailing read below).
-            stmts.push(Stmt::Expr(Expr::Var(bound_name.clone())));
-        }
-        if s.is_array {
-            stmts.push(Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_record_bound_array_len"),
-                args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-            }));
-            stmts.push(Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_record_shaped_array_dims"),
-                args: vec![Expr::Literal(Value::str(bound_name.clone()))],
-            }));
-            // Return the bound variable so the expression evaluates to the
-            // bound value (important for `+my @a := ...` which expects the
-            // list count).
-            stmts.push(Stmt::Expr(Expr::Var(bound_name)));
-        }
-        Stmt::SyntheticBlock(stmts)
-    } else if mark_scalar_readonly {
-        // Note: a declaration resets the bare name's readonly state (see
-        // `vm_var_assign_set_local.rs`'s `is_vardecl` block), so this marking is
-        // erased again by the declaration that follows it and is re-applied by
-        // that same store's `bind_marks_immutable` arm — which covers exactly
-        // the literal kinds `scalar_binding_rhs_is_readonly` accepts. It is kept
-        // here (rather than moved after the declaration) because a
-        // `SyntheticBlock` yields its LAST statement's value, and `my $x := 5`
-        // must still evaluate to `5` in expression position.
-        Stmt::SyntheticBlock(vec![
-            Stmt::MarkReadonly(bound_name, crate::ast::ReadonlyKind::Immutable),
-            stmt,
-        ])
-    } else if bind_to_var || bind_to_index {
-        Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmt])
-    } else {
-        stmt
-    };
+    });
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
     }
