@@ -2625,11 +2625,25 @@ impl Interpreter {
                             if let ValueView::Pair(key, inner_val) = arg.view()
                                 && key == inner_key.as_str()
                             {
+                                // The alias's declared type applies whichever
+                                // of its names the caller used: `Int :l(:$level)`
+                                // rejects `level => "foo"` as it does `l => "foo"`.
+                                let inner_val = if enforce_named_constraints {
+                                    self.check_and_coerce_param_type(
+                                        pd,
+                                        inner_val.clone(),
+                                        None,
+                                        None,
+                                        skip_constraint_recheck,
+                                    )?
+                                } else {
+                                    inner_val.clone()
+                                };
                                 // Rename param: bind only the leaf variable, not
                                 // the param's own name (see the primary-match
                                 // branch above).
                                 bind_named_rename_sub_signature(
-                                    self, sub_params, inner_val, &pd.traits,
+                                    self, sub_params, &inner_val, &pd.traits,
                                 )?;
                                 found = true;
                                 break 'alias;
