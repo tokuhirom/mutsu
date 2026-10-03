@@ -1,28 +1,15 @@
-# Trie: object subscripts, nested gathers, private calls and a dispatch regression
+# Trie: nested gathers are read, and a Seq prefers `@` over a coercion
 
-Drawing `Trie` from the ecosystem roulette turned up six bugs. With all of
-them fixed, its `t/02-trie` passes 70/70 under mutsu, matching rakudo; before,
-it failed at test 19 and then hung.
+#11682 took Trie's `t/02-trie` to 67/70. This change fixes the last three
+failures, so the file now passes 70/70, matching rakudo.
 
-- **`self{...}:adverb` parses as a subscript.** `self{$_}:exists` was read as
-  the invocant-colon call `{$_}.self(:exists)`, which is how its OrderedHash
-  dependency's `.elems` became 62. A `{` glued to an identifier is a
-  postcircumfix, and a nullary term such as `self` is never a listop head.
+- **A finite `gather` nested in a list is pulled when the list is read.** This
+  covers a gather reached through a variable, a gather that is a Pair's value,
+  and a gather returned by a hyper method call (`@nodes>>.get-all`). Such a
+  gather used to read as empty. It now renders its values in `say`, `.gist`
+  and `.Str`, and in the `:p`/`:kv` adverb rows. Two gaps from #11678 remain:
+  the element is not yet kept as a single `Seq`, and `.raku` still flattens it.
 - **A Seq argument prefers `@arr` over a `Str()` coercion candidate** in
-  method dispatch. This regressed when `Seq` stopped being `Positional`: the
-  method ranker scored the Seq as unrelated to `@`. It now ranks the Seq as
-  the List it binds as, the same way multi-sub dispatch already did. Without
-  this, Trie's `delete("ab")` recursed forever.
-- **`self!private` in a `gather` on a type object** is allowed when the gather
-  is consumed lazily from another package. The lexical `self` check now
-  accepts a type object as well as an instance.
-- **Slice adverbs on an Associative object** (`$o<k>:k`, `:v`, `:kv`, `:p`)
-  now ask `EXISTS-KEY` and `AT-KEY` for the given keys, as rakudo does.
-  Before, the adverb path snapshotted the whole object through `.keys`, and a
-  class without its own `keys` answered with `Any.keys`, giving `AT-KEY(0)`.
-- **A `gather` nested in a list is pulled when the list is read.** This covers
-  one held in a variable and the results of a hyper method call
-  (`@nodes>>.all`). Such a Seq used to read as empty. It now renders as
-  `(5)` inside `say` and `.gist` too.
-- **`$obj[*-1]` on an object with its own `AT-POS`** calls the WhateverCode
-  with the object's `.elems`.
+  method dispatch. `"ab".comb` is passed to `multi method d(@arr)` rather than
+  to `d(Str() $k)`. `t/oo/method/method-seq-arg-positional-over-coercion.t`
+  pins this.
