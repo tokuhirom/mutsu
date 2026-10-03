@@ -1232,12 +1232,12 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
 // Cost: O(1).
 fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
     match value {
-        Expr::Call { name, args } if name.as_str() == "__mutsu_bind_index_value" => match args
-            .as_slice()
-        {
-            [rhs, _] => Some(rhs),
-            _ => None,
-        },
+        Expr::Call { name, args } if name.as_str() == "__mutsu_bind_index_value" => {
+            match args.as_slice() {
+                [rhs, _] => Some(rhs),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

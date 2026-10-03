@@ -1531,7 +1531,12 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         return Err(unsupported(node));
     };
     let rhs = lower_expr(named_child(node, "right")?)?;
-    Ok(crate::parser::index_bind_expr(target, index, is_positional, rhs))
+    Ok(crate::parser::index_bind_expr(
+        target,
+        index,
+        is_positional,
+        rhs,
+    ))
 }
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
