@@ -464,6 +464,17 @@ impl Interpreter {
                                 .unwrap_or_default();
                             role_names.sort();
                             role_names.dedup();
+                            if required.is_multi {
+                                return Err(RuntimeError::typed_msg(
+                                    "X::Role::Unimplemented::Multi",
+                                    format!(
+                                        "Multi method '{}' must be implemented by {} because it is required by roles: {}.",
+                                        method_name,
+                                        class_name,
+                                        role_names.join(", ")
+                                    ),
+                                ));
+                            }
                             return Err(RuntimeError::typed_msg(
                                 "X::Comp::AdHoc",
                                 format!(

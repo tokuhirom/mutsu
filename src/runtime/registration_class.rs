@@ -909,6 +909,14 @@ impl Interpreter {
             if needs_bare {
                 return format!("{}{}", bare, suffix);
             }
+            // The bare name may be a short alias a `use` installed for a type
+            // declared under a longer name (`unit class A::B::T is export`
+            // imported into `unit module M; class C is T`, pre-qualified `M::T`).
+            if !registry_has_lookup(self, lookup)
+                && let Some(resolved) = self.package_type_alias(bare)
+            {
+                return format!("{}{}", resolved, suffix);
+            }
             if let ValueView::Package(pkg) = self.resolve_indirect_type_name(bare).view() {
                 let resolved = pkg.resolve();
                 if self.registry().classes.contains_key(resolved.as_str())
@@ -920,4 +928,10 @@ impl Interpreter {
         }
         name.to_string()
     }
+}
+
+/// True when `name` is itself a registered class or role.
+fn registry_has_lookup(interp: &Interpreter, name: &str) -> bool {
+    let registry = interp.registry();
+    registry.classes.contains_key(name) || registry.roles.contains_key(name)
 }

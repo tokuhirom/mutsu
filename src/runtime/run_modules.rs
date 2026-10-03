@@ -1632,6 +1632,26 @@ impl Interpreter {
                 if *qualified == module || qualified.starts_with(&format!("{module}::")) {
                     return true;
                 }
+                // The compunit's own `unit class` need not be named after its
+                // file (`A/B/MD5.rakumod` declaring `unit class A::B::Other::MD5
+                // is export`): an exported one is still this compunit's.
+                if unit_name.as_deref() == Some(qualified.as_str())
+                    && exported_here.contains(
+                        crate::qualified::unqualified_part(crate::symbol::Symbol::intern(
+                            qualified,
+                        ))
+                        .as_str(),
+                    )
+                {
+                    return true;
+                }
+                // `class A::B::EmptyCI is export` in `A/B/CI.rakumod`: named by
+                // its full name in this compunit's own export list.
+                if crate::qualified::is_qualified(crate::symbol::Symbol::intern(qualified))
+                    && exported_here.contains(qualified.as_str())
+                {
+                    return true;
+                }
                 let Some(prefix) = unit_prefix.as_deref() else {
                     return false;
                 };
@@ -1661,9 +1681,15 @@ impl Interpreter {
                 })
                 .collect();
             if !aliases.is_empty() {
-                let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
-                    .entry(importer_package)
-                    .or_default();
+                // Also keep them against the module's own name: a later `use` of
+                // this already-loaded module copies from there into ITS importer
+                // (`use_module_with_tags_inner`'s already-loaded branch).
+                let table = crate::runtime::cow_table_mut(&mut self.package_type_aliases);
+                let own = table.entry(module.to_string()).or_default();
+                for (short, qualified) in &aliases {
+                    own.entry(short.clone()).or_insert(qualified.clone());
+                }
+                let entry = table.entry(importer_package).or_default();
                 for (short, qualified) in aliases {
                     entry.entry(short).or_insert(qualified);
                 }
@@ -2089,8 +2115,9 @@ impl Interpreter {
                     return None;
                 };
                 let target = target.resolve();
-                (target != *name && self.has_type_direct(&target))
-                    .then(|| (name.clone(), target.to_string()))
+                (target != *name
+                    && (self.has_type_direct(&target) || self.is_declared_package(&target)))
+                .then(|| (name.clone(), target.to_string()))
             })
             .collect()
     }

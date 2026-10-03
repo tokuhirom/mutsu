@@ -50,7 +50,14 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
                 .iter()
                 .any(|(trait_name, _)| trait_name == "__mutsu_export_type")
         {
-            self.0.insert(name.resolve());
+            let name = name.resolve();
+            // A qualified declarator name publishes its last part, as rakudo does.
+            let sym = crate::symbol::Symbol::intern(&name);
+            if crate::qualified::is_qualified(sym) {
+                self.0
+                    .insert(crate::qualified::unqualified_part(sym).as_str().to_string());
+            }
+            self.0.insert(name);
         }
         crate::ast_visit::walk_stmt(self, stmt);
     }
@@ -61,7 +68,14 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
             && let Some(crate::ast::Expr::Literal(value)) = args.first()
         {
             let name = value.to_string_value();
-            if !name.is_empty() && !name.contains("::") {
+            // `class A::B::C is export` publishes the short name `C`, as rakudo
+            // does for a qualified declarator name.
+            let sym = crate::symbol::Symbol::intern(&name);
+            let short = crate::qualified::unqualified_part(sym).as_str().to_string();
+            if !short.is_empty() {
+                self.0.insert(short);
+            }
+            if crate::qualified::is_qualified(sym) {
                 self.0.insert(name);
             }
         }
