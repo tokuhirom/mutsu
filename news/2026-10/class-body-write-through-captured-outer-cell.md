@@ -10,12 +10,10 @@ redirected to the bare name while a class/role body is being walked and that
 name holds a shared cell, so it writes through the cell like any other
 captured-lexical write.
 
-A class-body bind to an outer lexical (`class E { my $w := $z }`) was a value
-copy for two reasons: the block-final `VarDecl` arm of `compile_block_inline`
-(every class-body statement is its own chunk, hence block-final) dropped the
-`:=` lowering, and the VM's bind path recognized an outer source only through a
-saved call-frame env, which a class-body chunk run through `run_nested` does not
-have. The tail arm now keeps the full bind lowering, and a source visible only
-through env while a class/role body runs is treated as an outer lexical: the
-alias and the source share one cell, and the declaring frame's slot adopts it
-through the caller-var writeback.
+A class-body bind to an outer lexical (`class E { my $w := $z }`) still
+degraded to a by-name alias: the VM's bind path recognized an outer source only
+through a saved call-frame env, which a class-body chunk run through
+`run_nested` does not have. A source visible only through env while a
+class/role body runs is now treated as an outer lexical, so the alias and the
+source share one cell in both directions, and the declaring frame's slot adopts
+it through the caller-var writeback.
