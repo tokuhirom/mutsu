@@ -17,7 +17,28 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, mut body) = block_with_pointy_params(rest, pointy_param.as_slice())?;
     if let Some(pd) = pointy_param {
-        body.insert(0, pointy_topic_bind(&pd));
+        if pointy_param_autothreads(&pd) {
+            // `given %r.all.value -> Any $_ { ... }`: the block is CALLED with
+            // the topic, so a Junction autothreads over a parameter whose type
+            // rejects it (Benchmark's statistics test) instead of failing the
+            // bind. Same lowering as `if COND -> sig { ... }`.
+            body = vec![Stmt::Expr(Expr::CallOn {
+                target: Box::new(Expr::AnonSubParams {
+                    params: vec![pd.name.clone()],
+                    param_defs: vec![pd],
+                    return_type: None,
+                    body,
+                    is_rw: false,
+                    is_raw: false,
+                    custom_traits: Default::default(),
+                    is_whatever_code: false,
+                    declarator: crate::ast::RoutineDeclarator::Block,
+                }),
+                args: vec![Expr::Var("_".to_string())],
+            })];
+        } else {
+            body.insert(0, pointy_topic_bind(&pd));
+        }
     }
     Ok((
         rest,
@@ -28,6 +49,27 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
             with_kind: None,
         },
     ))
+}
+
+/// Whether a `given ... -> PARAM` binds by calling the block: a plain scalar
+/// parameter whose declared type does not itself accept a Junction, so the call
+/// autothreads. Every other shape (untyped, `Mu`/`Junction`, sub-signatures,
+/// `is rw`/`is copy`/`is raw`, `@`/`%`/`&` sigils) keeps the inline bind.
+fn pointy_param_autothreads(pd: &crate::ast::ParamDef) -> bool {
+    let Some(ty) = pd.type_constraint.as_deref() else {
+        return false;
+    };
+    let base = ty
+        .trim_end_matches(":D")
+        .trim_end_matches(":U")
+        .trim_end_matches(":_");
+    !matches!(base, "Mu" | "Junction")
+        && pd.sub_signature.is_none()
+        && pd.traits.is_empty()
+        && !pd.name.starts_with(['@', '%', '&'])
+        && !pd.sigilless
+        && !pd.named
+        && !pd.is_variadic()
 }
 
 pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
