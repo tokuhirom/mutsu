@@ -209,8 +209,7 @@ impl Interpreter {
                 self.registry_mut().functions_mut().insert(key, def.clone());
                 key
             };
-            self.registry_mut()
-                .our_scoped_functions
+            std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module_registered_functions)
                 .insert(installed_key);
@@ -397,8 +396,7 @@ impl Interpreter {
                     .or_insert_with(|| def.clone());
                 key
             };
-            self.registry_mut()
-                .our_scoped_functions
+            std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module_registered_functions)
                 .insert(installed_key);
@@ -1428,8 +1426,7 @@ impl Interpreter {
                 .and_then(|m| m.get(&name))
                 .cloned()
             {
-                self.registry_mut()
-                    .token_defs
+                std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
                     .insert(Symbol::intern(&target_single), defs);
                 crate::runtime::regex_parse::TOKEN_DEFS_GEN
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

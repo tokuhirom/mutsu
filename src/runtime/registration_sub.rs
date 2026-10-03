@@ -1696,8 +1696,7 @@ impl Interpreter {
             // same lock would deadlock, so clone the handle out first).
             let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
             if let Some(f) = f {
-                self.registry_mut()
-                    .our_scoped_functions
+                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
                     .insert(Symbol::intern(&fq), f);
             }
         }
@@ -2376,7 +2375,7 @@ impl Interpreter {
                 .proto_token_params
                 .insert(key.clone(), params);
         }
-        self.registry_mut().proto_tokens.insert(key);
+        std::sync::Arc::make_mut(&mut self.registry_mut().proto_tokens).insert(key);
     }
 
     /// The registry key -- the type identity -- of an enum declared as `name`

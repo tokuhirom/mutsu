@@ -423,7 +423,7 @@ impl Interpreter {
         // bumps `TOKEN_DEFS_GEN`, so doing it unconditionally invalidated the
         // regex-code parse cache and every generation-keyed regex memo on
         // every match of a pattern with a plain `:my $x = …` (#10121).
-        let mut saved_token_defs: Option<crate::runtime::registry::TokenDefsMap> = None;
+        let mut saved_token_defs: Option<std::sync::Arc<crate::runtime::registry::TokenDefsMap>> = None;
 
         for (decl_name, stmt_src) in declarators {
             // A grammar rule frame has already initialized its own dynamic

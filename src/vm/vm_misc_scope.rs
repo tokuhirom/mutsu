@@ -493,13 +493,15 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(b + w + d + R) per execution plus the body, b = ops in the block (scanned
-    // for declarations/topic binders on every entry), w = names the block wrote by
-    // name (the exit merges only its block tier), d = names it declared (their slots
-    // are reset, each checked against the block's p protected further-out slots, so
-    // O(d * p) with p = 0 unless the block re-shadows a name), R = routine-registry entries (snapshot + restore). Once any
-    // sigilless alias exists in the process the alias sync adds O(L), L = frame
-    // locals. Rakudo: O(1) -- see #9170.
+    // Cost: O(w + d) per execution plus the body, w = names the block wrote by name
+    // (the exit merges only its block tier), d = names it declared (their slots are
+    // reset, each checked against the block's p protected further-out slots, so
+    // O(d * p) with p = 0 unless the block re-shadows a name). The block's
+    // declaration facts are computed once per chunk (`block_range_facts`), and the
+    // routine-registry snapshot is O(1) with an O(1) restore when the block changed
+    // no routine table; a block that does declare a routine pays O(R) on exit, R =
+    // routine-registry entries. Once any sigilless alias exists in the process the
+    // alias sync adds O(L), L = frame locals. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -528,20 +530,11 @@ impl Interpreter {
         // ADR-0018 BlockScope restore: declaration opcodes carry the exact
         // lexical slot owned by this block. Keep that identity through cleanup
         // instead of broadcasting a name-keyed env value to every same-named
-        // slot in the frame.
-        let owned_slots: rustc_hash::FxHashSet<usize> = code.ops[pre_start..end]
-            .iter()
-            .filter_map(|op| match op {
-                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
-                // A block-scoped `our $x` (see `OpCode::DeclareOurScalar`)
-                // owns its slot the same way `SetLocalDecl` does: the LEXICAL
-                // alias is scoped to this block (Nil'd on exit below), while
-                // the package-qualified cell it shares persists independently
-                // in `env`/`our_vars`.
-                OpCode::DeclareOurScalar { slot, .. } => Some(*slot as usize),
-                _ => None,
-            })
-            .collect();
+        // slot in the frame. A block-scoped `our $x` (`DeclareOurScalar`) owns
+        // its slot the same way `SetLocalDecl` does: the LEXICAL alias is
+        // scoped to this block (Nil'd on exit below), while the
+        // package-qualified cell it shares persists in `env`/`our_vars`.
+        //
         // A `state` declaration inside this block is NOT a block-local `my`:
         // its storage (the state store's shared cell) outlives the block, and
         // an enclosing loop's `sync_state_locals_in_range` persists the
@@ -549,44 +542,19 @@ impl Interpreter {
         // Treating it as a fresh block-local Nil'd the slot on exit, so the
         // sync wrote Nil THROUGH the shared cell and every iteration of
         // `{ state $n = 0; $n = $n + 1 } for 1..3` restarted from Nil
-        // (1 1 1 instead of 1 2 3). Exclude state slots from the exit resets.
-        let state_slots: rustc_hash::FxHashSet<usize> = code.ops[pre_start..end]
-            .iter()
-            .filter_map(|op| match op {
-                OpCode::StateVarInit(slot, _) => Some(*slot as usize),
-                _ => None,
-            })
-            .collect();
-        // Does this block bind a topic of its own anywhere in its range? Only
-        // then is `$_` block-scoped and must not be written back on exit (see
-        // the restore loop below). Kept deliberately broad — every opcode that
-        // can leave `$_` pointing at something this block chose counts, and a
-        // `$_ := …` rebinding (`MarkRebindContext` + a store to `_`) is such a
-        // binding too, even though a plain `$_ = …` assignment is not.
-        let block_ops = &code.ops[pre_start..end];
-        let binds_own_topic = block_ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::SetTopic
-                    | OpCode::SaveTopic
-                    | OpCode::RestoreTopic
-                    | OpCode::EnterPointyTopic
-                    | OpCode::ExitPointyTopic
-                    | OpCode::ForLoop(_)
-                    | OpCode::Given { .. }
-                    | OpCode::DoGivenExpr { .. }
-                    | OpCode::When { .. }
-            )
-        }) || (block_ops
-            .iter()
-            .any(|op| matches!(op, OpCode::MarkRebindContext))
-            && block_ops.iter().any(|op| match op {
-                OpCode::SetGlobal(idx) => code
-                    .constants
-                    .get(*idx as usize)
-                    .is_some_and(|c| matches!(c.view(), ValueView::Str(s) if s.as_str() == "_")),
-                _ => false,
-            }));
+        // (1 1 1 instead of 1 2 3). So state slots are excluded from the exit
+        // resets.
+        //
+        // `binds_own_topic`: only a block that binds a topic of its own makes
+        // `$_` block-scoped, so that it is not written back on exit (see the
+        // restore loop below).
+        //
+        // All three are facts of the block's ops, computed once per chunk
+        // (`CompiledCode::block_range_facts`), not by a scan per entry (#9170).
+        let facts = code.block_range_facts(*ip, end);
+        let owned_slots = &facts.owned_slots;
+        let state_slots = &facts.state_slots;
+        let binds_own_topic = facts.binds_own_topic;
         let routine_snapshot = self.snapshot_routine_registry();
         // The block's by-name writes go to a tier of their own, chained over the
         // enclosing env, so the exit below merges back just those writes instead

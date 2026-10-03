@@ -133,7 +133,7 @@ impl Interpreter {
         if let Some(top) = self.import_scope_stack.last_mut() {
             top.own_routine_imports.insert(alias);
         }
-        self.imported_routine_aliases.insert(alias);
+        std::sync::Arc::make_mut(&mut self.imported_routine_aliases).insert(alias);
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
@@ -156,7 +156,7 @@ impl Interpreter {
     }
 
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
-        self.imported_routine_aliases
+        std::sync::Arc::make_mut(&mut self.imported_routine_aliases)
             .remove(&Symbol::intern(&format!("{package}::{name}")));
     }
 
@@ -167,7 +167,7 @@ impl Interpreter {
         tags: impl IntoIterator<Item = String>,
     ) {
         let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        self.imported_exported_proto_tags
+        std::sync::Arc::make_mut(&mut self.imported_exported_proto_tags)
             .entry(key)
             .or_default()
             .extend(tags);
