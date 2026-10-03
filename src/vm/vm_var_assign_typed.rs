@@ -770,6 +770,15 @@ impl Interpreter {
             // A role-mixed value is not an `Instance` view, so the arm below
             // never saw it and `"$r"` rendered the base value instead of the
             // composition's `Str` (see `mixin_user_stringifier`).
+            // A mixin over a `Str` interpolates as `.Stringy`: the role's own
+            // `Stringy` if it declares one, else its payload -- never its `Str`.
+            if let Some(payload) = crate::runtime::str_mixin_payload(&v) {
+                match self.dispatch_mixin_method_call(&v, "Stringy", vec![]) {
+                    Some(stringy) => result.push_str(&stringy?.to_string_value()),
+                    None => result.push_value(&payload),
+                }
+                continue;
+            }
             if let Some(mixed) = self.mixin_user_stringifier(&v) {
                 result.push_str(&mixed?.to_string_value());
                 continue;
