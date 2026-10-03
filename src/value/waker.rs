@@ -36,6 +36,14 @@ pub(crate) fn next_event_seq() -> u64 {
     EVENT_SEQ.fetch_add(1, Ordering::Relaxed)
 }
 
+/// Lock a waker's state. A thread that panicked while holding it left the
+/// queue itself consistent (every critical section is a few plain field
+/// updates), so a poisoned lock is recovered rather than propagated.
+fn lock_recover(lock: &Mutex<WakerState>) -> std::sync::MutexGuard<'_, WakerState> {
+    lock.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// One event delivered to a consumer. `key` (stored alongside in the queue)
 /// identifies which subscription of the consumer the event belongs to.
 #[derive(Debug, Clone)]
@@ -92,7 +100,7 @@ impl ReactWaker {
     /// thread is running.
     pub(crate) fn push_sync(&self, key: usize, event: SinkEvent, seq: u64) -> bool {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         state.events.push_back((key, event, seq));
         cvar.notify_all();
         state
@@ -111,7 +119,7 @@ impl ReactWaker {
     /// own registry lock, or a backlog replayed to a late-registered sink).
     pub(crate) fn push_at(&self, key: usize, event: SinkEvent, seq: u64) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         state.events.push_back((key, event, seq));
         cvar.notify_all();
     }
@@ -121,7 +129,7 @@ impl ReactWaker {
     /// consuming the queue.
     pub(crate) fn has_event_upto(&self, key: usize, seq: u64) -> bool {
         let (lock, _) = &*self.inner;
-        let state = lock.lock().unwrap();
+        let state = lock_recover(lock);
         state.events.iter().any(|(k, _, s)| *k == key && *s <= seq)
     }
 
@@ -130,7 +138,7 @@ impl ReactWaker {
     /// non-queue sources.
     pub(crate) fn notify(&self) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         state.poked = true;
         cvar.notify_all();
     }
@@ -140,7 +148,7 @@ impl ReactWaker {
     /// waiting — until [`Self::finish_in_flight`].
     pub(crate) fn drain(&self) -> Vec<(usize, SinkEvent, u64)> {
         let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         let events: Vec<_> = state.events.drain(..).collect();
         if state.consumer.is_some() {
             state
@@ -154,7 +162,7 @@ impl ReactWaker {
     /// dropped): release the producers waiting on those events.
     pub(crate) fn finish_in_flight(&self) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         if !state.in_flight.is_empty() {
             state.in_flight.clear();
             cvar.notify_all();
@@ -174,7 +182,7 @@ impl ReactWaker {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let (lock, cvar) = &*self.inner;
-            let mut state = lock.lock().unwrap();
+            let mut state = lock_recover(lock);
             state.consumer = Some(std::thread::current().id());
             state.setup = false;
             cvar.notify_all();
@@ -189,7 +197,7 @@ impl ReactWaker {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let (lock, _) = &*self.inner;
-            let mut state = lock.lock().unwrap();
+            let mut state = lock_recover(lock);
             state.consumer = Some(std::thread::current().id());
             state.setup = true;
         }
@@ -198,8 +206,7 @@ impl ReactWaker {
     /// Whether a producer on this thread has to wait for this consumer.
     pub(crate) fn holds_producer(&self) -> bool {
         let (lock, _) = &*self.inner;
-        lock.lock()
-            .unwrap()
+        lock_recover(lock)
             .consumer
             .is_some_and(|c| c != std::thread::current().id())
     }
@@ -208,7 +215,7 @@ impl ReactWaker {
     /// release every producer still waiting on it.
     pub(crate) fn end_synchronous_delivery(&self) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         state.consumer = None;
         state.setup = false;
         state.in_flight.clear();
@@ -243,7 +250,7 @@ impl ReactWaker {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))] // only native threads park
     fn set_parked(&self, parked: bool) {
         let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
+        let mut state = lock_recover(lock);
         if parked {
             state.consumer_parked += 1;
         } else {
@@ -271,7 +278,7 @@ impl ReactWaker {
             let deadline = mono_now() + timeout.as_secs_f64();
             loop {
                 {
-                    let state = lock.lock().unwrap();
+                    let state = lock_recover(lock);
                     if !state.events.is_empty() || state.poked {
                         break;
                     }
@@ -284,14 +291,16 @@ impl ReactWaker {
                     break;
                 }
             }
-            lock.lock().unwrap().poked = false;
+            lock_recover(lock).poked = false;
         }
         #[cfg(not(target_arch = "wasm32"))]
         crate::gc::block_quiescent(|| {
             let (lock, cvar) = &*self.inner;
-            let mut state = lock.lock().unwrap();
+            let mut state = lock_recover(lock);
             if state.events.is_empty() && !state.poked {
-                let (guard, _) = cvar.wait_timeout(state, timeout).unwrap();
+                let (guard, _) = cvar
+                    .wait_timeout(state, timeout)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 state = guard;
             }
             state.poked = false;
