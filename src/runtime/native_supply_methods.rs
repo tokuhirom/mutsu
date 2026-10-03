@@ -172,7 +172,7 @@ impl Interpreter {
         let emitter_sid = emitter.as_ref().and_then(Self::emitter_supplier_id_of);
         let done_before = emitter_sid.map(supplier_done_call_count);
         if let Some(ref e) = emitter {
-            self.active_supply_emitters.push(e.clone());
+            self.async_state.active_supply_emitters.push(e.clone());
         }
         // Only a stamped callback (one written inside a `supply` block) has a
         // consumer for a react-done signal; hold the guard for it so a bare
@@ -184,7 +184,7 @@ impl Interpreter {
         let res = self.call_sub_value(done_cb, Vec::new(), true);
         drop(react_done_handler);
         if emitter.is_some() {
-            self.active_supply_emitters.pop();
+            self.async_state.active_supply_emitters.pop();
         }
         match (res, stamped, emitter) {
             // The desugar's own terminator — its preceding `$emitter.done()`

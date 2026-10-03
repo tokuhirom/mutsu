@@ -92,13 +92,15 @@ impl Interpreter {
         // iteration's first body run starts AT that loop op — re-running the
         // ops before it would replay completed sibling loops / side effects.
         let this_code_id = code.ops.as_ptr() as usize;
-        let mut nested_entry: Option<usize> = self.gather_resume_body_ip.take().or_else(|| {
-            self.gather_for_loop_resume
-                .as_ref()
-                .filter(|s| s.code_id() == Some(this_code_id))
-                .and_then(|s| s.loop_ip())
-                .filter(|lip| *lip > body_start && *lip < loop_end)
-        });
+        let mut nested_entry: Option<usize> =
+            self.async_state.gather_resume_body_ip.take().or_else(|| {
+                self.async_state
+                    .gather_for_loop_resume
+                    .as_ref()
+                    .filter(|s| s.code_id() == Some(this_code_id))
+                    .and_then(|s| s.loop_ip())
+                    .filter(|lip| *lip > body_start && *lip < loop_end)
+            });
         // Set once the `IterationEnd` sentinel was reached (#9809): it ends
         // iteration like the end of the list, after a partial final chunk.
         let mut reached_iteration_end = false;
@@ -267,10 +269,14 @@ impl Interpreter {
                         // continue) instead of overwriting it.
                         let mut e = e;
                         let code_id = code.ops.as_ptr() as usize;
-                        let nested = if self.gather_for_loop_resume.as_ref().is_some_and(|st| {
-                            st.is_lexically_nested_in(code_id, body_start, loop_end)
-                        }) {
-                            self.gather_for_loop_resume.take()
+                        let nested = if self
+                            .async_state
+                            .gather_for_loop_resume
+                            .as_ref()
+                            .is_some_and(|st| {
+                                st.is_lexically_nested_in(code_id, body_start, loop_end)
+                            }) {
+                            self.async_state.gather_for_loop_resume.take()
                         } else {
                             None
                         };
@@ -281,7 +287,7 @@ impl Interpreter {
                             e.set_take_suspend_site(None);
                         }
                         let resume_body_ip = take_site.map(|(_, t)| t + 1);
-                        self.gather_for_loop_resume =
+                        self.async_state.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::LazyGather {
                                 lazy_list: ll_arc,
                                 next_index: if nested.is_some() || resume_body_ip.is_some() {

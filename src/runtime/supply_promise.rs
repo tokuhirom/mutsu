@@ -76,7 +76,7 @@ impl Interpreter {
             None
         };
         if let Some(ref e) = emitter {
-            self.active_supply_emitters.push(e.clone());
+            self.async_state.active_supply_emitters.push(e.clone());
         }
         // This function's own `match` below handles a `done`/`is_react_done()`
         // signal raised anywhere in the tap body's dynamic extent (directly or
@@ -95,7 +95,7 @@ impl Interpreter {
             Ok(value)
         });
         if emitter.is_some() {
-            self.active_supply_emitters.pop();
+            self.async_state.active_supply_emitters.pop();
         }
         // A bare `done` written inside a *sub* the body called is not rewritten
         // to `$emitter.done()` by the parser, so it unwinds to here as a raw
@@ -201,10 +201,12 @@ impl Interpreter {
             }
             a
         });
-        self.supply_emit_buffer.push(match emitter_supplier_id {
-            Some(sid) => EmitFrame::owned_by(sid),
-            None => EmitFrame::default(),
-        });
+        self.async_state
+            .supply_emit_buffer
+            .push(match emitter_supplier_id {
+                Some(sid) => EmitFrame::owned_by(sid),
+                None => EmitFrame::default(),
+            });
         // "Did the body complete *this* supply?" must be asked of this emitter,
         // not of the process. With an id, count `done`s on the emitter itself;
         // without one (`done` cannot reach a supplier), fall back to this
@@ -216,9 +218,11 @@ impl Interpreter {
         };
         // A bare `emit` reached from a *sub* called by the body is not rewritten
         // to `$emitter.emit(...)`, so it needs the emitter dynamically.
-        self.active_supply_emitters.push(emitter.clone());
+        self.async_state
+            .active_supply_emitters
+            .push(emitter.clone());
         let mut result = self.call_sub_value(on_demand_cb, vec![emitter], false);
-        self.active_supply_emitters.pop();
+        self.async_state.active_supply_emitters.pop();
         // The body's own bare `done` (`ast::Stmt::SupplyBodyDone`) always ends
         // just this synchronous call — absorb it here rather than relying on
         // callers to special-case it (they already treat a stray
@@ -234,7 +238,12 @@ impl Interpreter {
             None => thread_supplier_done_count(),
         };
         let body_ran_done = done_after > done_before;
-        let emitted = self.supply_emit_buffer.pop().unwrap_or_default().values;
+        let emitted = self
+            .async_state
+            .supply_emit_buffer
+            .pop()
+            .unwrap_or_default()
+            .values;
         (result, emitted, body_ran_done)
     }
 
@@ -289,7 +298,8 @@ impl Interpreter {
                     a.insert("supplier_done".to_string(), Value::FALSE);
                     a
                 });
-                self.pending_promise_whenever_arms
+                self.async_state
+                    .pending_promise_whenever_arms
                     .push((promise.clone(), supplier));
                 Value::array(vec![
                     supply,
@@ -321,7 +331,9 @@ impl Interpreter {
     /// it drives a thread clone of this interpreter, the same pair
     /// `promise_chain_method` uses for `.then`.
     pub(crate) fn arm_pending_promise_whenevers(&mut self) {
-        for (promise, supplier) in std::mem::take(&mut self.pending_promise_whenever_arms) {
+        for (promise, supplier) in
+            std::mem::take(&mut self.async_state.pending_promise_whenever_arms)
+        {
             // The stand-in's serialize group was recorded when the rewritten
             // `whenever <Supply>` marker was subscribed, just above this call.
             // Handing it to `on_resolve` makes the resolving thread reserve
@@ -589,14 +601,14 @@ impl Interpreter {
         let mut react_subs: Vec<crate::runtime::react_whenever::ReactSubscription> = Vec::new();
         let mut static_last_value: Option<Value> = None;
         // `register_nested_on_demand_source` below may register entries in
-        // `self.supply_stream_consumers` (so a nested stage's `emit` streams
+        // `self.async_state.supply_stream_consumers` (so a nested stage's `emit` streams
         // live into its consuming `whenever`'s callback instead of being
         // buffered). Those entries must move to `thread_interp` before the
         // background drive spawns — see the `stream_consumers_base` split
         // below — because the drive loop that actually observes the async
         // events runs on a *cloned* interpreter with its own (freshly empty)
         // `supply_stream_consumers`, not on `self`.
-        let stream_consumers_base = self.supply_stream_consumers.len();
+        let stream_consumers_base = self.async_state.supply_stream_consumers.len();
         for sub_val in &subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
@@ -705,7 +717,9 @@ impl Interpreter {
                             // No background drive will run: nothing will ever
                             // consume the stream consumer(s) this call (or
                             // its own recursion) may have left registered.
-                            self.supply_stream_consumers.truncate(stream_consumers_base);
+                            self.async_state
+                                .supply_stream_consumers
+                                .truncate(stream_consumers_base);
                             return Ok(());
                         }
                         continue;
@@ -753,7 +767,9 @@ impl Interpreter {
         if react_subs.is_empty() {
             // No live channels: resolve with the last value emitted by the
             // static sources (or any plain synchronously-emitted value).
-            self.supply_stream_consumers.truncate(stream_consumers_base);
+            self.async_state
+                .supply_stream_consumers
+                .truncate(stream_consumers_base);
             let result = static_last_value
                 .or_else(|| plain_values.last().cloned())
                 .unwrap_or(Value::NIL);
@@ -831,8 +847,9 @@ impl Interpreter {
         // `supply_stream_consumers`, so a nested stage's live-forwarding
         // wiring would otherwise vanish and its `emit`s would never reach
         // the consuming `whenever`'s callback.
-        thread_interp.supply_stream_consumers.extend(
-            self.supply_stream_consumers
+        thread_interp.async_state.supply_stream_consumers.extend(
+            self.async_state
+                .supply_stream_consumers
                 .split_off(stream_consumers_base),
         );
         // A refused thread (ADR-0123) is a catchable X::AdHoc, not a panic.
@@ -922,7 +939,9 @@ impl Interpreter {
             args: Vec<Value>,
             captured: &mut Vec<Value>,
         ) -> Result<(), RuntimeError> {
-            this.supply_emit_buffer.push(EmitFrame::default());
+            this.async_state
+                .supply_emit_buffer
+                .push(EmitFrame::default());
             // The caller below handles `is_react_done()`/`is_last()` from this
             // body's dynamic extent (directly or via a nested sub call) — see
             // `runtime::react_done_handler_depth`.
@@ -933,7 +952,12 @@ impl Interpreter {
             // caught at the callback boundary.
             let res = this.call_react_callback(&cb, args);
             drop(_react_done_handler);
-            let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default().values;
+            let mut emitted = this
+                .async_state
+                .supply_emit_buffer
+                .pop()
+                .unwrap_or_default()
+                .values;
             captured.append(&mut emitted);
             res.map(|_| ())
         }
@@ -1032,14 +1056,21 @@ impl Interpreter {
             args: Vec<Value>,
             last_value: &mut Value,
         ) -> Result<(), RuntimeError> {
-            this.supply_emit_buffer.push(EmitFrame::default());
+            this.async_state
+                .supply_emit_buffer
+                .push(EmitFrame::default());
             // The caller below handles `is_react_done()`/`is_last()` from this
             // body's dynamic extent — see `runtime::react_done_handler_depth`.
             let _react_done_handler =
                 crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
             let res = this.call_sub_value(cb, args, true);
             drop(_react_done_handler);
-            let emitted = this.supply_emit_buffer.pop().unwrap_or_default().values;
+            let emitted = this
+                .async_state
+                .supply_emit_buffer
+                .pop()
+                .unwrap_or_default()
+                .values;
             if let Some(last) = emitted.last() {
                 *last_value = last.clone();
             }

@@ -341,7 +341,7 @@ impl Interpreter {
                         }
                         Err(e) if e.is_last() => {
                             writeback(list_items, vm);
-                            vm.map_grep_last_depth =
+                            vm.async_state.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
                             break;
                         }
@@ -645,7 +645,7 @@ impl Interpreter {
                             Err(e) if e.is_redo() => continue 'body_redo,
                             Err(e) if e.is_next() => break 'body_redo,
                             Err(e) if e.is_last() => {
-                                vm.map_grep_last_depth =
+                                vm.async_state.map_grep_last_depth =
                                     Some(crate::runtime::loop_handler_depth::loop_handler_depth());
                                 stop = true;
                                 break 'body_redo;

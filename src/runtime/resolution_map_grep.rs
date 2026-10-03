@@ -776,7 +776,7 @@ impl Interpreter {
                             }
                         }
                         Err(e) if e.is_last() => {
-                            vm.map_grep_last_depth =
+                            vm.async_state.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
                             if let Some(val) = e.return_value {
                                 push_map_value(&mut result, val);

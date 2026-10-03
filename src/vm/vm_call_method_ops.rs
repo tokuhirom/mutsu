@@ -1055,7 +1055,7 @@ impl Interpreter {
             )
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "emit");
-            if let Some(buf) = self.supply_emit_buffer.last_mut() {
+            if let Some(buf) = self.async_state.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 self.stack.push(Value::NIL);
                 // Buffering into the supply emit buffer touches no env: no mark.

@@ -680,8 +680,7 @@ impl Interpreter {
             why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: Box::new(std::cell::Cell::new(false)),
-            gather_items: Vec::new(),
-            gather_take_limits: Vec::new(),
+            async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
             // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
             // child thread gets an independent snapshot (matches prior per-field
@@ -897,16 +896,6 @@ impl Interpreter {
                 &self.instance_type_metadata.read().unwrap(),
             ))),
             let_saves: Vec::new(),
-            supply_emit_buffer: Vec::new(),
-            pending_react_subscriptions: Vec::new(),
-            nested_react_callbacks: std::collections::HashSet::new(),
-            active_supply_emitters: Vec::new(),
-            pending_promise_whenever_arms: Vec::new(),
-            supply_emit_timed_buffer: Vec::new(),
-            supply_stream_consumers: Vec::new(),
-            react_active: 0,
-            pending_tap_closes: Vec::new(),
-            current_react_waker: None,
             // ADR-0010: a child lineage, not a share of one process-wide map.
             shared_vars: crate::runtime::shared_store::SharedStore::child_of(&self.shared_vars),
             shared_vars_active: true,
@@ -1021,9 +1010,6 @@ impl Interpreter {
             fn_keys_by_base: Default::default(),
             fn_keys_index: Default::default(),
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
-            // Equal, so the first call claims a block (see `take_invocation_id`).
-            next_invocation_id: 0,
-            invocation_id_block_end: 0,
             pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             // Which env keys an EXPORT hook installed is load-time knowledge,
@@ -1063,15 +1049,6 @@ impl Interpreter {
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
             begin_time_hidden: Vec::new(),
             nested_run_depth: 0,
-            gather_for_loop_resume: None,
-            gather_resume_body_ip: None,
-            gather_suspend_pending: false,
-            lazy_take_boundary_defer: false,
-            take_defer_to_op_end: false,
-            lazy_pull_entry_call_depth: None,
-            lazy_pull_entry_routine_depth: None,
-            rw_map_topic_capture: None,
-            map_grep_last_depth: None,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
         cloned.env.insert("/".to_string(), Value::NIL);

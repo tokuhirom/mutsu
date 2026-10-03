@@ -197,7 +197,7 @@ impl Interpreter {
     /// the element value regardless of its pair-ness.
     ///
     /// `capture_rw_topic`: when true, the block's final `$_` value is stashed in
-    /// `self.rw_map_topic_capture` (read from the live frame just after the body
+    /// `self.async_state.rw_map_topic_capture` (read from the live frame just after the body
     /// runs, before the frame is popped) so the native map loop can implement
     /// Raku's rw binding — `@a.map({ $_++ })` mutates `@a`. This captures the
     /// topic value directly rather than relying on the `__mutsu_rw_map_topic__`
@@ -1370,7 +1370,7 @@ impl Interpreter {
                 .iter()
                 .position(|n| n == "_")
                 .map(|i| self.locals[i].clone());
-            self.rw_map_topic_capture = local_topic
+            self.async_state.rw_map_topic_capture = local_topic
                 .or_else(|| self.env().get("_").cloned())
                 .or_else(|| self.env().get("__mutsu_rw_map_topic__").cloned());
         }

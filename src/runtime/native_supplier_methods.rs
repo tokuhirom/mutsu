@@ -361,7 +361,7 @@ impl Interpreter {
                 if let Some(buf) = self.supply_emit_frame_for(supplier_id_from_attrs(&attrs)) {
                     buf.push(value.clone());
                 }
-                if let Some(buf) = self.supply_emit_timed_buffer.last_mut() {
+                if let Some(buf) = self.async_state.supply_emit_timed_buffer.last_mut() {
                     buf.push((value.clone(), crate::thread_compat::Instant::now()));
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {

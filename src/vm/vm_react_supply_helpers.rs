@@ -106,12 +106,14 @@ impl Interpreter {
             emitter_supplier_id,
             done_promise.clone(),
         );
-        self.supply_stream_consumers.push(StreamConsumer {
-            supplier_id: emitter_supplier_id,
-            consumer_cb: callback.clone(),
-            done: false,
-        });
-        let stream_idx = self.supply_stream_consumers.len() - 1;
+        self.async_state
+            .supply_stream_consumers
+            .push(StreamConsumer {
+                supplier_id: emitter_supplier_id,
+                consumer_cb: callback.clone(),
+                done: false,
+            });
+        let stream_idx = self.async_state.supply_stream_consumers.len() - 1;
         let (res, emitted, _) = loan_env!(
             self,
             run_on_demand_body(on_demand_cb, Some(emitter_supplier_id))
@@ -123,6 +125,7 @@ impl Interpreter {
         // recognizes only `Supply`-sourced registrations) can see it.
         let emitted = self.normalize_promise_whenever_markers(emitted);
         let streamed_done = self
+            .async_state
             .supply_stream_consumers
             .get(stream_idx)
             .map(|c| c.done)
@@ -130,7 +133,9 @@ impl Interpreter {
         if let Err(e) = res
             && !e.is_react_done()
         {
-            self.supply_stream_consumers.truncate(stream_idx);
+            self.async_state
+                .supply_stream_consumers
+                .truncate(stream_idx);
             // This nested stage's body failed: hand it to the subscribing
             // `whenever`'s QUIT phasers before dying the react (issue #8185),
             // the same way the top-level on-demand branch in `vm_react_loop.rs`
@@ -145,7 +150,9 @@ impl Interpreter {
             return Err(crate::runtime::Interpreter::wrap_react_died(e));
         }
         if streamed_done {
-            self.supply_stream_consumers.truncate(stream_idx);
+            self.async_state
+                .supply_stream_consumers
+                .truncate(stream_idx);
             return Ok(Some(true));
         }
         // The StreamConsumer stays registered for the life of the react (the
@@ -280,7 +287,7 @@ impl Interpreter {
         // variable name (assigned per parse-site), which a deeper fix to lexical
         // emitter capture would remove; until then a same-sub-twice chain can
         // loop. Bail gracefully instead of overflowing the stack.
-        if self.supply_stream_consumers.len() > 256 {
+        if self.async_state.supply_stream_consumers.len() > 256 {
             return Err(RuntimeError::new(
                 "supply pipeline nested too deeply (a transform sub reused in the \
                  same pipeline shares an emitter binding)",
@@ -302,14 +309,17 @@ impl Interpreter {
             }
         };
         let sid = next_supplier_id();
-        self.supply_stream_consumers.push(StreamConsumer {
-            supplier_id: sid,
-            consumer_cb: consumer_cb.clone(),
-            done: false,
-        });
-        let idx = self.supply_stream_consumers.len() - 1;
+        self.async_state
+            .supply_stream_consumers
+            .push(StreamConsumer {
+                supplier_id: sid,
+                consumer_cb: consumer_cb.clone(),
+                done: false,
+            });
+        let idx = self.async_state.supply_stream_consumers.len() - 1;
         let (res, emitted, _) = loan_env!(self, run_on_demand_body(on_demand_cb, Some(sid)));
         let mut reached = self
+            .async_state
             .supply_stream_consumers
             .get(idx)
             .map(|c| c.done)
@@ -317,7 +327,7 @@ impl Interpreter {
         if let Err(e) = res
             && !e.is_react_done()
         {
-            self.supply_stream_consumers.truncate(idx);
+            self.async_state.supply_stream_consumers.truncate(idx);
             return Err(crate::runtime::Interpreter::wrap_react_died(e));
         }
         if !reached {
@@ -357,7 +367,7 @@ impl Interpreter {
                 }
             }
         }
-        self.supply_stream_consumers.truncate(idx);
+        self.async_state.supply_stream_consumers.truncate(idx);
         if !reached {
             for cb in last_callbacks {
                 match self.call_react_callback(&cb.clone(), Vec::new()) {

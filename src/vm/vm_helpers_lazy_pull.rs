@@ -175,7 +175,7 @@ impl Interpreter {
                 self.locals.refill_from(&coro.locals.clone());
                 self.stack = coro.stack.clone();
                 *self.env_mut() = coro.env.clone();
-                self.gather_for_loop_resume = coro.for_loop_resume.clone();
+                self.async_state.gather_for_loop_resume = coro.for_loop_resume.clone();
                 has_prior_state = true;
             } else {
                 // Fresh start (scoped overlay over the gather's captured env; see
@@ -212,7 +212,7 @@ impl Interpreter {
         let saved_gather_len = self.gather_items_len();
         // A stale deferred-suspension flag from an enclosing pull must not
         // fire this run's first loop boundary.
-        self.gather_suspend_pending = false;
+        self.async_state.gather_suspend_pending = false;
 
         // If resuming, MOVE the already-cached items into the gather collector
         // so the take_value limit check (and a `:=` self-reference read)
@@ -235,14 +235,17 @@ impl Interpreter {
         // can detect a take arriving from a NESTED routine call, where
         // suspension is unsound (see the corresponding field docs).
         let saved_pull_depth = self
+            .async_state
             .lazy_pull_entry_call_depth
             .replace(self.call_frames.len());
         let saved_routine_depth = self
+            .async_state
             .lazy_pull_entry_routine_depth
             .replace(self.routine_stack_len());
         // An enclosing multi-take op's deferral belongs to the OUTER pull; this
         // pull's own takes suspend normally.
-        let saved_take_defer_to_op_end = std::mem::replace(&mut self.take_defer_to_op_end, false);
+        let saved_take_defer_to_op_end =
+            std::mem::replace(&mut self.async_state.take_defer_to_op_end, false);
 
         // Run the compiled code
         let run_fns = fns.as_ref();
@@ -266,7 +269,7 @@ impl Interpreter {
                     if e.message == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
                 {
                     // Take limit reached — the gather body yielded.
-                    if self.gather_for_loop_resume.is_some() {
+                    if self.async_state.gather_for_loop_resume.is_some() {
                         // From inside a compound ForLoop op — keep ip here.
                     } else {
                         // ip points to the Take instruction; advance past it.
@@ -289,13 +292,13 @@ impl Interpreter {
             body_finished = true;
         }
 
-        self.lazy_pull_entry_call_depth = saved_pull_depth;
-        self.lazy_pull_entry_routine_depth = saved_routine_depth;
-        self.take_defer_to_op_end = saved_take_defer_to_op_end;
+        self.async_state.lazy_pull_entry_call_depth = saved_pull_depth;
+        self.async_state.lazy_pull_entry_routine_depth = saved_routine_depth;
+        self.async_state.take_defer_to_op_end = saved_take_defer_to_op_end;
         // The body may finish (or error) with the deferred-suspension flag
         // still set (straight-line takes, last iteration); it must not leak
         // into an unrelated later loop.
-        self.gather_suspend_pending = false;
+        self.async_state.gather_suspend_pending = false;
         // Collect gather items
         let items = self.pop_gather_items().unwrap_or_default();
         self.pop_gather_take_limit();
@@ -315,7 +318,7 @@ impl Interpreter {
 
         // Save coroutine state before restoring outer env
         if !body_finished && run_result.is_ok() {
-            let for_loop_resume = self.gather_for_loop_resume.take();
+            let for_loop_resume = self.async_state.gather_for_loop_resume.take();
             let coro_state = GatherCoroutineState {
                 ip,
                 locals: self.locals.to_vec(),

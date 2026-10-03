@@ -194,4 +194,14 @@ these preconditions:
     invalidation entry point is a follow-up: this step only moved the fields.
   - `regex`: done. `RegexGrammarState` (`src/runtime/regex_grammar_state.rs`) holds the 10
     regex/grammar/slang fields, all started fresh in a spawned thread; 386 → 377 fields.
-  - Next: `eval`, `threads`, `async`.
+  - `module` visibility (out of order, from ADR-11136's needs): `ModuleVisibility`
+    (`src/runtime/module_merge.rs`) took the seven ADR-11136/#7797 tables instead of adding
+    them to `Interpreter`.
+  - `async`: done. `AsyncState` (`src/runtime/async_state.rs`) holds the 23
+    gather/lazy-pull/supply/react fields, all started fresh in a spawned thread; 375 → 353.
+  - `eval` is deferred: its rule mixes the MAIN fields (copied into a spawned thread) with
+    `pending_eval_*`/`pending_supply_*`, which are set-then-taken side channels and so fall
+    under D3 (explicit parameters), not into a struct. The rules need splitting first.
+  - Next: `threads` (its thread policy is not uniform: `shared_vars` becomes a child store,
+    `thread_redeclared_vars` is seeded from the block's captured scalars, two dirty sets are
+    shared, the rest start fresh).

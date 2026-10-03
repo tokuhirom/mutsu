@@ -334,7 +334,7 @@ impl Interpreter {
                 // callback per accepted connection; the callback writes to the real
                 // TcpStream, so a client on the main thread sees the data over the
                 // OS socket).
-                if !self.supply_emit_buffer.is_empty() {
+                if !self.async_state.supply_emit_buffer.is_empty() {
                     // Same 5-element shape as every other whenever subscription
                     // marker ([source, body, [LAST…], [QUIT…], id]) so the supply-
                     // block tap path recognises it; a 2-element array fell
@@ -348,7 +348,7 @@ impl Interpreter {
                         Value::array(Vec::new()),
                         Value::NIL,
                     ]);
-                    if let Some(last) = self.supply_emit_buffer.last_mut() {
+                    if let Some(last) = self.async_state.supply_emit_buffer.last_mut() {
                         last.push(sub);
                     }
                 } else if !matches!(callback.view(), ValueView::Nil) {

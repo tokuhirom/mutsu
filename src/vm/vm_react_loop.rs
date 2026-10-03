@@ -65,7 +65,7 @@ impl Interpreter {
     /// Used when `done;` was called in the react body and we just need to
     /// clean up without processing events.
     pub(crate) fn run_react_event_loop_drain(&mut self) {
-        let _ = self.supply_emit_buffer.pop();
+        let _ = self.async_state.supply_emit_buffer.pop();
     }
 
     /// Deliver one value to a `whenever` subscription's callback, mapping the
@@ -135,7 +135,11 @@ impl Interpreter {
 
     pub(crate) fn run_react_event_loop(&mut self) -> Result<(), RuntimeError> {
         // Take the subscriptions collected during the react body
-        let frame = self.supply_emit_buffer.pop().unwrap_or_default();
+        let frame = self
+            .async_state
+            .supply_emit_buffer
+            .pop()
+            .unwrap_or_default();
         let subscriptions = frame.values;
         // Dropped on every exit: releases the producers the body's `whenever`s
         // held (see `runtime/react_setup.rs`).
@@ -166,7 +170,7 @@ impl Interpreter {
         if finished {
             self.arm_pending_promise_whenevers();
             if let Some(base) = stream_base {
-                self.supply_stream_consumers.truncate(base);
+                self.async_state.supply_stream_consumers.truncate(base);
             }
             return Ok(());
         }
@@ -195,7 +199,7 @@ impl Interpreter {
         };
         drop(setup);
         if let Some(base) = stream_base {
-            self.supply_stream_consumers.truncate(base);
+            self.async_state.supply_stream_consumers.truncate(base);
         }
         // The drive loop has dropped its subscriptions, so a `signal()` supply
         // that only this react tapped has lost its last tap: retire its
@@ -370,12 +374,14 @@ impl Interpreter {
                             // return). Direct emits stream live; inner `whenever`
                             // registrations still flow through `supply_emit_buffer`
                             // and are set up as ReactSubscriptions below.
-                            self.supply_stream_consumers.push(StreamConsumer {
-                                supplier_id: emitter_supplier_id,
-                                consumer_cb: callback.clone(),
-                                done: false,
-                            });
-                            let stream_idx = self.supply_stream_consumers.len() - 1;
+                            self.async_state
+                                .supply_stream_consumers
+                                .push(StreamConsumer {
+                                    supplier_id: emitter_supplier_id,
+                                    consumer_cb: callback.clone(),
+                                    done: false,
+                                });
+                            let stream_idx = self.async_state.supply_stream_consumers.len() - 1;
                             stream_base.get_or_insert(stream_idx);
                             let (od_res, emitted, body_ran_done) = loan_env!(
                                 self,
@@ -400,6 +406,7 @@ impl Interpreter {
                             // inner subscriptions route back to this consumer (the
                             // outer whenever's callback) via `try_stream_emit`.
                             let streamed_done = self
+                                .async_state
                                 .supply_stream_consumers
                                 .get(stream_idx)
                                 .map(|c| c.done)
@@ -416,7 +423,9 @@ impl Interpreter {
                                 // the react lives on, so an earlier `whenever`'s
                                 // consumer must stay registered. Dying still
                                 // unwinds every consumer this react pushed.
-                                self.supply_stream_consumers.truncate(stream_idx);
+                                self.async_state
+                                    .supply_stream_consumers
+                                    .truncate(stream_idx);
                                 let quit_cbs = items
                                     .get(3)
                                     .and_then(crate::runtime::Interpreter::value_array_items)
@@ -424,7 +433,8 @@ impl Interpreter {
                                 if self.deliver_supply_body_quit(&quit_cbs, &od_err)? {
                                     continue;
                                 }
-                                self.supply_stream_consumers
+                                self.async_state
+                                    .supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
                                 return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
                             }
@@ -433,7 +443,8 @@ impl Interpreter {
                             // its LAST callbacks and stop (don't set up the inner
                             // subscriptions or keep polling).
                             if streamed_done {
-                                self.supply_stream_consumers
+                                self.async_state
+                                    .supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
                                 let last_cbs = items
                                     .get(2)
@@ -514,7 +525,8 @@ impl Interpreter {
                             // `whenever`'s live source can still be re-emitted to
                             // this whenever's callback.
                             if early_done {
-                                self.supply_stream_consumers
+                                self.async_state
+                                    .supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
                                 return Ok(true);
                             }

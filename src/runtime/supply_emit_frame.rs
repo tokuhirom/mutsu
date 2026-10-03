@@ -66,7 +66,7 @@ impl Interpreter {
     /// whose emitter is a different supplier.
     // Cost: O(1).
     pub(super) fn supply_emit_frame_for(&mut self, sid: Option<u64>) -> Option<&mut Vec<Value>> {
-        let frame = self.supply_emit_buffer.last_mut()?;
+        let frame = self.async_state.supply_emit_buffer.last_mut()?;
         match frame.owner {
             Some(owner) if sid != Some(owner) => None,
             _ => Some(&mut frame.values),

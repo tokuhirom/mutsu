@@ -1,0 +1,2 @@
+# ADR-10779 async subsystem: AsyncState (src/runtime/async_state.rs).
+async_state
