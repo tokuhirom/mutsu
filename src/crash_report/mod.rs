@@ -8,16 +8,22 @@
 //! fires; there is no second chance to attach a debugger.
 //!
 //! [`install`] therefore registers a handler for the fatal signals that writes
-//! a per-process report to `tmp/crash/<pid>.txt` and then lets the signal
-//! through, so the wait status and any core-dump behaviour are exactly what
-//! they are today.
+//! a per-process report and then lets the signal through, so the wait status
+//! and any core-dump behaviour are exactly what they are today.
+//!
+//! By default the report goes to **stderr** and no file is written: the
+//! shipped binary must not drop files into whatever directory a user runs it
+//! from (#11219). When `MUTSU_CRASH_DIR` is set, the report goes to a fresh
+//! `$MUTSU_CRASH_DIR/<pid>.txt` instead (`<pid>-<n>.txt` if that name is
+//! taken; directory 0700, file 0600, `O_EXCL|O_NOFOLLOW`) and stderr gets one
+//! line naming that path.
 //!
 //! # Cost
 //!
 //! A handful of syscalls plus a small allocation at startup, and nothing at all
-//! until a crash. In particular the report directory is **not** created at
-//! startup — it is created from inside the handler — so an ordinary run in an
-//! arbitrary working directory leaves no trace.
+//! until a crash. In particular `$MUTSU_CRASH_DIR` is **not** created at
+//! startup — it is created from inside the handler — so an ordinary run leaves
+//! no trace even there.
 //!
 //! # Limitations
 //!
@@ -41,11 +47,11 @@
 //! (a dependency's own worker) still gets no report; there is no portable hook
 //! for that, and mutsu has no such threads today.
 //!
-//! The default `tmp/crash` is resolved against the process's **startup**
+//! A relative `MUTSU_CRASH_DIR` is resolved against the process's **startup**
 //! working directory, so a later `chdir` cannot move it — but a process that
 //! *starts* elsewhere (a subprocess spawned with `:cwd`, or one inheriting a
-//! parent's `chdir`) writes its report under that directory instead. A harness
-//! that collects reports from one place must therefore export an absolute
+//! parent's `chdir`) resolves it under that directory instead. A harness that
+//! collects reports from one place must therefore export an absolute
 //! `MUTSU_CRASH_DIR`, which every descendant inherits; CI does exactly that.
 //!
 //! This is instrumentation, not a fix: it buys nothing until the next crash,
@@ -64,9 +70,8 @@ mod report;
 /// lives as long as the process. Worker threads take
 /// `install_thread_alt_stack` instead, whose guard frees the stack on exit.
 ///
-/// Disabled entirely by `MUTSU_CRASH_REPORT=0`. Reports are written to
-/// `tmp/crash` relative to the startup working directory, or to
-/// `$MUTSU_CRASH_DIR` when that is set.
+/// Disabled entirely by `MUTSU_CRASH_REPORT=0`. Reports are written to stderr,
+/// or to a file under `$MUTSU_CRASH_DIR` when that is set.
 pub fn install() {
     #[cfg(all(unix, feature = "native"))]
     handler::install();

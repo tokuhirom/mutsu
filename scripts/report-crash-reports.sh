@@ -2,7 +2,8 @@
 # Surface any crash reports a CI job's mutsu processes left behind.
 #
 # `src/crash_report/` installs a fatal-signal handler that writes
-# tmp/crash/<pid>.txt naming the signal, fault address, pid, argv and a
+# $MUTSU_CRASH_DIR/<pid>.txt (only when that is set -- otherwise the report
+# goes to stderr; CI exports it as <workspace>/tmp/crash) naming the signal, fault address, pid, argv and a
 # backtrace, then lets the signal through unchanged. Without this step those
 # files would only exist inside the runner: a `Wstat: 11 (Signal: SEGV)` line
 # in a prove summary says nothing about *which* process faulted (the

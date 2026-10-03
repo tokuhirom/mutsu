@@ -51,8 +51,8 @@ const MAIN_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 fn main() {
     // Before anything else: a fatal signal from here on writes a crash report
-    // (tmp/crash/<pid>.txt) naming the signal, fault address, pid and argv,
-    // then re-raises. Two syscalls now, no files created until a crash.
+    // (to stderr, or $MUTSU_CRASH_DIR/<pid>.txt) naming the signal, fault
+    // address, pid and argv, then re-raises. Two syscalls now, no files created until a crash.
     mutsu::crash_report::install();
     // Before any thread exists: under `ulimit -v`, bound glibc's per-thread
     // malloc arenas so they cannot eat the address space the heap and the
