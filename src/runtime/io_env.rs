@@ -295,6 +295,10 @@ impl Interpreter {
             // which relays the resolved value into `make_big_rat_arith`'s
             // overflow decision (`src/value/mod.rs`).
             "$*RAT-OVERFLOW" | "*RAT-OVERFLOW" => Value::package(Symbol::intern("Num")),
+            // `$*STACK-ID`: per stack, so read fresh every time, never cached.
+            "$*STACK-ID" | "*STACK-ID" => {
+                Value::int(crate::runtime::stack_id::current_stack_id() as i64)
+            }
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,
