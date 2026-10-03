@@ -325,6 +325,17 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
+                // A lexical type shadowing an enclosing constant (#11517): the
+                // type's own `MY::` binding, read by name so a nested closure
+                // captures it. `GetBareWord` would find the constant's term key.
+                if self.lexical_type_shadows.contains(name.as_str())
+                    && !self.sigilless_locals.contains(name.as_str())
+                    && !self.enclosing_sigilless.contains(name.as_str())
+                {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    return;
+                }
                 // An in-scope `constant` with a compile-time scalar value is read
                 // straight from the constant pool (ADR-0006 §2.2) instead of a
                 // GetLocal / GetBareWord package lookup.

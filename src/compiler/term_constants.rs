@@ -35,6 +35,24 @@ impl Compiler {
             .copied()
     }
 
+    /// A lexical type declaration (`my class NAME`, `my role NAME`) shadows a
+    /// same-named sigil-less constant of an enclosing scope for the rest of
+    /// its block (#11517): stop reading or inlining the constant, and have a
+    /// bareword `NAME` read the type's lexical binding (see
+    /// [`Compiler::lexical_type_shadows`]). Only a name that is a visible
+    /// constant is recorded; any other bareword keeps `GetBareWord`'s
+    /// resolution order.
+    // Cost: O(|name|).
+    pub(super) fn shadow_constant_with_lexical_type(&mut self, name: &str) {
+        if !(self.constant_vars_in_scope.contains(name) || self.outer_constant_names.contains(name))
+        {
+            return;
+        }
+        self.constant_vars_in_scope.remove(name);
+        self.forget_constant(name);
+        self.lexical_type_shadows.insert(name.to_string());
+    }
+
     /// Whether the bareword `name` names a sigil-less constant visible here —
     /// declared in this unit or an enclosing one — rather than a sigil-less
     /// binding (`my \b`, a `\b` parameter) of the same spelling.
