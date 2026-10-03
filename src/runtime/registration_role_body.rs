@@ -166,6 +166,7 @@ impl Interpreter {
             format!("!{}", attr_name_str)
         };
         self.apply_handle_specs_to_role(&decl.handles, &attr_var_name, &mut cx.role_def);
+        self.record_role_attribute_traits(cx, &decl, &attr_name_str);
         Ok(())
     }
 
@@ -645,12 +646,37 @@ impl Interpreter {
         let saved_package = self.current_package().to_string();
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
-            if !matches!(&op.raw, Stmt::SubDecl { .. }) {
+            // An exported sub-level `proto` (`proto sub to-file(|) is
+            // export(:to-file) {*}` in PDF::Filespec) declares the routine its
+            // multis join, so it registers with them — once per role
+            // (`role_registered_sub_protos`).
+            if !matches!(
+                &op.raw,
+                Stmt::SubDecl { .. }
+                    | Stmt::ProtoDecl {
+                        is_method: false,
+                        is_export: true,
+                        ..
+                    }
+            ) {
+                continue;
+            }
+            if let Stmt::ProtoDecl { name, .. } = &op.raw
+                && self
+                    .registry()
+                    .role_registered_sub_protos
+                    .contains(&(role_name.to_string(), name.resolve()))
+            {
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.set_current_package(saved_package);
                 return Err(error);
+            }
+            if let Stmt::ProtoDecl { name, .. } = &op.raw {
+                self.registry_mut()
+                    .role_registered_sub_protos
+                    .insert((role_name.to_string(), name.resolve()));
             }
         }
         self.set_current_package(saved_package);

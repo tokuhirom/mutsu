@@ -603,7 +603,11 @@ pub(crate) fn placeholder_overrides_signature_error(
         }
         if let Some(ph) = crate::ast::collect_unattached_placeholders(std::slice::from_ref(stmt))
             .into_iter()
-            .find(|ph| !declared.contains(ph.as_str()) && !is_perl5_caret_special(ph))
+            .find(|ph| {
+                !declared.contains(ph.as_str())
+                    && !is_perl5_caret_special(ph)
+                    && !super::outer_slurpy::outer_declares_implicit_slurpy(ph)
+            })
         {
             let message = format!(
                 "Placeholder variable '{}' cannot override existing signature",

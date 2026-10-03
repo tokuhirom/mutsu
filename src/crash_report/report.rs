@@ -43,36 +43,38 @@ const BUF_SIZE: usize = 2048;
 /// Path buffer size — `PATH_MAX` on Linux.
 const PATH_SIZE: usize = 4096;
 
+/// How many `<pid>-<n>.txt` names to try before giving up on a file.
+const MAX_SUFFIX: i64 = 1000;
+
 /// # Safety
 /// `info` must be null or the kernel-supplied `siginfo_t` for `sig`.
 pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t) {
-    let Some(dir) = REPORT_DIR.get() else { return };
     // SAFETY: getpid takes no arguments and cannot fail.
     let pid = unsafe { libc::getpid() };
 
-    // <dir>/<pid>.txt, built in place: no allocation, no formatting machinery,
-    // nothing that can fail if the heap is corrupt.
+    // With a report directory, the report goes to a fresh file there and only
+    // its path goes to stderr; without one (the default), or when the file
+    // cannot be created, the report itself goes to stderr.
     let mut path = [0u8; PATH_SIZE];
-    let mut len = 0;
-    append(&mut path, &mut len, dir);
-    // SAFETY: `append` always leaves spare bytes past `len`.
-    unsafe { mkdir_p(&mut path, len) };
-    append(&mut path, &mut len, b"/");
-    let mut num = [0u8; 24];
-    append(&mut path, &mut len, dec(&mut num, pid as i64));
-    append(&mut path, &mut len, b".txt\0");
-
-    // SAFETY: `path` is NUL-terminated in place.
-    let fd = unsafe {
-        libc::open(
-            path.as_ptr().cast(),
-            libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC,
-            0o644 as libc::c_uint,
-        )
+    let file = match REPORT_DIR.get() {
+        Some(Some(dir)) => open_report_file(dir, pid, &mut path),
+        _ => None,
     };
-    if fd < 0 {
-        return;
-    }
+    let fd = match file {
+        Some((fd, len)) => {
+            let mut note = Buf::new();
+            note.s("mutsu: fatal signal ");
+            note.dec(sig as i64);
+            note.s(" (");
+            note.s(signal_name(sig));
+            note.s("); crash report: ");
+            note.b(&path[..len]);
+            note.s("\n");
+            note.flush(libc::STDERR_FILENO);
+            fd
+        }
+        None => libc::STDERR_FILENO,
+    };
 
     let mut buf = Buf::new();
     buf.s("mutsu crash report\nsignal: ");
@@ -146,12 +148,63 @@ pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t) {
     write_all(fd, bt.as_bytes());
     write_all(fd, b"\n");
 
-    // SAFETY: `fd` is the descriptor opened above.
-    unsafe { libc::close(fd) };
+    if file.is_some() {
+        // SAFETY: `fd` is the descriptor opened above.
+        unsafe { libc::close(fd) };
+    }
+}
+
+/// Create `<dir>/<pid>.txt` — or `<pid>-<n>.txt` when a report from an
+/// earlier process with the same pid is already there — and return its
+/// descriptor and the path's length in `path`.
+///
+/// The directory is created 0700 and the file 0600, since the report carries
+/// the argv (possibly `-e` program text) and the cwd. `O_EXCL|O_NOFOLLOW`
+/// means an existing report is never truncated and a planted symlink is never
+/// followed. `None` when nothing could be created.
+fn open_report_file(
+    dir: &[u8],
+    pid: libc::pid_t,
+    path: &mut [u8; PATH_SIZE],
+) -> Option<(c_int, usize)> {
+    // <dir>/<pid>.txt, built in place: no allocation, no formatting machinery,
+    // nothing that can fail if the heap is corrupt.
+    let mut len = 0;
+    append(path, &mut len, dir);
+    // SAFETY: `append` always leaves spare bytes past `len`.
+    unsafe { mkdir_p(path, len) };
+    append(path, &mut len, b"/");
+    let mut num = [0u8; 24];
+    append(path, &mut len, dec(&mut num, pid as i64));
+    let stem = len;
+    for attempt in 0..MAX_SUFFIX {
+        len = stem;
+        if attempt > 0 {
+            append(path, &mut len, b"-");
+            append(path, &mut len, dec(&mut num, attempt));
+        }
+        append(path, &mut len, b".txt\0");
+        // SAFETY: `path` is NUL-terminated in place.
+        let fd = unsafe {
+            libc::open(
+                path.as_ptr().cast(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600 as libc::c_uint,
+            )
+        };
+        if fd >= 0 {
+            return Some((fd, len - 1));
+        }
+        // `raw_os_error` of `last_os_error` only reads errno: no allocation.
+        if std::io::Error::last_os_error().raw_os_error() != Some(libc::EEXIST) {
+            return None;
+        }
+    }
+    None
 }
 
 /// Append `bytes` to `path[..*len]`, truncating rather than overflowing and
-/// always leaving room for the `/<pid>.txt\0` suffix.
+/// always leaving room for the `/<pid>-<n>.txt\0` suffix.
 fn append(path: &mut [u8; PATH_SIZE], len: &mut usize, bytes: &[u8]) {
     let n = bytes.len().min(path.len().saturating_sub(*len + 32));
     path[*len..*len + n].copy_from_slice(&bytes[..n]);
@@ -170,7 +223,7 @@ unsafe fn mkdir_p(path: &mut [u8], len: usize) {
             let saved = path[i];
             path[i] = 0;
             // SAFETY: `path` is NUL-terminated at `i` for the duration.
-            unsafe { libc::mkdir(path.as_ptr().cast(), 0o755) };
+            unsafe { libc::mkdir(path.as_ptr().cast(), 0o700) };
             path[i] = saved;
         }
     }
@@ -392,6 +445,36 @@ mod tests {
         // SAFETY: `path` is far longer than the path written into it.
         unsafe { mkdir_p(&mut path, bytes.len()) };
         assert!(target.is_dir(), "{} was not created", target.display());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn an_existing_report_is_never_overwritten() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("mutsu-open-report-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let dir = std::os::unix::ffi::OsStrExt::as_bytes(base.as_os_str()).to_vec();
+        let mut paths = Vec::new();
+        for _ in 0..3 {
+            let mut path = [0u8; PATH_SIZE];
+            let (fd, len) = open_report_file(&dir, 4242, &mut path).expect("no report file");
+            write_all(fd, b"x");
+            // SAFETY: `fd` was just opened.
+            unsafe { libc::close(fd) };
+            paths.push(String::from_utf8(path[..len].to_vec()).unwrap());
+        }
+        let names: Vec<_> = paths
+            .iter()
+            .map(|p| p.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(names, ["4242.txt", "4242-1.txt", "4242-2.txt"]);
+        for p in &paths {
+            assert_eq!(std::fs::read(p).unwrap(), b"x", "{p} was truncated");
+            let mode = std::fs::metadata(p).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "{p}");
+        }
+        let mode = std::fs::metadata(&base).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
         let _ = std::fs::remove_dir_all(&base);
     }
 }

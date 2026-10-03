@@ -784,6 +784,22 @@ impl Interpreter {
                 freeze_readonly_captures: true,
             };
             let mut val = self.build_closure(code, idx, cc_idx, spec);
+            // The value of a `multi` term is that candidate (see
+            // `MULTI_CANDIDATE_VALUE_MARKER`): mark it the way `.candidates`
+            // marks the candidates it hands out.
+            if custom_traits
+                .iter()
+                .any(|(t, _)| t == crate::ast::MULTI_CANDIDATE_VALUE_MARKER)
+                && let ValueView::Sub(gc) = val.view()
+            {
+                // SAFETY: the closure was built just above and is not yet
+                // shared; no borrow into its `SubData` is live.
+                unsafe {
+                    crate::value::gc_contents_mut(&gc)
+                        .env
+                        .insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
+                }
+            }
             // Anonymous routine literals carry their custom `is` traits in the
             // pooled declaration just like named subs do. Apply them after the
             // closure value exists so traits such as `Sub::Memoized` can wrap

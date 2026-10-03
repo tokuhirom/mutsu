@@ -3,7 +3,7 @@
 //! from `registration_class_decl.rs` — no behavior change.
 
 use super::registration_class::{parse_role_type_args, should_treat_role_arg_as_type_expr};
-use super::registration_class_body::{ClassBodyCx, ClassBodyFlow};
+use super::registration_class_body::{ClassBodyCx, ClassBodyFlow, PendingAttrCompose};
 use super::registration_class_compose::{RoleCompositionCx, RoleCompositionOutcome};
 use super::*;
 
@@ -110,5 +110,43 @@ impl Interpreter {
             &outcome.direct_composed_roles,
         );
         Ok(ClassBodyFlow::RunTail)
+    }
+
+    /// Queue the `compose` hook of every role-composed attribute whose
+    /// trait-mutated meta-object (copied onto this class by
+    /// `compose_role_into_class`) overrides `Attribute.compose`, so it runs
+    /// with this class as the package — before the stub-requirement check, as
+    /// in Rakudo, where an accessor such a hook adds can satisfy a role's
+    /// `method x {...}`. Attributes declared in the class body itself were
+    /// already queued by `apply_attribute_traits`.
+    ///
+    /// Cost: O(a), a = attributes of the class.
+    pub(super) fn queue_role_attribute_composes(
+        &mut self,
+        cx: &mut ClassBodyCx<'_>,
+        own_attribute_names: &[Symbol],
+    ) {
+        for attr in &cx.class_def.attributes {
+            if own_attribute_names
+                .iter()
+                .any(|own| own.resolve() == attr.name)
+            {
+                continue;
+            }
+            let Some(obj) = self
+                .registry()
+                .class_attribute_trait_objects
+                .get(&(cx.name.to_string(), attr.name.clone()))
+                .cloned()
+            else {
+                continue;
+            };
+            if self.mixin_has_compose_hook(&obj) {
+                cx.pending_attr_composes.push(PendingAttrCompose::Attribute(
+                    cx.name.to_string(),
+                    attr.name.clone(),
+                ));
+            }
+        }
     }
 }

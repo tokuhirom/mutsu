@@ -14,10 +14,31 @@ fn is_superscript_digit(c: char) -> bool {
     )
 }
 
+/// Whether an identifier ending at `rest` is the key of a fat-arrow pair:
+/// Raku's `<?before \h* '=>'>` lookahead, which makes `ident => v` a Pair
+/// with the literal key `ident` even when `ident` names a declared term
+/// (`sub term:<data-home>` / `my \x` / `pi`). Horizontal whitespace only: a
+/// newline before the `=>` leaves the term a term.
+fn is_fat_arrow_key(rest: &str) -> bool {
+    rest.trim_start_matches([' ', '\t']).starts_with("=>")
+}
+
+/// Whether `name` is an ordinary identifier (the fat-arrow autoquote only
+/// applies to those, not to a symbolic term such as `term:<∅>`).
+fn is_identifier_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| crate::parser::helpers::is_ident_char(Some(b)) || b == b'-' || b == b'\'')
+}
+
 pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
+        if is_identifier_name(&input[..consumed_len]) && is_fat_arrow_key(&input[consumed_len..]) {
+            return Err(PError::expected("declared term symbol"));
+        }
         // If the declared callable is immediately followed by `(`, defer to
         // identifier_or_call so `name(...)` parses as a single call expression.
         //
@@ -51,6 +72,7 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     // evaluating `et` as if it were a zero-arg call ("Unknown function: et").
     if let Ok((rest, name)) = crate::parser::stmt::parse_raku_ident(input)
         && crate::parser::stmt::simple::is_imported_value_term(name)
+        && !is_fat_arrow_key(rest)
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
     {
         return Ok((rest, Expr::BareWord(name.to_string())));

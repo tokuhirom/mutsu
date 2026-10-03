@@ -19,7 +19,8 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
     ANY_DYNAMIC_TOKEN_PARAM, SavedDynParams, regex_args_have_opaque,
 };
-use crate::runtime::regex_types::NamedAtom;
+use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dynvar_scope_push};
+use crate::runtime::regex_types::{NamedAtom, RegexAtom, RegexCaptures};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -63,6 +64,15 @@ pub(super) enum CallTarget {
     /// No rule of that name: a builtin (`<.ws>`, `<wb>`, `<alpha>`, …) the walk's
     /// single-candidate arm decides, with at most one end.
     Single,
+    /// A call evaluated eagerly by the growing-seed loop (`subrule_seed_ends`),
+    /// every end up front, and entered highest priority first; the reason is
+    /// its `MUTSU_VM_STATS` leaf. Taken by a rule that may re-enter itself at
+    /// the same position, or one called while an evaluation of the same name
+    /// is live, whose re-entries read the seed (`lr-seed`); and by a callee
+    /// with no program of its own (`declined-callee`), most often a `:m` rule,
+    /// whose ends the all-ends entry finds by running its mark-stripped
+    /// program (anything it does walk, that entry counts as walked).
+    Eager(Arc<TokenCandidates>, &'static str),
 }
 
 impl Interpreter {
@@ -120,11 +130,27 @@ impl Interpreter {
                 }
             }
         };
-        // Only a frame keeps the window: the producer installs its own.
+        // An evaluation of this name is live (a growing-seed loop further up):
+        // this call may be its re-entry, which the loop's bookkeeping answers.
+        let verdict = match verdict {
+            Ok(CallTarget::Plain(..) | CallTarget::Proto(_)) if lr_name_active(spec.lookup_sym) => {
+                let (candidates, _) =
+                    self.parsed_subrule_candidates(spec, pkg, args.as_deref().unwrap_or(&[]));
+                Ok(CallTarget::Eager(candidates, "lr-seed"))
+            }
+            verdict => verdict,
+        };
+        // Only a call the engine evaluates keeps the window: the producer
+        // installs its own.
         let window = match (&verdict, window) {
             (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => {
                 self.rx_call_rule_frame(name, pkg, window)
             }
+            // The seed loop pushes the routine frame itself, around each
+            // candidate's evaluation (`subrule_candidate_ends_with_frame`).
+            (Ok(CallTarget::Eager(..)), window) => self
+                .rx_call_rule_frame(name, pkg, window)
+                .map(|w| CallWindow { routine: None, ..w }),
             (_, Some(saved)) => {
                 self.restore_subrule_dynamic_params(saved);
                 None
@@ -262,12 +288,6 @@ impl Interpreter {
         if !self.registry().grammar_custom_how.is_empty() {
             return Err("custom-how");
         }
-        // An enclosing call of this name is being evaluated by the walk's
-        // growing-seed loop: this call may be its re-entry, which only the
-        // walk's bookkeeping answers.
-        if lr_name_active(spec.lookup_sym) {
-            return Err("left-recursion-active");
-        }
         Ok(())
     }
 
@@ -309,15 +329,26 @@ impl Interpreter {
         if candidates.is_empty() {
             return Err("no-candidates");
         }
-        // `:m` remaps positions across the whole result set.
+        // `:m` remaps positions across the whole result set, which the all-ends
+        // entry does over the mark-stripped subject.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
-            return Err("ignoremark");
+            return Ok(CallTarget::Eager(candidates, "ignoremark-callee"));
         }
         // Several candidates without a proto dedup their ends across each
         // other; a mix of both is not a shape the walk's proto dispatch names.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
             return Err("multi-candidate");
+        }
+        // A wrapped proto candidate (`^find_method('p:sym<a>').wrap(..)`) is
+        // user code around that candidate's invocation, like a wrapped rule.
+        if proto
+            && candidates
+                .iter()
+                .filter_map(|(_, _, sym)| sym.as_deref())
+                .any(|k| self.proto_candidate_has_wrap_chain(pkg, &spec.lookup_name, k))
+        {
+            return Err("wrapped");
         }
         // The walk's eager arm scopes the caller's `:i` over a proto candidate's
         // body (`subrule_candidate_ends`), which needs the body compiled under it:
@@ -330,13 +361,13 @@ impl Interpreter {
             return Err("qq-thunks");
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
-            return Err("left-reenter");
+            return Ok(CallTarget::Eager(candidates, "lr-seed"));
         }
         if candidates
             .iter()
             .any(|(parsed, _, _)| program_for(parsed).is_none())
         {
-            return Err("callee-declined");
+            return Ok(CallTarget::Eager(candidates, "declined-callee"));
         }
         if proto {
             return Ok(CallTarget::Proto(candidates));
@@ -346,5 +377,60 @@ impl Interpreter {
             Arc::clone(program_for(parsed).ok_or("callee-declined")?),
             *sub_pkg,
         ))
+    }
+
+    /// Evaluate a [`CallTarget::Eager`] call: every end of the callee at `pos`
+    /// through the growing-seed loop, with the call's `window` installed for
+    /// the evaluation only (it is eager, so nothing resumes in it), and the
+    /// window's final values filed on each end's Match for its action, as the
+    /// walk's producer files them. LOWEST PRIORITY FIRST.
+    // Cost: the seed loop's (`subrule_seed_ends`), plus O(b + e·b) to install,
+    // read back and file a window of b bindings on e ends.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn rx_lr_call_ends(
+        &mut self,
+        atom: &RegexAtom,
+        candidates: &TokenCandidates,
+        window: Option<CallWindow>,
+        args: &[Value],
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        options: (bool, bool),
+    ) -> Vec<(usize, RegexCaptures)> {
+        let RegexAtom::Named(name) = atom else {
+            return Vec::new();
+        };
+        if let Some(keys) = window.as_ref().and_then(|w| w.scope_keys.as_ref()) {
+            grammar_dynvar_scope_push(keys.iter().cloned());
+        }
+        let mut out = self.subrule_seed_ends(
+            name.spec(),
+            candidates,
+            chars,
+            pos,
+            pkg,
+            args,
+            false,
+            options,
+        );
+        let Some(window) = window else {
+            return out;
+        };
+        let values: Vec<(String, Value)> = window
+            .attach
+            .iter()
+            .filter_map(|key| self.env.get(key).map(|v| (key.clone(), v.clone())))
+            .collect();
+        if window.scope_keys.is_some() {
+            grammar_dynvar_scope_pop();
+        }
+        self.restore_subrule_dynamic_params(window.saved);
+        if !values.is_empty() {
+            for (_, caps) in out.iter_mut() {
+                Self::attach_grammar_dynvars_to_named_caps(caps, atom, &values);
+            }
+        }
+        out
     }
 }

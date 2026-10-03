@@ -1019,7 +1019,17 @@ impl Interpreter {
         // A leading bracket class with no sign (`[a..z] +digit`) is an implicit
         // positive first item: the `+`/`-` only separates the subsequent parts.
         let mut implicit_first = remaining.starts_with('[');
+        // A class whose FIRST part is negative (`<-:Cc +[\t]>`) starts from
+        // every character minus that part, so a later `+` part is a union with
+        // that complement, not a filter on it -- the same rule
+        // `parse_bracket_char_class` applies to `<-[a] + [b]>`. The negatives
+        // written before the first positive part are moved here as they come.
+        let lead_negative = remaining.starts_with('-');
+        let mut lead_negative_items: Vec<ClassItem> = Vec::new();
         while !remaining.is_empty() {
+            if lead_negative && positive_items.is_empty() {
+                lead_negative_items.append(&mut negative_items);
+            }
             let adding;
             if implicit_first {
                 adding = true;
@@ -1145,6 +1155,22 @@ impl Interpreter {
                 }
             }
         }
+        if lead_negative && positive_items.is_empty() {
+            lead_negative_items.append(&mut negative_items);
+        }
+        if !lead_negative_items.is_empty()
+            && !positive_items.is_empty()
+            && subrule_branches.is_empty()
+            && inline_branches.is_empty()
+            && !negative_has_grammar_token
+        {
+            return Some(Self::union_with_negated_lead(
+                lead_negative_items,
+                positive_items,
+                negative_items,
+            ));
+        }
+        negative_items.splice(0..0, lead_negative_items);
         if positive_items.is_empty()
             && negative_items.is_empty()
             && subrule_branches.is_empty()

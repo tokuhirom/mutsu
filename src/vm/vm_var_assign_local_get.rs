@@ -583,6 +583,64 @@ impl Interpreter {
         self.box_decl_local_cell_any_sigil(code, idx);
     }
 
+    /// Record on the declared scalar local `idx`'s shared cell that it is a
+    /// fresh, writable binding, decided by this frame. A nested routine writing
+    /// the variable by name then asks the cell instead of the name-keyed
+    /// registry, which may hold a caller's same-named readonly parameter
+    /// (ADR-11142 §2.3, #11165). Only a declaration store calls this: the other
+    /// boxing sites may box a parameter or a loop alias, whose writability this
+    /// does not know. A later readonly mark of the same binding (`constant`, a
+    /// trait, an immutable `:=`) re-decides it
+    /// ([`Self::record_readonly_on_own_binding`]). A cell that already carries
+    /// a decision (an immutable `:=` binding cell) keeps it.
+    // Cost: O(1).
+    pub(crate) fn decide_declared_binding_writable(&self, code: &CompiledCode, idx: usize) {
+        if code.locals[idx].starts_with(['&', '@', '%']) {
+            return;
+        }
+        if let Some(ValueView::ContainerRef(cell)) = self.locals.get(idx).map(Value::view)
+            && cell.binding_decision().is_none()
+        {
+            cell.set_binding_decision(None);
+        }
+    }
+
+    /// Re-decide the frame's own binding of `name` as readonly for `kind`, when
+    /// a declaration-time mark (`constant`, `is readonly`-style traits, an
+    /// immutable `:=` that kept a bare value) lands on a variable whose shared
+    /// cell this frame already decided (see
+    /// [`Self::decide_declared_binding_writable`]). The registry mark the
+    /// caller also makes stays the source of truth for the frame's own writes;
+    /// this keeps the cell, which writers in other frames ask, in agreement.
+    // Cost: O(s), s = slots of `name` in `code` (almost always 1).
+    pub(crate) fn record_readonly_on_own_binding(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        kind: crate::ast::ReadonlyKind,
+    ) {
+        if !crate::value::readonly_binding_cells_possible() {
+            return;
+        }
+        let bare = name.trim_start_matches('$');
+        let sym = crate::symbol::Symbol::intern(bare);
+        let decide = |v: &Value| {
+            if let ValueView::ContainerRef(cell) = v.view()
+                && cell.binding_decision().is_some()
+            {
+                cell.set_binding_decision(Some(kind));
+            }
+        };
+        for &slot in code.local_slots_of(sym) {
+            if let Some(v) = self.locals.get(slot as usize) {
+                decide(v);
+            }
+        }
+        if let Some(v) = self.env().get_sym(sym) {
+            decide(v);
+        }
+    }
+
     /// [`Self::box_decl_local_cell`] admitting a `&` code variable too. Used
     /// for a local an escaping `our sub` captures (#11051): a module-level
     /// `my &backend` that an exported sub reassigns must alias one cell with

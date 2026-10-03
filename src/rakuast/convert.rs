@@ -6,17 +6,16 @@
 //! `RuntimeError` (the documented coverage boundary) rather than a
 //! silently-wrong node.
 
+use super::bareword::simple_type_node;
 use super::{
-    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, decl_traits,
+    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
     hash_literal, name_parts, routine_traits,
 };
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, ParamDef, Stmt, WithBlockKind,
 };
-use crate::ast_visit::{Visit, walk_stmt, walk_stmts};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
-use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn unsupported(what: &str) -> RuntimeError {
@@ -41,7 +40,7 @@ pub(super) fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstFie
 
 /// Top-level: a parsed program becomes a `RakuAST::StatementList`.
 pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let _scope = DeclaredNames::collect(stmts);
+    let _scope = bareword::DeclaredNames::collect(stmts);
     statement_list_inner(stmts)
 }
 
@@ -71,116 +70,6 @@ fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
 
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
-
-/// What a bareword naming something the same compilation unit declared means.
-///
-/// raku resolves such a name at parse time, so `class C { }; C.new` renders `C`
-/// as a `Type::Simple` — exactly like a builtin type — and
-/// `constant X = 5; X` renders `X` as a `Term::Name`. Both measured against
-/// rakudo 2026.07. mutsu's parser leaves both as `Expr::BareWord`, so the
-/// converter has to re-derive which is which from the unit's own declarations.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DeclaredKind {
-    /// A `class` / `role` / `grammar` / `enum` name.
-    Type,
-    /// A `constant` name.
-    Constant,
-}
-
-thread_local! {
-    /// The names the compilation unit currently being converted declares.
-    /// Empty outside a conversion, so a nested/re-entrant conversion that never
-    /// ran `statement_list` simply sees no declarations and keeps the old
-    /// bareword boundary.
-    static DECLARED_NAMES: std::cell::RefCell<std::collections::HashMap<String, DeclaredKind>> =
-        std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-/// RAII guard installing the unit's declared names for the duration of a
-/// conversion, restoring whatever was there before (so a nested conversion
-/// cannot leak its names into the outer one).
-struct DeclaredNames(std::collections::HashMap<String, DeclaredKind>);
-
-impl DeclaredNames {
-    fn collect(stmts: &[Stmt]) -> Self {
-        let mut names = std::collections::HashMap::new();
-        collect_declared_names(stmts, &mut names);
-        Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
-    }
-}
-
-impl Drop for DeclaredNames {
-    fn drop(&mut self) {
-        DECLARED_NAMES.with(|d| {
-            *d.borrow_mut() = std::mem::take(&mut self.0);
-        });
-    }
-}
-
-fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
-}
-
-/// Whether a `::`-qualified package name resolves at parse time: a run of
-/// pseudo-packages (`MY`, `OUTER::OUTER`), a builtin type, or a type the unit
-/// declares (including the stub `A` a `class A::B { }` creates).
-fn package_resolves(stem: &str) -> bool {
-    name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
-        || is_known_type_constraint(stem)
-        || declared_kind(stem) == Some(DeclaredKind::Type)
-}
-
-/// Record a declared type name, together with the stub packages a qualified
-/// name implies: `class A::B { }` makes `A` resolve too, and raku renders a
-/// later bareword `A` as a `Type::Simple` (measured on 2026.09).
-fn insert_declared_type(
-    name: crate::symbol::Symbol,
-    out: &mut std::collections::HashMap<String, DeclaredKind>,
-) {
-    out.insert(name.resolve(), DeclaredKind::Type);
-    for stub in crate::qualified::package_ancestors(name).skip(1) {
-        out.entry(stub.resolve()).or_insert(DeclaredKind::Type);
-    }
-}
-
-/// The names a statement list declares, at any depth: raku resolves a name
-/// declared anywhere the reference can see it, and a bareword that reaches
-/// conversion at all was already accepted by the parser. So the scan enters
-/// every child -- a declaration in an `if` or loop body, a closure or a `do`
-/// block counts as well as one in a class, routine or bare block.
-// Cost: O(n), n = size of the AST.
-fn collect_declared_names(
-    stmts: &[Stmt],
-    out: &mut std::collections::HashMap<String, DeclaredKind>,
-) {
-    struct Scan<'o>(&'o mut std::collections::HashMap<String, DeclaredKind>);
-
-    impl<'ast> Visit<'ast> for Scan<'_> {
-        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
-            match stmt {
-                // A `module`/`package`/`grammar` name resolves at parse time
-                // just like a class one: raku renders a later bareword `M` as
-                // a `Type::Simple` (measured on `module M { }; M.HOW`).
-                Stmt::ClassDecl { name, .. }
-                | Stmt::RoleDecl { name, .. }
-                | Stmt::EnumDecl { name, .. }
-                | Stmt::SubsetDecl { name, .. }
-                | Stmt::Package { name, .. } => insert_declared_type(*name, self.0),
-                Stmt::VarDecl {
-                    name,
-                    custom_traits,
-                    ..
-                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
-                    self.0.insert(name.clone(), DeclaredKind::Constant);
-                }
-                _ => {}
-            }
-            walk_stmt(self, stmt);
-        }
-    }
-
-    walk_stmts(&mut Scan(out), stmts);
-}
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
@@ -1517,14 +1406,6 @@ fn is_simple_type(t: &str) -> bool {
         })
 }
 
-/// A bare simple type `Int` -> `Type::Simple(Name.from-identifier("Int"))`.
-fn simple_type_node(t: &str) -> RakuAstNode {
-    RakuAstNode {
-        class: RakuAstClass::TypeSimple,
-        fields: vec![node_field(None, name_from_identifier(t))],
-    }
-}
-
 /// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
 /// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
 /// `Type::Definedness`; a `Base[Arg, ...]` -> `Type::Parameterized`. Coercion
@@ -1735,7 +1616,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 .ok_or_else(|| unsupported("stash lookup without its trailing `::`"))?;
             let name = name_parts::stash_name(stem)
                 .ok_or_else(|| unsupported("stash lookup with an empty name segment"))?;
-            if stem.is_empty() || package_resolves(stem) {
+            if stem.is_empty() || bareword::package_resolves(stem) {
                 Ok(RakuAstNode {
                     class: RakuAstClass::TermName,
                     fields: vec![node_field(None, name)],
@@ -1850,31 +1731,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // raku renders, so let those arms decide.
             other => convert_expr(other),
         },
-        // `self` -> `Term::Self`, a node with no fields. mutsu's parser leaves
-        // it as a bareword, so it has to be picked off before the type-name and
-        // declared-name arms below.
-        Expr::BareWord(name) if name == "self" => Ok(RakuAstNode {
-            class: RakuAstClass::TermSelf,
-            fields: Vec::new(),
-        }),
-        // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`.
-        Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
-        // A type the CORE setting declares (`X::AdHoc`, `IO::Path`), which raku
-        // resolves at parse time the same way.
-        Expr::BareWord(name) if super::core_type_names::contains(name) => {
-            Ok(simple_type_node(name))
-        }
-        // A name the same compilation unit declared. raku resolves it at parse
-        // time: a type name renders exactly like a builtin one, a constant
-        // renders as a `Term::Name`. Any other bareword stays the boundary.
-        Expr::BareWord(name) if declared_kind(name).is_some() => {
-            match declared_kind(name).expect("just checked") {
-                DeclaredKind::Type => Ok(simple_type_node(name)),
-                DeclaredKind::Constant => Ok(RakuAstNode {
-                    class: RakuAstClass::TermName,
-                    fields: vec![node_field(None, name_from_identifier(name))],
-                }),
-            }
+        // A bareword the setting or the unit's own declarations resolve; any
+        // other one stays the boundary (the catch-all arm below).
+        Expr::BareWord(name) if bareword::convert(name).is_some() => {
+            Ok(bareword::convert(name).expect("just checked"))
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
@@ -2322,7 +2182,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             param,
             body,
             is_whatever_code,
-            ..
+            param_sigilless,
         } => {
             if *is_whatever_code {
                 // ADR-0033 Phase 2 §2.5: reachable only from the still-eager
@@ -2331,7 +2191,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // operator-cluster-wide slice, not Whatever-specific).
                 return Err(unsupported("Whatever-code closure (compound assignment)"));
             }
-            pointy_block_from_lambda(param, body)
+            pointy_block_from_lambda(param, *param_sigilless, body)
         }
         Expr::AnonSubParams {
             params,
@@ -2683,10 +2543,14 @@ fn elsif_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeE
 }
 
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.
+///
+/// The body keeps the enclosing unit's declared names: the unit-level scan
+/// already entered every block, and re-collecting here would *replace* them
+/// with the block's own, hiding `class C { }` from a closure `{ C.new }`.
 fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Blockoid,
-        fields: vec![node_field(None, statement_list(body)?)],
+        fields: vec![node_field(None, statement_list_inner(body)?)],
     })
 }
 
@@ -3154,14 +3018,20 @@ fn anon_routine_node(
 /// the sigil from its single param and does NOT preserve `@`/`%` for a single
 /// non-scalar param (`-> @a` becomes `param: "a"`), so we assume `$` — a
 /// documented divergence from raku, which shows the real sigil.
-fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+fn pointy_block_from_lambda(
+    param: &str,
+    sigilless: bool,
+    body: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut parameter = simple_parameter("$", param, None, None, false, None)?;
+    if sigilless {
+        sigilless_target(&mut parameter, param);
+    }
     let sig = RakuAstNode {
         class: RakuAstClass::Signature,
         fields: vec![RakuAstField {
             name: Some("parameters"),
-            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(simple_parameter(
-                "$", param, None, None, false, None,
-            )?))]),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(parameter))]),
         }],
     };
     Ok(RakuAstNode {
@@ -3418,7 +3288,7 @@ fn signature(
 /// `sub-signature => Signature`, and a basic `::T` type capture becomes the
 /// `type-captures` field. Richer capture forms remain the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
-    if pd.onearg
+    if (pd.onearg && !pd.sigilless)
         || pd.literal_value.is_some()
         || !pd.trait_args.is_empty()
         || !pd.traits.iter().all(|t| is_parameter_is_trait(t))
@@ -3472,6 +3342,17 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     } else {
         pd.type_constraint.as_deref()
     };
+    // A sigilless parameter (`\x`) targets a term, not a variable. The
+    // parser's sigilless slurpies are `+a` (`onearg`) and the capture `|c`.
+    if pd.sigilless && (pd.double_slurpy || pd.named) {
+        return Err(unsupported("sigilless named / double-slurpy parameter"));
+    }
+    if pd.sigilless && pd.slurpy {
+        if pd.type_constraint.is_some() || pd.where_constraint.is_some() || pd.default.is_some() {
+            return Err(unsupported("typed sigilless slurpy parameter"));
+        }
+        return Ok(sigilless_slurpy_parameter(pd, type_setting));
+    }
     let (sigil, desigil) = split_sigil(&pd.name);
     let mut node = if pd.slurpy || pd.double_slurpy {
         // A typed or where-constrained slurpy carries richer shape; defer.
@@ -3498,6 +3379,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             pd.where_constraint.as_deref(),
         )?
     };
+    if pd.sigilless {
+        sigilless_target(&mut node, &pd.name);
+    }
     if let Some(type_capture) = type_capture {
         let target_index = node
             .fields
@@ -3627,6 +3511,54 @@ fn named_parameter(
         class: RakuAstClass::Parameter,
         fields,
     })
+}
+
+/// `+a` -> `Parameter(target => ParameterTarget::Term, slurpy =>
+/// Slurpy::SingleArgument)`; `|c` -> the same with `Slurpy::Capture`, and the
+/// anonymous `|` has no target at all (measured on rakudo 2026.09).
+fn sigilless_slurpy_parameter(pd: &ParamDef, type_setting: bool) -> RakuAstNode {
+    let mut fields = Vec::with_capacity(3);
+    if type_setting {
+        fields.push(node_field(Some("type"), type_setting_any()));
+    }
+    if pd.name != super::lower::ANONYMOUS_CAPTURE {
+        fields.push(node_field(
+            Some("target"),
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetTerm,
+                fields: vec![node_field(None, name_from_identifier(&pd.name))],
+            },
+        ));
+    }
+    let marker = if pd.onearg {
+        RakuAstClass::ParameterSlurpySingleArgument
+    } else {
+        RakuAstClass::ParameterSlurpyCapture
+    };
+    fields.push(leaf_field(
+        Some("slurpy"),
+        super::slurpy_marker_value(marker),
+    ));
+    RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    }
+}
+
+/// Retarget a parameter at the term `name`: a sigilless `\x` binds
+/// `ParameterTarget::Term(Name)`, not a variable (measured on rakudo 2026.09).
+fn sigilless_target(parameter: &mut RakuAstNode, name: &str) {
+    for field in &mut parameter.fields {
+        if field.name == Some("target") {
+            *field = node_field(
+                Some("target"),
+                RakuAstNode {
+                    class: RakuAstClass::ParameterTargetTerm,
+                    fields: vec![node_field(None, name_from_identifier(name))],
+                },
+            );
+        }
+    }
 }
 
 /// `Type::Setting.new(Name.from-identifier("Any"))` — the implicit default type

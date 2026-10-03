@@ -34,6 +34,13 @@ impl Interpreter {
     /// composed role (`R[Int]`), which is what makes `$obj ~~ R[Int]` decidable
     /// for a real instance — the role's type arguments are not recorded anywhere
     /// on the instance itself.
+    /// Whether one argument of a curried role's recorded name is a named
+    /// argument (`:value-type`, `:v(1)`) rather than a positional type.
+    // Cost: O(1).
+    fn is_named_type_arg_spelling(arg: &str) -> bool {
+        arg.starts_with(':') || arg.contains('\t') || arg.contains("=>")
+    }
+
     pub(in crate::runtime) fn class_composes_parameterised_role(
         &mut self,
         class_name: &str,
@@ -60,8 +67,13 @@ impl Interpreter {
             let Some((role_base, role_args)) = Self::parse_parametric_type_name(&role) else {
                 continue;
             };
+            // A named argument (`does R[Int,Str,:value-type]`) is not part of
+            // the curried role's type identity: Rakudo names that role
+            // `R[Int,Str]`, so an instance satisfies an `R[Int,Str]`
+            // constraint (Rake's tests do exactly this).
             let actual: Vec<Value> = role_args
                 .iter()
+                .filter(|arg| !Self::is_named_type_arg_spelling(arg))
                 .map(|arg| self.type_arg_value_from_name(arg))
                 .collect();
             // Either the composed role IS the constrained one, or it inherits
@@ -517,6 +529,17 @@ impl Interpreter {
         } else {
             constraint
         };
+        // A core native type object matches a native constraint only by name:
+        // `uint8` and `int16` both sit under `Int`, but neither is the other,
+        // so `array[uint8] ~~ array[int16]` is False (raku). Without this the
+        // value-level rule "an Int binds a native int" fires on the type
+        // object's `Int` ancestor.
+        if let ValueView::Package(name) = value.view()
+            && crate::runtime::native_decl::builtin_native_repr(constraint).is_some()
+            && crate::runtime::native_decl::builtin_native_repr(name.as_str()).is_some()
+        {
+            return name == constraint;
+        }
         if self.type_matches_value_resolved(constraint, value) {
             return true;
         }

@@ -183,7 +183,10 @@ impl Interpreter {
             }
             a
         });
-        self.supply_emit_buffer.push(Vec::new());
+        self.supply_emit_buffer.push(match emitter_supplier_id {
+            Some(sid) => EmitFrame::owned_by(sid),
+            None => EmitFrame::default(),
+        });
         // "Did the body complete *this* supply?" must be asked of this emitter,
         // not of the process. With an id, count `done`s on the emitter itself;
         // without one (`done` cannot reach a supplier), fall back to this
@@ -213,7 +216,7 @@ impl Interpreter {
             None => thread_supplier_done_count(),
         };
         let body_ran_done = done_after > done_before;
-        let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
+        let emitted = self.supply_emit_buffer.pop().unwrap_or_default().values;
         (result, emitted, body_ran_done)
     }
 
@@ -901,7 +904,7 @@ impl Interpreter {
             args: Vec<Value>,
             captured: &mut Vec<Value>,
         ) -> Result<(), RuntimeError> {
-            this.supply_emit_buffer.push(Vec::new());
+            this.supply_emit_buffer.push(EmitFrame::default());
             // The caller below handles `is_react_done()`/`is_last()` from this
             // body's dynamic extent (directly or via a nested sub call) — see
             // `runtime::react_done_handler_depth`.
@@ -912,7 +915,7 @@ impl Interpreter {
             // caught at the callback boundary.
             let res = this.call_react_callback(&cb, args);
             drop(_react_done_handler);
-            let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default();
+            let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default().values;
             captured.append(&mut emitted);
             res.map(|_| ())
         }
@@ -1011,14 +1014,14 @@ impl Interpreter {
             args: Vec<Value>,
             last_value: &mut Value,
         ) -> Result<(), RuntimeError> {
-            this.supply_emit_buffer.push(Vec::new());
+            this.supply_emit_buffer.push(EmitFrame::default());
             // The caller below handles `is_react_done()`/`is_last()` from this
             // body's dynamic extent — see `runtime::react_done_handler_depth`.
             let _react_done_handler =
                 crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
             let res = this.call_sub_value(cb, args, true);
             drop(_react_done_handler);
-            let emitted = this.supply_emit_buffer.pop().unwrap_or_default();
+            let emitted = this.supply_emit_buffer.pop().unwrap_or_default().values;
             if let Some(last) = emitted.last() {
                 *last_value = last.clone();
             }

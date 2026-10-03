@@ -1080,6 +1080,74 @@ Rakudo gives no reference for the last two: it reports two such `multi regex` ca
 ambiguous call, and it loops forever on left recursion. A wrapped proto candidate is not honored by
 either engine ([#11151](https://github.com/tokuhirom/mutsu/issues/11151)).
 
+### Slice E, twelfth part: `<~~>`
+
+`recurse-self` is no longer a decline. In the walk, `<~~>` takes the enclosing regex's first end at the
+cursor and discards its captures. It is guarded against re-entering at the same position
+(`regex_match_recurse_self`). That leaf matches the regex through
+`regex_match_end_from_caps_in_pkg`, which answers from the regex's compiled program, so the atom
+compiles to a `CapAtom` leaf (`leaf=recurse-self`), the way a lookaround does, and no walk is entered.
+The 7 declined patterns over `t/` and the roast whitelist compile
+(`t/regex/regex-recurse-self-compiled.t`, rakudo's values).
+
+The most common whole-pattern decline left is `seqalt-nullable-ratchet`. Rakudo's rule for it turned
+out to depend on sigspace after the group, and the walk's heuristic does not follow it
+([#11162](https://github.com/tokuhirom/mutsu/issues/11162)).
+### Slice E, thirteenth part: left recursion without the bridge
+
+`left-reenter` and `left-recursion-active` are gone. The growing-seed loop that evaluates a
+left-recursive call moved out of the walk's eager `Named` arm into its own module, `regex_lr_seed.rs`
+(`subrule_seed_ends`). It takes the candidate-evaluation helpers with it, and `regex_match_atom.rs`
+drops from 1,216 to 844 lines. The walk's arm calls the module, and so does the compiled engine,
+which now resolves such a call to `CallTarget::Lr` (renamed `Eager` in the fourteenth part). A call becomes `Lr` in two cases:
+
+- the call graph cannot prove the rule never re-enters itself at the same position (the old
+  `left-reenter` verdict);
+- an evaluation of the same name is live further up (the old `left-recursion-active` blocker). Such
+  a call may be the re-entry, which reads the live seed.
+
+The loop is the algorithm D3 required to stay confined to those calls. Its candidates are evaluated
+through the all-ends entry, which runs their compiled programs. So the walk takes no part, and the
+call counts as a leaf (`leaf=lr-seed`). The evaluation is eager, as before. The call's binding window
+(`$*` parameters, the rule's `:my $*x`) is installed around it only, and its final values are filed
+on each end's Match for the action, as the walk's producer filed them.
+
+Nothing about the answers changes: the loop is the walk's own, moved. D6 found no disagreement it did
+not find on `main`. Rakudo has no reference here, since it loops forever on left recursion.
+`t/grammar/grammar-left-recursion-compiled-call.t` pins mutsu's values.
+
+Survey (`t/grammar`, `t/regex`, `t/modules`): `bridged` 3,501 → 3,178. `left-recursion-active` 369 → 0
+and `left-reenter` 200 → 0; the calls run as `leaf=lr-seed` (321). `callee-declined` rose by 246:
+calls that used to stop at the old blocker now reach the declined `:m` callee check.
+
+### Slice E, fourteenth part: `(:m …)` captures, and eager calls of declined callees
+
+Two changes, and almost all of the remaining walk uses go with them.
+
+- **A capture group with a scoped `:m` body** (`(:ignoremark '"')`) used to decline its whole
+  pattern. It now compiles like `[:m …]`, with a `GroupEnds` over the body's ends on the
+  mark-stripped subject, inside the capture's own level. JSON::Tiny's string token and
+  `t/regex/regex-ignoremark-scaling.t` were the main users, and they now run with no walk at all.
+- **A call whose callee has no program** (`callee-declined`, and the `ignoremark` verdict for a `:m`
+  callee) is no longer a bridge. The left-recursion verdict of the thirteenth part is generalized to
+  `CallTarget::Eager(candidates, reason)`, and these calls take it. The growing-seed loop evaluates
+  them through the all-ends entry, which runs a `:m` callee's stripped program, so the call is a leaf
+  (`declined-callee`, `ignoremark-callee`). A callee that truly declines is still walked. The
+  all-ends entry counts that use itself, as `walked=declined`, so nothing is hidden.
+
+Survey (`t/grammar`, `t/regex`, `t/modules`):
+
+- `walked` 3,164 → 488;
+- `bridged` 3,183 → 138;
+- uses of the walk, walked plus bridged: 6,347 → 626.
+
+What still bridges: `code-interp` 68, `grammar-method` 23, `custom-how` 15, `wrapped` 15,
+`args-method` 10, `qq-thunks` 5, `no-candidates` 2.
+
+What still walks a whole match: `declined` 410, from the 31 patterns still declined. The most
+common decline is `seqalt-nullable-ratchet` ([#11162](https://github.com/tokuhirom/mutsu/issues/11162)).
+Context declines add 78 more.
+
 ### Reproducing §2
 
 ```raku

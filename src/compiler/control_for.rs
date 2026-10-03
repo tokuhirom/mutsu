@@ -554,6 +554,18 @@ impl Compiler {
         // Hand the declarations to the body's frame without restoring anything
         // yet: the bindings stay visible until the body's scope exits.
         self.pending_scope_frame = self.local_scopes.pop();
+        // A `&name` loop parameter (`for @its -> &it { it |%p }`) is a lexical
+        // `&it` binding for the body: a bare `it(...)` call must reach it, not a
+        // same-named routine (Test::Describe's exported `it`). The frame is
+        // what `amp_binding_in_active_scope` consults.
+        for name in param.iter().chain(params.iter()) {
+            if name.starts_with('&') {
+                self.pending_scope_frame
+                    .get_or_insert_with(Default::default)
+                    .entry(name.clone())
+                    .or_insert(None);
+            }
+        }
         self.hoist_sub_decls(&loop_body, true);
         // A `for` body is its own Raku call frame; count it so a
         // `callframe`/`caller` inside sees the enclosing routine one level

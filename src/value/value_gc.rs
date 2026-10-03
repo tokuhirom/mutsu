@@ -265,8 +265,8 @@ impl Trace for (Mutex<PromiseState>, Condvar) {
     }
 }
 
-/// A channel node's `Value` edges are its buffered `queue`, its `failure`, and
-/// its `closed_promise` node. Async node migration (§11 step 7).
+/// A channel node's `Value` edges are its buffered `queue`, its `failure`, the
+/// emitters of its `Channel.Supply` taps, and its `closed_promise` node. Async node migration (§11 step 7).
 impl Trace for (Mutex<ChannelState>, Condvar) {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         if let Ok(state) = self.0.lock() {
@@ -276,6 +276,9 @@ impl Trace for (Mutex<ChannelState>, Condvar) {
             if let Some(f) = &state.failure {
                 f.gc_trace(visit);
             }
+            for tap in &state.taps {
+                tap.emitter.gc_trace(visit);
+            }
             visit(&state.closed_promise.erased());
         }
     }
@@ -283,6 +286,7 @@ impl Trace for (Mutex<ChannelState>, Condvar) {
         if let Ok(state) = self.0.get_mut() {
             state.queue.clear();
             state.failure = None;
+            state.taps.clear();
         }
     }
 }

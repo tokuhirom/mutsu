@@ -466,6 +466,24 @@ impl Interpreter {
             if let Some(&i) = narrowed.first() {
                 best_idx = i;
             }
+            // Slurpiness (rakudo's `is_narrower`): once the shared positional
+            // types tie, a candidate without a slurpy positional is narrower
+            // than one with — `(Int $a)` beats `(Int $a, *@r)` for `f(1)` —
+            // and this is consulted BEFORE the named bind check.
+            let has_slurpy_positional = |def: &MethodDef| -> bool {
+                def.param_defs.iter().any(|p| {
+                    !p.is_invocant && !p.named && p.is_variadic() && !p.name.starts_with('%')
+                })
+            };
+            if narrowed
+                .iter()
+                .any(|&i| !has_slurpy_positional(&all_matches[i].1))
+            {
+                narrowed.retain(|&i| !has_slurpy_positional(&all_matches[i].1));
+                if let Some(&i) = narrowed.first() {
+                    best_idx = i;
+                }
+            }
             // Explicit-named preference (rakudo): among otherwise-tied
             // candidates, one that needs a named bind check — it declares an
             // explicit (non-slurpy) named parameter, or puts a `where` on a
@@ -618,7 +636,14 @@ impl Interpreter {
             // explicit named param, and `()` vs `(*%h)` correctly ties (ambiguous),
             // matching rakudo. The implicit method `*%_` carries no penalty either.
             if (pd.slurpy || pd.double_slurpy) && pd.name != "%_" && pd.name != "_" {
-                if !pd.named && !pd.name.starts_with('%') {
+                // A positional slurpy that receives no argument is not
+                // compared at all: rakudo checks only the positional
+                // parameters both candidates declare and consults slurpiness
+                // after those tie (the non-slurpy tie-break in
+                // `pick_method_winner`). Charging it here made
+                // `(Str:D $name, *@p)` lose `url-for('cart')` to
+                // `(Any:D $record)` (#11045).
+                if !pd.named && !pd.name.starts_with('%') && arg_idx < args.len() {
                     // positional slurpy
                     total += 2000;
                     arg_idx += 1;

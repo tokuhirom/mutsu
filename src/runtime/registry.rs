@@ -216,6 +216,9 @@ pub(crate) struct Registry {
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
+    /// `native`-declared types and the traits they recorded (`is repr`,
+    /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
+    pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
@@ -398,6 +401,18 @@ pub(crate) struct Registry {
     /// live in this stored object; `^attributes` returns it (topped up with
     /// the standard meta keys) so the mixin state survives introspection.
     pub(crate) class_attribute_trait_objects: HashMap<(String, String), crate::value::Value>,
+    /// A *role* attribute's custom traits (`has $.x is entry(...)`) still to
+    /// apply: (role, attr) -> its compiled declaration. Applied once, at the
+    /// role's first composition — the role body's `use` that imports the
+    /// trait handler runs only then — and removed; see
+    /// `apply_pending_role_attribute_traits`.
+    pub(crate) role_attribute_pending_traits:
+        HashMap<(String, String), crate::opcode::CompiledAttrDecl>,
+    /// Sub-level `proto`s a role body has already registered: (role,
+    /// routine name). A role's body re-runs at every composition, but its
+    /// `proto sub f(|) {*}` declares one routine for the role — registering
+    /// it again would be a redeclaration.
+    pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
@@ -471,7 +486,7 @@ pub(crate) struct Registry {
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
     /// the same `Arc` is also what gets re-inserted into `functions`.
-    pub(crate) our_scoped_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    pub(crate) our_scoped_functions: std::sync::Arc<HashMap<Symbol, std::sync::Arc<FunctionDef>>>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
     /// Copy-on-write behind an `Arc` for the same reason as
     /// [`Registry::functions`]; write through [`Registry::proto_functions_mut`].
@@ -480,7 +495,7 @@ pub(crate) struct Registry {
     /// held behind `Arc` so the whole-map snapshot/restore clones (and the
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.
-    pub(crate) token_defs: TokenDefsMap,
+    pub(crate) token_defs: std::sync::Arc<TokenDefsMap>,
     /// `proto sub` declaration markers (existence set). Private: every
     /// mutation must go through the `proto_subs_*` accessors below so the
     /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`
@@ -493,7 +508,7 @@ pub(crate) struct Registry {
     /// `Interpreter::has_proto_cached`.
     proto_gen: u64,
     /// `proto token`/`proto rule` declaration markers (existence set).
-    pub(crate) proto_tokens: HashSet<String>,
+    pub(crate) proto_tokens: std::sync::Arc<HashSet<String>>,
     /// The signature of a `proto token`/`proto rule` that declares positional
     /// parameters, keyed like `proto_tokens`.
     pub(crate) proto_token_params: HashMap<String, Arc<Vec<crate::ast::ParamDef>>>,

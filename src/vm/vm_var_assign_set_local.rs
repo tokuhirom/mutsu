@@ -119,6 +119,27 @@ impl Interpreter {
         matches!(v.view(), ValueView::Package(_))
     }
 
+    /// True when `v` reads the same through a binding cell as it does bare.
+    /// A cell itemizes what it holds, so a list-like value (`my $r := 1..3`,
+    /// a `Seq`, an immutable `List`) iterates as one item behind one, while
+    /// rakudo iterates the value a container-less `$r` is bound to. Those
+    /// keep a bare slot and only the readonly registry's mark.
+    // Cost: O(1).
+    fn binding_cell_keeps_value_semantics(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::Complex(..)
+            | ValueView::Package(_) => true,
+            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
+            _ => false,
+        }
+    }
+
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
     /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
     /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
@@ -802,6 +823,19 @@ impl Interpreter {
         // itself explicitly right after this store. `vardecl_context` is
         // consumed inside the inner handler, so snapshot it here.
         let is_vardecl = self.vardecl_context().get();
+        // A `:=` declaration decides its own readonly state inside the inner
+        // handler (an immutable bind marks it, a container bind aliases a
+        // binding decided elsewhere), so only a plain `=` declaration is a
+        // fresh writable binding this frame can decide for (#11165). Snapshot
+        // the bind flags before the inner handler consumes them.
+        let decl_is_plain_store = is_vardecl
+            && !self.bind_context().get()
+            && !self.scalar_bind_context().get()
+            && !self.rebind_context().get()
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::VarRef { .. })
+            );
         // Container-descriptor naming (`@kh.VAR.name`): a plain `my @x`/`my %h`
         // declaration stamps the variable name into the fresh container below,
         // after the store. A `:=` bind keeps the bound container's original
@@ -880,6 +914,9 @@ impl Interpreter {
                     || code.needs_cell_ref_capture_slots.contains(&idx))
             {
                 self.box_decl_local_cell(code, idx as usize);
+                if decl_is_plain_store {
+                    self.decide_declared_binding_writable(code, idx as usize);
+                }
             }
             // ADR-0055's container lane: an own `@`/`%` an escaping child closure
             // captures and this frame cannot vouch for becomes a shared cell at
@@ -907,6 +944,9 @@ impl Interpreter {
                 // `my $a` reaches this same site and must not pollute the persisted
                 // map with its value.
                 self.box_decl_local_cell_any_sigil(code, idx as usize);
+                if decl_is_plain_store {
+                    self.decide_declared_binding_writable(code, idx as usize);
+                }
             }
         }
         r
@@ -1119,7 +1159,7 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
-                return self.array_share_assign(code, idx, raw_popped, src);
+                return self.array_share_assign(code, idx, raw_popped, src, is_constant);
             }
         }
         // Plain `=` assignment stores a VALUE. A bare `ContainerRef` reaching an
@@ -1230,6 +1270,21 @@ impl Interpreter {
         // a non-`is rw` parameter DOES own a container (rakudo reports `Scalar`).
         let bind_marks_no_container =
             is_vardecl && scalar_bind && unnamed_bind_source && !bind_marks_itemized_scalar;
+        // The kind a binding cell carries for this bind, if it gets one (see
+        // the store below).
+        let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%', '&'])
+            && Self::binding_cell_keeps_value_semantics(&raw_popped)
+        {
+            if bind_marks_type_object {
+                Some(crate::ast::ReadonlyKind::TypeObject)
+            } else if bind_marks_immutable {
+                Some(crate::ast::ReadonlyKind::Immutable)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -1425,11 +1480,13 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Immutable);
         } else if bind_marks_type_object {
             let bare = code.locals[idx]
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::TypeObject);
         } else if bind_marks_itemized_scalar {
             // A readonly Scalar holds the itemized aggregate: the name owns a
             // container (so `.VAR` is `Scalar`), but cannot be assigned through.
@@ -1437,6 +1494,7 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
+            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Alias);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later
@@ -2884,6 +2942,11 @@ impl Interpreter {
             let scalar = !name.starts_with('@') && !name.starts_with('%');
             if scalar && self.is_value_share_slot(name, Some(&self.locals[idx])) {
                 self.clear_array_share_marker(name);
+                // The env entry is the SHARED cell too. Detach it now: the
+                // by-name write below would otherwise store through it into
+                // the source, and a skipped one would leave env holding a
+                // container the slot no longer does (ADR-0097 §15).
+                self.env_mut().insert(name.to_string(), val.clone());
             } else {
                 let arc = arc.clone();
                 if scalar {
@@ -3141,6 +3204,17 @@ impl Interpreter {
                 crate::gc::Gc::new(crate::value::ContainerCell::new(self.locals[idx].clone()));
             crate::value::register_container_constraint(&cell, &constraint);
             self.locals[idx] = Value::container_ref(cell);
+        }
+        // A `$` variable bound straight to a value has no container, and its
+        // readonly kind is a fact about this binding. Seat the value in a
+        // binding cell that carries the kind, so a writer in another frame
+        // that resolves the name to this binding gets the binding's answer,
+        // whatever the readonly registry holds under the name there
+        // (ADR-11142 §2.3, #11142).
+        if let Some(kind) = readonly_binding_kind {
+            self.locals[idx] = Value::container_ref(crate::gc::Gc::new(
+                crate::value::ContainerCell::new_readonly_binding(self.locals[idx].clone(), kind),
+            ));
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();

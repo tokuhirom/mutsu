@@ -18,6 +18,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only token: CI reads the repository and, in `changes`, the PR's file
+# list (scripts/ci-docs-only.sh). Nothing here writes back to GitHub.
+permissions:
+  contents: read
+  pull-requests: read
+
 # ── The shape of this workflow ──────────────────────────────────────────────
 #
 # `changes` classifies the diff, `build` compiles the release binary ONCE, and
@@ -77,6 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # The Makefile and this workflow are what `--check-inputs` below
           # reads: they name every path the build consumes, and no such path
           # may be on the classifier's documentation allowlist. Leading slashes
@@ -92,6 +99,7 @@ jobs:
             /docs/adr/
             /Makefile
             /.github/workflows/
+            /.github/scripts/
           sparse-checkout-cone-mode: false
 
       - name: Classifier self-test
@@ -163,6 +171,8 @@ jobs:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
@@ -265,6 +275,8 @@ jobs:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # These ledger checks run FIRST, before any toolchain: they read
       # files and finish in about a second each, so an unsorted whitelist or an
@@ -357,6 +369,13 @@ jobs:
         # scripts/layer-deps-baseline.txt and may go down, never up.
         # Self-tests its counter first.
         run: make check-layer-deps
+
+      - name: No new direct field on Interpreter
+        # ADR-10779 D4: struct Interpreter's field count, in
+        # scripts/interp-fields-baseline.txt, may go down, never up, and every
+        # field must belong to a subsystem. New state goes into its
+        # subsystem's type. Self-tests its parser first.
+        run: make check-interp-fields
 
       - name: Value API wall holds
         # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
@@ -494,6 +513,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Download the release binary
@@ -677,12 +697,11 @@ jobs:
         # This covers every mutsu in the job — any t/ or roast file's own
         # interpreter, and any subprocess it spawned (each writes its own
         # report, told apart by pid and argv). That is why the job env sets an
-        # ABSOLUTE MUTSU_CRASH_DIR: the default `tmp/crash` is resolved against
-        # each process's startup working directory, so a subprocess spawned
-        # with `:cwd`, or one inheriting a `chdir`, would drop its report in
-        # some temp directory this step never looks at. Verified: with the
-        # relative default, a `run(..., :cwd(...))` child's report lands under
-        # that cwd instead.
+        # ABSOLUTE MUTSU_CRASH_DIR: without it a report goes to stderr only,
+        # and a relative one is resolved against each process's startup
+        # working directory, so a subprocess spawned with `:cwd`, or one
+        # inheriting a `chdir`, would drop its report in some temp directory
+        # this step never looks at.
         #
         # `always()` (not `failure()`): a report can exist on an otherwise
         # green job -- a deliberately-provoked subprocess crash a test
@@ -865,6 +884,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
@@ -933,6 +954,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Miri only ships on nightly, and the nightly must be PINNED: an unpinned
       # `nightly` silently changes the interpreter (and its Stacked Borrows
@@ -1049,6 +1072,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
         with:
@@ -1064,7 +1089,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        run: .github/scripts/install-wasm-pack.sh
 
       - name: Build npm package
         run: |
@@ -1158,6 +1183,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0

@@ -37,10 +37,8 @@ impl Interpreter {
     /// range may be lazy, as in `'foo'[2..*]`).
     fn range_start_index(index: &Value) -> i64 {
         match index.view() {
-            ValueView::Range(a, _)
-            | ValueView::RangeExcl(a, _)
-            | ValueView::RangeExclBoth(a, _) => a,
-            ValueView::RangeExclStart(a, _) => a + 1,
+            ValueView::Range(a, _) | ValueView::RangeExcl(a, _) => a,
+            ValueView::RangeExclStart(a, _) | ValueView::RangeExclBoth(a, _) => a + 1,
             ValueView::GenericRange { start, .. } => start.to_f64() as i64,
             _ => 0,
         }
@@ -778,6 +776,15 @@ impl Interpreter {
                 break;
             }
             index = inner;
+        }
+        // A positional subscript numifies an allomorph (`@a[<1>]`, an `IntStr`
+        // from `:top<1>` or a `<...>` word list): its numeric part addresses
+        // the slot, as it does for a hash key's Str part below.
+        if is_positional
+            && let ValueView::Mixin(inner, mixins) = index.view()
+            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        {
+            index = inner.as_ref().clone();
         }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
@@ -1553,7 +1560,14 @@ impl Interpreter {
                     }
                 }
             }
-            (ValueView::Array(items, kind), ValueView::Range(a, b)) => {
+            // `a ^.. b` addresses the same window as `a+1 .. b`, and `a ^..^ b`
+            // the same as `a+1 ..^ b`: `range_params` folds the excluded start
+            // in (`@a[25^..^75]` returned Nil, Cro::WebSocket's message test).
+            (
+                ValueView::Array(items, kind),
+                ValueView::Range(..) | ValueView::RangeExclStart(..),
+            ) => {
+                let (a, b) = range_params(&index).map_or((0, -1), |(a, b, ..)| (a, b));
                 let source = Value::array_with_kind(items.clone(), kind);
                 match Self::inclusive_range_window(a, b, items.len())? {
                     Some((start, end_excl)) => {
@@ -1567,7 +1581,11 @@ impl Interpreter {
                     None => self.slice_result_value(&source, Vec::new()),
                 }
             }
-            (ValueView::Array(items, kind), ValueView::RangeExcl(a, b)) => {
+            (
+                ValueView::Array(items, kind),
+                ValueView::RangeExcl(..) | ValueView::RangeExclBoth(..),
+            ) => {
+                let (a, b) = range_params(&index).map_or((0, 0), |(a, b, ..)| (a, b));
                 let start = a.max(0) as usize;
                 let end_excl = if Self::range_end_is_unbounded(b) {
                     items.len()
@@ -2005,12 +2023,23 @@ impl Interpreter {
                 let result = if is_positional && !has_user_at_pos && has_user_at_key {
                     // For an Associative object, `[...]` falls back to AT-KEY
                     // when the class has no positional protocol of its own.
+                    // An exception the user's AT-KEY throws propagates.
                     self.try_compiled_method_or_interpret(
                         target.clone(),
                         "AT-KEY",
                         vec![Value::int(i)],
-                    )
-                    .unwrap_or(Value::NIL)
+                    )?
+                } else if has_user_at_pos {
+                    // The class's own AT-POS answers, and an exception it
+                    // throws (an out-of-range index, `Rake`'s
+                    // `X::OutOfRange.new(...).throw`) propagates to the
+                    // caller. Swallowing it into Nil made `dies-ok { $o[2] }`
+                    // fail and a CATCH around the read resume with Nil.
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-POS",
+                        vec![Value::int(i)],
+                    )?
                 } else if has_typed_positional_default {
                     // A parameterized Array subclass stores its element type
                     // in side metadata rather than in a user AT-POS method.
@@ -3217,6 +3246,12 @@ impl Interpreter {
                     && name.resolve() == "Any"
                     && !Self::index_is_type_parameterization(&idx) =>
             {
+                // A finite Range (`$any[1..3]`) is a slice too.
+                let range_list = Self::finite_int_range_as_list(&index);
+                let idx = match &range_list {
+                    Some(list) => list.view(),
+                    None => idx,
+                };
                 match idx {
                     ValueView::Array(items, ..) => Value::array(
                         items

@@ -97,7 +97,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         NamePartSimple => &[("name", Absent::Required)],
         NamePartExpression => &[("expr", Absent::Required)],
         TermName => &[("name", Absent::Required)],
-        CallName | CallNameWithoutParentheses => &[
+        TermTopicCall => &[("call", Absent::Required)],
+        CallName | CallNameWithoutParentheses | CallMethod => &[
             ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
@@ -155,7 +156,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("sub-signature", Absent::TypeObject("RakuAST::Signature")),
             ("traits", Absent::EmptyList),
         ],
-        ParameterTargetVar => &[("name", Absent::Required)],
+        ParameterTargetVar | ParameterTargetTerm => &[("name", Absent::Required)],
         VarDeclarationSimple => &[
             ("sigil", Absent::Required),
             ("desigilname", Absent::Required),
@@ -268,7 +269,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarLexical => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
-        TermName => "name",
+        TermName | ParameterTargetTerm => "name",
+        TermTopicCall => "call",
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional => "lexical-name",
         InitializerAssign | InitializerBind => "expression",

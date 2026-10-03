@@ -445,13 +445,40 @@ impl Interpreter {
                                 window,
                             }) => {
                                 // A frame's binding window: rewinding past the
-                                // call uninstalls it (`rx_scope`).
-                                let window = window.map(|window| {
-                                    let k = self.rx_window_adopt(&mut scopes, window);
-                                    reg_trail.push((UNDO_ENTER, k));
-                                    k
-                                });
+                                // call uninstalls it (`rx_scope`). An eager
+                                // evaluation installs its own around itself.
+                                let (window, lr_window) =
+                                    if matches!(verdict, Ok(CallTarget::Eager(..))) {
+                                        (None, window)
+                                    } else {
+                                        let window = window.map(|window| {
+                                            let k = self.rx_window_adopt(&mut scopes, window);
+                                            reg_trail.push((UNDO_ENTER, k));
+                                            k
+                                        });
+                                        (window, None)
+                                    };
                                 match verdict {
+                                    Ok(CallTarget::Eager(cands, why)) => {
+                                        walk_use(WalkUse::Leaf, why);
+                                        let mut ends = self.rx_lr_call_ends(
+                                            &program.atoms[atom as usize],
+                                            &cands,
+                                            lr_window,
+                                            call_args.as_deref().unwrap_or(&[]),
+                                            chars,
+                                            pos,
+                                            pkg,
+                                            (commit, ic),
+                                        );
+                                        // Ratchet commits to the highest-priority
+                                        // end, the last (lowest priority first).
+                                        if commit && ends.len() > 1 {
+                                            ends.drain(..ends.len() - 1);
+                                        }
+                                        pc += 1;
+                                        enter_cands!(ends)
+                                    }
                                     Ok(CallTarget::Plain(callee, callee_pkg)) => {
                                         if frame.is_some_and(|f| {
                                             frames[f as usize].depth >= MAX_FRAME_DEPTH
@@ -489,9 +516,13 @@ impl Interpreter {
                                             }
                                             Some(first) => {
                                                 // The call is committed to the first ranked
-                                                // candidate that matches, and to its first
-                                                // end, so a cut at its return drops the
-                                                // rest of the ranking too.
+                                                // candidate that matches: its return drops
+                                                // the rest of the ranking. Whether the
+                                                // candidate keeps only its first end is the
+                                                // call site's ratchet, as for any subrule --
+                                                // a `regex` caller backtracks into a `regex`
+                                                // candidate (`regex TOP { <sep> '9' }` over
+                                                // `regex sep:sym<x> { \d* }` matches "129").
                                                 let stack_base = stack.len();
                                                 if proto_rank.len() > 1 {
                                                     push_choice!(Choice::Proto(Box::new(
@@ -504,6 +535,7 @@ impl Interpreter {
                                                             next: 1,
                                                             mark: mark!(),
                                                             window,
+                                                            commit,
                                                         }
                                                     )));
                                                 }
@@ -521,7 +553,7 @@ impl Interpreter {
                                                     atom,
                                                     pos,
                                                     pc + 1,
-                                                    true,
+                                                    commit,
                                                     stack_base,
                                                     Some((Arc::clone(&cands), first)),
                                                     window
@@ -829,6 +861,19 @@ impl Interpreter {
                                     (frames[fi].commit, frames[fi].stack_base);
                                 if commit {
                                     truncate_stack!(stack_base);
+                                } else if frames[fi].proto.is_some() {
+                                    // A returning proto candidate settles the
+                                    // call's choice of candidate: the rest of the
+                                    // ranking (its `ProtoChoice`, right at the
+                                    // call's height) is given up, while the
+                                    // candidate's own choice points above it stay.
+                                    let (site, entry_pos) = (frames[fi].site, frames[fi].entry_pos);
+                                    if let Some(entry) = stack.get_mut(stack_base)
+                                        && matches!(entry, Choice::Proto(p)
+                                            if p.atom == site && p.pos == entry_pos)
+                                    {
+                                        *entry = Choice::Dead;
+                                    }
                                 }
                                 let settled = stack.len() <= stack_base;
                                 let f = &frames[fi];
@@ -960,6 +1005,7 @@ impl Interpreter {
                                 next,
                                 mark,
                                 window,
+                                commit,
                             } = *proto;
                             // The call's own height: its entry is popped.
                             let stack_base = stack.len();
@@ -974,9 +1020,11 @@ impl Interpreter {
                                     next: next + 1,
                                     mark,
                                     window,
+                                    commit,
                                 })));
                             }
-                            enter_proto = Some((atom, pos, pc, cands, idx, stack_base, window));
+                            enter_proto =
+                                Some((atom, pos, pc, cands, idx, stack_base, window, commit));
                             (pc, pos, mark)
                         }
                         Choice::Run {
@@ -1062,7 +1110,7 @@ impl Interpreter {
                         }
                         frame = target_frame;
                         match enter_proto {
-                            Some((atom, entry, ret_pc, cands, idx, stack_base, window)) => {
+                            Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit)) => {
                                 let (parsed, sub_pkg, _) = &cands[idx];
                                 let Some(callee) = program_for(parsed) else {
                                     debug_assert!(false, "a proto's candidates compile");
@@ -1074,7 +1122,7 @@ impl Interpreter {
                                     atom,
                                     entry,
                                     ret_pc,
-                                    true,
+                                    commit,
                                     stack_base,
                                     Some((Arc::clone(&cands), idx)),
                                     window
@@ -1088,7 +1136,7 @@ impl Interpreter {
                         continue 'run;
                     }
                     match enter_proto {
-                        Some((atom, entry, ret_pc, cands, idx, stack_base, window)) => {
+                        Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit)) => {
                             let (parsed, sub_pkg, _) = &cands[idx];
                             let Some(callee) = program_for(parsed) else {
                                 debug_assert!(false, "a proto's candidates compile");
@@ -1100,7 +1148,7 @@ impl Interpreter {
                                 atom,
                                 entry,
                                 ret_pc,
-                                true,
+                                commit,
                                 stack_base,
                                 Some((Arc::clone(&cands), idx)),
                                 window

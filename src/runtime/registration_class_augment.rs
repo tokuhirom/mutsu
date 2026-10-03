@@ -1571,6 +1571,21 @@ impl Interpreter {
             }
         };
         for op in ops {
+            // See the twin in `run_composed_role_deferred_body`: a sub-level
+            // `proto` is registered once per role.
+            let sub_proto_key = match &op.raw {
+                Stmt::ProtoDecl {
+                    name,
+                    is_method: false,
+                    ..
+                } => Some((type_owner.to_string(), name.resolve())),
+                _ => None,
+            };
+            if let Some(key) = &sub_proto_key
+                && self.registry().role_registered_sub_protos.contains(key)
+            {
+                continue;
+            }
             let body_pkg = match op.kind {
                 crate::opcode::DeferredBodyOpKind::TypeDecl => Some(type_owner),
                 crate::opcode::DeferredBodyOpKind::TokenRule => Some(regex_owner),
@@ -1649,6 +1664,11 @@ impl Interpreter {
                 self.import_target_package = None;
                 // See the twin in `run_composed_role_deferred_body` (#8842).
                 self.record_deferred_body_imports(type_owner, import_mark);
+            }
+            if r.is_ok()
+                && let Some(key) = sub_proto_key
+            {
+                self.registry_mut().role_registered_sub_protos.insert(key);
             }
             if let Err(err) = r {
                 if err.control.is_none() {

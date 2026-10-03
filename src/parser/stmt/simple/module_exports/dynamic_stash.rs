@@ -27,7 +27,14 @@ thread_local! {
 /// parser export records. A probe that fails (the module dies while loading)
 /// contributes nothing: the program's own run-time `use` loads the module
 /// again and reports the failure there, at its real location.
+///
+/// A non-executing parse (`crate::parser::no_execute`) never runs the module:
+/// it contributes nothing, leaving the static scan's exports in place, and is
+/// not cached so a later executing parse still probes.
 pub(super) fn probe_dynamic_exports(module: &str) -> Rc<Vec<InlineModuleExport>> {
+    if crate::parser::no_execute::no_execute() {
+        return Rc::new(Vec::new());
+    }
     let lib_paths = super::parser_lib_paths();
     let key = (module.to_string(), lib_paths.clone());
     if let Some(hit) = PROBE_CACHE.with(|c| c.borrow().get(&key).cloned()) {

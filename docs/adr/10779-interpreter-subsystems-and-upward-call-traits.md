@@ -1,6 +1,6 @@
 # ADR-10779: `Interpreter` subsystems and traits for upward calls
 
-- **Status**: Proposed (2026-10-03)
+- **Status**: Accepted (2026-10-03, by the maintainer)
 - **Issue**: [#10779](https://github.com/tokuhirom/mutsu/issues/10779)
 - **Input**: [docs/interpreter-state-map.md](../interpreter-state-map.md) (phase 2),
   `make check-layer-deps` (phase 1)
@@ -90,7 +90,8 @@ that is set and then not taken (an early return, an error path) leaks into the n
 ### D4. No new direct fields: a field-count ratchet
 
 The number of direct fields of `Interpreter` may only fall. Concretely: a check (a `--check`
-mode of `scripts/interp-field-matrix.py`, wired into `make checks`) fails when the count grows
+mode of `scripts/interp-field-matrix.py`, wired into `make checks` as
+`make check-interp-fields`) fails when the count grows
 or when a field matches no `SUBSYSTEMS` rule. New state goes into the subsystem type it belongs
 to. This is what keeps the extraction from being undone by later features, as the
 `check-layer-deps` ratchet does for module edges.
@@ -176,5 +177,7 @@ these preconditions:
 - Phase 1 (move misplaced helpers down, `check-layer-deps` ratchet): 208 → 71 upward references
   in #10809, #10837, #10871, #10909, #10973, #11120, #11130. Ongoing under D6.
 - Phase 2 (state map): done in #11141.
-- Phase 3 (this ADR): not started. The first steps are the D4 ratchet, then `guards` and
-  `caches`.
+- Phase 3 (this ADR): D4 ratchet landed (`make check-interp-fields`, baseline 439).
+  - `guards`: done. `RakuCycleGuards` (`src/runtime/raku_cycle_guards.rs`) holds the two
+    `.raku` render guards as one generic `CycleGuard<K>`; 439 → 436 fields.
+  - Next: `caches`.

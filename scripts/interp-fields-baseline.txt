@@ -1,0 +1,6 @@
+# Direct fields of `struct Interpreter` (src/runtime/mod.rs). ADR-10779 D4:
+# this number may only go down -- new state goes into the subsystem type it
+# belongs to. Checked by `make check-interp-fields`; re-cut after extracting
+# fields with
+#   scripts/interp-field-matrix.py --update
+436

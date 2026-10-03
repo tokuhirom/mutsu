@@ -388,6 +388,23 @@ impl Interpreter {
         }
     }
 
+    /// `Channel.send`'s delivery, shared with a `Supply.Channel` forwarding
+    /// tap (`SupplierEmitAction::ChannelSend`): the value is queued, never
+    /// emitted behind the queue's back, and then the pump hands it to a tap of
+    /// the channel's Supplies if one is ready -- those taps are consumers of the
+    /// queue like `receive` (see `native_methods::channel_supply`). The
+    /// forwarding tap used to queue it only, so
+    /// `$supplier.Supply.Channel.Supply.tap(...)` (Cro's WebSocket handler
+    /// feed) never saw a value emitted after the tap.
+    // Cost: O(v * t), v = values the pump moves, t = the channel's attached taps.
+    pub(crate) fn channel_send_value(&mut self, ch: &SharedChannel, value: Value) {
+        ch.send(value);
+        // A tap callback that dies does not fail the sender (see
+        // `pump_channel_taps`); only completing a tap can error, and that
+        // happens on close, not here.
+        let _ = self.pump_channel_taps(ch);
+    }
+
     pub(super) fn dispatch_channel_method(
         &mut self,
         ch: &SharedChannel,
@@ -401,40 +418,7 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
-                use crate::runtime::native_methods::state::supplier_emit;
-                use crate::runtime::native_methods::state_supplier::{
-                    supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
-                };
-                let sids = ch.supplier_ids();
-                for sid in &sids {
-                    supplier_emit(*sid, value.clone());
-                }
-                // A `Channel` is a queue, not a broadcast point: rakudo's
-                // `Channel.Supply` is a view onto a `.receive` loop, so taps on
-                // it are COMPETING consumers and each sent value reaches
-                // exactly one of them. This used to hand the value to every tap
-                // of every one of the channel's Supplies, so a program fanning
-                // work out to N workers over one channel did every unit N times
-                // (#7604). A `Supplier` is the genuine broadcaster and never
-                // reaches this path, so it keeps fanning out.
-                //
-                // Only this eager send-time dispatch broadcast: a `whenever` on
-                // a channel-backed Supply already competes correctly, because
-                // the react drive loop drains the channel queue itself.
-                let mut targets: Vec<(u64, usize)> = Vec::new();
-                for sid in &sids {
-                    targets.extend(
-                        supplier_live_tap_indices(*sid)
-                            .into_iter()
-                            .map(|i| (*sid, i)),
-                    );
-                }
-                if !targets.is_empty() {
-                    let (sid, tap_index) = targets[ch.next_supply_turn() % targets.len()];
-                    let actions = supplier_emit_callbacks_for_tap(sid, tap_index, &value);
-                    let _ = self.drive_supplier_emit_actions(sid, actions);
-                }
-                ch.send(value);
+                self.channel_send_value(ch, value);
                 Ok(Value::NIL)
             }
             "receive" => match ch.receive_result() {
@@ -452,52 +436,20 @@ impl Interpreter {
                 Ok(None) => Ok(Value::NIL),
                 Err(_) => Ok(Value::NIL),
             },
+            // Closing (or failing) the channel completes each tap of its
+            // Supplies once the values still queued have been delivered.
             "close" => {
-                use crate::runtime::native_methods::state::supplier_done;
-                use crate::runtime::native_methods::take_supplier_done_callbacks;
-                let sids = ch.supplier_ids();
-                for sid in &sids {
-                    supplier_done(*sid);
-                }
                 ch.close();
-                // `supplier_done` only raises the terminal flag and wakes the
-                // sinks; the `done => { ... }` callbacks a `.tap` registered on
-                // the supplier stay in its pending list, and for a
-                // channel-backed Supply nothing else ever drained them, so
-                // closing the channel delivered every value but never signalled
-                // completion. Run them here, exactly once per tap, the way
-                // `Supplier.done` does for a supplier-backed Supply.
-                for sid in &sids {
-                    for done_cb in take_supplier_done_callbacks(*sid) {
-                        if self.invoke_done_callback_or_quit(done_cb, *sid)? {
-                            break;
-                        }
-                    }
-                }
+                self.pump_channel_taps(ch)?;
                 Ok(Value::NIL)
             }
             "fail" => {
-                use crate::runtime::native_methods::state::supplier_quit;
-                use crate::runtime::native_methods::take_supplier_quit_callbacks;
                 let reason = args
                     .into_iter()
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
-                let reason = Self::as_exception_value(reason);
-                // The same completion edge as `close` above, on the failing
-                // side: a tap's `quit => { ... }` handler is the only thing that
-                // observes `$channel.fail`, so the supplier has to carry the
-                // quit reason and its handlers have to run.
-                let sids = ch.supplier_ids();
-                for sid in &sids {
-                    supplier_quit(*sid, reason.clone());
-                }
-                ch.fail(reason.clone());
-                for sid in &sids {
-                    for quit_cb in take_supplier_quit_callbacks(*sid) {
-                        self.call_supply_quit_handler(quit_cb, reason.clone())?;
-                    }
-                }
+                ch.fail(Self::as_exception_value(reason));
+                self.pump_channel_taps(ch)?;
                 Ok(Value::NIL)
             }
             "list" | "List" | "Array" | "Seq" => {
@@ -521,24 +473,7 @@ impl Interpreter {
             "elems" => Err(RuntimeError::new(
                 "Cannot call '.elems' on a Channel instance".to_string(),
             )),
-            "Supply" => {
-                use crate::runtime::native_methods::state::next_supplier_id;
-                let sid = next_supplier_id();
-                ch.add_supplier(sid);
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("values".to_string(), Value::array(Vec::new()));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("supplier_id".to_string(), Value::int(sid as i64));
-                // The channel itself, so a `whenever` on this Supply PUMPS it
-                // (draining the queue in the react drive loop) instead of
-                // relying on the eager send-time bridge. That is what makes the
-                // backlog visible -- values sent before anything tapped the
-                // channel are still on the queue -- and what keeps a `send`
-                // from counting as an emit before the loop has run.
-                attrs.insert("channel".to_string(), Value::channel(ch.clone()));
-                attrs.insert("live".to_string(), Value::TRUE);
-                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
-            }
+            "Supply" => Ok(Self::make_channel_supply(ch)),
             "Bool" => Ok(Value::TRUE),
             "WHAT" => Ok(Value::package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::str_from("Channel")),

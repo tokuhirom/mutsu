@@ -416,9 +416,17 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                 || c == b'<'
                 || c.is_ascii_alphabetic()
                 || c == b'_'
-        }) && let Ok((r, expr)) = expression(after_pipe)
+        }) && let Ok((r, expr)) = expression(input)
         {
-            return Ok((r, CallArg::Slip(expr)));
+            // `|` is a tight prefix: `ok |$m == (1,2), "d"` slips only `$m`
+            // and compares the result, it does not slip the comparison.
+            return Ok(match expr {
+                Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: inner,
+                } => (r, CallArg::Slip(*inner)),
+                other => (r, CallArg::Positional(other)),
+            });
         }
     }
 
@@ -578,6 +586,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         })?;
                         items.push(first);
                         let mut r = r2;
+                        let mut trailing_comma = false;
                         loop {
                             let (r2, _) = ws(r)?;
                             if r2.starts_with(']') {
@@ -589,13 +598,19 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                                         // `:name[...]` builds a real Array, matching the
                                         // expression-level colonpair form. Use BracketArray
                                         // (not ArrayLiteral) so a single inner list element
-                                        // is flattened (`:args[<1 2>]` -> [1, 2], not [[1,2]]).
-                                        value: Some(Expr::BracketArray(items, false)),
+                                        // is flattened (`:args[<1 2>]` -> [1, 2], not [[1,2]])
+                                        // -- unless a trailing comma keeps it whole.
+                                        value: Some(Expr::BracketArray(items, trailing_comma)),
                                     },
                                 ));
                             }
                             let (r2, _) = parse_char(r2, ',')?;
                             let (r2, _) = ws(r2)?;
+                            if r2.starts_with(']') {
+                                trailing_comma = true;
+                                r = r2;
+                                continue;
+                            }
                             let (r2, next) = expression(r2).map_err(|err| PError {
                                 messages: merge_expected_messages(
                                     "expected list item after ',' in named argument",

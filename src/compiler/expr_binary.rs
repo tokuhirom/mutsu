@@ -25,6 +25,17 @@ impl Compiler {
     /// The chain's root lvalue variable name (`x` / `@a` / `%h`), if the leftmost
     /// operand of an `andthen`/`orelse`/`notandthen` chain is a simple variable.
     // Cost: O(c), c = chain length.
+    /// A `<...>` subscript written with literal words: `<w>` (one string) or
+    /// `<a b>` (a list of them).
+    fn is_literal_angle_key(index: &Expr) -> bool {
+        let is_str =
+            |e: &Expr| matches!(e, Expr::Literal(v) if matches!(v.view(), ValueView::Str(_)));
+        match index {
+            Expr::ArrayLiteral(items) => !items.is_empty() && items.iter().all(is_str),
+            other => is_str(other),
+        }
+    }
+
     fn chain_root_lvalue_name(expr: &Expr) -> Option<String> {
         expr.lvalue_root(LvaluePeel::GROUPED | LvaluePeel::TOPIC_CHAIN)
             .map(LvalueRoot::into_spelled_key)
@@ -168,6 +179,28 @@ impl Compiler {
         {
             retargeted_right = Self::retarget_chain_rhs(right, &root);
             &retargeted_right
+        } else {
+            right
+        };
+        // `X but R<words>` / `X does R<words>` is rakudo's spelling of
+        // `X but R(<words>)`: the mixin operator reads a compile-time type
+        // subscripted with a literal key as the role plus its initial value
+        // (Actions' `mixin_op`), although `R<words>` alone is just `Any`.
+        let role_value_right;
+        let right: &Expr = if matches!(op, TokenKind::Ident(name) if name == "but" || name == "does")
+            && let Expr::Index {
+                target,
+                index,
+                is_positional: false,
+            } = right
+            && let Expr::BareWord(role) = target.as_ref()
+            && Self::is_literal_angle_key(index)
+        {
+            role_value_right = Expr::Call {
+                name: crate::symbol::Symbol::intern(role),
+                args: vec![index.as_ref().clone()],
+            };
+            &role_value_right
         } else {
             right
         };

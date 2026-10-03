@@ -346,6 +346,11 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             .find(|c: char| !is_raku_identifier_continue(c) && c != '-')
             .unwrap_or(after_dot.len());
         let after_ident = &after_dot[ident_end..];
+        if let Some(call) =
+            super::self_call::longname_self_call(after_ident, &after_dot[..ident_end])
+        {
+            return call;
+        }
         if after_ident.starts_with('(')
             || (after_ident.starts_with(':') && !after_ident.starts_with("::"))
         {
@@ -378,18 +383,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // A trailing `::` on a scalar name is accepted before a postfix or a
-    // term boundary (`$pkg::.WHO`, `$pkg::`). It refers to the same scalar;
-    // a following identifier or `(` remains a qualified/symbolic dereference.
-    let rest = if let Some(after) = rest.strip_prefix("::")
-        && (after.is_empty()
-            || after.chars().next().is_some_and(|c| {
-                c.is_whitespace() || matches!(c, '.' | ',' | ';' | ')' | ']' | '}')
-            })) {
-        after
-    } else {
-        rest
-    };
+    let rest = super::ident::skip_trailing_package_sep(rest);
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name

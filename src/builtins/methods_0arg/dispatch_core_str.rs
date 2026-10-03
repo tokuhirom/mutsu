@@ -10,6 +10,10 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(n), n = bytes of the invocant.
+        "naive-word-wrapper" => {
+            Some(crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[]))
+        }
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
         "words" => Some(Some(Ok(crate::value::str_iter_seq(
             target,
@@ -319,6 +323,9 @@ pub(super) fn dispatch(
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
         "join" => {
+            if crate::builtins::is_join_lazy(target) {
+                return Some(Some(Ok(Value::str("...".to_string()))));
+            }
             if matches!(target.view(), ValueView::LazyList(_)) {
                 return Some(None); // fall through to runtime to force
             }

@@ -69,6 +69,25 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Int", mro: ["Int", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Int"),
     row!("Num", mro: ["Num", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Num"),
     row!("Str", mro: ["Str", "Cool", "Any", "Mu"], roles: ["Stringy"], owner: "Str"),
+    // ---- Native types (NativeHOW): each is a subtype of its boxed type, so
+    // `int32 ~~ Int` and `num ~~ Num` hold and the boxed type's methods answer.
+    // raku: `int32.^mro` is `int32, Int, Cool, Any, Mu`; NativeHOW has no `.^roles`.
+    row!("int", mro: ["int", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("int8", mro: ["int8", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("int16", mro: ["int16", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("int32", mro: ["int32", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("int64", mro: ["int64", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("uint", mro: ["uint", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("uint8", mro: ["uint8", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("uint16", mro: ["uint16", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("uint32", mro: ["uint32", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("uint64", mro: ["uint64", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("byte", mro: ["byte", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("atomicint", mro: ["atomicint", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Int"),
+    row!("num", mro: ["num", "Num", "Cool", "Any", "Mu"], roles: [], owner: "Num"),
+    row!("num32", mro: ["num32", "Num", "Cool", "Any", "Mu"], roles: [], owner: "Num"),
+    row!("num64", mro: ["num64", "Num", "Cool", "Any", "Mu"], roles: [], owner: "Num"),
+    row!("str", mro: ["str", "Str", "Cool", "Any", "Mu"], roles: [], owner: "Str"),
     // raku: `Bool is Int` — Numeric/Real are NOT composed directly on Bool.
     row!("Bool", mro: ["Bool", "Int", "Cool", "Any", "Mu"], roles: [], owner: "Bool"),
     row!(

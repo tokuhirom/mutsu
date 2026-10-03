@@ -601,6 +601,8 @@ impl Interpreter {
         // Typed container: reject a wrong-typed swap value before the compare
         // (raku checks it even when the compare fails — roadmap T5).
         self.check_atomic_elem_type(&arr_name, &new_val)?;
+        // The element is a `Scalar`: an aggregate is itemized on the way in.
+        let new_val = Self::itemize_value_for_element_store(new_val);
 
         let atomic_key = atomic_lane_str_key(&arr_name, false);
 

@@ -23,6 +23,15 @@ otherwise `<top>/<first word of the file stem>` (with `vm_` / `builtins_` /
 Usage:
   scripts/interp-field-matrix.py                 # markdown report to stdout
   scripts/interp-field-matrix.py --json OUT.json # also dump the raw matrix
+  scripts/interp-field-matrix.py --check         # the `make checks` ratchet
+  scripts/interp-field-matrix.py --update        # re-cut it after a drop
+  scripts/interp-field-matrix.py --self-test
+
+`--check` is ADR-10779 D4: the number of direct `Interpreter` fields may only
+go down (it is recorded in scripts/interp-fields-baseline.txt), and every field
+must match a `SUBSYSTEMS` rule. New state goes into the subsystem type it
+belongs to instead of onto `Interpreter`. `--check` only parses the struct, so
+it needs no build and takes milliseconds.
 """
 
 import argparse
@@ -50,8 +59,9 @@ def strip_comments(text):
     return re.sub(r"//[^\n]*", "", text)
 
 
-def parse_fields():
-    text = STRUCT_FILE.read_text()
+def parse_fields(text=None):
+    if text is None:
+        text = STRUCT_FILE.read_text()
     m = re.search(r"^pub struct Interpreter \{\n(.*?)^\}", text, re.S | re.M)
     if not m:
         sys.exit("interp-field-matrix: `pub struct Interpreter` not found")
@@ -127,10 +137,95 @@ def trivial_accessors(fields):
 ACCESSOR_MAX_LINES = 6
 
 
+BASELINE = ROOT / "scripts" / "interp-fields-baseline.txt"
+BASELINE_HEADER = """\
+# Direct fields of `struct Interpreter` (src/runtime/mod.rs). ADR-10779 D4:
+# this number may only go down -- new state goes into the subsystem type it
+# belongs to. Checked by `make check-interp-fields`; re-cut after extracting
+# fields with
+#   scripts/interp-field-matrix.py --update
+"""
+
+
+def read_baseline():
+    for line in BASELINE.read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            return int(line.strip())
+    sys.exit(f"interp-field-matrix: no count in {BASELINE}")
+
+
+def check(update):
+    fields = parse_fields()
+    count = len(fields)
+    unclassified = sorted(f for f in fields if subsystem_of(f) == "unclassified")
+    allowed = read_baseline()
+    ok = True
+    if unclassified:
+        ok = False
+        print("check-interp-fields: these Interpreter fields match no SUBSYSTEMS rule in "
+              "scripts/interp-field-matrix.py; put each one in the subsystem it belongs "
+              "to (ADR-10779 D2):\n  " + "\n  ".join(unclassified), file=sys.stderr)
+    if count > allowed:
+        ok = False
+        print(f"check-interp-fields: Interpreter has {count} direct fields, the baseline "
+              f"allows {allowed}. Add the new state to its subsystem's type instead of to "
+              f"Interpreter (ADR-10779 D4).", file=sys.stderr)
+    elif count < allowed:
+        if update:
+            BASELINE.write_text(BASELINE_HEADER + f"{count}\n")
+            print(f"interp-fields baseline re-cut: {count} fields")
+            return 0 if ok else 1
+        ok = False
+        print(f"check-interp-fields: Interpreter fell from {allowed} to {count} direct "
+              f"fields -- re-cut:\n  scripts/interp-field-matrix.py --update", file=sys.stderr)
+    if ok:
+        print(f"check-interp-fields: {count} Interpreter fields (baseline {allowed}), "
+              f"all classified")
+    return 0 if ok else 1
+
+
+def self_test():
+    fixture = """\
+pub struct Interpreter {
+    env: Env,
+    /// a doc comment: not_a_field: X,
+    pub(crate) registry: Arc<RwLock<Registry>>,
+    multi_line:
+        HashMap<String, Vec<(u32, u32)>>,
+    nested: Box<Fn(Foo { inner: u8 }) -> u8>,
+    #[cfg(feature = "jit")]
+    jit_thing: u32,
+}
+"""
+    got = list(parse_fields(fixture))
+    want = ["env", "registry", "multi_line", "nested", "jit_thing"]
+    errors = []
+    if got != want:
+        errors.append(f"parse_fields: expected {want}, got {got}")
+    for field, sub in [("env", "frame"), ("pending_call_arg_sources", "handoff"),
+                       ("fn_resolve_cache", "caches"), ("raku_cycle_guards", "guards"),
+                       ("no_such_field_xyz", "unclassified")]:
+        if subsystem_of(field) != sub:
+            errors.append(f"subsystem_of({field!r}): expected {sub}, got {subsystem_of(field)}")
+    if errors:
+        print("interp-field-matrix: self-test failed:\n  " + "\n  ".join(errors),
+              file=sys.stderr)
+        return 1
+    print("interp-field-matrix: self-test ok")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", help="also write the raw matrix here")
+    ap.add_argument("--check", action="store_true", help="run the field-count ratchet")
+    ap.add_argument("--update", action="store_true", help="re-cut the ratchet baseline")
+    ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    if args.check or args.update:
+        return check(args.update)
 
     fields = parse_fields()
     accessors = trivial_accessors(fields)
@@ -207,7 +302,7 @@ SUBSYSTEMS = [
     ("async", "Supply/react/gather/lazy-pull state", r"^(supply_|react_|pending_react_subscriptions|nested_react_callbacks|active_supply_emitters|pending_promise_whenever_arms|pending_tap_closes|current_react_waker|gather_|lazy_|take_defer_to_op_end|map_grep_last_depth|rw_map_topic_capture|next_invocation_id|invocation_id_block_end)"),
     ("regex", "Regex, grammar and slang state", r"^(grammar_|rx_cursor|walk_cursors|start_invocant|in_regex_code_block|action_made|current_grammar_actions|defined_slang_|slang_declarator_hows)"),
     ("eval", "EVAL/REPL/MAIN and compile-time capture analysis", r"^(pending_eval_|repl_compiler|last_value|pending_supply_|pending_whenever_inherited_owned|last_block_my_declared|main_hidden_from_usage|explicit_run_main|nested_mode|uncaught)"),
-    ("guards", "Recursion/cycle guards for .raku/.gist and friends", r"^(rakuseen_|raku_leaf_)"),
+    ("guards", "Recursion/cycle guards for .raku/.gist and friends", r"^(raku_cycle_guards$|rakuseen_|raku_leaf_)"),
 ]
 
 CORE_MIN_FILES = 30
@@ -400,4 +495,4 @@ def report(rows, accessors):
     print("\n".join(out))
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

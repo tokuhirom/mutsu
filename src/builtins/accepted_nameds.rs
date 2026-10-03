@@ -63,6 +63,7 @@ pub(crate) fn native_method_accepted_nameds(method: &str) -> Option<&'static [&'
         | "unshift" | "values" | "yyyy-mm-dd" => &[],
         "base" => &["no-trailing-zeroes"],
         "minmax" => &["by"],
+        "naive-word-wrapper" => &["indent", "max"],
         "rotor" => &["partial"],
         "classify" | "categorize" => &["as", "into"],
         "classify-list" | "categorize-list" => &["as"],

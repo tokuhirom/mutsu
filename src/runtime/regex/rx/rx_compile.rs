@@ -422,7 +422,18 @@ impl Compiler {
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
                 }
-                self.pattern(p)?;
+                if p.ignore_mark {
+                    // `(:m …)`: the body's ends come from the mark-stripped
+                    // subject, as for `[:m …]` (`GroupEnds`), into the
+                    // capture's own level.
+                    if pattern_contains_code(p) || pattern_contains_backref(p) {
+                        return Err("ignoremark-code");
+                    }
+                    let i = self.push_atom(&RegexAtom::Group(p.clone()));
+                    self.ops.push(RxOp::GroupEnds(i));
+                } else {
+                    self.pattern(p)?;
+                }
                 if let Some(h) = height {
                     self.ops.push(RxOp::Cut(h));
                 }
@@ -563,7 +574,17 @@ impl Compiler {
             }
             RegexAtom::GoalMatch { goal, inner, .. } => self.goal_match(token, goal, inner)?,
             RegexAtom::TildeMarker => return Err("goal-match"),
-            RegexAtom::RecurseSelf(_) => return Err("recurse-self"),
+            RegexAtom::RecurseSelf(_) => {
+                // `<~~>`: the enclosing regex's first end at the cursor, its
+                // captures discarded, guarded against re-entry at the same
+                // position (`regex_match_recurse_self`). That leaf matches the
+                // regex through `regex_match_end_from_caps_in_pkg`, which
+                // answers from its compiled program, so no walk is entered.
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+                // The recursion runs the whole regex, code included.
+                self.has_code = true;
+            }
             _ => return Err("other-atom"),
         }
         Ok(())

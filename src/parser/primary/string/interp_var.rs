@@ -62,9 +62,24 @@ fn split_interp_var_name(var_rest: &str) -> Option<(&str, &str)> {
         return None;
     };
     let body = &var_rest[twigil_len..];
-    let end = body
-        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-        .unwrap_or(body.len());
+    // An identifier may contain `-` only between two word parts
+    // (`$foo-bar`): `"%PDF-{$v}"` is the literal `%PDF-` followed by
+    // a block, not a hash named `PDF-`, and `"$x-1"` is `$x` then `-1`.
+    let mut end = 0;
+    let mut chars = body.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c.is_alphanumeric() || c == '_' {
+            end = i + c.len_utf8();
+        } else if c == '-'
+            && chars
+                .peek()
+                .is_some_and(|&(_, n)| n.is_alphabetic() || n == '_')
+        {
+            continue;
+        } else {
+            break;
+        }
+    }
     let total = twigil_len + end;
     Some((&var_rest[..total], &var_rest[total..]))
 }

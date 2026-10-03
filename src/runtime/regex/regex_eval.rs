@@ -79,9 +79,10 @@ impl Interpreter {
         let visible_caps = caps.inline_capture_view();
         let live_target = super::regex_helpers::current_match_target()
             .unwrap_or_else(|| MatchTarget::new(matched_so_far));
+        let (cursor_from, cursor_to) = visible_caps.inline_cursor_bounds(matched_so_far);
         let cursor = Value::make_match_object_full(
-            visible_caps.match_from as i64,
-            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            cursor_from,
+            cursor_to,
             &visible_caps.positional,
             &visible_caps.named,
             live_target,
@@ -247,9 +248,10 @@ impl Interpreter {
         // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
+        let (cursor_from, cursor_to) = visible_caps.inline_cursor_bounds(matched_so_far);
         let cursor = Value::make_match_object_full(
-            visible_caps.match_from as i64,
-            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            cursor_from,
+            cursor_to,
             &visible_caps.positional,
             &visible_caps.named,
             live_target.clone(),
@@ -544,9 +546,10 @@ impl Interpreter {
                 Value::named_slot_value(slot, &live_target),
             ));
         }
+        let (cursor_from, cursor_to) = visible_caps.inline_cursor_bounds(&matched_so_far);
         let cursor = Value::make_match_object_full(
-            visible_caps.match_from as i64,
-            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            cursor_from,
+            cursor_to,
             &visible_caps.positional,
             &visible_caps.named,
             live_target.clone(),

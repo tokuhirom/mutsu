@@ -145,12 +145,24 @@ impl Interpreter {
         // The source and target own different holder words over this one cell:
         // the aggregate source remains plain, while the scalar target is an
         // itemized holder. Keeping the flavour on the word is what preserves
-        // `%h.raku` while making `$hi.raku` render `${...}`.
-        let container = Value::container_ref(cell.clone());
+        // `%h.raku` while making `$hi.raku` render `${...}`. A chained share
+        // (`$r = $q`) re-installs the source `$q`'s own word, so it keeps the
+        // flavour `$q` already had instead of being demoted to plain.
+        let source_idx = code.locals.iter().rposition(|n| n == resolved_source);
+        let source_itemized = val.container_ref_is_itemized()
+            || self
+                .env()
+                .get(resolved_source)
+                .is_some_and(Value::container_ref_is_itemized);
+        let container = if source_itemized {
+            Value::container_ref_itemized(cell.clone())
+        } else {
+            Value::container_ref(cell.clone())
+        };
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
         // via the scalar.
-        if let Some(source_idx) = code.locals.iter().rposition(|n| n == resolved_source) {
+        if let Some(source_idx) = source_idx {
             self.locals[source_idx] = container.clone();
             self.flush_local_to_env(code, source_idx);
         }

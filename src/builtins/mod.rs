@@ -24,6 +24,7 @@ pub(crate) mod math_prim;
 pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;
+pub(crate) mod naive_word_wrapper;
 pub(crate) mod native_method_row;
 #[cfg(test)]
 #[path = "native_method_row_rakudo_oracle.rs"]
@@ -108,6 +109,7 @@ pub(crate) use arith::{
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::epoch_nanos;
+pub(crate) use functions::is_join_lazy;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;

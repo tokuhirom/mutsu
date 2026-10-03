@@ -672,7 +672,123 @@ impl Interpreter {
         // not resolve is a genuine typo, not a type some `use`d module
         // just hadn't supplied yet.
         self.revalidate_pending_role_param_type_checks(&role.pending_param_type_checks)?;
+        // A forward-reference shell composes before the declarations that
+        // follow the first runtime statement (a trait handler's own `my role`
+        // among them) have registered; the in-place declaration composes for
+        // real.
+        if cx.is_hoisted_shell != super::registration_class::HoistedShell::Forward {
+            self.apply_pending_role_attribute_traits(base_role_name)?;
+            self.copy_role_attribute_trait_objects(cx, base_role_name, &role);
+        }
         self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
         Ok(())
+    }
+}
+
+/// A copy of a role attribute's meta-object owned by the composing class
+/// `owner` (`.package` reports the class, as in Rakudo), keeping the trait's
+/// mixins and the values they hold.
+// Cost: O(k), k = keys on the attribute object.
+fn rehome_attribute_object(obj: &Value, owner: &str) -> Value {
+    match obj.view() {
+        ValueView::Mixin(inner, overrides) => Value::mixin_parts(
+            std::sync::Arc::new(rehome_attribute_object(inner, owner)),
+            overrides.clone(),
+        ),
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } => {
+            let mut map = attributes.as_map().clone();
+            map.insert("__mutsu_attr_owner", Value::str(owner.to_string()));
+            Value::make_instance(class_name, map)
+        }
+        _ => obj.clone(),
+    }
+}
+
+impl Interpreter {
+    /// Run the custom attribute traits `record_role_attribute_traits` stashed
+    /// for `role_name` and its ancestor roles, now that a composition has run
+    /// the role body's `use` statements and the trait handlers are callable.
+    /// Each runs once per role (the stash entry is consumed); the resulting
+    /// meta-object is stored under (role, attr).
+    ///
+    /// Cost: O(r * p), r = the role and its ancestors, p = pending entries.
+    fn apply_pending_role_attribute_traits(&mut self, role_name: &str) -> Result<(), RuntimeError> {
+        if self.registry().role_attribute_pending_traits.is_empty() {
+            return Ok(());
+        }
+        let mut roles = vec![role_name.to_string()];
+        roles.extend(self.role_ancestor_names(role_name));
+        for role in roles {
+            let pending: Vec<(String, crate::opcode::CompiledAttrDecl)> = self
+                .registry()
+                .role_attribute_pending_traits
+                .iter()
+                .filter(|((r, _), _)| *r == role)
+                .map(|((_, attr), decl)| (attr.clone(), decl.clone()))
+                .collect();
+            for (attr, decl) in pending {
+                self.registry_mut()
+                    .role_attribute_pending_traits
+                    .remove(&(role.clone(), attr.clone()));
+                let saved_package = self.current_package();
+                self.set_current_package(role.clone());
+                // A role has no composed class of its own: its attributes'
+                // `compose` hooks fire per consuming class (`run_class_body`).
+                let mut role_level_composes = Vec::new();
+                let applied =
+                    self.apply_attribute_traits(&decl, &attr, &role, &mut role_level_composes);
+                self.set_current_package(saved_package);
+                applied?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Give the composing class its own copy of each composed role
+    /// attribute's trait-mutated meta-object (`has $.x is entry` →
+    /// `$att does COSDictAttrHOW`), as Rakudo instantiates the role's
+    /// attribute into the class; its `compose` hook is fired by
+    /// `run_class_body`.
+    ///
+    /// Cost: O(a * r), a = the role's attributes, r = the role and its ancestors.
+    fn copy_role_attribute_trait_objects(
+        &mut self,
+        cx: &mut RoleCompositionCx<'_>,
+        role_name: &str,
+        role: &RoleDef,
+    ) {
+        let mut owners = vec![role_name.to_string()];
+        owners.extend(self.role_ancestor_names(role_name));
+        for attr in &role.attributes {
+            let key = (cx.name.to_string(), attr.name.clone());
+            if self
+                .registry()
+                .class_attribute_trait_objects
+                .contains_key(&key)
+            {
+                continue;
+            }
+            let declared = attr
+                .declaring_package
+                .map(|p| p.resolve())
+                .into_iter()
+                .chain(owners.iter().cloned());
+            let found = declared.into_iter().find_map(|owner| {
+                self.registry()
+                    .class_attribute_trait_objects
+                    .get(&(owner, attr.name.clone()))
+                    .cloned()
+            });
+            if let Some(obj) = found {
+                let rehomed = rehome_attribute_object(&obj, cx.name);
+                self.registry_mut()
+                    .class_attribute_trait_objects
+                    .insert(key, rehomed);
+            }
+        }
     }
 }

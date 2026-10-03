@@ -224,13 +224,12 @@ impl Interpreter {
         crate::runtime::regex::regex_qq_token_scope::note_token_def_qq_thunks(&def.body);
         let def = std::sync::Arc::new(def);
         if multi {
-            self.registry_mut()
-                .token_defs
+            std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
                 .entry(key)
                 .or_default()
                 .push(def);
         } else {
-            self.registry_mut().token_defs.insert(key, vec![def]);
+            std::sync::Arc::make_mut(&mut self.registry_mut().token_defs).insert(key, vec![def]);
         }
         // Regex parses may fold token bodies in (parse_combined_class); a new /
         // redefined token must invalidate those cached parses.
@@ -244,7 +243,10 @@ impl Interpreter {
     /// `PARSED_TOKEN_CANDIDATES`, `REGEX_PARSE_CACHE`, the call-graph tables).
     /// The declaration itself bumped the generation on the way in; the removal
     /// has to bump it on the way out for the same reason.
-    pub(crate) fn restore_token_defs(&mut self, saved: crate::runtime::registry::TokenDefsMap) {
+    pub(crate) fn restore_token_defs(
+        &mut self,
+        saved: std::sync::Arc<crate::runtime::registry::TokenDefsMap>,
+    ) {
         self.registry_mut().token_defs = saved;
         crate::runtime::regex_parse::TOKEN_DEFS_GEN
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

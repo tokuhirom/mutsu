@@ -1624,7 +1624,21 @@ impl Interpreter {
                     if self.vardecl_context().get() {
                         self.unmark_readonly_sym(name_sym);
                     } else {
-                        self.check_readonly_for_modify_sym(&name, name_sym)?;
+                        // The binding a free-variable store resolves to answers
+                        // first, as in `CheckReadOnly` (ADR-11142, #11165).
+                        let decision = if crate::value::readonly_binding_cells_possible() {
+                            self.free_var_binding_decision(code, &name, name_sym)
+                        } else {
+                            None
+                        };
+                        match decision {
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
+                                kind,
+                                bound,
+                            )) => return Err(Self::readonly_binding_error(kind, &bound)),
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Writable) => {}
+                            None => self.check_readonly_for_modify_sym(&name, name_sym)?,
+                        }
                     }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant
@@ -6458,7 +6472,7 @@ impl Interpreter {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
 
-            // Cost: O(b + w + d + R) plus the body, b = ops in the block, w = names it wrote by name, d = names it declared, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared; O(R) more on exit when the block declared a routine, R = registry, and O(L) for the sigilless-alias sync once one exists (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockScope {
                 pre_end,
                 enter_end,
@@ -6486,7 +6500,7 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(b + w + d) plus the body, b = ops in the branch, w = names it wrote by name, d = names it declared (see exec_block_local_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared (see exec_block_local_scope_op).
             OpCode::BlockLocalScope {
                 body_end,
                 succeed_boundary,
@@ -7106,9 +7120,16 @@ impl Interpreter {
                     )
                 });
                 if !writable {
+                    let name = name_sym.resolve();
                     self.env_mut().insert_sym_noting(
-                        crate::runtime::sigilless_readonly_key(&name_sym.resolve()),
+                        crate::runtime::sigilless_readonly_key(&name),
                         Value::TRUE,
+                    );
+                    // A writer in another frame asks the binding (#11165).
+                    self.record_readonly_on_own_binding(
+                        code,
+                        &name,
+                        crate::ast::ReadonlyKind::ImmutableValue,
                     );
                 }
                 *ip += 1;
@@ -7117,6 +7138,7 @@ impl Interpreter {
             OpCode::MarkVarReadonly(name_idx, kind) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.mark_readonly_with(&name, *kind);
+                self.record_readonly_on_own_binding(code, &name, *kind);
                 *ip += 1;
             }
 

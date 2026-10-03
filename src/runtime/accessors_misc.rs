@@ -55,12 +55,12 @@ impl Interpreter {
             std::sync::Arc::clone(&registry.functions),
             std::sync::Arc::clone(&registry.proto_functions),
             registry.proto_subs_snapshot(),
-            registry.token_defs.clone(),
-            registry.proto_tokens.clone(),
-            registry.our_scoped_functions.keys().copied().collect(),
-            self.user_declared_infix_ops.clone(),
-            self.imported_routine_aliases.clone(),
-            self.imported_exported_proto_tags.clone(),
+            std::sync::Arc::clone(&registry.token_defs),
+            std::sync::Arc::clone(&registry.proto_tokens),
+            std::sync::Arc::clone(&registry.our_scoped_functions),
+            std::sync::Arc::clone(&self.user_declared_infix_ops),
+            std::sync::Arc::clone(&self.imported_routine_aliases),
+            std::sync::Arc::clone(&self.imported_exported_proto_tags),
         )
     }
 
@@ -72,7 +72,43 @@ impl Interpreter {
         self.restore_routine_registry_impl(snapshot, true);
     }
 
+    /// Whether every table `snapshot` holds is still the very `Arc` installed
+    /// now. Each table is copy-on-write and the snapshot keeps a second handle
+    /// to it, so any write since the snapshot replaced that table's `Arc`
+    /// (`Arc::make_mut` clones a shared one): pointer identity of all nine
+    /// means nothing the restore would put back has changed.
+    // Cost: O(1).
+    fn routine_registry_unchanged_since(&self, snapshot: &RoutineRegistrySnapshot) -> bool {
+        use std::sync::Arc;
+        let registry = self.registry();
+        Arc::ptr_eq(&snapshot.0, &registry.functions)
+            && Arc::ptr_eq(&snapshot.1, &registry.proto_functions)
+            && Arc::ptr_eq(&snapshot.2, &registry.proto_subs_snapshot())
+            && Arc::ptr_eq(&snapshot.3, &registry.token_defs)
+            && Arc::ptr_eq(&snapshot.4, &registry.proto_tokens)
+            && Arc::ptr_eq(&snapshot.5, &registry.our_scoped_functions)
+            && Arc::ptr_eq(&snapshot.6, &self.user_declared_infix_ops)
+            && Arc::ptr_eq(&snapshot.7, &self.imported_routine_aliases)
+            && Arc::ptr_eq(&snapshot.8, &self.imported_exported_proto_tags)
+    }
+
+    // Cost: O(1) when the scope changed none of the snapshotted tables (the
+    // common bare block, which declares no routine); otherwise O(R), R =
+    // routine-registry entries (our-scoped subs, tokens, and the function-table
+    // diff when the transition memo cannot name the installed keys).
     fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
+        // Nothing to put back: skip the diff and, above all, the token/method
+        // generation bumps below, which would otherwise retire every
+        // generation-keyed method cache on each exit of a block that declared
+        // nothing (#9170).
+        if self.routine_registry_unchanged_since(&snapshot) {
+            return;
+        }
+        let tokens_unchanged = {
+            let registry = self.registry();
+            std::sync::Arc::ptr_eq(&snapshot.3, &registry.token_defs)
+                && std::sync::Arc::ptr_eq(&snapshot.4, &registry.proto_tokens)
+        };
         let (
             mut functions,
             proto_functions,
@@ -106,7 +142,7 @@ impl Interpreter {
         // (read->write on the same lock would deadlock).
         {
             let registry = self.registry();
-            for (key, def) in &registry.our_scoped_functions {
+            for (key, def) in registry.our_scoped_functions.iter() {
                 if functions.contains_key(key) {
                     continue;
                 }
@@ -121,7 +157,7 @@ impl Interpreter {
                 // covers nested `package Foo { our sub bar {} }` blocks. Subs from
                 // module loading (`use Foo`) are typically already in the snapshot
                 // by the time the block is restored, so they are not preserved here.
-                if !our_scoped_keys.contains(key) {
+                if !our_scoped_keys.contains_key(key) {
                     new_our.push((*key, def.clone()));
                 }
             }
@@ -149,13 +185,15 @@ impl Interpreter {
         // preserved here and still drops with the block, as before.
         let mut new_tokens: Vec<(Symbol, Vec<std::sync::Arc<FunctionDef>>)> = Vec::new();
         let mut new_proto_tokens: Vec<String> = Vec::new();
-        {
+        // Both loops look for keys absent from the snapshot, so an untouched
+        // token table (the snapshot's own `Arc`) has none to find.
+        if !tokens_unchanged {
             let registry = self.registry();
             let token_owned_by_package = |defs: &[std::sync::Arc<FunctionDef>]| {
                 defs.iter()
                     .any(|d| registry.classes.contains_key(&d.package.resolve()))
             };
-            for (key, defs) in &registry.token_defs {
+            for (key, defs) in registry.token_defs.iter() {
                 if token_defs.contains_key(key) {
                     continue;
                 }
@@ -163,7 +201,7 @@ impl Interpreter {
                     new_tokens.push((*key, defs.clone()));
                 }
             }
-            for pt in &registry.proto_tokens {
+            for pt in registry.proto_tokens.iter() {
                 if proto_tokens.contains(pt) {
                     continue;
                 }
@@ -254,15 +292,18 @@ impl Interpreter {
         registry.proto_subs_restore(proto_subs);
         registry.proto_tokens = proto_tokens;
         for (key, defs) in new_tokens {
-            registry.token_defs.insert(key, defs);
+            std::sync::Arc::make_mut(&mut registry.token_defs).insert(key, defs);
         }
         for pt in new_proto_tokens {
-            registry.proto_tokens.insert(pt);
+            std::sync::Arc::make_mut(&mut registry.proto_tokens).insert(pt);
         }
         // token_defs was rewritten wholesale: invalidate regex parses that may
-        // have folded token content in.
-        crate::runtime::regex_parse::TOKEN_DEFS_GEN
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // have folded token content in. Putting back the table that is still
+        // installed rewrites nothing.
+        if !tokens_unchanged {
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         // token_defs holds grammar token/rule bodies, which are methods (ADR-0019
         // Phase E). Bump the canonical method generation unconditionally, exactly
         // as unconditionally as the TOKEN_DEFS_GEN bump above, so every

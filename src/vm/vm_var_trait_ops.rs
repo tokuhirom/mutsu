@@ -266,15 +266,31 @@ impl Interpreter {
                 // variable readonly; otherwise `.^name`/`.raku` still report
                 // Array even though List's immutability is enforced.
                 let name_str = name.to_string();
+                // `List.STORE` keeps the initializer's elements as they are:
+                // `my @l is List = 1, @a, %h` holds `@a` and `%h` themselves,
+                // not the Scalar-wrapped copies the Array assignment in
+                // `SetLocal` made of them. Build from the raw RHS that
+                // `StashVarDeclInit` captured when it is a list.
+                let raw_list = stashed_init.as_ref().and_then(|raw| match raw.view() {
+                    ValueView::Array(items, _) => Some(Value::array(items.to_vec())),
+                    _ => None,
+                });
                 if let Some(current) = self.read_var_trait_target(code, eff_slot, &name_str)
                     && let ValueView::Array(items, _) = current.view()
                 {
-                    let list = Value::array_with_kind(items.clone(), crate::value::ArrayKind::List);
+                    let list = raw_list.unwrap_or_else(|| {
+                        Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
+                    });
                     if !self.write_var_trait_target(code, eff_slot, &name_str, list.clone()) {
                         self.set_env_with_main_alias(&name_str, list);
                     }
                 }
                 self.mark_readonly_with(name, crate::ast::ReadonlyKind::ImmutableValue);
+                self.record_readonly_on_own_binding(
+                    code,
+                    name,
+                    crate::ast::ReadonlyKind::ImmutableValue,
+                );
                 return Ok(());
             }
             let is_buf_trait = matches!(
@@ -375,6 +391,11 @@ impl Interpreter {
             }
             // Mark the variable read-only to prevent mutation
             self.mark_readonly_with(&name_str, crate::ast::ReadonlyKind::ImmutableValue);
+            self.record_readonly_on_own_binding(
+                code,
+                &name_str,
+                crate::ast::ReadonlyKind::ImmutableValue,
+            );
             return Ok(());
         }
 
@@ -1027,6 +1048,27 @@ impl Interpreter {
     /// See the call site in [`Self::exec_apply_var_trait_op`] for why this is
     /// deliberately narrow.
     fn trait_name_through_constant_alias(&mut self, trait_name: &str) -> Option<String> {
+        // A curried role spelled in the trait (`my @a is Rake[Int,Str]`) ties
+        // the variable to the role's pun, the class `Rake[Int,Str].new`
+        // constructs through. Only plain type-name arguments are resolved here.
+        // Checked before the registered-name early return: the concretization
+        // itself can already be registered as a role under this very name.
+        if let Some((base, args)) = Self::parse_parametric_type_name(trait_name)
+            && (self.registry().roles.contains_key(&base)
+                || self.registry().role_candidates.contains_key(&base))
+            && args
+                .iter()
+                .all(|a| Self::is_builtin_type(a) || self.has_type(a))
+        {
+            let type_args: Vec<Value> = args
+                .iter()
+                .map(|a| Value::package(crate::symbol::Symbol::intern(a)))
+                .collect();
+            return self
+                .ensure_parametric_role_pun_class(&base, &type_args)
+                .ok()
+                .flatten();
+        }
         if self.registry().classes.contains_key(trait_name)
             || self.registry().roles.contains_key(trait_name)
         {
@@ -1036,6 +1078,17 @@ impl Interpreter {
         let bound = self
             .term_binding(trait_name)
             .or_else(|| self.get_env_with_main_alias(trait_name))?;
+        // `constant RIS = Rake[Int,Str]; my @a is RIS` — the same pun.
+        if let ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } = bound.view()
+        {
+            return self
+                .ensure_parametric_role_pun_class(&base_name.resolve(), type_args)
+                .ok()
+                .flatten();
+        }
         let ValueView::Package(p) = bound.view() else {
             return None;
         };

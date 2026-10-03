@@ -11,6 +11,7 @@ use super::super::add_parse_warning;
 use super::{block_inner, ident, keyword, parse_raku_ident, routine_block};
 
 mod op_name;
+mod outer_slurpy;
 mod param_list;
 mod param_validate;
 mod return_type;
@@ -21,6 +22,7 @@ mod traits;
 // --- Re-exports preserving each function's original visibility. ---
 
 // Signature/parameter validation (param_validate.rs).
+pub(crate) use outer_slurpy::enter_routine_body;
 pub(crate) use param_validate::{is_builtin_param_trait, placeholder_overrides_signature_error};
 pub(super) use param_validate::{
     literal_value_from_expr, validate_param_trait, validate_param_trait_pub,
@@ -49,6 +51,10 @@ pub(crate) use traits::{
 
 // Parameter list parsing (param_list.rs, return_type.rs).
 pub(super) use param_list::parse_param_list;
+pub(super) use param_list::{
+    any_callable_param, any_sigilless, has_type_capture, register_body_type_captures,
+    register_callable_param_terms, register_sigilless_terms,
+};
 pub(crate) use param_list::{check_duplicate_params, invalid_param_smiley_error};
 pub(super) use return_type::{
     parse_param_list_with_return, parse_return_type_annotation, skip_return_type_annotation,

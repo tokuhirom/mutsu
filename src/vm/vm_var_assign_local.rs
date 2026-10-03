@@ -35,7 +35,7 @@ impl Interpreter {
                         !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
                     }
                 {
-                    self.array_share_assign(code, idx, val.clone(), src)?;
+                    self.array_share_assign(code, idx, val.clone(), src, false)?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -386,11 +386,17 @@ impl Interpreter {
         // detaching the alias. Mirrors the statement-form `SetLocal` path and
         // the simple-local fast path above. A `=`-array-shared scalar reassigned
         // as a whole still REPLACES the slot (raku value semantics).
+        let mut replaces_value_share = false;
         if let ValueView::ContainerRef(arc) = self.locals[idx].view() {
             // Restrict to scalar (sigilless `\target` / `$`) names: `@`/`%` vars
             // keep their existing whole-reassignment semantics here.
             let scalar = !name.starts_with('@') && !name.starts_with('%');
-            if scalar && !self.is_value_share_slot(name, Some(&self.locals[idx])) {
+            if scalar && self.is_value_share_slot(name, Some(&self.locals[idx])) {
+                // The share ends here: drop the marker, as the statement-form
+                // `SetLocal` does, so the env mirror below is replaced too.
+                self.clear_array_share_marker(name);
+                replaces_value_share = true;
+            } else if scalar {
                 let arc = arc.clone();
                 self.check_container_cell_constraint(&arc, &val)?;
                 Value::store_through_cell(&arc, &val);
@@ -433,6 +439,12 @@ impl Interpreter {
             }
         }
         self.locals[idx] = val.clone();
+        if replaces_value_share {
+            // The env entry is the SHARED cell; a by-name write would store
+            // through it into the source (`my $x = %h; ($x, $y) = 7, 8`
+            // clobbered `%h`). Replace the entry outright instead.
+            self.env_mut().insert(name.to_string(), val.clone());
+        }
         self.set_env_with_main_alias(name, val.clone());
         if crate::env::closure_meta_keys_possible()
             && let Some(alias_name) = code

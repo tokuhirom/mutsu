@@ -486,6 +486,13 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             };
             if parent == "hidden" {
                 is_hidden = true;
+            } else if parent == "unsigned" {
+                // `is unsigned`, like `is ctype<...>`, is a NativeHOW trait,
+                // not a parent (`native ulong is Int is unsigned { }`).
+                custom_traits.push((parent.clone(), None));
+                let (r2, _) = ws(r2)?;
+                r = r2;
+                continue;
             } else if parent == "rw" {
                 class_is_rw = true;
             } else if parent == "repr" {

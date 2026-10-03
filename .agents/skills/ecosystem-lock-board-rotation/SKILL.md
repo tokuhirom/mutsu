@@ -13,7 +13,8 @@ Once the log is too large for one `get_comments` call, agents start locking from
 and the board stops doing its job. Rotation moves the board to a fresh issue that holds only the
 locks still live.
 
-History so far: #7884 → #8977 (2026-09-21, 318 comments) → #10045 (2026-09-28, 301 comments).
+History so far: #7884 → #8977 (2026-09-21, 318 comments) → #10045 (2026-09-28, 301 comments) →
+#11256 (2026-10-03, 269 comments).
 Each rotation took about a week of traffic.
 
 ## When to rotate

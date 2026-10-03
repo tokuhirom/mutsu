@@ -88,3 +88,9 @@ target-local/
 /test-file
 /testfile
 __pycache__/
+
+# Local secrets (the dev box keeps a GH_TOKEN in .env; docs/agent-environments.md).
+# Never commit them.
+.env
+.env.*
+!.env.example

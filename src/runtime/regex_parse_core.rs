@@ -540,6 +540,22 @@ fn try_consume_quantifier(
     Some((quant, frugal))
 }
 
+/// The quantifier an aliased atom carries: its own, or — for the whole-span
+/// wrapper a sigil alias puts around a quantified atom (`$<x>=\w+`) — the
+/// wrapped inner token's.
+// Cost: O(1).
+fn quant_of_alias_token(token: Option<&RegexToken>) -> RegexQuant {
+    let Some(token) = token else {
+        return RegexQuant::One;
+    };
+    match (&token.atom, &token.quant) {
+        (RegexAtom::Group(inner), RegexQuant::One) if inner.tokens.len() == 1 => {
+            inner.tokens[0].quant.clone()
+        }
+        (_, quant) => quant.clone(),
+    }
+}
+
 /// Split an inner `!` negation off a Unicode-property assertion body:
 /// `<?:!Letter>` is the positive assertion of the *negated* property, and
 /// `<!:!Letter>` negates that again ("there is a character here and it IS a
@@ -2762,11 +2778,14 @@ impl Interpreter {
                     '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}' => {
                         // Quoted literal string in Raku regex: 'foo-bar' matches literally
                         // In single-quoted regex strings, \\ matches a literal backslash
-                        // and \' matches a literal single quote.
+                        // and \' matches a literal single quote. A corner-bracket
+                        // `｢...｣` is the raw form (Q): it has no escapes at all, so
+                        // `｢\\｣` matches two backslashes.
+                        let raw = c == '\u{FF62}';
                         let mut literal = String::new();
                         loop {
                             match chars.next() {
-                                Some('\\') => match chars.peek() {
+                                Some('\\') if !raw => match chars.peek() {
                                     Some(&next_ch)
                                         if next_ch == '\\'
                                             || regex_single_quote_closes(c, next_ch) =>
@@ -3722,18 +3741,15 @@ impl Interpreter {
                                     {
                                         // <:!PropName> or <-:PropName> — negated Unicode property
                                         let prop_name = &trimmed[2..];
-                                        if top_level_combine_is_subtractive(prop_name) {
-                                            // `<-:C-[:;,"]>` — a negated property followed by a
-                                            // top-level `-[...]`/`-name` set *subtraction*. The
+                                        if has_top_level_combine_op(prop_name) {
+                                            // `<-:C-[:;,"]>` / `<-:Cc +[\t]>` — a negated
+                                            // property followed by top-level set operators. The
                                             // whole class starts from the full character set
                                             // (leading `-`), so route it to the combined-class
-                                            // parser as a leading *negative* item (`-:C-[:;,"]`);
-                                            // its purely-subtractive terms fold into a single
-                                            // negated char class. Both `:!P` and `-:P` normalise
-                                            // to the `-:P` form. (A tail containing a top-level
-                                            // `+` union is left to the plain-property path: the
-                                            // combined-class parser's positive-item semantics do
-                                            // not match Raku's full-set base there.)
+                                            // parser as a leading *negative* item: subtractions
+                                            // fold into a single negated char class, and a `+`
+                                            // union joins the complement (`union_with_negated_lead`).
+                                            // Both `:!P` and `-:P` normalise to the `-:P` form.
                                             if let Some(atom) = self.parse_combined_class(
                                                 &format!("-:{prop_name}"),
                                                 mode,
@@ -5090,6 +5106,51 @@ impl Interpreter {
             }
             if ws_after_quant {
                 tokens.push(sigspace_ws_token(ratchet));
+            }
+            // A sigil alias binds one *quantified* atom (Rakudo's
+            // `$<name>=<quantified_atom>`), so a second quantifier after an
+            // already-quantified aliased atom quantifies the whole alias:
+            // `$<w>=.*? +%% X` is `[$<w>=.*?]+ %% X`, and `$<w>` is a List
+            // with one Match per iteration (CSS::Writer's README splitter).
+            if primary_is_user_alias
+                && !user_alias_is_angle
+                && !matches!(quant_of_alias_token(tokens.last()), RegexQuant::One)
+                && let Some((outer_quant, outer_frugal)) = try_consume_quantifier(&mut chars)
+            {
+                let SeparatorParse {
+                    separator,
+                    ws_after_quant,
+                } = self.consume_repeat_separator(
+                    &mut chars,
+                    &outer_quant,
+                    mode,
+                    sigspace,
+                    ratchet,
+                );
+                let aliased = tokens.pop().expect("aliased token was just pushed");
+                tokens.push(RegexToken {
+                    atom: RegexAtom::Group(RegexPattern {
+                        tokens: vec![aliased],
+                        anchor_start: false,
+                        anchor_end: false,
+                        ignore_case,
+                        ignore_mark,
+                        derived: Default::default(),
+                    }),
+                    quant: outer_quant,
+                    named_capture: None,
+                    hash_capture: None,
+                    secondary_named_capture: None,
+                    force_list_capture: false,
+                    ratchet,
+                    frugal: outer_frugal,
+                    separator,
+                    from_runtime_interpolation: false,
+                    subrule_call_capture: false,
+                });
+                if ws_after_quant {
+                    tokens.push(sigspace_ws_token(ratchet));
+                }
             }
         }
         let tokens = merge_grapheme_literal_tokens(tokens);
