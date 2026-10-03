@@ -5,6 +5,11 @@
 
 use super::*;
 
+/// `private_resolve_cache`'s key: (receiver class, `!name`, argument type keys).
+pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
+/// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
+pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     /// One-entry memo of the last closure-capture env, so a closure literal
@@ -295,9 +300,7 @@ pub(crate) struct ResolutionCaches {
     /// (`private_type_cacheable`), so the winner is a function of the key.
     /// Cleared with the other method caches (generation bump) and by
     /// `clear_private_zeroarg_method_cache`.
-    #[allow(clippy::type_complexity)]
-    pub(crate) private_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<(Symbol, Arc<MethodDef>)>>,
+    pub(crate) private_resolve_cache: rustc_hash::FxHashMap<PrivateResolveKey, PrivateResolved>,
     /// Memoized `(class, "!name") -> may private_resolve_cache serve it`.
     pub(crate) private_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized `(native type name, method) -> does a user `augment` declare this

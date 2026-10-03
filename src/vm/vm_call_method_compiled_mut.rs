@@ -18,11 +18,11 @@ impl Interpreter {
         if std::mem::take(&mut self.caches.plain_method_lane_active) {
             // A private call's lane was installed by its own dispatch arm
             // below, not by the tail; replay that arm.
-            if method_sym.as_str().starts_with('!') {
-                match self.try_private_compiled_mut_dispatch(&target, method_sym, args) {
-                    Ok(result) => return result,
-                    Err(declined) => args = declined,
-                }
+            if method_sym.as_str().starts_with('!')
+                && let Some(result) =
+                    self.try_private_compiled_mut_dispatch(&target, method_sym, &mut args)
+            {
+                return result;
             }
             return self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args);
         }
@@ -382,30 +382,29 @@ impl Interpreter {
             crate::vm::vm_stats::record_method_fallback(method);
             return loan_env!(self, call_method_with_values(how, meta_method, how_args));
         }
-        if method.starts_with('!') {
-            match self.try_private_compiled_mut_dispatch(&target, method_sym, args) {
-                Ok(result) => return result,
-                Err(declined) => args = declined,
-            }
+        if method.starts_with('!')
+            && let Some(result) =
+                self.try_private_compiled_mut_dispatch(&target, method_sym, &mut args)
+        {
+            return result;
         }
         self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args)
     }
 
     /// `$obj!name(...)`: resolve the private candidate and run its compiled
-    /// body when the calling context may dispatch it directly. `Err(args)`
-    /// hands the arguments back when it declines, for the general tail.
+    /// body when the calling context may dispatch it directly. `None` leaves
+    /// `args` untouched for the general tail when it declines.
     ///
     /// Shared by the full path and the plain-method lane's replay of a private
     /// call (see `vm_call_method_plain_lane`), which also installs the lane
     /// from here: like the user-method tail, reaching a compiled private body
     /// proves every probe ahead of it declined.
-    #[allow(clippy::result_large_err)]
     pub(super) fn try_private_compiled_mut_dispatch(
         &mut self,
         target: &Value,
         method_sym: crate::symbol::Symbol,
-        args: Vec<Value>,
-    ) -> Result<Result<Value, RuntimeError>, Vec<Value>> {
+        args: &mut Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
         let method = method_sym.as_str();
         let class_sym = match target.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
@@ -416,7 +415,7 @@ impl Interpreter {
             let cn = class_sym.as_str();
             let resolved = loan_env!(
                 self,
-                resolve_private_method_for_vm_sym(class_sym, method_sym, &args)
+                resolve_private_method_for_vm_sym(class_sym, method_sym, args)
             );
             if let Some((owner_class, method_def)) = resolved {
                 let caller_allowed = self.can_fast_dispatch_private_method_vm(owner_class.as_str());
@@ -441,7 +440,7 @@ impl Interpreter {
                     let invocant_for_dispatch = target.clone();
                     let pushed_dispatch = loan_env!(
                         self,
-                        push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
+                        push_method_dispatch_frame(cn, method, args, invocant_for_dispatch,)
                     );
                     let invocant = Some(target.clone());
                     let empty_fns = CompiledFns::default();
@@ -453,7 +452,7 @@ impl Interpreter {
                         &method_def,
                         &cc,
                         &attributes,
-                        args,
+                        std::mem::take(args),
                         invocant,
                         fns_ref,
                     );
@@ -463,7 +462,7 @@ impl Interpreter {
                     self.pop_method_samewith_context();
                     let (result, reconciled) = match method_result {
                         Ok(r) => r,
-                        Err(e) => return Ok(Err(e)),
+                        Err(e) => return Some(Err(e)),
                     };
                     if let Some(id) = target_id {
                         // Commit only a `:=`-adjusted snapshot: an unadjusted
@@ -485,17 +484,17 @@ impl Interpreter {
                                 (None, Some(cell)) => cell.to_map(),
                                 (None, None) => AttrMap::new(),
                             };
-                            return Ok(loan_env!(
+                            return Some(loan_env!(
                                 self,
                                 proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
                             ));
                         }
                     }
-                    return Ok(Ok(result));
+                    return Some(Ok(result));
                 }
             }
         }
-        Err(args)
+        None
     }
 
     /// `.new` on an INSTANCE of a built-in class constructs from its type, as
