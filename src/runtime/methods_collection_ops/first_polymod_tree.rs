@@ -277,6 +277,16 @@ impl Interpreter {
                 _ => vec![v.clone()],
             }
         }
+        // A mixed-in number (`$n but Role`) divides the value it wraps;
+        // otherwise it read as 0 and an infinite divisor list stopped at once.
+        let unwrapped;
+        let target = match target.view() {
+            ValueView::Mixin(inner, _) => {
+                unwrapped = inner.as_ref().clone();
+                &unwrapped
+            }
+            _ => target,
+        };
         let mut n = val_to_f64(target);
         // Flatten args into a list of divisors, tracking if any source is infinite
         let mut divisors = Vec::new();
