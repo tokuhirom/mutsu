@@ -477,7 +477,7 @@ impl Interpreter {
                             if result.is_proxy_value()
                                 && !self.in_lvalue_assignment
                                 && !Self::method_is_rw_capable(&method_def)
-                                && let ValueView::Proxy { fetcher, .. } = result.view()
+                                && matches!(result.view(), ValueView::Proxy { .. })
                             {
                                 // Without a `:=` adjustment the returned map is
                                 // absent — re-snapshot the live cell for the
@@ -489,7 +489,7 @@ impl Interpreter {
                                 };
                                 return loan_env!(
                                     self,
-                                    proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
+                                    proxy_fetch(&result, None, cn, &proxy_attrs, id)
                                 );
                             }
                         }

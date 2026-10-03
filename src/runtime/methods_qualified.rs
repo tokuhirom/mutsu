@@ -589,7 +589,9 @@ impl Interpreter {
                 Err(e) => return Some(Err(e)),
             };
             attributes.commit_attrs(updated);
-            if result.is_proxy_value() && self.should_fetch_returned_proxy(qualifier, actual_method)
+            if result.is_proxy_value()
+                && self.should_fetch_returned_proxy(qualifier, actual_method)
+                && matches!(result.view(), ValueView::Proxy { .. })
             {
                 return Some(self.proxy_fetch(&result, None, qualifier, &attributes.to_map(), 0));
             }

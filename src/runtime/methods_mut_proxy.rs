@@ -42,12 +42,25 @@ impl Interpreter {
         attributes: &AttrMap,
         target_id: u64,
     ) -> Result<Value, RuntimeError> {
-        let ValueView::Proxy { fetcher, .. } = proxy.view() else {
+        let ValueView::Proxy {
+            fetcher,
+            storer,
+            subclass,
+            ..
+        } = proxy.view()
+        else {
             return Ok(proxy.clone());
         };
-        let fetcher = fetcher.clone();
-        let (result, _updated) =
-            self.call_proxy_callback(&fetcher, vec![proxy.clone()], attributes)?;
+        let fetcher = Value::clone(fetcher);
+        // Handed over as its `.VAR` (decontainerized), so binding it to the
+        // FETCH's invocant does not FETCH it again.
+        let invocant = Value::proxy_parts(
+            fetcher.clone(),
+            Value::clone(storer),
+            subclass.clone(),
+            true,
+        );
+        let (result, _updated) = self.call_proxy_callback(&fetcher, vec![invocant], attributes)?;
         // For FETCH we don't propagate attribute changes (reads shouldn't mutate)
         let _ = target_var;
         let _ = class_name;
