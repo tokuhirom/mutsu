@@ -88,6 +88,25 @@ impl CollationSettings {
             + encode(self.tertiary) * 16
             + encode(self.quaternary) * 64
     }
+
+    /// The inverse of [`Self::collation_level`]: the settings a level word
+    /// stands for, as `nqp::unicmp_s` receives it (`coll` passes
+    /// `$*COLLATION.collation-level`). A 2-bit field of `01` is normal, `10`
+    /// reversed, anything else disables the level.
+    // Cost: O(1).
+    pub fn from_level(level: i64) -> Self {
+        let decode = |shift: u32| match (level >> shift) & 0b11 {
+            1 => 1,
+            2 => -1,
+            _ => 0,
+        };
+        Self {
+            primary: decode(0),
+            secondary: decode(2),
+            tertiary: decode(4),
+            quaternary: decode(6),
+        }
+    }
 }
 
 /// Compare two strings using the full Unicode Collation Algorithm at the

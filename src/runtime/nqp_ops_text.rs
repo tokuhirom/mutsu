@@ -6,31 +6,17 @@
 //! `call_nqp_op_process`, which falls through to `call_nqp_op_text` before the
 //! loud unsupported-op error.
 //!
-//! **The numbers here are MoarVM's, measured against rakudo, not invented.**
-//! nqp code branches on them directly — `String::Utils`'s `nomark` compares a
-//! `getuniprop_int` result against a bare `6` and means "Mn" by it — so a
-//! self-consistent numbering of our own would run such code silently wrong
-//! rather than loudly unsupported. The General_Category value codes below were
-//! read off rakudo by walking codepoints 0..0x2FFFF (see
-//! `t/nqp/nqp-cclass-uniprop.t`). The `CCLASS_*` table itself lives in
-//! `builtins::cclass`, shared with the regex engine.
+//! The Unicode property ops (`unipropcode`, `getuniprop_*`, ...) live in
+//! `nqp_ops_unicode`, with MoarVM's measured property and value codes in
+//! `nqp_uniprop_data`: nqp code branches on those numbers directly —
+//! `String::Utils`'s `nomark` compares a `getuniprop_int` result against a
+//! bare `6` and means "Mn" by it (see `t/vm/nqp-text-unicode-ops.t`). The
+//! `CCLASS_*` table itself lives in `builtins::cclass`, shared with the regex
+//! engine.
 
 pub(crate) use super::nqp_backing::push_elem;
 use super::*;
 use crate::builtins::cclass::is_cclass;
-
-/// MoarVM's General_Category property value codes, in its enumeration order.
-/// The index into this table *is* the value `nqp::getuniprop_int` returns.
-const GENERAL_CATEGORY_CODES: [&str; 30] = [
-    "Cn", "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Me", "Mc", "Nd", "Nl", "No", "Zs", "Zl", "Zp", "Cc",
-    "Cf", "Co", "Cs", "Pd", "Ps", "Pe", "Pc", "Po", "Sm", "Sc", "Sk", "So", "Pi", "Pf",
-];
-
-/// MoarVM's property code for `General_Category`, as `nqp::unipropcode`
-/// answers it. Only the properties mutsu can actually answer are listed: an
-/// unknown name is an error rather than a handle that would later produce a
-/// confidently wrong integer.
-const PROP_GENERAL_CATEGORY: i64 = 20;
 
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
@@ -85,49 +71,6 @@ impl Interpreter {
                 Ok(Value::int(found as i64))
             }
 
-            // -- Unicode properties --
-            // nqp::unipropcode($name) -> the property handle getuniprop_* takes.
-            // Cost: O(m), m = chars of $name (copied, then compared).
-            "unipropcode" => {
-                let name = sarg(args, 0);
-                if name.eq_ignore_ascii_case("General_Category") || name.eq_ignore_ascii_case("gc")
-                {
-                    Ok(Value::int(PROP_GENERAL_CATEGORY))
-                } else {
-                    Err(RuntimeError::new(format!(
-                        "nqp::unipropcode: unsupported property '{name}' \
-                         (mutsu answers General_Category only)"
-                    )))
-                }
-            }
-            // nqp::getuniprop_int($codepoint, $propcode) -> the property VALUE
-            // code, and nqp::getuniprop_str the same value as its name.
-            // Cost: O(1) (table lookup; astral codepoints O(log r) binary search, r = ranges).
-            "getuniprop_int" | "getuniprop_str" => {
-                let cp = iarg(args, 0);
-                let prop = iarg(args, 1);
-                if prop != PROP_GENERAL_CATEGORY {
-                    return Some(Err(RuntimeError::new(format!(
-                        "nqp::{op}: unsupported property code {prop} \
-                         (mutsu answers General_Category only)"
-                    ))));
-                }
-                let gc = u32::try_from(cp)
-                    .ok()
-                    .and_then(char::from_u32)
-                    .map(|ch| crate::builtins::unicode_gc::general_category(ch).as_str())
-                    .unwrap_or("Cn");
-                if op == "getuniprop_str" {
-                    Ok(Value::str_from(gc))
-                } else {
-                    let code = GENERAL_CATEGORY_CODES
-                        .iter()
-                        .position(|&c| c == gc)
-                        .unwrap_or(0);
-                    Ok(Value::int(code as i64))
-                }
-            }
-
             // -- codepoint arrays --
             // nqp::strtocodes($str, $normalization, $target) — decompose or
             // compose per the NORMALIZE_* mode, put the codepoints in $target,
@@ -139,67 +82,31 @@ impl Interpreter {
             // offsets (`root <abcd abce abde>` answered "abc", not "ab").
             // Cost: O(n + k), n = chars of $str (copied, normalized), k = old elems of $target.
             "strtocodes" => {
-                let text = sarg(args, 0);
-                let mode = iarg(args, 1);
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
-                let normalized = match crate::builtins::str_prim::Normal::from_nqp_mode(mode) {
-                    Some(form) => crate::builtins::str_prim::normalize(&text, form),
-                    None if mode == 0 => std::borrow::Cow::Borrowed(text.as_str()),
-                    None => {
-                        return Some(Err(RuntimeError::new(format!(
-                            "nqp::strtocodes: unknown normalization mode {mode}"
-                        ))));
-                    }
-                };
-                let refilled = Self::nqp_with_elems_mut(op, &target, |elems| {
-                    elems.clear();
-                    // Codepoints ARE the result here. str-prim: allow
-                    elems.extend(normalized.chars().map(|ch| Value::int(ch as i64)));
-                });
-                match refilled {
-                    Ok(()) => Ok(target),
-                    Err(e) => Err(e),
-                }
+                super::nqp_ops_string::refill_codes(op, &sarg(args, 0), iarg(args, 1), &target)
+                    .map(|()| target)
             }
             // nqp::strfromcodes($codes) -> the string those codepoints spell.
+            // MoarVM strings are NFG, so building one from codepoints
+            // normalizes: rakudo's `nqp::strfromcodes("bå".NFD)` is two
+            // graphemes spelling `bå` precomposed, not the decomposed
+            // sequence it was handed. Without this, `JSON::Fast`'s escaper
+            // — which round-trips every string through `.NFD` and back —
+            // emitted decomposed text for any composed input.
             // Cost: O(e), e = elems of $codes (array copied, string built, NFC-normalized).
             "strfromcodes" => {
                 let codes = args.first().cloned().unwrap_or(Value::NIL);
-                let Some(elems) = Self::nqp_elems_of(&codes) else {
-                    return Some(Err(RuntimeError::new(
-                        "nqp::strfromcodes: expected an array of codepoints".to_string(),
-                    )));
-                };
-                let mut out = String::with_capacity(elems.len());
-                for v in &elems {
-                    match u32::try_from(crate::runtime::to_int(v))
-                        .ok()
-                        .and_then(char::from_u32)
-                    {
-                        Some(ch) => out.push(ch),
-                        None => {
-                            return Some(Err(RuntimeError::new(format!(
-                                "nqp::strfromcodes: {} is not a codepoint",
-                                v.to_string_value()
-                            ))));
-                        }
-                    }
-                }
-                // MoarVM strings are NFG, so building one from codepoints
-                // normalizes: rakudo's `nqp::strfromcodes("bå".NFD)` is two
-                // graphemes spelling `bå` precomposed, not the decomposed
-                // sequence it was handed. Without this, `JSON::Fast`'s escaper
-                // — which round-trips every string through `.NFD` and back —
-                // emitted decomposed text for any composed input.
-                Ok(Value::str(
-                    match crate::builtins::str_prim::normalize(
-                        &out,
-                        crate::builtins::str_prim::Normal::Nfc,
-                    ) {
-                        std::borrow::Cow::Borrowed(_) => out,
-                        std::borrow::Cow::Owned(nfc) => nfc,
-                    },
-                ))
+                super::nqp_ops_string::codes_to_string(op, &codes).map(|out| {
+                    Value::str(
+                        match crate::builtins::str_prim::normalize(
+                            &out,
+                            crate::builtins::str_prim::Normal::Nfc,
+                        ) {
+                            std::borrow::Cow::Borrowed(_) => out,
+                            std::borrow::Cow::Owned(nfc) => nfc,
+                        },
+                    )
+                })
             }
 
             // -- string primitives --
@@ -319,6 +226,9 @@ impl Interpreter {
             // nqp::iterator / iterkey_s / iterval (`nqp_iter.rs`).
             // Cost: O(e) at worst, e = hash entries (each op states its own).
             _ if let Some(result) = super::nqp_iter::call_nqp_iter_op(op, args) => result,
+            // Unicode properties and character names (`nqp_ops_unicode.rs`).
+            // Cost: O(1) to O(S * m) (each op states its own).
+            _ if let Some(result) = super::nqp_ops_unicode::call_nqp_unicode_op(op, args) => result,
             _ => return self.call_nqp_op_str(op, args),
         })
     }

@@ -182,6 +182,10 @@ impl Interpreter {
             // string bit ops live in their own module (#11491).
             // Cost: O(n1 + n2) at worst (each op states its own).
             _ if let Some(result) = super::nqp_ops_compare::call_nqp_compare_op(op, args) => result,
+            // The #11495 string ops: case mapping, positional variants, sprintf,
+            // encodings (`nqp_ops_string.rs`).
+            // Cost: O(1) to O(n) (each op states its own).
+            _ if let Some(result) = self.call_nqp_string_op(op, args) => result,
 
             _ => return self.call_nqp_op_list(op, args),
         })

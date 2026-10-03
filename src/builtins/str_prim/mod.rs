@@ -25,7 +25,7 @@ mod build;
 mod fold;
 mod strands;
 
-pub(crate) use build::{Normal, concat, flip, normalize, repeat};
+pub(crate) use build::{Normal, concat, flip, normalize, repeat, titlecase_each};
 pub(crate) use fold::{Fold, eq_at, find};
 pub(crate) use strands::Joiner;
 
@@ -65,9 +65,9 @@ pub(crate) fn slice<'a>(text: &'a str, idx: &GraphemeIndex, start: usize, count:
 }
 
 /// `nqp::substr($s, $from, $want)` with MoarVM's argument rules: a negative
-/// `$from` counts from the end, a negative (or absent) `$want` means "to the
-/// end", a range past either end is clamped, and only a window whose *end*
-/// lands before the start of the string is an error.
+/// `$from` counts from the end, a `$want` of -1 (or an absent one) means "to
+/// the end" and one below -1 is an error, a range past either end is clamped,
+/// and a window whose *end* lands before the start of the string is an error.
 ///
 /// Cost: O(k) amortized, k = graphemes returned.
 pub(crate) fn nqp_substr(v: &Value, from: i64, want: Option<i64>) -> Result<Value, RuntimeError> {
@@ -76,6 +76,11 @@ pub(crate) fn nqp_substr(v: &Value, from: i64, want: Option<i64>) -> Result<Valu
         let start = if from < 0 { len + from } else { from };
         let end = match want {
             Some(w) if w >= 0 => start.saturating_add(w),
+            Some(w) if w < -1 => {
+                return Err(RuntimeError::new(format!(
+                    "Substring length ({w}) cannot be negative"
+                )));
+            }
             _ => len,
         };
         if end < 0 {
@@ -258,6 +263,22 @@ fn unit_char(unit: &str) -> char {
 /// `nqp::ordat($s, $pos)`: [`char_at`] as an int, -1 outside the string.
 pub(crate) fn nqp_ordat(v: &Value, pos: i64) -> i64 {
     with_str_index(v, |text, idx| ordat_in(text, idx, pos))
+}
+
+/// `nqp::ordbaseat($s, $pos)`: the base character of the grapheme at `$pos`
+/// -- the first codepoint of its canonical decomposition (`é` is 101) --
+/// or -1 outside the string.
+///
+/// Cost: O(g) amortized, g = chars of that grapheme.
+pub(crate) fn nqp_ordbaseat(v: &Value, pos: i64) -> i64 {
+    use unicode_normalization::UnicodeNormalization;
+    with_str_index(v, |text, idx| {
+        usize::try_from(pos)
+            .ok()
+            .filter(|&p| p < idx.len())
+            .and_then(|p| slice(text, idx, p, 1).nfd().next())
+            .map_or(-1, |c| c as i64)
+    })
 }
 
 /// [`nqp_ordat`] over a string whose grapheme index the caller already holds.

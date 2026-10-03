@@ -144,6 +144,23 @@ pub(crate) fn flip(s: &str) -> Value {
     nfc_value(units.into_iter().rev().collect())
 }
 
+/// `s` with EVERY grapheme titlecased (`nqp::tc`; `nqp::tc("ßa")` is `SsA`),
+/// through the per-grapheme mapping `.tc` and `.uc` use. `.tc` itself
+/// titlecases only the first grapheme.
+///
+/// Cost: O(n), n = chars of `s` (per-grapheme NFD + case map, then NFC).
+pub(crate) fn titlecase_each(s: &str) -> Value {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut out = String::with_capacity(s.len());
+    for g in s.graphemes(true) {
+        out.push_str(&crate::builtins::unicode::case_convert_grapheme(
+            g,
+            crate::builtins::unicode::CaseOp::Title,
+        ));
+    }
+    nfc_value(out)
+}
+
 /// A Unicode normalization form (`.NFC`/`.NFD`/`.NFKC`/`.NFKD`, and
 /// `nqp::strtocodes`'s `NORMALIZE_*` modes 1..4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

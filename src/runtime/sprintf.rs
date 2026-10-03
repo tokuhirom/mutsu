@@ -7,7 +7,7 @@ use super::sprintf_helpers::{
 };
 use super::sprintf_hexfloat::format_hexfloat;
 pub(crate) use super::sprintf_validate::{
-    directives_count_message, sprintf_arg_specs, sprintf_directive_count,
+    directives_count_message, sprintf_arg_specs, sprintf_directive_count, sprintf_sequential_count,
     validate_sprintf_arg_types, validate_sprintf_directives,
 };
 

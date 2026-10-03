@@ -517,7 +517,7 @@ pub(crate) fn grapheme_foldcase(s: &str) -> String {
     result.nfc().collect()
 }
 
-enum CaseOp {
+pub(crate) enum CaseOp {
     Upper,
     Title,
 }
@@ -530,7 +530,7 @@ enum CaseOp {
 /// Characters are processed in NFD order to keep combining marks with their
 /// correct base character. Prepend characters and other non-cased characters
 /// are preserved in their original positions.
-fn case_convert_grapheme(grapheme: &str, op: CaseOp) -> String {
+pub(crate) fn case_convert_grapheme(grapheme: &str, op: CaseOp) -> String {
     use unicode_normalization::UnicodeNormalization;
 
     let nfd_chars: Vec<char> = grapheme.nfd().collect();
