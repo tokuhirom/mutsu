@@ -166,6 +166,7 @@ impl Interpreter {
                 | "language-revision"
                 | "method_table"
                 | "private_method_table"
+                | "private_methods"
                 | "submethod_table"
                 | "roles_to_compose"
                 | "nativesize"

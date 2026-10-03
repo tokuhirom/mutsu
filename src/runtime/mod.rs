@@ -762,6 +762,7 @@ mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
 mod methods_classhow_parents;
+mod methods_classhow_private_methods;
 mod methods_collection;
 pub(crate) mod methods_collection_ops;
 mod methods_definitehow;
