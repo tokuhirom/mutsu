@@ -1016,6 +1016,25 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // The plain-array mutators (`@a.push(...)`, `@!fields.push: $f`) mutate
+        // the array's shared backing node in place and reach the env only by
+        // name, through `env_root_descended_mut` -- whose `get_mut` promotes a
+        // parent-tier entry into the overlay, so a scoped env serves it as well
+        // as a flat one. Between the flatten below and this helper's usual call
+        // site the only branches a plain `Array` receiver with a `push`-family
+        // name can meet are the junction-argument autothreading (excluded here)
+        // and the shared-array lane, which bails on exactly the condition the
+        // helper itself bails on. So answer it before the flatten: one push per
+        // parsed CSV field paid a whole-scope env clone for nothing (#9494).
+        if modifier.is_none()
+            && !args.iter().any(Value::is_junction_value)
+            && let Some(result) = self.try_native_array_mut(target_name, &target, method, &args)
+        {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+            self.shadow_check_native_row_candidate(&target, method, method_sym, args.len(), true);
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Beyond the pure-read accessor fast path above, full method dispatch may
         // capture/iterate the env; collapse a transient scoped overlay env to a
         // flat env so the full lexical view is seen. Placed after the accessor
