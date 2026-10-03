@@ -62,6 +62,29 @@ impl Interpreter {
         Some(self.resolve_code_var_unshadowed(name)).filter(|v| !v.is_nil())
     }
 
+    /// What `code`'s unit itself imported as `&name`: through a `sub EXPORT`
+    /// map, through an `is export` tag, or else the registered routine.
+    // Cost: O(1) hash probes plus `resolve_code_var_unshadowed`.
+    pub(super) fn own_import_of_amp(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: Symbol,
+    ) -> Option<Value> {
+        if let Some(v) = self.unit_imported_callable(code, name_sym) {
+            return Some(v);
+        }
+        if let Some(v) = crate::runtime::dispatch_key::with_amp_name(name, |amp| {
+            self.module_imported_lexical(amp).cloned()
+        }) {
+            return Some(v.into_deref());
+        }
+        // The registered routine the unit's `is export` import aliased, read
+        // past the env entry the importer's override sits in.
+        Some(self.resolve_code_var_unshadowed(name))
+            .filter(|v| !v.is_nil() && !Self::callable_declared_in_unit_of(v, code))
+    }
+
     /// `&name`'s value for `code`: [`Self::imported_amp_over_inherited`]
     /// when it applies, else the usual by-name resolution.
     ///

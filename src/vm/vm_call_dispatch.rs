@@ -325,6 +325,17 @@ impl Interpreter {
         // subtree — attach it below so a later detached-value call of this
         // routine can resolve its nested `RegisterSub` keys (ADR-0019 C6e-3c).
         let (cc, own_compiled_fns) = {
+            // The body belongs to the unit the routine was declared in, not to
+            // whichever unit's code happens to call it first: stamp the chunks
+            // (and the closures nested in them) with the def's file, or a
+            // module routine first called from the script is attributed to the
+            // script (and its `sub EXPORT` overrides then leak into it).
+            let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(
+                def.source_file
+                    .as_deref()
+                    .map(crate::symbol::Symbol::intern)
+                    .or_else(crate::unit_source_file::current),
+            );
             let mut compiler = crate::compiler::Compiler::new();
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 compiler.set_current_package(pkg.to_string());

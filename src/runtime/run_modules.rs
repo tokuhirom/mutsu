@@ -868,6 +868,17 @@ impl Interpreter {
         // Each module may set its own `use v6.*` which should not leak
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
+        // ADR-0106 Slice 0: everything compiled for this module -- its mainline,
+        // its routine bodies (the parser already compiles some of them), the
+        // shared-body capture compile below -- belongs to the module's own
+        // file, not to the script that `use`d it. Entered before the parse, so
+        // a chunk built while parsing is stamped with the module too: a body
+        // stamped with the importer kept that stamp for good, and the module's
+        // own calls then saw the importer's `sub EXPORT` overrides. Restored
+        // when this load returns, including on the `?` paths below.
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
+            crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
+        ));
         let (mut stmts, precompiled) = self.parse_module_source(module, &source_path)?;
         // The module's BEGIN-time effects run first, in source order (ADR-0134).
         let prologue_len = crate::runtime::begin_prologue::order_unit(&mut stmts);
@@ -881,15 +892,6 @@ impl Interpreter {
             .map_err(|err| {
                 RuntimeError::new(format!("Failed to read module {}: {}", module, err))
             })?;
-        // ADR-0106 Slice 0: everything compiled for this module -- its mainline,
-        // its routine bodies, the shared-body capture compile below -- belongs
-        // to the module's own file, not to the script that `use`d it. Published
-        // here rather than only alongside the `?FILE` scoping further down, so
-        // the capture compile (which runs before that) is covered too. Restored
-        // when this load returns, including on the `?` paths below.
-        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
-            crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
-        ));
         // Track operator subs exported by this module so EVAL can see them.
         for name in Self::extract_module_exported_operator_names(&stmts) {
             crate::runtime::cow_table_mut(&mut self.imported_operator_names).insert(name);
