@@ -15,7 +15,42 @@ permissions:
   contents: read
 
 jobs:
+  # A `v*` tag is pushed by hand (the `cut-release` skill), not by a bot, so
+  # check it is one this repository meant to release before anything is built
+  # or published: it must name exactly the version `Cargo.toml` carries at the
+  # tagged commit, and that commit must already be on `main` (the version-bump
+  # pull request merged and passed CI there). A mistyped or stray tag stops
+  # here. A workflow_dispatch smoke build has no tag and skips the check.
+  verify-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: The tag matches Cargo.toml and is on main
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          want="${REF_NAME#v}"
+          have=$(sed -n -E '0,/^version = "(.*)"$/ s//\1/p' Cargo.toml)
+          if [ "$want" != "$have" ]; then
+            echo "::error::tag $REF_NAME does not match Cargo.toml version $have at the tagged commit"
+            exit 1
+          fi
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::tag $REF_NAME points at a commit that is not on main; tag the merged version-bump commit"
+            exit 1
+          fi
+          echo "tag $REF_NAME: Cargo.toml $have, commit $(git rev-parse --short HEAD) is on main"
+
   build:
+    needs: verify-tag
     strategy:
       # Do not let one platform's failure cancel the others, so a red target
       # still lets the healthy tarballs upload for inspection.
@@ -116,9 +151,10 @@ jobs:
   # Release-time gate: every bundled library's upstream test suite must still
   # pass (at its recorded baseline) against the SHIPPED library + this mutsu.
   # This is the deliberate, thorough check gating a release publish: a release is
-  # cut by the manual `tag-release.yml` trigger, and a regression here blocks it.
+  # cut by pushing a `v*` tag (the `cut-release` skill), and a regression here blocks it.
   # See scripts/battery-testsuite.sh, batteries.lock, batteries-whitelist.txt.
   batteries:
+    needs: verify-tag
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
