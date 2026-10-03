@@ -156,6 +156,30 @@ impl Interpreter {
             if positionals(required) != positionals(candidate) {
                 return false;
             }
+            // A `where` clause is part of the dispatch signature as well:
+            // `multi method f(Str $s where 'A')` and a composing class's
+            // `multi method f(Str $s where 'B')` are distinct candidates, so
+            // the class's one must not replace the role's (every
+            // `choose-transition(Str $stateID where $_ ~~ '...')` state of
+            // DSL::FiniteStateMachines' roles was dropped that way). The
+            // clauses are compared by their AST's hash.
+            let where_clauses = |def: &MethodDef| -> Vec<Option<u64>> {
+                def.param_defs
+                    .iter()
+                    .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
+                    .map(|pd| {
+                        pd.where_constraint.as_ref().map(|expr| {
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            expr.hash(&mut hasher);
+                            hasher.finish()
+                        })
+                    })
+                    .collect()
+            };
+            if where_clauses(required) != where_clauses(candidate) {
+                return false;
+            }
         }
         true
     }
