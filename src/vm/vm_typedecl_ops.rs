@@ -15,6 +15,26 @@ fn source_compound_name(
     })
 }
 
+/// The source spelling of a parent the compiler package-qualified (`foo` for
+/// `M::foo` inside `unit module M`), recorded as a `__parent_spelling` trait.
+// Cost: O(t), t = the declaration's traits.
+fn parent_spelling<'a>(
+    traits: &'a [(String, Option<crate::opcode::DeclTraitArg>)],
+    qualified: &str,
+) -> Option<&'a str> {
+    traits.iter().find_map(|(name, arg)| {
+        if name != "__parent_spelling" {
+            return None;
+        }
+        let ValueView::Pair(key, value) = arg.as_ref()?.literal()?.view() else {
+            return None;
+        };
+        (key.as_str() == qualified)
+            .then(|| value.as_str())
+            .flatten()
+    })
+}
+
 impl Interpreter {
     pub(super) fn exec_register_decl_op(
         &mut self,
@@ -757,8 +777,16 @@ impl Interpreter {
                 // match this shape, that guess was wrong and it really was
                 // an unknown parent all along (mirrors the sibling
                 // variable-/attribute-trait no-candidate fallback).
-                for trait_name in &deferred_traits {
-                    let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
+                // A hoisted shell carries the header's parents but not its
+                // traits; the real declaration dispatches them, once.
+                let deferred_traits: &[String] = if is_hoisted_shell {
+                    &[]
+                } else {
+                    &deferred_traits
+                };
+                for trait_name in deferred_traits {
+                    let spelling = parent_spelling(custom_traits, trait_name).unwrap_or(trait_name);
+                    let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
                     match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
                     {
                         Ok(_) => {}
