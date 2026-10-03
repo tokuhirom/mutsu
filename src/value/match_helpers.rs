@@ -111,6 +111,27 @@ pub(crate) fn match_visible_pos(val: &Value, cp: i64) -> i64 {
     prefix.graphemes(true).count() as i64
 }
 
+/// The code-point offset of grapheme index `g` in `text` (the inverse of
+/// [`match_visible_pos`]): `:p(N)` / `:c(N)` count graphemes, the engine counts
+/// code points. An index past the end maps past the end.
+// Cost: O(1) for ASCII without `\r\n`; otherwise O(p), p = chars before the
+// `g`-th grapheme.
+pub(crate) fn grapheme_to_cp_index(text: &str, g: usize) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    if text.is_ascii() && !text.contains("\r\n") {
+        return g;
+    }
+    let mut cp = 0usize;
+    let mut graphemes = text.graphemes(true);
+    for i in 0..g {
+        match graphemes.next() {
+            Some(gr) => cp += gr.chars().count(),
+            None => return cp + (g - i),
+        }
+    }
+    cp
+}
+
 /// Collect all captures from a Match object sorted by position.
 /// Positional captures use `ValuePair(Int => Match)` and named captures use
 /// `Pair(Str => Match)` to preserve the Raku-visible key types.

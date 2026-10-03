@@ -825,6 +825,7 @@ impl Interpreter {
                 // at the previous match's `$/.to`.
                 let start_pos = a
                     .continue_value
+                    .map(|n| crate::value::match_helpers::grapheme_to_cp_index(&text, n))
                     .unwrap_or_else(|| self.get_match_to_position());
                 if let Some(captures) = self.regex_match_with_captures_from(&pat, &text, start_pos)
                 {
@@ -842,7 +843,10 @@ impl Interpreter {
                 let pat = &a.pattern;
                 let text = self.regex_match_text(left);
                 let pat = pat.to_string();
-                let start_pos = a.pos_value.unwrap_or_else(|| self.get_match_to_position());
+                let start_pos = a
+                    .pos_value
+                    .map(|n| crate::value::match_helpers::grapheme_to_cp_index(&text, n))
+                    .unwrap_or_else(|| self.get_match_to_position());
                 if let Some(captures) = self.regex_match_with_captures_at(&pat, &text, start_pos) {
                     self.apply_single_regex_captures(&captures);
                     return true;

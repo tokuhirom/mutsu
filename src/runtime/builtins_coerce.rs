@@ -183,6 +183,9 @@ impl Interpreter {
                     return self.call_method_with_values(value.clone(), name, vec![]);
                 }
                 ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
+                ValueView::FatRat(..) | ValueView::BigRat(..) | ValueView::BigInt(..) => {
+                    Value::num(value.to_f64())
+                }
                 _ => Value::num(0.0),
             },
             "Str" => self.call_method_with_values(value, "Str", vec![])?,

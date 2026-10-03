@@ -62,8 +62,16 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
+        // `.from`/`.to` convert their code-point offsets into grapheme indices
+        // through the Match's `.orig`, so every Match built here carries it.
+        let orig: Option<Value> = captures
+            .target()
+            .map(|target| Value::str_arc(target.text().clone()));
         let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = ValueMap::default();
+            if let Some(orig) = &orig {
+                attrs.insert("orig".to_string(), orig.clone());
+            }
             attrs.insert("str".to_string(), Value::str(capture.to_string()));
             attrs.insert("from".to_string(), Value::int(from as i64));
             attrs.insert("to".to_string(), Value::int(to as i64));
@@ -76,6 +84,9 @@ impl Interpreter {
         };
 
         let mut attrs = ValueMap::default();
+        if let Some(orig) = &orig {
+            attrs.insert("orig".to_string(), orig.clone());
+        }
         attrs.insert("str".to_string(), Value::str(captures.matched_text()));
         attrs.insert("from".to_string(), Value::int(captures.from as i64));
         attrs.insert("to".to_string(), Value::int(captures.to as i64));

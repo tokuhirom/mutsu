@@ -1154,7 +1154,9 @@ impl Compiler {
     /// unsigned operand must not be mixed; the generic path handles that case
     /// as boxed numeric arithmetic.
     fn native_int_binary_mode(&self, left: &Expr, right: &Expr, opcode: &OpCode) -> Option<bool> {
-        if !matches!(opcode, OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::BitShiftLeft
+        if !matches!(
+            opcode,
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::BitShiftLeft
         ) {
             return None;
         }
