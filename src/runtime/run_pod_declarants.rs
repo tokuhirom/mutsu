@@ -264,9 +264,16 @@ impl Interpreter {
                         type_constraint.as_deref().unwrap_or("Mu"),
                     )),
                 );
+                // The same identity `.^attributes` gives this attribute
+                // (#10004), so `$=pod[$i].WHEREFORE === Foo.^attributes[0]`.
+                let identity = super::attribute_identity::AttributeIdentity {
+                    owner: crate::symbol::Symbol::intern(package),
+                    sigil: *sigil,
+                    name: *name,
+                };
                 out.insert(
                     format!("{package}::{full_name}"),
-                    Value::make_instance(crate::symbol::Symbol::intern("Attribute"), attrs),
+                    super::attribute_identity::attribute_meta_object(identity, attrs),
                 );
             }
             _ => {}
