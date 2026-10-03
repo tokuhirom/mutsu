@@ -227,6 +227,7 @@ fn parse_role_decl_does_clause_captures_bracket_exprs() {
         name,
         args,
         from_is,
+        ..
     } = &body[0]
     else {
         panic!("expected DoesDecl as the first body statement");

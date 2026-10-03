@@ -126,6 +126,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("backtrack", BACKTRACK),
         ],
         StatementList => &[("statements", Absent::EmptyList)],
+        StatementAlso => &[("traits", Absent::EmptyList)],
         StatementExpression => &[
             ("expression", Absent::Required),
             (

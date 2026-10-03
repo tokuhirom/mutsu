@@ -29,6 +29,7 @@ mod regex_char_class;
 mod regex_enumeration;
 mod regex_quantifier;
 mod render;
+mod role;
 mod routine_traits;
 mod signature_decl;
 mod subscript_adverb;
@@ -74,6 +75,7 @@ pub enum RakuAstClass {
     CompUnit,
     StatementList,
     StatementExpression,
+    StatementAlso,
     IntLiteral,
     NumLiteral,
     RatLiteral,
@@ -355,6 +357,7 @@ impl RakuAstClass {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
+            StatementAlso => "RakuAST::Statement::Also",
             IntLiteral => "RakuAST::IntLiteral",
             NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
@@ -751,7 +754,9 @@ impl RakuAstClass {
             ColonPairTrue | ColonPairFalse | ColonPairValue => {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
-            Pragma | StatementUse | StatementLanguageVersion => &["RakuAST::Statement"],
+            Pragma | StatementUse | StatementLanguageVersion | StatementAlso => {
+                &["RakuAST::Statement"]
+            }
             RegexQuantifierZeroOrMore
             | RegexQuantifierOneOrMore
             | RegexQuantifierZeroOrOne
@@ -924,7 +929,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         }
         "RakuAST::Pragma"
         | "RakuAST::Statement::Use"
-        | "RakuAST::Statement::LanguageVersion" => &["RakuAST::Statement"],
+        | "RakuAST::Statement::LanguageVersion"
+        | "RakuAST::Statement::Also" => &["RakuAST::Statement"],
         "RakuAST::RegexDeclaration"
         | "RakuAST::TokenDeclaration"
         | "RakuAST::RuleDeclaration" => &[
@@ -990,6 +996,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CompUnit,
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
+    RakuAstClass::StatementAlso,
     RakuAstClass::IntLiteral,
     RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
@@ -2396,6 +2403,9 @@ pub fn construct(
         return node.map(Some);
     }
     if let Some(node) = regex_enumeration::construct(class_name, method, args) {
+        return node.map(Some);
+    }
+    if let Some(node) = role::construct(class_name, method, args) {
         return node.map(Some);
     }
     // `Regex::InternalModifier::IgnoreCase.new(:modifier<ignorecase>, :negated)`:

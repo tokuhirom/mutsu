@@ -42,7 +42,7 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     Ok(stmts)
 }
 
-fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
         RakuAstClass::CompUnit => lower_stmts(named_child(node, "statement-list")?),
         RakuAstClass::StatementList => {
@@ -60,6 +60,7 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
+        RakuAstClass::StatementAlso => super::role::lower_also(node),
         RakuAstClass::StatementExpression => {
             let statement = lower_stmt_inner(named_child(node, "expression")?)?;
             if let Some(modifier) = node.fields.iter().find(|f| f.name == Some("loop-modifier")) {
@@ -223,7 +224,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::RegexDeclaration
         | RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
-        RakuAstClass::Role => lower_role(node),
+        RakuAstClass::Role => super::role::lower(node),
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
         RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
         RakuAstClass::TypeEnum => lower_enum(node),
@@ -656,7 +657,7 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// A package body as the parser leaves it: the `method`s declared in its
 /// nested blocks and routine bodies hoisted into it (the converter rendered
 /// them where they were written, `parser::unhoist_nested_methods`).
-fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
+pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
     crate::parser::hoist_nested_methods(&mut body);
     body
 }
@@ -802,29 +803,6 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// plain `Block`) wrapping the `Blockoid`, matching what the converter renders.
 /// Parameterised roles, export, `is rw`, and traits are refused on the read
 /// side, so nothing lowered here carries them.
-fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
-    let role_body = named_child(node, "body")?;
-    if role_body.class != RakuAstClass::RoleBody {
-        return Err(unsupported(node));
-    }
-    let body = lower_package_body(lower_stmts(named_child_or_positional(named_child(
-        role_body, "body",
-    )?)?)?);
-    Ok(Stmt::RoleDecl {
-        name: crate::symbol::Symbol::intern(&name),
-        type_params: Vec::new(),
-        type_param_defs: Vec::new(),
-        is_export: false,
-        export_tags: Vec::new(),
-        body,
-        is_rw: false,
-        language_version: crate::parser::current_language_version(),
-        custom_traits: Vec::new(),
-        decl_id: crate::ast::next_class_decl_id(),
-    })
-}
-
 /// `method NAME (…) { … }` -> `Stmt::MethodDecl`, the `Method` counterpart of
 /// [`lower_sub`]. The return type comes back through the same
 /// `signature.returns` / `Trait::Returns` / `Trait::Of` reading `lower_sub`
@@ -1105,7 +1083,7 @@ fn signature_positional_params(
     Ok((names, defs))
 }
 
-fn lower_signature_parameters(
+pub(super) fn lower_signature_parameters(
     signature: &RakuAstNode,
     owner: &RakuAstNode,
 ) -> Result<Vec<ParamDef>, RuntimeError> {
@@ -1590,7 +1568,7 @@ fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
 }
 
 /// The identifier string of a call node's `name` (a `Name`) child.
-fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> {
     match name_parts::name_shape(named_child(node, "name")?) {
         Some(NameShape::Identifier(name)) => Ok(name),
         _ => Err(unsupported(node)),

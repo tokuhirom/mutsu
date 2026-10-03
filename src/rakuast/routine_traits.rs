@@ -67,7 +67,7 @@ impl IsTraits {
     }
 
     /// The written flag traits, as `Trait::Is` nodes.
-    fn nodes(&self) -> Vec<RakuAstNode> {
+    pub(super) fn nodes(&self) -> Vec<RakuAstNode> {
         let mut nodes = Vec::new();
         for (on, name) in [(self.is_rw, "rw"), (self.is_raw, "raw")] {
             if on {

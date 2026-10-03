@@ -21,6 +21,7 @@ pub(crate) fn does_decl(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(&name),
             args: None,
             from_is: false,
+            also: false,
         },
     ))
 }

@@ -349,6 +349,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             name,
             args,
             from_is: _,
+            also: _,
         } => {
             v.visit_name(name.as_str(), NameKind::Type);
             if let Some(a) = args {

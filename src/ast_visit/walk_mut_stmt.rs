@@ -300,6 +300,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             name: _,
             args,
             from_is: _,
+            also: _,
         } => {
             if let Some(a) = args {
                 exprs_mut(v, a);
