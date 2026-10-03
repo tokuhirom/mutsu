@@ -282,10 +282,10 @@ impl Interpreter {
         // how it disposed of the exception. Stamped onto the error if the chain
         // falls back to unwinding, so those handlers do not run a second time.
         let mut passed: Option<(u64, CatchInlineVerdict)> = None;
-        let mut idx = self.catch_handlers.len();
+        let mut idx = self.control.catch_handlers.len();
         while idx > 0 {
             idx -= 1;
-            let entry = &self.catch_handlers[idx];
+            let entry = &self.control.catch_handlers[idx];
             let Some(handler) = entry.handler.as_ref() else {
                 break;
             };
@@ -306,7 +306,7 @@ impl Interpreter {
             let catch_begin = handler.catch_begin;
             let control_begin = handler.control_begin;
             let fns = handler.compiled_fns.clone();
-            let inner = self.catch_handlers.split_off(idx);
+            let inner = self.control.catch_handlers.split_off(idx);
             let throw_package = self.current_package_sym();
             let routine_len = self.routine_stack.len();
             let method_tail = if same_frame {
@@ -332,7 +332,7 @@ impl Interpreter {
                 &fns,
                 err,
             );
-            self.catch_handlers.extend(inner);
+            self.control.catch_handlers.extend(inner);
             self.routine_stack.truncate(routine_len);
             if let Some(tail) = method_tail {
                 self.method_class_stack.truncate(method_depth);

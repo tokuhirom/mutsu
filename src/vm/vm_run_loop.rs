@@ -251,13 +251,13 @@ impl Interpreter {
         // phaser evaluated by a subsequent EVAL sharing this Interpreter) in
         // X::Comp::BeginTime too. Snapshot the entry depth so every error
         // exit below can restore it after deciding whether to wrap.
-        let entry_check_phaser_depth = self.check_phaser_depth;
-        let entry_check_phaser_kinds = self.check_phaser_kinds.len();
+        let entry_check_phaser_depth = self.control.check_phaser_depth;
+        let entry_check_phaser_kinds = self.control.check_phaser_kinds.len();
         // ADR-0041 §9: the BEGIN-time visibility frames are pushed by
         // `CheckPhaserStart` AND by the value-position `BEGIN` opcode (which
         // does not raise `check_phaser_depth`), so unwind them by their own
         // entry depth rather than by the phaser depth.
-        let entry_begin_time_depth = self.begin_time_hidden.len() as u32;
+        let entry_begin_time_depth = self.control.begin_time_hidden.len() as u32;
         let mut ip = 0;
         // VM poll (design doc §1.2): between instructions no container borrow
         // is live, so a cycle collect may run here. Fires on worker threads
@@ -286,7 +286,7 @@ impl Interpreter {
                     poll_due = ip <= op_ip;
                     continue;
                 }
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -309,33 +309,49 @@ impl Interpreter {
                 // call-frame handling further up the stack.
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = RuntimeError::controlflow_return(true);
-                    if self.check_phaser_depth > 0 {
+                    if self.control.check_phaser_depth > 0 {
                         let wrapped = Self::wrap_in_begin_time(
                             inner_err,
-                            self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                            self.control
+                                .check_phaser_kinds
+                                .last()
+                                .copied()
+                                .unwrap_or("CHECK"),
                         );
-                        self.check_phaser_depth = entry_check_phaser_depth;
-                        self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                        self.control.check_phaser_depth = entry_check_phaser_depth;
+                        self.control
+                            .check_phaser_kinds
+                            .truncate(entry_check_phaser_kinds);
                         self.begin_time_unwind_to(entry_begin_time_depth);
                         return Err(wrapped);
                     }
-                    self.check_phaser_depth = entry_check_phaser_depth;
-                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                    self.control.check_phaser_depth = entry_check_phaser_depth;
+                    self.control
+                        .check_phaser_kinds
+                        .truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(inner_err);
                 }
-                if self.check_phaser_depth > 0 {
+                if self.control.check_phaser_depth > 0 {
                     let wrapped = Self::wrap_in_begin_time(
                         e,
-                        self.check_phaser_kinds.last().copied().unwrap_or("CHECK"),
+                        self.control
+                            .check_phaser_kinds
+                            .last()
+                            .copied()
+                            .unwrap_or("CHECK"),
                     );
-                    self.check_phaser_depth = entry_check_phaser_depth;
-                    self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                    self.control.check_phaser_depth = entry_check_phaser_depth;
+                    self.control
+                        .check_phaser_kinds
+                        .truncate(entry_check_phaser_kinds);
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(wrapped);
                 }
-                self.check_phaser_depth = entry_check_phaser_depth;
-                self.check_phaser_kinds.truncate(entry_check_phaser_kinds);
+                self.control.check_phaser_depth = entry_check_phaser_depth;
+                self.control
+                    .check_phaser_kinds
+                    .truncate(entry_check_phaser_kinds);
                 self.begin_time_unwind_to(entry_begin_time_depth);
                 return Err(e);
             }
@@ -452,7 +468,7 @@ impl Interpreter {
         // inline-handled by a CATCH belonging to the outer run, for the same
         // isolation reason `resume_ip` is cleared above. Such a throw keeps the
         // ordinary unwinding path.
-        let saved_catch_handlers = std::mem::take(&mut self.catch_handlers);
+        let saved_catch_handlers = std::mem::take(&mut self.control.catch_handlers);
         let saved_last_topic = self.topic_state.last_topic_value.take();
         let saved_topic_save_stack = std::mem::take(&mut self.topic_state.topic_save_stack);
         let saved_topic_source_var = self.topic_state.topic_source_var.take();
@@ -555,7 +571,7 @@ impl Interpreter {
         self.upvalues = saved_upvalues;
         self.call_frames = saved_call_frames;
         self.resume_ip = saved_resume_ip;
-        self.catch_handlers = saved_catch_handlers;
+        self.control.catch_handlers = saved_catch_handlers;
         self.topic_state.last_topic_value = saved_last_topic;
         self.topic_state.topic_save_stack = saved_topic_save_stack;
         self.topic_state.topic_source_var = saved_topic_source_var;
@@ -656,7 +672,7 @@ impl Interpreter {
                     poll_due = ip <= op_ip;
                     continue;
                 }
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -977,7 +993,7 @@ impl Interpreter {
                             false,
                         );
                     }
-                    if e.is_warn() && self.control_handler_depth == 0 {
+                    if e.is_warn() && self.control.control_handler_depth == 0 {
                         if !self.warning_suppressed() {
                             self.write_warn_to_stderr(&e.message);
                         }
@@ -1046,7 +1062,7 @@ impl Interpreter {
                     continue;
                 }
                 // Handle warn signals inline when no CONTROL handler is active.
-                if e.is_warn() && self.control_handler_depth == 0 {
+                if e.is_warn() && self.control.control_handler_depth == 0 {
                     if !self.warning_suppressed() {
                         self.write_warn_to_stderr(&e.message);
                     }
@@ -1109,7 +1125,7 @@ impl Interpreter {
                     // LEAVE is collected here, never handled at its throw.
                     self.push_catch_marker();
                     let result = self.run_range(code, ip + 1, guard_next, compiled_fns);
-                    self.catch_handlers.pop();
+                    self.control.catch_handlers.pop();
                     if let Err(e) = result {
                         collected_errors.push(e);
                     }

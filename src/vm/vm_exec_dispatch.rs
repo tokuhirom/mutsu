@@ -6268,8 +6268,9 @@ impl Interpreter {
             // Cost: O(1).
             OpCode::CheckPhaserStart { is_begin, .. } => {
                 self.sync_source_line(code, *ip);
-                self.check_phaser_depth += 1;
-                self.check_phaser_kinds
+                self.control.check_phaser_depth += 1;
+                self.control
+                    .check_phaser_kinds
                     .push(if *is_begin { "BEGIN" } else { "CHECK" });
                 // ADR-0041 §9: a name reference evaluated at BEGIN time sees
                 // only declarations the program has textually reached.
@@ -6278,8 +6279,8 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::CheckPhaserEnd => {
-                self.check_phaser_depth = self.check_phaser_depth.saturating_sub(1);
-                self.check_phaser_kinds.pop();
+                self.control.check_phaser_depth = self.control.check_phaser_depth.saturating_sub(1);
+                self.control.check_phaser_kinds.pop();
                 self.begin_time_leave();
                 *ip += 1;
             }
@@ -6781,7 +6782,7 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::EndBeginPrologue => {
-                self.begin_prologue_pending = false;
+                self.control.begin_prologue_pending = false;
                 *ip += 1;
             }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).

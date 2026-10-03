@@ -119,7 +119,7 @@ impl Interpreter {
     /// stacks, and closure-capture overrides.
     fn visit_lexical_envs(&self, visitor: &mut dyn RootVisitor) {
         self.env.visit_values(visitor);
-        for phaser in &self.end_phasers {
+        for phaser in &self.control.end_phasers {
             phaser.env.visit_values(visitor);
         }
         for code in self.attached_leave_phasers() {
@@ -250,10 +250,11 @@ impl Interpreter {
         visit_map_values(visitor, &self.escaped_our_lexical_cells);
         visit_map_values(visitor, &self.state_vars);
         visit_map_values(visitor, &self.closure_captured_state);
-        self.once_values
+        self.control
+            .once_values
             .visit_done_values(|v| visitor.visit_value(v));
         visit_map_values(visitor, &self.attr_var_defaults);
-        for save in &self.let_saves {
+        for save in &self.control.let_saves {
             visitor.visit_value(&save.value);
             if let Some((container, key)) = &save.elem {
                 visitor.visit_value(container);

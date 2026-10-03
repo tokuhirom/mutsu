@@ -57,8 +57,8 @@ impl Interpreter {
                         crate::thread_compat::sleep(Duration::from_millis(100))
                     });
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
-                        self.halted = true;
-                        self.exit_code = code;
+                        self.control.halted = true;
+                        self.control.exit_code = code;
                         return Ok(Value::NIL);
                     }
                 }
@@ -70,8 +70,8 @@ impl Interpreter {
                 if duration > Duration::from_secs(10) {
                     Self::interruptible_sleep(duration);
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
-                        self.halted = true;
-                        self.exit_code = code;
+                        self.control.halted = true;
+                        self.control.exit_code = code;
                         return Ok(Value::NIL);
                     }
                 } else {

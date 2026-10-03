@@ -982,6 +982,7 @@ mod resolution_method_rank;
 mod resolution_private_method;
 mod resolution_sequence;
 pub(crate) use resolution_sequence::value_is_definite;
+pub(crate) mod control_state;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
@@ -2333,26 +2334,6 @@ pub struct Interpreter {
     /// See [`TapState`] — extracted out of this struct so its ownership can later
     /// move (lever B). Access only through `self.tap`'s methods.
     tap: TapState,
-    halted: bool,
-    /// Prints an uncaught mainline exception; `run` calls it before the END
-    /// phasers, as rakudo's top-level handler does. See [`Self::set_uncaught_reporter`].
-    uncaught_reporter: Option<UncaughtReporter>,
-    /// Set once `uncaught_reporter` has printed the error `run` returns.
-    uncaught_reported: bool,
-    exit_code: i64,
-    /// Set while the END phasers run for a program that is already exiting, and
-    /// once any END phaser has itself called `exit`. A further `exit` still
-    /// unwinds but leaves [`Self::exit_code`] alone — rakudo latches the process
-    /// status at the first `exit` (`the-end-is-nigh`), so `exit 42; END { exit 7 }`
-    /// exits 42. See `Interpreter::finish` and `builtin_exit`.
-    exit_status_locked: bool,
-    /// True while the main compilation unit's BEGIN prologue (ADR-0134) is
-    /// still running: `run` raises it before the mainline starts and the
-    /// `EndBeginPrologue` opcode lowers it once the prologue and its
-    /// undeclared-routine guards are done. An error that escapes the mainline
-    /// while it is still raised is a compile-time failure, so `run` skips the
-    /// END phasers for it (#10977).
-    pub(crate) begin_prologue_pending: bool,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
@@ -2706,11 +2687,6 @@ pub struct Interpreter {
     /// one buffer per nesting level in flight; bounded, and cleared before
     /// being returned.
     pub(crate) regex_quant_scratch: Vec<Vec<usize>>,
-    /// Number of active CONTROL handlers in the current VM stack. Tracked
-    /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
-    /// EVAL) can observe handlers installed by the outer VM and propagate
-    /// warn/control signals appropriately.
-    pub(crate) control_handler_depth: u32,
     test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<CodeFrame>,
     doc_comments: HashMap<String, DocComment>,
@@ -2798,34 +2774,6 @@ pub struct Interpreter {
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
     module_export_defs: HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
-    /// Registered END phasers, in registration order (they run in reverse).
-    end_phasers: Vec<EndPhaser>,
-    /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
-    /// [`end_order`] class keep the order they were registered in.
-    end_phaser_seq: u64,
-    /// One entry per module body currently executing, holding the [`end_order`]
-    /// class the END phasers it registers belong to. Empty while the main
-    /// compunit runs. See `load_module` for why a `use` reached from an `EVAL`
-    /// is not `end_order::MODULE`.
-    module_load_order: Vec<u64>,
-    /// Tracks END phaser site_ids to ensure each is registered only once.
-    /// Only consulted for phasers that were NOT pre-installed by
-    /// `preregister_main_end_phasers` (a module's, an `EVAL`'s, an rvalue
-    /// `END`): a pre-installed one owns a fixed slot in `end_phasers`, so
-    /// re-reaching its declaration re-captures into that slot rather than
-    /// adding a phaser.
-    end_phaser_sites: HashSet<u64>,
-    /// `ast::Stmt::Phaser::end_index` -> position in `end_phasers`, for the
-    /// main compunit's ENDs, which `preregister_main_end_phasers` installs in
-    /// source order before the body runs. Reaching such a declaration updates the slot's
-    /// captured env instead of installing a second phaser; never reaching it
-    /// still leaves the phaser installed, which is what makes an END inside a
-    /// never-entered block (or a never-called sub) run at exit, as it does in
-    /// rakudo.
-    main_end_slots: HashMap<u32, usize>,
-    /// Monotonic counter stamped into `EndPhaser::capture_seq` each time a
-    /// phaser captures its declaring scope's env. See that field.
-    end_phaser_capture_seq: u64,
     chroot_root: Option<PathBuf>,
     loaded_modules: std::sync::Arc<HashSet<String>>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
@@ -3329,13 +3277,6 @@ pub struct Interpreter {
     /// It is what `$*R.find-attach-target` resolves a module's EXPORT-time
     /// request against (`runtime::attach_target`).
     use_attach_depth: Option<usize>,
-    /// One frame per module body currently being loaded, innermost last; the
-    /// main program is the implicit frame below them
-    /// (`mainline_leave_phasers`). See `runtime::attach_target`.
-    compunit_leave_frames: Vec<attach_target::CompunitLeaveFrame>,
-    /// LEAVE phasers a `use` attached to the main program's compunit, run when
-    /// the mainline finishes (`Interpreter::finish`).
-    mainline_leave_phasers: Vec<Value>,
     /// Routine aliases installed by an import, keyed by their target package
     /// and name. A local `sub` may shadow such an alias, but two declarations
     /// in the same scope must still be rejected. The set is restored together
@@ -3615,13 +3556,6 @@ pub struct Interpreter {
     /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
     /// String hashing that dominated the closure dispatch profile.
     closure_captured_state: HashMap<(u64, Symbol), Value>,
-    /// Fired `once { ... }` results, keyed by `(routine-clone-id, op-position)`.
-    /// Shared by `Arc` handle into every spawned thread's clone so a `once` in a
-    /// sub run from multiple `start` blocks fires exactly once across threads
-    /// (see [`once_store::OnceStore`]).
-    once_values: Arc<once_store::OnceStore>,
-    once_scope_stack: Vec<u64>,
-    next_once_scope_id: u64,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     var_dynamic_flags: HashMap<String, bool>,
     /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
@@ -3689,8 +3623,6 @@ pub struct Interpreter {
     /// share pays the one deep clone via `Arc::make_mut`. Collapses to a plain
     /// VM field once the Interpreter execution path is removed (PLAN.md ④/⑤).
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
-    /// `let`/`temp` save stack; see [`LetSaveEntry`].
-    let_saves: Vec<LetSaveEntry>,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
     encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
@@ -3967,25 +3899,10 @@ pub struct Interpreter {
     /// calls -- which is why the guard's reserve has to absorb a whole
     /// interval's worth of frames. See `vm::vm_stack_guard`.
     pub(crate) stack_check_countdown: u32,
-    /// Active CONTROL handlers on the dynamic call stack (one per executing
-    /// `CONTROL { }` block). Kept in lock-step with `control_handler_depth` so
-    /// a `warn` raised deep inside a protected body can find the innermost
-    /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
-    /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
-    pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
     /// The function table inline CATCH/CONTROL handler entries share while it
     /// is unchanged, keyed by its `CompiledFns::id`. See
     /// `Interpreter::shared_fns_snapshot`.
     pub(crate) handler_fns_snapshot: Option<(u64, std::sync::Arc<crate::opcode::CompiledFns>)>,
-    /// ADR-0072: active exception-absorbing regions on the dynamic call stack —
-    /// every `try` and every block with a `CATCH { }`. A `die` raised deep inside
-    /// a protected body consults `.last()`: when that innermost region's CATCH is
-    /// resume-capable, the handler runs INLINE at the throw site so `.resume`
-    /// returns to the `die`'s own call site with every intervening Rust frame
-    /// still live. See `vm::CatchHandlerEntry`.
-    pub(crate) catch_handlers: Vec<crate::vm::CatchHandlerEntry>,
-    /// Monotonic id source for `CatchHandlerEntry::token`.
-    pub(crate) catch_handler_seq: u64,
     /// Address of the `CompiledCode` of the bytecode frame currently executing
     /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
     /// machinery to reconcile the *caller's* local slots from env after a reify
@@ -4335,10 +4252,6 @@ pub struct Interpreter {
     /// `LoadEnterResult` at the end of the block body.
     pub(crate) enter_result_stack: Vec<Value>,
     pub(crate) pending_alias_bind_names: Vec<(String, String)>,
-    pub(crate) check_phaser_depth: u32,
-    /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
-    /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.
-    pub(crate) check_phaser_kinds: Vec<&'static str>,
     /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
     /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time
     /// region (`constant` initializer, `BEGIN`/`CHECK` body) rolls these back
@@ -4346,10 +4259,6 @@ pub struct Interpreter {
     /// textually reached, as rakudo's compile-time pad install does.
     pub(crate) hoisted_unreached_decls:
         rustc_hash::FxHashMap<Symbol, crate::runtime::hoist_visibility::HoistedDeclRecord>,
-    /// One frame per open BEGIN-time region: the registry entries that region
-    /// hid, and the defs to put back when it closes. Depth-aligned with
-    /// `check_phaser_depth`.
-    pub(crate) begin_time_hidden: Vec<Vec<(Symbol, Option<Arc<FunctionDef>>)>>,
     /// Depth of `with_nested_registers` re-entry (nested VM runs: closure
     /// bodies dispatched from native code, EVAL, dies-ok blocks, ...). The
     /// uncaught-CX::Return -> X::ControlFlow::Return conversion in `run_inner`
@@ -4384,6 +4293,9 @@ pub struct Interpreter {
     /// Topic, given/when and for/loop bookkeeping (the `topic` subsystem,
     /// ADR-10779).
     pub(crate) topic_state: topic_state::TopicState,
+    /// Control flow, exceptions, phasers and program exit (the `control`
+    /// subsystem, ADR-10779).
+    pub(crate) control: control_state::ControlState,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.

@@ -117,25 +117,25 @@ impl Interpreter {
     /// reported first, then END runs). Without one, `run` just returns the
     /// error and the caller prints it.
     pub fn set_uncaught_reporter(&mut self, reporter: super::UncaughtReporter) {
-        self.uncaught_reporter = Some(reporter);
+        self.control.uncaught_reporter = Some(reporter);
     }
 
     /// True when the installed reporter already printed the error `run` returned.
     pub fn uncaught_reported(&self) -> bool {
-        self.uncaught_reported
+        self.control.uncaught_reported
     }
 
     // Cost: O(1) plus the reporter's own rendering.
     pub(crate) fn report_uncaught_early(&mut self, err: &RuntimeError) {
-        if let Some(mut reporter) = self.uncaught_reporter.take() {
+        if let Some(mut reporter) = self.control.uncaught_reporter.take() {
             reporter(self, err);
-            self.uncaught_reported = true;
-            self.uncaught_reporter = Some(reporter);
+            self.control.uncaught_reported = true;
+            self.control.uncaught_reporter = Some(reporter);
         }
     }
 
     pub fn exit_code(&self) -> i64 {
-        self.exit_code
+        self.control.exit_code
     }
 
     /// Return the value of `%*ENV<RAKU_EXCEPTIONS_HANDLER>`, if set.
@@ -168,7 +168,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_halted(&self) -> bool {
-        self.halted
+        self.control.halted
     }
 
     /// True when the program asked to `exit` rather than running off its end.
@@ -176,7 +176,7 @@ impl Interpreter {
     /// outstanding non-`app_lifetime` `Thread`s — see
     /// [`Self::join_outstanding_threads`].
     pub fn exit_requested(&self) -> bool {
-        self.halted
+        self.control.halted
     }
 
     /// Wait for every still-running non-`app_lifetime` `Thread` before the
@@ -332,7 +332,7 @@ impl Interpreter {
     pub(crate) fn push_warn_suppression(&mut self) {
         self.warn_suppression_depth += 1;
         self.warn_suppression_boundaries
-            .push(self.control_handlers.len());
+            .push(self.control.control_handlers.len());
     }
 
     pub(crate) fn pop_warn_suppression(&mut self) {

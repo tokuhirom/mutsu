@@ -619,7 +619,7 @@ impl Interpreter {
                 self.emit_stderr(&format!("{usage}\n"));
             }
         }
-        self.exit_code = if help_requested { 0 } else { 2 };
+        self.control.exit_code = if help_requested { 0 } else { 2 };
         Ok(())
     }
 
