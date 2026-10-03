@@ -739,6 +739,7 @@ mod handle_read;
 mod handle_read_chars;
 mod handle_seq_reader;
 pub(crate) mod hoist_visibility;
+mod imported_trait_dispatcher;
 pub(crate) mod incdec_rw_sub;
 mod inline_package_subs;
 mod io;

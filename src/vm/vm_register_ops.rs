@@ -806,8 +806,7 @@ impl Interpreter {
             // closure value exists so traits such as `Sub::Memoized` can wrap
             // this exact value. Parser markers (and built-in declaration-only
             // traits) never reach user `trait_mod:<is>` dispatch.
-            let has_trait_mod =
-                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
             for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
                 !t.starts_with("__")
                     && t != "default"
@@ -852,7 +851,10 @@ impl Interpreter {
                     ));
                 }
                 let saved_writeback_key = self.trait_mod_writeback_key.take();
-                let call_result = self.vm_call_function("trait_mod:<is>", args);
+                let call_result = match self.try_imported_trait_mod("trait_mod:<is>", &args) {
+                    Some(result) => result,
+                    None => self.vm_call_function("trait_mod:<is>", args),
+                };
                 self.trait_mod_writeback_key = saved_writeback_key;
                 let mixin_writeback = self.trait_mod_writeback_value.take();
                 match call_result {

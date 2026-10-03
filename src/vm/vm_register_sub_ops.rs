@@ -25,8 +25,7 @@ impl Interpreter {
                         "Can't use unknown trait 'is' -> '{trait_name}' in a parameter declaration."
                     ))
                 };
-                if !self.has_proto("trait_mod:<is>") && !self.has_multi_candidates("trait_mod:<is>")
-                {
+                if !self.has_trait_mod_handler("trait_mod:<is>") {
                     return Err(unknown());
                 }
                 // Hand the candidate a real Parameter, the way raku does. A
@@ -55,7 +54,7 @@ impl Interpreter {
                 let named_arg = Value::pair(trait_name.clone(), arg_value);
                 let call_result = loan_env!(
                     self,
-                    call_function("trait_mod:<is>", vec![param_val.clone(), named_arg])
+                    call_trait_mod("trait_mod:<is>", vec![param_val.clone(), named_arg])
                 );
                 // Discriminate "no candidate accepted this trait" (raku's
                 // unknown-trait error) from a real error a matched candidate's
@@ -1470,8 +1469,7 @@ impl Interpreter {
         }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
         if !custom_traits.is_empty() {
-            let has_trait_mod =
-                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
             for trait_name in custom_traits.iter().filter(|t| {
                 !t.starts_with("__")
                     && *t != "default"
@@ -1499,7 +1497,7 @@ impl Interpreter {
                 let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                 let result = loan_env!(
                     self,
-                    call_function("trait_mod:<is>", vec![sub_val, named_arg])
+                    call_trait_mod("trait_mod:<is>", vec![sub_val, named_arg])
                 )?;
                 // If the trait_mod returned a modified sub (e.g. with CALL-ME mixed in),
                 // store it in the env so function dispatch can find it.
