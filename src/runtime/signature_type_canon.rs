@@ -83,8 +83,7 @@ impl Interpreter {
                     )
                 })
             });
-            if type_constraint.is_none() && sub_signature.is_none() && code_signature.is_none()
-            {
+            if type_constraint.is_none() && sub_signature.is_none() && code_signature.is_none() {
                 if let Some(out) = out.as_mut() {
                     out.push(pd.clone());
                 }

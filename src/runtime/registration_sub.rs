@@ -1397,8 +1397,7 @@ impl Interpreter {
                         .canonical_signature_param_types(&existing.param_defs)
                         .is_some());
             redeclares_hoisted_twin = refines_aliases;
-            let same =
-                same_decl && !refines_aliases && existing.return_type == new_def.return_type;
+            let same = same_decl && !refines_aliases && existing.return_type == new_def.return_type;
             // The identical declaration already installed here may have been
             // installed *without* a compiled body (a forward-declaration or
             // prelude pass registers from a source declaration and carries no
