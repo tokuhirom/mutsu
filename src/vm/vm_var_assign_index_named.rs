@@ -3541,6 +3541,19 @@ impl Interpreter {
         };
         let inner_idx = self.stack.pop().unwrap_or(Value::NIL);
         let outer_idx = self.stack.pop().unwrap_or(Value::NIL);
+        // The keys below are carried as strings; a positional subscript that is
+        // a Bool or a non-integer number names the element its `Int` does
+        // (`@range[$which][not $upper] = $mid`, Geo::Basic's geohash).
+        let inner_idx = if inner_positional {
+            Self::positional_index_as_int(inner_idx)
+        } else {
+            inner_idx
+        };
+        let outer_idx = if outer_positional {
+            Self::positional_index_as_int(outer_idx)
+        } else {
+            outer_idx
+        };
         // A finite integer Range as the outer positional subscript
         // (`@a[1][1..2] = <A B>`) is a slice over its elements, same as `(1,2)`.
         let outer_idx = if outer_positional {
