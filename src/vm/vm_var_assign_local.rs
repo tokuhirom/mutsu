@@ -176,6 +176,8 @@ impl Interpreter {
                 // `(@d = @a)` on an already-declared local, in value position:
                 // the third store that needs the one decomposition rule.
                 decomposed
+            } else if Self::is_destructure_staging_temp(name) {
+                runtime::utils::coerce_to_staging_array(raw_val)
             } else {
                 runtime::coerce_to_array(raw_val)
             };
