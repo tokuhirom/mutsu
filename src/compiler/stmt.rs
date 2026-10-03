@@ -3024,11 +3024,11 @@ impl Compiler {
                 ) {
                     self.code.emit(OpCode::NormalizeReturnSlip);
                 }
-                if self.is_routine {
+                if self.return_is_routine() {
                     self.code.emit(OpCode::Return);
                 } else {
                     self.code.emit(OpCode::ReturnFromNonRoutine(
-                        self.lexically_in_routine,
+                        self.return_lexically_in_routine(),
                         self.eval_context_dead_routine,
                     ));
                 }

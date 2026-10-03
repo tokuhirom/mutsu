@@ -27,8 +27,7 @@ impl BlockRoutineness {
         }
     }
 
-    /// Both flags set to `in_routine`: the classification a body with no
-    /// owning callable gets (see `ambient_block_routineness`).
+    /// Both flags set to `in_routine` (see `carrier_ambient_routineness`).
     // Cost: O(1).
     fn uniform(in_routine: bool) -> Self {
         BlockRoutineness {
@@ -214,41 +213,31 @@ impl Interpreter {
         self.compile_block_value_opts(body, false, None)
     }
 
-    /// The routine classification a carrier compile of `body` uses (ADR-0050):
-    /// an EVAL unit's own (ADR-0037 §2.3), else the owning code object's
-    /// definition-site one when the caller has it (`routineness`), else the
-    /// ambient answer for a body with no owning callable.
+    /// The `is_routine` / `lexically_in_routine` a carrier compile sets on its
+    /// compiler: an EVAL unit's own (ADR-0037 §2.3), else whether any frame is
+    /// live. For an EVAL unit that is the whole classification. For any other
+    /// body it is the *activation* half only — "this body runs as a scope
+    /// activation", which the lexical-sub binding, scoped type constraints and
+    /// the phaser scope ask. Where a `return` goes is a separate, lexical fact:
+    /// an owned body gets it from its definition site
+    /// (`Compiler::return_routineness`, ADR-0050), and only a body nothing owns
+    /// (a regex code block, a `where` clause run by name, a grammar action)
+    /// falls back to this dynamic answer for that too. Narrowing the fallback
+    /// to `enclosing_routine_exists()` would turn an anonymous `sub`'s legal
+    /// `return` into a throw, since it pushes a block frame (ADR-0050 §3(a)).
     // Cost: O(1), plus `eval_unit_in_routine`'s frame walk for an EVAL unit.
-    fn carrier_routineness(
-        &self,
-        is_eval_unit: bool,
-        routineness: Option<BlockRoutineness>,
-    ) -> BlockRoutineness {
+    fn carrier_ambient_routineness(&self, is_eval_unit: bool) -> BlockRoutineness {
         if is_eval_unit {
             BlockRoutineness::uniform(self.eval_unit_in_routine())
-        } else if let Some(routineness) = routineness {
-            routineness
         } else {
-            self.ambient_block_routineness()
+            BlockRoutineness::uniform(!self.routine_stack.is_empty())
         }
-    }
-
-    /// The fallback classification for a body no code object owns — an ad-hoc
-    /// AST body (a regex code block, a `where` clause run by name, a grammar
-    /// action): whether any frame is live. This is a *dynamic* answer to a
-    /// lexical question, which is exactly why a body that does have an owner
-    /// never gets it (ADR-0050 §1.1). An anonymous `sub` pushes a block frame,
-    /// so narrowing it to `enclosing_routine_exists()` would turn that sub's
-    /// legal `return` into a throw (§3(a)).
-    // Cost: O(1).
-    fn ambient_block_routineness(&self) -> BlockRoutineness {
-        BlockRoutineness::uniform(!self.routine_stack.is_empty())
     }
 
     /// `compile_block_value`, with `is_eval_unit` marking the body as an EVAL'd
     /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`) and
     /// `routineness` the owning code object's definition-site classification
-    /// (`None` for a body with no owner; see `carrier_routineness`).
+    /// (`None` for a body with no owner; see `carrier_ambient_routineness`).
     pub(crate) fn compile_block_value_opts(
         &self,
         body: &[Stmt],
@@ -286,9 +275,19 @@ impl Interpreter {
         // site instead (ADR-0050): sampling the stack made a wrapper block
         // `.wrap`ped onto a method compile as a routine, so its `return`
         // returned from the wrapped method instead of throwing.
-        let routineness = self.carrier_routineness(is_eval_unit, routineness);
-        compiler.is_routine = routineness.is_routine;
-        compiler.lexically_in_routine = routineness.lexically_in_routine;
+        //
+        // Only the *return* half moves to the definition site: `is_routine`
+        // also says "this body is a scope activation" (lexical-sub binding,
+        // scoped type constraints, the phaser scope), which the ambient answer
+        // keeps meaning for a recompiled body, so the classification rides in
+        // `return_routineness` instead of replacing it.
+        let ambient = self.carrier_ambient_routineness(is_eval_unit);
+        compiler.is_routine = ambient.is_routine;
+        compiler.lexically_in_routine = ambient.lexically_in_routine;
+        if !is_eval_unit && let Some(routineness) = routineness {
+            compiler.return_routineness =
+                Some((routineness.is_routine, routineness.lexically_in_routine));
+        }
         // ADR-0037 §2.3: only meaningful together with `is_routine == false`
         // — see the field's doc comment on `Compiler`.
         compiler.eval_context_dead_routine = is_eval_unit
@@ -510,7 +509,8 @@ impl Interpreter {
         routineness: Option<BlockRoutineness>,
         post: &CarrierPostCompile,
     ) -> CarrierCompileCtxKey {
-        let routineness = self.carrier_routineness(is_eval_unit, routineness);
+        let ambient = self.carrier_ambient_routineness(is_eval_unit);
+        let return_routineness = routineness.filter(|_| !is_eval_unit);
         let scope = if let Some(frame) = self.routine_stack.last() {
             format!("{}::&{}", frame.package, frame.name)
         } else {
@@ -523,7 +523,8 @@ impl Interpreter {
         });
         CarrierCompileCtxKey {
             is_eval_unit,
-            routineness,
+            in_routine: ambient.is_routine,
+            return_routineness,
             scope,
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),

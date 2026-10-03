@@ -285,9 +285,23 @@ constant across that callable's cache entries.
 - `compile_block_value_opts` takes an `Option<BlockRoutineness>` parameter (a parameter, not a
   `pending_*` field). `call_sub_value`'s closure-body carrier passes the `SubData`'s recorded pair;
   an EVAL unit keeps ADR-0037's derivation; a body with no owning callable (regex code blocks and
-  closure interpolation, `where` clauses run by name, grammar actions) keeps the dynamic answer as
-  the explicitly named fallback `ambient_block_routineness`.
-- `CarrierCompileCtxKey` keys on the full pair instead of a single `in_routine` bit (§2.3).
+  closure interpolation, `where` clauses run by name, grammar actions) keeps the dynamic answer.
+- **Deviation from §2: only the `return` half moves.** `Compiler::is_routine` turned out to carry a
+  second meaning on a recompiled body — "this body runs as a scope activation" — which
+  `binds_lexsub_free_vars` (a lexical `sub` binding its free variables per activation, #11238),
+  scoped `my TYPE $x` constraints and the ENTER/LEAVE phaser scope all read. Replacing it with the
+  definition-site answer broke those (a lexical sub inside a `supply` block stopped seeing its
+  block's `@order` from a worker thread). So the carrier keeps setting `is_routine` /
+  `lexically_in_routine` to the ambient answer and hands the definition-site pair to the new
+  `Compiler::return_routineness`, which only `Stmt::Return`'s emission
+  (`Compiler::return_is_routine` / `return_lexically_in_routine`) and the closures nested in that
+  body read. Untangling the activation meaning from `is_routine` is part of the Slice 3 audit.
+- `CarrierCompileCtxKey` keys on both: the ambient `in_routine` and the owned body's
+  `return_routineness` (§2.3).
+- Every site that turns an escaped `return` signal into `X::ControlFlow::Return` (out of dynamic
+  scope) now attaches a backtrace (`Interpreter::dead_return_error`): a lazily-forced `.map`
+  block's `return` reaches that path now that its classification is correct, and rakudo reports a
+  backtrace there too.
 - The inline map/grep compile (`compile_loop_block_cached`) reads the origin chunk's
   `lexically_in_routine` the same way, keeping its stack sample only for a block with no
   `CompiledCode`.

@@ -36,6 +36,7 @@ impl Compiler {
         chunk_compiler.fold_root = false;
         chunk_compiler.is_routine = self.is_routine;
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
+        chunk_compiler.return_routineness = self.return_routineness;
         chunk_compiler.enclosing_package = Some(
             self.enclosing_package
                 .clone()

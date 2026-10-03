@@ -1242,6 +1242,23 @@ impl Compiler {
         self.compile_closure_body_with_routine_flag(params, param_defs, body, true, is_rw, &[])
     }
 
+    /// Whether a `return` compiled here stops at this body (`OpCode::Return`)
+    /// — the definition-site answer when the carrier handed one over
+    /// ([`Compiler::return_routineness`], ADR-0050).
+    // Cost: O(1).
+    pub(crate) fn return_is_routine(&self) -> bool {
+        self.return_routineness.map_or(self.is_routine, |r| r.0)
+    }
+
+    /// Whether a Routine lexically encloses a `return` compiled here, so a
+    /// non-routine body re-targets it outward instead of throwing — the
+    /// definition-site answer when the carrier handed one over (ADR-0050).
+    // Cost: O(1).
+    pub(crate) fn return_lexically_in_routine(&self) -> bool {
+        self.return_routineness
+            .map_or(self.lexically_in_routine, |r| r.1)
+    }
+
     fn compile_closure_body_with_routine_flag(
         &mut self,
         params: &[String],
@@ -1276,6 +1293,15 @@ impl Compiler {
         // already is, or the parent itself is a routine.
         sub_compiler.lexically_in_routine =
             is_routine || self.is_routine || self.lexically_in_routine;
+        // ADR-0050: a closure nested in a carrier-recompiled body classifies
+        // its `return` by the enclosing body's definition site, not by the
+        // activation flags above.
+        sub_compiler.return_routineness = self.return_routineness.map(|_| {
+            (
+                is_routine,
+                is_routine || self.return_is_routine() || self.return_lexically_in_routine(),
+            )
+        });
         // `%_` / `@_` from an enclosing method stay visible inside nested
         // closures (e.g. a `do {}` block inside a `.protect: { ... }` block),
         // so carry the method context down. A nested *named sub* is not a method
@@ -1779,7 +1805,7 @@ impl Compiler {
         sub_compiler.code.is_routine = is_routine;
         // ADR-0050: the definition-site half of the classification, recorded
         // so a carrier recompile of this body can honour it.
-        sub_compiler.code.lexically_in_routine = sub_compiler.lexically_in_routine;
+        sub_compiler.code.lexically_in_routine = sub_compiler.return_lexically_in_routine();
         sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // Use the sub_compiler's source line if a SetLine was processed
         // within the body, otherwise fall back to the parent compiler's

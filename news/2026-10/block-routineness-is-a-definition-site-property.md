@@ -21,10 +21,18 @@ some frame always is.
 ADR-0050 (now Accepted) makes the classification a recorded fact:
 `CompiledCode` carries the definition-site `lexically_in_routine` beside its
 `is_routine`, the carrier is handed that pair as a parameter, and the carrier
-compile cache keys on it. Only a body that no code object owns (a regex code
-block, a `where` clause run by name) still gets the dynamic answer, as an
-explicitly named fallback. The inline `.map`/`.grep` compile asks its origin
-chunk the same way.
+compile cache keys on it. The pair only decides where a `return` goes
+(`Compiler::return_routineness`): `is_routine` also means "this body runs as a
+scope activation" to the lexical-sub binding, scoped type constraints and the
+phaser scope, and a recompiled body keeps its ambient answer for those. Only a
+body that no code object owns (a regex code block, a `where` clause run by
+name) still gets the dynamic answer for `return` too. The inline `.map`/`.grep`
+compile asks its origin chunk the same way.
+
+With the classification right, a `return` in a lazily-forced `.map` block now
+surfaces as rakudo's "outside of immediately-enclosing Routine" error rather
+than "outside of any Routine", and every site that raises that error now
+attaches a backtrace, as rakudo does.
 
 Pinned by `t/routines/closure/wrap-block-return-definition-site.t`;
 `roast/S04-statements/return.t`, `roast/S06-advanced/return.t` and
