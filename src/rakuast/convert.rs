@@ -369,9 +369,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if crate::ast::bind_decl::declaration(stmt).is_some() =>
         {
             let decl = crate::ast::bind_decl::declaration(stmt).expect("just checked");
-            var_decl_statement(decl, true)
+            var_decl_statement(var_decl_parts(decl)?, true)
         }
-        Stmt::VarDecl { .. } => var_decl_statement(stmt, false),
+        Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
@@ -1325,8 +1325,11 @@ fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
 /// A `my`/`our`/`state` declaration with an optional simple type, as a
 /// `VarDeclaration::Simple` statement; `is_binding` renders its right-hand side
 /// as an `Initializer::Bind` (`:=`) rather than an `Initializer::Assign`.
-fn var_decl_statement(stmt: &Stmt, is_binding: bool) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let Stmt::VarDecl {
+fn var_decl_statement(
+    parts: VarDeclParts<'_>,
+    is_binding: bool,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let VarDeclParts {
         name,
         expr,
         type_constraint,
@@ -1335,14 +1338,10 @@ fn var_decl_statement(stmt: &Stmt, is_binding: bool) -> Result<Option<RakuAstNod
         is_dynamic,
         custom_traits,
         where_constraint,
-        ..
-    } = stmt
-    else {
-        return Err(unsupported("variable declaration"));
-    };
+    } = parts;
     // Dynamic (`$*x`), `where` constraints, parameterised/definite/coercion
     // types, and real `is`/`does` traits carry richer shape, deferred.
-    if *is_dynamic || where_constraint.is_some() {
+    if is_dynamic || where_constraint {
         return Err(unsupported("dynamic / where-constrained declaration"));
     }
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
@@ -1350,7 +1349,7 @@ fn var_decl_statement(stmt: &Stmt, is_binding: bool) -> Result<Option<RakuAstNod
     // `__constant_sigil` recording the declared sigil) and sets
     // `is_our` for the package-scoped default spelling.
     if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
-        return constant_declaration(name, expr, custom_traits, type_constraint, *is_our);
+        return constant_declaration(name, expr, custom_traits, type_constraint, is_our);
     }
     let is_internal = |n: &str| {
         n == "__has_initializer" || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
@@ -1363,9 +1362,9 @@ fn var_decl_statement(stmt: &Stmt, is_binding: bool) -> Result<Option<RakuAstNod
     }
     // build_type_node validates simple/definite and defers the rest.
     let type_name = type_constraint.as_deref();
-    let scope = if *is_our {
+    let scope = if is_our {
         Some("our")
-    } else if *is_state {
+    } else if is_state {
         Some("state")
     } else {
         None
@@ -1381,6 +1380,47 @@ fn var_decl_statement(stmt: &Stmt, is_binding: bool) -> Result<Option<RakuAstNod
     let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
     decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
     Ok(Some(statement_expression(decl)))
+}
+
+/// The fields of a `Stmt::VarDecl` that a `VarDeclaration::Simple` renders.
+/// Taken apart in one place so the rendering function is not one more step of
+/// the converter's recursion over `Stmt` (`make check-ast-walkers`).
+struct VarDeclParts<'a> {
+    name: &'a str,
+    expr: &'a Expr,
+    type_constraint: &'a Option<String>,
+    is_state: bool,
+    is_our: bool,
+    is_dynamic: bool,
+    custom_traits: &'a [(String, Option<Expr>)],
+    where_constraint: bool,
+}
+
+fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
+    let Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        custom_traits,
+        where_constraint,
+        ..
+    } = stmt
+    else {
+        return Err(unsupported("variable declaration"));
+    };
+    Ok(VarDeclParts {
+        name,
+        expr,
+        type_constraint,
+        is_state: *is_state,
+        is_our: *is_our,
+        is_dynamic: *is_dynamic,
+        custom_traits,
+        where_constraint: where_constraint.is_some(),
+    })
 }
 
 /// A declaration's initializer: `= EXPR` or `:= EXPR`.
