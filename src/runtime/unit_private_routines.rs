@@ -125,9 +125,17 @@ impl Interpreter {
         if candidates.is_empty() {
             return;
         }
-        let exported = match module {
-            Some(module) => self.own_exported_routine_names(module),
-            None => self.exported_routine_names(),
+        // A `need` imports nothing (#11080): the module's exports are still
+        // registered for its `EXPORT::<tag>` stash, but its package-less
+        // routines stay lexical to it like any private helper. A later `use`
+        // re-installs them from the stash aliases (`import_module`).
+        let exported = if self.loading_without_import {
+            std::collections::HashSet::new()
+        } else {
+            match module {
+                Some(module) => self.own_exported_routine_names(module),
+                None => self.exported_routine_names(),
+            }
         };
         let mut secluded: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
         for (key, name) in candidates {
