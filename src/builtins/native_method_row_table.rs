@@ -1330,6 +1330,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `Any` (`Any.^can("lazy")` is 0).
     ("Instant", "succ", 1, 16),
     ("Instant", "pred", 1, 16),
+    ("Instant", "rand", 1, 16),
     ("Instant", "base", 6, 16),
     ("Instant", "polymod", 8, 16),
     ("Instant", "Bool", 1, 16),
@@ -1346,7 +1347,6 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "isNaN", 1, 16),
     ("Instant", "narrow", 1, 16),
     ("Instant", "raku", 1, 16),
-    ("Instant", "rand", 1, 16),
     ("Instant", "tai", 1, 16),
     ("Duration", "succ", 1, 16),
     ("Duration", "pred", 1, 16),
