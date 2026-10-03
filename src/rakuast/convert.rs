@@ -1226,6 +1226,22 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     Some((call, value))
 }
 
+/// The bound value of an indexed bind's `__mutsu_bind_index_value(rhs, meta)`
+/// marker, or `None` for any other value. The marker's source metadata is
+/// derived from `rhs`, so lowering rebuilds it.
+// Cost: O(1).
+fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
+    match value {
+        Expr::Call { name, args } if name.as_str() == "__mutsu_bind_index_value" => match args
+            .as_slice()
+        {
+            [rhs, _] => Some(rhs),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// `ApplyInfix(left, Assignment, right)` over already converted operands.
 fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
     let assignment = RakuAstNode {
@@ -2286,6 +2302,33 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
         // `%h<…>` from `%h{…}` yet (#10654) and renders both as `HashIndex`,
         // so an associative assignment takes the `HashIndex` form.
+        // `@a[i] := v` / `%h<k> := v`: an `IndexAssign` whose value is the
+        // parser's bind marker, rendered as rakudo does -- a plain `:=` infix
+        // over the subscript. A slice or multi-dimensional index
+        // (`@a[0,1] := …`, `@a[1;1] := …`) parses to the same flattened list,
+        // so neither renders.
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            is_positional,
+        } if index_bind_rhs(value).is_some() => {
+            let rhs = index_bind_rhs(value).ok_or_else(|| unsupported("indexed bind"))?;
+            if matches!(index.as_ref(), Expr::ArrayLiteral(_)) {
+                return Err(unsupported("slice or multi-dimensional bind"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyInfix,
+                fields: vec![
+                    node_field(
+                        Some("left"),
+                        subscript_node(target, index, *is_positional, None, Vec::new())?,
+                    ),
+                    node_field(Some("infix"), plain_infix(":=")),
+                    node_field(Some("right"), convert_expr(rhs)?),
+                ],
+            })
+        }
         Expr::IndexAssign {
             target,
             index,

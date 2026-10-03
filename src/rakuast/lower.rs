@@ -311,6 +311,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 None => lower_assign(node),
             }
         }
+        // `@a[i] := EXPR` -- the parser's indexed-bind statement.
+        RakuAstClass::ApplyInfix if infix_is_bind_to_subscript(node) => {
+            Ok(Stmt::Expr(lower_index_bind(node)?))
+        }
         // `$x := EXPR` is an `ApplyInfix` with a plain `:=` infix -- the
         // parser's `Stmt::Assign` with a `Bind` op.
         RakuAstClass::ApplyInfix if infix_is_bind_to_variable(node) => {
@@ -1486,12 +1490,48 @@ fn infix_is_assignment(node: &RakuAstNode) -> bool {
 /// is a variable. Any other bind target (a subscript, an attribute) stays the
 /// boundary, as the converter never renders one.
 fn infix_is_bind_to_variable(node: &RakuAstNode) -> bool {
-    let is_bind = named_child(node, "infix").is_ok_and(|infix| {
+    infix_is_bind(node)
+        && named_child(node, "left").is_ok_and(|left| variable_spelling(left).is_ok())
+}
+
+/// Whether an `ApplyInfix`'s infix is a plain `:=`.
+fn infix_is_bind(node: &RakuAstNode) -> bool {
+    named_child(node, "infix").is_ok_and(|infix| {
         infix.class == RakuAstClass::Infix
             && positional_leaf(infix)
                 .is_ok_and(|op| matches!(op.view(), ValueView::Str(s) if s.as_str() == ":="))
-    });
-    is_bind && named_child(node, "left").is_ok_and(|left| variable_spelling(left).is_ok())
+    })
+}
+
+/// Whether an `ApplyInfix` is `SUBSCRIPT := …` (`@a[i] := v`, `%h<k> := v`).
+fn infix_is_bind_to_subscript(node: &RakuAstNode) -> bool {
+    infix_is_bind(node)
+        && named_child(node, "left").is_ok_and(|left| {
+            left.class == RakuAstClass::ApplyPostfix
+                && named_child(left, "postfix").is_ok_and(|p| {
+                    matches!(
+                        p.class,
+                        RakuAstClass::PostcircumfixArrayIndex
+                            | RakuAstClass::PostcircumfixHashIndex
+                            | RakuAstClass::PostcircumfixLiteralHashIndex
+                    )
+                })
+        })
+}
+
+/// `SUBSCRIPT := EXPR` through the parser's own `index_bind_expr`.
+// Cost: O(n), n = size of the node.
+fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let Expr::Index {
+        target,
+        index,
+        is_positional,
+    } = lower_expr(named_child(node, "left")?)?
+    else {
+        return Err(unsupported(node));
+    };
+    let rhs = lower_expr(named_child(node, "right")?)?;
+    Ok(crate::parser::index_bind_expr(target, index, is_positional, rhs))
 }
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
@@ -3186,6 +3226,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 is_bind: false,
             })
         }
+        // `(@a[i] := EXPR)` in expression position -> an indexed bind.
+        RakuAstClass::ApplyInfix if infix_is_bind_to_subscript(node) => lower_index_bind(node),
         // `($x := EXPR)` in expression position -> a binding expression.
         RakuAstClass::ApplyInfix if infix_is_bind_to_variable(node) => {
             let (name, expr) = lower_assign_parts(node)?;

@@ -399,24 +399,9 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     // `*` expression as WhateverCode instead of evaluating it
                     // as Numeric(Whatever). This expression-context path is
                     // reached before the statement-level indexed-bind parser.
-                    let rhs = crate::parser::expr::wrap_finished_expr(rhs);
-                    let bind_value = Expr::Call {
-                        name: crate::symbol::Symbol::intern("__mutsu_bind_index_value"),
-                        args: vec![
-                            rhs.clone(),
-                            crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(
-                                &rhs,
-                            ),
-                        ],
-                    };
                     return Ok((
                         r2,
-                        Expr::IndexAssign {
-                            target,
-                            index,
-                            value: Box::new(bind_value),
-                            is_positional,
-                        },
+                        crate::parser::index_bind_expr(target, index, is_positional, rhs),
                     ));
                 }
                 _ => {}

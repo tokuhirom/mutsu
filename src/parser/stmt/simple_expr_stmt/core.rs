@@ -22,9 +22,8 @@ use crate::value::Value;
 use crate::value::ValueView;
 
 use super::lvalue::{
-    bind_source_metadata_expr, callable_lvalue_assign_expr, grouped_assign_lvalue_stmt,
-    method_lvalue_assign_expr, method_lvalue_target_name, named_sub_lvalue_assign_expr,
-    single_target_list_lvalue_stmt,
+    callable_lvalue_assign_expr, grouped_assign_lvalue_stmt, method_lvalue_assign_expr,
+    method_lvalue_target_name, named_sub_lvalue_assign_expr, single_target_list_lvalue_stmt,
 };
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
@@ -655,24 +654,18 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         })?;
         // Indexed bind RHSs are values too: a compound `*` expression must be
         // retained as WhateverCode instead of being evaluated as Numeric(Whatever).
-        let value = crate::parser::expr::wrap_finished_expr(value);
-        let source_meta = bind_source_metadata_expr(&value);
-        let bind_value = Expr::Call {
-            name: Symbol::intern("__mutsu_bind_index_value"),
-            args: vec![value, source_meta],
-        };
         match expr {
             Expr::Index {
                 target,
                 index,
                 is_positional,
             } => {
-                let stmt = Stmt::Expr(Expr::IndexAssign {
+                let stmt = Stmt::Expr(super::lvalue::index_bind_expr(
                     target,
                     index,
-                    value: Box::new(bind_value),
                     is_positional,
-                });
+                    value,
+                ));
                 return parse_statement_modifier(rest, stmt);
             }
             Expr::MultiDimIndex {
@@ -680,12 +673,12 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } => {
                 // For bind (:=), use IndexAssign with flattened dimensions
                 // because bind semantics are handled by the IndexAssign VM path
-                let stmt = Stmt::Expr(Expr::IndexAssign {
+                let stmt = Stmt::Expr(super::lvalue::index_bind_expr(
                     target,
-                    index: Box::new(Expr::ArrayLiteral(dimensions)),
-                    value: Box::new(bind_value),
-                    is_positional: true,
-                });
+                    Box::new(Expr::ArrayLiteral(dimensions)),
+                    true,
+                    value,
+                ));
                 return parse_statement_modifier(rest, stmt);
             }
             _ => {}
