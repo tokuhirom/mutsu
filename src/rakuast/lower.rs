@@ -63,6 +63,7 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
         RakuAstClass::StatementAlso => super::role::lower_also(node),
+        RakuAstClass::StatementWhenever => super::react::lower_whenever(node),
         RakuAstClass::StatementExpression => {
             let statement = lower_stmt_inner(named_child(node, "expression")?)?;
             if let Some(modifier) = node.fields.iter().find(|f| f.name == Some("loop-modifier")) {
@@ -163,6 +164,17 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
+        RakuAstClass::StatementPrefixReact => super::react::lower_react(node),
+        // A bare `done` is the react/supply completion unless a lexical
+        // `&done` shadows it; the compiler decides that for the bare word
+        // (`Expr::BareWord("done")`), so lower to it rather than to a fixed
+        // `Stmt::ReactDone`.
+        RakuAstClass::CallNameWithoutParentheses
+            if call_name_str(node).is_ok_and(|n| n == "done")
+                && !node.fields.iter().any(|f| f.name == Some("args")) =>
+        {
+            Ok(Stmt::Expr(Expr::BareWord("done".to_string())))
+        }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::StatementIf => lower_if(node),

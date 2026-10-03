@@ -204,7 +204,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         Stmt::Import { module: _, tags: _ } => {}
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
-        | Stmt::React { body }
+        | Stmt::React { body, .. }
         | Stmt::Default(body)
         | Stmt::Catch(body)
         | Stmt::Control(body) => v.visit_stmts_mut(body),

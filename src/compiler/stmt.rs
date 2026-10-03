@@ -3727,9 +3727,9 @@ impl Compiler {
             }
 
             // ADR-0048 Phase 2: `react {}` does not take a signature in raku.
-            Stmt::React { body } if self.emit_block_placeholder_die(body) => {}
+            Stmt::React { body, .. } if self.emit_block_placeholder_die(body) => {}
             // --- React: event loop scope ---
-            Stmt::React { body } => {
+            Stmt::React { body, .. } => {
                 let idx = self.code.emit(OpCode::ReactScope { body_end: 0 });
                 for s in body {
                     self.compile_stmt(s);

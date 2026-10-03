@@ -964,6 +964,18 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 is_our: *is_our,
             },
         )?))),
+        Stmt::React { body, blorst } => Ok(Some(statement_expression(
+            super::react::convert_react(body, *blorst)?,
+        ))),
+        Stmt::Whenever {
+            supply,
+            params,
+            param_defs,
+            body,
+        } => Ok(Some(super::react::convert_whenever(
+            supply, params, param_defs, body,
+        )?)),
+        Stmt::ReactDone => Ok(Some(statement_expression(super::react::convert_done()))),
         // `also does R;` in a package body.
         Stmt::DoesDecl {
             name,
@@ -2652,7 +2664,7 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 }
 
 /// A bare `{ ... }` block -> `Block(body => Blockoid)`.
-fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],

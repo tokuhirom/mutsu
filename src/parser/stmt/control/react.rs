@@ -11,12 +11,19 @@ pub(crate) fn react_stmt(input: &str) -> PResult<'_, Stmt> {
             rest2,
             Stmt::React {
                 body: vec![whenever],
+                blorst: true,
             },
         ));
     }
     // `react { ... }` block form.
     if let Ok((rest, body)) = block(rest) {
-        return Ok((rest, Stmt::React { body }));
+        return Ok((
+            rest,
+            Stmt::React {
+                body,
+                blorst: false,
+            },
+        ));
     }
     // `react STATEMENT` blorst form (e.g. `react foo`). A `react` takes a
     // block-or-statement; when it's a bare statement, parse a single expression
@@ -29,6 +36,7 @@ pub(crate) fn react_stmt(input: &str) -> PResult<'_, Stmt> {
         rest,
         Stmt::React {
             body: vec![Stmt::Expr(expr)],
+            blorst: true,
         },
     ))
 }
