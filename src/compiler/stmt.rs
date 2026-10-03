@@ -4910,10 +4910,17 @@ impl Compiler {
                     is_temp: true,
                     slot,
                 });
+                // `self` is a term, not a variable (`temp self.x = v`,
+                // `temp $.x ~= v`).
+                let invocant = if var_name == "self" {
+                    Expr::BareWord(var_name.clone())
+                } else {
+                    Expr::Var(var_name.clone())
+                };
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
-                        Expr::Var(var_name.clone()),
+                        invocant,
                         Expr::Literal(Value::str(method_name.clone())),
                         Expr::ArrayLiteral(method_args.clone()),
                         value.clone(),
