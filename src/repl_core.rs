@@ -96,8 +96,7 @@ pub(crate) fn process_line(
     // position rather than sink context — the same rule EVAL follows. Without
     // this, typing `1 + 2 * 3` answers 7 *and* warns "Useless use of ... in
     // sink context"; rakudo's REPL just answers 7.
-    crate::parser::set_eval_value_tail();
-    let display = match interpreter.run(accumulated) {
+    let display = match interpreter.run_value_tail(accumulated) {
         Ok(_) => {
             let output = interpreter.output();
             let had_output = interpreter.has_output_emitted();
