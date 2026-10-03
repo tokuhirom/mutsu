@@ -893,6 +893,7 @@ mod promise_broken_gist;
 mod promise_errors;
 pub(crate) mod quanthash_store;
 mod quanthash_subclass;
+pub(crate) mod raku_cycle_guards;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
 pub(crate) mod react_whenever;
@@ -3992,27 +3993,9 @@ pub struct Interpreter {
     /// here for the duration so the re-entry takes the class path instead of
     /// recognising the name as a role again and looping.
     pub(crate) role_pun_construction: Vec<String>,
-    /// Ids currently being rendered by `Mu.rakuseen($id, &code)` — the
-    /// cyclic-structure guard for `.raku`/`.gist`. A repeated id means a cycle:
-    /// `rakuseen` returns a backreference name instead of re-running `&code`
-    /// (which would recurse forever), and the first (outer) occurrence wraps its
-    /// result in `(my \NAME = ...)`.
-    pub(crate) rakuseen_active: Vec<String>,
-    /// Ids for which a cycle backreference was emitted during the current render;
-    /// the outer `rakuseen` for that id consumes the flag to add the `(my \NAME =
-    /// ...)` binding wrapper.
-    pub(crate) rakuseen_cycle_hit: std::collections::HashSet<String>,
-    /// Instance ids whose `.raku` is currently being rendered by the nested-leaf
-    /// walker (`methods_raku_dispatch`). A self-referencing object
-    /// (`$obj.myself[0] = $obj`) would otherwise recurse forever: instance →
-    /// attribute container → the same instance. A repeated id renders as a
-    /// Rakudo-style backreference name (`Bug_48`) instead of dispatching again.
-    pub(crate) raku_leaf_active: Vec<u64>,
-    /// Instance ids for which a cycle backreference was emitted during the
-    /// current native `.raku` render; the frame that pushed the id onto
-    /// `raku_leaf_active` consumes the flag to wrap its rendering in the
-    /// `(my \NAME = ...)` binding (mirroring the user-facing `rakuseen`).
-    pub(crate) raku_leaf_cycle_hit: std::collections::HashSet<u64>,
+    /// Recursion guards for `.raku`/`.gist` renders of self-referencing
+    /// structures (the `guards` subsystem, ADR-10779).
+    pub(crate) raku_cycle_guards: raku_cycle_guards::RakuCycleGuards,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
     /// Set when reading a Proxy subclass attribute; consumed by subsequent .push/.pop etc.
     pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String)>,

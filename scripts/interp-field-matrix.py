@@ -203,7 +203,7 @@ pub struct Interpreter {
     if got != want:
         errors.append(f"parse_fields: expected {want}, got {got}")
     for field, sub in [("env", "frame"), ("pending_call_arg_sources", "handoff"),
-                       ("fn_resolve_cache", "caches"), ("rakuseen_active", "guards"),
+                       ("fn_resolve_cache", "caches"), ("raku_cycle_guards", "guards"),
                        ("no_such_field_xyz", "unclassified")]:
         if subsystem_of(field) != sub:
             errors.append(f"subsystem_of({field!r}): expected {sub}, got {subsystem_of(field)}")
@@ -302,7 +302,7 @@ SUBSYSTEMS = [
     ("async", "Supply/react/gather/lazy-pull state", r"^(supply_|react_|pending_react_subscriptions|nested_react_callbacks|active_supply_emitters|pending_promise_whenever_arms|pending_tap_closes|current_react_waker|gather_|lazy_|take_defer_to_op_end|map_grep_last_depth|rw_map_topic_capture|next_invocation_id|invocation_id_block_end)"),
     ("regex", "Regex, grammar and slang state", r"^(grammar_|rx_cursor|walk_cursors|start_invocant|in_regex_code_block|action_made|current_grammar_actions|defined_slang_|slang_declarator_hows)"),
     ("eval", "EVAL/REPL/MAIN and compile-time capture analysis", r"^(pending_eval_|repl_compiler|last_value|pending_supply_|pending_whenever_inherited_owned|last_block_my_declared|main_hidden_from_usage|explicit_run_main|nested_mode|uncaught)"),
-    ("guards", "Recursion/cycle guards for .raku/.gist and friends", r"^(rakuseen_|raku_leaf_)"),
+    ("guards", "Recursion/cycle guards for .raku/.gist and friends", r"^(raku_cycle_guards$|rakuseen_|raku_leaf_)"),
 ]
 
 CORE_MIN_FILES = 30
