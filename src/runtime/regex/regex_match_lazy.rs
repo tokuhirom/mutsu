@@ -252,7 +252,7 @@ impl Interpreter {
                 pkg,
                 false,
                 false,
-                &mut MatchSink::Cont(&mut cont, 0),
+                &mut MatchSink::Cont(&mut cont),
             );
         }
         unwind
@@ -324,7 +324,7 @@ impl Interpreter {
                 pkg,
                 false,
                 false,
-                &mut MatchSink::Cont(&mut cont, 0),
+                &mut MatchSink::Cont(&mut cont),
             );
         }
         unwind
@@ -440,7 +440,7 @@ impl Interpreter {
                 pkg,
                 false,
                 false,
-                &mut MatchSink::Cont(&mut cont, 0),
+                &mut MatchSink::Cont(&mut cont),
             );
         }
         (matched, unwind)

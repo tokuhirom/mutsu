@@ -8,13 +8,19 @@ pub(super) fn is_quantifier_start(next: Option<char>) -> bool {
     matches!(next, Some('*' | '+' | '?'))
 }
 
-/// Mark a quantifier that ends `out` as backtrackable (`:!`) when the rule's
-/// significant whitespace follows it. Rakudo ratchets the `[atom <.ws>]`
-/// wrapper there, not the quantifier, so `rule { 'D' <id>? <v> }` gives
+/// Mark the term that ends `out` as backtrackable (`:!`) when the rule's
+/// significant whitespace follows it. Rakudo ratchets each term of a sequence
+/// on its outermost node, and a term with significant whitespace after it is
+/// the `[term <.ws>]` wrapper, so the ratchet lands on the wrapper and the
+/// term itself can still give its match back: `rule { 'D' <id>? <v> }` gives
 /// `<id>` back to let `<v>` match (ASN::Grammar's `'DEFAULT' <id-string>?
-/// <value>`); an explicit backtrack modifier (`?:`, `?:!`, `??`, `?!`)
-/// keeps its own meaning, and a `%` separator binds to the quantifier.
-// Cost: O(1).
+/// <value>`), and `rule { '(' [ <x>? || <y> ] ')' }` reaches `<y>` (#11162).
+/// The terms marked are the ones that can backtrack: a quantified atom, a
+/// group, a capture or a subrule call. An explicit backtrack modifier (`?:`,
+/// `?:!`, `??`, `?!`) keeps its own meaning, a `%` separator binds to the
+/// quantifier, and a sigil alias (`$<x>=[ … ]`) ratchets the atom it binds
+/// itself, as rakudo does.
+// Cost: O(n), n = length of `out` (one backward scan for the atom start).
 pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, escaped: bool) {
     // Nothing follows inside this rule (`… <x>? }`): there is nothing to give
     // an element back to, and the rule itself returns ratcheted.
@@ -22,36 +28,95 @@ pub(super) fn mark_backtracking_before_ws(out: &mut String, next: Option<char>, 
         return;
     }
     let trimmed_len = out.trim_end().len();
-    // `<id> ** 0..1`: a range quantifier, which the single-char check below
-    // cannot see.
-    if let Some(pos) = out[..trimmed_len].rfind("**") {
-        let range = out[pos + 2..trimmed_len].trim_start();
-        if !range.is_empty()
-            && range
-                .chars()
-                .all(|c| c.is_ascii_digit() || matches!(c, '.' | '^' | '*'))
-        {
-            out.truncate(trimmed_len);
-            out.push_str(":!");
-            return;
-        }
-    }
-    let mut rev = out[..trimmed_len].chars().rev();
-    let (Some(quant), Some(before)) = (rev.next(), rev.next()) else {
+    let Some(atom_end) = backtrackable_term_atom_end(&out[..trimmed_len]) else {
         return;
     };
-    let is_quant = matches!(quant, '?' | '*' | '+');
-    // A frugal (`*?`, `??`) or already-modified quantifier is left alone, and
-    // the character before must close an atom (`x?`, `<id>?`, `]*`, `)+`).
-    if !is_quant
-        || matches!(before, '?' | '*' | '+' | ':' | '!' | '\\')
-        || before.is_whitespace()
-        || matches!(before, '|' | '&' | '(' | '[' | '{' | '<' | '%' | '=')
+    if let Some(start) = last_atom_start(&out[..atom_end])
+        && is_sigil_alias_target(&out[..start])
     {
         return;
     }
     out.truncate(trimmed_len);
     out.push_str(":!");
+}
+
+/// If `text` ends with a term that can backtrack, the byte offset where the
+/// term's atom ends (before any quantifier).
+fn backtrackable_term_atom_end(text: &str) -> Option<usize> {
+    // `<id> ** 0..1`: a range quantifier, which the single-char check below
+    // cannot see.
+    if let Some(pos) = text.rfind("**") {
+        let range = text[pos + 2..].trim_start();
+        if !range.is_empty()
+            && range
+                .chars()
+                .all(|c| c.is_ascii_digit() || matches!(c, '.' | '^' | '*'))
+        {
+            return Some(text[..pos].trim_end().len());
+        }
+    }
+    let mut rev = text.chars().rev();
+    let (Some(last), Some(before)) = (rev.next(), rev.next()) else {
+        return None;
+    };
+    if matches!(last, '?' | '*' | '+') {
+        // A frugal (`*?`, `??`) or already-modified quantifier is left alone,
+        // and the character before must close an atom (`x?`, `<id>?`, `]*`,
+        // `)+`).
+        if matches!(before, '?' | '*' | '+' | ':' | '!' | '\\')
+            || before.is_whitespace()
+            || matches!(before, '|' | '&' | '(' | '[' | '{' | '<' | '%' | '=')
+        {
+            return None;
+        }
+        return Some(text.len() - last.len_utf8());
+    }
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let k = chars.len() - 1;
+    if is_escaped(&chars, k) {
+        return None;
+    }
+    match last {
+        ']' | ')' => Some(text.len()),
+        '>' => {
+            let open = matching_open(&chars, k, '<', '>')?;
+            is_backtrackable_assertion(&text[chars[open].0 + 1..chars[k].0]).then_some(text.len())
+        }
+        _ => None,
+    }
+}
+
+/// Whether the body of a `<…>` assertion is a call that can backtrack: a
+/// named rule, a method or a lexical/variable regex. Lookarounds, character
+/// classes, code assertions and `<.ws>` itself have a single end.
+fn is_backtrackable_assertion(body: &str) -> bool {
+    let name = body.trim_start_matches(['.', '&']);
+    if matches!(name, "ws" | "?" | "!") || name.starts_with(['?', '!', '[', '-', '+', ':', '(', '{', '~'])
+    {
+        return false;
+    }
+    let ident: String = name
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ':'))
+        .collect();
+    if matches!(
+        ident.as_str(),
+        "before" | "after" | "ws" | "ww" | "wb" | "same" | "at"
+    ) {
+        return false;
+    }
+    name.starts_with(|c: char| c.is_alphabetic() || matches!(c, '_' | '$' | '@'))
+}
+
+/// Whether the text before an atom ends in a sigil alias's `=` (`$<x>=`,
+/// `@<x>=`, `$0=`), which binds that atom.
+fn is_sigil_alias_target(before_atom: &str) -> bool {
+    let trimmed = before_atom.trim_end();
+    if !trimmed.ends_with('=') {
+        return false;
+    }
+    let chars: Vec<(usize, char)> = trimmed.char_indices().collect();
+    !is_escaped(&chars, chars.len() - 1)
 }
 
 /// Wrap the last atom of `out` as `[ATOM <.ws>]` so a quantifier that

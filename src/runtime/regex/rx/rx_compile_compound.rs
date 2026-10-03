@@ -8,7 +8,7 @@ use super::super::regex_helpers::{
 };
 use super::RxOp;
 use super::rx_compile::{
-    Compiler, Decline, atom_captures, min_len, pattern_captures, pattern_contains_backref,
+    Compiler, Decline, atom_captures, pattern_captures, pattern_contains_backref,
     pattern_contains_code, pattern_reads_enclosing_state,
 };
 use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToken};
@@ -49,22 +49,13 @@ impl Compiler {
     /// *k+1* is entered. Each branch ends with an `AltTail` that pads the
     /// alternation's positional slot space and marks its list-valued names
     /// (`alternation_branch_delta`). Under ratchet the alternation commits to
-    /// the first branch that matches and to that branch's first end; the walk
-    /// moves past a branch whose every end is zero-width, so a ratcheted
-    /// alternation with such a branch (other than the last) is declined.
+    /// the first branch that matches and to that branch's first end,
+    /// zero-width or not.
     pub(super) fn seq_alternation(
         &mut self,
         token: &RegexToken,
         alts: &[RegexPattern],
     ) -> Result<(), Decline> {
-        if token.ratchet
-            && alts
-                .iter()
-                .take(alts.len().saturating_sub(1))
-                .any(|a| min_len(a) == 0)
-        {
-            return Err("seqalt-nullable-ratchet");
-        }
         let alt = self.alts.len() as u32;
         self.alts.push(alternation_list_flags(alts));
         let pos_base = self.reg();

@@ -437,16 +437,24 @@ struct SeparatorParse {
 }
 
 impl Interpreter {
-    /// Whether a quantifier under `:sigspace` is followed by significant
+    /// Whether a sequence term under `:sigspace` is followed by significant
     /// whitespace (and not by a `%` separator), which leaves it backtrackable
     /// even in a ratcheted regex -- see the `token_ratchet` computation.
-    // Cost: O(w), w = whitespace characters after the quantifier.
-    fn sigspace_quantifier_backtracks(
+    ///
+    /// Rakudo ratchets each term of a sequence on its outermost compiled
+    /// node. A term that significant whitespace follows compiles to
+    /// `concat(term, <.ws>)`, and the ratchet lands on that concat, which
+    /// ignores it, so the term itself (a quantifier, a subrule call, an
+    /// alternation, a group) can still give its match back. Only terms that
+    /// can backtrack at all are marked; for the rest the flag is moot.
+    // Cost: O(w), w = whitespace characters after the term.
+    fn sigspace_term_backtracks(
+        atom: &RegexAtom,
         quant: &RegexQuant,
         sigspace: bool,
         chars: &std::iter::Peekable<std::str::Chars>,
     ) -> bool {
-        if !sigspace || matches!(quant, RegexQuant::One) {
+        if !sigspace || (matches!(quant, RegexQuant::One) && !atom_may_backtrack(atom)) {
             return false;
         }
         let mut lookahead = chars.clone();
@@ -456,6 +464,37 @@ impl Interpreter {
         while lookahead.next_if(|c| c.is_whitespace()).is_some() {}
         lookahead.peek().is_some_and(|c| *c != '%')
     }
+}
+
+/// A `[ … ]` group around a single term compiles to that term in rakudo, so
+/// a backtrack decision made for the group (`[<x>]:!`, or significant
+/// whitespace after it) is made for the term: un-ratchet it too.
+// Cost: O(d), d = depth of directly nested single-term groups.
+fn unratchet_transparent_group(atom: &mut RegexAtom) {
+    if let RegexAtom::Group(inner) = atom
+        && let [only] = inner.tokens.as_mut_slice()
+    {
+        only.ratchet = false;
+        unratchet_transparent_group(&mut only.atom);
+    }
+}
+
+/// Whether an unquantified atom can yield more than one end, so that its
+/// ratchet flag changes what a later failure may backtrack into.
+// Cost: O(1).
+fn atom_may_backtrack(atom: &RegexAtom) -> bool {
+    matches!(
+        atom,
+        RegexAtom::Named(_)
+            | RegexAtom::Group(_)
+            | RegexAtom::CaptureGroup(_)
+            | RegexAtom::CaptureIsolatedGroup(_)
+            | RegexAtom::CaptureIsolatedGroupScoped(..)
+            | RegexAtom::Alternation(_)
+            | RegexAtom::SequentialAlternation(_)
+            | RegexAtom::Conjunction(_)
+            | RegexAtom::ClosureInterpolation { .. }
+    )
 }
 
 /// The `<.ws>` token `:sigspace` inserts for significant whitespace.
@@ -4996,13 +5035,19 @@ impl Interpreter {
                 false
             } else {
                 // Inherit the pattern-level :ratchet flag -- except for a
-                // quantifier that significant whitespace follows under
-                // :sigspace. Rakudo wraps such an atom with the `<.ws>` and
-                // ratchets that wrapper, not the quantifier, so `rule { 'D'
-                // <id>? <v> }` backtracks out of `<id>` to let `<v>` match
-                // (ASN::Grammar's `'DEFAULT' <id-string>? <value>`). An
-                // explicit `:` still commits (`<id>?: <v>` fails).
-                ratchet && !Self::sigspace_quantifier_backtracks(&quant, sigspace, &chars)
+                // term that significant whitespace follows under :sigspace.
+                // Rakudo wraps such a term with the `<.ws>` and ratchets that
+                // wrapper, not the term, so `rule { 'D' <id>? <v> }`
+                // backtracks out of `<id>` to let `<v>` match (ASN::Grammar's
+                // `'DEFAULT' <id-string>? <value>`), and `:s '(' [ <x>? ||
+                // <y> ] ')'` reaches `<y>` (#11162). An explicit `:` still
+                // commits (`<id>?: <v>` fails), and a sigil alias
+                // (`$<x>=<id>?`) ratchets the atom it binds itself.
+                let sigil_aliased =
+                    pending_named_capture.is_some() && !pending_named_capture_is_angle_alias;
+                ratchet
+                    && (sigil_aliased
+                        || !Self::sigspace_term_backtracks(&atom, &quant, sigspace, &chars))
             };
             // Handle `%` / `%%` separator quantifier modifier, e.g.
             // `<thing>+ % ','`. Only meaningful for repeating quantifiers. The
@@ -5017,11 +5062,14 @@ impl Interpreter {
             // the alias becomes the primary capture and the builtin name becomes secondary.
             // See the `'<'` arm: an aliased negated subrule assertion can never
             // produce a successful match in Rakudo.
-            let atom = if aliased_negated_subrule {
+            let mut atom = if aliased_negated_subrule {
                 RegexAtom::Named("!".into())
             } else {
                 atom
             };
+            if !token_ratchet && ratchet {
+                unratchet_transparent_group(&mut atom);
+            }
             let user_alias = pending_named_capture.take();
             let user_alias_is_angle = pending_named_capture_is_angle_alias;
             pending_named_capture_is_angle_alias = false;

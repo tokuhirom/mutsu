@@ -197,7 +197,7 @@ impl Interpreter {
                 sub_pkg,
                 false,
                 false,
-                &mut MatchSink::Cont(&mut cont, 0),
+                &mut MatchSink::Cont(&mut cont),
             );
             self.leave_rule_cursor();
         }
