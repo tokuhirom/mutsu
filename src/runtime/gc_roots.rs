@@ -260,8 +260,11 @@ impl Interpreter {
                 visitor.visit_value(key);
             }
         }
-        for vec in &self.async_state.supply_emit_buffer {
-            visit_slice(visitor, vec);
+        for frame in &self.async_state.supply_emit_buffer {
+            visit_slice(visitor, frame);
+            if let Some(quit) = &frame.quit {
+                visitor.visit_value(quit);
+            }
         }
         // A marker queued here holds the whenever's source Supply and its
         // callbacks, and it is the ONLY thing holding them between the nested
