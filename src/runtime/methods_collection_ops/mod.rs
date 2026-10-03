@@ -169,6 +169,27 @@ thread_local! {
     static MUTSU_THREAD_ID: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
 }
 
+// The `Thread` object `$*THREAD` returns on this OS thread, built on first
+// access. One object per thread (rakudo: `$*THREAD` is the thread's own
+// `Thread`), so `$*THREAD does R` mixes `R` into the object every later
+// `$*THREAD` read sees. A held `Gc` instance is an external reference to the
+// cycle collector (trial deletion), so the cache keeps it alive without a root.
+thread_local! {
+    static THREAD_OBJECT: std::cell::RefCell<Option<Value>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install `thread` as the current OS thread's `$*THREAD` object.
+pub(super) fn set_current_thread_object(thread: Value) {
+    THREAD_OBJECT.with(|cell| *cell.borrow_mut() = Some(thread));
+}
+
+/// The current OS thread's `$*THREAD` object, built by `make` on first use.
+// Cost: O(1).
+pub(crate) fn current_thread_object(make: impl FnOnce() -> Value) -> Value {
+    THREAD_OBJECT.with(|cell| cell.borrow_mut().get_or_insert_with(make).clone())
+}
+
 /// Set the mutsu thread ID for the current thread.
 pub(super) fn set_current_mutsu_thread_id(id: i64) {
     MUTSU_THREAD_ID.with(|cell| cell.set(id));

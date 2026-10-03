@@ -336,9 +336,11 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                // $*THREAD: dynamically create a Thread instance with current thread ID
+                // $*THREAD: the current thread's own Thread object.
                 if name == "*THREAD" || name == "$*THREAD" {
-                    self.stack.push(Self::make_thread_instance());
+                    self.stack.push(crate::runtime::current_thread_object(
+                        Self::make_thread_instance,
+                    ));
                     *ip += 1;
                     return Ok(());
                 }

@@ -875,7 +875,8 @@ impl Interpreter {
                     NewlineMode::Cr => "\r",
                     NewlineMode::Crlf => "\r\n",
                 };
-                self.env_mut().insert("?NL".to_string(), Value::str_from(nl));
+                self.env_mut()
+                    .insert("?NL".to_string(), Value::str_from(nl));
                 Ok(Value::NIL)
             }
             "require" => self.builtin_require(&args),

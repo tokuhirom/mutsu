@@ -1638,8 +1638,13 @@ impl Interpreter {
             if self.is_native_method(&class_name.resolve(), method)
                 && !self.grammar_has_user_method(&class_name.resolve(), method)
             {
+                let cls = class_name.resolve();
+                if Self::native_method_blocks_on_other_thread(&cls, method) {
+                    let snapshot = attributes.to_map();
+                    return self.call_native_instance_method(&cls, &snapshot, method, args);
+                }
                 return self.call_native_instance_method(
-                    &class_name.resolve(),
+                    &cls,
                     &(attributes).as_map(),
                     method,
                     args,
