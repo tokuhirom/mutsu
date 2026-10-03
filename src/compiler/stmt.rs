@@ -507,6 +507,12 @@ impl Compiler {
     /// list at runtime (`my $r := 0..2; @a[$r]`), which
     /// [`Self::desugar_for_scalar_element_source`] handles with a runtime guard.
     fn for_index_is_slice(index: &Expr) -> bool {
+        // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into a
+        // WhateverCode that yields the range.
+        let index = match index {
+            Expr::WhateverCurry(inner) => inner.as_ref(),
+            other => other,
+        };
         match index {
             Expr::Binary { op, .. } => matches!(
                 op,
