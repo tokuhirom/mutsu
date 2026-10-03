@@ -85,6 +85,21 @@ fn starts_bool_prefix_arg(s: &str) -> bool {
     })
 }
 
+/// A string/numeric prefix (`~`, `-`, `+`) glued to a term-starting
+/// sigil/paren/quote/digit: `~$/`, `-1`, `+"5"`. After a package-qualified
+/// routine name and a space (`Base58::decode ~$/`) it opens the routine's
+/// listop argument, as in Rakudo. The glue excludes the spaced infix forms
+/// (`M::x - 1`), and every two-character infix (`~~`, `--`, `-=`, `+<`, ...)
+/// continues with an operator character, not a term start.
+fn starts_glued_prefix_arg(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix(['~', '-', '+']) else {
+        return false;
+    };
+    rest.as_bytes().first().is_some_and(|b| {
+        matches!(b, b'(' | b'$' | b'@' | b'%' | b'&' | b'\'' | b'"') || b.is_ascii_digit()
+    })
+}
+
 /// A slip prefix (`|`) directly followed by a term-starting sigil/paren/angle
 /// is an unambiguous argument start, so `unique |$x` / `min |@a` /
 /// `test |<all is>` parse as a call with a flattened argument rather than
@@ -2319,6 +2334,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             && !short_name_is_type
             && !name_is_enum_value
             && name.contains('-');
+        // A lowercase package-qualified name that is no known type, enum value
+        // or value term names a routine (`Base58::decode`), whose listop
+        // argument may open with a glued prefix: `Base58::decode ~$/`.
+        let qualified_routine_prefix_arg = name.contains("::")
+            && short_name.starts_with(|c: char| c.is_ascii_lowercase())
+            && !name_is_declared_type
+            && !name_is_enum_value
+            && !crate::parser::stmt::simple::is_user_declared_value_term(&name)
+            && starts_glued_prefix_arg(r);
         if is_user_prefix_sub {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
                 return Ok((r2, make_call_expr(call_name, input, vec![arg])));
@@ -2368,6 +2392,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || starts_hyper_prefix_op(r)
             || starts_bool_prefix_arg(r)
             || starts_slip_prefix_arg(r)
+            || qualified_routine_prefix_arg
             || starts_with_term_keyword(r)
             // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
             // so `undeclared-sub q:to/END/` is a no-paren listop call.

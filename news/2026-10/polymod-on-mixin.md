@@ -18,3 +18,9 @@ module's own `our package P2PKH`. A qualified call from a method (or a closure
 or lexical sub inside one) of a class or role declared in a module now finds
 `Q::f` under the enclosing package too, as Rakudo finds it through the lexical
 scope. It used to work only from the module's own subs.
+
+The `checkedB58Str` subset then calls `Base58::decode ~$/` inside its code
+assertion. A package-qualified routine called as a listop now takes an
+argument that opens with a glued prefix operator (`M::f ~$x`, `M::f -1`), so
+this no longer parses as `M::f() ~ $x`. A spaced infix (`M::c - 1`) is still
+an infix. The bare-name form inside a regex code block is #11616.
