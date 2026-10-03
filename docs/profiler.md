@@ -221,44 +221,39 @@ An allocation row has the shape `{ "count": 321, "bytes": 15061 }`. It is
 available only in the measurement-only `alloc-stats` mode described above; do
 not compare that run's wall clock or sampled time with a normal build.
 
-`hits` counts *line entries*, and a line entry is a line-**transition** edge: the
-line is counted each time control arrives at it *from a different line*. It is not
-a statement-execution count, and the difference is not academic. Two consequences
-to know before reading any `hits` column:
+`hits` counts *line arrivals*. Control arrives at a line in two ways, and each
+counts once:
 
-- **A line that calls a routine is entered twice** per execution — once to make
-  the call, and once more when control returns to finish the statement.
-- **A loop whose body occupies a single line is counted once per loop entry, not
-  once per trip.** Staying on the same line is not a transition, so there is
-  nothing to count. Only a body spanning two or more lines gets one hit per line
-  per trip:
+- **from a different line** — the ordinary case, a line-transition edge;
+- **by coming back around a loop** — a compound loop (`for`, `while`, `loop`,
+  `repeat`, a statement-modifier `for`) entering its body for the next trip, or a
+  backward jump (`nqp::while`). This counts even when the line does not change,
+  so a loop whose body sits on one line still gets one hit per trip
+  ([#8737](https://github.com/tokuhirom/mutsu/issues/8737)).
 
-  ```raku
-  for 1..100 { $b = $b + 1 }       # that line: hits 1
+It is not a statement-execution count. What it means for each loop shape:
 
-  for 1..100 {
-      $b = $b + 1;                 # that line: hits 1  (body is still one line)
-  }
+```raku
+for 1..100 { $b = $b + 1 }       # that line: hits 101 (reached once, then 100 trips)
 
-  for 1..100 {
-      $b = $b + 1;                 # hits 100
-      $c = $c + 1;                 # hits 100
-  }
-  ```
+for 1..100 {                     # hits 1
+    $b = $b + 1;                 # hits 100
+}
 
-  This is a property of the counting mechanism, not of any one loop form: `for`,
-  `while`, `loop` and `repeat` all behave this way, and it applies to the loop's
-  header line too: a one-line `while $i < 100 { ... }` reports `hits 1`, while a
-  `while` whose body is on separate lines reports one hit per condition
-  evaluation on its header line — trips plus the final false one. That second
-  shape is the one `tests/profile_counts.rs` pins (5,000 trips: body lines
-  5,000 each, header 5,001).
+while $i < 100 {                 # hits 101 (each condition test: 100 trips + the false one)
+    $i = $i + 1;                 # hits 100
+}
+```
 
-So a `hits` column is a reliable trip count only where the loop body is spread
-over several lines, and comparing it against NYTProf's statement counts is not
-meaningful in general. [#8737](https://github.com/tokuhirom/mutsu/issues/8737)
-tracks whether the counter should record a hit on a loop backedge that lands on
-the same line, which would make `hits` a trip count for every loop form.
+A line holding a whole loop therefore reports trips + 1, the same `trips + 1` a
+multi-line `while`'s header has always reported; `tests/profile_counts.rs` pins
+both shapes (and the 5,000-trip header/body split of the multi-line `while`).
+
+**A return is not an arrival.** A line that calls a routine is counted once each
+time control reaches it, not once more when the call comes back: the
+"current line" is kept per routine depth, so the callee's lines do not disturb
+the caller's. This is also what keeps the counts identical with the JIT on and
+off (ADR-0106 §8 gate 4) on a line that makes a call.
 
 ### Routine rows
 

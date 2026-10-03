@@ -83,11 +83,11 @@ my %hits = @files[0]<lines>.map({ .<line> => .<hits> });
 is %hits{5}, $TRIPS, 'the loop body line ran exactly the trip count';
 is %hits{6}, $TRIPS, '... and so did the second body line';
 is %hits{4}, $TRIPS + 1, '... while the condition ran once more';
-# `hits` counts *line entries* (the `op_lines[ip] != last_line` edge, ADR-0106
-# D5), so a line that calls a routine is entered twice: once to make the call,
-# and once more when control comes back to finish the statement. Documented in
-# docs/profiler.md, and asserted here so it stays deliberate.
-is %hits{10}, 2, '... and the calling line is entered twice, call and return';
+# `hits` counts *arrivals* (ADR-0106 §9.1), and a return from a call is not
+# one: the line that makes the call is counted once. (It used to be counted
+# again on the return in the interpreter but not in native code, which broke
+# JIT parity -- #8737.) Documented in docs/profiler.md.
+is %hits{10}, 1, '... and the calling line is counted once, not again on return';
 
 # The caller breakdown (ADR-0106 D3) -- the column a flat line table cannot
 # produce.

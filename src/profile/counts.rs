@@ -19,7 +19,7 @@ use super::{CallsiteLocation, LineLocation, RoutineLocation};
 use crate::opcode::CompiledCode;
 use crate::runtime::RoutineFrame;
 use rustc_hash::FxHashMap;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,11 +53,19 @@ impl ThreadCounts {
 }
 
 thread_local! {
-    /// The line the previous poll stood on. A plain `Cell`, deliberately: it
-    /// is read on every poll and the tables behind it are only touched when
-    /// the line actually changes, so the common "still on the same line" poll
-    /// takes no lock at all.
-    static LAST_LINE: Cell<Option<LastLine>> = const { Cell::new(None) };
+    /// The line the previous poll stood on, per routine depth
+    /// (`Interpreter::routine_stack`'s length). It is read on every poll and
+    /// the tables behind it are only touched when the line actually changes,
+    /// so the common "still on the same line" poll takes no lock at all.
+    ///
+    /// Per depth, because a *return* is not an arrival: a caller's line was
+    /// already counted when control reached it, and a callee's polls at its
+    /// own depth leave the caller's entry alone, so coming back from the call
+    /// counts nothing. A single "last line" made the interpreter (which polls
+    /// every op) count a line again after each call on it returned, while
+    /// native code (which hooks only line transitions and jump targets) did
+    /// not — the JIT-parity gap ADR-0106 §8 gate 4 forbids (#8737).
+    static LAST_LINES: RefCell<Vec<Option<LastLine>>> = const { RefCell::new(Vec::new()) };
     static THREAD_COUNTS: RefCell<Option<ThreadCounts>> = const { RefCell::new(None) };
 }
 
@@ -68,6 +76,23 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 fn registry() -> &'static Mutex<Vec<TableHandle>> {
     static REGISTRY: OnceLock<Mutex<Vec<TableHandle>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Replace the last line recorded at routine depth `depth`, returning the old
+/// one. A re-entrant borrow (impossible today) answers "unknown" rather than
+/// panicking: a counter must never be the thing that panics inside the VM.
+// Cost: O(1) amortized; the vector grows to the deepest routine depth polled.
+fn swap_last_line(depth: usize, line: Option<LastLine>) -> Option<LastLine> {
+    LAST_LINES
+        .try_with(|cell| {
+            let mut lines = cell.try_borrow_mut().ok()?;
+            if lines.len() <= depth {
+                lines.resize(depth + 1, None);
+            }
+            std::mem::replace(&mut lines[depth], line)
+        })
+        .ok()
+        .flatten()
 }
 
 /// Run `f` against this thread's tables, creating and registering them on
@@ -86,17 +111,18 @@ fn with_tables<R>(f: impl FnOnce(&mut Tables) -> R) -> Option<R> {
         .unwrap_or(None)
 }
 
-/// Record a poll standing at `here`, counting a hit when it is a different
-/// line from the previous poll's.  The chunk address distinguishes a routine
-/// re-entry at the same source line from continuing the previous execution of
-/// that line.
+/// Record a poll standing at `here` at routine depth `depth`, counting a hit
+/// when it is a different line from the previous poll's at that depth.  The
+/// chunk address distinguishes a routine re-entry at the same source line from
+/// continuing the previous execution of that line.
 ///
 /// `here` is resolved by the caller (`vm_poll::record_line`) because the
 /// sampler needs the same answer, and resolving it twice per poll would be
 /// paying for the armed gate twice over.
-pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
+// Cost: O(1) amortized.
+pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>, depth: usize) {
     let Some(location) = here else {
-        LAST_LINE.with(|cell| cell.set(None));
+        swap_last_line(depth, None);
         return;
     };
     let last_line = LastLine {
@@ -104,8 +130,8 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
         location,
     };
     // The hot case by a wide margin: another opcode on the line we are already
-    // counting. It costs one thread-local load and a compare, no lock.
-    if LAST_LINE.with(|cell| cell.replace(Some(last_line))) == Some(last_line) {
+    // counting. It costs one thread-local access and a compare, no lock.
+    if swap_last_line(depth, Some(last_line)) == Some(last_line) {
         return;
     }
     with_tables(|tables| {
@@ -113,7 +139,25 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
     });
 }
 
-/// Reset the line-transition edge after a routine frame is pushed, then count
+/// End the current line visit, so the next poll counts a hit even when it
+/// stands on the same line.
+///
+/// A hit is an *arrival* at a line. Arriving from a different line is the
+/// common case and needs nothing: [`record_line_at`] sees the line change.
+/// The other way to arrive is to come back around a loop — a compound loop
+/// entering its body range for the next trip, or a backward jump — and a loop
+/// whose body sits on one line never changes line doing so. Without this, a
+/// one-line `for 1..100 { $a++ }` counted its line once per loop *entry*
+/// rather than once per trip (#8737). The poll network calls this on those
+/// arrivals only, and only while the profiler is armed, at the routine depth
+/// the arrival happens at.
+// Cost: O(1) amortized.
+pub(crate) fn end_line_visit(depth: usize) {
+    swap_last_line(depth, None);
+}
+
+/// Reset the line-transition edge of the routine depth `frame` is about to be
+/// pushed at (`callee_depth`), then count
 /// the exact routine entry and its call site when that site has a source
 /// location.
 ///
@@ -125,8 +169,8 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
 /// module finished loading ([#8743]).
 ///
 /// [#8743]: https://github.com/tokuhirom/mutsu/issues/8743
-pub(crate) fn record_routine_frame(frame: &RoutineFrame) {
-    LAST_LINE.with(|cell| cell.set(None));
+pub(crate) fn record_routine_frame(frame: &RoutineFrame, callee_depth: usize) {
+    swap_last_line(callee_depth, None);
     with_tables(|tables| {
         let routine = RoutineLocation {
             package: frame.package,
@@ -220,7 +264,7 @@ mod tests {
             let here = code
                 .location_at(ip)
                 .map(|(file, line)| LineLocation { file, line });
-            record_line_at(&code, here);
+            record_line_at(&code, here, 0);
         }
         let snapshot = take_counts();
         assert_eq!(

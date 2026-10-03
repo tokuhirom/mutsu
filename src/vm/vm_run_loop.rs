@@ -267,6 +267,9 @@ impl Interpreter {
         // and its stop-the-world bound: `vm_poll::DispatchPolls`.
         let polls = crate::vm::vm_poll::DispatchPolls::current();
         let mut poll_due = true;
+        // The entry poll is not a loop arrival (`poll_code`'s `arrival`);
+        // every later due poll follows a backward transfer.
+        let mut at_entry = true;
         while ip < code.ops.len() {
             if polls.due(poll_due) {
                 crate::vm::vm_poll::poll_code(
@@ -274,7 +277,9 @@ impl Interpreter {
                     ip as u32,
                     code,
                     self,
+                    poll_due && !at_entry,
                 );
+                at_entry = false;
             }
             let op_ip = ip;
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -653,6 +658,9 @@ impl Interpreter {
         // and its stop-the-world bound: `vm_poll::DispatchPolls`.
         let polls = crate::vm::vm_poll::DispatchPolls::current();
         let mut poll_due = true;
+        // The entry poll is not a loop arrival (`poll_code`'s `arrival`);
+        // every later due poll follows a backward transfer.
+        let mut at_entry = true;
         while ip < code.ops.len() {
             if polls.due(poll_due) {
                 crate::vm::vm_poll::poll_code(
@@ -660,7 +668,9 @@ impl Interpreter {
                     ip as u32,
                     code,
                     self,
+                    poll_due && !at_entry,
                 );
+                at_entry = false;
             }
             let op_ip = ip;
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
@@ -960,6 +970,7 @@ impl Interpreter {
                     start as u32,
                     code,
                     self,
+                    false,
                 );
             }
             return Ok(());
@@ -1048,6 +1059,7 @@ impl Interpreter {
                     ip as u32,
                     code,
                     self,
+                    poll_due,
                 );
             }
             let op_ip = ip;

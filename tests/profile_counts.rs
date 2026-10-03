@@ -76,6 +76,108 @@ fn jit_on_and_off_produce_the_same_counts() {
     assert_eq!(off.callsite_calls(), on.callsite_calls());
 }
 
+/// A loop whose body sits on one line still counts a hit per trip (#8737).
+///
+/// A hit is an arrival at a line. Coming back around a loop is an arrival even
+/// when the line does not change: a compound loop entering its body for the
+/// next trip, or an `nqp::while`'s backward jump. Before #8737 only a line
+/// *change* counted, so every one-line loop below reported `hits 1`. A line
+/// holding a whole loop is reached once from the line above and once per trip,
+/// so it reports `TRIPS + 1` — the same `trips + 1` a multi-line `while`'s
+/// condition line has always reported.
+const ONE_LINE_TRIPS: u64 = 100;
+
+fn one_line_fixture() -> String {
+    let n = ONE_LINE_TRIPS;
+    format!(
+        "use nqp;\n\
+         my $a = 0;\n\
+         for 1..{n} {{ $a = $a + 1 }}\n\
+         my $b = 0;\n\
+         for 1..{n} {{\n\
+         \x20   $b = $b + 1;\n\
+         }}\n\
+         my $c = 0; my $i = 0;\n\
+         while $i < {n} {{ $c = $c + 1; $i = $i + 1 }}\n\
+         my $d = 0;\n\
+         loop (my $k = 0; $k < {n}; $k++) {{ $d = $d + 1 }}\n\
+         my $e = 0;\n\
+         repeat {{ $e = $e + 1 }} while $e < {n};\n\
+         my $f = 0;\n\
+         $f++ for ^{n};\n\
+         my int $g = 0;\n\
+         nqp::while($g < {n}, $g = $g + 1);\n\
+         say \"$a $b $c $d $e $f $g\";\n"
+    )
+}
+
+#[test]
+fn one_line_loop_bodies_count_per_trip() {
+    let path = fixture_path("counts-one-line", &one_line_fixture());
+    let off = profile(&path, &[("MUTSU_JIT", "off")]);
+    let on = profile(&path, &[("MUTSU_JIT", "on"), ("MUTSU_JIT_THRESHOLD", "1")]);
+    let _ = std::fs::remove_file(&path);
+
+    let n = ONE_LINE_TRIPS;
+    assert_eq!(off.stdout, format!("{n} {n} {n} {n} {n} {n} {n}\n"));
+    let hits = |line: u32| -> u64 {
+        off.hits(line)
+            .unwrap_or_else(|| panic!("line {line} is missing from {:?}", off.line_hits()))
+    };
+    assert_eq!(hits(3), n + 1, "one-line `for`");
+    assert_eq!(hits(5), 1, "a multi-line `for` header is reached once");
+    assert_eq!(
+        hits(6),
+        n,
+        "a one-line body on its own line runs once per trip"
+    );
+    assert_eq!(hits(9), n + 1, "one-line `while`");
+    assert_eq!(hits(11), n + 1, "one-line C-style `loop`");
+    assert_eq!(hits(13), n + 1, "one-line `repeat ... while`");
+    assert_eq!(hits(15), n + 1, "statement-modifier `for`");
+    assert_eq!(
+        hits(17),
+        n + 1,
+        "one-line `nqp::while` (a plain backward jump)"
+    );
+    assert_eq!(hits(18), 1);
+
+    // ADR-0106 §8 gate 4 holds for the new arrivals too.
+    if cfg!(feature = "jit") {
+        assert!(
+            on.jit_entries() > 0,
+            "the JIT never entered, so this proves nothing about JIT parity"
+        );
+    }
+    assert_eq!(
+        off.line_hits(),
+        on.line_hits(),
+        "line counts diverge between JIT off and on"
+    );
+}
+
+/// A return is not an arrival: a line that calls a routine is counted once per
+/// time control reaches it, not once more each time the call comes back. The
+/// interpreter (which polls every op) used to count the return and native code
+/// (which hooks only line transitions) did not, so a JIT-compiled caller
+/// reported fewer hits than an interpreted one (#8737).
+#[test]
+fn a_return_from_a_call_is_not_another_hit() {
+    let path = fixture_path(
+        "counts-call-return",
+        "sub g() { 1 }\nmy $t = 0;\n$t += g() for ^20;\nfor ^20 {\n    $t += g();\n}\nsay $t;\n",
+    );
+    let off = profile(&path, &[("MUTSU_JIT", "off")]);
+    let on = profile(&path, &[("MUTSU_JIT", "on"), ("MUTSU_JIT_THRESHOLD", "1")]);
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(off.stdout, "40\n");
+    assert_eq!(off.hits(3), Some(21), "statement-modifier loop calling `g`");
+    assert_eq!(off.hits(5), Some(20), "a loop body line calling `g`");
+    assert_eq!(off.hits(3), on.hits(3), "JIT parity on the calling line");
+    assert_eq!(off.hits(5), on.hits(5), "JIT parity on the calling line");
+}
+
 /// Routine entries and call sites are counted exactly too, and a routine that
 /// is hot enough to be JIT-compiled is counted the same either way.
 #[test]

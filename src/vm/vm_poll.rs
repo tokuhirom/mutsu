@@ -187,16 +187,26 @@ pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
 /// The profiler runs *before* the GC consumer: the line was entered at this ip
 /// whatever the collector then does, and time spent inside a collect is not
 /// time this line was running (`profile::exclude_non_raku` discounts it).
+///
+/// `arrival` says the poll stands where control just *arrived* by coming back
+/// around a loop — a backward transfer, or a compound loop entering its body
+/// for the next trip — so the line counts a hit even when it is the line the
+/// previous poll stood on (`profile::end_line_visit`, #8737). It is only read
+/// inside the armed-profiler branch.
 #[inline(always)]
 pub(crate) fn poll_code(
     kind: SafepointKind,
     site: PollSite,
     code: &CompiledCode,
     interp: &Interpreter,
+    arrival: bool,
 ) {
     count_poll();
     let s = state();
     if s & STATE_PROFILER != 0 || test_profiler_enabled() {
+        if arrival {
+            crate::profile::end_line_visit(interp.routine_stack().len());
+        }
         record_line(code, site, interp);
     }
     if s & STATE_GC != 0 {
@@ -244,7 +254,7 @@ impl Interpreter {
         let op_ip = *ip;
         let r = self.exec_one(code, ip, compiled_fns);
         if *ip <= op_ip && r.is_ok() && armed() {
-            poll_code(SafepointKind::Backedge, *ip as u32, code, self);
+            poll_code(SafepointKind::Backedge, *ip as u32, code, self, true);
         }
         r
     }
@@ -269,7 +279,7 @@ pub(crate) fn record_line(code: &CompiledCode, site: PollSite, interp: &Interpre
             .map(|(file, line)| crate::profile::LineLocation { file, line });
         #[cfg(feature = "alloc-stats")]
         crate::alloc_stats::set_current_line(here);
-        crate::profile::record_line_at(code, here);
+        crate::profile::record_line_at(code, here, interp.routine_stack().len());
         crate::profile::sample_if_due(interp, here);
     }
 }
