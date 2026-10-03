@@ -305,8 +305,12 @@ impl Interpreter {
         // A `&name` binds the routine itself. An EXPORT map built from `:p`
         // pairs (`UNIT::{"&$_"}:p`, String::Utils' selective import) carries
         // each value in the stash element's container, and a bare call of the
-        // imported name would otherwise try to invoke that Scalar.
-        let value = if key.starts_with('&') {
+        // imported name would otherwise try to invoke that Scalar. A
+        // sigilless key (a type or term, `UNIT::{$_}:p` for `my class`) binds
+        // the value itself just the same: a type object is never held in a
+        // Scalar, and the wrapped one hid the class from call-position
+        // resolution (`LicenseId("0BSD")` in SBOM::CycloneDX).
+        let value = if key.starts_with('&') || !key.starts_with(['$', '@', '%']) {
             value.into_deref()
         } else {
             value

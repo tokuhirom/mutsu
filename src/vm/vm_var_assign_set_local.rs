@@ -3454,6 +3454,14 @@ impl Interpreter {
         // execution.
         let name_sym = code.const_sym(name_idx);
         loan_env!(self, set_var_dynamic(name, dynamic));
+        // A declaration is a fresh binding: a readonly mark left by an outer
+        // same-named one (`my @names is List` in a module, class or role body
+        // -- the set is keyed by bare name) does not apply to it. The
+        // declaration's own traits re-mark it right after this op. Journaled
+        // like any unmark, so leaving the frame restores the outer mark.
+        if !self.readonly_vars.borrow().is_empty() {
+            self.unmark_readonly_sym(name_sym);
+        }
         // A `my $*name` is this frame's own binding of the dynamic, not the
         // process-level one `PROCESS::<$name>` reports (`process_stash_entries`).
         if dynamic && (name.starts_with('*') || name.starts_with("@*") || name.starts_with("%*")) {

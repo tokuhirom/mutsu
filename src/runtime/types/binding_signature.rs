@@ -3883,6 +3883,13 @@ impl Interpreter {
                     // the caller's readonly state via `restore_readonly_vars`.
                     self.unmark_readonly_sym(pd_name_sym);
                 }
+            } else if !self.readonly_vars.borrow().is_empty() {
+                // The same leak for a fresh, writable `@`/`%` param: an outer
+                // same-named immutable binding (`my @names is List` in a
+                // module or role body) made `sub EXPORT(*@names) { @names ||=
+                // ... }` silently unassignable. Journaled, so the frame's exit
+                // restores the outer mark.
+                self.unmark_readonly(&pd.name);
             }
         }
         // Rakudo's container-descriptor `.name` for `@`/`%` parameters
