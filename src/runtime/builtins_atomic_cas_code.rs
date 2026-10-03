@@ -87,6 +87,13 @@ impl Interpreter {
                 self.call_sub_value(code.clone(), call_args, true)?
             };
             self.check_atomic_elem_type(name, &new_val)?;
+            // The cell is a `Scalar` (a `$` variable or an element), so an
+            // aggregate is itemized on the way in, as a plain `=` store does.
+            let new_val = if name.starts_with(['@', '%']) {
+                Self::itemize_value_for_element_store(new_val)
+            } else {
+                Self::itemize_scalar_store(name, new_val)
+            };
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             if Self::cas_retry_matches(&current, &guard) {
                 *guard = new_val.clone();

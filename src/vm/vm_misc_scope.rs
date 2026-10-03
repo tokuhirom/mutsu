@@ -270,7 +270,7 @@ impl Interpreter {
                 self.coerce_object_to_hash(init_val)
                     .detach_shared_container()
             } else {
-                init_val
+                Self::itemize_scalar_store(name, init_val)
             };
             // Seed the shared cell from any value the local snapshot already
             // holds (state mutated before the first thread spawned), else from
@@ -346,7 +346,10 @@ impl Interpreter {
                 let tc = tc.clone();
                 self.typed_scalar_nil_seed_value(name, &tc)
             } else {
-                init_val
+                // The cell is this `$` holder's `Scalar`: the initializer is
+                // itemized exactly as a later `$x = %h` write through it is
+                // (`state $x = %h; $x.raku` is `${...}`, ADR-0079).
+                Self::itemize_scalar_store(name, init_val)
             };
             // ADR-0042 slice 1 §3.1: a `state Int @a` container is boxed into
             // a `ContainerRef` cell unconditionally below (Track B slice 3),
