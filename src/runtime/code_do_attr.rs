@@ -116,8 +116,18 @@ impl Interpreter {
             self.registration_callable_id(key)
         });
         let mut sub_id = data.id;
-        if let Some((&old_id, _)) = self.wrap_sub_names.iter().find(|(_, n)| **n == func_name) {
-            let stored_callable_id = self.wrap_callable_ids.get(&func_name).copied().flatten();
+        if let Some((&old_id, _)) = self
+            .dispatch
+            .wrap_sub_names
+            .iter()
+            .find(|(_, n)| **n == func_name)
+        {
+            let stored_callable_id = self
+                .dispatch
+                .wrap_callable_ids
+                .get(&func_name)
+                .copied()
+                .flatten();
             let same_sub = match (stored_callable_id, current_callable_id) {
                 (Some(stored), Some(current)) => stored == current,
                 // If we can't tell, assume same.
@@ -127,12 +137,12 @@ impl Interpreter {
                 sub_id = old_id;
             } else {
                 // Redefined: clear the old wrap chain and mappings.
-                crate::runtime::cow_table_mut(&mut self.wrap_chains).remove(&old_id);
-                self.wrap_sub_names.remove(&old_id);
-                self.wrap_name_to_sub.remove(&func_name);
+                crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).remove(&old_id);
+                self.dispatch.wrap_sub_names.remove(&old_id);
+                self.dispatch.wrap_name_to_sub.remove(&func_name);
             }
         }
-        crate::runtime::cow_table_mut(&mut self.wrap_callable_ids)
+        crate::runtime::cow_table_mut(&mut self.dispatch.wrap_callable_ids)
             .insert(func_name.clone(), current_callable_id);
         (sub_id, func_name)
     }
@@ -150,10 +160,13 @@ impl Interpreter {
     ) {
         self.invalidate_fn_resolution();
         if !func_name.is_empty() {
-            self.wrap_sub_names.insert(sub_id, func_name.clone());
+            self.dispatch
+                .wrap_sub_names
+                .insert(sub_id, func_name.clone());
             // Only the first Sub value for this name is kept: it carries the
             // chain's key.
-            self.wrap_name_to_sub
+            self.dispatch
+                .wrap_name_to_sub
                 .entry(func_name)
                 .or_insert_with(|| target.clone());
         }
@@ -164,7 +177,7 @@ impl Interpreter {
     // Cost: O(1) when nothing is wrapped; otherwise O(w + c), w = wrapped
     // routines, c = wrappers on this routine.
     fn bound_do_body(&self, data: &SubData) -> Option<Value> {
-        if self.wrap_chains.is_empty() {
+        if self.dispatch.wrap_chains.is_empty() {
             return None;
         }
         let name = data
@@ -173,11 +186,12 @@ impl Interpreter {
             .map(Value::to_string_value)
             .unwrap_or_else(|| data.name.resolve());
         let sub_id = self
+            .dispatch
             .wrap_sub_names
             .iter()
             .find(|(_, n)| !name.is_empty() && **n == name)
             .map_or(data.id, |(&id, _)| id);
-        let chain = self.wrap_chains.get(&sub_id)?;
+        let chain = self.dispatch.wrap_chains.get(&sub_id)?;
         chain
             .iter()
             .find(|(h, _)| *h == DO_BODY_HANDLE)
@@ -262,7 +276,7 @@ impl Interpreter {
         };
         let body = direct_code(&body_data);
         let (sub_id, func_name) = self.routine_wrap_key(data);
-        let chain = crate::runtime::cow_table_mut(&mut self.wrap_chains)
+        let chain = crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains)
             .entry(sub_id)
             .or_default();
         chain.retain(|(h, _)| *h != DO_BODY_HANDLE);

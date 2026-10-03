@@ -879,7 +879,7 @@ impl Interpreter {
             // failure's runtime X::TypeCheck::Binding identity instead of
             // reclassifying it as X::TypeCheck::Argument (raku throws Binding
             // for `my &t = &typed; t("nope")`). One-shot; consumed at entry.
-            self.suppress_binding_error_enhance = true;
+            self.dispatch.suppress_binding_error_enhance = true;
             return self.call_compiled_closure(&data, &cf.code, args, fns);
         }
 
@@ -910,7 +910,7 @@ impl Interpreter {
             // dispatched through a value must keep a binding failure's runtime
             // identity instead of the "will never work with declared signature"
             // wrap, which is meant for statically-resolved bare calls.
-            self.suppress_binding_error_enhance = true;
+            self.dispatch.suppress_binding_error_enhance = true;
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
 

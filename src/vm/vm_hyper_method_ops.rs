@@ -810,7 +810,7 @@ impl Interpreter {
             // As on the scalar `CallMethod` path: tell the by-name dispatch to
             // resolve the user method instead of the pseudo-method macro.
             if skip_native && quoted && pseudo {
-                self.skip_pseudo_method_native = Some(method.clone());
+                self.dispatch.skip_pseudo_method_native = Some(method.clone());
             }
             let item_args = args.clone();
             match modifier {

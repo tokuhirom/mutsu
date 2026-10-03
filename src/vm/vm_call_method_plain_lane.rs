@@ -140,7 +140,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
-        self.method_dispatch_pure = false;
+        self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
         self.caches.plain_method_lane_active = true;
         let call_result = self.dispatch_compiled_method_mut_with_raw_invocant(

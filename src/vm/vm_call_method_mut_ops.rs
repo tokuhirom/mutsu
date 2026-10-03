@@ -1615,7 +1615,7 @@ impl Interpreter {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            self.skip_pseudo_method_native = Some(method.to_string());
+            self.dispatch.skip_pseudo_method_native = Some(method.to_string());
         }
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
@@ -3084,7 +3084,7 @@ impl Interpreter {
                 // The CallMethod path has the Nil absorber for direct Nil.method calls.
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this.
-                self.method_dispatch_pure = false;
+                self.dispatch.method_dispatch_pure = false;
                 if !skip_native
                     && !self.native_lever_a_user_override_sym(&target, method_sym)
                     && let Some(produced) =
@@ -3094,7 +3094,7 @@ impl Interpreter {
                         "callmethodmut",
                         "quanthash-weight-pair-producer",
                     );
-                    self.method_dispatch_pure = true;
+                    self.dispatch.method_dispatch_pure = true;
                     self.stack.push(produced);
                     return Ok(());
                 }
@@ -3117,7 +3117,7 @@ impl Interpreter {
                         "callmethodmut",
                         "element-container-producer",
                     );
-                    self.method_dispatch_pure = true;
+                    self.dispatch.method_dispatch_pure = true;
                     self.stack.push(produced);
                     return Ok(());
                 }
@@ -3129,7 +3129,7 @@ impl Interpreter {
                         // array/hash natives are handled by the dedicated
                         // writeback branches above and return early). So it is
                         // env-pure w.r.t. the caller -> no per-call locals pull.
-                        self.method_dispatch_pure = true;
+                        self.dispatch.method_dispatch_pure = true;
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "callmethodmut",
                             "native",

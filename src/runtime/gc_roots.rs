@@ -156,10 +156,10 @@ impl Interpreter {
         for (_, block, _) in &self.threads.lock_async_deferred {
             visitor.visit_value(block);
         }
-        for (_, _, args, _, _) in &self.multi_dispatch_stack {
+        for (_, _, args, _, _) in &self.dispatch.multi_dispatch_stack {
             visit_slice(visitor, args);
         }
-        for frame in &self.method_dispatch_stack {
+        for frame in &self.dispatch.method_dispatch_stack {
             visitor.visit_value(&frame.invocant);
             visit_slice(visitor, &frame.args);
             // ADR-0019 E9b-1: a `Wrapper` entry carries a live callable Value;
@@ -171,24 +171,29 @@ impl Interpreter {
                 }
             }
         }
-        for (invocant, args) in self.pending_method_dispatch.iter().map(|p| p.roots()) {
+        for (invocant, args) in self
+            .dispatch
+            .pending_method_dispatch
+            .iter()
+            .map(|p| p.roots())
+        {
             visitor.visit_value(invocant);
             visit_slice(visitor, args);
         }
-        for ctx in &self.samewith_context_stack {
+        for ctx in &self.dispatch.samewith_context_stack {
             visit_opt(visitor, &ctx.invocant);
             visit_opt(visitor, &ctx.callable);
             if let Some(args) = &ctx.args {
                 visit_slice(visitor, args);
             }
         }
-        for chain in self.wrap_chains.values() {
+        for chain in self.dispatch.wrap_chains.values() {
             for (_, v) in chain {
                 visitor.visit_value(v);
             }
         }
-        visit_map_values(visitor, &self.wrap_name_to_sub);
-        for frame in &self.wrap_dispatch_stack {
+        visit_map_values(visitor, &self.dispatch.wrap_name_to_sub);
+        for frame in &self.dispatch.wrap_dispatch_stack {
             visit_slice(visitor, &frame.remaining);
             visit_slice(visitor, &frame.args);
         }
@@ -206,7 +211,7 @@ impl Interpreter {
                 visitor.visit_value(calc);
             }
         }
-        for frame in &self.proto_dispatch_stack {
+        for frame in &self.dispatch.proto_dispatch_stack {
             visit_slice(visitor, &frame.args);
             if let Some(ctx) = &frame.method_ctx {
                 visitor.visit_value(&ctx.invocant);

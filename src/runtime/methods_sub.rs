@@ -100,8 +100,8 @@ impl Interpreter {
                     let Some(wrapper) = args.first().cloned() else {
                         return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
                     };
-                    self.wrap_handle_counter += 1;
-                    let handle_id = self.wrap_handle_counter;
+                    self.dispatch.wrap_handle_counter += 1;
+                    let handle_id = self.dispatch.wrap_handle_counter;
                     self.registry_mut()
                         .push_method_wrap(&package, &name, 0, handle_id, wrapper);
                     let attrs = method_wrap_handle_attrs(&package, &name, 0, handle_id, target);
@@ -1165,8 +1165,8 @@ impl Interpreter {
             } else {
                 return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
             };
-            self.wrap_handle_counter += 1;
-            let handle_id = self.wrap_handle_counter;
+            self.dispatch.wrap_handle_counter += 1;
+            let handle_id = self.dispatch.wrap_handle_counter;
             // Method candidate wrap: if this Sub came from ^lookup().candidates[N],
             // store the wrap chain in method_wrap_chains instead.
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
@@ -1189,7 +1189,7 @@ impl Interpreter {
             // `&foo` creates a fresh Sub, so the chain is keyed by name once a
             // routine is wrapped (see `routine_wrap_key`).
             let (sub_id, func_name) = self.routine_wrap_key(data);
-            crate::runtime::cow_table_mut(&mut self.wrap_chains)
+            crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains)
                 .entry(sub_id)
                 .or_default()
                 .push((handle_id, wrapper));
@@ -1255,6 +1255,7 @@ impl Interpreter {
                 .map(Value::to_string_value)
                 .unwrap_or_else(|| data.name.resolve());
             let sub_id = self
+                .dispatch
                 .wrap_sub_names
                 .iter()
                 .find(|(_, n)| **n == func_name)
@@ -1262,14 +1263,16 @@ impl Interpreter {
                 .unwrap_or(data.id);
             if args.is_empty() {
                 // unwrap with no args on a never-wrapped sub should error
-                if !self.wrap_chains.contains_key(&sub_id) || self.wrap_chains[&sub_id].is_empty() {
+                if !self.dispatch.wrap_chains.contains_key(&sub_id)
+                    || self.dispatch.wrap_chains[&sub_id].is_empty()
+                {
                     return Some(Err(routine_unwrap_error(
                         "Cannot unwrap routine: not wrapped",
                     )));
                 }
                 // Pop the outermost wrapper
                 if let Some(chain) =
-                    crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id)
+                    crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id)
                 {
                     chain.pop();
                     if chain.is_empty() {
@@ -1288,7 +1291,8 @@ impl Interpreter {
                     "Cannot unwrap routine: invalid wrap handle",
                 )));
             };
-            let chain = crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id);
+            let chain =
+                crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id);
             if let Some(chain) = chain {
                 let before_len = chain.len();
                 chain.retain(|(hid, _)| *hid != handle_id);
@@ -1374,8 +1378,8 @@ impl Interpreter {
 
     /// Clean up wrap_sub_names and wrap_name_to_sub when a sub's wrap chain becomes empty.
     pub(crate) fn cleanup_wrap_name_entries(&mut self, sub_id: u64) {
-        if let Some(name) = self.wrap_sub_names.remove(&sub_id) {
-            self.wrap_name_to_sub.remove(&name);
+        if let Some(name) = self.dispatch.wrap_sub_names.remove(&sub_id) {
+            self.dispatch.wrap_name_to_sub.remove(&name);
         }
     }
 
@@ -1388,6 +1392,7 @@ impl Interpreter {
     /// calls to the new routine can still dispatch the old wrapper.
     pub(crate) fn clear_wrap_chains_for_name(&mut self, name: &str) {
         let sub_ids: Vec<u64> = self
+            .dispatch
             .wrap_sub_names
             .iter()
             .filter_map(|(sub_id, sub_name)| (sub_name == name).then_some(*sub_id))
@@ -1395,13 +1400,13 @@ impl Interpreter {
         if sub_ids.is_empty() {
             return;
         }
-        let wrap_chains = crate::runtime::cow_table_mut(&mut self.wrap_chains);
+        let wrap_chains = crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains);
         for sub_id in sub_ids {
             wrap_chains.remove(&sub_id);
-            self.wrap_sub_names.remove(&sub_id);
+            self.dispatch.wrap_sub_names.remove(&sub_id);
         }
-        self.wrap_name_to_sub.remove(name);
-        crate::runtime::cow_table_mut(&mut self.wrap_callable_ids).remove(name);
+        self.dispatch.wrap_name_to_sub.remove(name);
+        crate::runtime::cow_table_mut(&mut self.dispatch.wrap_callable_ids).remove(name);
         self.invalidate_fn_resolution();
     }
 }

@@ -49,13 +49,14 @@ impl Interpreter {
 
     pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
         let fq = format!("{}::{}", self.current_package(), full_name);
-        self.operator_assoc
+        self.dispatch
+            .operator_assoc
             .get(&fq)
             .cloned()
-            .or_else(|| self.operator_assoc.get(full_name).cloned())
+            .or_else(|| self.dispatch.operator_assoc.get(full_name).cloned())
             .or_else(|| {
                 let global = format!("GLOBAL::{}", full_name);
-                self.operator_assoc.get(&global).cloned()
+                self.dispatch.operator_assoc.get(&global).cloned()
             })
     }
 
@@ -254,18 +255,24 @@ impl Interpreter {
 
     /// Check whether a sub has an active (non-empty) wrap chain.
     pub(crate) fn has_wrap_chain(&self, sub_id: u64) -> bool {
-        self.wrap_chains.get(&sub_id).is_some_and(|c| !c.is_empty())
+        self.dispatch
+            .wrap_chains
+            .get(&sub_id)
+            .is_some_and(|c| !c.is_empty())
     }
 
     /// Check whether we're already inside a wrap dispatch for a given sub.
     pub(crate) fn is_wrap_dispatching(&self, sub_id: u64) -> bool {
-        self.wrap_dispatch_stack.iter().any(|f| f.sub_id == sub_id)
+        self.dispatch
+            .wrap_dispatch_stack
+            .iter()
+            .any(|f| f.sub_id == sub_id)
     }
 
     /// Find the sub_id and Sub value for a function name that has an active wrap chain.
     /// Returns the sub_id if a wrap chain exists for the given function name.
     pub(crate) fn wrap_sub_id_for_name(&self, name: &str) -> Option<u64> {
-        for (sub_id, sub_name) in &self.wrap_sub_names {
+        for (sub_id, sub_name) in &self.dispatch.wrap_sub_names {
             if sub_name == name && self.has_wrap_chain(*sub_id) {
                 return Some(*sub_id);
             }
@@ -308,18 +315,18 @@ impl Interpreter {
     /// question.
     #[inline]
     pub(crate) fn any_routine_wrapped(&self) -> bool {
-        !self.wrap_name_to_sub.is_empty()
+        !self.dispatch.wrap_name_to_sub.is_empty()
     }
 
     /// Whether the routine `name` currently carries a wrapper.
     pub(crate) fn routine_is_wrapped(&self, name: &str) -> bool {
-        self.wrap_name_to_sub.contains_key(name)
+        self.dispatch.wrap_name_to_sub.contains_key(name)
     }
 
     /// Get the original wrapped Sub value for a function name.
     /// Returns the Sub value stored when wrap was called, preserving the original sub_id.
     pub(crate) fn get_wrapped_sub(&self, name: &str) -> Option<Value> {
-        self.wrap_name_to_sub.get(name).cloned()
+        self.dispatch.wrap_name_to_sub.get(name).cloned()
     }
 
     pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
@@ -1212,8 +1219,8 @@ impl Interpreter {
         });
         self.push_samewith_context(method_name, invocant, Some(args.to_vec()));
         if native_how_mixin || self.is_metamodel_how_class(receiver_class) {
-            self.metamodel_dispatch_stack.push((
-                self.samewith_context_stack.len(),
+            self.dispatch.metamodel_dispatch_stack.push((
+                self.dispatch.samewith_context_stack.len(),
                 receiver_class.to_string(),
                 method_name.to_string(),
                 args.to_vec(),
@@ -1227,8 +1234,8 @@ impl Interpreter {
     /// select the highest (innermost) live frame instead of a fixed
     /// wrap-then-method-then-multi search order.
     pub(crate) fn next_dispatch_token(&mut self) -> u64 {
-        self.dispatch_token_counter += 1;
-        self.dispatch_token_counter
+        self.dispatch.dispatch_token_counter += 1;
+        self.dispatch.dispatch_token_counter
     }
 
     /// ADR-0019 E9a/E9b-2: candidates from the deferral expansion whose
@@ -1371,20 +1378,22 @@ impl Interpreter {
             wraps_spliced: true,
         });
         remaining.extend(mro_tail);
-        self.method_dispatch_stack.push(super::MethodDispatchFrame {
-            receiver_class: receiver_class.to_string(),
-            invocant,
-            args: args.to_vec(),
-            remaining,
-            rw_params,
-            dispatch_token,
-            arg_sources,
-            // The caller invokes chain's outermost wrapper directly right
-            // after this push, so this frame always STARTS inside wrapper
-            // code (even when `chain.len() == 1` and `remaining` holds no
-            // `Wrapper` entry at all).
-            in_wrapper: true,
-        });
+        self.dispatch
+            .method_dispatch_stack
+            .push(super::MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining,
+                rw_params,
+                dispatch_token,
+                arg_sources,
+                // The caller invokes chain's outermost wrapper directly right
+                // after this push, so this frame always STARTS inside wrapper
+                // code (even when `chain.len() == 1` and `remaining` holds no
+                // `Wrapper` entry at all).
+                in_wrapper: true,
+            });
     }
 
     /// Push the callsame frame for a wrapped auto-generated attribute
@@ -1409,16 +1418,18 @@ impl Interpreter {
         }
         remaining.push(terminal);
         let dispatch_token = self.next_dispatch_token();
-        self.method_dispatch_stack.push(super::MethodDispatchFrame {
-            receiver_class: receiver_class.to_string(),
-            invocant,
-            args: args.to_vec(),
-            remaining,
-            rw_params: Vec::new(),
-            dispatch_token,
-            arg_sources,
-            in_wrapper: true,
-        });
+        self.dispatch
+            .method_dispatch_stack
+            .push(super::MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining,
+                rw_params: Vec::new(),
+                dispatch_token,
+                arg_sources,
+                in_wrapper: true,
+            });
     }
 
     pub(crate) fn has_any_wrap_chains(&self) -> bool {
@@ -1434,11 +1445,11 @@ impl Interpreter {
             "ADR-0019 E9b-2: WrapDispatchFrame is sub-only; sub_id == 0 was the retired method-wrap sentinel"
         );
         frame.dispatch_token = self.next_dispatch_token();
-        self.wrap_dispatch_stack.push(frame);
+        self.dispatch.wrap_dispatch_stack.push(frame);
     }
 
     pub(crate) fn pop_wrap_dispatch_frame(&mut self) {
-        self.wrap_dispatch_stack.pop();
+        self.dispatch.wrap_dispatch_stack.pop();
     }
 
     /// Get method-level wrap chain for a specific candidate.
@@ -1490,11 +1501,12 @@ impl Interpreter {
     /// Must always be called after push_method_dispatch_frame, regardless of its return value.
     pub(crate) fn pop_method_samewith_context(&mut self) {
         if self
+            .dispatch
             .metamodel_dispatch_stack
             .last()
-            .is_some_and(|(depth, ..)| *depth == self.samewith_context_stack.len())
+            .is_some_and(|(depth, ..)| *depth == self.dispatch.samewith_context_stack.len())
         {
-            self.metamodel_dispatch_stack.pop();
+            self.dispatch.metamodel_dispatch_stack.pop();
         }
         self.pop_samewith_context();
     }
@@ -1558,7 +1570,7 @@ impl Interpreter {
         // and no rw value to chain forward.
         if all_candidates.len() == 1 {
             let dispatch_token = self.next_dispatch_token();
-            self.multi_dispatch_stack.push((
+            self.dispatch.multi_dispatch_stack.push((
                 name.to_string(),
                 super::MultiRemaining::empty(),
                 args.to_vec(),
@@ -1607,7 +1619,7 @@ impl Interpreter {
         // empty (every candidate shares the winner's body fingerprint): being a
         // multi is what makes this a dispatcher, not having somewhere to defer
         // to. An empty frame is exactly the "no next candidate -> Nil" case.
-        self.multi_dispatch_stack.push((
+        self.dispatch.multi_dispatch_stack.push((
             name.to_string(),
             remaining,
             args.to_vec(),
@@ -1619,7 +1631,7 @@ impl Interpreter {
 
     /// Pop a multi dispatch frame (must only be called if push returned true).
     pub(crate) fn pop_multi_dispatch(&mut self) {
-        self.multi_dispatch_stack.pop();
+        self.dispatch.multi_dispatch_stack.pop();
     }
 
     /// Push a samewith context (ADR-0019 E9c-1: the single push/pop helper
@@ -1636,29 +1648,33 @@ impl Interpreter {
         invocant: Option<Value>,
         args: Option<Vec<Value>>,
     ) {
-        self.samewith_context_stack.push(super::SamewithContext {
-            name: name.to_string(),
-            invocant,
-            callable: None,
-            args,
-        });
+        self.dispatch
+            .samewith_context_stack
+            .push(super::SamewithContext {
+                name: name.to_string(),
+                invocant,
+                callable: None,
+                args,
+            });
     }
 
     /// Push a samewith context for an anonymous routine invoked through its
     /// callable value. Such a routine has no name in the function registry,
     /// so the redispatch must retain the callable itself.
     pub(crate) fn push_samewith_callable_context(&mut self, callable: Value) {
-        self.samewith_context_stack.push(super::SamewithContext {
-            name: String::new(),
-            invocant: None,
-            callable: Some(callable),
-            args: None,
-        });
+        self.dispatch
+            .samewith_context_stack
+            .push(super::SamewithContext {
+                name: String::new(),
+                invocant: None,
+                callable: Some(callable),
+                args: None,
+            });
     }
 
     /// Pop a samewith context.
     pub(crate) fn pop_samewith_context(&mut self) {
-        self.samewith_context_stack.pop();
+        self.dispatch.samewith_context_stack.pop();
     }
 
     pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<Vec<String>> {

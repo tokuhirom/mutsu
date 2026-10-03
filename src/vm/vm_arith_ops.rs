@@ -160,10 +160,10 @@ impl Interpreter {
     /// own `sub infix:<+>` must still apply inside it.
     #[inline]
     pub(crate) fn user_infix_override(&self, canon: &str) -> bool {
-        if self.user_declared_infix_ops.is_empty() {
+        if self.dispatch.user_declared_infix_ops.is_empty() {
             return false;
         }
-        let Some(files) = self.user_declared_infix_ops.get(canon) else {
+        let Some(files) = self.dispatch.user_declared_infix_ops.get(canon) else {
             return false;
         };
         // Empty == provenance unknown (an export, or a declaration we could
@@ -369,8 +369,11 @@ impl Interpreter {
     /// unaffected — matching raku, where `infix:<,>` overloads value lists only.
     pub(super) fn try_comma_overload(&mut self, n: u32) -> Result<bool, RuntimeError> {
         if n < 2
-            || self.user_declared_infix_ops.is_empty()
-            || !self.user_declared_infix_ops.contains_key("infix:<,>")
+            || self.dispatch.user_declared_infix_ops.is_empty()
+            || !self
+                .dispatch
+                .user_declared_infix_ops
+                .contains_key("infix:<,>")
         {
             return Ok(false);
         }

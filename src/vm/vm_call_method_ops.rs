@@ -1440,7 +1440,7 @@ impl Interpreter {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            self.skip_pseudo_method_native = Some(method.to_string());
+            self.dispatch.skip_pseudo_method_native = Some(method.to_string());
         }
         // Auto-FETCH Proxy containers for reads, including `.WHAT`: type
         // introspection describes the fetched value, not the Proxy container.
@@ -2314,14 +2314,14 @@ impl Interpreter {
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this (sets it true),
                 // letting the opcode tail skip the env_dirty mark + per-call pull.
-                self.method_dispatch_pure = false;
+                self.dispatch.method_dispatch_pure = false;
                 let call_result = if matches!(method, "shift" | "pop")
                     && args.is_empty()
                     && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
                 {
                     // Native array node mutation on a by-value target: env-pure
                     // (no named binding is written).
-                    self.method_dispatch_pure = true;
+                    self.dispatch.method_dispatch_pure = true;
                     crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "shift-pop");
                     if let ValueView::Array(_, kind) = target.view()
                         && kind.is_lazy()
@@ -2368,7 +2368,7 @@ impl Interpreter {
                                 })
                                 .collect();
                             // Pure array transform: env-pure.
-                            self.method_dispatch_pure = true;
+                            self.dispatch.method_dispatch_pure = true;
                             crate::vm::vm_stats::record_dispatch_entry_intercept(
                                 "callmethod",
                                 "slip-default",
@@ -2378,7 +2378,7 @@ impl Interpreter {
                             self.try_native_method(&target, method_sym, &args)
                         {
                             // Native method on a by-value (read) target: env-pure.
-                            self.method_dispatch_pure = true;
+                            self.dispatch.method_dispatch_pure = true;
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethod",
                                 "native",
@@ -2395,7 +2395,7 @@ impl Interpreter {
                         self.try_native_method(&target, method_sym, &args)
                     {
                         // Native method on a by-value (read) target: env-pure.
-                        self.method_dispatch_pure = true;
+                        self.dispatch.method_dispatch_pure = true;
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
                         // ADR-0019 E5b step 1: shadow-verify design decision
                         // 4's `Native` candidate (already zero-mismatch at
@@ -2427,7 +2427,7 @@ impl Interpreter {
                 };
                 // Slice 6.3: mark env dirty only when the dispatch was not a
                 // proven-pure compiled method call.
-                let mark_dirty = !self.method_dispatch_pure;
+                let mark_dirty = !self.dispatch.method_dispatch_pure;
                 match modifier {
                     Some("?") => match call_result {
                         Ok(val)

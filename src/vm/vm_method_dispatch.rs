@@ -1230,7 +1230,7 @@ impl Interpreter {
             // back an `is rw` param. A method that merged nothing leaves the
             // caller's slots coherent -> stays "pure" so the opcode skips the
             // env_dirty mark (no per-call locals pull).
-            self.method_dispatch_pure = !wrote_caller && rw_writeback.is_empty();
+            self.dispatch.method_dispatch_pure = !wrote_caller && rw_writeback.is_empty();
 
             // Slice F (env<->locals coherence): a method that mutated a captured
             // outer lexical (`method bar { $Foo++ }` closing over an outer-block
@@ -1308,7 +1308,7 @@ impl Interpreter {
 
         if can_skip_merge {
             // No env writes possible -> the caller's slots stay coherent (pure).
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             self.set_current_package_sym(saved_package);
             if pushed_caller {
                 self.pop_caller_env();
@@ -2644,7 +2644,7 @@ impl Interpreter {
         if can_skip_merge {
             // No env writes possible — just restore saved env (pure: caller
             // slots stay coherent, opcode skips the env_dirty mark).
-            self.method_dispatch_pure = true;
+            self.dispatch.method_dispatch_pure = true;
             let frame = self.pop_call_frame();
             self.set_env(frame.saved_env);
         } else {
@@ -2654,7 +2654,7 @@ impl Interpreter {
             let frame = self.pop_call_frame();
             if self.env().ptr_eq(&frame.saved_env) {
                 // Env object unchanged -> nothing merged back (pure).
-                self.method_dispatch_pure = true;
+                self.dispatch.method_dispatch_pure = true;
                 self.set_env(frame.saved_env);
             } else {
                 // Callee-frame key predicate for the merge (keys that should NOT
@@ -2704,7 +2704,7 @@ impl Interpreter {
                 );
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
-                self.method_dispatch_pure = !wrote_caller;
+                self.dispatch.method_dispatch_pure = !wrote_caller;
                 // Slice F: write captured-outer mutations straight through to the
                 // caller's local slot (see the primary merge path above).
                 for k in &changed_caller_locals {

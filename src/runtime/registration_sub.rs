@@ -801,8 +801,8 @@ impl Interpreter {
             // Declared here: record the compilation unit so the operator stays
             // lexically scoped to it (and to any EVAL unit nested inside it).
             let unit = self.current_unit;
-            let is_new = !self.user_declared_infix_ops.contains_key(name);
-            let files = crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
+            let is_new = !self.dispatch.user_declared_infix_ops.contains_key(name);
+            let files = crate::runtime::cow_table_mut(&mut self.dispatch.user_declared_infix_ops)
                 .entry(name.to_string())
                 .or_default();
             // An entry that is already permissive (empty == exported) stays
@@ -817,7 +817,9 @@ impl Interpreter {
         // proto of the same name (e.g. an EVAL-scoped `proto bar {*}` followed
         // by a mainline `sub bar(...)`), so stop gating calls on it.
         if !multi {
-            self.empty_sig_proto_names.remove(&Symbol::intern(name));
+            self.dispatch
+                .empty_sig_proto_names
+                .remove(&Symbol::intern(name));
         }
         // A prelude routine spliced into a host compunit (mutsu's NativeCall
         // helpers) belongs to no package the host declares: it registers under
@@ -962,17 +964,18 @@ impl Interpreter {
             // `contains_key` test would then report "already installed" and
             // leave that other routine's definition live inside this body —
             // `Digest::SHA2`'s `sha256` computing with `sha512`'s `rotr`.
-            let already_installed =
-                self.registered_fn_fingerprints
-                    .get(&fq_sym)
-                    .is_some_and(|(fp, installed)| {
-                        *fp == site_fp
-                            && self
-                                .registry()
-                                .functions
-                                .get(&fq_sym)
-                                .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
-                    });
+            let already_installed = self
+                .dispatch
+                .registered_fn_fingerprints
+                .get(&fq_sym)
+                .is_some_and(|(fp, installed)| {
+                    *fp == site_fp
+                        && self
+                            .registry()
+                            .functions
+                            .get(&fq_sym)
+                            .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
+                });
             if already_installed {
                 self.note_registration_callable_id(&self.current_package(), name);
                 return Ok(SubRegisterOutcome::Unchanged);
@@ -1018,6 +1021,7 @@ impl Interpreter {
             if !shadows_outer_multi
                 && !self.registry().functions.contains_key(&fq_sym)
                 && let Some(cached) = self
+                    .dispatch
                     .prepared_fn_defs
                     .get(&fq_sym)
                     .filter(|(fp, _)| *fp == site_fp)
@@ -1037,7 +1041,8 @@ impl Interpreter {
                 // `my sub`, which runs on every call and used to throw the
                 // whole index away (#8314).
                 self.invalidate_fn_resolution_for_keys([fq_sym]);
-                self.registered_fn_fingerprints
+                self.dispatch
+                    .registered_fn_fingerprints
                     .insert(fq_sym, (site_fp, cached));
                 if pkg != "GLOBAL" {
                     self.mark_my_scoped_package_item(fq);
@@ -1402,7 +1407,7 @@ impl Interpreter {
                 if new_def.is_stub
                     && let Some(fp) = site_fingerprint
                 {
-                    crate::runtime::cow_table_mut(&mut self.registered_stub_decl_sites)
+                    crate::runtime::cow_table_mut(&mut self.dispatch.registered_stub_decl_sites)
                         .insert((single_key_sym, fp));
                 }
                 self.note_registration_callable_id(&self.current_package(), name);
@@ -1484,6 +1489,7 @@ impl Interpreter {
                 if new_def.is_stub
                     && let Some(fp) = site_fingerprint
                     && self
+                        .dispatch
                         .registered_stub_decl_sites
                         .contains(&(single_key_sym, fp))
                 {
@@ -1532,10 +1538,10 @@ impl Interpreter {
             self.invalidate_fn_resolution();
         }
         if let Some(assoc) = associativity {
-            crate::runtime::cow_table_mut(&mut self.operator_assoc)
+            crate::runtime::cow_table_mut(&mut self.dispatch.operator_assoc)
                 .insert(name.to_string(), assoc.clone());
             let qualified = format!("{}::{}", self.current_package(), name);
-            crate::runtime::cow_table_mut(&mut self.operator_assoc)
+            crate::runtime::cow_table_mut(&mut self.dispatch.operator_assoc)
                 .insert(qualified, assoc.clone());
         }
         if multi {
@@ -1610,7 +1616,8 @@ impl Interpreter {
             // which (for a `my sub` whose lexical scope is snapshot/restored each
             // enclosing call) is exactly the per-call cost this is meant to avoid.
             if let Some(fp) = site_fingerprint {
-                self.registered_fn_fingerprints
+                self.dispatch
+                    .registered_fn_fingerprints
                     .insert(fq_sym, (fp, arc.clone()));
                 // A stub site is remembered permanently (not just as the last
                 // fingerprint): the real definition it forward-declares will
@@ -1619,7 +1626,7 @@ impl Interpreter {
                 // declaration re-arriving, not a new conflicting stub (see
                 // `registered_stub_decl_sites`).
                 if arc.is_stub {
-                    crate::runtime::cow_table_mut(&mut self.registered_stub_decl_sites)
+                    crate::runtime::cow_table_mut(&mut self.dispatch.registered_stub_decl_sites)
                         .insert((fq_sym, fp));
                 }
                 // Cache the derived definition so a later re-install of this exact
@@ -1630,10 +1637,12 @@ impl Interpreter {
                     && associativity.is_none()
                     && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
                 {
-                    self.prepared_fn_defs.insert(fq_sym, (fp, arc.clone()));
+                    self.dispatch
+                        .prepared_fn_defs
+                        .insert(fq_sym, (fp, arc.clone()));
                 }
             } else {
-                self.registered_fn_fingerprints.remove(&fq_sym);
+                self.dispatch.registered_fn_fingerprints.remove(&fq_sym);
             }
             // A named wrap chain belongs to the declaration it wrapped, not
             // to every later routine with the same name. Retire it before an
@@ -2257,7 +2266,9 @@ impl Interpreter {
             !use_pos && !use_named
         };
         if proto_empty_sig {
-            self.empty_sig_proto_names.insert(Symbol::intern(name));
+            self.dispatch
+                .empty_sig_proto_names
+                .insert(Symbol::intern(name));
         }
         self.registry_mut().proto_functions_mut().insert(
             Symbol::intern(&fq),
@@ -2335,7 +2346,9 @@ impl Interpreter {
             !use_pos && !use_named
         };
         if proto_empty_sig {
-            self.empty_sig_proto_names.insert(Symbol::intern(name));
+            self.dispatch
+                .empty_sig_proto_names
+                .insert(Symbol::intern(name));
         }
         self.registry_mut().proto_functions_mut().insert(
             Symbol::intern(&key),

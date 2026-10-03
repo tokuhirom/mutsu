@@ -159,7 +159,7 @@ impl Interpreter {
 
     pub(crate) fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
         let mut assoc = HashMap::new();
-        for (key, value) in self.operator_assoc.iter() {
+        for (key, value) in self.dispatch.operator_assoc.iter() {
             let name = if let Some(pos) = key.rfind("::") {
                 &key[pos + 2..]
             } else {

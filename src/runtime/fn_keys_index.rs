@@ -52,9 +52,13 @@ impl Interpreter {
     // Cost: O(m), m = key bytes (base-name reduction, intern, two hash probes).
     pub(crate) fn evict_fn_keys_base(&mut self, key: Symbol) -> bool {
         let base = function_key_base_name(key.as_str());
-        let evicted = self.fn_keys_by_base.remove(&Symbol::intern(base)).is_some();
-        if self.fn_keys_index.complete {
-            self.fn_keys_index.dirty.insert(base);
+        let evicted = self
+            .dispatch
+            .fn_keys_by_base
+            .remove(&Symbol::intern(base))
+            .is_some();
+        if self.dispatch.fn_keys_index.complete {
+            self.dispatch.fn_keys_index.dirty.insert(base);
         }
         evicted
     }
@@ -62,8 +66,8 @@ impl Interpreter {
     /// Drop the whole index, completeness included.
     // Cost: O(b), b = indexed base names.
     pub(crate) fn clear_fn_keys_index(&mut self) {
-        self.fn_keys_by_base.clear();
-        self.fn_keys_index = FnKeysIndexState::default();
+        self.dispatch.fn_keys_by_base.clear();
+        self.dispatch.fn_keys_index = FnKeysIndexState::default();
     }
 
     /// Answer a miss on `base` (not in `fn_keys_by_base`) and index the answer.
@@ -71,27 +75,28 @@ impl Interpreter {
     // one pass over the functions map, O(r), r = registered functions, which
     // also refills every other dirty base name.
     pub(crate) fn fill_fn_keys_base(&mut self, base: &str, base_sym: Symbol) -> Arc<[Symbol]> {
-        if !self.fn_keys_index.complete {
-            self.fn_keys_index.cold_misses += 1;
-            if self.fn_keys_index.cold_misses < 2 {
+        if !self.dispatch.fn_keys_index.complete {
+            self.dispatch.fn_keys_index.cold_misses += 1;
+            if self.dispatch.fn_keys_index.cold_misses < 2 {
                 let keys = self.collect_fn_keys_for_base(base);
-                self.fn_keys_by_base.insert(base_sym, keys.clone());
+                self.dispatch.fn_keys_by_base.insert(base_sym, keys.clone());
                 return keys;
             }
             self.build_fn_keys_index(None);
-        } else if self.fn_keys_index.dirty.contains(base) {
-            let dirty = std::mem::take(&mut self.fn_keys_index.dirty);
+        } else if self.dispatch.fn_keys_index.dirty.contains(base) {
+            let dirty = std::mem::take(&mut self.dispatch.fn_keys_index.dirty);
             if dirty.len() == 1 {
                 // The per-call `my sub` re-install cycle (#8314) dirties one
                 // name at a time: a plain comparing scan, as cheap as before.
                 let keys = self.collect_fn_keys_for_base(base);
-                self.fn_keys_by_base.insert(base_sym, keys.clone());
+                self.dispatch.fn_keys_by_base.insert(base_sym, keys.clone());
                 return keys;
             }
             self.build_fn_keys_index(Some(&dirty));
         }
         // Complete and `base` is clean now: an entry, or no keys at all.
-        self.fn_keys_by_base
+        self.dispatch
+            .fn_keys_by_base
             .entry(base_sym)
             .or_insert_with(|| Arc::from([]))
             .clone()
@@ -124,11 +129,12 @@ impl Interpreter {
             }
         }
         for (base, keys) in by_base {
-            self.fn_keys_by_base
+            self.dispatch
+                .fn_keys_by_base
                 .insert(Symbol::intern(base), Arc::from(keys));
         }
-        self.fn_keys_index.complete = true;
-        self.fn_keys_index.dirty.clear();
+        self.dispatch.fn_keys_index.complete = true;
+        self.dispatch.fn_keys_index.dirty.clear();
     }
 }
 
@@ -137,7 +143,9 @@ mod tests {
     use super::*;
 
     fn indexed(i: &Interpreter, base: &str) -> bool {
-        i.fn_keys_by_base.contains_key(&Symbol::intern(base))
+        i.dispatch
+            .fn_keys_by_base
+            .contains_key(&Symbol::intern(base))
     }
 
     /// The first miss after a clear is a single-name scan; the second builds
@@ -153,11 +161,11 @@ mod tests {
         // First miss: that name only, index still incomplete.
         assert!(!i.fn_keys_for_base("alpha").is_empty());
         assert!(!indexed(&i, "beta"));
-        assert!(!i.fn_keys_index.complete);
+        assert!(!i.dispatch.fn_keys_index.complete);
 
         // Second miss: the complete index, every base name at once.
         assert!(!i.fn_keys_for_base("beta").is_empty());
-        assert!(i.fn_keys_index.complete);
+        assert!(i.dispatch.fn_keys_index.complete);
         assert!(indexed(&i, "gamma"));
         assert!(i.fn_keys_for_base("never-declared").is_empty());
 
@@ -173,7 +181,7 @@ mod tests {
             "the other dirty name refilled in the same pass"
         );
         assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
-        assert!(i.fn_keys_index.dirty.is_empty());
+        assert!(i.dispatch.fn_keys_index.dirty.is_empty());
     }
 
     /// A name registered after the index became complete is found: its
@@ -187,7 +195,7 @@ mod tests {
         i.invalidate_fn_resolution();
         i.fn_keys_for_base("alpha");
         i.fn_keys_for_base("beta");
-        assert!(i.fn_keys_index.complete);
+        assert!(i.dispatch.fn_keys_index.complete);
 
         i.run("sub delta() { 4 }\n").expect("second program runs");
         let fresh = i.collect_fn_keys_for_base("delta");

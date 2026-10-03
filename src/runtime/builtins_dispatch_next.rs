@@ -93,15 +93,15 @@ impl Interpreter {
     /// nested inside a sub wrapper, or vice versa).
     fn innermost_dispatch_stack(&self) -> Option<DispatchFrameKind> {
         let mut best: Option<(u64, DispatchFrameKind)> = None;
-        if let Some(frame) = self.wrap_dispatch_stack.last() {
+        if let Some(frame) = self.dispatch.wrap_dispatch_stack.last() {
             best = Some((frame.dispatch_token, DispatchFrameKind::Wrap));
         }
-        if let Some(frame) = self.method_dispatch_stack.last()
+        if let Some(frame) = self.dispatch.method_dispatch_stack.last()
             && best.is_none_or(|(t, _)| frame.dispatch_token > t)
         {
             best = Some((frame.dispatch_token, DispatchFrameKind::Method));
         }
-        if let Some(entry) = self.multi_dispatch_stack.last()
+        if let Some(entry) = self.dispatch.multi_dispatch_stack.last()
             && best.is_none_or(|(t, _)| entry.4 > t)
         {
             best = Some((entry.4, DispatchFrameKind::Multi));
@@ -133,19 +133,19 @@ impl Interpreter {
         self.materialize_pending_method_dispatch();
         match self.innermost_dispatch_stack() {
             Some(DispatchFrameKind::Wrap) => {
-                if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+                if let Some(frame) = self.dispatch.wrap_dispatch_stack.last_mut() {
                     frame.remaining.clear();
                 }
                 Ok(Value::TRUE)
             }
             Some(DispatchFrameKind::Method) => {
-                if let Some(frame) = self.method_dispatch_stack.last_mut() {
+                if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut() {
                     frame.remaining.clear();
                 }
                 Ok(Value::TRUE)
             }
             Some(DispatchFrameKind::Multi) => {
-                if let Some(top) = self.multi_dispatch_stack.last_mut() {
+                if let Some(top) = self.dispatch.multi_dispatch_stack.last_mut() {
                     top.1.clear();
                 }
                 Ok(Value::TRUE)
@@ -181,7 +181,7 @@ impl Interpreter {
         // A lazy `gather` body re-pushes the context it captured at creation for
         // the duration of its force (see `push_captured_samewith_context`), so
         // this stack is correct there too.
-        if let Some(ctx) = self.samewith_context_stack.last().cloned() {
+        if let Some(ctx) = self.dispatch.samewith_context_stack.last().cloned() {
             if let Some(callable) = ctx.callable {
                 return self.call_sub_value(callable, args.to_vec(), false);
             }
@@ -216,7 +216,7 @@ impl Interpreter {
     /// Record the innermost dynamic samewith context into `env` so a closure
     /// captured from it (today: a lazy `gather` body) can still redispatch.
     pub(crate) fn capture_samewith_context_into(&self, env: &mut crate::env::Env) {
-        let Some(ctx) = self.samewith_context_stack.last() else {
+        let Some(ctx) = self.dispatch.samewith_context_stack.last() else {
             return;
         };
         env.insert(
@@ -264,10 +264,11 @@ impl Interpreter {
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
         let (_depth, receiver, method_name, orig_args) =
-            self.metamodel_dispatch_stack.last().cloned()?;
+            self.dispatch.metamodel_dispatch_stack.last().cloned()?;
         // Only fire when the innermost method dispatch is the metamodel method
         // itself (not some helper method it called).
         if self
+            .dispatch
             .samewith_context_stack
             .last()
             .is_none_or(|ctx| ctx.name != method_name)
@@ -331,6 +332,7 @@ impl Interpreter {
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
         let method_name = self
+            .dispatch
             .samewith_context_stack
             .last()
             .map(|ctx| ctx.name.clone())?;
@@ -340,7 +342,7 @@ impl Interpreter {
         ) {
             return None;
         }
-        let frame = self.method_dispatch_stack.last()?;
+        let frame = self.dispatch.method_dispatch_stack.last()?;
         let frame_args = frame.args.clone();
         let invocant = self
             .env
@@ -424,13 +426,14 @@ impl Interpreter {
         // top-of-args-stack entry with a DIFFERENT (deeper, stale)
         // context if a raw push sat above the pairing `push_method_
         // samewith_context` push; see `SamewithContext`'s doc comment.
-        let ctx = self.samewith_context_stack.last().cloned();
+        let ctx = self.dispatch.samewith_context_stack.last().cloned();
         let method_name = ctx.as_ref().map(|c| c.name.clone())?;
         // A single (non-multi, non-wrapped) compiled method pushes no
         // `method_dispatch_stack` frame, so the invocant/args must come from
         // the samewith context and `self` rather than a dispatch frame (mirrors
         // `native_mu_base_next_candidate`'s `self.env.get("self")` fallback).
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -439,6 +442,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
@@ -510,9 +514,10 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.samewith_context_stack.last().cloned();
+        let ctx = self.dispatch.samewith_context_stack.last().cloned();
         let method_name = ctx.as_ref().map(|c| c.name.clone())?;
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -521,6 +526,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
@@ -612,9 +618,10 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.samewith_context_stack.last().cloned();
+        let ctx = self.dispatch.samewith_context_stack.last().cloned();
         let method_name = ctx.as_ref().map(|c| c.name.clone())?;
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -632,6 +639,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
@@ -719,11 +727,12 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.samewith_context_stack.last().cloned()?;
+        let ctx = self.dispatch.samewith_context_stack.last().cloned()?;
         if !matches!(ctx.name.as_str(), "gist" | "Str" | "raku") {
             return None;
         }
         let invocant = self
+            .dispatch
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
@@ -735,6 +744,7 @@ impl Interpreter {
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
             None => self
+                .dispatch
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
@@ -841,13 +851,14 @@ impl Interpreter {
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
         let method_name = self
+            .dispatch
             .samewith_context_stack
             .last()
             .map(|ctx| ctx.name.clone())?;
         if !matches!(method_name.as_str(), "parse" | "subparse" | "parsefile") {
             return None;
         }
-        let frame = self.method_dispatch_stack.last()?;
+        let frame = self.dispatch.method_dispatch_stack.last()?;
         let receiver_class = frame.receiver_class.clone();
         let orig_args = frame.args.clone();
         if !self.class_is_grammar(&receiver_class) {
@@ -901,7 +912,7 @@ impl Interpreter {
         // prefix entries, so this stack no longer carries a `sub_id == 0`
         // entry) — only when it is genuinely the innermost context.
         if innermost == Some(DispatchFrameKind::Wrap)
-            && let Some(frame) = self.wrap_dispatch_stack.last_mut()
+            && let Some(frame) = self.dispatch.wrap_dispatch_stack.last_mut()
         {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
@@ -919,7 +930,7 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(frame_arg_sources);
                 }
                 if let ValueView::Sub(data) = next.view() {
-                    self.wrap_skip_once = Some(data.id);
+                    self.dispatch.wrap_skip_once = Some(data.id);
                 }
                 let result = self.call_sub_value(next, call_args, false)?;
                 if tail_call {
@@ -934,8 +945,10 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         // Try method dispatch stack — only when it is genuinely the innermost context.
-        if innermost == Some(DispatchFrameKind::Method) && !self.method_dispatch_stack.is_empty() {
-            let frame_idx = self.method_dispatch_stack.len() - 1;
+        if innermost == Some(DispatchFrameKind::Method)
+            && !self.dispatch.method_dispatch_stack.is_empty()
+        {
+            let frame_idx = self.dispatch.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();
             // ADR-0019 E9b-2 decision 3: lazy mid-MRO wrap splice. When the
             // front entry is an un-spliced Candidate that itself carries a
@@ -949,7 +962,9 @@ impl Interpreter {
             // GH#2178.
             loop {
                 let is_unspliced_candidate = matches!(
-                    self.method_dispatch_stack[frame_idx].remaining.first(),
+                    self.dispatch.method_dispatch_stack[frame_idx]
+                        .remaining
+                        .first(),
                     Some(DeferralEntry::Candidate {
                         wraps_spliced: false,
                         ..
@@ -959,6 +974,7 @@ impl Interpreter {
                     break;
                 }
                 let method_name_now = self
+                    .dispatch
                     .samewith_context_stack
                     .last()
                     .map(|ctx| ctx.name.clone())
@@ -966,11 +982,11 @@ impl Interpreter {
                 if method_name_now.is_empty() {
                     break;
                 }
-                let Some(DeferralEntry::Candidate { owner, def, .. }) = self.method_dispatch_stack
-                    [frame_idx]
-                    .remaining
-                    .first()
-                    .cloned()
+                let Some(DeferralEntry::Candidate { owner, def, .. }) =
+                    self.dispatch.method_dispatch_stack[frame_idx]
+                        .remaining
+                        .first()
+                        .cloned()
                 else {
                     break;
                 };
@@ -998,12 +1014,12 @@ impl Interpreter {
                     def,
                     wraps_spliced: true,
                 });
-                self.method_dispatch_stack[frame_idx]
+                self.dispatch.method_dispatch_stack[frame_idx]
                     .remaining
                     .splice(0..1, splice);
                 // Loop back: the front entry is now Wrapper(outermost).
             }
-            match self.method_dispatch_stack[frame_idx]
+            match self.dispatch.method_dispatch_stack[frame_idx]
                 .remaining
                 .first()
                 .cloned()
@@ -1066,8 +1082,11 @@ impl Interpreter {
                     // invoke it with [invocant, ...args] and the (shifted)
                     // wrap-captured call-site arg sources, mirroring today's
                     // (now sub-only) WrapDispatchFrame wrapper leg.
-                    self.method_dispatch_stack[frame_idx].remaining.remove(0);
-                    let caller_in_wrapper = self.method_dispatch_stack[frame_idx].in_wrapper;
+                    self.dispatch.method_dispatch_stack[frame_idx]
+                        .remaining
+                        .remove(0);
+                    let caller_in_wrapper =
+                        self.dispatch.method_dispatch_stack[frame_idx].in_wrapper;
                     if let Some(new_args) = override_args {
                         // `callwith`'s args are invocant-INCLUSIVE (element 0
                         // is the new SELF) exactly when the CALLER is itself
@@ -1078,7 +1097,7 @@ impl Interpreter {
                         // override args stay invocant-exclusive
                         // (S06-advanced/dispatching.t "Args to callwith in
                         // wrapper/multi are used by enclosing ...").
-                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                         if caller_in_wrapper {
                             let mut it = new_args.into_iter();
                             if let Some(inv) = it.next() {
@@ -1089,7 +1108,7 @@ impl Interpreter {
                             frame.args = new_args;
                         }
                     }
-                    let frame = &mut self.method_dispatch_stack[frame_idx];
+                    let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                     // ADR-0019 E9b-2: unlike the plain-Candidate advance leg
                     // below, this call runs from INSIDE a wrapper block's own
                     // execution, not from a method body — `self.env`'s "self"
@@ -1113,7 +1132,7 @@ impl Interpreter {
                         self.shift_arg_sources_for_wrap_invocant();
                     }
                     if let ValueView::Sub(data) = code.view() {
-                        self.wrap_skip_once = Some(data.id);
+                        self.dispatch.wrap_skip_once = Some(data.id);
                     }
                     let result = self.call_sub_value(code, call_args, false)?;
                     if tail_call {
@@ -1131,7 +1150,7 @@ impl Interpreter {
                     // terminal candidate of a wrapped accessor chain, so read
                     // it directly with the current frame invocant.
                     let (invocant, args) = {
-                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                         frame.remaining.remove(0);
                         let caller_in_wrapper = frame.in_wrapper;
                         let args = match override_args {
@@ -1193,7 +1212,7 @@ impl Interpreter {
                     // multi on the frame's current invocant and args (a
                     // wrapper's `callwith` may have replaced both).
                     let (invocant, args) = {
-                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                         frame.remaining.remove(0);
                         if let Some(new_args) = override_args {
                             if frame.in_wrapper {
@@ -1210,8 +1229,9 @@ impl Interpreter {
                         (frame.invocant.clone(), frame.args.clone())
                     };
                     if !is_override
-                        && let Some(sources) =
-                            self.method_dispatch_stack[frame_idx].arg_sources.clone()
+                        && let Some(sources) = self.dispatch.method_dispatch_stack[frame_idx]
+                            .arg_sources
+                            .clone()
                     {
                         self.set_pending_call_arg_sources(Some(sources));
                     }
@@ -1233,7 +1253,7 @@ impl Interpreter {
                 came_from_wrapper,
                 frame_wrap_arg_sources,
             ) = {
-                let frame = &mut self.method_dispatch_stack[frame_idx];
+                let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                 let entry = frame.remaining.first().cloned().expect(
                     "ADR-0019 E9b-2: the match above only falls through here for a Candidate",
                 );
@@ -1377,6 +1397,7 @@ impl Interpreter {
             // chain. Methods without compiled code (a delegation forwarder)
             // keep the interpreter path.
             let method_name_for_dispatch = self
+                .dispatch
                 .samewith_context_stack
                 .last()
                 .map(|ctx| ctx.name.clone())
@@ -1494,7 +1515,7 @@ impl Interpreter {
                 }
             }
             if let Some(new_invocant) = updated_invocant
-                && let Some(frame) = self.method_dispatch_stack.get_mut(frame_idx)
+                && let Some(frame) = self.dispatch.method_dispatch_stack.get_mut(frame_idx)
             {
                 frame.invocant = new_invocant;
             }
@@ -1508,7 +1529,7 @@ impl Interpreter {
         // method frame does not fall through to an unrelated outer multi.
         if innermost == Some(DispatchFrameKind::Multi)
             && let Some((_name, candidates, orig_args, rw_params, dispatch_token)) =
-                self.multi_dispatch_stack.last().cloned()
+                self.dispatch.multi_dispatch_stack.last().cloned()
         {
             let is_override = override_args.is_some();
             // Kept for the native-base fallback at the exhaustion point below,
@@ -1611,10 +1632,10 @@ impl Interpreter {
                 return Ok(Value::NIL);
             };
             let remaining = candidates.advanced_past(idx);
-            let stack_len = self.multi_dispatch_stack.len();
+            let stack_len = self.dispatch.multi_dispatch_stack.len();
             // Keep rw_params fixed: it always identifies the FIRST candidate's
             // slots, even as the chain advances through later candidates.
-            self.multi_dispatch_stack[stack_len - 1] = (
+            self.dispatch.multi_dispatch_stack[stack_len - 1] = (
                 _name,
                 remaining,
                 call_args.clone(),
@@ -1716,6 +1737,7 @@ impl Interpreter {
                 .last()
                 .is_some_and(|frame| frame.name == "new")
                 || self
+                    .dispatch
                     .samewith_context_stack
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
@@ -1723,11 +1745,13 @@ impl Interpreter {
                 let call_args = match override_args {
                     Some(args) => args,
                     None => self
+                        .dispatch
                         .method_dispatch_stack
                         .last()
                         .map(|f| f.args.clone())
                         .or_else(|| {
-                            self.samewith_context_stack
+                            self.dispatch
+                                .samewith_context_stack
                                 .last()
                                 .and_then(|c| c.args.clone())
                         })
@@ -1824,7 +1848,7 @@ impl Interpreter {
         // Check wrap dispatch stack first (wrapper chains) — only when it is
         // genuinely the innermost context.
         if innermost == Some(DispatchFrameKind::Wrap)
-            && let Some(frame) = self.wrap_dispatch_stack.last_mut()
+            && let Some(frame) = self.dispatch.wrap_dispatch_stack.last_mut()
         {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
@@ -1849,11 +1873,12 @@ impl Interpreter {
         // so the candidate is returned as a plain routine value.
         if innermost == Some(DispatchFrameKind::Method) {
             let method_name = self
+                .dispatch
                 .samewith_context_stack
                 .last()
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
-            if let Some(frame) = self.method_dispatch_stack.last_mut()
+            if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut()
                 && let Some(DeferralEntry::Candidate { owner, def, .. }) =
                     frame.remaining.first().cloned()
             {
@@ -1892,7 +1917,7 @@ impl Interpreter {
         }
         // Check multi dispatch stack
         let Some((_name, candidates, orig_args, rw_params, dispatch_token)) =
-            self.multi_dispatch_stack.last().cloned()
+            self.dispatch.multi_dispatch_stack.last().cloned()
         else {
             return Ok(Value::NIL);
         };
@@ -1918,8 +1943,8 @@ impl Interpreter {
         };
         // Remove this candidate and all before it from the remaining list
         let remaining = candidates.advanced_past(idx);
-        let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] =
+        let stack_len = self.dispatch.multi_dispatch_stack.len();
+        self.dispatch.multi_dispatch_stack[stack_len - 1] =
             (_name, remaining, orig_args, rw_params, dispatch_token);
         // Return as a callable Sub value
         if let Some(code) = &next_def.dispatchee {

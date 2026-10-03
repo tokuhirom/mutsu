@@ -1,0 +1,2 @@
+# ADR-10779 dispatch subsystem: DispatchState (src/runtime/dispatch_state.rs).
+dispatch

@@ -496,11 +496,13 @@ impl Interpreter {
         target: &Value,
         method_sym: crate::symbol::Symbol,
     ) -> bool {
-        self.native_base_bypass.is_some_and(|(ty, sym, bits)| {
-            sym == method_sym
-                && bits == target.nanbox_bits()
-                && ty == crate::runtime::utils::value_type_name(target).as_ptr() as usize
-        })
+        self.dispatch
+            .native_base_bypass
+            .is_some_and(|(ty, sym, bits)| {
+                sym == method_sym
+                    && bits == target.nanbox_bits()
+                    && ty == crate::runtime::utils::value_type_name(target).as_ptr() as usize
+            })
     }
 
     pub(crate) fn native_lever_a_user_override_sym(
@@ -597,7 +599,7 @@ impl Interpreter {
             // adr0019-e2-e4-resolver-core (#7540) design decision 5.
             let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
-            if !self.dispatch_ambiguous {
+            if !self.dispatch.dispatch_ambiguous {
                 self.caches
                     .multi_resolve_cache
                     .insert(mkey, resolved_arc.clone());

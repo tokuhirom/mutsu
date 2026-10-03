@@ -657,9 +657,9 @@ impl Interpreter {
         // a call with positional arguments can never reach a candidate. Reject
         // it here, before the light-call caches would dispatch directly to a
         // multi candidate. Guarded by `is_empty()` so the common case is free.
-        if !self.empty_sig_proto_names.is_empty()
+        if !self.dispatch.empty_sig_proto_names.is_empty()
             && self
-                .empty_sig_proto_names
+                .dispatch.empty_sig_proto_names
                 .contains(&code.const_sym(name_idx))
             // Re-verify against the registry: the name-only set can go stale
             // (an EVAL-scoped `proto bar {*}` must not veto an unrelated

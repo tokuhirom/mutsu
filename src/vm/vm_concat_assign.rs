@@ -109,7 +109,10 @@ impl Interpreter {
             || code.needs_env_sync.get(idx).copied().unwrap_or(true)
             || crate::opcode::reflective_name_access_possible()
             || self.user_infix_override("infix:<~>")
-            || self.user_declared_infix_ops.contains_key("infix:<~=>")
+            || self
+                .dispatch
+                .user_declared_infix_ops
+                .contains_key("infix:<~=>")
         {
             return false;
         }

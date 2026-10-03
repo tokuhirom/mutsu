@@ -58,7 +58,7 @@ impl Interpreter {
             std::sync::Arc::clone(&registry.token_defs),
             std::sync::Arc::clone(&registry.proto_tokens),
             std::sync::Arc::clone(&registry.our_scoped_functions),
-            std::sync::Arc::clone(&self.user_declared_infix_ops),
+            std::sync::Arc::clone(&self.dispatch.user_declared_infix_ops),
             std::sync::Arc::clone(&self.imported_routine_aliases),
             std::sync::Arc::clone(&self.imported_exported_proto_tags),
         )
@@ -87,7 +87,7 @@ impl Interpreter {
             && Arc::ptr_eq(&snapshot.3, &registry.token_defs)
             && Arc::ptr_eq(&snapshot.4, &registry.proto_tokens)
             && Arc::ptr_eq(&snapshot.5, &registry.our_scoped_functions)
-            && Arc::ptr_eq(&snapshot.6, &self.user_declared_infix_ops)
+            && Arc::ptr_eq(&snapshot.6, &self.dispatch.user_declared_infix_ops)
             && Arc::ptr_eq(&snapshot.7, &self.imported_routine_aliases)
             && Arc::ptr_eq(&snapshot.8, &self.imported_exported_proto_tags)
     }
@@ -125,7 +125,7 @@ impl Interpreter {
         // block-local `sub infix:<+>` to keep intercepting imported-module
         // arithmetic (e.g. Test.rakumod's `$num_of_tests_run + 1`) after the
         // block exited, resetting the test counter to Nil.
-        self.user_declared_infix_ops = user_infix_ops;
+        self.dispatch.user_declared_infix_ops = user_infix_ops;
         self.imported_routine_aliases = imported_routine_aliases;
         self.imported_exported_proto_tags = imported_exported_proto_tags;
         self.reinstate_module_functions(&mut functions, is_eval);

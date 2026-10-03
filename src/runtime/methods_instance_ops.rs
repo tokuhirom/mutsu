@@ -564,7 +564,7 @@ impl Interpreter {
             }
         }
         self.pop_method_samewith_context();
-        self.method_dispatch_stack.pop();
+        self.dispatch.method_dispatch_stack.pop();
         result
     }
 
@@ -3401,8 +3401,8 @@ impl Interpreter {
                         am.get("__mutsu_lookup_method").map(Value::view),
                         super::dispatcher_wrap::method_object_wrap_slot(&am),
                     ) {
-                        self.wrap_handle_counter += 1;
-                        let handle_id = self.wrap_handle_counter;
+                        self.dispatch.wrap_handle_counter += 1;
+                        let handle_id = self.dispatch.wrap_handle_counter;
                         let (cls, meth) = (cls.to_string(), meth.to_string());
                         self.registry_mut()
                             .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);

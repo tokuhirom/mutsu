@@ -469,9 +469,9 @@ impl Interpreter {
             // wrapper) sets `wrap_skip_once` so exactly that call runs the sub
             // directly; a fresh named call — including a *recursive* one from
             // inside the original body — re-enters the chain like Raku does.
-            let skip_chain_once = self.wrap_skip_once.take() == Some(data.id);
+            let skip_chain_once = self.dispatch.wrap_skip_once.take() == Some(data.id);
             if !skip_chain_once
-                && let Some(chain) = self.wrap_chains.get(&data.id).cloned()
+                && let Some(chain) = self.dispatch.wrap_chains.get(&data.id).cloned()
                 && !chain.is_empty()
                 // A nextcallee-returned wrappee carries __mutsu_wrap_direct:
                 // it is the inner code object and always runs directly.
@@ -761,7 +761,7 @@ impl Interpreter {
                 // (X::TypeCheck::Binding), not reclassified as a compile-time
                 // X::TypeCheck::Argument. One-shot; consumed at the callee's
                 // entry — see suppress_binding_error_enhance.
-                self.suppress_binding_error_enhance = true;
+                self.dispatch.suppress_binding_error_enhance = true;
                 return self.call_compiled_closure(&data, &cf.code, call_args, fns);
             }
             let saved_env = self.env.clone();

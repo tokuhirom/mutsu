@@ -27,19 +27,19 @@ impl Interpreter {
         method_ctx: Option<ProtoMethodCtx>,
     ) {
         let dispatch_token = self.next_dispatch_token();
-        self.proto_dispatch_stack.push(ProtoDispatchFrame {
+        self.dispatch.proto_dispatch_stack.push(ProtoDispatchFrame {
             name,
             args,
             method_ctx,
             dispatch_token,
-            method_depth: self.method_call_depth,
+            method_depth: self.dispatch.method_call_depth,
         });
     }
 
     /// Leave the proto body entered by `push_proto_dispatch_frame`.
     // Cost: O(1).
     pub(crate) fn pop_proto_dispatch_frame(&mut self) {
-        self.proto_dispatch_stack.pop();
+        self.dispatch.proto_dispatch_stack.pop();
     }
 
     /// Run `f` as a method call: a `{*}` reached from inside it finds this
@@ -58,14 +58,14 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(crate) fn enter_method_call(&mut self) {
-        self.method_call_depth += 1;
+        self.dispatch.method_call_depth += 1;
     }
 
     /// Close the method call opened by `enter_method_call`.
     // Cost: O(1).
     #[inline]
     pub(crate) fn leave_method_call(&mut self) {
-        self.method_call_depth -= 1;
+        self.dispatch.method_call_depth -= 1;
     }
 
     /// What a `{*}` executing now means, decided from the dynamic call chain
@@ -81,16 +81,22 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn resolve_onlystar(&self) -> Result<Option<ProtoDispatchFrame>, RuntimeError> {
         let deferral_token = self
+            .dispatch
             .multi_dispatch_stack
             .last()
             .map(|entry| entry.4)
-            .max(self.wrap_dispatch_stack.last().map(|f| f.dispatch_token));
-        if let Some(frame) = self.proto_dispatch_stack.last() {
-            let shadowed = frame.method_depth != self.method_call_depth
+            .max(
+                self.dispatch
+                    .wrap_dispatch_stack
+                    .last()
+                    .map(|f| f.dispatch_token),
+            );
+        if let Some(frame) = self.dispatch.proto_dispatch_stack.last() {
+            let shadowed = frame.method_depth != self.dispatch.method_call_depth
                 || deferral_token.is_some_and(|t| t > frame.dispatch_token);
             return Ok((!shadowed).then(|| frame.clone()));
         }
-        if self.method_call_depth > 0 || deferral_token.is_some() {
+        if self.dispatch.method_call_depth > 0 || deferral_token.is_some() {
             return Ok(None);
         }
         // The innermost code object that was actually called names the error
