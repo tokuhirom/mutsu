@@ -283,9 +283,22 @@ impl Interpreter {
         if Self::top_segment_is_setting_package(top) {
             return true;
         }
-        if self.package_granted_in_unit_chain(executing, top)
+        let granted = self.package_granted_in_unit_chain(executing, top)
             || self.package_granted_in_unit_chain(self.current_unit, top)
+            || self.package_merged_here(top);
+        // A package a module published bare (`package OuterPkg { }` in a
+        // package-less module) is the module's own declaration: visible where
+        // the module is merged, or where another merged module granted the
+        // same namespace (`class RT123276::B::C1` nests under the class
+        // module `RT123276` publishes) -- never by the permissive fallback
+        // below (ADR-11136).
+        if let Some(sym) = Symbol::lookup(top)
+            && let Some(&module) = self.module_visibility.module_name_providers.get(&sym)
+            && !self.module_visibility.unit_package_names.contains(&sym)
         {
+            return granted || self.module_merged_here(module);
+        }
+        if granted {
             return true;
         }
         // Exact-prefix fallback: a compunit always sees a package it
@@ -347,6 +360,7 @@ impl Interpreter {
         for _ in 0..64 {
             let Some(sym) = unit else { return false };
             if self
+                .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(top))
@@ -418,6 +432,7 @@ impl Interpreter {
                 return true;
             }
             if self
+                .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(prefix))
@@ -485,14 +500,14 @@ impl Interpreter {
         // for every importer after the first -- and `Test`'s `use-ok` makes
         // the first importer an `EVAL` unit routinely, so the script's own
         // `use` was the one that lost.
-        let recorded = self.module_granted_packages.get(module).cloned();
-        let entry = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
-            .entry(importer_unit)
-            .or_default();
-        entry.insert(module.to_string());
-        entry.insert(top.to_string());
-        if let Some(recorded) = recorded {
-            entry.extend(recorded);
-        }
+        let mut grant: HashSet<String> = self
+            .module_visibility
+            .module_granted_packages
+            .get(module)
+            .cloned()
+            .unwrap_or_default();
+        grant.insert(module.to_string());
+        grant.insert(top.to_string());
+        self.merge_module_into_importer(importer_unit, module, &grant);
     }
 }

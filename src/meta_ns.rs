@@ -150,6 +150,10 @@ pub(crate) enum MetaNs {
     /// `__mutsu_constant_var::<name>` — the name was declared `constant`, which
     /// makes it a compile-time value rather than merely readonly.
     ConstantVar,
+    /// `__mutsu_module_merge::<module>` — a block-level `need`/`use` merged
+    /// this module's GLOBAL into the scope (ADR-11136). Lives in the block's
+    /// env tier, so it ends with the block and a closure keeps it.
+    ModuleMerge,
     /// `__mutsu_deleted_index::<name>` — the set of indices `:delete`d out of
     /// this container, which read as missing even when the slot holds a type
     /// object.
@@ -287,6 +291,7 @@ impl MetaNs {
         MetaNs::BoundDecont,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
+        MetaNs::ModuleMerge,
         MetaNs::DeletedIndex,
         MetaNs::ElemShare,
         MetaNs::EvalRole,
@@ -348,6 +353,7 @@ impl MetaNs {
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
+            MetaNs::ModuleMerge => "__mutsu_module_merge::",
             MetaNs::DeletedIndex => "__mutsu_deleted_index::",
             MetaNs::ElemShare => "__mutsu_elem_share::",
             MetaNs::EvalRole => "__mutsu_eval_role::",
@@ -613,6 +619,7 @@ mod tests {
             (MetaNs::BoundArraySlice, "__mutsu_bound_array_slice::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
+            (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
             (MetaNs::DeletedIndex, "__mutsu_deleted_index::@a"),
             (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),

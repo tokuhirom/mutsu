@@ -13,6 +13,7 @@ impl Interpreter {
         source_slot: Option<u32>,
         pointy_param: &Option<String>,
         captured_pointy_value: Option<Value>,
+        pointy_entry_value: Option<&Value>,
     ) {
         let Some(source) = source else {
             return;
@@ -51,6 +52,14 @@ impl Interpreter {
         let Some(current) = current else {
             return;
         };
+        // A scalar pointy param left at its entry value was never written:
+        // the source keeps whatever it holds now, including a `:=` rebind
+        // made inside the block.
+        if let Some(entry) = pointy_entry_value
+            && Self::loop_var_unchanged(&current, entry)
+        {
+            return;
+        }
         if let Some(orig) = self.get_env_with_main_alias(source)
             && Self::loop_var_unchanged(&current, &orig)
         {
