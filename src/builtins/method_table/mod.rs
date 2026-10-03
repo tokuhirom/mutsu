@@ -184,6 +184,13 @@ fn table() -> &'static Table {
     })
 }
 
+/// Whether any row is named `method`: the test every lookup makes first.
+// Cost: O(1), a bit test.
+#[inline]
+pub(crate) fn names_a_row(method: Symbol) -> bool {
+    table().has_name(method)
+}
+
 /// The row a plain receiver of `shape` dispatches `method` to when called
 /// with `arity` positional arguments, if the table has one.
 // Cost: O(1), a bit test and one hash lookup.
