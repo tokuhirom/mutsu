@@ -994,7 +994,7 @@ impl Interpreter {
             let fns = compiled_fns.unwrap_or(&empty_fns);
             let pkg_is_global = crate::qualified::is_global_package(package);
             if !pkg_is_global {
-                let fq = crate::qualified::qualified(package, Symbol::intern(&name_str));
+                let fq = crate::qualified::qualified(package, name);
                 if self.has_function(fq.as_str()) {
                     return self.call_function_compiled_first(fq.as_str(), args, fns);
                 }

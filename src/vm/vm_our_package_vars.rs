@@ -78,7 +78,11 @@ impl Interpreter {
     fn our_package_var_key(&self, name: &str) -> Option<String> {
         // An explicitly-written `@Other::x` is already the package variable it
         // names; anonymous containers are never package variables.
-        if crate::qualified::is_qualified(Symbol::intern(name))
+        // A byte scan, not an intern: this runs on free-variable reads and
+        // only has the name's text.
+        // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
+        // (#11507).
+        if crate::runtime::utils::has_double_colon(name)
             || crate::runtime::utils::has_anon_marker(name)
         {
             return None;

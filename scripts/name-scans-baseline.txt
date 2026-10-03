@@ -130,3 +130,5 @@ src/value/signature.rs                                      2    0    2
 src/value/type_name.rs                                      0    1    0
 src/value/types_isa.rs                                      0    0    1
 src/value/value_carray.rs                                   0    0    1
+src/vm/vm_env_helpers.rs                                    0    0    2
+src/vm/vm_our_package_vars.rs                               0    0    1

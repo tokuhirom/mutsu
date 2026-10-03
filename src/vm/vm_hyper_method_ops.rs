@@ -962,8 +962,7 @@ impl Interpreter {
                     // A qualified dispatch (`».Any::elems`) still names a
                     // plain list-native method once the owner prefix is
                     // stripped, so nodality is decided on the unqualified tail.
-                    let unqualified_method =
-                        crate::qualified::last_segment(Symbol::intern(&method)).as_str();
+                    let unqualified_method = crate::qualified::last_segment(method_sym).as_str();
                     let is_list_native_method = is_nodal_list_method(unqualified_method);
                     if is_list_native_method {
                         method_is_nodal = true;

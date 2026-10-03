@@ -88,7 +88,11 @@ impl Interpreter {
         // memoized flag of the constraint's symbol (`qualified::is_qualified`),
         // and the `[` probe is a byte scan (`str_scan.rs`).
         let constraint: std::borrow::Cow<'_, str> = if !plain_builtin
-            && !crate::qualified::is_qualified(Symbol::intern(&constraint))
+            && !crate::qualified::is_qualified(match &constraint {
+                // The constant-pool spelling has its symbol in the chunk's table.
+                std::borrow::Cow::Borrowed(_) => code.const_sym(tc_idx),
+                std::borrow::Cow::Owned(resolved) => Symbol::intern(resolved),
+            })
             && !crate::runtime::utils::has_bracket(constraint.as_ref())
             && !self.unshadowed_builtin_type_name(&constraint)
         {
