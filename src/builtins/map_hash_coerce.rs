@@ -179,10 +179,8 @@ fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError
         .map(unwrap_contained_pair)
         .map(|v| stash_symbols(&v).unwrap_or(v))
         .collect();
-    if check_odd {
-        if has_dangling_key(&items) {
-            return Err(make_odd_number_error(&items));
-        }
+    if check_odd && has_dangling_key(&items) {
+        return Err(make_odd_number_error(&items));
     }
     let mut map = ValueMap::default();
     let mut iter = items.iter();
