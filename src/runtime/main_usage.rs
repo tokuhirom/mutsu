@@ -216,6 +216,17 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join("|");
             let type_name = usage_type_name(sp, &ty);
+            // An enum shows as its `.^name`, which rakudo leaves unqualified
+            // (`<E>` for `module M { enum E }`).
+            let shown_type = if self.resolve_enum_type_key(&type_name).is_some() {
+                type_name
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(&type_name)
+                    .to_string()
+            } else {
+                type_name.clone()
+            };
             if sp.sigil == '@' {
                 let shown = if constraints.is_empty() {
                     "Any"
@@ -225,7 +236,7 @@ impl Interpreter {
                 argument.push_str(&format!("=<{shown}> ..."));
             } else if type_name != "Bool" {
                 let shown = if constraints.is_empty() {
-                    type_name.clone()
+                    shown_type
                 } else {
                     constraints.clone()
                 };
@@ -407,7 +418,9 @@ fn usage_constraints(pd: &ParamDef, sp: &SigParam, ty: &ParamType) -> (String, u
     let mut total = 0;
     if let Some(subset) = &ty.subset {
         total += 1;
-        parts.push(subset.clone());
+        // Rakudo shows a subset constraint by its short name (`[=S]` for
+        // `M::S`, the spelling an `import M` leaves in scope).
+        parts.push(subset.rsplit("::").next().unwrap_or(subset).to_string());
     }
     if let Some(lit) = &pd.literal_value {
         total += 1;
