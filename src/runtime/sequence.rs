@@ -500,7 +500,7 @@ impl Interpreter {
         // Check for "wrong side" on geometric sequences too
         let geo_ratio_f64 = match &mode {
             SeqMode::Geometric(r) => Some(*r),
-            SeqMode::GeometricRat(n, d) => Some(*n as f64 / *d as f64),
+            SeqMode::GeometricRat(n, d) => Some(crate::value::rat_to_f64(*n, *d)),
             _ => None,
         };
         if let Some(ratio) = geo_ratio_f64
@@ -1160,7 +1160,9 @@ impl Interpreter {
                                     SeqMode::Geometric(_) | SeqMode::GeometricRat(..) => {
                                         let ratio = match &mode {
                                             SeqMode::Geometric(r) => *r,
-                                            SeqMode::GeometricRat(n, d) => *n as f64 / *d as f64,
+                                            SeqMode::GeometricRat(n, d) => {
+                                                crate::value::rat_to_f64(*n, *d)
+                                            }
                                             _ => unreachable!(),
                                         };
                                         if ratio > 0.0 {

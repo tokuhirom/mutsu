@@ -826,7 +826,7 @@ impl Interpreter {
             .ok()
             .and_then(|v| match v.view() {
                 ValueView::Num(n) => Some(n),
-                ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
                 ValueView::Int(n) => Some(n as f64),
                 _ => None,
             })

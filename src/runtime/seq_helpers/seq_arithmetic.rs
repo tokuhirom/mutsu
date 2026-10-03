@@ -7,7 +7,7 @@ impl Interpreter {
             ValueView::Num(f) => Some(f),
             ValueView::Rat(n, d) => {
                 if d != 0 {
-                    Some(n as f64 / d as f64)
+                    Some(crate::value::rat_to_f64(n, d))
                 } else {
                     None
                 }
@@ -252,7 +252,7 @@ impl Interpreter {
                 if d != 0 && step == step.floor() && step.abs() < i64::MAX as f64 {
                     make_rat(n + step as i64 * d, d)
                 } else {
-                    Value::num(n as f64 / d as f64 + step)
+                    Value::num(crate::value::rat_to_f64(n, d) + step)
                 }
             }
             _ => Value::num(Self::seq_value_to_f64(val).unwrap_or(0.0) + step),
@@ -319,7 +319,7 @@ impl Interpreter {
                 {
                     make_rat(nn, dd)
                 } else {
-                    Value::num(n as f64 / d as f64 + num as f64 / den as f64)
+                    Value::num(crate::value::rat_to_f64(n, d) + num as f64 / den as f64)
                 }
             }
             ValueView::Num(f) => Value::num(f + num as f64 / den as f64),
@@ -393,7 +393,7 @@ impl Interpreter {
                 if d != 0 && ratio == ratio.floor() && ratio.abs() < i64::MAX as f64 {
                     make_rat(n * ratio as i64, d)
                 } else {
-                    Value::num(n as f64 / d as f64 * ratio)
+                    Value::num(crate::value::rat_to_f64(n, d) * ratio)
                 }
             }
             _ => Value::num(Self::seq_value_to_f64(val).unwrap_or(0.0) * ratio),

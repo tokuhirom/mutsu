@@ -298,14 +298,14 @@ pub(crate) fn native_function_2arg(
             let (base_r, base_i) = match arg2.view() {
                 ValueView::Int(i) => (i as f64, 0.0),
                 ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
                 ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };
             let (exp_r, exp_i) = match arg1.view() {
                 ValueView::Int(i) => (i as f64, 0.0),
                 ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
                 ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };

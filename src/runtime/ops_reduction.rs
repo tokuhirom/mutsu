@@ -189,14 +189,14 @@ impl Interpreter {
                     if d == 0 {
                         f64::NAN
                     } else {
-                        n as f64 / d as f64
+                        crate::value::rat_to_f64(n, d)
                     }
                 }
                 ValueView::FatRat(n, d) => {
                     if d == 0 {
                         f64::NAN
                     } else {
-                        n as f64 / d as f64
+                        crate::value::rat_to_f64(n, d)
                     }
                 }
                 // Numerators/denominators too large for the inline i64 view

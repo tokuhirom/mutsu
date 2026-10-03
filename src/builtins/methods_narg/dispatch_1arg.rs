@@ -583,7 +583,7 @@ pub(crate) fn native_method_1arg(
             // .Rat(epsilon) — use continued fraction algorithm with given epsilon
             let epsilon = match arg.view() {
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::Int(i) => i as f64,
                 _ => 1e-6,
             };
@@ -1550,8 +1550,8 @@ pub(crate) fn native_method_1arg(
             let scale = match unwrapped_arg.view() {
                 ValueView::Int(i) => i as f64,
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-                ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
                     crate::builtins::arith::bigint_ratio_to_f64(n, d)
                 }
@@ -1598,8 +1598,8 @@ pub(crate) fn native_method_1arg(
                 ValueView::Int(i) => i as f64,
                 ValueView::BigInt(bi) => bi.to_f64().unwrap_or(0.0),
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-                ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
                     crate::builtins::arith::bigint_ratio_to_f64(n, d)
                 }
@@ -2150,8 +2150,8 @@ pub(crate) fn native_method_1arg(
             let base_complex = match arg.view() {
                 ValueView::Int(i) => Some((i as f64, 0.0)),
                 ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((n as f64 / d as f64, 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((n as f64 / d as f64, 0.0)),
+                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
+                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
                 ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
                     Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
                 }
@@ -2161,8 +2161,8 @@ pub(crate) fn native_method_1arg(
             let target_complex = match target.view() {
                 ValueView::Int(i) => Some((i as f64, 0.0)),
                 ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((n as f64 / d as f64, 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((n as f64 / d as f64, 0.0)),
+                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
+                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
                 ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
                     Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
                 }
@@ -2198,7 +2198,7 @@ pub(crate) fn native_method_1arg(
             let (base_r, base_i) = match arg.view() {
                 ValueView::Int(i) => (i as f64, 0.0),
                 ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
                 ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };
@@ -2206,7 +2206,7 @@ pub(crate) fn native_method_1arg(
             let (exp_r, exp_i) = match target.view() {
                 ValueView::Int(i) => (i as f64, 0.0),
                 ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (n as f64 / d as f64, 0.0),
+                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
                 ValueView::Complex(r, i) => (r, i),
                 _ => return None,
             };
@@ -2232,13 +2232,13 @@ pub(crate) fn native_method_1arg(
             let mag = match target.view() {
                 ValueView::Int(i) => i as f64,
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 _ => return None,
             };
             let angle = match arg.view() {
                 ValueView::Int(i) => i as f64,
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 _ => return None,
             };
             Some(Ok(Value::complex(mag * angle.cos(), mag * angle.sin())))

@@ -48,7 +48,7 @@ fn fold_entries(args: &[Value]) -> Vec<Entry> {
     let weight_of = |v: &Value| match v.view() {
         ValueView::Int(i) => i as f64,
         ValueView::Num(f) => f,
-        ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+        ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
         _ => 1.0,
     };
     if has_pairs {

@@ -59,7 +59,7 @@ pub(crate) fn range_scale(range_val: &Value, factor: &Value) -> Option<Value> {
     let n = match factor.view() {
         ValueView::Int(i) => Some(i as f64),
         ValueView::Num(f) => Some(f),
-        ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
         _ => None,
     }?;
     let (start, end, excl_start, excl_end) = range_bounds(range_val)?;

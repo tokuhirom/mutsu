@@ -27,7 +27,8 @@ pub fn mix_weight_to_value(w: f64) -> Value {
                 let without_dot: String = s.chars().filter(|c| *c != '.').collect();
                 if let Ok(n) = without_dot.parse::<i64>() {
                     // Verify round-trip: n/d as f64 == w
-                    if (n as f64 / d as f64 - w).abs() < f64::EPSILON * w.abs().max(1.0) {
+                    if (crate::value::rat_to_f64(n, d) - w).abs() < f64::EPSILON * w.abs().max(1.0)
+                    {
                         return make_rat(n, d);
                     }
                 }

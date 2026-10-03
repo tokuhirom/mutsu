@@ -1747,14 +1747,14 @@ impl Interpreter {
             }
             (ValueView::Complex(ar, ai), ValueView::Rat(n, d)) => {
                 if d != 0 {
-                    ar == (n as f64 / d as f64) && ai == 0.0
+                    ar == (crate::value::rat_to_f64(n, d)) && ai == 0.0
                 } else {
                     false
                 }
             }
             (ValueView::Rat(n, d), ValueView::Complex(br, bi)) => {
                 if d != 0 {
-                    (n as f64 / d as f64) == br && bi == 0.0
+                    (crate::value::rat_to_f64(n, d)) == br && bi == 0.0
                 } else {
                     false
                 }
@@ -1813,7 +1813,7 @@ impl Interpreter {
                 if d != 0 {
                     a.trim()
                         .parse::<f64>()
-                        .is_ok_and(|v| v == n as f64 / d as f64)
+                        .is_ok_and(|v| v == crate::value::rat_to_f64(n, d))
                 } else {
                     false
                 }

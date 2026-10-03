@@ -516,7 +516,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Num(f) => raku_round_to_value(f),
                 ValueView::Int(i) => Value::int(i),
                 ValueView::Rat(n, d) if d != 0 => {
-                    let f = n as f64 / d as f64;
+                    let f = crate::value::rat_to_f64(n, d);
                     raku_round_to_value(f)
                 }
                 _ => Value::int(0),
@@ -526,7 +526,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             ValueView::Instance { .. } => return None,
             ValueView::Int(i) => Value::num((i as f64).exp()),
             ValueView::Num(f) => Value::num(f.exp()),
-            ValueView::Rat(n, d) if d != 0 => Value::num((n as f64 / d as f64).exp()),
+            ValueView::Rat(n, d) if d != 0 => Value::num((crate::value::rat_to_f64(n, d)).exp()),
             ValueView::Complex(r, i) => {
                 let ea = r.exp();
                 Value::complex(ea * i.cos(), ea * i.sin())

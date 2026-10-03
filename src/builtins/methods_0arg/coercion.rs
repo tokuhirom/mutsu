@@ -66,7 +66,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             ValueView::Num(f) => Some(Ok(Value::complex(f.cos(), f.sin()))),
             ValueView::Rat(n, d) if d != 0 => {
-                let x = n as f64 / d as f64;
+                let x = crate::value::rat_to_f64(n, d);
                 Some(Ok(Value::complex(x.cos(), x.sin())))
             }
             ValueView::Complex(re, im) => {
@@ -85,8 +85,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Complex(_, _) => Some(Ok(target.clone())),
             ValueView::Int(i) => Some(Ok(Value::complex(i as f64, 0.0))),
             ValueView::Num(f) => Some(Ok(Value::complex(f, 0.0))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::complex(n as f64 / d as f64, 0.0))),
-            ValueView::FatRat(n, d) if d != 0 => Some(Ok(Value::complex(n as f64 / d as f64, 0.0))),
+            ValueView::Rat(n, d) if d != 0 => {
+                Some(Ok(Value::complex(crate::value::rat_to_f64(n, d), 0.0)))
+            }
+            ValueView::FatRat(n, d) if d != 0 => {
+                Some(Ok(Value::complex(crate::value::rat_to_f64(n, d), 0.0)))
+            }
             ValueView::BigInt(n) => Some(Ok(Value::complex(
                 num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(f64::INFINITY),
                 0.0,

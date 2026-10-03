@@ -33,7 +33,7 @@ pub(crate) fn to_f64_value(value: &Value) -> f64 {
             if d == 0 {
                 0.0
             } else {
-                n as f64 / d as f64
+                crate::value::rat_to_f64(n, d)
             }
         }
         ValueView::BigInt(bi) => num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0),

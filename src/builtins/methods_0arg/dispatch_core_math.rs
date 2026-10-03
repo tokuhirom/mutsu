@@ -195,8 +195,12 @@ pub(super) fn dispatch(
             ValueView::Int(i) => Some(Ok(Value::num((i as f64).ln()))),
             ValueView::BigInt(i) => Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
             ValueView::Num(f) => Some(Ok(Value::num(f.ln()))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).ln()))),
-            ValueView::FatRat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).ln()))),
+            ValueView::Rat(n, d) if d != 0 => {
+                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).ln())))
+            }
+            ValueView::FatRat(n, d) if d != 0 => {
+                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).ln())))
+            }
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
                 crate::builtins::arith::bigint_ratio_to_f64(n, d).ln(),
             ))),
@@ -213,7 +217,9 @@ pub(super) fn dispatch(
                 Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).log2())))
             }
             ValueView::Num(f) => Some(Ok(Value::num(f.log2()))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).log2()))),
+            ValueView::Rat(n, d) if d != 0 => {
+                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).log2())))
+            }
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
                 (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log2(),
             ))),
@@ -232,7 +238,7 @@ pub(super) fn dispatch(
             )))),
             ValueView::Num(f) => Some(Ok(Value::num(crate::builtins::math_prim::log10(f)))),
             ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num(
-                crate::builtins::math_prim::log10(n as f64 / d as f64),
+                crate::builtins::math_prim::log10(crate::value::rat_to_f64(n, d)),
             ))),
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                 Some(Ok(Value::num(crate::builtins::math_prim::log10(
@@ -251,7 +257,9 @@ pub(super) fn dispatch(
             ValueView::Int(i) => Some(Ok(Value::num((i as f64).exp()))),
             ValueView::BigInt(i) => Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).exp()))),
             ValueView::Num(f) => Some(Ok(Value::num(f.exp()))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).exp()))),
+            ValueView::Rat(n, d) if d != 0 => {
+                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).exp())))
+            }
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
                 (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp(),
             ))),
@@ -268,8 +276,8 @@ pub(super) fn dispatch(
                 ValueView::Int(i) => i as f64,
                 ValueView::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-                ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 }
@@ -293,8 +301,8 @@ pub(super) fn dispatch(
                 ValueView::Int(i) => i as f64,
                 ValueView::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
                 ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-                ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
                 ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 }

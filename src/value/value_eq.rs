@@ -74,7 +74,7 @@ impl PartialEq for Value {
                 if d == 0 {
                     return false;
                 }
-                (n as f64 / d as f64) == f
+                (crate::value::rat_to_f64(n, d)) == f
             }
             (ValueView::BigRat(an, ad), ValueView::BigRat(bn, bd)) => an == bn && ad == bd,
             (ValueView::BigRat(n, d), ValueView::Int(i))
@@ -104,11 +104,11 @@ impl PartialEq for Value {
             | (ValueView::Num(f), ValueView::Complex(r, i)) => i == 0.0 && r == f,
             (ValueView::Complex(r, i), ValueView::Rat(n, d))
             | (ValueView::Rat(n, d), ValueView::Complex(r, i)) => {
-                d != 0 && i == 0.0 && r == (n as f64 / d as f64)
+                d != 0 && i == 0.0 && r == (crate::value::rat_to_f64(n, d))
             }
             (ValueView::Complex(r, i), ValueView::FatRat(n, d))
             | (ValueView::FatRat(n, d), ValueView::Complex(r, i)) => {
-                d != 0 && i == 0.0 && r == (n as f64 / d as f64)
+                d != 0 && i == 0.0 && r == (crate::value::rat_to_f64(n, d))
             }
             (ValueView::Complex(r, i), ValueView::BigRat(n, d))
             | (ValueView::BigRat(n, d), ValueView::Complex(r, i)) => {

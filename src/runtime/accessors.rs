@@ -658,7 +658,7 @@ impl Interpreter {
             ValueView::BigInt(n) => n.to_string(),
             ValueView::Num(n) => format!("{}", n),
             ValueView::Bool(b) => if b { "True" } else { "False" }.to_string(),
-            ValueView::Rat(n, d) => format!("{}", n as f64 / d as f64),
+            ValueView::Rat(n, d) => format!("{}", crate::value::rat_to_f64(n, d)),
             ValueView::Nil => "Nil".to_string(),
             _ => value.to_string_value(),
         }

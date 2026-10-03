@@ -131,7 +131,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         }
         (ValueView::Num(a), ValueView::Rat(n, d)) => {
             let rat_f = if d != 0 {
-                n as f64 / d as f64
+                crate::value::rat_to_f64(n, d)
             } else {
                 f64::NAN
             };
@@ -139,7 +139,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
         }
         (ValueView::Rat(n, d), ValueView::Num(b)) => {
             let rat_f = if d != 0 {
-                n as f64 / d as f64
+                crate::value::rat_to_f64(n, d)
             } else {
                 f64::NAN
             };

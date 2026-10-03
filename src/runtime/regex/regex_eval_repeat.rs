@@ -65,7 +65,7 @@ impl Interpreter {
             match v.view() {
                 ValueView::Num(n) => n,
                 ValueView::Int(i) => i as f64,
-                ValueView::Rat(n, d) => n as f64 / d as f64,
+                ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
                 _ => v.to_f64(),
             }
         }
