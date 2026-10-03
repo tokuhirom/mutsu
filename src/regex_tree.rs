@@ -789,6 +789,10 @@ impl RegexTree {
                     }
                     Some(vec![lookaround])
                 }
+                // A dynamic `$*x` is resolved through the caller chain, which
+                // the match-time `VarInterp` read does not do; the runtime
+                // parser keeps it.
+                RegexNode::Interpolation { name, .. } if name.starts_with('*') => None,
                 RegexNode::Interpolation { name, .. } => Some(vec![token(
                     crate::runtime::RegexAtom::VarInterp(name.clone()),
                     crate::runtime::RegexQuant::One,
@@ -1938,7 +1942,7 @@ impl Parser {
         {
             let sigil = self.chars[self.pos];
             self.pos += 1;
-            let Some(name) = self.parse_variable_name() else {
+            let Some(name) = self.parse_twigil_variable_name() else {
                 self.pos = start;
                 return None;
             };
@@ -2342,21 +2346,36 @@ impl Parser {
     fn parse_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         self.pos += 1; // '$'
         let name = if self.consume_if('{') {
-            let name = self.parse_variable_name()?;
+            let name = self.parse_twigil_variable_name()?;
             if !self.consume_if('}') {
                 return None;
             }
             name
         } else {
-            self.parse_variable_name()?
+            self.parse_twigil_variable_name()?
         };
         Some(RegexNode::Interpolation { name, sequential })
     }
 
     fn parse_array_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
         self.pos += 1; // '@'
-        let name = self.parse_variable_name()?;
+        let name = self.parse_twigil_variable_name()?;
         Some(RegexNode::ArrayInterpolation { name, sequential })
+    }
+
+    /// A variable name after its sigil, with an optional dynamic `*` twigil
+    /// kept in front (`*x`), as the main parser names a dynamic variable.
+    fn parse_twigil_variable_name(&mut self) -> Option<String> {
+        let start = self.pos;
+        let dynamic = self.consume_if('*');
+        match self.parse_variable_name() {
+            Some(name) if dynamic => Some(format!("*{name}")),
+            Some(name) => Some(name),
+            None => {
+                self.pos = start;
+                None
+            }
+        }
     }
 
     fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {

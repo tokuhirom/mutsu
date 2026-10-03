@@ -157,6 +157,8 @@ pub enum RakuAstClass {
     VarLexical,
     // A package-qualified variable `$Foo::v`: a `Name` plus its sigil.
     VarPackage,
+    // A dynamic variable `$*x`: its whole spelling, twigil included.
+    VarDynamic,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -433,6 +435,7 @@ impl RakuAstClass {
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
             VarPackage => "RakuAST::Var::Package",
+            VarDynamic => "RakuAST::Var::Dynamic",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -640,6 +643,12 @@ impl RakuAstClass {
         }
     }
 
+    /// A variable named by one spelling string (`$x` or `$*x`): what a
+    /// colonpair value or a regex interpolation's `var` may hold.
+    pub fn is_simple_variable(self) -> bool {
+        matches!(self, RakuAstClass::VarLexical | RakuAstClass::VarDynamic)
+    }
+
     /// Extra `RakuAST::*` ancestor type names this node kind smartmatches beyond
     /// its own class, its `::`-namespace ancestors, and the universal
     /// `RakuAST::Node` — i.e. the *semantic* hierarchy (`RakuAST::Term` /
@@ -661,6 +670,7 @@ impl RakuAstClass {
             | TypeEnum
             | VarLexical
             | VarPackage
+            | VarDynamic
             | TermReduce
             | Sub
             | Block
@@ -864,6 +874,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Type::Enum"
         | "RakuAST::Var::Lexical"
         | "RakuAST::Var::Package"
+        | "RakuAST::Var::Dynamic"
         | "RakuAST::Term::Reduce"
         | "RakuAST::Sub"
         | "RakuAST::Block"
@@ -1080,6 +1091,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
     RakuAstClass::VarPackage,
+    RakuAstClass::VarDynamic,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,
@@ -1864,11 +1876,7 @@ pub fn construct(
     if class_name == "RakuAST::Regex::Interpolation" && method == "new" {
         let var = named_arg(args, "var")
             .ok_or_else(|| RuntimeError::new("RakuAST::Regex::Interpolation.new requires `var`"))?;
-        require_rakuast_class(
-            &var,
-            RakuAstClass::VarLexical,
-            "RakuAST::Regex::Interpolation.new",
-        )?;
+        require_simple_variable(&var, "RakuAST::Regex::Interpolation.new")?;
         let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
         if !matches!(sequential.view(), ValueView::Bool(_)) {
             return Err(RuntimeError::new(
@@ -2013,11 +2021,7 @@ pub fn construct(
         let value = named_arg(args, "value").ok_or_else(|| {
             RuntimeError::new("RakuAST::ColonPair::Variable.new requires `value`")
         })?;
-        require_rakuast_class(
-            &value,
-            RakuAstClass::VarLexical,
-            "RakuAST::ColonPair::Variable.new",
-        )?;
+        require_simple_variable(&value, "RakuAST::ColonPair::Variable.new")?;
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::ColonPairVariable,
             fields: vec![
@@ -2175,11 +2179,7 @@ pub fn construct(
         let var = named_arg(args, "var").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::InterpolatedVar.new requires `var`")
         })?;
-        require_rakuast_class(
-            &var,
-            RakuAstClass::VarLexical,
-            "RakuAST::Regex::Assertion::InterpolatedVar.new",
-        )?;
+        require_simple_variable(&var, "RakuAST::Regex::Assertion::InterpolatedVar.new")?;
         let sequential = named_arg(args, "sequential").unwrap_or_else(|| Value::truth(false));
         if !matches!(sequential.view(), ValueView::Bool(_)) {
             return Err(RuntimeError::new(
@@ -2204,11 +2204,7 @@ pub fn construct(
         let callee = named_arg(args, "callee").ok_or_else(|| {
             RuntimeError::new("RakuAST::Regex::Assertion::Callable.new requires `callee`")
         })?;
-        require_rakuast_class(
-            &callee,
-            RakuAstClass::VarLexical,
-            "RakuAST::Regex::Assertion::Callable.new",
-        )?;
+        require_simple_variable(&callee, "RakuAST::Regex::Assertion::Callable.new")?;
         let args_node = named_arg(args, "args");
         if let Some(args_node) = &args_node {
             require_rakuast_class(
@@ -2541,6 +2537,16 @@ fn require_rakuast_class(
     }
 }
 
+/// A `Var::Lexical` or `Var::Dynamic` node, as a variable-holding slot expects.
+fn require_simple_variable(value: &Value, constructor: &str) -> Result<(), RuntimeError> {
+    match value.view() {
+        ValueView::RakuAst(node) if node.class.is_simple_variable() => Ok(()),
+        _ => Err(RuntimeError::new(format!(
+            "{constructor} expects a RakuAST::Var::Lexical or RakuAST::Var::Dynamic node"
+        ))),
+    }
+}
+
 fn require_any_rakuast(
     value: &Value,
     constructor: &str,
@@ -2693,6 +2699,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
+        ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
         ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
@@ -2879,6 +2886,16 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(field_to_value(&f.value));
     }
+    // `Var::Lexical.sigil` / `Var::Dynamic.sigil`: derived from the spelling.
+    if method == "sigil"
+        && node.class.is_simple_variable()
+        && let Some(f) = node.fields.first()
+        && let RakuAstFieldValue::Node(v) = &f.value
+        && let ValueView::Str(s) = v.view()
+        && let Some(sigil) = s.chars().next()
+    {
+        return Some(Value::str(sigil.to_string()));
+    }
     // A field the class DECLARES but this node does not carry still answers:
     // rakudo models every field as an attribute, so an absent optional clause
     // reads as an undefined type object (or `()` / `False` / `0`) rather than
@@ -2989,6 +3006,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Prefix
             | RakuAstClass::VarLexical
             | RakuAstClass::VarPackage
+            | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
             | RakuAstClass::ApplyInfix
             | RakuAstClass::ApplyPrefix

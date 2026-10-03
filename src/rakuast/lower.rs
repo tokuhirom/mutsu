@@ -1544,15 +1544,18 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// The source spelling of a variable node: `$x` for a `Var::Lexical`, and the
+/// The source spelling of a variable node: `$x` for a `Var::Lexical`, `$*x`
+/// for a `Var::Dynamic` (the parser names it `*x` after the sigil), and the
 /// sigil plus the `::`-joined name for a `Var::Package` (`$Foo::v`), which is
 /// how the parser names a package-qualified variable.
 fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
     match node.class {
-        RakuAstClass::VarLexical => match positional_leaf(node)?.view() {
-            ValueView::Str(s) => Ok(s.to_string()),
-            _ => Err(unsupported(node)),
-        },
+        RakuAstClass::VarLexical | RakuAstClass::VarDynamic => {
+            match positional_leaf(node)?.view() {
+                ValueView::Str(s) => Ok(s.to_string()),
+                _ => Err(unsupported(node)),
+            }
+        }
         RakuAstClass::VarPackage => {
             let sigil = leaf_str(node, "sigil")?;
             if !matches!(sigil.as_str(), "$" | "@" | "%" | "&") {
@@ -2403,7 +2406,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexAssertionInterpolatedVar => {
             let sequential = bool_field(node, "sequential")?;
             let var = named_child(node, "var")?;
-            if var.class != RakuAstClass::VarLexical {
+            if !var.class.is_simple_variable() {
                 return Err(unsupported(node));
             }
             let name_value = positional_leaf(var)?;
@@ -2417,7 +2420,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
                 return Err(unsupported(node));
             }
             let name = &name[sigil.len_utf8()..];
-            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+            if name.is_empty() || name.starts_with(['?', '^', '.', '!']) || name == "*" {
                 return Err(unsupported(node));
             }
             Ok(RegexNode::RegexValueInterpolation {
@@ -2503,7 +2506,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
         RakuAstClass::RegexInterpolation => {
             let sequential = bool_field(node, "sequential")?;
             let var = named_child(node, "var")?;
-            if var.class != RakuAstClass::VarLexical {
+            if !var.class.is_simple_variable() {
                 return Err(unsupported(node));
             }
             let name_value = positional_leaf(var)?;
@@ -2517,7 +2520,7 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             } else {
                 return Err(unsupported(node));
             };
-            if name.is_empty() || name.starts_with(['*', '?', '^', '.', '!']) {
+            if name.is_empty() || name.starts_with(['?', '^', '.', '!']) || name == "*" {
                 return Err(unsupported(node));
             }
             if array {
@@ -3061,7 +3064,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
-        RakuAstClass::VarLexical | RakuAstClass::VarPackage => {
+        RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
             Ok(match sigil {
