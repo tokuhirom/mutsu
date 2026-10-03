@@ -41,6 +41,28 @@ fn parse_final_return_type_annotation(input: &str) -> PResult<'_, String> {
     Ok((rest, rt))
 }
 
+/// `Name:D[params]` → `Name[params]:D` when the smiley sits directly between
+/// a leading identifier and the whole remaining `[...]`; anything else is
+/// returned unchanged.
+// Cost: O(n), n = annotation length.
+fn move_smiley_after_parametrization(annotation: String) -> String {
+    for smiley in [":D[", ":U[", ":_["] {
+        if let Some(pos) = annotation.find(smiley) {
+            let base = &annotation[..pos];
+            let params = &annotation[pos + 2..];
+            if !base.is_empty()
+                && base
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
+                && params.ends_with(']')
+            {
+                return format!("{base}{params}{}", &smiley[..2]);
+            }
+        }
+    }
+    annotation
+}
+
 /// Parse a return type annotation (--> Type) and return both remainder and type name.
 pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     let (rest, _) = ws(input)?;
@@ -144,6 +166,10 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
     if annotation.is_empty() {
         return Err(PError::expected("return type annotation"));
     }
+    // A definedness smiley written before the parametrization (`Hash:D[Int:D]`)
+    // is the same type as `Hash[Int:D]:D`, the canonical form every type check
+    // and `.raku` expects (the `my`/parameter type parser already does this).
+    annotation = move_smiley_after_parametrization(annotation);
     // A coercion type's empty source is `Any`: `--> Str()` is `Str(Any)`, which is the
     // name `.returns` reports.
     if let Some(base) = annotation.strip_suffix("()")

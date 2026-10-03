@@ -6,7 +6,7 @@ use super::helpers::literal_str;
 use super::interp_helpers::try_parse_interp_method_call;
 use super::interp_var::split_top_level_commas;
 
-/// Interpolate `&name(ARGS)` at the head of `rest` (which starts at the `&`),
+/// Interpolate `&name(ARGS)` (or `&name.method(ARGS)`) at the head of `rest` (which starts at the `&`),
 /// followed by the same postfix chain an interpolated variable takes
 /// (`"&short-name($id).subst('::','-',:g)"` calls `.subst` on the result, as
 /// in raku). Without the parenthesized argument list `&name` is literal text.
@@ -27,6 +27,20 @@ where
         .unwrap_or(var_rest.len());
     let name = &var_rest[..end];
     let after_name = &var_rest[end..];
+    // `"&code.name()"`: a parenthesized method call on the code object itself
+    // interpolates too (a paren-less `&code.name` stays literal text).
+    if !name.is_empty() && after_name.starts_with('.') {
+        let target = Expr::CodeVar(name.to_string());
+        let (expr, remainder) = try_parse_interp_method_call(after_name, target);
+        if remainder.len() == after_name.len() {
+            return None;
+        }
+        if !current.is_empty() {
+            parts.push(Expr::Literal(literal_str(std::mem::take(current))));
+        }
+        parts.push(expr);
+        return Some(remainder);
+    }
     if !after_name.starts_with('(') {
         return None;
     }
