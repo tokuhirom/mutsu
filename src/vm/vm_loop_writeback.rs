@@ -86,6 +86,17 @@ impl Interpreter {
         let Some(current) = current else {
             return;
         };
+        // The writeback stores the topic's VALUE, never its container. The body
+        // can leave `$_` holding a `ContainerRef` cell — `given %h<k> { %h<k>
+        // := $_ }` installs one shared cell at the element and in `$_` — and
+        // storing that cell through the element's own cell made it contain
+        // itself, so the next read recursed until the stack overflowed (PURL's
+        // `%args<name> := $_ with ...`).
+        let current = if current.is_container_ref() {
+            current.deref_container()
+        } else {
+            current
+        };
         // If the body never changed the topic from the value bound on entry, the
         // writeback is a no-op. Skip it: assigning the same value back into a
         // read-only aggregate element (a grammar Match subcapture — `given
