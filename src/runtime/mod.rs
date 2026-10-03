@@ -705,6 +705,7 @@ mod method_def_syms;
 pub(crate) mod nativecall_fnptr;
 pub(crate) mod term_names;
 pub(crate) mod toplevel_callable_ids;
+pub(crate) mod toplevel_markers;
 pub(crate) mod toplevel_package_symbols;
 pub(crate) use self::decl_types::*;
 mod attribute_core_traits;

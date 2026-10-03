@@ -59,19 +59,24 @@ pub(crate) struct ModuleToplevel {
     /// Package-qualified enum values a loaded module's mainline bound at its
     /// top level (group 2, `runtime::toplevel_package_symbols`).
     pub(crate) package_symbols: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Value>>,
+    /// `constant` marker names a loaded module's mainline declared at its top
+    /// level, keyed by the declaring package (group 3,
+    /// `runtime::toplevel_markers`).
+    pub(crate) constant_markers: std::sync::Arc<crate::runtime::PackageKeyed<()>>,
     /// The depths the executing module mainline started at, while one runs.
     /// See [`Interpreter::run_module_mainline`].
     pub(crate) depth: Option<ModuleToplevelDepth>,
 }
 
 impl ModuleToplevel {
-    /// A spawned thread's copy: it shares both tables copy-on-write (#7796)
+    /// A spawned thread's copy: it shares the tables copy-on-write (#7796)
     /// but is not itself running a module mainline.
-    // Cost: O(1), two `Arc` bumps.
+    // Cost: O(1), three `Arc` bumps.
     pub(crate) fn for_thread(&self) -> Self {
         Self {
             callable_ids: self.callable_ids.clone(),
             package_symbols: self.package_symbols.clone(),
+            constant_markers: self.constant_markers.clone(),
             depth: None,
         }
     }
