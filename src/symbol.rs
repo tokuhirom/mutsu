@@ -243,6 +243,16 @@ pub(crate) mod flags {
     /// about every string-valued insert, to keep
     /// [`crate::sigilless_alias_index`] a superset of the live alias entries.
     pub(crate) const SIGILLESS_ALIAS_KEY: u16 = 1 << 10;
+    /// A system name whose VALUE is rewritten in the ordinary course of
+    /// execution: the topic family (`_`, `@_`, `%_`) and the per-routine
+    /// implicits ([`ROUTINE_SCOPED_IMPLICIT`]: `$!`, `$/` and its capture
+    /// views). A loop writes these on every iteration, so the per-tier
+    /// closure-capture memo (`env_tier::Tier::capture_sys`) does not hold
+    /// their values -- it records only that the key is present, and a
+    /// capture reads the live value by name. Every other system name (types,
+    /// constants, dynamics, `__mutsu_*` metadata) is written once and read by
+    /// every capture.
+    pub(crate) const CAPTURE_VOLATILE: u16 = 1 << 11;
     /// This symbol has been used as an env key **somewhere in this process**.
     ///
     /// Unlike every other bit here this is NOT a property of the symbol's
@@ -315,7 +325,10 @@ pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
 fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if is_routine_scoped_implicit_var(s) {
-        f |= flags::ROUTINE_SCOPED_IMPLICIT;
+        f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::CAPTURE_VOLATILE;
+    }
+    if matches!(s, "_" | "@_" | "%_") {
+        f |= flags::CAPTURE_VOLATILE;
     }
     if s.starts_with(TYPE_META_PREFIX) {
         f |= flags::TYPE_META;

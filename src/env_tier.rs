@@ -32,8 +32,8 @@
 //! [`Env::filtered_flat_capture`]: crate::env::Env::filtered_flat_capture
 
 use std::ops::Deref;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use crate::symbol::{Symbol, flags};
 use crate::value::Value;
@@ -83,6 +83,33 @@ pub(crate) struct Tier {
     ///
     /// [`Env::capture_tier`]: crate::env::Env::capture_tier
     container_ref_keys: OnceLock<Box<[Symbol]>>,
+    /// Memo of [`Self::capture_sys`]: the system names a closure capture keeps
+    /// from this tier, with their values, as a shared immutable tier of its
+    /// own. Unlike `capture_candidates` this depends on VALUES, so every
+    /// mutator that can change a memoized entry drops it -- but a write to a
+    /// plain user lexical (the common loop write) or to a volatile system name
+    /// ([`flags::CAPTURE_VOLATILE`], whose value the memo does not hold) leaves
+    /// it alone. See [`CaptureSys`].
+    capture_sys: OnceLock<Arc<CaptureSys>>,
+}
+
+/// What a closure capture takes from one wide env tier, built once per
+/// version of that tier's system names and shared by every capture of it
+/// (#9170).
+///
+/// A capture keeps every visible system name (types, constants, dynamics,
+/// `__mutsu_*` metadata -- ADR-0094 §4), and copying them into each capture
+/// made a closure creation cost O(system names in scope). Held as a tier of
+/// its own, the capture reaches them through a shared layer instead
+/// ([`crate::env_capture_view::CaptureView`]).
+pub(crate) struct CaptureSys {
+    /// The kept non-volatile system names and their values. Never written
+    /// after it is built, so it is safe to share and to memoize over.
+    pub(crate) sys: Arc<Tier>,
+    /// The volatile system names present in the tier ([`flags::CAPTURE_VOLATILE`]).
+    /// A capture reads their live values by name, so this records keys only,
+    /// as a superset (a removal does not prune it).
+    pub(crate) volatile: Box<[Symbol]>,
 }
 
 impl Clone for Tier {
@@ -92,6 +119,7 @@ impl Clone for Tier {
             capture_candidates: self.capture_candidates.clone(),
             capture_asked: AtomicBool::new(self.capture_asked.load(Ordering::Relaxed)),
             container_ref_keys: self.container_ref_keys.clone(),
+            capture_sys: self.capture_sys.clone(),
         }
     }
 }
@@ -202,6 +230,59 @@ impl Tier {
             capture_candidates: OnceLock::new(),
             capture_asked: AtomicBool::new(false),
             container_ref_keys: OnceLock::new(),
+            capture_sys: OnceLock::new(),
+        }
+    }
+
+    /// The system names a closure capture keeps from this tier -- see
+    /// [`CaptureSys`]. Built on first ask from the capture-candidate keys and
+    /// held until a mutator changes one of the entries it holds.
+    // Cost: O(1) when memoized; a build is O(c), c = the tier's candidate keys
+    // (O(n) map entries for a tier too narrow to index its candidates).
+    pub(crate) fn capture_sys(&self) -> &Arc<CaptureSys> {
+        if let Some(memo) = self.capture_sys.get() {
+            return memo;
+        }
+        let mut sys = SymMap::default();
+        let mut volatile = Vec::new();
+        let mut take = |k: Symbol, v: &Value| {
+            if capture_walk_skips(k) {
+                return;
+            }
+            if k.flags() & flags::CAPTURE_VOLATILE != 0 {
+                volatile.push(k);
+            } else {
+                sys.insert(k, v.clone());
+            }
+        };
+        if self.map.len() < CANDIDATE_MEMO_MIN_KEYS {
+            for (k, v) in &self.map {
+                take(*k, v);
+            }
+        } else {
+            for &k in self.capture_candidates() {
+                if let Some(v) = self.map.get(&k) {
+                    take(k, v);
+                }
+            }
+        }
+        let built = Arc::new(CaptureSys {
+            sys: Arc::new(Tier::new(sys)),
+            volatile: volatile.into_boxed_slice(),
+        });
+        self.capture_sys.get_or_init(|| built)
+    }
+
+    /// Drop the [`Self::capture_sys`] memo if a write to `key` can change what
+    /// it holds. `new_key` says whether the write added `key`.
+    #[inline(always)]
+    fn note_capture_sys_write(&mut self, key: Symbol, new_key: bool) {
+        if self.capture_sys.get_mut().is_none() || capture_walk_skips(key) {
+            return;
+        }
+        // A volatile name's value is not in the memo, only its presence.
+        if new_key || key.flags() & flags::CAPTURE_VOLATILE == 0 {
+            self.capture_sys.take();
         }
     }
 
@@ -261,9 +342,8 @@ impl Tier {
         if self.map.len() < CANDIDATE_MEMO_MIN_KEYS {
             return CaptureWalk::Entries;
         }
-        // Build on the SECOND ask, never the first — the same "wait for a
-        // repeat" discipline `vm_capture_cache` arms its memo with, and for the
-        // same reason. A tier can be both wide and allocated fresh per call: a
+        // Build on the SECOND ask, never the first — wait for a repeat before
+        // paying for a memo. A tier can be both wide and allocated fresh per call: a
         // method frame that flattens its chain gets one, and a capture inside
         // it would build a list, read it once and drop it. That is a pure loss,
         // and it was 2.4% of `benchmarks/bench-ctor.raku` (#7565). A tier worth
@@ -307,10 +387,18 @@ impl Tier {
         self.capture_candidates.take();
     }
 
+    /// Drop every memo (the bulk-write escape hatches).
+    #[cfg(test)]
+    fn invalidate_all(&mut self) {
+        self.capture_candidates.take();
+        self.capture_sys.take();
+    }
+
     #[inline]
     pub(crate) fn insert(&mut self, key: Symbol, value: Value) -> Option<Value> {
         note_alias_entry(key, &value);
         let prev = self.map.insert(key, value);
+        self.note_capture_sys_write(key, prev.is_none());
         if prev.is_none() {
             // A key that was already here was latched when it arrived, so the
             // mark rides along with the index invalidation on the rare
@@ -325,12 +413,17 @@ impl Tier {
     /// [`Self::capture_candidates`].
     #[inline]
     pub(crate) fn remove(&mut self, key: &Symbol) -> Option<Value> {
-        self.map.remove(key)
+        let prev = self.map.remove(key);
+        if prev.is_some() {
+            self.note_capture_sys_write(*key, false);
+        }
+        prev
     }
 
     /// Value-only: the key must already be present, so the key set is unchanged.
     #[inline]
     pub(crate) fn get_mut(&mut self, key: &Symbol) -> Option<&mut Value> {
+        self.note_capture_sys_write(*key, false);
         self.map.get_mut(key)
     }
 
@@ -338,12 +431,15 @@ impl Tier {
     pub(crate) fn values_mut(
         &mut self,
     ) -> std::collections::hash_map::ValuesMut<'_, Symbol, Value> {
+        self.capture_sys.take();
         self.map.values_mut()
     }
 
     /// Filtering can only remove keys — superset indexes survive it.
     #[inline]
     pub(crate) fn retain(&mut self, f: impl FnMut(&Symbol, &mut Value) -> bool) {
+        // The predicate gets `&mut Value`, so it may write as well as drop.
+        self.capture_sys.take();
         self.map.retain(f);
     }
 
@@ -363,7 +459,7 @@ impl Tier {
     /// what closes it — there is no borrow to hold past the marking pass.
     #[cfg(test)]
     pub(crate) fn with_map_mut<R>(&mut self, f: impl FnOnce(&mut SymMap) -> R) -> R {
-        self.invalidate_key_set();
+        self.invalidate_all();
         let out = f(&mut self.map);
         for (key, value) in &self.map {
             crate::symbol::mark_env_key(*key);
