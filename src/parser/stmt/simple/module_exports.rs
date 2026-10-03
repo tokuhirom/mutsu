@@ -208,8 +208,6 @@ fn import_is_pragma_like(module: &str) -> bool {
             | "MONKEY-SEE-NO-EVAL"
             | "MONKEY-TYPING"
             | "MONKEY-GUTS"
-            | "NativeCall"
-            | "NativeCall::Types"
     )
 }
 

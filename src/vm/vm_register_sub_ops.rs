@@ -335,7 +335,7 @@ impl Interpreter {
             if outcome == crate::runtime::registration_sub::SubRegisterOutcome::Installed {
                 // If this sub carries the `is native(...)` trait, record its C-FFI
                 // descriptor so calls route through NativeCall instead of the body.
-                if custom_traits.iter().any(|(t, _)| t == "native") {
+                if false && custom_traits.iter().any(|(t, _)| t == "native") {
                     self.register_native_call_sub(
                         &resolved_name,
                         param_defs,

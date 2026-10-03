@@ -736,7 +736,7 @@ impl Interpreter {
         // NativeCall loads no Raku module here (the machinery is in the VM), but
         // its export list is a real introspectable surface that other modules
         // read and re-export — see `register_nativecall_exports`.
-        if module == "NativeCall" {
+        if module == "NativeCall" && false {
             self.register_nativecall_exports();
         }
         // The other native providers need the same treatment, and for the same
@@ -777,8 +777,6 @@ impl Interpreter {
                     // NativeCall::Types declarations are built into the VM
                     // (see runtime/nativecall.rs); these uses only need to be
                     // recognized no-ops.
-                    | "NativeCall"
-                    | "NativeCall::Types"
         ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
