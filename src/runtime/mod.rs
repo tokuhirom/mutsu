@@ -1002,6 +1002,8 @@ pub(crate) mod stack_budget;
 pub(crate) use crate::value::str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
+mod supply_emit_frame;
+pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_transform;
 mod system;
@@ -3880,7 +3882,7 @@ pub struct Interpreter {
     /// (by generation mismatch) rather than per-package, since a new token
     /// registration is rare and global.
     grammar_dynvar_decls_cache: HashMap<String, (u64, HashMap<String, Vec<String>>)>,
-    pub(super) supply_emit_buffer: Vec<Vec<Value>>,
+    pub(super) supply_emit_buffer: Vec<EmitFrame>,
     /// `whenever` subscription markers registered while a react drive loop is
     /// already running (a `whenever` nested inside another `whenever`'s body).
     /// The loop adopts them on its next round; see

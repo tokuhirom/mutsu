@@ -194,9 +194,9 @@ impl Interpreter {
                 a.insert("done".to_string(), Value::FALSE);
                 a
             });
-            self.supply_emit_buffer.push(Vec::new());
+            self.supply_emit_buffer.push(EmitFrame::default());
             let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-            self.supply_emit_buffer.pop().unwrap_or_default()
+            self.supply_emit_buffer.pop().unwrap_or_default().values
         } else {
             attributes
                 .get("values")
