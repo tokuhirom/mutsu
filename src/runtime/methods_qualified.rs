@@ -514,7 +514,7 @@ impl Interpreter {
         // should take the ordinary qualified-method path.
         let qualifier_has_user_new = {
             let registry = self.registry();
-            registry.user_method_overloads(qualifier, "new").is_some()
+            registry.declares_user_new(qualifier)
         };
         let resolved =
             if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
@@ -1029,7 +1029,7 @@ impl Interpreter {
             }
             let qualifier_has_user_new = {
                 let registry = self.registry();
-                registry.user_method_overloads(qualifier, "new").is_some()
+                registry.declares_user_new(qualifier)
             };
             let resolved =
                 if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
@@ -1147,7 +1147,7 @@ impl Interpreter {
             }
             let qualifier_has_user_new = {
                 let registry = self.registry();
-                registry.user_method_overloads(qualifier, "new").is_some()
+                registry.declares_user_new(qualifier)
             };
             let resolved =
                 if actual_method == "new" && qualifier != pkg_name && !qualifier_has_user_new {

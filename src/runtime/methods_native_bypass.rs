@@ -143,6 +143,7 @@ impl Interpreter {
                 | "method_names"
                 | "attributes"
                 | "attribute_table"
+                | "get_attribute_for_usage"
                 | "parents"
                 | "roles"
                 | "candidates"

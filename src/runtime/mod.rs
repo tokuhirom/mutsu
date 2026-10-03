@@ -768,6 +768,7 @@ mod methods_call_dispatch;
 mod methods_call_helpers;
 mod methods_classhow;
 mod methods_classhow_attribute;
+mod methods_classhow_attribute_table;
 mod methods_classhow_builtin_methods;
 mod methods_classhow_dispatch;
 mod methods_classhow_grammar_tokens;
