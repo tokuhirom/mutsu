@@ -48,6 +48,10 @@ NOT_APPLICABLE = {
     "list_b": "Rakudo rejects every Raku call at compile time (\"The 'list_b' op "
               "needs a list of blocks, got QAST::Op\"): a Raku block literal "
               "never compiles to the bare QAST::Block the op requires.",
+    "for": "Rakudo rejects every Raku call at compile time (\"The 'for' op "
+           "expects a block as its second operand, got QAST::Op\"): a Raku "
+           "block literal compiles to a closure op, never the bare QAST::Block "
+           "the op requires (NQP's own `nqp::for` fails the same way).",
 }
 # The native-typed hash slots: no associative REPR a Raku program can reach
 # stores natives -- MoarVM's VMHash (`nqp::hash`, a Hash's `$!storage`) dies
