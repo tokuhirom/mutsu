@@ -155,7 +155,7 @@ impl Interpreter {
                 // from a stable sort over `candidates`, which is already
                 // in declaration order.
                 let (mut keys, mut ranked) = (Vec::new(), Vec::new());
-                self.ltm_rank_proto(&candidates, chars, pos, &mut keys, &mut ranked);
+                self.ltm_rank_proto(candidates, chars, pos, &mut keys, &mut ranked);
                 // Attempt the ranked candidates in order and stop at the
                 // first that actually matches — Rakudo tries the NFA's
                 // fates in order and commits to the first that succeeds,
