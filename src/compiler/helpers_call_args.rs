@@ -736,6 +736,12 @@ impl Compiler {
         // than snapshot its value.
         let source_name = match arg {
             Expr::CodeVar(_) => arg.var_key(),
+            // A bareword this frame does not know as a variable compiles to a
+            // `GetBareWord` term lookup: it has no container to tag, and a tag
+            // under its bare spelling would let `WrapVarRef` swap in whatever
+            // a package store holds under that name -- a class body's nested
+            // type `Q::Atom` in place of its `my constant Atom` (#11385).
+            Expr::BareWord(name) if !self.bareword_denotes_variable(name) => None,
             _ => self.lvalue_root_key(
                 arg,
                 crate::ast::LvaluePeel::ASSIGN
