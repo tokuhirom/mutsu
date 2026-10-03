@@ -156,6 +156,13 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        // The plain-method lane enters this tail without the opcode's
+        // `flatten_scoped_env` guard, which only the user-method arm above can
+        // do without (see `run_plain_method_lane`). Everything below -- the
+        // native forks and the interpreter fallback -- gets the flat env the
+        // full path would have handed it. O(1) when the env is already flat,
+        // as it is on every non-lane entry.
+        self.flatten_scoped_env();
         // Guard for the whole "lever A" native block below — see
         // `native_lever_a_user_override`'s doc comment (mut path twin of the
         // non-mut guard in `try_compiled_method_or_interpret_inner`).

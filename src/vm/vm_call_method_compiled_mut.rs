@@ -7,7 +7,7 @@ impl Interpreter {
         target_name: &str,
         target: Value,
         method_sym: crate::symbol::Symbol,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // #8880: the caller has already established that this receiver class and
         // method name walk the whole probe prefix below without a single probe
@@ -16,6 +16,14 @@ impl Interpreter {
         let target = self.new_on_builtin_instance_target(target, method_sym);
         let target = self.resource_split_target(target, method_sym.as_str())?;
         if std::mem::take(&mut self.caches.plain_method_lane_active) {
+            // A private call's lane was installed by its own dispatch arm
+            // below, not by the tail; replay that arm.
+            if method_sym.as_str().starts_with('!')
+                && let Some(result) =
+                    self.try_private_compiled_mut_dispatch(&target, method_sym, &mut args)
+            {
+                return result;
+            }
             return self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args);
         }
         let method: &str = method_sym.as_str();
@@ -374,89 +382,119 @@ impl Interpreter {
             crate::vm::vm_stats::record_method_fallback(method);
             return loan_env!(self, call_method_with_values(how, meta_method, how_args));
         }
-        if method.starts_with('!') {
-            let class_sym = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name),
-                ValueView::Package(name) => Some(name),
-                _ => None,
-            };
-            if let Some(class_sym) = class_sym {
-                let cn = class_sym.as_str();
-                let resolved = loan_env!(self, resolve_private_method_for_vm(cn, method, &args));
-                if let Some((owner_class, method_def)) = resolved {
-                    let caller_allowed = self.can_fast_dispatch_private_method_vm(&owner_class);
-                    if caller_allowed && let Some(ref cc) = method_def.compiled_code {
-                        let cc = cc.clone();
-                        let target_id = match target.view() {
-                            ValueView::Instance { id, .. } => Some(id),
-                            _ => None,
-                        };
-                        let attrs_cell = match target.view() {
-                            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
-                            _ => None,
-                        };
-                        let attributes = match target.view() {
-                            ValueView::Instance { attributes, .. } => attributes.to_map(),
-                            _ => AttrMap::new(),
-                        };
-                        // The real receiver, never its type object: a deferral candidate
-                        // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
-                        let invocant_for_dispatch = target.clone();
-                        let pushed_dispatch = loan_env!(
-                            self,
-                            push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
-                        );
-                        let invocant = Some(target);
-                        let empty_fns = CompiledFns::default();
-                        let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-                        let method_result = self.call_compiled_method(
-                            cn,
-                            crate::symbol::Symbol::intern(&owner_class),
-                            method_sym,
-                            &method_def,
-                            &cc,
-                            &attributes,
-                            args,
-                            invocant,
-                            fns_ref,
-                        );
-                        if pushed_dispatch {
-                            self.pop_method_dispatch();
-                        }
-                        self.pop_method_samewith_context();
-                        let (result, reconciled) = method_result?;
-                        if let Some(id) = target_id {
-                            // Commit only a `:=`-adjusted snapshot: an unadjusted
-                            // one equals the cell and the whole-map write would
-                            // race with concurrent cell-CAS (lost updates).
-                            if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
-                                cell.commit_attrs(m.clone());
-                            }
-                            if result.is_proxy_value()
-                                && !self.in_lvalue_assignment
-                                && !Self::method_is_rw_capable(&method_def)
-                                && let ValueView::Proxy { fetcher, .. } = result.view()
-                            {
-                                // Without a `:=` adjustment the returned map is
-                                // absent — re-snapshot the live cell for the
-                                // proxy fetcher.
-                                let proxy_attrs = match (&reconciled, &attrs_cell) {
-                                    (Some(m), _) => m.clone(),
-                                    (None, Some(cell)) => cell.to_map(),
-                                    (None, None) => AttrMap::new(),
-                                };
-                                return loan_env!(
-                                    self,
-                                    proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
-                                );
-                            }
-                        }
-                        return Ok(result);
+        if method.starts_with('!')
+            && let Some(result) =
+                self.try_private_compiled_mut_dispatch(&target, method_sym, &mut args)
+        {
+            return result;
+        }
+        self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args)
+    }
+
+    /// `$obj!name(...)`: resolve the private candidate and run its compiled
+    /// body when the calling context may dispatch it directly. `None` leaves
+    /// `args` untouched for the general tail when it declines.
+    ///
+    /// Shared by the full path and the plain-method lane's replay of a private
+    /// call (see `vm_call_method_plain_lane`), which also installs the lane
+    /// from here: like the user-method tail, reaching a compiled private body
+    /// proves every probe ahead of it declined.
+    pub(super) fn try_private_compiled_mut_dispatch(
+        &mut self,
+        target: &Value,
+        method_sym: crate::symbol::Symbol,
+        args: &mut Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let method = method_sym.as_str();
+        let class_sym = match target.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name),
+            ValueView::Package(name) => Some(name),
+            _ => None,
+        };
+        if let Some(class_sym) = class_sym {
+            let cn = class_sym.as_str();
+            let resolved = loan_env!(
+                self,
+                resolve_private_method_for_vm_sym(class_sym, method_sym, args)
+            );
+            if let Some((owner_class, method_def)) = resolved {
+                let caller_allowed = self.can_fast_dispatch_private_method_vm(owner_class.as_str());
+                if caller_allowed && let Some(ref cc) = method_def.compiled_code {
+                    // See the lane install in `compiled_mut_resolved_dispatch`.
+                    self.note_plain_method_lane_reached(class_sym, method_sym);
+                    let cc = cc.clone();
+                    let target_id = match target.view() {
+                        ValueView::Instance { id, .. } => Some(id),
+                        _ => None,
+                    };
+                    let attrs_cell = match target.view() {
+                        ValueView::Instance { attributes, .. } => Some(attributes.clone()),
+                        _ => None,
+                    };
+                    let attributes = match target.view() {
+                        ValueView::Instance { attributes, .. } => attributes.to_map(),
+                        _ => AttrMap::new(),
+                    };
+                    // The real receiver, never its type object: a deferral candidate
+                    // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
+                    let invocant_for_dispatch = target.clone();
+                    let pushed_dispatch = loan_env!(
+                        self,
+                        push_method_dispatch_frame(cn, method, args, invocant_for_dispatch,)
+                    );
+                    let invocant = Some(target.clone());
+                    let empty_fns = CompiledFns::default();
+                    let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
+                    let method_result = self.call_compiled_method(
+                        cn,
+                        owner_class,
+                        method_sym,
+                        &method_def,
+                        &cc,
+                        &attributes,
+                        std::mem::take(args),
+                        invocant,
+                        fns_ref,
+                    );
+                    if pushed_dispatch {
+                        self.pop_method_dispatch();
                     }
+                    self.pop_method_samewith_context();
+                    let (result, reconciled) = match method_result {
+                        Ok(r) => r,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    if let Some(id) = target_id {
+                        // Commit only a `:=`-adjusted snapshot: an unadjusted
+                        // one equals the cell and the whole-map write would
+                        // race with concurrent cell-CAS (lost updates).
+                        if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
+                            cell.commit_attrs(m.clone());
+                        }
+                        if result.is_proxy_value()
+                            && !self.in_lvalue_assignment
+                            && !Self::method_is_rw_capable(&method_def)
+                            && let ValueView::Proxy { fetcher, .. } = result.view()
+                        {
+                            // Without a `:=` adjustment the returned map is
+                            // absent — re-snapshot the live cell for the
+                            // proxy fetcher.
+                            let proxy_attrs = match (&reconciled, &attrs_cell) {
+                                (Some(m), _) => m.clone(),
+                                (None, Some(cell)) => cell.to_map(),
+                                (None, None) => AttrMap::new(),
+                            };
+                            return Some(loan_env!(
+                                self,
+                                proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
+                            ));
+                        }
+                    }
+                    return Some(Ok(result));
                 }
             }
         }
-        self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args)
+        None
     }
 
     /// `.new` on an INSTANCE of a built-in class constructs from its type, as

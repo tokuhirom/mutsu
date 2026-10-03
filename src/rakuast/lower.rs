@@ -3145,7 +3145,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::ApplyPrefix => {
             let operand = lower_expr(named_child(node, "operand")?)?;
-            let op = infix_token(named_child(node, "prefix")?)?;
+            let op = prefix_token(named_child(node, "prefix")?)?;
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
@@ -3402,6 +3402,15 @@ fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Runti
         return Err(unsupported(node));
     };
     crate::compiler::helpers_ops::op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
+}
+
+/// Resolve a `Prefix` operator's positional spelling in prefix context.
+fn prefix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+    let name = positional_leaf(node)?;
+    let ValueView::Str(s) = name.view() else {
+        return Err(unsupported(node));
+    };
+    crate::compiler::helpers_ops::prefix_op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
 }
 
 /// An optional boolean-valued named field (an omitted field is `False`, which

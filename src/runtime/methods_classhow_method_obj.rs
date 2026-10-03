@@ -82,6 +82,8 @@ impl Interpreter {
             let method_obj = self.make_native_method_object(native_name, class_name);
             result.push(method_obj);
         }
+        drop(registry);
+        self.collect_grammar_token_methods(class_name, result);
     }
 
     /// Build the class's own method table (`.^method_table`): the methods

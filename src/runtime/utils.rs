@@ -422,7 +422,7 @@ pub(crate) use crate::value::quanthash_keys::*;
 pub(crate) use crate::value::radix_numeric::*;
 pub(crate) use crate::value::rat_parts::*;
 pub(crate) use crate::value::shaped_array::*;
-pub(crate) use crate::value::to_list::value_to_list;
+pub(crate) use crate::value::to_list::{stash_symbol_entries, value_to_list};
 pub(crate) use crate::value::type_name::value_type_name;
 pub(crate) use crate::value::version_cmp::*;
 pub(crate) use crate::value::which_key::value_which_key;

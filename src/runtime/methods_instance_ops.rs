@@ -2785,9 +2785,9 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    ValueView::Sub(data) => Ok(Value::str(format_operator_name(
-                        crate::qualified::unqualified_part(data.name).as_str(),
-                    ))),
+                    ValueView::Sub(data) => {
+                        Ok(Value::str(format_operator_name(data.name.as_str())))
+                    }
                     // `Nil` swallows every method call. `Array`/`Hash` answer
                     // with their container descriptor's name in rakudo
                     // (`[1].name` is "element", `(my %h).name` is "%h"),

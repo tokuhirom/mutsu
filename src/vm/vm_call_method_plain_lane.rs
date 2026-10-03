@@ -82,7 +82,12 @@ impl Interpreter {
         want_ref: bool,
         method_sym: crate::symbol::Symbol,
     ) -> Option<crate::runtime::PlainMethodLaneKey> {
-        if modifier.is_some() || quoted || want_ref {
+        // A private call (`.!`) is admitted: its method symbol is the
+        // `!`-prefixed name, so it can never share a key with a public call,
+        // and its replay re-runs the private dispatch arm that installed it
+        // (`try_private_compiled_mut_dispatch`), including that arm's
+        // calling-context permission check.
+        if !matches!(modifier, None | Some("!")) || quoted || want_ref {
             return None;
         }
         let ValueView::Instance { class_name, .. } = target.view() else {
@@ -108,12 +113,24 @@ impl Interpreter {
     /// Dispatch a lane hit: everything the skipped stretch does that is *not* a
     /// probe, then the same user-method dispatch the full path ends in.
     ///
-    /// Two non-probe effects live inside the skipped stretch and are reproduced
-    /// here. `flatten_scoped_env` collapses a transient scoped overlay env,
-    /// because a compiled method body may capture or iterate the caller's
-    /// lexicals and would otherwise see a truncated view. `method_dispatch_pure
-    /// = false` is the Slice 6.3 seed: assume the dispatch dirties the caller
-    /// env unless a proven-pure path clears it.
+    /// One non-probe effect of the skipped stretch is reproduced here:
+    /// `method_dispatch_pure = false` is the Slice 6.3 seed (assume the
+    /// dispatch dirties the caller env unless a proven-pure path clears it).
+    ///
+    /// The stretch's other effect, `flatten_scoped_env`, is deliberately NOT
+    /// reproduced (#9494). It guards consumers that capture or iterate the
+    /// whole lexical view, and a lane hit reaches none of them before the
+    /// callee runs: the lane goes straight to `compiled_mut_resolved_dispatch`,
+    /// whose user-method arm runs a compiled body exactly the way a sub call
+    /// runs one -- a fresh `Env::scoped_child` over the caller's (possibly
+    /// scoped) env, with closure captures flattening at their own capture site
+    /// and the return merge reading the callee's overlay / frame-write log. Sub
+    /// calls have never flattened at the call. The tail's non-user fallbacks
+    /// (the native forks and the interpreter) are not covered by that argument,
+    /// so the tail flattens before reaching them. Flattening here cost a
+    /// whole-scope map clone per call and, worse, left the CALLER's frame flat
+    /// for the rest of its life, turning its own return merge scope-sized
+    /// (#7630, #7563).
     pub(super) fn run_plain_method_lane(
         &mut self,
         code: &CompiledCode,
@@ -123,7 +140,6 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
-        self.flatten_scoped_env();
         self.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
         self.caches.plain_method_lane_active = true;
@@ -174,8 +190,13 @@ impl Interpreter {
         // With arguments, the native-method cascade must not have been asked:
         // its decline reads argument values, which the key does not hold. It
         // is skipped exactly when the class has a user method of this name
-        // (`skip_native` in `exec_call_method_mut_op_impl`).
-        if !key.2.is_empty() && !self.grammar_has_user_method_memo(class_sym, method_sym) {
+        // (`skip_native` in `exec_call_method_mut_op_impl`). No native method
+        // is spelled with a leading `!`, so a private call's cascade declines
+        // on the name alone.
+        if !key.2.is_empty()
+            && !method_sym.as_str().starts_with('!')
+            && !self.grammar_has_user_method_memo(class_sym, method_sym)
+        {
             return;
         }
         self.refresh_method_caches_for_generation();

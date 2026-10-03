@@ -6642,7 +6642,7 @@ impl Interpreter {
             }
 
             // -- Closures and registration --
-            // Cost: O(s + f), the closure-capture cost (see capture_closure_env), s = visible env names that are not plain user lexicals, f = free vars. Rakudo: O(1) -- see #9170.
+            // Cost: O(f * d + n + l), the closure-capture cost (see capture_closure_env), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared layers.
             OpCode::MakeGather(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
@@ -6703,19 +6703,19 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeLambda(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
@@ -6726,7 +6726,7 @@ impl Interpreter {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(f * d + n + l), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared system-name layers (see capture_closure_env).
             OpCode::MakeBlockClosure(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
@@ -7065,6 +7065,13 @@ impl Interpreter {
             // Cost: O(1) (gated hashed probes; the error path is cold).
             OpCode::CheckReadOnly(name_idx) => {
                 self.exec_check_read_only_op(code, *name_idx)?;
+                *ip += 1;
+            }
+            // Cost: O(n), n = elements of the right-hand side when the name is
+            // bound to a mutable aggregate (the in-place STORE); otherwise O(1)
+            // (a slot read, or one env probe for a non-local name).
+            OpCode::SigillessAggregateStore { name_idx, slot } => {
+                self.exec_sigilless_aggregate_store_op(code, *name_idx, *slot);
                 *ip += 1;
             }
             // Cost: O(1).

@@ -526,6 +526,7 @@ impl Interpreter {
             is_cunion,
             eligible,
             eligible_when_user_new_declines,
+            noarg_user_new_declines: std::sync::OnceLock::new(),
             class_attrs,
             attr_syms,
             type_constraints,
@@ -618,7 +619,19 @@ impl Interpreter {
             return Some(self.construct_cunion_instance(class_name.as_str(), args));
         }
         if !(plan.eligible
-            || plan.eligible_when_user_new_declines && self.user_new_declines(class_name, args))
+            || plan.eligible_when_user_new_declines
+                && if args.is_empty() {
+                    match plan.noarg_user_new_declines.get() {
+                        Some(&d) => d,
+                        None => {
+                            let d = self.user_new_declines(class_name, args);
+                            let _ = plan.noarg_user_new_declines.set(d);
+                            d
+                        }
+                    }
+                } else {
+                    self.user_new_declines(class_name, args)
+                })
         {
             return None;
         }

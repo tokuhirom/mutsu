@@ -5,15 +5,13 @@
 
 use super::*;
 
+/// `private_resolve_cache`'s key: (receiver class, `!name`, argument type keys).
+pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
+/// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
+pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
-    /// One-entry memo of the last closure-capture env, so a closure literal
-    /// created over and over from an unchanged scope (`.map({...})` in a loop)
-    /// stops rebuilding the same map every time. See
-    /// [`crate::vm::vm_capture_cache`]. Boxed like `cur_repo`: it is touched
-    /// only by closure creation, and inlining ~180 bytes of it would push the
-    /// per-opcode hot fields apart for every program.
-    pub(crate) capture_cache: Box<crate::vm::vm_capture_cache::CaptureCache>,
     pub(super) protect_block_cache: ProtectBlockCache,
     /// See `CarrierCompileCache`: reuses `eval_block_value_inner`'s carrier
     /// compile across repeated calls to the same `SubData` id instead of
@@ -289,6 +287,15 @@ pub(crate) struct ResolutionCaches {
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
     pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// The private-method twin of `multi_resolve_cache`: `$obj!name(args)`
+    /// resolved against `(receiver class, "!name", arg-type-keys)`. Filled only
+    /// when no candidate of that name is value-dependent
+    /// (`private_type_cacheable`), so the winner is a function of the key.
+    /// Cleared with the other method caches (generation bump) and by
+    /// `clear_private_zeroarg_method_cache`.
+    pub(crate) private_resolve_cache: rustc_hash::FxHashMap<PrivateResolveKey, PrivateResolved>,
+    /// Memoized `(class, "!name") -> may private_resolve_cache serve it`.
+    pub(crate) private_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized `(native type name, method) -> does a user `augment` declare this
     /// method on that type or an MRO ancestor` — the `native_lever_a_user_override`
     /// gate every native method call passes through. The answer is a pure function
@@ -401,10 +408,7 @@ pub(crate) struct ResolutionCaches {
 }
 
 impl ResolutionCaches {
-    /// A spawned thread rebuilds its caches on demand. Starting empty is also
-    /// required, not only cheap, for `capture_cache`: its entry holds `Arc`s on
-    /// the parent thread's env tiers, which the child neither shares nor
-    /// should pin.
+    /// A spawned thread rebuilds its caches on demand.
     // Cost: O(1).
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self::default()

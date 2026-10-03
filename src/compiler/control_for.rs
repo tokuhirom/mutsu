@@ -245,6 +245,24 @@ impl Compiler {
                 ndims: dimensions.len() as u32,
                 is_positional: false,
             });
+        } else if let Expr::Index {
+            target,
+            index,
+            is_positional: true,
+        } = &normalized_iterable
+            && matches!(target.as_ref(), Expr::ArrayVar(_))
+            && ((param.is_none() && params.is_empty()) || has_rw && !has_copy)
+        {
+            // `for @a[1..*-1] <-> $t { $t = ... }` / `for @a[1, 2] { $_ *= 2 }`:
+            // the loop variable aliases each selected element, so the slice
+            // hands the loop the elements' containers, exactly as
+            // `my @s := @a[1, 2]` does.
+            self.compile_expr(target);
+            self.compile_expr(index);
+            self.code.emit(OpCode::IndexAutovivifyLazyTerminal {
+                is_positional: true,
+                raw_list_elem: false,
+            });
         } else {
             self.compile_expr(&normalized_iterable);
             // `for $obj.attr <-> $v { $v = ... }` / `for $obj."$name"() { $_ = ... }`

@@ -215,6 +215,73 @@ impl Interpreter {
         out
     }
 
+    /// [`Self::resolve_private_method_for_vm`] for the VM's private-call sites,
+    /// which hold the receiver class and the `!name` method already interned.
+    ///
+    /// Served from `private_resolve_cache` when every candidate of the name is
+    /// type-deterministic (see [`Self::method_candidate_shape`]) and every
+    /// argument has a type key: the uncached resolver then picks the same
+    /// winner for every call with the same key, so it runs once per key
+    /// instead of on every call. It cloned the class's whole overload list and
+    /// the winning `MethodDef` each time (~16k instructions per `self!m(...)`
+    /// with arguments; Text::CSV's `self!ready($f)` / `self!accept-field($f)`
+    /// run twice per parsed field, #9494).
+    // Cost: O(a) on a hit, a = arguments (their type keys); a miss is the
+    // uncached resolver.
+    pub(crate) fn resolve_private_method_for_vm_sym(
+        &mut self,
+        class_sym: Symbol,
+        method_sym: Symbol,
+        arg_values: &[Value],
+    ) -> Option<(Symbol, std::sync::Arc<MethodDef>)> {
+        self.refresh_method_caches_for_generation();
+        let method = method_sym.as_str();
+        let private_rest = method.strip_prefix('!')?;
+        // The owner-qualified form (`$obj!Owner::m`) is rare and keeps the
+        // uncached walk.
+        let keys = if crate::qualified::is_qualified(method_sym) {
+            None
+        } else {
+            self.multi_arg_type_keys(arg_values)
+        };
+        let Some(keys) = keys else {
+            return self
+                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
+                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
+        };
+        let cacheable = match self
+            .caches
+            .private_type_cacheable
+            .get(&(class_sym, method_sym))
+        {
+            Some(&c) => c,
+            None => {
+                let (_, value_dependent) =
+                    self.method_candidate_shape(class_sym.as_str(), private_rest);
+                self.caches
+                    .private_type_cacheable
+                    .insert((class_sym, method_sym), !value_dependent);
+                !value_dependent
+            }
+        };
+        if !cacheable {
+            return self
+                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
+                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
+        }
+        let key = (class_sym, method_sym, keys);
+        if let Some(hit) = self.caches.private_resolve_cache.get(&key) {
+            return hit.clone();
+        }
+        let resolved = self
+            .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
+            .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
+        self.caches
+            .private_resolve_cache
+            .insert(key, resolved.clone());
+        resolved
+    }
+
     pub(crate) fn resolve_private_method_for_vm(
         &mut self,
         class_name: &str,
