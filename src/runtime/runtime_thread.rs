@@ -1037,6 +1037,7 @@ impl Interpreter {
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
+            readonly_rw_tail: None,
             otf_compile_cache: HashMap::new(),
             // Share the parent's captured module-sub bodies by value so a `start`
             // block that calls a module sub with `state` reaches the same compiled

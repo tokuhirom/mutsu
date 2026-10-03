@@ -3454,6 +3454,7 @@ impl Interpreter {
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
+            readonly_rw_tail: None,
             otf_compile_cache: HashMap::new(),
             imported_compiled_fns: HashMap::new(),
             state_scope_id: Box::new(std::cell::Cell::new(None)),

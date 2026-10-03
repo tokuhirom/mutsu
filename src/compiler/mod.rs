@@ -1600,6 +1600,11 @@ pub(crate) struct Compiler {
     /// $x`), so `for $x` iterates and `my @a = $x` flattens the bound value.
     /// A body `my $x` re-declaration removes the name (see the `VarDecl` arm).
     decont_scalar_params: std::collections::HashSet<String>,
+    /// READONLY `$` parameters of the routine being compiled (no `is rw` /
+    /// `is raw` / `is copy`, not sigilless): a `return-rw`/`is rw` tail
+    /// naming one hands back a value, not a container (#11108). A body `my`
+    /// re-declaration removes the name, as for `decont_scalar_params`.
+    readonly_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
     /// declaring block has exited, their stale local slot must not be reused —
@@ -1925,6 +1930,7 @@ impl Compiler {
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
+            readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -4210,6 +4216,19 @@ impl Compiler {
                     == crate::vm::ScalarParamBind::Decont
             {
                 self.decont_scalar_params.insert(pd.name.clone());
+            }
+            if !pd.name.is_empty()
+                && !pd.sigilless
+                && !pd.slurpy
+                && !pd.double_slurpy
+                && !pd.is_invocant
+                && !pd.name.starts_with(['@', '%', '&'])
+                && !pd
+                    .traits
+                    .iter()
+                    .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
+            {
+                self.readonly_scalar_params.insert(pd.name.clone());
             }
         }
     }

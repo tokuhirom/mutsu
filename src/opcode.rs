@@ -1595,6 +1595,13 @@ pub(crate) enum OpCode {
     /// bare aggregate and an `is rw` parameter would reject it (#11077). A
     /// value that is not a `VarRef` passes through untouched.
     CaptureRwArgCell,
+    /// The `return-rw` / `is rw` tail operand on top of the stack is a
+    /// READONLY `$` parameter (`sub w($p) is rw { $p }`): it hands back a
+    /// value, not a container. When that value is a Hash/Array, record it in
+    /// `Interpreter::readonly_rw_tail` so assigning to the call refuses
+    /// instead of storing into the caller's aggregate (#11108). The stack is
+    /// left untouched.
+    MarkReadonlyRwTail,
     /// ADR-0067: the `is rw` tail of a method whose body is a bare private
     /// attribute (`method acc is rw { $!v }`) hands its caller the
     /// *attribute's* container, not a copy of its value.
