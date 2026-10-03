@@ -214,6 +214,19 @@ impl Interpreter {
         for &p in &param_syms {
             push(&mut temporaries, p);
         }
+        // A sigilless param (`-> \x`) is marked by a top-level
+        // `MarkSigillessReadonly` statement in the body (a simple pointy block
+        // carries no `param_defs` to say so), which writes its readonly marker
+        // into the consuming frame's env. Left behind, the marker made a later
+        // `$x is rw` parameter of an unrelated call read as readonly (#11429).
+        for stmt in data.body.iter() {
+            if let crate::ast::Stmt::MarkSigillessReadonly(name) = stmt {
+                push(
+                    &mut temporaries,
+                    crate::runtime::sigilless_readonly_key(name),
+                );
+            }
+        }
         push(&mut temporaries, crate::symbol::wk::topic());
         push(&mut temporaries, crate::symbol::wk::topic_sigiled());
         if kind == InlineLoopKind::Grep {
