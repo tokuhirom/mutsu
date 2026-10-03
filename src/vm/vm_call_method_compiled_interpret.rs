@@ -78,6 +78,11 @@ impl Interpreter {
                 class_name.as_str(),
             ));
         }
+        if let Some(class_name) = new_on_package
+            && let Some(err) = self.uninstantiable_error(class_name.as_str())
+        {
+            return Err(err);
+        }
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
         // Interpreter builds the instance directly instead of routing through the
