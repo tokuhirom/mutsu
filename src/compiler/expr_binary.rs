@@ -1160,6 +1160,14 @@ impl Compiler {
         ) {
             return None;
         }
+        // A shift of two literals is plain `Int` arithmetic (`1 +< 65` promotes);
+        // only a native-typed variable makes the shift a machine operation.
+        if matches!(opcode, OpCode::BitShiftLeft)
+            && !matches!(left.peel_parens(), Expr::Var(_))
+            && !matches!(right.peel_parens(), Expr::Var(_))
+        {
+            return None;
+        }
         let left_signed = self.native_int_operand_signedness(left)?;
         let right_signed = self.native_int_operand_signedness(right)?;
         (left_signed == right_signed).then_some(!left_signed)
