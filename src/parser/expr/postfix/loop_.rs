@@ -2423,7 +2423,7 @@ fn postfix_expr_loop_from(
                         normalize_adverb_name(adv_name),
                     ];
                     let r = collect_remaining_adverbs(r_after_adv, &mut known);
-                    expr = build_adverb_error_call(&what, &var_name, &known, &[]);
+                    expr = build_adverb_error_call(&what, &var_name, Some(&args[0]), &known, &[]);
                     rest = r;
                     continue;
                 }

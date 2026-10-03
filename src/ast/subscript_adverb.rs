@@ -95,16 +95,21 @@ pub(crate) fn deleting(read: &Expr) -> Expr {
     }
 }
 
-/// Build a `__mutsu_subscript_adverb_error` call for X::Adverb.
+/// Build a `__mutsu_subscript_adverb_error` call for X::Adverb. `target` is
+/// the subscripted expression: its container descriptor names the report's
+/// `.source` at run time (a `@a` parameter bound to `@n` reports `@n`), with
+/// the spelled `source` as the fallback.
 pub(crate) fn build_adverb_error_call(
     what: &str,
     source: &str,
+    target: Option<&Expr>,
     nogo: &[String],
     unexpected: &[String],
 ) -> Expr {
     let mut args = vec![
         Expr::Literal(Value::str(what.to_string())),
         Expr::Literal(Value::str(source.to_string())),
+        target.cloned().unwrap_or(Expr::Literal(Value::NIL)),
     ];
     for a in nogo {
         args.push(Expr::Literal(Value::str(format!("__nogo__{}", a))));
@@ -162,6 +167,7 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
         return build_adverb_error_call(
             "slice",
             &var_name,
+            Some(mdt),
             &["!exists".to_string(), "delete".to_string()],
             &[],
         );
