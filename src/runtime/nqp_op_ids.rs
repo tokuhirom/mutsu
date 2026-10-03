@@ -1,5 +1,5 @@
 //! The compile-time registry of `nqp::` VALUE ops: one dense `u16` id per op
-//! name, plus which of the six chained dispatch tables owns it.
+//! name, plus which of the seven chained dispatch tables owns it.
 //!
 //! In NQP/Rakudo an `nqp::` value op is a `QAST::Op` node the QAST compiler
 //! turns into a single MoarVM instruction; it is not a call and has no name at
@@ -16,7 +16,7 @@
 //! [`nqp_op_id`] resolves the name ONCE, in the compiler
 //! (`try_compile_nqp_value_op`), and `OpCode::NqpOp` carries the id. At
 //! runtime [`nqp_op_table`] sends the id straight to the owning table, so
-//! exactly one `match op` runs instead of up to six.
+//! exactly one `match op` runs instead of up to seven.
 //!
 //! **This table is an optimization, never a semantic gate.** A name missing
 //! from it simply compiles to the old `CallFunc` path, which reaches the same
@@ -79,6 +79,8 @@ pub(crate) enum NqpOpTable {
     Str,
     /// `call_nqp_op_list` (runtime/nqp_ops_list.rs)
     List,
+    /// `call_nqp_op_native` (runtime/nqp_ops_native.rs)
+    Native,
 }
 
 /// Every registered op, as `(name without the `nqp::` prefix, owning table)`.
@@ -86,7 +88,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 208] = [
+static NQP_OPS: [(&str, NqpOpTable); 217] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -98,6 +100,10 @@ static NQP_OPS: [(&str, NqpOpTable); 208] = [
     ("atpos_i", NqpOpTable::Value),
     ("atpos_n", NqpOpTable::Value),
     ("atpos_s", NqpOpTable::Text),
+    ("atpos_u", NqpOpTable::Native),
+    ("atposref_i", NqpOpTable::Native),
+    ("atposref_n", NqpOpTable::Native),
+    ("atposref_u", NqpOpTable::Native),
     ("attrinited", NqpOpTable::Builtin),
     ("backtrace", NqpOpTable::Builtin),
     ("bindattr", NqpOpTable::Builtin),
@@ -110,6 +116,7 @@ static NQP_OPS: [(&str, NqpOpTable); 208] = [
     ("bindpos_i", NqpOpTable::Value),
     ("bindpos_n", NqpOpTable::Value),
     ("bindpos_s", NqpOpTable::Text),
+    ("bindpos_u", NqpOpTable::Native),
     ("bitand_I", NqpOpTable::Value),
     ("bitand_i", NqpOpTable::Value),
     ("bitneg_I", NqpOpTable::Value),
@@ -233,6 +240,7 @@ static NQP_OPS: [(&str, NqpOpTable); 208] = [
     ("neg_I", NqpOpTable::Value),
     ("neg_i", NqpOpTable::Value),
     ("neg_n", NqpOpTable::Value),
+    ("neverrepossess", NqpOpTable::Native),
     ("nextfiledir", NqpOpTable::Value),
     ("not_i", NqpOpTable::Value),
     ("null", NqpOpTable::Text),
@@ -264,6 +272,7 @@ static NQP_OPS: [(&str, NqpOpTable); 208] = [
     ("readuint", NqpOpTable::Value),
     ("rindex", NqpOpTable::Str),
     ("setbuffersizefh", NqpOpTable::Process),
+    ("setcodename", NqpOpTable::Native),
     ("setelems", NqpOpTable::Builtin),
     ("sha1", NqpOpTable::Builtin),
     ("shift", NqpOpTable::List),
@@ -283,7 +292,9 @@ static NQP_OPS: [(&str, NqpOpTable); 208] = [
     ("time", NqpOpTable::Process),
     ("uc", NqpOpTable::Str),
     ("unbox_i", NqpOpTable::Builtin),
+    ("unbox_n", NqpOpTable::Native),
     ("unbox_s", NqpOpTable::Value),
+    ("unbox_u", NqpOpTable::Native),
     ("unipropcode", NqpOpTable::Text),
     ("unlock", NqpOpTable::Process),
     ("unshift", NqpOpTable::Process),
