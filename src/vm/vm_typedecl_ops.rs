@@ -705,6 +705,8 @@ impl Interpreter {
             // that set NativeHOW metadata; they never reach a user
             // `trait_mod:<is>` (see `runtime::native_decl`).
             self.apply_native_type_traits(&storage_name, repr.as_deref(), custom_traits)?;
+            // `is array_type(T)` is core too (`runtime::array_type_trait`).
+            self.apply_class_array_type_trait(&storage_name, custom_traits)?;
             // Remember whether the class's HOW already carried a `compose`
             // hook, so one mixed in by the traits below can be told apart.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
@@ -721,6 +723,7 @@ impl Interpreter {
                     // are not user traits; never dispatch them to trait_mod:<is>.
                     if trait_name.starts_with("__")
                         || crate::runtime::native_decl::is_native_type_trait(trait_name)
+                        || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
                     {
                         continue;
                     }
@@ -729,7 +732,17 @@ impl Interpreter {
                         None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    // As in rakudo, an `is foo(...)` no candidate accepts is
+                    // an unknown parent, whichever candidates exist.
+                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    {
+                        Ok(_) => {}
+                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
+                            return Err(self.unknown_parent_error(&storage_name, trait_name));
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
                 // Dispatch deferred unknown parents as custom traits (no
                 // args). `validate_class_parents` optimistically deferred
@@ -1271,6 +1284,10 @@ impl Interpreter {
             //
             // The composition-time run lives in `registration_class_decl.rs`.
 
+            // `is array_type(...)` is a core trait, applied to each composing
+            // class (`runtime::array_type_trait`).
+            self.record_role_array_type_trait(&qualified_name, custom_traits);
+
             // Gather deferred custom traits from role registration
             let role_deferred = self
                 .get_role_def(&qualified_name)
@@ -1284,7 +1301,9 @@ impl Interpreter {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
                     // Skip internal markers (e.g. `__my_scoped`); they are not real `is` traits.
-                    if trait_name.starts_with("__") {
+                    if trait_name.starts_with("__")
+                        || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
+                    {
                         continue;
                     }
                     let trait_value = match trait_arg {
@@ -1292,7 +1311,14 @@ impl Interpreter {
                         None => Value::TRUE,
                     };
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    {
+                        Ok(_) => {}
+                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            return Err(self.unknown_parent_error(&qualified_name, trait_name));
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
                 // Dispatch deferred unknown parents as custom traits (no
                 // args); fall back to the unknown-parent diagnosis if no
