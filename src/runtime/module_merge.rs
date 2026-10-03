@@ -87,6 +87,10 @@ pub(crate) struct ModuleVisibility {
     /// (`module_granted_packages` inverted), so the #7797 qualified gate
     /// can honour a block-level merge.
     pub(crate) package_granting_modules: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
+    /// #11351: the error (message, exception) of a BEGIN-time preload whose
+    /// module body died, by module name, for the in-place `use` to report
+    /// (`runtime::module_preload_failure`).
+    pub(crate) failed_preloads: std::sync::Arc<HashMap<String, (String, Option<Value>)>>,
 }
 
 impl Interpreter {
