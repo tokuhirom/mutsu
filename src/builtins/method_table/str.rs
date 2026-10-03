@@ -1,22 +1,25 @@
-//! `Str`'s rows.
+//! `Str`'s rows, and the `Cool` text methods that stringify into them.
 //!
-//! Rakudo declares each of these on `Str` (the `Str:D` candidates) and again
-//! on `Cool`, whose candidates stringify the invocant and call `Str`'s. Here
-//! the `Str` rows hold the implementation, and the cascade arms that still
-//! answer `Cool` receivers (`42.flip`, `1.5.uc`) call the same handlers, so
-//! each method has one implementation however the call arrives. Every handler
-//! reads its receiver through `grapheme_index::with_str`, which borrows a
-//! `Str`'s payload and stringifies anything else.
+//! Rakudo declares each text method twice: on `Str` (the `Str:D` candidate,
+//! which does the work) and on `Cool` (a candidate that calls `self.Str` and
+//! then `Str`'s). Both owners get a row here and both rows point at the same
+//! handler, which reads its receiver through `grapheme_index::with_str`: that
+//! borrows a `Str`'s payload and stringifies anything else, which is what the
+//! `Cool` candidate does. So `"abc".flip` and `42.flip` reach one
+//! implementation, and every other shape whose MRO has `Cool` (`Int`, `Num`,
+//! the rationals, `Complex`, `List`, `Array`, `Map`, `Hash`) finds the `Cool`
+//! row. The cascade arms that still answer receivers with no shape (`Bool`,
+//! instances of `Cool` subclasses) call the same handlers.
 
 use super::{Handler, MethodRow};
 use crate::builtins::grapheme_index::with_str;
 use crate::value::{RuntimeError, Value};
 
-/// A zero-argument `Str` row.
-macro_rules! str_rows {
-    ($($name:literal => $handler:ident),* $(,)?) => {
+/// Zero-argument rows owned by `$owner`.
+macro_rules! rows {
+    ($owner:literal: $($name:literal => $handler:ident),* $(,)?) => {
         &[$(MethodRow {
-            owner: "Str",
+            owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
@@ -24,24 +27,34 @@ macro_rules! str_rows {
     };
 }
 
-pub(super) static ROWS: &[MethodRow] = str_rows![
+/// The text methods both `Str` and `Cool` declare.
+macro_rules! text_rows {
+    ($owner:literal) => {
+        rows![$owner:
+            "codes" => codes,
+            "ord" => ord,
+            "uc" => uc,
+            "lc" => lc,
+            "fc" => fc,
+            "tc" => tc,
+            "tclc" => tclc,
+            "wordcase" => wordcase,
+            "flip" => flip,
+            "trim" => trim,
+            "trim-leading" => trim_leading,
+            "trim-trailing" => trim_trailing,
+            "chomp" => chomp,
+            "chop" => chop,
+        ]
+    };
+}
+
+pub(super) static ROWS: &[MethodRow] = rows!["Str":
     "chars" => chars,
     "Bool" => bool,
-    "codes" => codes,
-    "ord" => ord,
-    "uc" => uc,
-    "lc" => lc,
-    "fc" => fc,
-    "tc" => tc,
-    "tclc" => tclc,
-    "wordcase" => wordcase,
-    "flip" => flip,
-    "trim" => trim,
-    "trim-leading" => trim_leading,
-    "trim-trailing" => trim_trailing,
-    "chomp" => chomp,
-    "chop" => chop,
 ];
+pub(super) static STR_TEXT_ROWS: &[MethodRow] = text_rows!("Str");
+pub(super) static COOL_TEXT_ROWS: &[MethodRow] = text_rows!("Cool");
 
 // Cost: O(1) amortized: the grapheme count comes from the payload's cached
 // index (built in O(n) on first use, `grapheme_index`).

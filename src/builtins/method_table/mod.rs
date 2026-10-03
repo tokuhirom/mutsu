@@ -76,6 +76,8 @@ static FAMILIES: &[&[MethodRow]] = &[
     list::ROWS,
     map::ROWS,
     str::ROWS,
+    str::STR_TEXT_ROWS,
+    str::COOL_TEXT_ROWS,
     int::ROWS,
     num::ROWS,
     rational::RAT_ROWS,

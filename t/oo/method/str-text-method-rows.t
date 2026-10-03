@@ -2,10 +2,11 @@ use Test;
 
 # ADR-11276 slice 3: Str's zero-argument text methods are rows in the
 # built-in method table. A plain Str answers from the row (also through the
-# call-site lane, exercised by the loops); Cool receivers, allomorphs and Str
-# subclasses keep their own answers.
+# call-site lane, exercised by the loops), and so does every receiver whose
+# MRO reaches Cool's copy of the method; allomorphs and Str subclasses keep
+# their own answers.
 
-plan 17;
+plan 20;
 
 my @methods = <uc lc fc tc tclc wordcase flip trim trim-leading trim-trailing chomp chop codes ord>;
 
@@ -50,6 +51,13 @@ subtest 'the empty string', {
 is-deeply 42.5.flip, "5.24", 'Cool receiver: Rat.flip';
 is-deeply 42.chop, "4", 'Cool receiver: Int.chop';
 is-deeply 1e0.codes, 1, 'Cool receiver: Num.codes';
+is-deeply [1, "b c "].flip, " c b 1", 'Cool receiver: Array.flip stringifies the list';
+is-deeply %(a => 1).uc, "A\t1", 'Cool receiver: Hash.uc stringifies the pairs';
+{
+    my $i = 120;
+    my @got = (^3).map({ $i.flip });
+    is-deeply @got.List, ("021", "021", "021"), 'a Cool row through the call-site lane';
+}
 is-deeply IntStr.new(7, " ab c\n").trim, "ab c", 'an allomorph reads its Str part';
 
 class MyStr is Str { }
