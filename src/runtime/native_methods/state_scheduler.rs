@@ -12,7 +12,7 @@ fn uncaught_handler_store() -> &'static UncaughtHandlerStore {
 }
 
 /// Get the current uncaught_handler value (None if not set).
-pub(in crate::runtime) fn get_uncaught_handler() -> Option<Value> {
+pub(crate) fn get_uncaught_handler() -> Option<Value> {
     uncaught_handler_store().lock().unwrap().clone()
 }
 

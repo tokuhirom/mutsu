@@ -12,8 +12,31 @@ impl std::fmt::Debug for PromiseState {
     }
 }
 
+/// A sunk `start` promise that broke with nobody to observe it: the
+/// exception, the worker thread id, and the output the worker left buffered.
+/// Rakudo's scheduler treats it as fatal: it prints the diagnostic and exits
+/// the program with status 1 (#9767).
+pub(crate) struct UnhandledBreak {
+    pub(crate) result: Value,
+    pub(crate) thread_id: i64,
+    pub(crate) output: String,
+    pub(crate) stderr_output: String,
+}
+
 impl PromiseState {
-    pub(super) fn take_unhandled_report(&mut self) -> Option<(Value, i64)> {
+    /// The fatal-report decision, taken under the promise's own lock so it
+    /// fires exactly once whichever of "sunk" and "broken" happens last.
+    fn take_unhandled_break(&mut self) -> Option<UnhandledBreak> {
+        let (result, thread_id) = self.take_unhandled_report()?;
+        Some(UnhandledBreak {
+            result,
+            thread_id,
+            output: std::mem::take(&mut self.output),
+            stderr_output: std::mem::take(&mut self.stderr_output),
+        })
+    }
+
+    fn take_unhandled_report(&mut self) -> Option<(Value, i64)> {
         if !self.report_unhandled
             || self.status != "Broken"
             || self.observed
@@ -26,15 +49,10 @@ impl PromiseState {
     }
 }
 
-impl Drop for PromiseState {
-    fn drop(&mut self) {
-        if let Some((result, thread_id)) = self.take_unhandled_report() {
-            report_unhandled_promise(&result, thread_id);
-        }
-    }
-}
-
-pub(super) fn report_unhandled_promise(result: &Value, thread_id: i64) {
+/// Rakudo's report for an exception nobody handled in scheduled code: the
+/// header line, the message and (when there is one) the backtrace.
+// Cost: O(m), m = the message and backtrace length.
+pub(crate) fn unhandled_promise_text(result: &Value, thread_id: i64) -> String {
     let (message, backtrace) = match result.view() {
         ValueView::Instance { attributes, .. } => {
             let attrs = attributes.as_map();
@@ -47,16 +65,17 @@ pub(super) fn report_unhandled_promise(result: &Value, thread_id: i64) {
         }
         _ => (result.to_string_value(), None),
     };
-    eprintln!(
-        "Unhandled exception in code scheduled on thread {}",
-        thread_id
+    let mut text = format!(
+        "Unhandled exception in code scheduled on thread {}\n{}\n",
+        thread_id, message
     );
-    eprintln!("{message}");
     if let Some(backtrace) = backtrace
         && !backtrace.is_empty()
     {
-        eprintln!("{backtrace}");
+        text.push_str(&backtrace);
+        text.push('\n');
     }
+    text
 }
 
 impl SharedPromise {
@@ -159,11 +178,24 @@ impl SharedPromise {
         lock.lock().unwrap().vow_taken = true;
     }
 
-    /// Mark a sunk `start` promise so a Broken result is reported if nobody
-    /// observes it before the last reference disappears.
-    pub(crate) fn mark_unhandled(&self) {
+    /// Mark a sunk `start` promise: a Broken result nobody observes is fatal.
+    /// When the worker already broke it, the break is returned here for the
+    /// sinking thread to report; otherwise the worker reports it when it breaks
+    /// ([`Self::take_unhandled_break`]).
+    // Cost: O(1).
+    pub(crate) fn mark_unhandled(&self) -> Option<UnhandledBreak> {
         let (lock, _) = &*self.inner;
-        lock.lock().unwrap().report_unhandled = true;
+        let mut state = lock.lock().unwrap();
+        state.report_unhandled = true;
+        state.take_unhandled_break()
+    }
+
+    /// Called by the worker right after it broke this promise: the break, when
+    /// the promise was already sunk and nobody observed it (#9767).
+    // Cost: O(1).
+    pub(crate) fn take_unhandled_break(&self) -> Option<UnhandledBreak> {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().take_unhandled_break()
     }
 
     /// Mark the promise as observed by user code. This suppresses the

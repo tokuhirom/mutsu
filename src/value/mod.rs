@@ -637,6 +637,7 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
+pub(crate) use value_async::{UnhandledBreak, unhandled_promise_text};
 mod value_channel_taps;
 pub(crate) use buf_bytes::BufBytes;
 pub(crate) use value_channel_taps::ChannelEnd;
