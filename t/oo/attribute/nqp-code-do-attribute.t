@@ -55,8 +55,12 @@ plan 14;
         method replace-body() {
             my $replacement := -> |c { "{self.tag}:{c.list.join(',')}" };
             my $do := nqp::getattr($replacement, Code, '$!do');
+            # The name is read first: once `$!do` is rebound, `self.name`
+            # answers the new body's (empty) name. Upstream NativeCall keeps
+            # it in `$!name` for the same reason.
+            my $name := self.name;
             nqp::bindattr(self, Code, '$!do', $do);
-            nqp::setcodename($do, self.name);
+            nqp::setcodename($do, $name);
         }
     }
     multi trait_mod:<is>(Routine $r, :$replaced!) {

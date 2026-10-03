@@ -24,6 +24,12 @@
 //! entering any wrap chain (the `__mutsu_wrap_direct` marker `nextcallee`
 //! also uses). Rakudo's `$!do` is a `ForeignCode`; mutsu's is the `Sub`/`Block`
 //! itself, which is what callers do with it (call it, rename it, bind it).
+//!
+//! Rakudo's `Code.name` is `nqp::getcodename($!do)`: a routine and its body
+//! share one name. A `$!do` copy therefore links back to the code object it
+//! was copied from, and [`Interpreter::code_name_holder`] follows those links
+//! (and a routine's bound body) to the one object whose name `.name` reports
+//! and `set_name` / `nqp::setcodename` rewrite (#11462).
 
 use super::*;
 use crate::gc::Gc;
@@ -48,20 +54,43 @@ pub(crate) fn code_do_target(obj: &Value, name: &str) -> Option<Gc<SubData>> {
     }
 }
 
-/// `data` as a direct code object: the same body and captures, marked so a
-/// call runs it without entering a wrap chain.
-// Cost: O(e), e = entries of the captured environment (a copy-on-write clone).
-fn direct_code(data: &SubData) -> Value {
-    if matches!(
+/// The env key under which a `$!do` copy records the code object it was
+/// copied from. Rakudo's `Code.name` is `nqp::getcodename($!do)`, so a routine
+/// and its `$!do` share one name: renaming either renames both. mutsu's `$!do`
+/// is a distinct copy, so the copy points back at the object that owns the
+/// name (#11462).
+const DO_OWNER_KEY: &str = "__mutsu_do_owner";
+
+/// How many `$!do` / owner links a name lookup follows. Each link points at an
+/// object that existed before the one holding it, so the links cannot form a
+/// cycle; the bound only keeps a pathological chain from running long.
+const NAME_LINK_LIMIT: usize = 64;
+
+/// Whether `data` is a direct code object (runs without entering a wrap chain).
+// Cost: O(1).
+fn is_direct(data: &SubData) -> bool {
+    matches!(
         data.env.get("__mutsu_wrap_direct").map(Value::view),
         Some(ValueView::Bool(true))
-    ) {
-        return Value::sub_value(Gc::new(data.clone()));
+    )
+}
+
+/// `data` as a direct code object: the same body and captures, marked so a
+/// call runs it without entering a wrap chain, and linked back to `data` for
+/// its name. A code object that already is direct is answered as itself, so
+/// `$!do` keeps its identity across a read and a bind.
+// Cost: O(e), e = entries of the captured environment (a copy-on-write clone).
+fn direct_code(data: &Gc<SubData>) -> Value {
+    if is_direct(data) {
+        return Value::sub_value(data.clone());
     }
-    let mut direct = data.clone();
+    let mut direct = (**data).clone();
     direct
         .env
         .insert("__mutsu_wrap_direct".to_string(), Value::TRUE);
+    direct
+        .env
+        .insert(DO_OWNER_KEY.to_string(), Value::sub_value(data.clone()));
     Value::sub_value(Gc::new(direct))
 }
 
@@ -130,12 +159,14 @@ impl Interpreter {
         }
     }
 
-    /// `nqp::getattr($code, Code, '$!do')`: the body a call of `target` runs
-    /// (the bound body if one was bound, else the declared one), as a direct
-    /// code object. Read-only: it does not touch the wrap tables.
-    // Cost: O(w + c + e), w = wrapped routines, c = wrappers on this routine,
-    // e = entries of the captured environment.
-    pub(crate) fn code_do_get(&self, data: &SubData) -> Value {
+    /// The body bound to routine `data`'s `$!do`, if one was bound. Read-only:
+    /// it does not touch the wrap tables.
+    // Cost: O(1) when nothing is wrapped; otherwise O(w + c), w = wrapped
+    // routines, c = wrappers on this routine.
+    fn bound_do_body(&self, data: &SubData) -> Option<Value> {
+        if self.wrap_chains.is_empty() {
+            return None;
+        }
         let name = data
             .env
             .get("__mutsu_wrap_name")
@@ -146,12 +177,70 @@ impl Interpreter {
             .iter()
             .find(|(_, n)| !name.is_empty() && **n == name)
             .map_or(data.id, |(&id, _)| id);
-        if let Some(chain) = self.wrap_chains.get(&sub_id)
-            && let Some((_, body)) = chain.iter().find(|(h, _)| *h == DO_BODY_HANDLE)
-        {
-            return body.clone();
+        let chain = self.wrap_chains.get(&sub_id)?;
+        chain
+            .iter()
+            .find(|(h, _)| *h == DO_BODY_HANDLE)
+            .map(|(_, body)| body.clone())
+    }
+
+    /// `nqp::getattr($code, Code, '$!do')`: the body a call of `target` runs
+    /// (the bound body if one was bound, else the declared one), as a direct
+    /// code object. Read-only: it does not touch the wrap tables.
+    // Cost: O(w + c + e), w = wrapped routines, c = wrappers on this routine,
+    // e = entries of the captured environment.
+    pub(crate) fn code_do_get(&self, data: &Gc<SubData>) -> Value {
+        self.bound_do_body(data)
+            .unwrap_or_else(|| direct_code(data))
+    }
+
+    /// The code object that holds `data`'s name. Rakudo answers `Code.name`
+    /// from `$!do`, so the holder is found by following a routine to its
+    /// bound `$!do` body, and a `$!do` copy back to the object it was copied
+    /// from, until neither link applies.
+    // Cost: O(l * (w + c)), l = links followed (at most `NAME_LINK_LIMIT`),
+    // w = wrapped routines, c = wrappers per routine; O(1) for a code object
+    // with no `$!do` history while nothing is wrapped.
+    pub(crate) fn code_name_holder(&self, data: &Gc<SubData>) -> Gc<SubData> {
+        let mut holder = data.clone();
+        for _ in 0..NAME_LINK_LIMIT {
+            let next = if is_direct(&holder) {
+                holder.env.get(DO_OWNER_KEY).cloned()
+            } else {
+                self.bound_do_body(&holder)
+            };
+            let Some(next) = next else { break };
+            let next = Self::unwrap_callable_mixin(next);
+            let ValueView::Sub(next) = next.view() else {
+                break;
+            };
+            holder = next.clone();
         }
-        direct_code(data)
+        holder
+    }
+
+    /// `Code.name` of a `Sub`: the name of its [name holder](Self::code_name_holder).
+    // Cost: as `code_name_holder`.
+    pub(crate) fn code_name(&self, data: &Gc<SubData>) -> Symbol {
+        self.code_name_holder(data).name
+    }
+
+    /// `Code.set_name` / `nqp::setcodename`: rename code object `target`
+    /// together with the object that holds its name, and `target` itself when
+    /// it is a `$!do` copy. A routine whose `$!do` was rebound keeps its own
+    /// name field (it keys the wrap chain); its `.name` answers from the body.
+    /// Returns `false` when `target` is not a code object.
+    // Cost: as `code_name_holder`, plus O(n), n = chars of the new name.
+    pub(crate) fn rename_code(&self, target: &Value, name: &str) -> bool {
+        let ValueView::Sub(data) = target.view() else {
+            return false;
+        };
+        let holder = self.code_name_holder(&data);
+        crate::runtime::methods_sub::rename_code_object(&Value::sub_value(holder.clone()), name);
+        if is_direct(&data) && !Gc::ptr_eq(&holder, &data) {
+            crate::runtime::methods_sub::rename_code_object(target, name);
+        }
+        true
     }
 
     /// `nqp::bindattr($code, Code, '$!do', $body)`: every later call of

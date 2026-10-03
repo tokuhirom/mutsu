@@ -125,12 +125,13 @@ impl Interpreter {
                 }
             }
             // nqp::setcodename($code, $name): rename a code object in place,
-            // the same write `Code.set_name` makes. Returns the code object.
-            // Cost: O(n), n = chars of the new name (interned).
+            // the same write `Code.set_name` makes, so a routine whose `$!do`
+            // is `$code` reports the new name too. Returns the code object.
+            // Cost: as `Interpreter::rename_code`.
             "setcodename" => {
                 let code = operand(args, 0);
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                if crate::runtime::methods_sub::rename_code_object(&code, &name) {
+                if self.rename_code(&code, &name) {
                     Ok(code)
                 } else {
                     Err(RuntimeError::new(

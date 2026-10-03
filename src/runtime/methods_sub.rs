@@ -565,13 +565,13 @@ impl Interpreter {
         // Without this arm the call fell through to method composition and
         // answered a `<composed-method:set_name>` Sub while the name stayed
         // empty (#9479, PDF::COS::Tie's `&accessor.set_name($key)`).
-        // Cost: O(n), n = chars of the new name (interned).
+        // Cost: as `Interpreter::rename_code`.
         if method == "set_name"
             && let [new_name] = args.as_slice()
             && matches!(target.view(), ValueView::Sub(_))
         {
             let name = new_name.to_string_value();
-            rename_code_object(target, &name);
+            self.rename_code(target, &name);
             return Some(Ok(Value::str(name)));
         }
         // WhateverCode's ACCEPTS is its predicate interface: invoke the
