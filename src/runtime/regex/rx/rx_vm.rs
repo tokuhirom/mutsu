@@ -593,7 +593,7 @@ impl Interpreter {
                                                 &frames[f as usize].cursor
                                             });
                                             let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
-                                            self.rx_cursor = Some(cursor);
+                                            self.regex_state.rx_cursor = Some(cursor);
                                         }
                                         let mut cands = self.regex_match_atom_all_with_arg_values(
                                             &program.atoms[atom as usize],
@@ -605,7 +605,7 @@ impl Interpreter {
                                             commit,
                                             call_args,
                                         );
-                                        self.rx_cursor = None;
+                                        self.regex_state.rx_cursor = None;
                                         // Ratchet commits to the highest-priority end, the
                                         // last (the producer's order is lowest first).
                                         if commit && cands.len() > 1 {
