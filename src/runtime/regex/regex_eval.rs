@@ -93,7 +93,7 @@ impl Interpreter {
         // its parse-cache id.
         let val = if let Some(body) = parsed_body {
             self.run_regex_sub_eval(env, None, |interp| {
-                interp.eval_block_value_cached_for_site(body)
+                interp.eval_block_value_cached_for_site(body, None)
             })
         } else {
             let (stmts, id) = self.parse_regex_code_cached_with_id(code)?;

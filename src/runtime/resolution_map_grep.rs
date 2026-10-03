@@ -297,7 +297,13 @@ impl Interpreter {
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
     ) {
-        let lexically_in_routine = !self.routine_stack.is_empty();
+        // ADR-0050: where a `return` in the callback goes is fixed by where the
+        // block was written, so ask its origin chunk; only a block with no
+        // `CompiledCode` falls back to sampling the stack.
+        let lexically_in_routine = data.compiled_code.as_deref().map_or_else(
+            || !self.routine_stack.is_empty(),
+            |origin| super::resolution_eval::BlockRoutineness::of_code(origin).lexically_in_routine,
+        );
         let key = data.compiled_code.as_ref().map(|cc| MapGrepCacheKey {
             origin: cc.clone(),
             lexically_in_routine,

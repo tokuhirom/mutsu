@@ -1777,6 +1777,9 @@ impl Compiler {
         sub_compiler.code.compiled_fns =
             (!own_compiled_fns.is_empty()).then(|| std::sync::Arc::new(own_compiled_fns));
         sub_compiler.code.is_routine = is_routine;
+        // ADR-0050: the definition-site half of the classification, recorded
+        // so a carrier recompile of this body can honour it.
+        sub_compiler.code.lexically_in_routine = sub_compiler.lexically_in_routine;
         sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // Use the sub_compiler's source line if a SetLine was processed
         // within the body, otherwise fall back to the parent compiler's

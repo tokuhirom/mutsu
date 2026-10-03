@@ -1,6 +1,6 @@
 # ADR-0050: A Block's routine-ness is a definition-site lexical property, not a re-derived dynamic one
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted — Slices 1 and 2 implemented ([#9892](https://github.com/tokuhirom/mutsu/issues/9892), see §7); Slice 3 residue open
 - Date: 2026-08-20
 - Origin: `todo/deep/nextsame-in-wrap-closure-lexical-return-target.md` (the
   architectural half; the small half became
@@ -273,3 +273,29 @@ constant across that callable's cache entries.
 - `EVAL ..., context => $frame` and the light-dispatch-path routine frames —
   ADR-0037.
 - Deep `CALLER::CALLER::` / `callframes()` chains — ADR-0035.
+
+## 7. Implementation status
+
+**Slices 1 and 2 shipped together** ([#9892](https://github.com/tokuhirom/mutsu/issues/9892),
+`news/2026-10/block-routineness-is-a-definition-site-property.md`):
+
+- `CompiledCode::lexically_in_routine` records the definition-site half beside the existing
+  `is_routine` (`compile_closure_body_with_routine_flag`). The pair travels as
+  `resolution_eval::BlockRoutineness`.
+- `compile_block_value_opts` takes an `Option<BlockRoutineness>` parameter (a parameter, not a
+  `pending_*` field). `call_sub_value`'s closure-body carrier passes the `SubData`'s recorded pair;
+  an EVAL unit keeps ADR-0037's derivation; a body with no owning callable (regex code blocks and
+  closure interpolation, `where` clauses run by name, grammar actions) keeps the dynamic answer as
+  the explicitly named fallback `ambient_block_routineness`.
+- `CarrierCompileCtxKey` keys on the full pair instead of a single `in_routine` bit (§2.3).
+- The inline map/grep compile (`compile_loop_block_cached`) reads the origin chunk's
+  `lexically_in_routine` the same way, keeping its stack sample only for a block with no
+  `CompiledCode`.
+
+Pinned by `t/routines/closure/wrap-block-return-definition-site.t` (§1.2(a) dies, §1.2(b)'s
+enclosing-sub case, the already-correct direct-call shapes, a wrapper `sub`, an anonymous `sub`,
+and a `return` from a map block). The roast files §5 names (`S04-statements/return.t`,
+`S06-advanced/return.t`, `S06-advanced/wrap.t`) stay green.
+
+Slice 3 (auditing the other ambient facts the carrier re-derives — `scope`/`enclosing_package`
+foremost) is still open.
