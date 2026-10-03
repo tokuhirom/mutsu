@@ -25,6 +25,8 @@ pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;
 pub(crate) mod native_method_row;
+#[cfg(test)]
+mod native_method_row_rakudo_oracle;
 mod native_method_row_table;
 pub(crate) mod numeric_subclass;
 pub(crate) mod pack;
