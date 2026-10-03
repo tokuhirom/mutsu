@@ -504,11 +504,14 @@ impl Interpreter {
                     })
                     .and_then(|(idx, _)| by_index(idx)),
             ),
+            // A Str is matched against each variant's *value* in string form
+            // (`enum ST <A B C>; ST("1")` -> B), as Rakudo's value map does; a
+            // variant's name is not a lookup key (`ST("B")` is a Failure).
             ValueView::Str(name) => Some(
                 variants
                     .iter()
                     .enumerate()
-                    .find(|(_, (key, _))| key.as_str() == name.as_str())
+                    .find(|(_, (_, v))| v.to_value().to_string_value() == name.as_str())
                     .and_then(|(idx, _)| by_index(idx)),
             ),
             // A rational/complex value (e.g. `Mass(1/1000)` for `enum Mass (mg =>
