@@ -1049,6 +1049,8 @@ mod mixin_wrapped_methods;
 mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;
+/// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
+pub(crate) mod stack_id;
 pub(crate) mod unbounded_range;
 mod undeclared_names;
 pub(crate) mod undeclared_routines;
@@ -1061,7 +1063,6 @@ pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
 mod which_identity;
-/// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod worker_pool;
 pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
 pub(crate) use self::locals::Locals;
