@@ -5,7 +5,7 @@ use Test;
 # type with an honest REPR, and the `native` declarator records `is ctype`,
 # `is nativesize` and `is unsigned`.
 
-plan 25;
+plan 27;
 
 # Core native types.
 ok int32 ~~ Int, 'int32 ~~ Int';
@@ -14,6 +14,9 @@ ok int ~~ Real, 'int ~~ Real (through Int)';
 ok num32 ~~ Num, 'num32 ~~ Num';
 ok str ~~ Str, 'str ~~ Str';
 nok 5 ~~ int32, 'an Int value does not match a native type object';
+nok uint8 ~~ int16, 'one native type object is not another, though both are Int';
+my array[uint8] $na .= new(1);
+nok $na ~~ array[int16], 'so array[uint8] is not array[int16]';
 is int32.^mro.map(*.^name).join(','), 'int32,Int,Cool,Any,Mu', 'int32.^mro';
 is num.^mro.map(*.^name).join(','), 'num,Num,Cool,Any,Mu', 'num.^mro';
 is str.^mro.map(*.^name).join(','), 'str,Str,Cool,Any,Mu', 'str.^mro';

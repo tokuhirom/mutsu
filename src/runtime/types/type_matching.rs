@@ -517,6 +517,17 @@ impl Interpreter {
         } else {
             constraint
         };
+        // A core native type object matches a native constraint only by name:
+        // `uint8` and `int16` both sit under `Int`, but neither is the other,
+        // so `array[uint8] ~~ array[int16]` is False (raku). Without this the
+        // value-level rule "an Int binds a native int" fires on the type
+        // object's `Int` ancestor.
+        if let ValueView::Package(name) = value.view()
+            && crate::runtime::native_decl::builtin_native_repr(constraint).is_some()
+            && crate::runtime::native_decl::builtin_native_repr(name.as_str()).is_some()
+        {
+            return name == constraint;
+        }
         if self.type_matches_value_resolved(constraint, value) {
             return true;
         }
