@@ -1427,12 +1427,6 @@ impl Compiler {
                 } else {
                     DeclReset::Keep
                 };
-                let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
-                    name_idx,
-                    dynamic: is_dynamic,
-                    local_slot: None,
-                    reset,
-                });
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
                 // The static half of a `:D` scalar holds its type object, which
                 // the constraint rejects: register the constraint after the
@@ -1441,6 +1435,14 @@ impl Compiler {
                     || custom_traits
                         .iter()
                         .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+                let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
+                    name_idx,
+                    dynamic: is_dynamic,
+                    local_slot: None,
+                    reset,
+                    // The early registration below is the very next op.
+                    type_follows: !defer_type_constraint && type_constraint.is_some(),
+                });
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");
                 let preapply_container_default = has_default_trait

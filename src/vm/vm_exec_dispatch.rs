@@ -6956,8 +6956,16 @@ impl Interpreter {
                 dynamic,
                 local_slot,
                 reset,
+                type_follows,
             } => {
-                self.exec_set_var_dynamic_op(code, *name_idx, *dynamic, *local_slot, *reset);
+                self.exec_set_var_dynamic_op(
+                    code,
+                    *name_idx,
+                    *dynamic,
+                    *local_slot,
+                    *reset,
+                    *type_follows,
+                );
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.

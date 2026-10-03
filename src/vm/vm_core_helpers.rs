@@ -267,14 +267,6 @@ impl Interpreter {
         self.loan_env_for(|i| i.set_var_type_constraint_for(name, name_sym, constraint))
     }
 
-    /// Declaration-position variant (`my Int @a`): registers the constraint
-    /// without tagging a pre-existing same-named env value — see
-    /// `set_var_type_constraint_decl`.
-    #[inline]
-    pub(crate) fn vm_set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<&str>) {
-        self.loan_env_for(|i| i.set_var_type_constraint_decl(name, constraint))
-    }
-
     pub(crate) fn last_stack_value(&self) -> Option<&Value> {
         if self.stack.len() == 1 {
             self.stack.last()

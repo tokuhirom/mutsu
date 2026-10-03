@@ -617,11 +617,31 @@ impl Compiler {
         // pragma statements of this block are tracked in order, then the
         // pragma in effect at block entry is put back for the real compile.
         let pragma_at_entry = self.variables_pragma;
+        // While every statement so far is inert (see `stmt_is_inert_prefix`),
+        // nothing has run between block entry and the declaration at hand, so
+        // the declaration's own `SetVarType*` — emitted before its initializer
+        // — registers the constraint before anything could observe the name,
+        // and a hoisted copy would only register it a second time on every
+        // execution (#11467: a loop body's leading `my Str $c = "a"` paid for
+        // two registrations per iteration). A phaser anywhere in the block can
+        // run code at entry (`ENTER`, `FIRST`, `PRE`), so it turns this off;
+        // so does a `use variables` pragma in effect, whose implicit smiley
+        // the hoist (and only the hoist) derives here.
+        let mut prefix_inert =
+            pragma_at_entry.is_none() && !stmts.iter().any(|s| matches!(s, Stmt::Phaser { .. }));
         for stmt in stmts {
+            if stmt.is_marker() {
+                continue;
+            }
+            let hoist_redundant = prefix_inert && Self::decl_registers_before_init(stmt);
+            prefix_inert = prefix_inert && Self::stmt_is_inert_prefix(stmt);
             if let Stmt::Use { module, arg, .. } = stmt
                 && module == "variables"
             {
                 self.apply_variables_pragma_stmt(arg.as_ref());
+                continue;
+            }
+            if hoist_redundant {
                 continue;
             }
             // `state TYPE $x` hoists exactly like `my TYPE $x`: Raku's
@@ -661,6 +681,39 @@ impl Compiler {
             }
         }
         self.variables_pragma = pragma_at_entry;
+    }
+
+    /// Whether `stmt` is a plain `my` declaration whose compiled form registers
+    /// its type constraint before it runs any code of its own, so a block-entry
+    /// hoist of it is redundant when nothing executes before it (see
+    /// `hoist_typed_var_decls`). `state` is excluded: its registration is not
+    /// re-run on every entry the way a `my` declaration's is.
+    fn decl_registers_before_init(stmt: &Stmt) -> bool {
+        matches!(
+            stmt,
+            Stmt::VarDecl {
+                is_state: false,
+                is_our: false,
+                where_constraint: None,
+                custom_traits,
+                ..
+            } if custom_traits.iter().all(|(n, _)| n == "__has_initializer")
+        )
+    }
+
+    /// Whether executing `stmt` can run no code beyond its own declaration
+    /// bookkeeping: a plain `my` declaration (see
+    /// [`Self::decl_registers_before_init`]) whose initializer, if any, is a
+    /// literal.
+    fn stmt_is_inert_prefix(stmt: &Stmt) -> bool {
+        Self::decl_registers_before_init(stmt)
+            && matches!(
+                stmt,
+                Stmt::VarDecl {
+                    expr: Expr::Literal(_),
+                    ..
+                }
+            )
     }
 
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).

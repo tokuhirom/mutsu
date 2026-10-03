@@ -35,8 +35,12 @@ impl Interpreter {
         // site on a `JSON::Fast.from-json` parse at 172,747 allocations per 100
         // records (#8830).
         let name: &str = Self::const_str(code, name_idx);
+        // The name's symbol comes from the chunk's constant-pool table instead
+        // of a `Symbol::intern` per use (this op interned it twice).
+        let name_sym = code.const_sym(name_idx);
         let raw_constraint: &str = Self::const_str(code, tc_idx);
-        self.save_type_meta_for_scope_exit(name);
+        let type_key = Interpreter::type_meta_key_for_sym(name_sym);
+        self.save_type_meta_for_scope_exit(name, name_sym, type_key);
         // Empty constraint = CLEAR: an untyped expression-position
         // declaration dropping a stale same-named constraint (the
         // compiler never emits an empty string for a real type).
@@ -51,11 +55,20 @@ impl Interpreter {
         // constraint like `int` or `Str` with no capture, generic or package
         // alias to resolve -- borrows the constant-pool string instead of
         // allocating a copy of it to immediately compare and drop.
-        let constraint: std::borrow::Cow<'_, str> =
+        //
+        // A plain builtin name nothing shadows resolves to itself through every
+        // step below; the per-site memo answers that without asking them
+        // (see `type_decl_constraint_is_plain_builtin`).
+        let plain_builtin =
+            self.type_decl_constraint_is_plain_builtin(code, tc_idx, raw_constraint);
+        let constraint: std::borrow::Cow<'_, str> = if plain_builtin {
+            std::borrow::Cow::Borrowed(raw_constraint)
+        } else {
             match loan_env!(self, try_resolved_type_capture_name(raw_constraint)) {
                 Some(resolved) => std::borrow::Cow::Owned(resolved),
                 None => std::borrow::Cow::Borrowed(raw_constraint),
-            };
+            }
+        };
         // Container metadata is later rendered as `Array[T]`/`Hash[T]`, so a
         // user type used unqualified inside a module must retain the same
         // package-qualified identity as the type checker.  Keeping the raw
@@ -74,18 +87,18 @@ impl Interpreter {
         // Both probes are byte scans (`str_scan.rs`): `contains("::")` builds a
         // `StrSearcher` and `contains('[')` a `CharSearcher`, per execution, for
         // two fixed one- and two-byte needles.
-        let constraint: std::borrow::Cow<'_, str> =
-            if !crate::runtime::utils::has_double_colon(constraint.as_ref())
-                && !crate::runtime::utils::has_bracket(constraint.as_ref())
-                && !self.unshadowed_builtin_type_name(&constraint)
-            {
-                match self.resolve_type_in_current_package(&constraint) {
-                    Some(resolved) => std::borrow::Cow::Owned(resolved),
-                    None => constraint,
-                }
-            } else {
-                constraint
-            };
+        let constraint: std::borrow::Cow<'_, str> = if !plain_builtin
+            && !crate::runtime::utils::has_double_colon(constraint.as_ref())
+            && !crate::runtime::utils::has_bracket(constraint.as_ref())
+            && !self.unshadowed_builtin_type_name(&constraint)
+        {
+            match self.resolve_type_in_current_package(&constraint) {
+                Some(resolved) => std::borrow::Cow::Owned(resolved),
+                None => constraint,
+            }
+        } else {
+            constraint
+        };
         // Clear stale atomic CAS state when an @-variable is
         // (re-)declared with a type constraint like atomicint. Not on the
         // hoist: the state belongs to whatever container is bound right now,
@@ -94,9 +107,18 @@ impl Interpreter {
             self.clear_atomic_array_state(name);
         }
         if scoped {
-            self.loan_env_for(|i| i.set_var_type_constraint_routine_scoped(name, &constraint));
+            let plain_meta = plain_builtin.then(|| code.constants[tc_idx as usize].clone());
+            self.loan_env_for(|i| {
+                i.set_var_type_constraint_routine_scoped(
+                    name,
+                    name_sym,
+                    type_key,
+                    &constraint,
+                    plain_meta,
+                )
+            });
         } else {
-            self.vm_set_var_type_constraint_decl(name, Some(constraint.as_ref()));
+            self.loan_env_for(|i| i.set_var_type_constraint_decl(name, name_sym, &constraint));
         }
         // For scalar variables, if the current value is Nil, set it to the type object.
         // Exception: if the constraint is "Nil", keep the value as Nil
@@ -106,13 +128,11 @@ impl Interpreter {
             // seeding it would overwrite the outer variable's value for good
             // (the block-exit restore only puts the metadata back). Seed only a
             // name nothing has bound — the shape the hoist exists for.
+            let current = self.env().get_sym(name_sym);
             let is_nil = if hoisted {
-                self.env().get(name).is_none()
+                current.is_none()
             } else {
-                matches!(
-                    self.env().get(name).map(Value::view),
-                    Some(ValueView::Nil) | None
-                )
+                matches!(current.map(Value::view), Some(ValueView::Nil) | None)
             };
             // ... or the variable still holds a DEAD seed: a type object for a
             // name nothing has registered. `hoist_typed_var_decls` emits a
@@ -129,10 +149,15 @@ impl Interpreter {
             // (the fused form calls `.new` on the *bareword*) died with
             // "Unknown method ... new on C". Re-seeding an already-correct value
             // is a no-op: the seed is a pure function of the constraint.
-            let is_dead_seed = matches!(
-                self.env().get(name).map(Value::view),
-                Some(ValueView::Package(p)) if !self.type_name_is_known(&p.resolve())
-            );
+            // `Any` — the reset a fresh declaration's `SetVarDynamic` leaves in
+            // a loop body — is known by construction, which settles that
+            // steady state without the probe.
+            let is_dead_seed = !is_nil
+                && matches!(
+                    current.map(Value::view),
+                    Some(ValueView::Package(p))
+                        if p != crate::symbol::wk::any() && !self.type_name_is_known(&p.resolve())
+                );
             if is_nil || is_dead_seed {
                 let init_val = self.typed_scalar_nil_seed_value(name, &constraint);
                 self.set_env_with_main_alias(name, init_val.clone());
@@ -164,6 +189,50 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether the declaration constraint at constant `tc_idx` is a plain
+    /// builtin type name that nothing shadows — one for which
+    /// `exec_set_var_type`'s resolution steps (type-capture substitution,
+    /// package and constant aliases, package qualification) all return the
+    /// spelling unchanged.
+    ///
+    /// The steps that can say otherwise without a registry write are asked
+    /// on every call, and are two loads in the common program: a bound `::T`
+    /// capture (`any_type_capture_seen`, process-global latch) and a module
+    /// package alias (`package_type_aliases`, empty unless one was imported).
+    /// A constant alias cannot rename a known type (`type_alias_target`
+    /// answers `None` for every `is_known_type_constraint` name before it looks
+    /// at any binding). What remains — a user `subset`/`enum`/`role` declared
+    /// under the builtin name — lives in the registry, so the answer is
+    /// memoized per site for one registry write generation
+    /// ([`crate::value::TypeDeclSiteCaches`]).
+    // Cost: O(1) on a memo hit; a miss adds O(|name|) for the spelling checks
+    // plus three registry probes.
+    pub(super) fn type_decl_constraint_is_plain_builtin(
+        &self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        constraint: &str,
+    ) -> bool {
+        if Self::any_type_capture_seen() || !self.package_type_aliases.is_empty() {
+            return false;
+        }
+        let generation = self.registry_write_generation();
+        let sites = code.constants.len();
+        let idx = tc_idx as usize;
+        if code.type_decl_sites.cached(sites, idx, generation) {
+            return true;
+        }
+        let plain = crate::runtime::utils::is_known_type_constraint(constraint)
+            && !constraint
+                .bytes()
+                .any(|b| matches!(b, b':' | b'(' | b'[' | b'{' | b' '))
+            && self.unshadowed_builtin_type_name(constraint);
+        if plain && self.registry_write_generation() == generation {
+            code.type_decl_sites.remember(sites, idx, generation);
+        }
+        plain
+    }
+
     /// Record this name's PRE-declaration env-scoped constraint metadata
     /// (`__mutsu_type::<name>`, `__mutsu_hash_key_type::<name>`) into the
     /// innermost branch/loop-body scope, so `pop_loop_local_scope` puts it back
@@ -190,15 +259,16 @@ impl Interpreter {
     /// First write wins (`or_insert`), so a loop body that re-declares on every
     /// iteration still restores the value from before the loop, matching how the
     /// surrounding shadow-restore records a name once per scope.
-    fn save_type_meta_for_scope_exit(&mut self, name: &str) {
+    ///
+    /// Only a `%` name can carry hash-key metadata
+    /// (`Interpreter::may_carry_hash_key_meta`), so only it records that key.
+    fn save_type_meta_for_scope_exit(&mut self, name: &str, name_sym: Symbol, type_key: Symbol) {
         if self.topic_state.loop_local_saved_env.is_empty() {
             return;
         }
-        let name_sym = crate::symbol::Symbol::intern(name);
-        for key in [
-            Interpreter::type_meta_key_for_sym(name_sym),
-            Interpreter::hash_key_meta_key_for_sym(name_sym),
-        ] {
+        let hash_key = Interpreter::may_carry_hash_key_meta(name)
+            .then(|| Interpreter::hash_key_meta_key_for_sym(name_sym));
+        for key in std::iter::once(type_key).chain(hash_key) {
             // First write wins, so once this scope has recorded the key there
             // is nothing left to do — and in particular no reason to copy the
             // key's bytes to build the `entry()` argument, nor to clone the

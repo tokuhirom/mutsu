@@ -4518,6 +4518,12 @@ pub(crate) enum OpCode {
         local_slot: Option<u32>,
         /// How the binding is prepared before its initializer runs.
         reset: DeclReset,
+        /// The declaration's own type-constraint registration (`SetVarType*`)
+        /// immediately follows this op and overwrites the name's constraint
+        /// metadata, so the stale-constraint clear this op otherwise performs
+        /// is skipped: clearing an entry only to re-insert it on the next op
+        /// cost a remove plus an insert per execution of a typed `my` (#11467).
+        type_follows: bool,
     },
     /// Register a variable declared `is export`, after its value has been
     /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the
@@ -7503,6 +7509,9 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// Per-string-constant memo for `SetVarType*`'s constraint resolution
+    /// (see [`crate::value::TypeDeclSiteCaches`]).
+    pub(crate) type_decl_sites: crate::value::TypeDeclSiteCaches,
     /// Lazily-built "this slot's read has no name-shaped guard work" bit per
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
@@ -8089,6 +8098,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),

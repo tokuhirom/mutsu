@@ -277,6 +277,7 @@ impl Compiler {
                         } else {
                             DeclReset::Keep
                         },
+                        type_follows: false,
                     });
                 }
                 // The pre-created default container makes the store see the
@@ -309,6 +310,7 @@ impl Compiler {
                         dynamic: is_dynamic,
                         local_slot: None,
                         reset: DeclReset::Fresh,
+                        type_follows: false,
                     });
                 }
                 // my $x = expr in expression context -> declare, assign, return value
@@ -872,6 +874,7 @@ impl Compiler {
                         dynamic: is_dynamic,
                         local_slot: None,
                         reset: DeclReset::Keep,
+                        type_follows: false,
                     });
                 }
                 // Register a scalar type constraint AFTER `SetVarDynamic` (which

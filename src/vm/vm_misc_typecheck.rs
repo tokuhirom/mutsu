@@ -16,6 +16,9 @@ impl Interpreter {
         // Set again below only when this check fully matched the value, so the
         // declaration store right after it can skip a second match.
         self.decl_typechecked_context().set(false);
+        if !bind_mode && self.type_check_plain_scalar_fast(code, tc_idx, var_name)? {
+            return Ok(());
+        }
         // A `use variables :D/:U` smiley is already part of the constraint:
         // the compiler applies the (lexical) pragma to the declaration.
         let effective_constraint = std::borrow::Cow::Borrowed(Self::const_str(code, tc_idx));
@@ -194,28 +197,32 @@ impl Interpreter {
         // Element-level matching is for declarations like `my Int @x = 1, 2, 3`.
         // Also skip element-level matching for subset types whose base type is a container type
         // (e.g., `subset NumArray of Array where { ... }`).
-        let is_container_constraint = matches!(
-            declared_constraint,
-            "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
-        ) || {
-            let ultimate_base = self.resolve_subset_base_type(declared_constraint);
+        // Only an `Array` value consults it, and the subset walk allocates, so
+        // it is asked lazily rather than for every scalar declaration.
+        let is_container_constraint = || {
             matches!(
-                ultimate_base.as_str(),
-                "List"
-                    | "Array"
-                    | "Positional"
-                    | "Seq"
-                    | "Cool"
-                    | "Any"
-                    | "Mu"
-                    | "Iterable"
-                    | "Hash"
-                    | "Map"
-                    | "Pair"
-            )
+                declared_constraint,
+                "List" | "Array" | "Positional" | "Seq" | "Cool" | "Any" | "Mu" | "Iterable"
+            ) || {
+                let ultimate_base = self.resolve_subset_base_type(declared_constraint);
+                matches!(
+                    ultimate_base.as_str(),
+                    "List"
+                        | "Array"
+                        | "Positional"
+                        | "Seq"
+                        | "Cool"
+                        | "Any"
+                        | "Mu"
+                        | "Iterable"
+                        | "Hash"
+                        | "Map"
+                        | "Pair"
+                )
+            }
         };
         if let ValueView::Array(..) = value.view()
-            && !is_container_constraint
+            && !is_container_constraint()
             // Element-level matching is for `@`-sigil typed arrays (`my Int @a`),
             // whose constraint is the ELEMENT type. A `$`-scalar holding an array
             // (`my Array[Numeric] $x = …`, `my Array[Numeric] constant c .= new`)
@@ -345,8 +352,13 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // The known-type arm's verdict, reused by the general check below so
+        // a known constraint is matched once, not twice (#11467; a subset's
+        // `where` block shadowing the name would also have run twice).
+        let mut known_matched: Option<bool> = None;
         if runtime::is_known_type_constraint(base_constraint) {
             let matched = !value.is_nil() && self.type_matches_value(constraint, &value);
+            known_matched = Some(matched);
             if matched {
                 self.decl_typechecked_context().set(true);
             }
@@ -471,7 +483,10 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Comp::Group", group_attrs));
             }
         }
-        let matched = !value.is_nil() && self.type_matches_value(constraint, &value);
+        let matched = match known_matched {
+            Some(matched) => matched,
+            None => !value.is_nil() && self.type_matches_value(constraint, &value),
+        };
         if matched {
             self.decl_typechecked_context().set(true);
         }
@@ -501,6 +516,51 @@ impl Interpreter {
             *self.stack.last_mut().unwrap() = coerced;
         }
         Ok(())
+    }
+
+    /// The common declaration check — a `$` scalar typed with a plain,
+    /// unshadowed, non-native builtin name (`my Str $c = "a"`) receiving a
+    /// value that matches it — answered without the general check's
+    /// preamble. Returns `Ok(true)` when it settled the check, `Ok(false)` to
+    /// hand it to the general path (which then re-derives everything).
+    ///
+    /// For such a constraint the general path does exactly this once the value
+    /// matches: no alias to resolve (the name is a known type), no element
+    /// check (not an `@`/`%` variable), no native-width validation, no
+    /// definiteness error (the value is not `Nil`), then the match, the
+    /// "already type-checked" mark for the store, and the coercion step. A
+    /// value that does not match falls back, so every error is still raised
+    /// by the general path. Every `value.view()` of the preamble it skips
+    /// costs a refcount round trip on a `Str` (#11467).
+    // Cost: O(1) on a memo hit, plus the match itself.
+    fn type_check_plain_scalar_fast(
+        &mut self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        var_name: Option<&str>,
+    ) -> Result<bool, RuntimeError> {
+        let constraint = Self::const_str(code, tc_idx);
+        if !var_name.is_some_and(|n| n.starts_with('$'))
+            || !self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint)
+            || crate::runtime::native_types::is_native_int_type(constraint)
+            || matches!(constraint, "num" | "num32" | "num64" | "str")
+        {
+            return Ok(false);
+        }
+        let Some(value) = self.stack.last() else {
+            return Ok(false);
+        };
+        if value.is_nil() {
+            return Ok(false);
+        }
+        let value = value.clone();
+        if !self.type_matches_value(constraint, &value) {
+            return Ok(false);
+        }
+        self.decl_typechecked_context().set(true);
+        let coerced = loan_env!(self, try_coerce_value_for_constraint(constraint, value))?;
+        *self.stack.last_mut().unwrap() = coerced;
+        Ok(true)
     }
 
     pub(super) fn exec_indirect_type_lookup_op(&mut self) {

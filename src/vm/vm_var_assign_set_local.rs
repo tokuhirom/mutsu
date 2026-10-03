@@ -2348,11 +2348,18 @@ impl Interpreter {
                         self.type_check_assignment_failure(name, constraint, check_val)
                     });
                 }
-                if !(val.is_nil() || binding && val.is_proxy_value()) {
+                // The adjacent `TypeCheck` that vouched for the value
+                // (`decl_typechecked`) already ran this coercion on it as its
+                // last step, and stored the result we just popped.
+                if !(decl_typechecked || val.is_nil() || binding && val.is_proxy_value()) {
                     val = loan_env!(self, try_coerce_value_for_constraint(constraint, val))?;
                 }
-                // Wrap native integer values on assignment (overflow wrapping)
-                val = Self::wrap_native_int_by_constraint(constraint, val)?;
+                // Wrap native integer values on assignment (overflow wrapping).
+                // A vouched-for declaration is never native: `TypeCheck`'s
+                // native arms validate and return without vouching.
+                if !decl_typechecked {
+                    val = Self::wrap_native_int_by_constraint(constraint, val)?;
+                }
             }
         } else if !is_bind
             && !is_rebind
@@ -3226,12 +3233,17 @@ impl Interpreter {
                     | ValueView::Bag(..)
                     | ValueView::Mix(..)
             )
-            && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
             // Only a binding with a same-named lexical shadow needs a cell to
             // retain its own constraint.  Keeping ordinary typed locals in
             // their existing representation preserves specialized CAS and
-            // subset-predicate paths.
-            && code.locals.iter().filter(|local| local.as_str() == name).count() > 1
+            // subset-predicate paths. Asked before the constraint probe: it is
+            // one indexed lookup and settles the common (unshadowed) local,
+            // where the probe was an env walk per typed declaration (#11467).
+            && match name_sym {
+                Some(sym) => code.local_slots_of(sym).len(),
+                None => code.local_slots_named(name).len(),
+            } > 1
+            && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
             // Aggregate/native scalar values have specialized lvalue paths
             // which do not yet accept a scalar cell wrapper. Their own
             // container metadata already carries the relevant constraint.
@@ -3472,6 +3484,7 @@ impl Interpreter {
         dynamic: bool,
         local_slot: Option<u32>,
         reset: crate::opcode::DeclReset,
+        type_follows: bool,
     ) {
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
@@ -3529,7 +3542,11 @@ impl Interpreter {
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name. The slot's
         // pre-interned symbol spares the clear a re-hash of the name (#7736).
-        self.vm_set_var_type_constraint_for(name, Some(name_sym), None);
+        // A typed declaration's own registration is the next op and overwrites
+        // the entry anyway (see `OpCode::SetVarDynamic::type_follows`).
+        if !type_follows {
+            self.vm_set_var_type_constraint_for(name, Some(name_sym), None);
+        }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             loan_env!(self, reset_atomic_var_key_decl(name));
         }
