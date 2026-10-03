@@ -73,7 +73,7 @@ pub(crate) struct Tier {
     /// a `ContainerRef` cell, not a function of the key set at all. This is
     /// safe with no invalidation whatsoever, for a narrower reason than
     /// `capture_candidates`' "key-set only" contract: it is built and read
-    /// exclusively through [`Env::capture_tier`], which only ever looks at a
+    /// exclusively through [`Env::capture_view`], which only ever looks at a
     /// closure's OWN already-captured env (`SubData::env`) — set once when
     /// the closure literal is created and never written to again (the same
     /// discipline `SubData::body` documents). A tier reached the ordinary way
@@ -81,7 +81,7 @@ pub(crate) struct Tier {
     /// calls this method, so the "value changed after the memo was built"
     /// case this would need to guard against cannot arise. See #7565.
     ///
-    /// [`Env::capture_tier`]: crate::env::Env::capture_tier
+    /// [`Env::capture_view`]: crate::env::Env::capture_view
     container_ref_keys: OnceLock<Box<[Symbol]>>,
     /// Memo of [`Self::capture_sys`]: the system names a closure capture keeps
     /// from this tier, with their values, as a shared immutable tier of its
