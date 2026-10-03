@@ -565,9 +565,7 @@ impl Interpreter {
         }
         // A module's own bare declaration is visible only where that module
         // is merged (ADR-11136).
-        if let Some(sym) = Symbol::lookup(name)
-            && !self.bare_name_visible_here(sym)
-        {
+        if self.module_name_hidden_here(name) {
             return Self::no_such_symbol_failure(name);
         }
         // A lexical type remains registered for escaped values, but its

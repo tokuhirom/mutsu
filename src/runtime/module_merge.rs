@@ -383,6 +383,23 @@ impl Interpreter {
         }
     }
 
+    /// Whether the bare name `name` is a module's own declaration that is not
+    /// merged where the code is running -- and so must not resolve here
+    /// (ADR-11136). A type nested in the running class or package that shares
+    /// the spelling (`grammar Actions` inside `class Cro::Uri::HTTP`) is what
+    /// the name means here, whatever another module published under it.
+    // Cost: as `bare_name_visible_here`, plus a nested-type probe for a name
+    // that is hidden.
+    pub(crate) fn module_name_hidden_here(&self, name: &str) -> bool {
+        if self.module_visibility.module_name_providers.is_empty() {
+            return false;
+        }
+        let Some(sym) = Symbol::lookup(name) else {
+            return false;
+        };
+        !self.bare_name_visible_here(sym) && self.resolve_suppressed_type(name).is_none()
+    }
+
     /// Whether a block-level merge live here granted the package `top`
     /// (`package_granting_modules`) -- the block-scoped half of #7797's
     /// qualified gate, whose unit-wide half is `compunit_visible_packages`.

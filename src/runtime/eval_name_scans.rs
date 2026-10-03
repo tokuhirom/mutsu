@@ -212,9 +212,7 @@ impl UndeclaredName<'_> {
         }
         // A module's own declaration resolves only where that module is
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
-        if let Some(sym) = crate::symbol::Symbol::lookup(name)
-            && !interp.bare_name_visible_here(sym)
-        {
+        if interp.module_name_hidden_here(name) {
             return self.declared.contains(name);
         }
         is_core_term(name)

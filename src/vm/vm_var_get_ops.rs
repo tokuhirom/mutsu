@@ -106,9 +106,7 @@ impl Interpreter {
         // A module's own bare declaration (`class OuterCls`, `constant C`)
         // resolves only where that module's GLOBAL is merged: in the scope that
         // ran its `need`/`use`, or in the module itself (ADR-11136).
-        if let Some(sym) = Symbol::lookup(name)
-            && !self.bare_name_visible_here(sym)
-        {
+        if self.module_name_hidden_here(name) {
             return Err(RuntimeError::undeclared_symbols(format!(
                 "Undeclared name:\n    {name} used at line 1"
             )));
