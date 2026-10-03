@@ -33,8 +33,10 @@
 use super::*;
 
 impl Interpreter {
-    // Cost: O(1) on a memo hit (one lock, two `env` probes); a miss costs one
-    // bareword resolution, O(p*|name|), p = packages on the bare-name search path.
+    // Cost: O(1) on a memo hit (one lock, two `env` probes, one provenance
+    // probe; a module-published name adds the O(d) merge check, d = EVAL
+    // parent-chain depth); a miss costs one bareword resolution, O(p*|name|),
+    // p = packages on the bare-name search path.
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
@@ -46,6 +48,7 @@ impl Interpreter {
         let idx = name_idx as usize;
         if let Some(sym) = code.bareword_sites.cached(sites, idx, generation)
             && self.env_leaves_type_name(sym)
+            && self.bare_name_visible_here(sym)
         {
             self.stack.push(Value::package(sym));
             return Ok(());

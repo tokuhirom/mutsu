@@ -104,11 +104,15 @@ impl Compiler {
         }
     }
 
-    /// Check if a block directly contains a `use`/`no` statement (non-recursive).
+    /// Check if a block directly contains a `use`/`need`/`require`/`import`/`no`
+    /// statement (non-recursive). A `need` or `require` merges a module into the
+    /// block too (ADR-11136).
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
-        stmts
-            .iter()
-            .any(|s| matches!(s, Stmt::Use { .. } | Stmt::Import { .. } | Stmt::No { .. }))
+        stmts.iter().any(|s| match s {
+            Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } | Stmt::No { .. } => true,
+            Stmt::Expr(crate::ast::Expr::Call { name, .. }) => *name == "require",
+            _ => false,
+        })
     }
 
     /// The declaration inside the bind source of `$target := my $z = ...`,

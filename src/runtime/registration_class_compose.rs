@@ -202,6 +202,7 @@ impl Interpreter {
                 "No matching candidate found for the parametric role",
             ));
         }
+        self.compose_role_array_type(cx.name, base_role_name, &role_param_names, &role_arg_values)?;
         // Check for attribute conflicts detected during role composition
         if let Some((attr_name, role_a, role_b)) = role.attribute_conflicts.first() {
             return Err(RuntimeError::new(format!(
