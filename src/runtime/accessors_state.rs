@@ -287,18 +287,17 @@ impl Interpreter {
         if self.wrap_sub_id_for_name(name).is_some() {
             return self.get_wrapped_sub(name);
         }
-        let (pkg, bare) = name.rsplit_once("::")?;
-        let pkg = pkg.strip_prefix("::").unwrap_or(pkg);
-        self.wrap_sub_id_for_name(bare)?;
-        let sub = self.get_wrapped_sub(bare)?;
+        let name = Symbol::intern(name);
+        if !crate::qualified::is_qualified(name) {
+            return None;
+        }
+        let bare = crate::qualified::unqualified_part(name);
+        self.wrap_sub_id_for_name(bare.as_str())?;
+        let sub = self.get_wrapped_sub(bare.as_str())?;
         let ValueView::Sub(data) = sub.view() else {
             return None;
         };
-        let pkg = Symbol::intern(pkg);
-        let same_package = data.package == pkg
-            || crate::qualified::is_global_package(pkg)
-                && crate::qualified::is_global_package(data.package);
-        same_package.then(|| sub.clone())
+        (crate::qualified::qualified(data.package, bare) == name).then(|| sub.clone())
     }
 
     /// Whether ANY routine has been `.wrap`ped in this program.
