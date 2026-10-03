@@ -13,7 +13,6 @@ pub(crate) mod cross_product;
 #[path = "emoji_name_gen.rs"]
 mod emoji_name_gen;
 pub(crate) mod emoji_name_table;
-pub(crate) mod fast_0arg;
 mod functions;
 pub(crate) mod grapheme_index;
 pub(crate) mod iterator_construct;
@@ -21,6 +20,7 @@ pub(crate) mod label;
 pub(crate) mod lazy_scan;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod math_prim;
+pub(crate) mod method_table;
 pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;
