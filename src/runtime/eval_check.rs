@@ -26,6 +26,11 @@ fn collect_use_declared_type_names(
     extra_dirs: &[String],
     out: &mut HashSet<String>,
 ) -> bool {
+    // `use Foo:auth<zef:x>` carries its dist selectors appended to the module
+    // name; the file lookup wants the bare name (Timezones::ZoneInfo's tests
+    // `use Timezones::ZoneInfo::Time:auth<zef:guifa>` and then type a
+    // parameter with the exported `Time` class).
+    let (module, _) = Interpreter::split_dist_selectors(module);
     let path = module_source_in_dirs(module, extra_dirs)
         .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
     let Some(path) = path else {
@@ -208,7 +213,7 @@ impl Interpreter {
     }
 
     /// The type names this unit declares, without harvesting `use`d modules.
-    fn unit_declared_types(stmts: &[Stmt]) -> DeclaredTypes {
+    pub(super) fn unit_declared_types(stmts: &[Stmt]) -> DeclaredTypes {
         scan(
             TypeDecls {
                 harvest: None,

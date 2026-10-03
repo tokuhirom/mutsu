@@ -1164,8 +1164,7 @@ impl Interpreter {
                             std::sync::Arc::new(def)
                         })
                         .collect();
-                    self.registry_mut()
-                        .token_defs
+                    std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
                         .insert(target_key, target_defs);
                     crate::runtime::regex_parse::TOKEN_DEFS_GEN
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -2015,6 +2014,11 @@ impl Interpreter {
             "private_method_table" if !args.is_empty() => {
                 let type_name = self.mop_receiver_owner(&args[0]);
                 Ok(Value::hash(self.class_private_method_table(&type_name)))
+            }
+            // Cost: O(m), m = methods declared directly on the class.
+            "private_methods" if !args.is_empty() => {
+                let type_name = self.mop_receiver_owner(&args[0]);
+                Ok(self.class_private_methods(&type_name))
             }
             // `Metamodel::ClassHOW.roles_to_compose`: the roles a class
             // still has queued for the native composer to flatten in,

@@ -17,6 +17,8 @@ pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {
         // A source-preserving literal is an immutable lvalue exactly like the
         // plain literal it wraps; the sink-warn source text is irrelevant here.
         Expr::LiteralSrc(v, _) => Expr::Literal(v),
+        // `$(EXPR) = v` decides on the `.item` call the contextualizer is.
+        contextualizer @ Expr::Contextualizer { .. } => contextualizer.contextualizer_call(),
         other => other,
     }
 }

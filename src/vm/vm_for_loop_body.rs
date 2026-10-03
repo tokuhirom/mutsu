@@ -1399,6 +1399,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -1430,6 +1431,7 @@ impl Interpreter {
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
                         self.stack.truncate(stack_base);
+                        Self::collect_loop_control_value(&mut collected, e.return_value);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,

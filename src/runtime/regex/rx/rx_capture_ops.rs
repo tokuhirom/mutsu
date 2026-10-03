@@ -329,20 +329,19 @@ impl Interpreter {
 }
 
 /// Count a `CapAtom` on `MUTSU_VM_STATS`'s `regex-walk:` line: the walk's
-/// single-atom arm matches it. A quantified `<subrule>` is the arm running the
-/// callee, so it is a bridge; every other atom is a leaf.
+/// single-atom arm matches it, a leaf.
 // Cost: O(1).
 #[inline]
 fn walk_leaf_use(atom: &RegexAtom) {
     use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk};
     let (kind, reason) = match atom {
-        RegexAtom::Named(_) => (WalkUse::Bridged, "quantified-call"),
         RegexAtom::Lookaround { .. } => (WalkUse::Leaf, "lookaround"),
         RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => (WalkUse::Leaf, "backref"),
         RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => (WalkUse::Leaf, "marker"),
         RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
         RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
         RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
+        RegexAtom::RecurseSelf(_) => (WalkUse::Leaf, "recurse-self"),
         _ => (WalkUse::Leaf, "other"),
     };
     record_regex_walk(kind, reason);

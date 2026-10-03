@@ -271,3 +271,41 @@ fn a_composite_class_reads_the_registry_only_through_a_positive_named_item() {
     // No `NamedBuiltin` anywhere: a pure function of the pattern.
     assert!(!mentions_subrule(&parse("<[a..z] - [aeiou]>")));
 }
+
+#[test]
+fn find_admitted_agrees_with_admits_at_position_by_position() {
+    // `find_admitted` reads each character once instead of looking ahead at
+    // every rejected position (#11145); it must still yield exactly the
+    // positions `admits_at` admits, in every window. Every subject of up to
+    // four characters over an alphabet holding a plain letter, a set member,
+    // `\r`/`\n` (the one all-ASCII cluster), a combining mark, a precomposed
+    // letter and a ZWJ is checked against every `from..=last` window.
+    let alphabet = ['a', 'x', '\r', '\n', '\u{301}', '\u{e9}', '\u{200d}'];
+    let patterns = [r"<-[a..z]>", r"<-[a..z\r]>", r"<[x]>", r"\n", "[:m 'x']"];
+    for pattern in patterns {
+        let parsed = parse(pattern);
+        let prefilter = std::sync::Arc::clone(pattern_prefilter(&parsed));
+        let set = prefilter.first.as_ref().expect("pattern has a first set");
+        for len in 1..=4u32 {
+            for mut code in 0..alphabet.len().pow(len) {
+                let chars: Vec<char> = (0..len)
+                    .map(|_| {
+                        let c = alphabet[code % alphabet.len()];
+                        code /= alphabet.len();
+                        c
+                    })
+                    .collect();
+                for from in 0..chars.len() {
+                    for last in from..chars.len() {
+                        let want = (from..=last).find(|&i| set.admits_at(&chars, i));
+                        assert_eq!(
+                            set.find_admitted(&chars, from, last),
+                            want,
+                            "{pattern} over {chars:?}, window {from}..={last}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

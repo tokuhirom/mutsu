@@ -746,7 +746,15 @@ impl Interpreter {
         // A verdict that depends on a conditional `use` comes back as guards
         // that run right after the prologue, which decides the condition
         // (#10331).
-        let begin_prologue = match self.check_undeclared_routines_with_guards(&body_main) {
+        // An undeclared bareword term is the same CHECK-time failure
+        // ("Undeclared name", #9768).
+        let checked = self
+            .check_undeclared_routines_with_guards(&body_main)
+            .and_then(|guards| {
+                self.check_undeclared_names_mainline(&body_main)?;
+                Ok(guards)
+            });
+        let begin_prologue = match checked {
             Ok(guards) => {
                 let end = prologue_len + guards.len();
                 body_main.splice(prologue_len..prologue_len, guards);
@@ -767,6 +775,7 @@ impl Interpreter {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
+        compiler.lexical_scope_known = true;
         let (code, compiled_fns) = compiler.compile(&body_main);
         // Seed the escaping-our-sub lexical names from the compiled top-level code
         // (and its nested closures), so a free-variable read inside such an `our`

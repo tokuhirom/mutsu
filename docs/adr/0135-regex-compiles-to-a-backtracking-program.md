@@ -1021,6 +1021,79 @@ Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 11,469 t
 `t/grammar/grammar-rule-dynvar-decl-frames.t` pins the rakudo values: ratchet commit, scope and
 shadowing, re-installation on backtracking, and the action's view.
 
+### Slice E, tenth part: quantified calls are loops of frame calls
+
+`ratchet-scan` and `quantified-call` are gone. A quantified `<subrule>` (`<x>*`, `<x>+`,
+`<x> ** n`, `<x>+ % sep`) compiled to a loop whose body asked the walk's single-candidate arm for
+the callee's first end (`CapAtom`). A ratcheted `*` / `+` was first offered to the walk's
+possessive scan (`NamedRun` over `regex_named_ratchet_run`). The loop body is now the same `Call`
+op as an unquantified call, committed under ratchet, and the `NamedRun` op is deleted.
+
+That also fixes a wrong answer, with rakudo as the reference. The walk's chain took each
+iteration's first end only, so a later failure could never backtrack into an iteration's callee:
+`regex TOP { <x>+ a }; regex x { a+ }` failed on `aaa`, where rakudo matches with `x => aa`. An
+uncommitted frame resumes there (Slice D's non-ratchet resumption). D6 therefore disagrees with the
+walk on that shape.
+
+The walk's scan dropped the `:sym<…>` of a proto with a single candidate on each iteration's Match,
+and D6 caught it (`t/grammar/role-proto-regex-reinstantiate.t`). The scan's resolution
+(`try_resolve_named_to_pattern`) now returns the candidate's sym, and the scan files it.
+
+Measured on release builds, best of five, against `main`: `bench-grammar-parse-big`,
+`bench-grammar-json-tiny`, `bench-yaml-parse` and `bench-yaml-parse-big` are unchanged within noise.
+So removing the scan's fast path costs nothing measurable.
+
+Survey over `t/grammar`, `t/regex` and `t/modules`: walk uses fell from 10,563 to 9,098.
+
+- `bridged` 5,010 → 3,608: `ratchet-scan` 1,239 → 0 and `quantified-call` 211 → 0.
+- `walked` 3,352 → 3,281.
+
+`t/grammar/grammar-quantified-subrule-frames.t` pins the rakudo values.
+
+### Slice E, eleventh part: `<&lexical>` calls, and wraps narrowed to the wrapped rule
+
+Two more bridges become frames. Both were shapes #7548 lists as still eager.
+
+- **`<&r>` naming a lexical Regex** (`lexical-regex`). Such a call resolves per call: a lexical's value
+  belongs to the call's scope, so the verdict is never cached. The Regex's defining scope joins the
+  call's binding window (`install_subrule_dynamic_params`, which the walk's producer installs too).
+  `<::(EXPR)>` still bridges, under its own reason, `symbolic-name`.
+- **Wrapped tokens** (`wrapped`). The blocker used to be global: one `.wrap` on any method sent every
+  later call of every grammar to the walk. The reason was that a wrapper reads its caller's rule name
+  from a Backtrace (#9151), out of the routine frame the walk's eager arm pushes around each call while
+  a wrap exists (`subrule_candidate_ends_with_frame`). That routine frame is now part of the call
+  window (`CallWindow::routine`), pushed and popped like the bindings: installed while the callee
+  runs, removed at its return, and pushed again when backtracking re-enters it. Only a call of the
+  wrapped rule itself bridges, since its wrapper is user code around the invocation.
+
+What #7548 measured as eager is now lazy for proto candidates, calls with arguments, `$*` parameters,
+lexical Regex calls and unwrapped rules in a wrapped grammar. Each `{ … }` block in the callee runs
+once per end entered, as rakudo runs it (`t/grammar/grammar-lexical-and-wrap-subrule-frames.t`). Still
+eager:
+
+- a call of a wrapped rule;
+- custom-HOW grammars and grammar methods;
+- several candidates without a proto;
+- left recursion.
+
+Rakudo gives no reference for the last two: it reports two such `multi regex` candidates as an
+ambiguous call, and it loops forever on left recursion. A wrapped proto candidate is not honored by
+either engine ([#11151](https://github.com/tokuhirom/mutsu/issues/11151)).
+
+### Slice E, twelfth part: `<~~>`
+
+`recurse-self` is no longer a decline. In the walk, `<~~>` takes the enclosing regex's first end at the
+cursor and discards its captures. It is guarded against re-entering at the same position
+(`regex_match_recurse_self`). That leaf matches the regex through
+`regex_match_end_from_caps_in_pkg`, which answers from the regex's compiled program, so the atom
+compiles to a `CapAtom` leaf (`leaf=recurse-self`), the way a lookaround does, and no walk is entered.
+The 7 declined patterns over `t/` and the roast whitelist compile
+(`t/regex/regex-recurse-self-compiled.t`, rakudo's values).
+
+The most common whole-pattern decline left is `seqalt-nullable-ratchet`. Rakudo's rule for it turned
+out to depend on sigspace after the group, and the walk's heuristic does not follow it
+([#11162](https://github.com/tokuhirom/mutsu/issues/11162)).
+
 ### Reproducing §2
 
 ```raku

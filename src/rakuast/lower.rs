@@ -8,7 +8,9 @@
 
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind};
+use crate::ast::{
+    ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
+};
 use crate::regex_tree::{RegexNode, RegexQuantifier, RegexTree};
 use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
 use std::sync::Arc;
@@ -2766,7 +2768,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(lowered)
         }
         RakuAstClass::CircumfixHashComposer => super::hash_literal::lower_composer(node),
-        RakuAstClass::ContextualizerHash => super::hash_literal::lower_contextualizer(node),
+        RakuAstClass::ContextualizerHash => super::contextualizer::lower(node, ContextKind::Hash),
+        RakuAstClass::ContextualizerItem => super::contextualizer::lower(node, ContextKind::Item),
+        RakuAstClass::ContextualizerList => super::contextualizer::lower(node, ContextKind::List),
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {
@@ -2782,6 +2786,21 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `::(...)` name. Both are represented by RakuAST::Term::Name; the
         // nested Name part tells the lowerer which internal expression to keep.
         RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
+        // `.method(...)` on the topic: the same method call `$_.method(...)`
+        // compiles to.
+        RakuAstClass::TermTopicCall => {
+            let call = named_child_or_positional(node)?;
+            if call.class != RakuAstClass::CallMethod {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::MethodCall {
+                target: Box::new(Expr::Var("_".to_string())),
+                name: crate::symbol::Symbol::intern(&call_name_str(call)?),
+                args: arg_exprs(call)?,
+                modifier: dispatch_modifier(call)?,
+                quoted: false,
+            })
+        }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
         // itself (a leading backslash), which is how the converter reads it

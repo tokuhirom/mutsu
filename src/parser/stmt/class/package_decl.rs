@@ -174,6 +174,13 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     r = r3;
                     continue;
                 }
+                // `unit class A::B::C is export;` publishes the short name `C`
+                // to the importer; carry the marker the module loader reads.
+                if parent == "export" && name.contains("::") {
+                    let mut tags = Vec::new();
+                    super::class_decl::push_export_tags(r2, &mut tags);
+                    custom_traits.push(super::class_decl::export_type_marker(&tags));
+                }
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
@@ -496,24 +503,41 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // `is Foo(...)` before the terminating semicolon, e.g.
     // `unit module App::Racoco::ConfigFile is export;`.
     let mut rest = rest;
+    let mut export_tags: Option<Vec<String>> = None;
     while let Some(r) = keyword("is", rest) {
         let (r, _) = ws1(r)?;
-        let (r, _trait_name) = crate::parser::stmt::ident(r)?;
+        let (r, trait_name) = crate::parser::stmt::ident(r)?;
+        if trait_name == "export" {
+            let mut tags = Vec::new();
+            super::class_decl::push_export_tags(r, &mut tags);
+            export_tags = Some(tags);
+        }
         let r = skip_balanced_parens(r);
         let (r, _) = ws(r)?;
         rest = r;
     }
     let (rest, _) = opt_char(rest, ';');
-    Ok((
-        rest,
-        Stmt::Package {
-            name: Symbol::intern(&name),
-            body: Vec::new(),
-            kind,
-            is_unit: true,
-            is_my: false,
-        },
-    ))
+    let package = Stmt::Package {
+        name: Symbol::intern(&name),
+        body: Vec::new(),
+        kind,
+        is_unit: true,
+        is_my: false,
+    };
+    // `unit module A::B::C is export;` publishes the short name `C` (the
+    // package itself), as rakudo does for a qualified declarator name.
+    if let Some(tags) = export_tags
+        && name.contains("::")
+    {
+        return Ok((
+            rest,
+            Stmt::SyntheticBlock(vec![
+                package,
+                super::class_decl::export_type_stmt(&name, &tags),
+            ]),
+        ));
+    }
+    Ok((rest, package))
 }
 
 /// Parse `package` declaration.

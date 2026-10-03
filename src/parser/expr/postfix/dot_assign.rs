@@ -404,6 +404,27 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
 /// `input` starts after the `=` character. `expr` is the target expression.
 /// Kept as a separate function to avoid bloating the postfix loop's stack frame.
 #[inline(never)]
+/// Consume colonpair adverbs trailing a `.= method(...)` argument list and
+/// append them to `args`: `%h<k> .= subst('a', 'b'):g` passes `:g` to
+/// `.subst`, exactly as the postfix loop binds `$s.subst('a', 'b'):g`.
+pub(crate) fn parse_trailing_call_adverbs<'a>(
+    mut rest: &'a str,
+    args: &mut Vec<Expr>,
+) -> PResult<'a, ()> {
+    loop {
+        let (r_adv, _) = ws(rest)?;
+        if r_adv.starts_with(':')
+            && !r_adv.starts_with("::")
+            && let Ok((r_next, adverb)) = crate::parser::primary::colonpair_expr(r_adv)
+        {
+            args.push(adverb);
+            rest = r_next;
+            continue;
+        }
+        return Ok((rest, ()));
+    }
+}
+
 pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Expr> {
     let (r, _) = ws(input)?;
     // Parse quoted method name
@@ -473,9 +494,10 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
     let (r_final, args) = if r.starts_with('(') {
         let (r2, _) = parse_char(r, '(')?;
         let (r2, _) = ws(r2)?;
-        let (r2, a) = parse_call_arg_list(r2)?;
+        let (r2, mut a) = parse_call_arg_list(r2)?;
         let (r2, _) = ws(r2)?;
         let (r2, _) = parse_char(r2, ')')?;
+        let (r2, ()) = parse_trailing_call_adverbs(r2, &mut a)?;
         (r2, a)
     } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
         // Colon-arg syntax: .=method: arg (no space before colon). The arg list

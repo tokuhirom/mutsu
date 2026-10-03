@@ -2047,6 +2047,17 @@ impl Interpreter {
                     && !raw_mode
                     && !is_bind_ctx
                     && !is_rebind
+                    && !self.vardecl_context().get()
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(decayed) = self.sigilless_alias_nil_decay_by_name(&name)
+                {
+                    // A sigilless alias of another variable: the Nil decays
+                    // against that variable's container (#11110).
+                    val = decayed;
+                } else if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
                     && !name.starts_with(['@', '%', '&'])
                     && let Some(def) = self.var_default(&name)
                 {
@@ -3330,6 +3341,11 @@ impl Interpreter {
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
             OpCode::CaptureRwArgCell => {
                 self.exec_capture_rw_arg_cell_op(code);
+                *ip += 1;
+            }
+            // Cost: O(1).
+            OpCode::MarkReadonlyRwTail => {
+                self.exec_mark_readonly_rw_tail_op();
                 *ip += 1;
             }
             // Cost: O(1) (attribute map probes).
@@ -5086,6 +5102,38 @@ impl Interpreter {
                     label.clone(),
                 ));
             }
+            // Cost: O(1) (raises a control signal carrying the popped value).
+            OpCode::LastValue => {
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                return Err(crate::builtins::label::loop_control_value_signal(
+                    crate::value::Control::Last,
+                    value,
+                ));
+            }
+            // Cost: O(1) (raises a control signal carrying the popped value).
+            OpCode::NextValue => {
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                return Err(crate::builtins::label::loop_control_value_signal(
+                    crate::value::Control::Next,
+                    value,
+                ));
+            }
+            // Cost: O(1).
+            OpCode::LoopControlLabelArg(is_last) => {
+                if let Some(name) = self.stack.last().and_then(crate::value::label::label_name) {
+                    self.stack.pop();
+                    let control = if *is_last {
+                        crate::value::Control::Last
+                    } else {
+                        crate::value::Control::Next
+                    };
+                    return Err(crate::runtime::loop_handler_depth::loop_control_signal(
+                        control,
+                        Some(name),
+                    ));
+                }
+                *ip += 1;
+            }
             // Cost: O(1) (raises a control signal).
             OpCode::Redo(label) => {
                 return Err(crate::runtime::loop_handler_depth::loop_control_signal(
@@ -6410,7 +6458,7 @@ impl Interpreter {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
 
-            // Cost: O(b + w + d + R) plus the body, b = ops in the block, w = names it wrote by name, d = names it declared, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared; O(R) more on exit when the block declared a routine, R = registry, and O(L) for the sigilless-alias sync once one exists (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockScope {
                 pre_end,
                 enter_end,
@@ -6438,7 +6486,7 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(b + w + d) plus the body, b = ops in the branch, w = names it wrote by name, d = names it declared (see exec_block_local_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(w + d) plus the body, w = names it wrote by name, d = names it declared (see exec_block_local_scope_op).
             OpCode::BlockLocalScope {
                 body_end,
                 succeed_boundary,

@@ -119,7 +119,7 @@ impl Interpreter {
         &mut self,
         atom: &RegexAtom,
         pkg: Symbol,
-    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol)> {
+    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol, Option<Symbol>)> {
         let RegexAtom::Named(name) = atom else {
             return None;
         };
@@ -134,8 +134,14 @@ impl Interpreter {
         if candidates.len() != 1 {
             return None;
         }
-        let (parsed, sub_pkg, _sym_key) = &candidates[0];
-        Some((std::sync::Arc::clone(parsed), *sub_pkg))
+        // A proto with one candidate: its `:sym<…>` goes on the Match, as the
+        // proto dispatch files it.
+        let (parsed, sub_pkg, sym_key) = &candidates[0];
+        Some((
+            std::sync::Arc::clone(parsed),
+            *sub_pkg,
+            sym_key.as_deref().map(Symbol::intern),
+        ))
     }
 
     /// A regex `:my $var = EXPR;` — wherever it appears in the pattern, not
@@ -417,7 +423,8 @@ impl Interpreter {
         // bumps `TOKEN_DEFS_GEN`, so doing it unconditionally invalidated the
         // regex-code parse cache and every generation-keyed regex memo on
         // every match of a pattern with a plain `:my $x = …` (#10121).
-        let mut saved_token_defs: Option<crate::runtime::registry::TokenDefsMap> = None;
+        let mut saved_token_defs: Option<std::sync::Arc<crate::runtime::registry::TokenDefsMap>> =
+            None;
 
         for (decl_name, stmt_src) in declarators {
             // A grammar rule frame has already initialized its own dynamic

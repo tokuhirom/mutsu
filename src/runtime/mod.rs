@@ -762,6 +762,7 @@ mod methods_classhow_lookup;
 mod methods_classhow_method_obj;
 mod methods_classhow_mro;
 mod methods_classhow_parents;
+mod methods_classhow_private_methods;
 mod methods_collection;
 pub(crate) mod methods_collection_ops;
 mod methods_definitehow;
@@ -787,7 +788,7 @@ mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod str_subclass_stringy;
-pub(crate) use str_subclass_stringy::str_subclass_payload;
+pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
 mod methods_io_dispatch;
 mod methods_list_view_default;
@@ -928,6 +929,7 @@ pub(crate) mod registration_class_validate;
 mod registration_method_traits;
 mod registration_private_access;
 mod registration_role;
+mod registration_role_bind_cells;
 mod registration_role_body;
 mod registration_role_body_lexical;
 mod registration_role_decl;
@@ -1016,6 +1018,7 @@ mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;
 pub(crate) mod unbounded_range;
+mod undeclared_names;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unicode_name_prop;
@@ -3391,11 +3394,11 @@ pub struct Interpreter {
     /// in the same scope must still be rejected. The set is restored together
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
-    pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    pub(crate) imported_routine_aliases: std::sync::Arc<HashSet<Symbol>>,
     /// Export tags inherited by a local multi that extends an imported
     /// exported proto. Rakudo exports the whole family, including the local
     /// candidate, under those tags.
-    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
+    pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     /// Environment keys installed by imports, paired with the spelling that
     /// should appear in a lexical pseudo-stash. Scalar exports are stored in
     /// `env` without their `$` sigil, so the display spelling cannot be
@@ -4498,6 +4501,13 @@ pub struct Interpreter {
     /// may rebind with `:=`, each with the value it held when first rebound
     /// (#10361; see `vm_rw_param_rebind`). Saved per call frame.
     pub(crate) rw_param_rebinds: Vec<(u32, Option<Value>)>,
+    /// The aggregate an `is rw` routine's tail handed back through a READONLY
+    /// binding (`sub w($p) is rw { $p }` with `w(%r)`), set by
+    /// `OpCode::MarkReadonlyRwTail`. The routine-call assignment checks the call result
+    /// against it by identity and refuses the store (#11108): such a tail is
+    /// a value, while an `@`/`%`/sigilless tail aliasing the same aggregate
+    /// would be a container.
+    pub(crate) readonly_rw_tail: Option<Value>,
     pub(crate) otf_compile_cache: HashMap<u64, Arc<CompiledFunction>>,
     /// Compiled bodies of subs defined in `use`d modules, captured at module-load
     /// time and keyed by the sub's body/signature fingerprint. Unlike the per-call
@@ -5329,12 +5339,12 @@ pub(crate) type RoutineRegistrySnapshot = (
     Arc<crate::runtime::function_table::FunctionTable>,
     Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>,
     Arc<rustc_hash::FxHashSet<String>>,
-    rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
-    rustc_hash::FxHashSet<String>,
-    rustc_hash::FxHashSet<Symbol>,
+    Arc<crate::runtime::registry::TokenDefsMap>,
+    Arc<rustc_hash::FxHashSet<String>>,
+    Arc<rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>>, // our-scoped functions snapshot
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
-    HashSet<Symbol>,                  // imported routine aliases snapshot
-    HashMap<Symbol, HashSet<String>>, // imported exported-proto tags snapshot
+    Arc<HashSet<Symbol>>,                  // imported routine aliases snapshot
+    Arc<HashMap<Symbol, HashSet<String>>>, // imported exported-proto tags snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
@@ -5381,13 +5391,13 @@ pub(crate) struct ImportScopeSnapshot {
     /// Imported routine aliases visible before this scope was pushed. The
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
-    pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    pub(crate) imported_routine_aliases: std::sync::Arc<HashSet<Symbol>>,
     /// The routine aliases (`Pkg::name`) imported while this scope was the
     /// innermost one, including re-imports of an alias an enclosing scope
     /// already had: the block's own `MY::` lists exactly these (#10626).
     pub(crate) own_routine_imports: HashSet<Symbol>,
     /// Export tags inherited by local multis extending imported exported protos.
-    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
+    pub(crate) imported_exported_proto_tags: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
@@ -5407,6 +5417,10 @@ pub(crate) struct ImportScopeSnapshot {
     /// `runtime::attach_target`), in attach order. Run LIFO when the scope
     /// closes, on every exit path (`OpCode::ImportScope`).
     pub(crate) leave_phasers: Vec<Value>,
+    /// The compilation unit whose code opened this scope (`current_unit` at
+    /// the push). An import made here shadows that unit's own top-level
+    /// routines, but not another unit's (#11103).
+    pub(crate) unit: Symbol,
 }
 
 impl Default for Interpreter {

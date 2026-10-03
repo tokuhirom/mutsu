@@ -614,6 +614,18 @@ impl Compiler {
             Expr::UserRoutineCall { name, args } => {
                 self.compile_expr_user_routine_call(name, args);
             }
+            // A contextualizer is the `.item` / `.list` / `.hash` call rakudo
+            // lowers it to; it is its own node only so `.AST` can tell it from
+            // a user-written call of the same name.
+            Expr::Contextualizer { kind, inner } => {
+                self.compile_expr(&Expr::MethodCall {
+                    target: inner.clone(),
+                    name: Symbol::intern(kind.method()),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                });
+            }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
             // pure grouping: they never introduce a container and never strip
             // one, so a parenthesized target must reach the SAME specialised
@@ -1002,7 +1014,10 @@ impl Compiler {
                 // `OpCode::GetCodeVarLocal`).
                 match self.local_map.get(format!("&{name}").as_str()) {
                     Some(&slot) => self.code.emit(OpCode::GetCodeVarLocal { name_idx, slot }),
-                    None => self.code.emit(OpCode::GetCodeVar(name_idx)),
+                    None => {
+                        self.note_unscoped_amp_read(name);
+                        self.code.emit(OpCode::GetCodeVar(name_idx))
+                    }
                 };
             }
             // Hash literal
@@ -1396,7 +1411,36 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::IndirectTypeLookupStore);
             }
-            Expr::ControlFlow { kind, label } => {
+            Expr::ControlFlow {
+                kind,
+                label: _,
+                value: Some(value),
+                take_value,
+            } => {
+                use crate::ast::ControlFlowKind;
+                self.compile_expr(value);
+                if *take_value {
+                    // A gather-lowered loop: a `Label` value raises the
+                    // labelled signal here; any other value is taken as the
+                    // iteration's result, then the signal ends the iteration.
+                    self.code.emit(OpCode::LoopControlLabelArg(matches!(
+                        kind,
+                        ControlFlowKind::Last
+                    )));
+                    self.code.emit(OpCode::Dup);
+                    self.code.emit(OpCode::Take);
+                }
+                self.code.emit(match kind {
+                    ControlFlowKind::Last => OpCode::LastValue,
+                    _ => OpCode::NextValue,
+                });
+            }
+            Expr::ControlFlow {
+                kind,
+                label,
+                value: None,
+                take_value: _,
+            } => {
                 use crate::ast::ControlFlowKind;
                 let op = match kind {
                     ControlFlowKind::Last => OpCode::Last(label.clone()),

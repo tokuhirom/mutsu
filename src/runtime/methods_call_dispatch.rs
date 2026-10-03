@@ -4589,6 +4589,9 @@ impl Interpreter {
         if method == "join"
             && let ValueView::LazyList(list) = target.view()
         {
+            if crate::builtins::is_join_lazy(&target) {
+                return Ok(Value::str("...".to_string()));
+            }
             let items = self.force_lazy_list_bridge(&list)?;
             return self.call_method_with_values(Value::real_array(items), method, args);
         }

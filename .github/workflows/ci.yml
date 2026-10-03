@@ -358,6 +358,13 @@ jobs:
         # Self-tests its counter first.
         run: make check-layer-deps
 
+      - name: No new direct field on Interpreter
+        # ADR-10779 D4: struct Interpreter's field count, in
+        # scripts/interp-fields-baseline.txt, may go down, never up, and every
+        # field must belong to a subsystem. New state goes into its
+        # subsystem's type. Self-tests its parser first.
+        run: make check-interp-fields
+
       - name: Value API wall holds
         # A ratchet (docs/nanbox-3b0-api-wall.md): no direct `Value::<Variant>`
         # outside src/value/. At 0; this keeps it there.

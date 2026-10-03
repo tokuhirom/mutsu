@@ -1075,6 +1075,7 @@ mod declaration_plan_tests {
     }
 }
 mod adverb_interp;
+mod amp_scope;
 mod begin_use;
 mod body_scans;
 mod const_fold;
@@ -1119,6 +1120,7 @@ mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod hoist_nested_types;
 mod lazy_body_env_sync;
+mod lazy_body_reads;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
@@ -1268,6 +1270,12 @@ pub(crate) struct Compiler {
     /// therefore back-fills its keys into the matching hoisted plan (same name
     /// and same `sub_registration_fingerprint`, i.e. the same declaration).
     hoisted_sub_plans: Vec<(crate::symbol::Symbol, u64, u32)>,
+    /// `__hoisted` class/role shell registrations emitted by
+    /// `hoist_type_decl_shells`, as `(decl_id, decl plan index)`. The shell
+    /// carries a subset of the source-order declaration's body, so when that
+    /// declaration's env-sync reads are bounded the shell's are too, and the
+    /// source-order site marks it bounded with its own plan (#11116).
+    hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     /// Names of `@`/`$` variables whose CURRENT declaration provably denotes a
@@ -1600,6 +1608,11 @@ pub(crate) struct Compiler {
     /// $x`), so `for $x` iterates and `my @a = $x` flattens the bound value.
     /// A body `my $x` re-declaration removes the name (see the `VarDecl` arm).
     decont_scalar_params: std::collections::HashSet<String>,
+    /// READONLY `$` parameters of the routine being compiled (no `is rw` /
+    /// `is raw` / `is copy`, not sigilless): a `return-rw`/`is rw` tail
+    /// naming one hands back a value, not a container (#11108). A body `my`
+    /// re-declaration removes the name, as for `decont_scalar_params`.
+    readonly_scalar_params: std::collections::HashSet<String>,
     /// Subset of `constant_vars` whose declaring lexical block is still open.
     /// Constants are `our`-scoped (installed in the package), so once their
     /// declaring block has exited, their stale local slot must not be reused —
@@ -1762,6 +1775,13 @@ pub(crate) struct Compiler {
     /// EVAL). Used to detect placeholder variables (`$^x`, `@_`, ...) that appear
     /// outside any sub or block -> X::Placeholder::Mainline.
     pub(crate) is_mainline: bool,
+    /// True when this compiler sees the whole lexical scope chain of the code
+    /// it compiles: the program's own compilation unit and every sub, method
+    /// and closure nested in it (handed down by `inherit_outer_code_var_names`).
+    /// A fresh compiler that re-compiles a body out of context (an EVAL, an
+    /// interpret-path fallback) leaves it false. Only then may a `&name` read
+    /// be recorded as having no lexical binding in scope (`amp_scope`).
+    pub(crate) lexical_scope_known: bool,
     /// When true, a `key => $var` Pair must NOT capture `$var`'s container.
     /// Set while compiling call arguments: a named argument's value is passed
     /// to the callee by the call's binding rules (and decontainerized for plain
@@ -1875,6 +1895,7 @@ impl Compiler {
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),
             hoisted_sub_plans: Vec::new(),
+            hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
@@ -1925,6 +1946,7 @@ impl Compiler {
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
+            readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -1948,6 +1970,7 @@ impl Compiler {
             dot_twigil_rmw_assign: false,
             compiling_our_sub: false,
             is_mainline: false,
+            lexical_scope_known: false,
             suppress_pair_capture: false,
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
@@ -4210,6 +4233,19 @@ impl Compiler {
                     == crate::vm::ScalarParamBind::Decont
             {
                 self.decont_scalar_params.insert(pd.name.clone());
+            }
+            if !pd.name.is_empty()
+                && !pd.sigilless
+                && !pd.slurpy
+                && !pd.double_slurpy
+                && !pd.is_invocant
+                && !pd.name.starts_with(['@', '%', '&'])
+                && !pd
+                    .traits
+                    .iter()
+                    .any(|t| matches!(t.as_str(), "rw" | "raw" | "copy"))
+            {
+                self.readonly_scalar_params.insert(pd.name.clone());
             }
         }
     }

@@ -206,35 +206,6 @@ impl Interpreter {
                 }
             }
         }
-        // Stub multi methods (body is `{...}`) that use ::?CLASS
-        // must be implemented by the composing class.
-        // Non-stub multi methods with ::?CLASS are fine.
-        let body_is_stub = {
-            let filtered: Vec<_> = decl.body.iter().filter(|s| !s.is_marker()).collect();
-            filtered.len() == 1
-                && matches!(
-                    filtered[0],
-                    Stmt::Expr(Expr::Call { name, .. })
-                        if name == "__mutsu_stub_die"
-                            || name == "__mutsu_stub_warn"
-                )
-        };
-        if decl.multi
-            && body_is_stub
-            && (decl.param_defs.iter().any(|pd| {
-                pd.type_constraint
-                    .as_deref()
-                    .is_some_and(|tc| tc.contains("?CLASS"))
-            }) || decl
-                .return_type
-                .as_deref()
-                .is_some_and(|rt| rt.contains("?CLASS")))
-        {
-            return Err(RuntimeError::typed_msg(
-                "X::Role::Unimplemented::Multi",
-                "Unimplemented multi method from role",
-            ));
-        }
         // ADR-0019 D3-1: see `class_body_method_decl`'s identical comment —
         // the compiler and this walk flatten `SyntheticBlock` identically, so
         // the chunk at this cursor position matches this statement.

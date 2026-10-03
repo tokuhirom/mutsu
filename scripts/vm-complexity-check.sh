@@ -42,11 +42,19 @@ CASES=(
     '~~ junction of regexes vs frame locals|250|1|LOCALS my $w = "b"; my $r = 0;|for ^5000 { $r++ if "ab" ~~ any(/zz/, /a$w/) }'
     '~~ regex with EVAL in code vs frame locals|1000|1|use MONKEY-SEE-NO-EVAL; LOCALS my $x = "ab"; my $w = "b"; my $r = 0;|for ^300 { $r++ if $x ~~ / (.) <?{ $0 eq EVAL(q[$w]) }> / }'
     '~~ regex with ::($n) in code vs frame locals|250|1|LOCALS my $x = "ab"; my $w = "b"; my $n = q[$w]; my $r = 0;|for ^5000 { $r++ if $x ~~ / (.) <?{ $0 eq ::($n) }> / }'
-    # The Proxy case's residual growth is the FETCH itself, not ~~ -- see #9385.
+    # Covers the FETCH too: it runs as an O(1) closure call (#9385).
     '~~ Proxy RHS vs frame locals|250|1|my $re = /b/; my $p := Proxy.new(FETCH => -> $ { $re }, STORE => -> $, $ { }); LOCALS my $r = 0;|for ^5000 { $r++ if "ab" ~~ $p }'
     '~~ lazy list RHS vs frame locals|250|1|my @l = lazy (/zz/, /b/); LOCALS my $r = 0;|for ^5000 { $r++ if "ab" ~~ @l }'
     '$outer = $_ (SetGlobal) vs env|2000|1|LOCALS my $s = 0;|for ^20000 { $s += (my $z = $_) }'
     'bare block { my } vs env|500|1|LOCALS my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
+    # The block/branch "size" cases below grow ops the body never runs; run
+    # them with MUTSU_JIT=off, since the JIT's one-time O(size) compile of the
+    # loop body otherwise lands in the timed region (the control case shows it).
+    'bare block { my } vs routine registry|500|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "our sub rs$_ \{ $_ \}" }).join(";"); my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
+    'bare block { my } vs grammar tokens|500|1|use MONKEY-SEE-NO-EVAL; EVAL "grammar GG \{ " ~ (^NN).map({ "token t$_ \{ a \}" }).join(";") ~ " \}"; my $t = 0;|for ^5000 { { my $y = 1; $t += $y } }'
+    'bare block { my } vs block size|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { { my $y = 1; $t += $y; if $never { STMTS } } }'
+    'loop body vs untaken-branch size (control)|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { $t += 1; if $never { STMTS } }'
+    'if { my } vs branch size|500|1|my $never = 0; my $s = 0; my $t = 0;|for ^5000 { if $t >= 0 { my $y = 1; $t += $y; if $never { STMTS } } }'
     '"a{ $t }b" vs env|1000|1|LOCALS my $t = 1; my $s;|for ^5000 { $s = "a{ $t }b" }'
     '"a$t b" vs env (control)|1000|1|LOCALS my $t = 1; my $s;|for ^5000 { $s = "a$t b" }'
     '&f read vs frame locals|500|1|sub f { 1 }; LOCALS my $c;|for ^20000 { $c = &f }'

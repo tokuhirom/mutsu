@@ -193,6 +193,15 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
     }
 }
 
+/// Append one map-block result to `result`, flattening a `Slip`.
+// Cost: O(1) (O(k) for a Slip, k = its elements).
+fn push_map_value(result: &mut Vec<Value>, val: Value) {
+    match val.view() {
+        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+        _ => result.push(val),
+    }
+}
+
 /// Normalize the last non-`SetLine` statement of a `.map`/`.grep` block `body`
 /// so the re-compiled block leaves its value on the stack (otherwise the map/grep
 /// result wrongly falls back to the topic `$_`). Two statement shapes compile as
@@ -757,10 +766,19 @@ impl Interpreter {
                                 _ => result.push(val),
                             }
                         }
-                        Err(e) if e.is_next() => {}
+                        // v6.e `next VALUE` / `last VALUE`: the value is the
+                        // item's contribution to the map's result.
+                        Err(e) if e.is_next() => {
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut result, val);
+                            }
+                        }
                         Err(e) if e.is_last() => {
                             vm.map_grep_last_depth =
                                 Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            if let Some(val) = e.return_value {
+                                push_map_value(&mut result, val);
+                            }
                             break;
                         }
                         Err(e) if e.is_succeed() => {

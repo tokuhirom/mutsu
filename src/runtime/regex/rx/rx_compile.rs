@@ -49,8 +49,6 @@ pub(super) struct Compiler {
     /// matches those bodies with `IN_QUANTIFIED_ALTERNATION_MATCH` set, which
     /// turns off a `||` branch's positional padding.
     pub(super) quant_alt_depth: usize,
-    /// The next [`Self::atom`] call compiles the body of a chain quantifier.
-    chain_atom: bool,
 }
 
 /// Compile `pattern`, or say why not.
@@ -70,7 +68,6 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_code: false,
         has_call: false,
         quant_alt_depth: 0,
-        chain_atom: false,
     };
     c.pattern(pattern)?;
     c.ops.push(RxOp::Match);
@@ -375,7 +372,6 @@ impl Compiler {
     pub(super) fn atom(&mut self, token: &RegexToken) -> Result<(), Decline> {
         // Consumed here, so the atoms of a group nested under this one do not
         // inherit it.
-        let chain = std::mem::take(&mut self.chain_atom);
         match &token.atom {
             a if is_consuming(a) => {
                 let i = self.push_atom(a);
@@ -434,18 +430,16 @@ impl Compiler {
             }
             RegexAtom::Named(_) => {
                 let i = self.push_atom(&token.atom);
-                if chain {
-                    // The body of a chain quantifier (`<x>*`) is matched by the
-                    // walk's single-candidate arm, one first end per iteration
-                    // (`grow_one_iter`), which is what `CapAtom` calls.
-                    self.ops.push(RxOp::CapAtom(i));
-                } else {
-                    self.ops.push(RxOp::Call {
-                        atom: i,
-                        commit: token.ratchet,
-                    });
-                    self.has_call = true;
-                }
+                // A quantified call (`<x>*`) is the same frame call per
+                // iteration: committed under ratchet, and otherwise resumable,
+                // so a later failure backtracks into an iteration's callee as
+                // in rakudo (`regex r { <x>+ a }; regex x { a+ }` on `aaa`).
+                // The walk's chain took each iteration's first end only.
+                self.ops.push(RxOp::Call {
+                    atom: i,
+                    commit: token.ratchet,
+                });
+                self.has_call = true;
                 // The callee may run code, read lexicals or capture: the
                 // position-only matcher must not run this program.
                 self.has_code = true;
@@ -569,7 +563,17 @@ impl Compiler {
             }
             RegexAtom::GoalMatch { goal, inner, .. } => self.goal_match(token, goal, inner)?,
             RegexAtom::TildeMarker => return Err("goal-match"),
-            RegexAtom::RecurseSelf(_) => return Err("recurse-self"),
+            RegexAtom::RecurseSelf(_) => {
+                // `<~~>`: the enclosing regex's first end at the cursor, its
+                // captures discarded, guarded against re-entry at the same
+                // position (`regex_match_recurse_self`). That leaf matches the
+                // regex through `regex_match_end_from_caps_in_pkg`, which
+                // answers from its compiled program, so no walk is entered.
+                let i = self.push_atom(&token.atom);
+                self.ops.push(RxOp::CapAtom(i));
+                // The recursion runs the whole regex, code included.
+                self.has_code = true;
+            }
             _ => return Err("other-atom"),
         }
         Ok(())
@@ -668,25 +672,7 @@ impl Compiler {
         else {
             return Err("too-large");
         };
-        // A ratcheted `*` / `+` over a `<subrule>` is first offered to the
-        // walk's possessive scan (`walk_ratchet_fast_paths`). Only the unbounded
-        // quantifiers qualify, as in the walk; an alias or `:frugal` never does.
-        let scan = matches!(token.atom, RegexAtom::Named(_))
-            && token.ratchet
-            && token.named_capture.is_none()
-            && !token.frugal
-            && matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore);
-        if !scan {
-            return self.repeat_bounded(token, Bounds::Fixed(min, max));
-        }
-        let atom = self.push_atom(&token.atom);
-        let at = self.pc();
-        self.ops.push(RxOp::NamedRun { atom, min, skip: 0 }); // patched below
-        self.repeat_bounded(token, Bounds::Fixed(min, max))?;
-        let skip = self.pc();
-        self.ops[at as usize] = RxOp::NamedRun { atom, min, skip };
-        self.has_code = true;
-        Ok(())
+        self.repeat_bounded(token, Bounds::Fixed(min, max))
     }
 
     /// `x ** { code }`: the walk evaluates the count where the quantifier is
@@ -785,7 +771,6 @@ impl Compiler {
             self.ops.push(RxOp::OpenPlainIter { tok, pos_base });
         }
         self.quant_alt_depth += usize::from(alt_body);
-        self.chain_atom = true;
         let body_result = self.atom(token);
         self.quant_alt_depth -= usize::from(alt_body);
         body_result?;

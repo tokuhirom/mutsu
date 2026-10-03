@@ -86,6 +86,27 @@ pub(crate) fn parse_qualified_ident_prefix_with_hyphens<'a>(input: &'a str) -> P
     Ok((rest, full))
 }
 
+/// Skip the trailing `::` of a variable's long name. Rakudo reads `$pkg::`,
+/// `@a::` and `%h::` as the variable itself (`$pkg::.WHO` is `$pkg.WHO`), so
+/// the separator is consumed rather than left behind as a stray term. A
+/// following `(` is the symbolic-lookup form `$a::(...)` and is kept.
+pub(crate) fn skip_trailing_package_sep(rest: &str) -> &str {
+    match rest.strip_prefix("::") {
+        Some(after) if !after.starts_with('(') => after,
+        _ => rest,
+    }
+}
+
+/// Parse an `@`/`%` variable's long name, accepting a trailing `::` (see
+/// [`skip_trailing_package_sep`]).
+pub(crate) fn parse_var_longname_with_hyphens(input: &str) -> PResult<'_, String> {
+    let (rest, name) = parse_qualified_ident_prefix_with_hyphens(input)?;
+    Ok((
+        skip_trailing_package_sep(rest),
+        normalize_raku_identifier(&name),
+    ))
+}
+
 pub(crate) fn parse_interpolation_qualified_ident_with_hyphens_or_empty(
     input: &str,
 ) -> (&str, String) {

@@ -79,6 +79,23 @@ impl Interpreter {
     ///
     /// The aliasing these binds exist for is untouched: only the whole-value
     /// `=` is refused, so `$x.push(9)`, `$x<k> = 2` and `$x[0]` keep working.
+    /// True when a `$`-sigil `:=` bind SOURCE is an itemized aggregate
+    /// (`$(%h)`, `$(@a)`, `(1, 2).item`): the value sits in a `Scalar`, so the
+    /// name binds that Scalar -- `.VAR.^name` is `Scalar` and `=:=` sees a
+    /// container -- but the Scalar is readonly, and an assignment is rakudo's
+    /// "Cannot assign to a readonly variable or a value" (#11129).
+    // Cost: O(1).
+    fn bind_source_is_itemized_aggregate(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Hash(_) => v.hash_is_itemized(),
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Scalar(inner) => {
+                matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(_))
+            }
+            _ => false,
+        }
+    }
+
     fn bind_source_is_non_scalar_container(v: &Value) -> bool {
         matches!(
             v.view(),
@@ -100,6 +117,27 @@ impl Interpreter {
     /// `::Immutable`) even though both leave the name with no container.
     fn bind_source_is_type_object(v: &Value) -> bool {
         matches!(v.view(), ValueView::Package(_))
+    }
+
+    /// True when `v` reads the same through a binding cell as it does bare.
+    /// A cell itemizes what it holds, so a list-like value (`my $r := 1..3`,
+    /// a `Seq`, an immutable `List`) iterates as one item behind one, while
+    /// rakudo iterates the value a container-less `$r` is bound to. Those
+    /// keep a bare slot and only the readonly registry's mark.
+    // Cost: O(1).
+    fn binding_cell_keeps_value_semantics(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::Complex(..)
+            | ValueView::Package(_) => true,
+            ValueView::Instance { id, .. } => id == crate::value::ITERATION_END_ID,
+            _ => false,
+        }
     }
 
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
@@ -1166,8 +1204,16 @@ impl Interpreter {
         let synthetic_index_source = bind_source
             .as_deref()
             .is_some_and(|n| n.starts_with("__mutsu_bind_index_ref_"));
+        let unnamed_bind_source = bind_source.is_none() || synthetic_index_source;
+        // An itemized aggregate (`$(%h)`, `(1, 2).item`) sits in a readonly
+        // Scalar of its own; it is none of the container-less shapes below.
+        let bind_marks_itemized_scalar = is_vardecl
+            && scalar_bind
+            && unnamed_bind_source
+            && Self::bind_source_is_itemized_aggregate(&raw_popped);
         let bind_marks_immutable = scalar_bind
-            && (bind_source.is_none() || synthetic_index_source)
+            && unnamed_bind_source
+            && !bind_marks_itemized_scalar
             && Self::bind_source_has_no_container(&raw_popped);
         // The same container-less shape, but for a TYPE OBJECT source — see
         // `bind_source_is_type_object` for why it needs its own kind rather
@@ -1188,7 +1234,8 @@ impl Interpreter {
         // stay assignable.
         let bind_marks_non_scalar_container = is_vardecl
             && scalar_bind
-            && (((bind_source.is_none() || synthetic_index_source)
+            && ((unnamed_bind_source
+                && !bind_marks_itemized_scalar
                 && Self::bind_source_is_non_scalar_container(&raw_popped))
                 || bind_source
                     .as_deref()
@@ -1203,7 +1250,22 @@ impl Interpreter {
         // Scoped to a declaration: a parameter bind reaches this store too, and
         // a non-`is rw` parameter DOES own a container (rakudo reports `Scalar`).
         let bind_marks_no_container =
-            is_vardecl && scalar_bind && (bind_source.is_none() || synthetic_index_source);
+            is_vardecl && scalar_bind && unnamed_bind_source && !bind_marks_itemized_scalar;
+        // The kind a binding cell carries for this bind, if it gets one (see
+        // the store below).
+        let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%', '&'])
+            && Self::binding_cell_keeps_value_semantics(&raw_popped)
+        {
+            if bind_marks_type_object {
+                Some(crate::ast::ReadonlyKind::TypeObject)
+            } else if bind_marks_immutable {
+                Some(crate::ast::ReadonlyKind::Immutable)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -1404,6 +1466,13 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
+        } else if bind_marks_itemized_scalar {
+            // A readonly Scalar holds the itemized aggregate: the name owns a
+            // container (so `.VAR` is `Scalar`), but cannot be assigned through.
+            let bare = code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .to_string();
+            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later
@@ -2021,6 +2090,15 @@ impl Interpreter {
             val = self.fetch_proxy_container_elements(val)?;
         }
         if val.is_nil()
+            && !is_bind
+            && !is_rebind
+            && !is_vardecl
+            && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
+        {
+            // A sigilless alias of another variable: the Nil decays against
+            // that variable's container, not this name (#11110).
+            val = decayed;
+        } else if val.is_nil()
             && !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)
         {
@@ -3099,6 +3177,17 @@ impl Interpreter {
                 crate::gc::Gc::new(crate::value::ContainerCell::new(self.locals[idx].clone()));
             crate::value::register_container_constraint(&cell, &constraint);
             self.locals[idx] = Value::container_ref(cell);
+        }
+        // A `$` variable bound straight to a value has no container, and its
+        // readonly kind is a fact about this binding. Seat the value in a
+        // binding cell that carries the kind, so a writer in another frame
+        // that resolves the name to this binding gets the binding's answer,
+        // whatever the readonly registry holds under the name there
+        // (ADR-11142 §2.3, #11142).
+        if let Some(kind) = readonly_binding_kind {
+            self.locals[idx] = Value::container_ref(crate::gc::Gc::new(
+                crate::value::ContainerCell::new_readonly_binding(self.locals[idx].clone(), kind),
+            ));
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();

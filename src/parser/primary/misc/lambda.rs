@@ -284,14 +284,18 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             // A two-parameter pointy block was already correct because it
             // takes the `AnonSubParams` path below; route the one-parameter
             // form there too.
-            && !first.name.starts_with(['@', '%']);
+            //
+            // A `&` parameter likewise: stripped to `param: "t"`, `-> &t { }`
+            // declared no `&t` lexical the compiler could see, so a `&t()` /
+            // `t()` in the body was compiled as if no `&t` were in scope and
+            // resolved to an outer `sub t` instead of the argument (#10997).
+            && !first.name.starts_with(['@', '%', '&']);
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first
                 .name
                 .strip_prefix('@')
                 .or_else(|| first.name.strip_prefix('%'))
-                .or_else(|| first.name.strip_prefix('&'))
                 .unwrap_or(&first.name)
                 .to_string();
             Ok((

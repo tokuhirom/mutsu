@@ -483,7 +483,7 @@ pub(crate) struct Registry {
     /// (like `functions`) so block-scope restore and whole-registry clones
     /// (`clone_for_thread`, EVAL copy) share the def rather than deep-cloning it;
     /// the same `Arc` is also what gets re-inserted into `functions`.
-    pub(crate) our_scoped_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
+    pub(crate) our_scoped_functions: std::sync::Arc<HashMap<Symbol, std::sync::Arc<FunctionDef>>>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
     /// Copy-on-write behind an `Arc` for the same reason as
     /// [`Registry::functions`]; write through [`Registry::proto_functions_mut`].
@@ -492,7 +492,7 @@ pub(crate) struct Registry {
     /// held behind `Arc` so the whole-map snapshot/restore clones (and the
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.
-    pub(crate) token_defs: TokenDefsMap,
+    pub(crate) token_defs: std::sync::Arc<TokenDefsMap>,
     /// `proto sub` declaration markers (existence set). Private: every
     /// mutation must go through the `proto_subs_*` accessors below so the
     /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`
@@ -505,7 +505,7 @@ pub(crate) struct Registry {
     /// `Interpreter::has_proto_cached`.
     proto_gen: u64,
     /// `proto token`/`proto rule` declaration markers (existence set).
-    pub(crate) proto_tokens: HashSet<String>,
+    pub(crate) proto_tokens: std::sync::Arc<HashSet<String>>,
     /// The signature of a `proto token`/`proto rule` that declares positional
     /// parameters, keyed like `proto_tokens`.
     pub(crate) proto_token_params: HashMap<String, Arc<Vec<crate::ast::ParamDef>>>,

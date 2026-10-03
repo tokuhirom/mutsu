@@ -105,7 +105,6 @@ impl Compiler {
                     if let Some(source_name) = topic.container_var_key() {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();
                         let name_idx = self.code.add_constant(Value::str(source_name));
-                        self.code.note_rebind_target(source_slot);
                         self.code
                             .emit(OpCode::TagContainerRef(name_idx, source_slot));
                     }
@@ -1353,6 +1352,7 @@ impl Compiler {
                 }
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.note_unscoped_amp_read(name);
             self.code.emit(OpCode::CallOnCodeVar {
                 name_idx,
                 arity: args.len() as u32,

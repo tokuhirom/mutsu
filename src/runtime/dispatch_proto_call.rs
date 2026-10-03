@@ -408,7 +408,7 @@ impl Interpreter {
             && !self.has_multi_candidates(name)
     }
 
-    fn multi_no_match_exception(name: &str, message: String) -> RuntimeError {
+    pub(crate) fn multi_no_match_exception(name: &str, message: String) -> RuntimeError {
         let mut err = RuntimeError::new(format!("No matching candidates for proto sub: {}", name));
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message));
@@ -482,6 +482,12 @@ impl Interpreter {
                     || ks.starts_with(&bare_prefix)
             })
             .collect();
+        // A compunit-scoped family the caller cannot see is not one of "these
+        // signatures" (#11081, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope(name) {
+            let name_sym = Symbol::intern(name);
+            candidates.retain(|(_, def)| self.operator_candidate_visible(name_sym, def));
+        }
         candidates.sort_by_key(|(_, def)| def.decl_order);
         for (_, def) in candidates {
             let sig_str = format!("    {}", Self::build_signature_string(&def.param_defs));

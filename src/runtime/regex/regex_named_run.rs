@@ -33,7 +33,7 @@ impl Interpreter {
             if self.token_method_has_wrap_chain(pkg.as_str(), &name.spec().lookup_name));
         if is_silent_named_atom(atom)
             && !wrapped
-            && let Some((resolved, resolved_pkg)) = self.try_resolve_named_to_pattern(atom, pkg)
+            && let Some((resolved, resolved_pkg, _)) = self.try_resolve_named_to_pattern(atom, pkg)
         {
             // Ratcheted silent Named token (e.g. <.ws>): resolve the pattern
             // once and match directly; silent atoms produce no captures.
@@ -56,7 +56,8 @@ impl Interpreter {
         }
         if is_named_atom_no_args(atom)
             && !wrapped
-            && let Some((resolved, resolved_pkg)) = self.try_resolve_named_to_pattern(atom, pkg)
+            && let Some((resolved, resolved_pkg, sym)) =
+                self.try_resolve_named_to_pattern(atom, pkg)
         {
             // Ratcheted non-silent Named token (e.g. <huge>*): resolve the
             // pattern once and loop directly, accumulating named captures
@@ -89,6 +90,9 @@ impl Interpreter {
                 }
                 if !capture_name.is_empty() {
                     let mut subcap = inner_caps;
+                    if sym.is_some() {
+                        subcap.set_sym(sym);
+                    }
                     subcap.from = current;
                     subcap.to = end;
                     let subcap = std::sync::Arc::new(subcap.into_cap_node());

@@ -222,11 +222,22 @@ impl Interpreter {
         // resolution the class-body DoesDecl path already does.
         // JSON::Unmarshal composes all its CustomUnmarshaller roles
         // this way.
-        let role_name_str = if !self.is_role_type_name(&role_name_str)
-            && !self.registry().classes.contains_key(&role_name_str)
-            && !role_name_str.contains('[')
+        // A parametric application (`does Key[IO::Path]`) resolves its base the
+        // same way and keeps the `[...]` suffix as written.
+        let (role_base_str, role_suffix_str) = match role_name_str.find('[') {
+            Some(i) => (
+                role_name_str[..i].to_string(),
+                role_name_str[i..].to_string(),
+            ),
+            None => (role_name_str.clone(), String::new()),
+        };
+        let role_name_str = if !self.is_role_type_name(&role_base_str)
+            && !self.registry().classes.contains_key(&role_base_str)
         {
-            if let Some((declaring_package, _)) = cx.name.rsplit_once("::") {
+            let known = |this: &Self, n: &str| {
+                this.is_role_type_name(n) || this.registry().classes.contains_key(n)
+            };
+            let resolved_base = if let Some((declaring_package, _)) = cx.name.rsplit_once("::") {
                 // A unit module's mainline runs with GLOBAL as the current
                 // package, even though the compiler has already qualified
                 // this role's storage name. Resolve a sibling parent from the
@@ -234,30 +245,22 @@ impl Interpreter {
                 // probe handles a nested name such as `Q::R` inside the unit
                 // module: first try `M::Q::R`, then leave an unrelated fully
                 // qualified name untouched.
-                let relative = format!("{declaring_package}::{role_name_str}");
-                if self.is_role_type_name(&relative)
-                    || self.registry().classes.contains_key(&relative)
-                {
-                    relative
+                let relative = format!("{declaring_package}::{role_base_str}");
+                if known(self, &relative) {
+                    Some(relative)
                 } else {
-                    let resolved = self.resolve_declared_type_name(&role_name_str);
-                    if self.is_role_type_name(&resolved)
-                        || self.registry().classes.contains_key(&resolved)
-                    {
-                        resolved
-                    } else {
-                        role_name_str
-                    }
+                    None
                 }
             } else {
-                let resolved = self.resolve_declared_type_name(&role_name_str);
-                if self.is_role_type_name(&resolved)
-                    || self.registry().classes.contains_key(&resolved)
-                {
-                    resolved
-                } else {
-                    role_name_str
-                }
+                None
+            };
+            let resolved_base = resolved_base.or_else(|| {
+                let resolved = self.resolve_declared_type_name(&role_base_str);
+                known(self, &resolved).then_some(resolved)
+            });
+            match resolved_base {
+                Some(base) => format!("{base}{role_suffix_str}"),
+                None => role_name_str,
             }
         } else {
             role_name_str

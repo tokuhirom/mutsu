@@ -853,6 +853,45 @@ pub(crate) enum HashSpelling {
     Contextualizer,
 }
 
+/// Which contextualizer an [`Expr::Contextualizer`] spells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ContextKind {
+    /// `$(...)`: raku's `Contextualizer::Item`.
+    Item,
+    /// `@(...)`: raku's `Contextualizer::List`.
+    List,
+    /// `%(...)` with non-pair contents: raku's `Contextualizer::Hash`.
+    Hash,
+}
+
+impl Expr {
+    /// A [`Expr::Contextualizer`] as the `.item` / `.list` / `.hash` call it
+    /// compiles to, for the assignment paths that decide on the call's shape.
+    pub(crate) fn contextualizer_call(self) -> Expr {
+        match self {
+            Expr::Contextualizer { kind, inner } => Expr::MethodCall {
+                target: inner,
+                name: Symbol::intern(kind.method()),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+            other => other,
+        }
+    }
+}
+
+impl ContextKind {
+    /// The method the compiler lowers the contextualizer to.
+    pub(crate) fn method(self) -> &'static str {
+        match self {
+            Self::Item => "item",
+            Self::List => "list",
+            Self::Hash => "hash",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -1016,6 +1055,15 @@ pub(crate) enum Expr {
         complement: bool,
         squash: bool,
         non_destructive: bool,
+    },
+    /// `$(...)`, `@(...)`, `%(...)`: a contextualizer. It compiles exactly as
+    /// the `.item` / `.list` / `.hash` call on `inner` that rakudo lowers it
+    /// to, but is its own node so a user-written `.list` call still renders as
+    /// a call across the RakuAST boundary. `inner` is the parenthesized
+    /// expression (`Grouped`), or the nested contextualizer of `$@(...)`.
+    Contextualizer {
+        kind: ContextKind,
+        inner: Box<Expr>,
     },
     MethodCall {
         target: Box<Expr>,
@@ -1324,9 +1372,20 @@ pub(crate) enum Expr {
         origin: DoBlockOrigin,
     },
     DoStmt(Box<Stmt>),
+    /// `last` / `next` / `redo`, optionally labelled. `value` is v6.e's
+    /// `last VALUE` / `next VALUE`: the loop ends (or the iteration does) and
+    /// `VALUE` is the iteration's contribution to the loop's result list. A
+    /// `Label` value is the labelled form spelled as an argument
+    /// (`last(FOO)`), decided at run time. Never set for `redo`.
+    ///
+    /// `take_value` marks a valued form whose loop is lowered to a `gather`
+    /// (`do while`, `do loop`, `lazy for`): such a loop collects its values by
+    /// `take`, so the value is taken before the signal is raised.
     ControlFlow {
         kind: ControlFlowKind,
         label: Option<String>,
+        value: Option<Box<Expr>>,
+        take_value: bool,
     },
     IndirectTypeLookup(Box<Expr>),
     /// `::(EXPR)::Name` / `::(EXPR)::A::B` / `::(EXPR)::`: an indirect lookup

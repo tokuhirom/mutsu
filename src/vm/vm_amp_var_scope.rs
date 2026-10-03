@@ -16,24 +16,32 @@ impl Interpreter {
     /// other imported names (`module_imported_lexical`). The env entry is
     /// kept when this code captured `&name` (`free_var_syms`), binds it in
     /// its own slot (a `&name` parameter), or the binding was declared in
-    /// this code's own compunit (a role's `&name` type parameter lives only in
-    /// env, so a same-unit binding cannot be told apart from a lexical one).
+    /// this code's own compunit and the compiler could not prove the read
+    /// site has no lexical `&name` in scope (`unscoped_amp_reads`): a role's
+    /// `&name` type parameter lives only in env, so without that proof a
+    /// same-unit binding cannot be told apart from a lexical one. With it, a
+    /// caller's same-unit `my &g` no longer replaces the `sub g` a routine's
+    /// `&g` names (#10997).
     ///
     /// Cost: O(1) when env has no `&name` entry (one hashed probe); otherwise
-    /// as `resolve_code_var` (a set probe, a local-slot probe and an
-    /// import-table probe first).
+    /// O(u) plus `resolve_code_var`, u = this code's `unscoped_amp_reads`
+    /// (a handful at most), after a set probe, a local-slot probe and an
+    /// import-table probe.
     fn imported_amp_over_inherited(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         if name.contains(":<") || name.starts_with(['!', '?', '*', '.']) {
             return None;
         }
         let val =
             crate::runtime::dispatch_key::with_amp_name(name, |amp| self.env().get(amp).cloned())?;
-        if !Self::env_callable_is_lexical_override(&val, name)
-            || Self::callable_declared_in_unit_of(&val, code)
-        {
+        if !Self::env_callable_is_lexical_override(&val, name) {
             return None;
         }
         let name_sym = Symbol::intern(name);
+        if Self::callable_declared_in_unit_of(&val, code)
+            && !code.unscoped_amp_reads.contains(&name_sym)
+        {
+            return None;
+        }
         if crate::qualified::is_qualified(name_sym)
             || self.export_amp_override_names.contains(&name_sym)
         {
@@ -63,5 +71,41 @@ impl Interpreter {
             return imported;
         }
         loan_env!(self, resolve_code_var(name))
+    }
+
+    /// The binding a routine's free `&name` closes over when it lives in a
+    /// declaration-scoped store rather than in the running frame: a mainline
+    /// or block sub's captured unit-lexical cell (ADR-0024, #10483), or a
+    /// class/package body's own `my &name` (`package_lexicals`). Consulted
+    /// before the by-name env, where a CALLER's same-named `my &name` sits
+    /// -- reading that one is dynamic scoping (URI::Template's `uri-encode`
+    /// called from a method whose `my &enc` shadowed the class body's).
+    /// Scalars resolve through the same two stores ahead of env (`GetGlobal`).
+    ///
+    /// A `&name` slot of the running `code` itself (a parameter, or a
+    /// `my &name` of this frame) shadows both stores, so none is consulted
+    /// then.
+    ///
+    /// Cost: O(1), three hashed probes (the two stores answer immediately
+    /// when empty).
+    pub(super) fn declared_scope_amp_var_for(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+    ) -> Option<Value> {
+        if crate::qualified::is_qualified(Symbol::intern(name))
+            || name.starts_with(['!', '?', '*', '.'])
+        {
+            return None;
+        }
+        crate::runtime::dispatch_key::with_amp_name(name, |amp| {
+            if self.find_local_slot(code, amp).is_some() {
+                return None;
+            }
+            self.unit_scope_lexical(amp)
+                .or_else(|| self.package_scope_lexical(amp))
+        })
+        .map(Value::into_deref)
+        .filter(|v| !v.is_nil())
     }
 }

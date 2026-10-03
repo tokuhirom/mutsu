@@ -120,6 +120,25 @@ impl Interpreter {
     /// `enclosing_routine_exists()` when no `context` argument drove one (the
     /// unchanged, pre-ADR-0037 behavior — `sub f() { EVAL 'return 1' }` still
     /// returns from `f`).
+    /// The `&`-lexicals an `EVAL` call site sees, for the EVAL compiler's
+    /// `outer_code_var_names` (#11154): every plain user `&name` in the env
+    /// whose callable is a lexical binding rather than the routine of that
+    /// name (`env_callable_is_lexical_override` -- a `my &g = -> {...}`, a
+    /// `&g` parameter). EVAL resolves the caller's lexicals by name from the
+    /// env, so the env is the call site's scope here.
+    ///
+    /// Cost: O(e), e = visible env names (one scan per EVAL compile).
+    fn eval_site_amp_lexicals(&self) -> Vec<String> {
+        let env = self.env();
+        env.visible_keys_where(|k| k.starts_with('&') && crate::env::is_plain_user_lexical(k))
+            .into_iter()
+            .filter(|key| {
+                env.get(key)
+                    .is_some_and(|v| Self::env_callable_is_lexical_override(v, &key[1..]))
+            })
+            .collect()
+    }
+
     fn eval_unit_in_routine(&self) -> bool {
         match self.pending_eval_context_routine {
             Some(EvalContextRoutineState::Live(_)) => true,
@@ -184,6 +203,9 @@ impl Interpreter {
         // barewords. The fresh compiler otherwise has no signature context.
         compiler.seed_enclosing_sigilless(&self.pending_eval_sigilless);
         compiler.seed_prebound_placeholders(&self.pending_eval_placeholder_params);
+        if is_eval_unit {
+            compiler.seed_outer_code_var_names(self.eval_site_amp_lexicals());
+        }
         // ADR-0059 Slice 2: an `is rw`/`is raw` routine body recompiled here
         // still hands its caller its tail's container.
         compiler.set_rw_tail(self.pending_eval_rw_tail);

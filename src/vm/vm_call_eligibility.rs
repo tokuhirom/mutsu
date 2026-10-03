@@ -131,6 +131,8 @@ impl Interpreter {
             // A body observing its caller frame (callframe / CALLER::) needs the
             // frame-pushing path, or introspection resolves to the grand-caller.
             && !cf.code.uses_callframe
+            // `samewith` needs the samewith context only the full path pushes.
+            && !cf.code.uses_samewith
             // A body that declares an inner sub (`my sub`, `proto`, ...)
             // relies on the full call path's routine-registry
             // snapshot/restore to take the declaration away again on return;
@@ -166,6 +168,8 @@ impl Interpreter {
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
             && !cf.code.uses_callframe
+            // `samewith` needs the samewith context only the full path pushes.
+            && !cf.code.uses_samewith
             // A body that declares an inner sub (`my sub`, `proto`, ...)
             // relies on the full call path's routine-registry
             // snapshot/restore to take the declaration away again on return;
@@ -423,6 +427,8 @@ impl Interpreter {
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
             && !cf.code.uses_callframe
+            // `samewith` needs the samewith context only the full path pushes.
+            && !cf.code.uses_samewith
             // Only allow return types that light_return_type_check can handle,
             // or a definite constant return (`--> Nil`, `--> True`), which the
             // light path serves by returning the constant (#9074).

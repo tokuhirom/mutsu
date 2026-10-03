@@ -68,9 +68,12 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
   upstream module runs verbatim (rung 2). Neither "the implementation is large" nor "the real
   module is slow" justifies a native substitute — a measured gap justifies a transparent,
   semantics-preserving optimization only (ADR-0096 §D3). The exceptions are enumerated in ADR-0096
-  §D4: `NativeCall` (justified; measured not retirable, [#7560](https://github.com/tokuhirom/mutsu/issues/7560))
-  and the JSON `to-json`/`from-json` interception (scheduled for retirement,
-  [#8183](https://github.com/tokuhirom/mutsu/issues/8183)). Retire a provider the way `Pod::To::Text`
+  §D4, and none is permanent: the JSON `to-json`/`from-json` interception is retired
+  ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)), and `NativeCall` is being moved to
+  the vendored upstream module through its backend-neutral path
+  ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
+  [#11203](https://github.com/tokuhirom/mutsu/issues/11203)); its native provider stays only
+  until that lands. Retire a provider the way `Pod::To::Text`
   (`docs/batteries/pod-to-text.md`) and the native `monitor` declarator
   (`news/2026-08/exporthow-declare-mop.md`) were retired — but measure before assuming it is retirable.
 - **No stubs, hardcoded outputs, early returns or test-specific hacks** to make a test pass. Every
@@ -87,6 +90,13 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
 - **Never close a PR without preserving its knowledge.** A conflicted PR gets rebased (by you or an
   agent that reads its diff), not closed and summarized.
 - **Never remove a test from `roast-whitelist.txt` because of a regression** — fix the regression.
+- **Never weaken a security protection without the user's prior approval** (user decision,
+  2026-10-03). This covers anything that lowers the security of the shipped binaries or of a
+  user's system, whatever it gains: linking non-PIE or otherwise disabling ASLR, RELRO, stack
+  protectors, CFI or other hardening flags; loosening sandboxing, file permissions, TLS or
+  signature verification; widening what untrusted code or input can reach. Ask *before*
+  implementing it. A note in the PR body or a report after the merge is not approval:
+  #11104 shipped a non-PIE `mutsu` for ~0.5-1 ms of startup, and #11158 had to revert it.
 - **Repository artifacts are always English**: code comments, commit messages, PR titles and
   bodies, ADRs, `news/`, `PLAN.md`, `TODO_roast/`, everything under `docs/`. Conversing with the
   user in Japanese does not change this.
@@ -246,6 +256,11 @@ scripts/dev stop <id>
   `Interpreter` (#10779): move a pure helper down, or route an essential compile-time call
   through a trait. `make check-layer-deps` is a shrinking ratchet over
   `scripts/layer-deps-baseline.txt`.
+- **No new fields on `Interpreter`.** New state goes into the subsystem type it belongs to
+  ([ADR-10779](docs/adr/10779-interpreter-subsystems-and-upward-call-traits.md); the subsystems
+  are the `SUBSYSTEMS` rules in `scripts/interp-field-matrix.py`), and a value passed from a
+  caller to a callee is a parameter, not a `pending_*` field. `make check-interp-fields` is a
+  shrinking ratchet over `scripts/interp-fields-baseline.txt`.
 - **Never build an `Interpreter` to run code.** Only process entry points, thread spawns
   (`clone_for_thread`), the parse-time module probes and a `thread_local!` construct one; a
   closure is called on the interpreter you already have (`call_compiled_closure`,

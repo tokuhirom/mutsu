@@ -16,8 +16,8 @@
 //! call-walker descends into also has its declarations collected — both are
 //! gathered in the same traversal to keep them symmetric.
 
-use crate::ast::{CallArg, Expr, Stmt, UndeclaredRoutineCall};
-use crate::ast_visit::{NameKind, Visit, walk_call_arg, walk_stmt, walk_stmts};
+use crate::ast::{CallArg, Expr, ParamDef, Stmt, UndeclaredRoutineCall};
+use crate::ast_visit::{NameKind, Visit, walk_call_arg, walk_param, walk_stmt, walk_stmts};
 use crate::value::{RuntimeError, RuntimeErrorCode};
 use std::collections::HashSet;
 
@@ -62,6 +62,11 @@ pub(crate) enum ScanMode {
     /// too: rakudo rejects an undeclared one at compile time
     /// ("Undeclared name"), and a type of that name suppresses it.
     Eval,
+}
+
+/// Whether a `use` of `module` imports no names at all (a pragma, `lib`).
+pub(crate) fn module_imports_no_names(module: &str) -> bool {
+    conditional::imports_no_routines(module)
 }
 
 /// A declared name with its sigil and twigil removed.
@@ -168,6 +173,15 @@ impl<'ast> Visit<'ast> for Scan {
         }
     }
 
+    fn visit_param(&mut self, param: &'ast ParamDef) {
+        // A type capture (`::T`, `role R[::T]`, `method m(::T:)`) declares
+        // the type name `T` for the rest of its scope.
+        if let Some(capture) = &param.type_capture {
+            self.declare(capture);
+        }
+        walk_param(self, param);
+    }
+
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         match kind {
             NameKind::Call | NameKind::UserRoutineCall => self.record_call(name),
@@ -181,7 +195,10 @@ impl<'ast> Visit<'ast> for Scan {
             | NameKind::VarDecl
             | NameKind::AssignTarget
             | NameKind::Param
-            | NameKind::BlockParam => self.declare(name),
+            | NameKind::BlockParam
+            // A label (`L: for ...`) is a term in its scope (`last L`,
+            // `:label(L)`).
+            | NameKind::Label => self.declare(name),
             _ => {}
         }
     }

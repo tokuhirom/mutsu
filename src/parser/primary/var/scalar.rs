@@ -378,6 +378,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    let rest = super::ident::skip_trailing_package_sep(rest);
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
     let full_name = if twigil.is_empty() {
         name

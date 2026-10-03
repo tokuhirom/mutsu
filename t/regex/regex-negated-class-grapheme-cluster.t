@@ -6,7 +6,7 @@ use Test;
 # backslash/property items (`\w`, `\s`, `<:L>`) still test its base
 # character. Every expectation below was checked against rakudo (#10748).
 
-plan 15;
+plan 18;
 
 my $s = "x\x[301]";
 is $s.chars, 1, 'x + combining acute is one grapheme';
@@ -28,3 +28,9 @@ is ~("x\x[301]y" ~~ / <-[a..z\s]>+ /), "x\x[301]", 'a quantified class stops at 
 
 grammar G { token TOP { <-[a..z0..9\s]>+ } }
 ok G.parse($s), 'the same class in a grammar token';
+
+# `\r\n` is one grapheme of two ASCII codepoints: the scan prefilter must
+# still offer the position of its `\r` to the engine (#11145).
+is ("a\r\nb" ~~ / <-[a..z\r]> /).Str.ords, (13, 10), 'a negated class without \n matches the CRLF cluster';
+nok "a\r\nb" ~~ / <-[a..z\r\n]> /, 'a negated class with both \r and \n rejects it';
+is ~("ab\x[301]cd" ~~ / <-[a..c]> /), "b\x[301]", 'an ASCII base before a mark is offered to the engine';
