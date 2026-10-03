@@ -13,6 +13,12 @@ pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     pub(super) protect_block_cache: ProtectBlockCache,
+    /// The type object a `C[T]` type constraint stands for when `C` declares
+    /// its own `method ^parameterize`, keyed by the constraint's spelling
+    /// (`types::meta_parameterized`). Rakudo evaluates such a constraint once,
+    /// at compile time; this keeps a parameter check from calling the
+    /// meta-method on every call.
+    pub(crate) meta_parameterized_types: HashMap<String, Value>,
     /// See `CarrierCompileCache`: reuses `eval_block_value_inner`'s carrier
     /// compile across repeated calls to the same `SubData` id instead of
     /// recompiling its AST every time. Opt-in per call site via

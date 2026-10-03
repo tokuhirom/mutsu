@@ -117,6 +117,9 @@ impl Interpreter {
                         _ => crate::runtime::to_int(v),
                     })
                     .unwrap_or(0);
+                if let Some(attrs) = crate::runtime::carray_ref::ref_attrs(&list) {
+                    return Some(self.carray_ref_at(&attrs, idx));
+                }
                 crate::runtime::nqp_backing::elem_at(&list, idx).map(|e| e.unwrap_or(Value::NIL))
             }
             // nqp::ordat($str, $pos): the codepoint of the grapheme at `$pos`
@@ -334,6 +337,15 @@ impl Interpreter {
                     })
                     .unwrap_or_default();
                 let short = crate::runtime::cstruct_layout::short_base_name(&target);
+                // A class declared `is repr('CPointer')` boxes the address as
+                // an instance of *that* class, as MoarVM's CPointer REPR does:
+                // upstream NativeCall's `Pointer.new($addr)` is
+                // `nqp::box_i($addr, ::?CLASS)`.
+                if self.registry().cpointer_classes.contains(target.as_str()) {
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("address".to_string(), Value::int(n));
+                    return Some(Ok(Value::make_instance(Symbol::intern(&target), attrs)));
+                }
                 if short == "Pointer" || short.starts_with("Pointer[") {
                     let of = short
                         .strip_prefix("Pointer[")

@@ -257,7 +257,7 @@ impl Interpreter {
                 "nativecast() expects a type object as its first argument",
             ));
         };
-        let addr = crate::runtime::nativecall::value_c_address(source);
+        let addr = self.carray_element_address(source);
         // The address-to-value half is shared with `Pointer[T].deref`, which
         // Rakudo defines as `nativecast(self.of, self)` — see
         // `runtime::nativecall_cast`.

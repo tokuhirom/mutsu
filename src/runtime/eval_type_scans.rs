@@ -139,11 +139,18 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
                     harvest(module, &mut out.types);
                 }
             }
-            Stmt::ClassDecl { name, .. } => {
+            Stmt::ClassDecl { name, body, .. } => {
                 // A plain `class` is type-like but NOT parametric (parameterizing
                 // it with `[T]`/`of T` is X::NotParametric); roles ARE parametric.
+                // So is a class with its own `method ^parameterize` (upstream
+                // NativeCall's `CArray`), whose `C[T]` calls that meta-method.
                 insert_declared_name(&mut out.types, &name.resolve());
-                insert_declared_name(&mut out.classes, &name.resolve());
+                let parametric = body.iter().any(
+                    |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == "^parameterize"),
+                );
+                if !parametric {
+                    insert_declared_name(&mut out.classes, &name.resolve());
+                }
             }
             Stmt::RoleDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
                 insert_declared_name(&mut out.types, &name.resolve());

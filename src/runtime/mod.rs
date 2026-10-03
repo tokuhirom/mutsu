@@ -652,6 +652,7 @@ pub(crate) mod cloexec_pipe;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 pub(crate) mod array_type_trait;
+mod carray_ref;
 mod carray_repr;
 mod compunit_scope;
 mod constraint_meta;

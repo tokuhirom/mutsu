@@ -19,9 +19,8 @@
 //!
 //! An array whose element type is a reference (`Pointer`, `Str`, a CStruct
 //! class) is a `CArray` of addresses that read back as objects, which bytes
-//! alone cannot hold (MoarVM keeps a parallel `child` table); its storage is
-//! ADR-0015's P3c and still open, so such an instance gets no element storage
-//! yet.
+//! alone cannot hold; [`carray_ref`] keeps MoarVM's parallel
+//! child table beside the address table (ADR-0015 P3c).
 
 use super::*;
 use crate::value::ElemKind;
@@ -108,7 +107,8 @@ impl Interpreter {
     /// `nqp::create` of `class`, a CArray-REPR class, reached as type `ty`
     /// (the class itself, or a mixin of it whose roles may say what the
     /// elements are). The instance gets empty element storage of the type's
-    /// `.^array_type` when that is a native numeric type.
+    /// `.^array_type`: native elements for a native numeric type, an address
+    /// table with its child table for a reference type.
     // Cost: O(a + r), a = attributes of the class, r = roles of a mixin `ty`.
     pub(crate) fn create_carray_instance(
         &mut self,
@@ -116,16 +116,70 @@ impl Interpreter {
         ty: &Value,
     ) -> Result<Value, RuntimeError> {
         let instance = self.create_instance(class);
-        let encoding = match self.type_array_type(ty)? {
-            Some(elem) => self.native_elem_encoding(&elem),
-            None => None,
-        };
-        if let Some((width, kind)) = encoding
-            && let ValueView::Instance { attributes, .. } = instance.view()
-        {
-            crate::value::value_buf::install_empty_storage(&attributes, width, kind);
-        }
+        self.install_carray_elem_storage(ty, &instance)?;
         Ok(instance)
+    }
+
+    /// Give `instance`, just allocated as type `ty`, the element storage of
+    /// `ty`'s `.^array_type`: native elements for a native numeric type, an
+    /// address table with its child table for a reference type.
+    // Cost: O(r), r = roles of a mixin `ty`.
+    fn install_carray_elem_storage(
+        &mut self,
+        ty: &Value,
+        instance: &Value,
+    ) -> Result<(), RuntimeError> {
+        let Some(elem) = self.type_array_type(ty)? else {
+            return Ok(());
+        };
+        let attributes = match instance.view() {
+            ValueView::Instance { attributes, .. } => attributes,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { attributes, .. } => attributes,
+                _ => return Ok(()),
+            },
+            _ => return Ok(()),
+        };
+        match self.native_elem_encoding(&elem) {
+            Some((width, kind)) => {
+                crate::value::value_buf::install_empty_storage(&attributes, width, kind)
+            }
+            // A reference element: a table of addresses plus the objects they
+            // stand for (ADR-0015 P3c, `carray_ref`).
+            None => super::carray_ref::install_ref_storage(&attributes, elem),
+        }
+        Ok(())
+    }
+
+    /// The REPR step of `bless`/`.new`: when `ty` (a class, or a mixin of
+    /// one) is a CArray-REPR class, give `instance` its element storage.
+    // Cost: O(1) for any other class; O(r) otherwise, r = roles of a mixin `ty`.
+    pub(crate) fn install_carray_storage(
+        &mut self,
+        ty: &Value,
+        instance: &Value,
+    ) -> Result<(), RuntimeError> {
+        if self.registry().carray_classes.is_empty() {
+            return Ok(());
+        }
+        let class = match ty.view() {
+            ValueView::Package(name) => name,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Package(name) => name,
+                _ => return Ok(()),
+            },
+            _ => return Ok(()),
+        };
+        // Storage the base class's own allocation already gave a mixin's
+        // instance is replaced while it is still empty: the mixin's roles,
+        // not the base class, say what the elements are.
+        if !self.is_carray_repr_class(class.as_str())
+            || crate::value::value_buf::buf_target(instance)
+                .is_some_and(|(_, attrs)| crate::value::value_buf::buf_len_or_zero(&attrs) > 0)
+        {
+            return Ok(());
+        }
+        self.install_carray_elem_storage(ty, instance)
     }
 
     /// `nqp::create` of a mixin type object (`Base.^mixin(R)`, a

@@ -11,6 +11,7 @@ mod capture_param_containers;
 mod coercion;
 mod coercion_bind;
 pub(crate) use coercion_bind::CoercionBindError;
+mod meta_parameterized;
 mod native_backed_class;
 mod omitted_optional;
 mod param_exprs;
