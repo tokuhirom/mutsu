@@ -832,7 +832,10 @@ impl Interpreter {
             return Ok(None);
         }
         let name = name.to_string();
-        if self.maybe_mixin_container_store(Some(idx), &name)?.is_some() {
+        if self
+            .maybe_mixin_container_store(Some(idx), &name)?
+            .is_some()
+        {
             return Ok(Some(()));
         }
         // The tied instance normally lives in the local slot, but when this store
