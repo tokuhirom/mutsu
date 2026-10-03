@@ -206,6 +206,7 @@ impl Interpreter {
             RegexAtom::Named(name)
                 if !LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
                     && self
+                        .regex_state
                         .grammar_rule_dynvar_decls
                         .contains_key(&name.spec().lookup_name) =>
             {
@@ -740,7 +741,7 @@ impl Interpreter {
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         // The cursor the engine published for this one call, if any: taken at
         // once so a call nested inside the method never sees it.
-        let published = self.rx_cursor.take();
+        let published = self.regex_state.rx_cursor.take();
         if !self.subrule_names_user_method(spec, pkg) {
             return None;
         }

@@ -1,6 +1,8 @@
 # ADR-0019: Compile declarations and unify method dispatch entries
 
-- **Status**: Accepted/Implemented (2026-08-17)
+- **Status**: Accepted/Implemented (2026-08-17). The E2 box's design decision 1 (rows are
+  recognition metadata, invocation stays in the arity cascades) is superseded by
+  [ADR-11276](11276-built-in-methods-are-handler-rows.md) (2026-10-03)
 - **Date**: 2026-08-03
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md),
   [ANALYSIS.md §1.1, §3.3, §4-1](../../ANALYSIS.md)

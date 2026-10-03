@@ -915,10 +915,11 @@ impl Interpreter {
         // compiled slots.
         let mut free_var_writes: Vec<String> = Vec::new();
         let (result, updated) = self.run_regex_sub_eval(env, None, |interp| {
-            let saved_in_block = std::mem::replace(&mut interp.in_regex_code_block, true);
+            let saved_in_block =
+                std::mem::replace(&mut interp.regex_state.in_regex_code_block, true);
             let r =
                 interp.eval_block_value_cached_reporting_writes(&stmts, id, &mut free_var_writes);
-            interp.in_regex_code_block = saved_in_block;
+            interp.regex_state.in_regex_code_block = saved_in_block;
             let pkg = interp.current_package_sym();
             let updated: Vec<(String, Value)> = free_var_writes
                 .iter()

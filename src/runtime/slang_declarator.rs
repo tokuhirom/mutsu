@@ -175,7 +175,8 @@ impl Interpreter {
             .find(|(k, _)| *k == kind)
             .map(|(_, how)| how.clone())
             .or_else(|| {
-                self.slang_declarator_hows
+                self.regex_state
+                    .slang_declarator_hows
                     .get(&kind)
                     .map(Self::slang_how_type_name)
             })

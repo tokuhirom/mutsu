@@ -95,7 +95,7 @@ impl Interpreter {
     // Cost: O(1) amortized.
     #[inline]
     pub(super) fn enter_rule_cursor(&mut self) {
-        self.walk_cursors.push(None);
+        self.regex_state.walk_cursors.push(None);
     }
 
     /// Close the scope [`Self::enter_rule_cursor`] opened: the grammar instance a
@@ -104,7 +104,7 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(super) fn leave_rule_cursor(&mut self) -> Option<Value> {
-        self.walk_cursors.pop().flatten()
+        self.regex_state.walk_cursors.pop().flatten()
     }
 
     /// File `cursor` on every end of the invocation that owned it.
@@ -129,11 +129,11 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> Option<Value> {
-        if let Some(cursor) = self.walk_cursors.last()? {
+        if let Some(cursor) = self.regex_state.walk_cursors.last()? {
             return Some(cursor.clone());
         }
         let cursor = self.new_grammar_cursor(chars, pos, pkg);
-        *self.walk_cursors.last_mut()? = Some(cursor.clone());
+        *self.regex_state.walk_cursors.last_mut()? = Some(cursor.clone());
         Some(cursor)
     }
 
@@ -184,7 +184,7 @@ impl Interpreter {
     /// back what was armed before (a parse inside a code block nests).
     // Cost: O(1).
     pub(crate) fn arm_start_rule_invocant(&mut self, invocant: Option<Value>) -> Option<Value> {
-        std::mem::replace(&mut self.start_invocant.armed, invocant)
+        std::mem::replace(&mut self.regex_state.start_invocant.armed, invocant)
     }
 
     /// The built invocant `.parse` hands the start rule of grammar `pkg`
@@ -212,13 +212,13 @@ impl Interpreter {
     /// with [`Self::restore_rx_start_invocant`] when the run ends.
     // Cost: O(1).
     pub(super) fn take_rx_start_invocant(&mut self) -> Option<Value> {
-        self.start_invocant.armed.take()
+        self.regex_state.start_invocant.armed.take()
     }
 
     // Cost: O(1).
     pub(super) fn restore_rx_start_invocant(&mut self, invocant: Option<Value>) {
         if invocant.is_some() {
-            self.start_invocant.armed = invocant;
+            self.regex_state.start_invocant.armed = invocant;
         }
     }
 
@@ -226,7 +226,7 @@ impl Interpreter {
     /// [`StartRuleInvocant::rx_code`]).
     // Cost: O(1).
     pub(super) fn publish_rx_code_invocant(&mut self, invocant: Option<Value>) {
-        self.start_invocant.rx_code = Some(invocant);
+        self.regex_state.start_invocant.rx_code = Some(invocant);
     }
 
     /// Open the walk's scope for the start rule's own pattern: a rule
@@ -236,11 +236,12 @@ impl Interpreter {
     pub(super) fn enter_start_rule_cursor(&mut self) -> Option<(usize, Value)> {
         self.enter_rule_cursor();
         let scope = self
+            .regex_state
             .start_invocant
             .armed
             .take()
-            .map(|inv| (self.walk_cursors.len(), inv));
-        std::mem::replace(&mut self.start_invocant.walk, scope)
+            .map(|inv| (self.regex_state.walk_cursors.len(), inv));
+        std::mem::replace(&mut self.regex_state.start_invocant.walk, scope)
     }
 
     // Cost: O(1).
@@ -248,8 +249,9 @@ impl Interpreter {
         &mut self,
         saved: Option<(usize, Value)>,
     ) -> Option<Value> {
-        if let Some((_, inv)) = std::mem::replace(&mut self.start_invocant.walk, saved) {
-            self.start_invocant.armed = Some(inv);
+        if let Some((_, inv)) = std::mem::replace(&mut self.regex_state.start_invocant.walk, saved)
+        {
+            self.regex_state.start_invocant.armed = Some(inv);
         }
         self.leave_rule_cursor()
     }
@@ -259,11 +261,13 @@ impl Interpreter {
     /// the walk's start-rule scope when it is the innermost invocation.
     // Cost: O(1).
     pub(super) fn code_block_start_invocant(&mut self) -> Option<Value> {
-        if let Some(published) = self.start_invocant.rx_code.take() {
+        if let Some(published) = self.regex_state.start_invocant.rx_code.take() {
             return published;
         }
-        match &self.start_invocant.walk {
-            Some((depth, inv)) if *depth == self.walk_cursors.len() => Some(inv.clone()),
+        match &self.regex_state.start_invocant.walk {
+            Some((depth, inv)) if *depth == self.regex_state.walk_cursors.len() => {
+                Some(inv.clone())
+            }
             _ => None,
         }
     }

@@ -292,7 +292,7 @@ impl Interpreter {
         // assertion's own `$/`/`$0` env below is not clobbered by the action
         // dispatch.
         let made_named: ValueMap = if code.contains(".made") {
-            if let Some(actions0) = self.current_grammar_actions.clone() {
+            if let Some(actions0) = self.regex_state.current_grammar_actions.clone() {
                 self.run_named_capture_actions(&visible_caps, actions0)
             } else {
                 // No actions: `.made` must still resolve (to Nil) on a Match,
@@ -388,8 +388,8 @@ impl Interpreter {
             self.pending_local_updates.extend(kept);
             body_result.map(|_| Value::NIL)
         } else {
-            let saved_in_block = self.in_regex_code_block;
-            self.in_regex_code_block = true;
+            let saved_in_block = self.regex_state.in_regex_code_block;
+            self.regex_state.in_regex_code_block = true;
             // Cached compile: an assertion is evaluated once per cursor
             // position, and recompiling its handful of statements every time
             // was the dominant cost of a `<?{ … }>`-driven match (see
@@ -400,7 +400,7 @@ impl Interpreter {
                 code_cache_id,
                 &mut free_var_writes,
             );
-            self.in_regex_code_block = saved_in_block;
+            self.regex_state.in_regex_code_block = saved_in_block;
             self.writeback_assertion_free_var_writes(&free_var_writes, &scoped);
             r
         };
@@ -665,7 +665,7 @@ impl Interpreter {
         if !super::regex_helpers::dynvar_overlay_active() || !super::regex_helpers::dynvar_seen() {
             return;
         }
-        let Some(actions) = self.current_grammar_actions.clone() else {
+        let Some(actions) = self.regex_state.current_grammar_actions.clone() else {
             return;
         };
         let rule_name = match &token.atom {

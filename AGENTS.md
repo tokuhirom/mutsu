@@ -34,7 +34,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [`ecosystem-sweep-landing`](.agents/skills/ecosystem-sweep-landing/SKILL.md) | The nightly landing routine fires, or an `ecosystem/sweep-*` branch has no pull request: verify it, open and merge its PR, file new failure clusters |
 | [`ecosystem-lock-board-rotation`](.agents/skills/ecosystem-lock-board-rotation/SKILL.md) | The lock board passed ~250 comments or a `get_comments` read of it overflows: moving it to a fresh issue |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass for wasted `.clone()` calls |
-| [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
+| [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, the bump PR, pushing the `vX.Y.Z` tag, verifying tarballs/npm/Release |
 | [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`security-audit`](.agents/skills/security-audit/SKILL.md) | A security audit, or a change touching a trust boundary (code loading, parse-time execution, `unsafe`/threads, runtime-created files, `site/`, `.github/`) |
@@ -411,7 +411,8 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
 7. **Before going idle, decide the next slice** from `PLAN.md` / `TODO_roast/BLOCKERS.md` / the
    issue queue, or put a strategic fork to the user.
 
-Releases are cut by one manual trigger of `tag-release.yml` — see the `cut-release` skill. All four
+Releases are a version-bump PR plus a `vX.Y.Z` tag pushed on its merge commit — see the
+`cut-release` skill; **push a `v*` tag only there, when the user asked for a release**. All four
 release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pass another.
 
 ## Issues, planning and news

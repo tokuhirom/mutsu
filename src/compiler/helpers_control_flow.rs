@@ -1209,6 +1209,13 @@ impl Compiler {
                         main_leaves_value = true;
                         continue;
                     }
+                    // A tail assignment yields the assigned value, as it does
+                    // in a `do` block (`try { $x = 9 }` is 9, #11188).
+                    if matches!(stmt, Stmt::Assign { .. }) {
+                        self.compile_tail_stmt_value(stmt);
+                        main_leaves_value = true;
+                        continue;
+                    }
                     // A tail `given`/`when`/`default` leaves its value on the
                     // stack (ADR-0052) and IS the region's value.
                     if Self::stmt_nets_a_stack_value(stmt) {
