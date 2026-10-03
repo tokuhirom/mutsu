@@ -782,6 +782,9 @@ impl Interpreter {
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
             let mut skip_native = method == "VAR";
+            // Set when the element is an object whose class declares the
+            // method: see the leaf dispatch below.
+            let mut user_method_on_instance = false;
             if !skip_native && (quoted || !pseudo) {
                 let class_name = if item.is_lazy_match_value() {
                     // Lazy Match: read the cursor class off the node (a grammar
@@ -798,6 +801,10 @@ impl Interpreter {
                     && self.has_user_method(&cn, &method)
                 {
                     skip_native = true;
+                    user_method_on_instance = !pseudo
+                        && hyper_cell.is_none()
+                        && !item.is_lazy_match_value()
+                        && matches!(item.view(), ValueView::Instance { .. });
                 }
             }
             // As on the scalar `CallMethod` path: tell the by-name dispatch to
@@ -1028,6 +1035,23 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
+                        } else if user_method_on_instance {
+                            // A user method on an object: the element is the
+                            // invocant by value -- the method cannot rebind the
+                            // element, and its attribute writes land in the
+                            // object's shared attribute cell -- so dispatch it
+                            // as `CallMethod` does a value receiver, without
+                            // parking the element in a temp env binding for a
+                            // write-back that cannot happen.
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "user",
+                            );
+                            self.try_compiled_method_or_interpret_sym(
+                                item.clone(),
+                                method_sym,
+                                item_args,
+                            )?
                         } else {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "hypermethodcall",
