@@ -22,15 +22,19 @@
 //! expressions, attribute descriptors, trait and parent-argument chunks, the
 //! class-body statement chunks run at registration, and the type names it
 //! mentions. [`Compiler::note_class_decl_env_sync`] bounds the plan only when
-//! every one of them is enumerable.
+//! every one of them is enumerable. A role (#11078) adds its type-parameter
+//! signatures and the deferred body statements each composition runs; see
+//! [`Compiler::note_role_decl_env_sync`].
 
 use super::Compiler;
 use crate::ast::ParamDef;
 use crate::opcode::{
-    ClassBodyOp, CompiledClassDeclPlan, CompiledCode, CompiledDeclExpr, DeclTraitArg, OpCode,
+    ClassBodyOp, CompiledAttrDecl, CompiledClassDeclPlan, CompiledCode, CompiledDeclExpr,
+    CompiledMethodDecl, CompiledRoleDeclPlan, DeclTraitArg, DeferredBodyOpKind, OpCode,
 };
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
+use std::collections::{HashMap, HashSet};
 
 impl Compiler {
     /// Record the env-sync slots of a named sub's compiled bodies `keys` and
@@ -118,36 +122,8 @@ impl Compiler {
                 decl_arg_reads(Some(arg), &mut names)?;
             }
         }
-        for (_, attr) in &plan.attr_decls {
-            if attr.unknown_traits.iter().any(|(_, _, arg)| arg.is_some()) {
-                return None;
-            }
-            for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
-                decl_arg_reads(arg.as_ref(), &mut names)?;
-            }
-            for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
-                push_type_name_tokens(type_name, &mut names);
-            }
-        }
-        if plan.method_name_chunks.iter().any(Option::is_some) {
-            return None;
-        }
-        for method in &plan.method_decls {
-            if method.name_expr.is_some()
-                || method.custom_traits.iter().any(|(_, arg)| arg.is_some())
-            {
-                return None;
-            }
-            let cf = self.compiled_functions.get(&method.compiled_routine_key?)?;
-            if !lazy_body_reads_bounded(&cf.code) {
-                return None;
-            }
-            collect_by_name_reads(&cf.code, &mut names);
-            self.param_defs_by_name_reads(&cf.param_defs, &mut names)?;
-            if let Some(ret) = &method.return_type {
-                push_type_name_tokens(ret, &mut names);
-            }
-        }
+        attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
+        self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
         for op in &plan.body_plan {
             match op {
                 ClassBodyOp::Attr { .. } | ClassBodyOp::Method => {}
@@ -173,6 +149,112 @@ impl Compiler {
             }
         }
         Some(names)
+    }
+
+    /// The role counterpart of [`Self::note_class_decl_env_sync`] (#11078):
+    /// mark the role-declaration plan `decl_idx` bounded when every channel
+    /// its registration and compositions read outer lexicals through by name
+    /// is enumerable. Beyond the class channels, a role has type-parameter
+    /// signatures (defaults evaluated per parameterization) and deferred
+    /// body statements run at each composition: a `Plain` one is recompiled
+    /// from raw AST under the composition's ambient package, so its reads
+    /// are enumerated from an analysis compile of the same statement — the
+    /// package changes how a name qualifies, not which lexicals it reads.
+    /// A `token`/`rule` statement (interpreter-executed, ADR-0009) leaves
+    /// the plan unbounded.
+    // Cost: O(b), b = total ops and constants of the role's compiled method
+    // bodies, declaration chunks and analysis-compiled deferred statements.
+    pub(super) fn note_role_decl_env_sync(&mut self, decl_idx: u32) {
+        let Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) =
+            self.code.decl_plans.get(decl_idx as usize)
+        else {
+            return;
+        };
+        let Some(plan) = self.code.role_decl_plans.get(*plan_idx as usize) else {
+            return;
+        };
+        let Some(names) = self.role_plan_by_name_reads(plan) else {
+            return;
+        };
+        self.record_bounded_lazy_decl(&[decl_idx], names);
+    }
+
+    /// Every name the registration and compositions of the role `plan` may
+    /// resolve by name in the declaring frame's env, or `None` when one of
+    /// them is beyond enumeration.
+    // Cost: O(b), b as in `note_role_decl_env_sync`.
+    fn role_plan_by_name_reads(&self, plan: &CompiledRoleDeclPlan) -> Option<Vec<Symbol>> {
+        let mut names: Vec<Symbol> = Vec::new();
+        self.param_defs_by_name_reads(&plan.type_param_defs, &mut names)?;
+        for (_, arg) in &plan.custom_traits {
+            decl_arg_reads(arg.as_ref(), &mut names)?;
+        }
+        for parent in &plan.parent_ops {
+            // A bracketed parent whose arguments did not parse as an
+            // expression list is evaluated from its spelling.
+            if parent.args.is_none() && parent.name.with_str(|s| s.contains('[')) {
+                return None;
+            }
+            parent
+                .name
+                .with_str(|s| push_type_name_tokens(s, &mut names));
+            for arg in parent.args.iter().flatten() {
+                decl_arg_reads(Some(arg), &mut names)?;
+            }
+        }
+        attr_decls_by_name_reads(&plan.attr_decls, &mut names)?;
+        self.methods_by_name_reads(&plan.method_name_chunks, &plan.method_decls, &mut names)?;
+        let package = self.qualified_role_decl_name(&plan.name.resolve());
+        for op in &plan.deferred_body_ops {
+            match (op.kind, &op.chunk) {
+                (DeferredBodyOpKind::TokenRule, _) => return None,
+                (_, Some(chunk)) => chunk_reads(chunk, &mut names)?,
+                (_, None) => {
+                    let chunk = self.compile_decl_stmts_chunk_in_package(
+                        std::slice::from_ref(&op.raw),
+                        &package,
+                        &HashSet::new(),
+                        &HashMap::new(),
+                        &HashSet::new(),
+                    );
+                    chunk_reads(&chunk, &mut names)?;
+                }
+            }
+        }
+        Some(names)
+    }
+
+    /// Fold the by-name reads of a type's top-level `method`/`submethod`
+    /// declarations: each compiled body, its signature's declaration-time
+    /// expressions and its return type. `None` for a computed method name,
+    /// a trait argument, or a body that was not compiled.
+    // Cost: O(b), b = total ops and constants of the method bodies.
+    fn methods_by_name_reads(
+        &self,
+        name_chunks: &[Option<CompiledDeclExpr>],
+        methods: &[CompiledMethodDecl],
+        out: &mut Vec<Symbol>,
+    ) -> Option<()> {
+        if name_chunks.iter().any(Option::is_some) {
+            return None;
+        }
+        for method in methods {
+            if method.name_expr.is_some()
+                || method.custom_traits.iter().any(|(_, arg)| arg.is_some())
+            {
+                return None;
+            }
+            let cf = self.compiled_functions.get(&method.compiled_routine_key?)?;
+            if !lazy_body_reads_bounded(&cf.code) {
+                return None;
+            }
+            collect_by_name_reads(&cf.code, out);
+            self.param_defs_by_name_reads(&cf.param_defs, out)?;
+            if let Some(ret) = &method.return_type {
+                push_type_name_tokens(ret, out);
+            }
+        }
+        Some(())
     }
 
     /// Fold the by-name reads of a signature's declaration-time expressions
@@ -234,6 +316,28 @@ impl Compiler {
             }
         }
     }
+}
+
+/// Fold the by-name reads of a type's attribute descriptors: their
+/// `default`/`where`/`is default` chunks and type names. `None` for an
+/// unknown trait with an argument (evaluated from raw AST).
+// Cost: O(b), b = total ops and constants of the attribute chunks.
+fn attr_decls_by_name_reads(
+    attrs: &[(Symbol, CompiledAttrDecl)],
+    out: &mut Vec<Symbol>,
+) -> Option<()> {
+    for (_, attr) in attrs {
+        if attr.unknown_traits.iter().any(|(_, _, arg)| arg.is_some()) {
+            return None;
+        }
+        for arg in [&attr.default, &attr.where_constraint, &attr.is_default] {
+            decl_arg_reads(arg.as_ref(), out)?;
+        }
+        for type_name in attr.type_constraint.iter().chain(&attr.is_type) {
+            push_type_name_tokens(type_name, out);
+        }
+    }
+    Some(())
 }
 
 /// Fold the by-name reads of one declaration-time argument; `None` when it is
