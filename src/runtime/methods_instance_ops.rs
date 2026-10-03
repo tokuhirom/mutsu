@@ -3001,6 +3001,17 @@ impl Interpreter {
                 if let Some(repr) = target.custom_repr() {
                     return Ok(Value::str_from(repr));
                 }
+                // A native type object: a `native` declaration's `is repr<...>`,
+                // or the core's own `int*`/`num*`/`str` (`P6int`/`P6num`/`P6str`).
+                if let ValueView::Package(name) = target.view() {
+                    let name = name.resolve();
+                    if let Some(repr) = self.native_decl(&name).and_then(|d| d.repr) {
+                        return Ok(Value::str(repr));
+                    }
+                    if let Some(repr) = crate::runtime::native_decl::builtin_native_repr(&name) {
+                        return Ok(Value::str_from(repr));
+                    }
+                }
                 // Type objects only. An *instance* reaches here when it has no C
                 // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`
                 // pins that it must keep under-reporting `P6opaque`: answering

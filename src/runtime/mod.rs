@@ -653,6 +653,7 @@ mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
+pub(crate) mod native_decl;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
 mod nqp_create;
