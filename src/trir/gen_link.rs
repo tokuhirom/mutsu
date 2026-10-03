@@ -93,7 +93,7 @@ pub(super) enum GenOutcome {
 impl Interpreter {
     fn trir_gen_context(&self) -> GenContext {
         (
-            self.fn_resolve_gen,
+            self.caches.fn_resolve_gen,
             self.current_package_sym(),
             self.routine_stack().last().and_then(|f| f.lexical_package),
         )

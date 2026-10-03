@@ -273,7 +273,7 @@ impl Interpreter {
         // The constructor-lane candidate is scoped to this dispatch too: one a
         // probe claimed must not be installed by a later, unrelated arrival at
         // the native constructor.
-        self.ctor_lane_candidate = None;
+        self.caches.ctor_lane_candidate = None;
         result
     }
 
@@ -763,18 +763,18 @@ impl Interpreter {
         // `Class.new(named...)` on a class whose `.new` has been observed to
         // walk the whole chain into the native default constructor goes
         // straight there. See `vm_ctor_lane`.
-        self.ctor_lane_candidate =
+        self.caches.ctor_lane_candidate =
             Self::ctor_lane_key(&target, &args, modifier, quoted, want_ref, method_sym);
-        if let Some(class_sym) = self.ctor_lane_candidate
+        if let Some(class_sym) = self.caches.ctor_lane_candidate
             && let Some(result) = self.try_ctor_lane(class_sym, &args)
         {
-            self.ctor_lane_candidate = None;
+            self.caches.ctor_lane_candidate = None;
             self.stack.push(result?);
             return Ok(());
         }
         match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
-                self.plain_method_lane_candidate = None;
+                self.caches.plain_method_lane_candidate = None;
                 return self.run_plain_method_lane(
                     code,
                     target_name,
@@ -784,7 +784,7 @@ impl Interpreter {
                     args,
                 );
             }
-            other => self.plain_method_lane_candidate = other,
+            other => self.caches.plain_method_lane_candidate = other,
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {

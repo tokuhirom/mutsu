@@ -63,20 +63,22 @@ impl Interpreter {
     /// alone: the underlying [`Self::has_multi_candidates`] answer depends on
     /// `bare_name_packages_syms()`, which is scope-sensitive, so a name-only
     /// key let one package's answer leak into every other package's (#7539) —
-    /// see the doc comment on [`crate::runtime::Interpreter::multi_candidates_cache`].
+    /// see the doc comment on [`ResolutionCaches::multi_candidates_cache`](crate::runtime::resolution_caches::ResolutionCaches::multi_candidates_cache).
     pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
         // A scoped family's answer depends on the executing compunit, which
         // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
         if self.operator_has_import_scope_sym(sym) {
             return self.has_multi_candidates(&sym.resolve());
         }
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         let key = self.bare_name_ctx_key(sym);
-        if let Some(&cached) = self.multi_candidates_cache.get(generation, &key) {
+        if let Some(&cached) = self.caches.multi_candidates_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_multi_candidates(&sym.resolve());
-        self.multi_candidates_cache.insert(generation, key, result);
+        self.caches
+            .multi_candidates_cache
+            .insert(generation, key, result);
         result
     }
 
@@ -115,16 +117,16 @@ impl Interpreter {
             return self.has_proto(name);
         }
         let pgen = self.registry().proto_generation();
-        if self.has_proto_cache_gen != pgen {
-            self.has_proto_cache.clear();
-            self.has_proto_cache_gen = pgen;
+        if self.caches.has_proto_cache_gen != pgen {
+            self.caches.has_proto_cache.clear();
+            self.caches.has_proto_cache_gen = pgen;
         }
         let key = self.bare_name_ctx_key(name_sym);
-        if let Some(&cached) = self.has_proto_cache.get(&key) {
+        if let Some(&cached) = self.caches.has_proto_cache.get(&key) {
             return cached;
         }
         let result = self.has_proto(name);
-        self.has_proto_cache.insert(key, result);
+        self.caches.has_proto_cache.insert(key, result);
         result
     }
 
@@ -148,13 +150,15 @@ impl Interpreter {
         if self.has_prelude_functions() {
             return self.has_declared_function(name);
         }
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         let key = self.bare_name_ctx_key(name_sym);
-        if let Some(&cached) = self.declared_fn_cache.get(generation, &key) {
+        if let Some(&cached) = self.caches.declared_fn_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_declared_function(name);
-        self.declared_fn_cache.insert(generation, key, result);
+        self.caches
+            .declared_fn_cache
+            .insert(generation, key, result);
         result
     }
 
@@ -174,13 +178,13 @@ impl Interpreter {
         if self.operator_has_import_scope_sym(name_sym) {
             return self.has_multi_function(name);
         }
-        let generation = self.fn_resolve_gen;
+        let generation = self.caches.fn_resolve_gen;
         let key = self.bare_name_ctx_key(name_sym);
-        if let Some(&cached) = self.multi_fn_cache.get(generation, &key) {
+        if let Some(&cached) = self.caches.multi_fn_cache.get(generation, &key) {
             return cached;
         }
         let result = self.has_multi_function(name);
-        self.multi_fn_cache.insert(generation, key, result);
+        self.caches.multi_fn_cache.insert(generation, key, result);
         result
     }
 
@@ -292,7 +296,7 @@ impl Interpreter {
         // still paid the hash on every step, which profiled as 2.6% of a
         // `[mm] 1 .. 200` run (ADR-0019 C6d-1).
         let cache_key = fingerprint ^ (def.package.id() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        if let Some(cached) = self.otf_compile_cache.get(&cache_key) {
+        if let Some(cached) = self.caches.otf_compile_cache.get(&cache_key) {
             return cached.clone();
         }
         // L2: process-global content-addressed cache. A spawned task starts with
@@ -310,7 +314,8 @@ impl Interpreter {
         let shareable = !Self::routine_body_facts(def).declares_state;
         if shareable && let Some(cached) = global_otf_cache().lock().unwrap().get(&cache_key) {
             let cached = Arc::clone(cached);
-            self.otf_compile_cache
+            self.caches
+                .otf_compile_cache
                 .insert(cache_key, Arc::clone(&cached));
             return cached;
         }
@@ -404,7 +409,9 @@ impl Interpreter {
         } else {
             cf
         };
-        self.otf_compile_cache.insert(cache_key, Arc::clone(&cf));
+        self.caches
+            .otf_compile_cache
+            .insert(cache_key, Arc::clone(&cf));
         cf
     }
 
@@ -513,8 +520,8 @@ impl Interpreter {
             // defining package rides along so a cache hit runs the body under
             // the same package this (uncached) call does.
             let cur_pkg_sym = self.current_package_sym();
-            let generation = self.fn_resolve_gen;
-            self.otf_call_cache.insert(
+            let generation = self.caches.fn_resolve_gen;
+            self.caches.otf_call_cache.insert(
                 generation,
                 name_sym,
                 (cur_pkg_sym, def.package, Arc::clone(&cf)),

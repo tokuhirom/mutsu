@@ -180,4 +180,7 @@ these preconditions:
 - Phase 3 (this ADR): D4 ratchet landed (`make check-interp-fields`, baseline 439).
   - `guards`: done. `RakuCycleGuards` (`src/runtime/raku_cycle_guards.rs`) holds the two
     `.raku` render guards as one generic `CycleGuard<K>`; 439 → 436 fields.
-  - Next: `caches`.
+  - `caches`: done. `ResolutionCaches` (`src/runtime/resolution_caches.rs`) holds the 51
+    cache fields, all started fresh in a spawned thread; 436 → 386 fields. A single
+    invalidation entry point is a follow-up: this step only moved the fields.
+  - Next: `regex`, `eval`, `threads`, `async`.

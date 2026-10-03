@@ -63,10 +63,13 @@ impl Interpreter {
         if self.operator_has_import_scope_sym(name_sym) {
             return Arc::new(self.resolve_all_multi_candidates_indexed(name));
         }
-        let generation = (self.fn_resolve_gen, self.registry().proto_generation());
-        if self.multi_dispatch_candidates_memo_gen != generation {
-            self.multi_dispatch_candidates_memo.clear();
-            self.multi_dispatch_candidates_memo_gen = generation;
+        let generation = (
+            self.caches.fn_resolve_gen,
+            self.registry().proto_generation(),
+        );
+        if self.caches.multi_dispatch_candidates_memo_gen != generation {
+            self.caches.multi_dispatch_candidates_memo.clear();
+            self.caches.multi_dispatch_candidates_memo_gen = generation;
         }
         let key = (
             name_sym,
@@ -75,11 +78,12 @@ impl Interpreter {
                 .last()
                 .and_then(|frame| frame.lexical_package),
         );
-        if let Some(cached) = self.multi_dispatch_candidates_memo.get(&key) {
+        if let Some(cached) = self.caches.multi_dispatch_candidates_memo.get(&key) {
             return cached.clone();
         }
         let candidates = Arc::new(self.resolve_all_multi_candidates_indexed(name));
-        self.multi_dispatch_candidates_memo
+        self.caches
+            .multi_dispatch_candidates_memo
             .insert(key, candidates.clone());
         candidates
     }

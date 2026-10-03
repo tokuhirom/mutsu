@@ -811,7 +811,7 @@ mod base_name_tests {
         let mut i = crate::runtime::Interpreter::new();
         i.run("sub alpha() { 1 }\n").expect("setup program runs");
 
-        let base = i.fn_resolve_gen;
+        let base = i.caches.fn_resolve_gen;
         assert_eq!(
             base,
             i.registry().functions_version(),
@@ -822,7 +822,7 @@ mod base_name_tests {
         // the same map, so every memo over it is still good. (This is what
         // absorbs the sites that announce one registration twice.)
         i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::alpha/0")]);
-        assert_eq!(i.fn_resolve_gen, base, "no write, no new generation");
+        assert_eq!(i.caches.fn_resolve_gen, base, "no write, no new generation");
 
         // A routine scope installing a lexical sub: a real write, a new
         // generation.
@@ -837,14 +837,14 @@ mod base_name_tests {
             .functions_mut()
             .insert(Symbol::intern("GLOBAL::inner"), def);
         i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::inner")]);
-        let inside = i.fn_resolve_gen;
+        let inside = i.caches.fn_resolve_gen;
         assert_ne!(inside, base, "a write mints a fresh generation");
 
         // The routine returns. The restore puts the snapshot's own `Arc` back,
         // version and all.
         i.restore_routine_registry(snapshot);
         assert_eq!(
-            i.fn_resolve_gen, base,
+            i.caches.fn_resolve_gen, base,
             "the pre-excursion generation is live again"
         );
         assert!(

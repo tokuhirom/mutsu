@@ -1167,7 +1167,7 @@ impl Interpreter {
         // `crate::vm::vm_capture_cache` for why an address comparison settles
         // "unchanged".
         let tier_addrs = self.env().tier_addrs();
-        if let Some(mut env) = self.capture_cache.get(tier_addrs, cc).cloned() {
+        if let Some(mut env) = self.caches.capture_cache.get(tier_addrs, cc).cloned() {
             self.finish_closure_capture(code, cc, &mut env);
             return env;
         }
@@ -1176,10 +1176,13 @@ impl Interpreter {
             .env()
             .filtered_flat_capture(&|k, _v| capture_keeps(k, free, own_locals), probe);
         let tiers = self
+            .caches
             .capture_cache
             .wants_arm(tier_addrs, cc)
             .then(|| self.env().tier_maps());
-        self.capture_cache.record(tier_addrs, cc, tiers, &env);
+        self.caches
+            .capture_cache
+            .record(tier_addrs, cc, tiers, &env);
         self.finish_closure_capture(code, cc, &mut env);
         env
     }
