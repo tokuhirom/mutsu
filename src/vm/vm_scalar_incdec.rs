@@ -127,7 +127,7 @@ impl Interpreter {
             .or_else(|| self.escaping_our_write_cell(code, name))
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
-            .or_else(|| self.read_package_scope_var(name))
+            .or_else(|| self.read_package_scope_var(name_sym))
             .or_else(|| self.qualified_our_var_read(name_sym))
             .or_else(|| self.anon_state_value(name))
             .or_else(|| self.package_alias_var_read(name))

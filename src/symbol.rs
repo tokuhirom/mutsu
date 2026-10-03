@@ -582,6 +582,9 @@ pub(crate) mod wk {
         empty_package => "";
         /// The default top-level package every unqualified declaration lands in.
         global_package => "GLOBAL";
+        /// The `Main` package a sigiled free variable is also looked up under
+        /// (`$x` -> `$Main::x`, `get_env_with_main_alias`).
+        main_package => "Main";
         /// `.map`, probed by name on every map/grep reification to ask whether
         /// an `augment class Array { method map {...} }` shadows the native
         /// loop (`native_lever_a_user_override`).

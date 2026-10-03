@@ -98,6 +98,7 @@ impl Interpreter {
         // an `rsplit_once` per step — both are decided by text the source
         // fixed once (#8899).
         let cur_sym = self.current_package_sym();
+        let name_sym = Symbol::intern(name);
         let frame = self.routine_stack().last();
         let candidates = [
             frame.and_then(|f| f.lexical_package),
@@ -109,7 +110,6 @@ impl Interpreter {
         ];
         for candidate in candidates.into_iter().flatten() {
             for pkg_sym in crate::qualified::package_ancestors(candidate) {
-                let pkg = pkg_sym.as_str();
                 if crate::qualified::is_global_package(pkg_sym)
                     || crate::qualified::is_routine_scoped_package(pkg_sym)
                 {
@@ -119,7 +119,7 @@ impl Interpreter {
                 // positional-capture exclusions the compiler's
                 // `qualify_variable_name` does, so reads and writes reconstruct
                 // exactly the key the declaration stored.
-                if let Some(key) = Self::package_qualified_candidate(name, pkg)
+                if let Some(key) = Self::package_qualified_candidate(name_sym, pkg_sym)
                     && self.get_our_var(key.as_str()).is_some()
                 {
                     return Some(key.as_str().to_string());

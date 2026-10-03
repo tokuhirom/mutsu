@@ -264,76 +264,27 @@ impl Interpreter {
     /// already qualified, sigil-stripped twigils, or positional captures —
     /// mirroring the `GetGlobal` bare-name read fallback so reads and writes
     /// resolve to the same canonical store.
-    fn package_qualified_candidate_uncached(name: &str, cur: &str) -> Option<Symbol> {
-        if crate::runtime::utils::has_double_colon(name)
-            || cur.is_empty()
-            || cur == "GLOBAL"
-            || crate::runtime::utils::has_routine_scope_marker(cur)
+    ///
+    /// It runs on the container-read path: `our_package_var_key` walks up to
+    /// four candidate packages' `::` chains on EVERY `@`/`%` read once a
+    /// program declares any `our` variable (#7571). Every question here is a
+    /// memoized property of the two symbols, so a call allocates nothing and
+    /// scans no text (#11507).
+    // Cost: O(1) amortized (flag-table reads and one memo probe).
+    pub(super) fn package_qualified_candidate(name: Symbol, cur: Symbol) -> Option<Symbol> {
+        if crate::qualified::is_qualified(name)
+            || crate::qualified::is_global_package(cur)
+            || crate::qualified::is_routine_scoped_package(cur)
         {
             return None;
         }
-        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
+        let bare_first = name.as_str().trim_start_matches(['$', '@', '%', '&']);
         let first_ch = bare_first.chars().next()?;
         if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
         {
             return None;
         }
-        let candidate = if let Some(rest) = name.strip_prefix('$') {
-            format!("${cur}::{rest}")
-        } else if let Some(rest) = name.strip_prefix('@') {
-            format!("@{cur}::{rest}")
-        } else if let Some(rest) = name.strip_prefix('%') {
-            format!("%{cur}::{rest}")
-        } else if let Some(rest) = name.strip_prefix('&') {
-            format!("&{cur}::{rest}")
-        } else {
-            format!("{cur}::{name}")
-        };
-        Some(Symbol::intern(&candidate))
-    }
-
-    /// [`Self::package_qualified_candidate_uncached`] with a process-wide memo.
-    ///
-    /// The mapping is a *pure function of its two strings* — no interpreter or
-    /// registry state feeds it — so a hit can never answer for the wrong scope
-    /// and the memo needs no generation counter.
-    ///
-    /// It earns its keep on the container-read path: `our_package_var_key`
-    /// walks up to four candidate packages' `::` chains on EVERY `@`/`%` read
-    /// once a program declares any `our` variable, and each step built its key
-    /// with `format!`. That was 1.6% of the RIPEMD profile in `format!`
-    /// machinery alone, plus the matching malloc/free pair and a String-keyed
-    /// hash of the result (#7571). Returning an interned `Symbol` removes all
-    /// three: the key is a `&'static str` the callers can probe with.
-    pub(super) fn package_qualified_candidate(name: &str, cur: &str) -> Option<Symbol> {
-        thread_local! {
-            static MEMO: std::cell::RefCell<rustc_hash::FxHashMap<(Symbol, Symbol), Option<Symbol>>> =
-                const {
-                    std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
-                        rustc_hash::FxBuildHasher,
-                    ))
-                };
-        }
-        // The cheap structural rejections run BEFORE interning, so a name that
-        // can never be package-qualified (a twigil, a positional capture) does
-        // not grow the symbol table or the memo with an entry whose answer is
-        // always `None`.
-        if crate::runtime::utils::has_double_colon(name)
-            || cur.is_empty()
-            || cur == "GLOBAL"
-            || crate::runtime::utils::has_routine_scope_marker(cur)
-        {
-            return None;
-        }
-        let key = (Symbol::intern(name), Symbol::intern(cur));
-        if let Some(hit) = MEMO.with(|m| m.borrow().get(&key).copied()) {
-            return hit;
-        }
-        let computed = Self::package_qualified_candidate_uncached(name, cur);
-        MEMO.with(|m| {
-            m.borrow_mut().insert(key, computed);
-        });
-        computed
+        Some(crate::qualified::qualified_var(cur, name))
     }
 
     /// Resolve a bare enum-member name through the current package chain
@@ -342,29 +293,25 @@ impl Interpreter {
     /// rollback (only bare keys are dropped), so this recovers members that a
     /// nested `use` made invisible under their bare name. Walks up the package
     /// chain like `resolve_type_in_current_package`.
-    pub(super) fn resolve_enum_member_in_current_package(&self, name: &str) -> Option<Value> {
-        if name.is_empty() || crate::runtime::utils::has_double_colon(name) {
+    pub(super) fn resolve_enum_member_in_current_package(&self, name: Symbol) -> Option<Value> {
+        if name.as_str().is_empty() || crate::qualified::is_qualified(name) {
             return None;
         }
-        let probe_chain = |root: &str| -> Option<Value> {
-            let mut pkg: &str = root;
-            loop {
-                if pkg.is_empty() || pkg == "GLOBAL" {
+        let probe_chain = |root: Symbol| -> Option<Value> {
+            for pkg in crate::qualified::package_ancestors(root) {
+                if crate::qualified::is_global_package(pkg) {
                     return None;
                 }
-                let qualified = format!("{pkg}::{name}");
-                if let Some(v) = self.env().get(&qualified)
+                let qualified = crate::qualified::qualified(pkg, name);
+                if let Some(v) = self.env().get(qualified.as_str())
                     && matches!(v.view(), ValueView::Enum { .. })
                 {
                     return Some(v.clone());
                 }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => return None,
-                }
             }
+            None
         };
-        if let Some(v) = probe_chain(self.current_package_sym().as_str()) {
+        if let Some(v) = probe_chain(self.current_package_sym()) {
             return Some(v);
         }
         // Inside a method body the runtime package is often GLOBAL; the
@@ -372,11 +319,11 @@ impl Interpreter {
         // package chain too (`unit class EnumC; our enum HF <… Lists>;
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
         let invocant_class = match self.env().get("self").map(|v| v.view()) {
-            Some(ValueView::Instance { class_name, .. }) => Some(class_name.to_string()),
-            Some(ValueView::Package(p)) => Some(p.resolve()),
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name),
+            Some(ValueView::Package(p)) => Some(p),
             _ => None,
         }?;
-        probe_chain(&invocant_class)
+        probe_chain(invocant_class)
     }
 
     /// Read a bare free-variable name from the enclosing package's variable
@@ -385,18 +332,18 @@ impl Interpreter {
     /// `GetGlobal` read fallbacks so the fused `AtomicCompoundVar` / inc-dec
     /// RMW paths see the same value a plain `Var` read would. Returns the raw
     /// stored value (the caller decont's if needed).
-    pub(super) fn read_package_scope_var(&self, name: &str) -> Option<Value> {
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
+    pub(super) fn read_package_scope_var(&self, name: Symbol) -> Option<Value> {
+        // The symbol mirror, not `current_package()`: that takes the `RwLock`
+        // and clones the `String` on every free-variable read.
+        let cur = self.current_package_sym();
         if let Some(candidate) = Self::package_qualified_candidate(name, cur)
             && let Some(v) = self.get_our_var(candidate.as_str())
         {
             return Some(v.clone());
         }
         self.package_lexicals
-            .get(cur)
-            .and_then(|m| m.get(name))
+            .get(cur.as_str())
+            .and_then(|m| m.get(name.as_str()))
             .cloned()
     }
 
@@ -409,8 +356,8 @@ impl Interpreter {
     /// Callers use this AFTER the live env misses, so an in-scope binding
     /// always wins. Never falls through to the bare (GLOBAL) name — the
     /// lexical alias for `our` is block-scoped.
-    pub(crate) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
-        if crate::runtime::utils::has_double_colon(name) {
+    pub(crate) fn package_chain_var_fallback(&self, name: Symbol) -> Option<Value> {
+        if crate::qualified::is_qualified(name) {
             return None;
         }
         // Both questions are decided by the package name's TEXT, so they are
@@ -422,39 +369,33 @@ impl Interpreter {
         {
             return None;
         }
-        let cur: &str = cur_sym.as_str();
-        let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
+        let name_str = name.as_str();
+        let bare_first = name_str.trim_start_matches(['$', '@', '%', '&']);
         let first_ch = bare_first.chars().next()?;
         if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
         {
             return None;
         }
-        let (sigil, rest) = match name.as_bytes().first() {
-            Some(b'$' | b'@' | b'%' | b'&') => (&name[..1], &name[1..]),
-            _ => ("", name),
-        };
-        let mut pkg: &str = cur;
-        loop {
-            let candidate = format!("{sigil}{pkg}::{rest}");
-            if let Some(v) = self.get_our_var(&candidate).cloned() {
+        // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
+        // memoized per symbol: no `format!` and no `"::"` search per read.
+        for pkg in crate::qualified::package_ancestors(cur_sym) {
+            let candidate = crate::qualified::qualified_var(pkg, name);
+            if let Some(v) = self.get_our_var(candidate.as_str()).cloned() {
                 return Some(v);
             }
-            if let Some(v) = self.get_env_with_main_alias(&candidate) {
+            if let Some(v) = self.get_env_with_main_alias(candidate.as_str()) {
                 return Some(v);
             }
             if let Some(v) = self
                 .package_lexicals
-                .get(pkg)
-                .and_then(|m| m.get(name))
+                .get(pkg.as_str())
+                .and_then(|m| m.get(name_str))
                 .cloned()
             {
                 return Some(v);
             }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => return None,
-            }
         }
+        None
     }
 
     /// Resolve a regex body's bare lexical through its defining grammar's
@@ -465,10 +406,11 @@ impl Interpreter {
     /// it is only for regex interpolation, where the token resolver has already
     /// selected an inherited definition.
     pub(crate) fn regex_package_chain_var_fallback(&self, name: &str) -> Option<Value> {
-        if let Some(value) = self.package_chain_var_fallback(name) {
+        let name_sym = Symbol::intern(name);
+        if let Some(value) = self.package_chain_var_fallback(name_sym) {
             return Some(value);
         }
-        if crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)) {
+        if crate::qualified::is_qualified(name_sym) {
             return None;
         }
         let cur = self.current_package_sym();
@@ -481,12 +423,12 @@ impl Interpreter {
             for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(&mro_pkg))
             {
                 if pkg.as_str() != cur.as_str() {
-                    if let Some(candidate) = Self::package_qualified_candidate(name, pkg.as_str())
+                    if let Some(candidate) = Self::package_qualified_candidate(name_sym, pkg)
                         && let Some(value) = self.get_our_var(candidate.as_str()).cloned()
                     {
                         return Some(value);
                     }
-                    if let Some(candidate) = Self::package_qualified_candidate(name, pkg.as_str())
+                    if let Some(candidate) = Self::package_qualified_candidate(name_sym, pkg)
                         && let Some(value) = self.get_env_with_main_alias(candidate.as_str())
                     {
                         return Some(value);
@@ -561,34 +503,34 @@ impl Interpreter {
         //     auto-qualifies free vars. Resolve ONLY when the qualifier is the
         //     current package, so `$Other::x` from outside never reaches another
         //     package's `my` lexical (Raku: `my` lexicals are not package-public).
-        let key: std::borrow::Cow<str> = if crate::runtime::utils::has_double_colon(name) {
-            let (sigil, rest) = match name.as_bytes().first() {
-                Some(b @ (b'$' | b'@' | b'%' | b'&')) => (Some(*b as char), &name[1..]),
-                _ => (None, name),
-            };
-            let (pkg, bare) = rest.rsplit_once("::")?;
-            if pkg != cur {
-                return None;
-            }
-            // A class-body `my` static lives in `package_lexicals` for BARE-name
-            // reuse, but a QUALIFIED `$C::x` is a distinct package variable, not
-            // the static — do not resolve it here (t/package-lookup.t).
-            if self
-                .class_body_static_names
-                .get(pkg)
-                .is_some_and(|s| s.contains(bare))
+        // Interning is behind the empty-store gate above, so the common
+        // program never pays it; the split itself is memoized per symbol.
+        let key: std::borrow::Cow<str> =
+            if let Some(crate::qualified::QualifiedVar { sigil, pkg, bare }) =
+                crate::qualified::split_qualified_var(Symbol::intern(name))
             {
-                return None;
-            }
-            match sigil {
-                // `@`/`%`/`&` lexicals are stored WITH their sigil; a scalar (`$`
-                // or sigil-less) is stored sigil-less.
-                Some(s @ ('@' | '%' | '&')) => std::borrow::Cow::Owned(format!("{s}{bare}")),
-                _ => std::borrow::Cow::Borrowed(bare),
-            }
-        } else {
-            std::borrow::Cow::Borrowed(name)
-        };
+                if pkg != cur {
+                    return None;
+                }
+                // A class-body `my` static lives in `package_lexicals` for BARE-name
+                // reuse, but a QUALIFIED `$C::x` is a distinct package variable, not
+                // the static — do not resolve it here (t/package-lookup.t).
+                if self
+                    .class_body_static_names
+                    .get(pkg)
+                    .is_some_and(|s| s.contains(bare))
+                {
+                    return None;
+                }
+                match sigil {
+                    // `@`/`%`/`&` lexicals are stored WITH their sigil; a scalar (`$`
+                    // or sigil-less) is stored sigil-less.
+                    "@" | "%" | "&" => std::borrow::Cow::Owned(format!("{sigil}{bare}")),
+                    _ => std::borrow::Cow::Borrowed(bare),
+                }
+            } else {
+                std::borrow::Cow::Borrowed(name)
+            };
         self.package_lexicals
             .get(cur)
             .and_then(|m| m.get(key.as_ref()))
@@ -605,21 +547,19 @@ impl Interpreter {
     /// bare sigiled name. An explicitly written foreign qualifier
     /// (`%Other::h`) never matches `current_package`, so `my` lexicals stay
     /// invisible across packages.
-    pub(super) fn auto_qualified_bare_env_read(&self, name: &str) -> Option<Value> {
+    pub(super) fn auto_qualified_bare_env_read(&self, name: Symbol) -> Option<Value> {
         let cur_sym = self.current_package_sym();
         if crate::qualified::is_global_package(cur_sym) {
             return None;
         }
-        let cur: &str = cur_sym.as_str();
-        let (sigil, rest) = match name.as_bytes().first() {
-            Some(b @ (b'@' | b'%')) => (*b as char, &name[1..]),
-            _ => return None,
-        };
-        let (pkg, bare) = rest.rsplit_once("::")?;
-        if bare.is_empty() || pkg != cur {
+        let split = crate::qualified::split_qualified_var(name)?;
+        if !matches!(split.sigil, "@" | "%")
+            || split.bare.is_empty()
+            || split.pkg != cur_sym.as_str()
+        {
             return None;
         }
-        self.get_env_with_main_alias(&format!("{sigil}{bare}"))
+        self.get_env_with_main_alias(&format!("{}{}", split.sigil, split.bare))
     }
 
     /// Read a file-scope `my` lexical of the compunit the running routine belongs
@@ -683,7 +623,7 @@ impl Interpreter {
         if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
-        if !crate::runtime::utils::has_double_colon(name)
+        if !crate::qualified::is_qualified(Symbol::intern(name))
             && let Some(ValueView::ContainerRef(arc)) = self
                 .unit_lexicals
                 .get(crate::runtime::MAINLINE_UNIT_KEY)
@@ -734,7 +674,7 @@ impl Interpreter {
             return None;
         }
         let frame = self.routine_stack().last()?;
-        if frame.is_block || frame.package != "GLOBAL" {
+        if frame.is_block || frame.package != crate::symbol::wk::global_package() {
             return None;
         }
         let key = self.mainline_lexical_subs.get(frame.name.as_str())?;
@@ -849,9 +789,11 @@ impl Interpreter {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
-        // Probed once: `str::contains` builds a searcher per call, and this
-        // resolver asked it three times per free-variable read.
-        let qualified = crate::runtime::utils::has_double_colon(name);
+        // Split once, memoized per symbol: the interning sits behind the
+        // empty-store gate above, so a program with no unit lexicals never
+        // pays it.
+        let split = crate::qualified::split_qualified_var(Symbol::intern(name));
+        let qualified = split.is_some();
         // ADR-0024: a mainline named sub's free-variable read consults its own
         // captured cells first. Tried before the package-chain candidates
         // below, which all explicitly exclude `GLOBAL` — the running routine's
@@ -868,41 +810,59 @@ impl Interpreter {
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur_sym = self.current_package_sym();
         let cur: &str = cur_sym.as_str();
-        if qualified {
+        if let Some(split) = split {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
-            let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
-                name.strip_prefix('$').unwrap_or(name),
-            )?;
+            let (pkg, bare) = Self::unit_lexical_scalar_split(split)?;
             if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
             return Self::lookup_unit_lexical_chain(&self.unit_lexicals, cur, bare, lexical_owner);
         }
-        let frame = self.routine_stack().last();
-        let candidates = [
-            frame.and_then(|f| f.lexical_package).map(|s| s.as_str()),
-            self.method_class_stack_top_str(),
-            frame
-                .map(|f| f.package.as_str())
-                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
-            Some(cur),
-        ];
-        for candidate in candidates.into_iter().flatten() {
-            if candidate.is_empty()
-                || candidate == "GLOBAL"
-                || crate::runtime::utils::has_routine_scope_marker(candidate)
-            {
-                continue;
-            }
-            if let Some(found) =
-                Self::lookup_unit_lexical_chain(&self.unit_lexicals, candidate, name, lexical_owner)
-            {
+        for candidate in self.unit_lexical_candidates(cur_sym).into_iter().flatten() {
+            if let Some(found) = Self::lookup_unit_lexical_chain(
+                &self.unit_lexicals,
+                candidate.as_str(),
+                name,
+                lexical_owner,
+            ) {
                 return Some(found);
             }
         }
         None
+    }
+
+    /// The packages a free-variable read probes the unit-lexical store
+    /// under, in order: the frame's lexical package, the method-class-stack
+    /// top, the frame's own package, then `cur`. A global or routine-scope
+    /// mangled package is never a candidate; both are flag reads on the
+    /// symbol, not string compares.
+    // Cost: O(1).
+    fn unit_lexical_candidates(&self, cur: Symbol) -> [Option<Symbol>; 4] {
+        let frame = self.routine_stack().last();
+        [
+            frame.and_then(|f| f.lexical_package),
+            self.method_class_stack_top_sym(),
+            frame.map(|f| f.package),
+            Some(cur),
+        ]
+        .map(|candidate| {
+            candidate.filter(|pkg| {
+                !crate::qualified::is_global_package(*pkg)
+                    && !crate::qualified::is_routine_scoped_package(*pkg)
+            })
+        })
+    }
+
+    /// A qualified unit-lexical name's package and bare scalar name. Only
+    /// scalars are in the store, keyed sigil-less, so a `@`/`%`/`&` name never
+    /// resolves here.
+    // Cost: O(1).
+    fn unit_lexical_scalar_split(
+        split: crate::qualified::QualifiedVar,
+    ) -> Option<(&'static str, &'static str)> {
+        matches!(split.sigil, "" | "$").then_some((split.pkg, split.bare))
     }
 
     /// Mutable counterpart of [`Self::unit_lexical_slot`] — identical
@@ -933,8 +893,8 @@ impl Interpreter {
         // later immutable accessor calls in the same function does not
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
-        let qualified = crate::runtime::utils::has_double_colon(name);
-        let own_bucket: Option<String> = if qualified {
+        let split = crate::qualified::split_qualified_var(Symbol::intern(name));
+        let own_bucket: Option<String> = if split.is_some() {
             None
         } else {
             self.active_unit_lexical_bucket()
@@ -956,13 +916,11 @@ impl Interpreter {
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur_sym = self.current_package_sym();
         let cur: &str = cur_sym.as_str();
-        if qualified {
+        if let Some(split) = split {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
-            let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
-                name.strip_prefix('$').unwrap_or(name),
-            )?;
+            let (pkg, bare) = Self::unit_lexical_scalar_split(split)?;
             if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
@@ -974,39 +932,17 @@ impl Interpreter {
                 lexical_owner,
             );
         }
-        // Same candidate order as `unit_lexical_slot`: the frame's lexical
-        // package, the method-class-stack top, the frame's own package, then
-        // whatever package is current. Collected as owned `String`s up front
-        // (via the owned `method_class_stack_top`, not the borrowing
-        // `_str` form) so the read-only accessors are done before the
+        // Same candidate order as `unit_lexical_slot`. The candidates are
+        // `Copy` symbols, so the read-only accessors are done before the
         // mutable borrow of `self.unit_lexicals` below starts.
-        let frame = self.routine_stack().last();
-        let candidates: Vec<String> = [
-            frame
-                .and_then(|f| f.lexical_package)
-                .map(|s| s.as_str().to_string()),
-            self.method_class_stack_top(),
-            frame
-                .map(|f| f.package.as_str().to_string())
-                .filter(|pkg| !pkg.is_empty() && pkg != "GLOBAL"),
-            Some(cur.to_string()),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        for candidate in candidates {
-            if candidate.is_empty()
-                || candidate == "GLOBAL"
-                || crate::runtime::utils::has_routine_scope_marker(&candidate)
-            {
-                continue;
-            }
-            if Self::lookup_unit_lexical_chain(&self.unit_lexicals, &candidate, name, lexical_owner)
+        for candidate in self.unit_lexical_candidates(cur_sym).into_iter().flatten() {
+            let candidate = candidate.as_str();
+            if Self::lookup_unit_lexical_chain(&self.unit_lexicals, candidate, name, lexical_owner)
                 .is_some()
             {
                 return Self::lookup_unit_lexical_chain_mut(
                     self.unit_lexicals_cow_mut(),
-                    &candidate,
+                    candidate,
                     name,
                     lexical_owner,
                 );
@@ -1037,7 +973,8 @@ impl Interpreter {
     /// happens to hold under that key, which is exactly the aliasing this store
     /// removes.
     pub(crate) fn is_unit_lexical_of(&self, pkg: &str, name: &str) -> bool {
-        if self.unit_lexicals.is_empty() || pkg.is_empty() || pkg == "GLOBAL" {
+        if self.unit_lexicals.is_empty() || crate::qualified::is_global_package(Symbol::intern(pkg))
+        {
             return false;
         }
         Self::lookup_in_package_chain(&self.unit_lexicals, pkg, name).is_some()
@@ -1243,7 +1180,10 @@ impl Interpreter {
         // A sigil-less name whose final segment starts uppercase is a package
         // or type (`OUR::A36`), not a variable — resolved elsewhere.
         if sigil.is_empty() {
-            let last = bare.rsplit("::").next().unwrap_or(bare);
+            // `name` carries `OUR::`, so it always splits; the last segment
+            // is memoized per symbol.
+            let last = crate::qualified::split_qualified_var(Symbol::intern(name))
+                .map_or(bare, |q| q.bare);
             if last.chars().next().is_some_and(|c| c.is_uppercase()) {
                 return None;
             }
@@ -1274,10 +1214,11 @@ impl Interpreter {
         if self.our_vars_is_empty() && self.package_lexicals.is_empty() {
             return false;
         }
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
-        if let Some(candidate) = Self::package_qualified_candidate(name, cur)
+        // The symbol mirror, not `current_package()`: that takes the `RwLock`
+        // and clones the `String` on every free-variable read.
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
+        if let Some(candidate) = Self::package_qualified_candidate(Symbol::intern(name), cur_sym)
             && self.get_our_var(candidate.as_str()).is_some()
         {
             // A plain `our $x` keeps its value in ONE shared cell that the
@@ -1388,15 +1329,22 @@ impl Interpreter {
         rest.starts_with("PROCESS::")
     }
 
-    fn main_qualified_name(name: &str) -> Option<String> {
-        for sigil in ["$", "@", "%", "&"] {
-            if let Some(rest) = name.strip_prefix(sigil)
-                && !crate::runtime::utils::has_double_colon(rest)
-            {
-                return Some(format!("{sigil}Main::{rest}"));
-            }
+    /// `$x` -> `$Main::x` (any sigil), `None` for a sigil-less or already
+    /// qualified name. The key is memoized per symbol pair, so the miss path
+    /// of every env read no longer allocates it.
+    // Cost: O(1) amortized.
+    fn main_qualified_name(name: &str) -> Option<Symbol> {
+        if !name.starts_with(['$', '@', '%', '&']) {
+            return None;
         }
-        None
+        let name = Symbol::intern(name);
+        if crate::qualified::is_qualified(name) {
+            return None;
+        }
+        Some(crate::qualified::qualified_var(
+            crate::symbol::wk::main_package(),
+            name,
+        ))
     }
 
     /// Look up a sigiled variable name (e.g. "@z") in the locals array by its
@@ -1635,7 +1583,7 @@ impl Interpreter {
             return self.env().get(&alias).cloned();
         }
         if let Some(qualified) = Self::main_qualified_name(name) {
-            return self.env().get(&qualified).cloned();
+            return self.env().get(qualified.as_str()).cloned();
         }
         // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
         // the variable under its bare name in the environment.
@@ -1853,9 +1801,9 @@ impl Interpreter {
             return;
         }
         if let Some(qualified) = Self::main_qualified_name(name)
-            && self.env().contains_key(&qualified)
+            && self.env().contains_key(qualified.as_str())
         {
-            self.env_mut().insert(qualified, value);
+            self.env_mut().insert(qualified.resolve(), value);
             return;
         }
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the
@@ -2268,7 +2216,7 @@ impl Interpreter {
 
     /// Check if a local name looks like a bare function parameter (no sigil).
     /// These are stored by the compiler for function params like `$n` → `n`.
-    fn is_bare_param_name(name: &str) -> bool {
+    fn is_bare_param_name(name: &str, sym: Symbol) -> bool {
         !name.is_empty()
             && !name.starts_with('$')
             && !name.starts_with('@')
@@ -2278,7 +2226,7 @@ impl Interpreter {
             && !name.starts_with('!')
             && !name.starts_with('^')
             && name != "_"
-            && !crate::runtime::utils::has_double_colon(name)
+            && !crate::qualified::is_qualified(sym)
             && !name.starts_with("__mutsu_")
     }
 
@@ -2314,7 +2262,7 @@ impl Interpreter {
         }
         // Skip topic (_), attributes (.x, !x), and package-qualified names to
         // avoid corrupting outer scope.
-        if Self::is_bare_param_name(name) {
+        if Self::is_bare_param_name(name, sym.unwrap_or_else(|| Symbol::intern(name))) {
             crate::vm::vm_stats::record_env_flush(1);
             self.set_env_with_main_alias_sym(name, sym, self.locals[idx].clone());
         }

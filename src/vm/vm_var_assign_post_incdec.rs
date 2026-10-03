@@ -129,7 +129,7 @@ impl Interpreter {
             // plain `env` copy left by a prior call's return-merge.
             .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias_sym(name, name_sym))
-            .or_else(|| self.read_package_scope_var(name))
+            .or_else(|| self.read_package_scope_var(name_sym))
             .or_else(|| self.anon_state_value(name))
             .unwrap_or(Value::NIL);
         // ContainerRef cell: atomic RMW under the cell lock so concurrent
