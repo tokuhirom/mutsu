@@ -400,7 +400,7 @@ impl Interpreter {
                         );
                         self.invalidate_fn_resolution();
                     }
-                    if decl.is_my {
+                    if decl.is_my && !decl.is_submethod {
                         let (my_params, my_param_defs) =
                             method_sub_form_params(&effective_params, &effective_param_defs);
                         let func_def = crate::ast::FunctionDef {
