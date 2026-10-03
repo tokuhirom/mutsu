@@ -52,6 +52,15 @@ impl Interpreter {
         if crate::value::readonly_binding_cells_possible() {
             match self.free_var_readonly_binding(code, name_idx) {
                 Some(FreeVarBinding::Readonly(kind, bound)) => {
+                    // A sigilless name bound to a mutable Array/Hash assigns
+                    // into it (see `vm_sigilless_aggregate_store`).
+                    if kind == crate::ast::ReadonlyKind::ImmutableValue
+                        && Self::is_sigilless_assignable_aggregate(&bound.deref_container())
+                    {
+                        self.pending_sigilless_store =
+                            Some(Self::const_str(code, name_idx).to_string());
+                        return Ok(());
+                    }
                     return Err(Self::readonly_binding_error(kind, &bound));
                 }
                 Some(FreeVarBinding::Writable) => binding_decided_writable = true,

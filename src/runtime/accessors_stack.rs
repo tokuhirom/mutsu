@@ -462,9 +462,16 @@ impl Interpreter {
     /// `current_package` has already moved on to the callee by this point, so
     /// it is not recoverable from the stack.)
     pub(crate) fn caller_frame_package(&self) -> String {
+        self.caller_frame_package_at(1)
+    }
+
+    /// The package of the frame `depth` callers up (`CALLER::` is 1,
+    /// `CALLER::CALLER::` is 2); GLOBAL once the walk passes the mainline.
+    // Cost: O(1).
+    pub(crate) fn caller_frame_package_at(&self, depth: usize) -> String {
         let len = self.routine_stack.len();
-        if len >= 2 {
-            return self.routine_stack[len - 2].package.resolve();
+        if len > depth {
+            return self.routine_stack[len - 1 - depth].package.resolve();
         }
         "GLOBAL".to_string()
     }
