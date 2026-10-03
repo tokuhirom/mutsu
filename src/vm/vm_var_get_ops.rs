@@ -134,6 +134,16 @@ impl Interpreter {
                 name,
             )));
         }
+        // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
+        // one whose block has exited), which is stored under its term key rather
+        // than under the qualified spelling the lookups below ask for (#11518).
+        if let Some(short) = name.strip_prefix("GLOBAL::")
+            && !short.contains("::")
+            && let Some(v) = self.term_binding(short)
+        {
+            self.stack.push(v);
+            return Ok(());
+        }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
         // routine before the type-object paths below, so the bare term is
