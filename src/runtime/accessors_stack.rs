@@ -830,6 +830,11 @@ impl Interpreter {
         self.gather_items.pop()
     }
 
+    /// The take collector at `depth` on the gather-items stack.
+    pub(crate) fn gather_items_at(&self, depth: usize) -> Option<&[Value]> {
+        self.gather_items.get(depth).map(Vec::as_slice)
+    }
+
     pub(crate) fn current_gather_items(&self) -> Vec<Value> {
         self.gather_items.last().cloned().unwrap_or_default()
     }

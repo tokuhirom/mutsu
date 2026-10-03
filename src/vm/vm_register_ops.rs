@@ -299,6 +299,7 @@ impl Interpreter {
                     started: false,
                     for_loop_resume: None,
                     state_scope_id: crate::value::next_instance_id(),
+                    running_collector: None,
                 })),
                 lazy_pipe: None,
                 closure_seq: None,
