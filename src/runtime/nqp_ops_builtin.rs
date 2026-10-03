@@ -45,7 +45,7 @@ impl Interpreter {
     /// [`Self::dispatch_nqp_op`] for a call site whose op was already resolved
     /// to a dense registry id at COMPILE time (`OpCode::NqpOp`).
     ///
-    /// The registry records which of the seven chained tables claims the op, so
+    /// The registry records which of the eight chained tables claims the op, so
     /// this enters that one directly instead of walking the chain from the
     /// top: `nqp::ordat` lives in the fifth table and used to pay four failed
     /// `match op` walks — over 25, 72, 20 and 24 names — before reaching its
@@ -70,6 +70,7 @@ impl Interpreter {
             NqpOpTable::Str => self.call_nqp_op_str(op, args),
             NqpOpTable::List => self.call_nqp_op_list(op, args),
             NqpOpTable::Native => self.call_nqp_op_native(op, args),
+            NqpOpTable::P6 => self.call_nqp_op_p6(op, args),
         };
         match claimed {
             Some(result) => result,

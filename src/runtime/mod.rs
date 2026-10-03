@@ -675,6 +675,7 @@ pub(crate) mod nqp_ops_list;
 mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;
 mod nqp_ops_numeric;
+pub(crate) mod nqp_ops_p6;
 mod nqp_ops_process;
 mod nqp_ops_str;
 pub(crate) mod nqp_ops_text;

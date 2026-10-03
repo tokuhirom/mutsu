@@ -755,7 +755,7 @@ impl Compiler {
     /// (`frob();`, possibly `is rw` → container) are excluded: Raku keeps those
     /// container-wrapped and does not auto-sink them, and mutsu decontainerizes
     /// before `SinkPop` so the two cases are indistinguishable at runtime.
-    fn stmt_value_may_user_sink(expr: &Expr) -> bool {
+    pub(super) fn stmt_value_may_user_sink(expr: &Expr) -> bool {
         match expr {
             Expr::MethodCall { .. } => true,
             // `$x but R` / `$x does R` freshly composes a new mixin value, so

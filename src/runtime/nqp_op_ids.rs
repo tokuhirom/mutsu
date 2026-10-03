@@ -1,5 +1,5 @@
 //! The compile-time registry of `nqp::` VALUE ops: one dense `u16` id per op
-//! name, plus which of the seven chained dispatch tables owns it.
+//! name, plus which of the eight chained dispatch tables owns it.
 //!
 //! In NQP/Rakudo an `nqp::` value op is a `QAST::Op` node the QAST compiler
 //! turns into a single MoarVM instruction; it is not a call and has no name at
@@ -81,6 +81,8 @@ pub(crate) enum NqpOpTable {
     List,
     /// `call_nqp_op_native` (runtime/nqp_ops_native.rs)
     Native,
+    /// `call_nqp_op_p6` (runtime/nqp_ops_p6.rs)
+    P6,
 }
 
 /// Every registered op, as `(name without the `nqp::` prefix, owning table)`.
@@ -88,7 +90,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 321] = [
+static NQP_OPS: [(&str, NqpOpTable); 333] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -341,11 +343,23 @@ static NQP_OPS: [(&str, NqpOpTable); 321] = [
     ("opendir", NqpOpTable::Value),
     ("ord", NqpOpTable::Builtin),
     ("ordat", NqpOpTable::Builtin),
+    ("p6bindassert", NqpOpTable::P6),
     ("p6bindattrinvres", NqpOpTable::List),
+    ("p6bindcaptosig", NqpOpTable::P6),
+    ("p6box", NqpOpTable::P6),
     ("p6box_i", NqpOpTable::Value),
     ("p6box_n", NqpOpTable::Value),
     ("p6box_s", NqpOpTable::Value),
+    ("p6capturelex", NqpOpTable::P6),
+    ("p6decontrv", NqpOpTable::P6),
+    ("p6decontrv_6c", NqpOpTable::P6),
+    ("p6definite", NqpOpTable::P6),
+    ("p6getouterctx", NqpOpTable::P6),
+    ("p6isbindable", NqpOpTable::P6),
     ("p6scalarwithvalue", NqpOpTable::List),
+    ("p6setautothreader", NqpOpTable::P6),
+    ("p6trialbind", NqpOpTable::P6),
+    ("p6typecheckrv", NqpOpTable::P6),
     ("pop", NqpOpTable::List),
     ("pop_i", NqpOpTable::List),
     ("pop_n", NqpOpTable::List),

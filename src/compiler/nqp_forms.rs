@@ -165,6 +165,11 @@ impl Compiler {
                 });
                 true
             }
+            // The Rakudo `p6*` forms (#11505): each needs its operand's
+            // container or the enclosing routine, which a value op never sees.
+            "nqp::p6store" | "nqp::p6sink" | "nqp::p6return" | "nqp::p6invokeflat" => {
+                self.try_compile_nqp_p6_form(name, args)
+            }
             // nqp::where(obj) — the object's identity integer. It is `.WHERE`
             // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
             // that method rather than keeping a second identity scheme (#9346).

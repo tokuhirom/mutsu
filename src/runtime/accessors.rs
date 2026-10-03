@@ -681,7 +681,7 @@ impl Interpreter {
 
     /// Enforce a return type constraint on a return value.
     /// Handles coercion types like Str(Numeric:D), Foo:D(), and subset types.
-    fn enforce_return_type_constraint(
+    pub(crate) fn enforce_return_type_constraint(
         &mut self,
         spec: &str,
         value: Value,
