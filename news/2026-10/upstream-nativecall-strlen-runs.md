@@ -28,4 +28,4 @@ strlen("hello")` returns 5 through upstream's own `trait_mod:<is>`, replacement 
   positionals and nameds.
 
 Two findings are filed separately: upstream's `check_routine_sanity` still warns about
-`--> size_t`, and an unknown method on a Sub answers a composed-method object instead of dying.
+`--> size_t` (#11555), and an unknown method on a Sub answers a composed-method object instead of dying (#11554).
