@@ -144,8 +144,9 @@ impl Interpreter {
             // modules, so there is nothing to exempt it from.
             // Cost: O(1).
             "neverrepossess" => Ok(operand(args, 0)),
-            // The FFI ops (`nativecall_nqp.rs`).
-            _ => return self.call_nqp_op_ffi(op, args),
+            // The coercion / conversion / value-test ops (`nqp_ops_coerce.rs`),
+            // then the FFI ops (`nativecall_nqp.rs`).
+            _ => return self.call_nqp_op_coerce(op, args),
         })
     }
 }

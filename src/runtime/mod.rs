@@ -668,6 +668,7 @@ pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
 mod nqp_ops_bigint;
 mod nqp_ops_builtin;
+mod nqp_ops_coerce;
 mod nqp_ops_compare;
 pub(crate) mod nqp_ops_list;
 pub(crate) mod nqp_ops_native;

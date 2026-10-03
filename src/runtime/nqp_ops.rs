@@ -42,7 +42,7 @@ fn pure(op: NqpPure, args: &[Value]) -> Value {
 /// whitespace, an optional sign, then digits; no digits at all is 0, and a
 /// magnitude too large for `i64` saturates rather than erroring (matches
 /// MoarVM's behavior, verified against `raku -e 'nqp::coerce_si(...)'`).
-fn parse_leading_int(s: &str) -> i64 {
+pub(super) fn parse_leading_int(s: &str) -> i64 {
     let trimmed = s.trim_start();
     // Parsing ASCII digits, not indexing the string. str-prim: allow
     let mut chars = trimmed.chars().peekable();
