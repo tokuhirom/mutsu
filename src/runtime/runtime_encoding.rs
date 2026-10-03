@@ -434,7 +434,7 @@ impl Interpreter {
     /// Record that the lexical type `fq_name` was declared under that
     /// namespaced spelling itself (see `namespaced_lexical_types`).
     pub(crate) fn mark_namespaced_lexical_type(&mut self, fq_name: String) {
-        crate::runtime::cow_table_mut(&mut self.namespaced_lexical_types).insert(fq_name);
+        self.registry_mut().namespaced_lexical_types.insert(fq_name);
     }
 
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
@@ -549,7 +549,7 @@ impl Interpreter {
         // declaration at file scope (`my class M::C {}`), whose qualified name
         // remains visible within its own compilation unit.
         if type_package.is_some_and(|package| self.registry().package_kinds.contains_key(package))
-            && !self.namespaced_lexical_types.contains(fq_name)
+            && !self.registry().namespaced_lexical_types.contains(fq_name)
         {
             return false;
         }
