@@ -32,6 +32,16 @@ pub(crate) fn native_method_1arg(
 
     // Scalar containers are transparent for method dispatch (no .VAR at this arity).
     let target = target.descalarize();
+    // The `Whatever` type object binds a `Whatever` count exactly as `*`
+    // does (rakudo's `multi method pick(Whatever)` takes both), so
+    // `.pick(Whatever)` / `pick(Whatever, @list)` is the full shuffle.
+    let arg = if matches!(method, "pick" | "roll")
+        && matches!(arg.view(), ValueView::Package(name) if name == "Whatever")
+    {
+        &Value::WHATEVER
+    } else {
+        arg
+    };
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::numeric_subclass`).
     if let Some(result) =

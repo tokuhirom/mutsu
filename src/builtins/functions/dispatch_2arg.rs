@@ -1,6 +1,5 @@
 use super::flat::join_flat;
 use super::math::is_extrema_named_pair;
-use crate::builtins::rng::builtin_rand;
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -98,49 +97,13 @@ pub(crate) fn native_function_2arg(
                 arg2,
             )
         }
+        // Cost: O(n + k), n = elements of the list (copied), k = count rolled.
+        // `roll($count, @list)` is the method `.roll($count)` on the list, one
+        // implementation for both forms (the sub form had its own copy, which
+        // did not know the `Whatever` type object as a count).
         "roll" => {
-            let count = match arg1.view() {
-                ValueView::Int(i) if i > 0 => Some(i as usize),
-                ValueView::Int(_) => Some(0),
-                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                ValueView::Whatever => None,
-                ValueView::Str(s) => {
-                    let parsed = s.trim().parse::<i64>().ok()?;
-                    Some(parsed.max(0) as usize)
-                }
-                _ => return None,
-            };
-            let items = crate::runtime::utils::value_to_list(arg2);
-            if count.is_none() {
-                if items.is_empty() {
-                    return Some(Ok(Value::array(Vec::new())));
-                }
-                let generated = 1024usize;
-                let mut out = Vec::with_capacity(generated);
-                for _ in 0..generated {
-                    let mut idx = (builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    out.push(items[idx].clone());
-                }
-                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached_infinite(out),
-                ))));
-            }
-            let count = count.unwrap_or(0);
-            if items.is_empty() || count == 0 {
-                return Some(Ok(Value::array(Vec::new())));
-            }
-            let mut result = Vec::with_capacity(count);
-            for _ in 0..count {
-                let mut idx = (builtin_rand() * items.len() as f64) as usize;
-                if idx >= items.len() {
-                    idx = items.len() - 1;
-                }
-                result.push(items[idx].clone());
-            }
-            Some(Ok(Value::array(result)))
+            let list = Value::array(runtime::value_to_list(arg2));
+            crate::builtins::native_method_1arg(&list, crate::symbol::Symbol::intern("roll"), arg1)
         }
         "pick" => {
             // pick($count, @list) — sub form delegates to method .pick($count)
