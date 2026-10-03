@@ -1095,7 +1095,10 @@ impl Interpreter {
         // though mutsu represents it as the `Array` variant of `Value`. Only the `Array`
         // name is narrowed here; `Positional`, `Iterable`, `Cool` and `Any`
         // keep matching through the generic tail exactly as raku reports them.
-        if (constraint == "Array" || constraint.starts_with("Array["))
+        // The same holds for `List`: `array`'s MRO has no `List` in it, so
+        // `(List:D $a)` must not claim a native array that `(array:D $a)`
+        // would take (PDF::Grammar::Test's `json-eqv` candidates).
+        if (constraint == "Array" || constraint.starts_with("Array[") || constraint == "List")
             && matches!(value.view(), ValueView::Array(..))
             && self.container_type_metadata(value).is_some_and(|m| {
                 m.declared_type

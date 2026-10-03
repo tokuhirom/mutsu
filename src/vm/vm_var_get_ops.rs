@@ -78,6 +78,27 @@ impl Interpreter {
     /// Split out of the opcode arm so a caller holding the name in something
     /// other than a `CompiledCode` constant pool can use it — TRIR's
     /// `LoadBareWord` (ADR-0110), whose chunk has a pool of its own.
+    /// The enclosing package's own enum member `name` (`C::array` for a bare
+    /// `array` inside class `C`), from the env or, for a type declared at a
+    /// compilation unit's top level, the top-level package-symbol table
+    /// `bind_package_symbol` records it in.
+    // Cost: O(|name|) for the qualified key plus the two probes.
+    fn own_package_enum_member(&self, name: &str) -> Option<Value> {
+        // A method runs with the caller's current package; the class it was
+        // declared in is the routine's lexical package.
+        let package = self.private_calling_package()?;
+        let package = Symbol::intern(&package);
+        if crate::qualified::is_global_package(package) {
+            return None;
+        }
+        let qualified = crate::qualified::qualified(package, Symbol::intern(name));
+        self.env()
+            .get(qualified.as_str())
+            .or_else(|| self.toplevel_package_symbol(qualified.as_str()))
+            .filter(|value| matches!(value.view(), ValueView::Enum { .. }))
+            .cloned()
+    }
+
     pub(crate) fn push_bare_word_value(
         &mut self,
         name: &str,
@@ -306,16 +327,7 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::package(Symbol::intern(name))
-        } else if !self.current_package_is_global()
-            && let Some(enum_val) = self
-                .env()
-                .get(
-                    crate::qualified::qualified(self.current_package_sym(), Symbol::intern(name))
-                        .as_str(),
-                )
-                .filter(|value| matches!(value.view(), ValueView::Enum { .. }))
-                .cloned()
-        {
+        } else if let Some(enum_val) = self.own_package_enum_member(name) {
             // A class/package's own enum member is a package symbol.  Consult
             // it before the lexical bare-key namespace: another class can use
             // the same member spelling without changing what this class's

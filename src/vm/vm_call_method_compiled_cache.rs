@@ -185,7 +185,20 @@ impl Interpreter {
                 a
             };
             let a = &a;
+            // A native `array[T]` is held in the `Array` representation but is
+            // a different type (`array` is not a `List`), so it keys by its own
+            // declared type: `(List:D $a)` and `(array:D $a)` must not share a
+            // cached winner (PDF::Grammar::Test's `json-eqv`).
+            let native_array_key = match a.view() {
+                ValueView::Array(data, _) => data
+                    .declared_type
+                    .as_deref()
+                    .filter(|d| *d == "array" || d.starts_with("array["))
+                    .map(crate::symbol::Symbol::intern),
+                _ => None,
+            };
             let key = match a.view() {
+                _ if let Some(native) = native_array_key => native,
                 ValueView::Instance { class_name, .. } => class_name,
                 // A bare type object (`Int`, `Foo`, ...) must key on its OWN
                 // name, not the generic `value_type_name` fallback below,
