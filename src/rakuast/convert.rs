@@ -62,7 +62,7 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// The leading `scope => "my"` of a lexical package declaration (`my class`),
 /// measured on rakudo 2026.09; a package's default scope is `our`, which
 /// renders no field.
-fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
+pub(super) fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
     if is_lexical {
         vec![leaf_field(Some("scope"), Value::str_from("my"))]
     } else {
@@ -72,6 +72,10 @@ fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
 
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
+
+/// The parser's `custom_traits` marker for a `my`-scoped declaration
+/// (`my role R { }`).
+pub(super) const MY_SCOPED: &str = "__my_scoped";
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
@@ -985,6 +989,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             unknown_traits,
             is_built,
             default_is_seed,
+            default_is_trait,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
@@ -993,28 +998,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // `Trait::WillBuild` and the `initializer`; a typed attribute
             // (`has Int $.z`) carries an *implicit* `BareWord(<TypeName>)`
             // default that is no default at all. `is rw` / `is readonly` /
-            // `is required` are `Trait::Is` (`rakuast::attribute`); other
-            // traits, type smileys, `where`, aliases and `my`/`our`
-            // attributes are deferred.
-            let explicit_default = default.as_ref().filter(|_| !*default_is_seed);
+            // `is required`, `is default(…)` and `is built` are `Trait::Is`
+            // (`rakuast::attribute`); a `:D` / `:U` smiley is the type's
+            // `Type::Definedness`. Other traits, `where`, aliases and
+            // `my`/`our` attributes are deferred.
+            let explicit_default = default
+                .as_ref()
+                .filter(|_| !*default_is_seed && !*default_is_trait);
+            let smiley_type = match (type_constraint, type_smiley.as_deref()) {
+                (_, None) => None,
+                (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
+                _ => return Err(unsupported("attribute with a `:_` smiley")),
+            };
             if !handles.is_empty()
-                || type_smiley.is_some()
                 || matches!(is_required, Some(Some(_)))
                 || where_constraint.is_some()
                 || *is_alias
                 || *is_our
                 || *is_my
-                || is_default.is_some()
                 || is_type.is_some()
                 || deprecated_message.is_some()
                 || !unknown_traits.is_empty()
-                || is_built.is_some()
             {
                 return Err(unsupported("attribute with traits / smiley / scope"));
             }
-            // Definite attributes carry `type_smiley` (guarded above), so the
-            // type_constraint here is a bare type; build_type_node handles it.
-            let type_name = type_constraint.as_deref();
+            let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
             let twigil = if *is_public { "." } else { "!" };
             let full_name = if *sigil == '$' {
                 name.resolve()
@@ -1035,6 +1043,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     is_rw: *is_rw,
                     is_readonly: *is_readonly,
                     is_required: is_required.is_some(),
+                    is_default: is_default.clone(),
+                    is_built: *is_built,
                 },
             )?;
             Ok(Some(statement_expression(decl)))

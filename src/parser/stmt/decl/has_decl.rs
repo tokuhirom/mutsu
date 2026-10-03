@@ -102,6 +102,7 @@ fn has_decl_list(
             // initializer is always an assignment.
             default_is_bind: false,
             default_is_seed,
+            default_is_trait: false,
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -148,11 +149,13 @@ fn has_decl_list(
                         if let Stmt::HasDecl {
                             default,
                             is_default,
+                            default_is_trait,
                             ..
                         } = stmt
                         {
                             *default = Some(default_expr.clone());
                             *is_default = Some(default_expr.clone());
+                            *default_is_trait = true;
                         }
                     }
                     let (r2, _) = ws(inner)?;
@@ -952,6 +955,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         None;
 
     // Default value
+    let mut default_is_trait = false;
     let (rest, mut default) = if let Some(stripped) = rest.strip_prefix(".=") {
         let (rest, _) = ws(stripped)?;
         let (rest, method_name) =
@@ -1043,6 +1047,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         if sigil == b'@' || sigil == b'%' {
             (rest, None)
         } else {
+            default_is_trait = true;
             (rest, Some(default_expr))
         }
     } else if sigil == b'$'
@@ -1283,6 +1288,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // As above: only the `my`/`our` class-level spellings can bind.
         default_is_bind: false,
         default_is_seed,
+        default_is_trait,
     };
     // Splice `has $!g //= EXPR;` into `has $!g; $!g //= EXPR;` (#8441 gap 2)
     // — the declared variable's own read expression, matching exactly how

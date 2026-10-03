@@ -2253,6 +2253,11 @@ pub(crate) enum Stmt {
         /// initialized (ADR-0121 D4).
         #[serde(default)]
         default_is_seed: bool,
+        /// `default` is the value of an `is default(EXPR)` trait, which a
+        /// scalar attribute with no initializer also starts with; the source
+        /// wrote no `= EXPR`.
+        #[serde(default)]
+        default_is_trait: bool,
     },
     MethodDecl {
         name: Symbol,
