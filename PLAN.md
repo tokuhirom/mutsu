@@ -180,7 +180,7 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
 - [ ] **NativeCall → vendored upstream** ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
       tracking issue [#11203](https://github.com/tokuhirom/mutsu/issues/11203)). Upstream's QAST
       import is dead and its dispatcher is optional, so the vendored files
-      (`modules/Rakudo-Core/lib/NativeCall*`) need interpreter growth only. Next: #11209 (REPRs),
+      (`modules/Rakudo-Core/lib/NativeCall*`) need interpreter growth only. Next: #11310 (trait-candidate scoping), #11209 (REPRs),
       #11211 (FFI ops), #11207 (`Code.$!do`); measure with `scripts/nativecall-upstream-trial.sh`.
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 

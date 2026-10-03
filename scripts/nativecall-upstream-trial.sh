@@ -40,7 +40,7 @@ steps=(
     "load UNC::Compiler::GNU|use UNC::Compiler::GNU; print 'ok'"
     "load UNC::Types|use UNC::Types; print 'ok'"
     "Types: native type traits|use UNC::Types; print UNC::Types::ulong.^unsigned == 1 && UNC::Types::long.^nativesize == -4 ?? 'ok' !! 'wrong'"
-    "Types: Pointer.new|use UNC::Types; print UNC::Types::Pointer.new.raku eq 'UNC::Types::Pointer.new' ?? 'ok' !! UNC::Types::Pointer.new.raku"
+    "Types: Pointer.new|use UNC::Types; print UNC::Types::Pointer.new.raku eq 'UNC::Types::Pointer.new(0)' ?? 'ok' !! UNC::Types::Pointer.new.raku"
     "Types: CArray[int32] elements|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); print \$a[1] == 2 && \$a.elems == 3 ?? 'ok' !! 'wrong'"
     "Types: CArray[int32] write|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); \$a[0] = 7; print \$a[0] == 7 ?? 'ok' !! 'wrong'"
     "load UNC|use UNC; print 'ok'"
