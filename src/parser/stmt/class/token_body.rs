@@ -386,6 +386,7 @@ fn emit_rule_separator(
         && chars.get(j + WS.len()) != Some(&'?');
     if ws_after_separator {
         *i = j + WS.len();
+        super::rule_ws_quantified::mark_separated_quantifier_backtracking(out);
     }
     let opt = if optional { "?" } else { "" };
     let sep = sep.trim();
