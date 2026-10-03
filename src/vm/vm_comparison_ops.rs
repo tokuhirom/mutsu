@@ -265,43 +265,41 @@ fn value_to_i64(v: &Value) -> Option<i64> {
 }
 
 impl Interpreter {
-    fn parse_numeric_string_for_spaceship(s: &str) -> Result<f64, RuntimeError> {
+    /// A Str operand of a numeric comparison numifies exactly as `.Numeric`
+    /// does: `"0.1234567890123456789012345"` is the exact Rat, not an f64, so
+    /// `0.1234567890123456789012345 == "0.1234567890123456789012345"` holds
+    /// (Math::Root compares a 20 000-digit FatRat with a digit string). An
+    /// empty or blank string is 0. `None` for a non-Str operand.
+    ///
+    // Cost: O(c), c = chars of the string.
+    pub(super) fn numeric_comparison_operand(v: &Value) -> Result<Option<Value>, RuntimeError> {
+        let ValueView::Str(s) = v.view() else {
+            return Ok(None);
+        };
         let t = s.trim();
-        // Raku numifies an empty (or whitespace-only) string to 0, so `"" <=> 0`
-        // is `Same` rather than an X::Str::Numeric.
         if t.is_empty() {
-            return Ok(0.0);
+            return Ok(Some(Value::int(0)));
         }
-        t.parse::<f64>().map_err(|_| {
-            RuntimeError::new(format!(
-                "X::Str::Numeric: Cannot convert string '{}' to a number",
-                s
-            ))
-        })
+        crate::runtime::str_numeric::parse_raku_str_to_numeric(t)
+            .map(Some)
+            .ok_or_else(|| {
+                RuntimeError::new(format!(
+                    "X::Str::Numeric: Cannot convert string '{}' to a number",
+                    t
+                ))
+            })
     }
 
     pub(super) fn numeric_spaceship_ordering(
         left: &Value,
         right: &Value,
     ) -> Result<std::cmp::Ordering, RuntimeError> {
-        match (left.view(), right.view()) {
-            (ValueView::Str(a), ValueView::Str(b)) => {
-                let a = Self::parse_numeric_string_for_spaceship(&a)?;
-                let b = Self::parse_numeric_string_for_spaceship(&b)?;
-                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
-            }
-            (ValueView::Str(a), _) => {
-                let a = Self::parse_numeric_string_for_spaceship(&a)?;
-                let b = runtime::to_float_value(right).unwrap_or(0.0);
-                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
-            }
-            (_, ValueView::Str(b)) => {
-                let a = runtime::to_float_value(left).unwrap_or(0.0);
-                let b = Self::parse_numeric_string_for_spaceship(&b)?;
-                Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
-            }
-            _ => Ok(Self::spaceship_ordering(left, right)),
-        }
+        let l = Self::numeric_comparison_operand(left)?;
+        let r = Self::numeric_comparison_operand(right)?;
+        Ok(Self::spaceship_ordering(
+            l.as_ref().unwrap_or(left),
+            r.as_ref().unwrap_or(right),
+        ))
     }
 
     /// The full `infix:<==>` semantics, shared so that calling the operator as
@@ -401,6 +399,9 @@ impl Interpreter {
                 _ => (l, r),
             };
             let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
+            // A digit string compares at its exact value, not as an f64.
+            let l = Self::numeric_comparison_operand(&l)?.unwrap_or(l);
+            let r = Self::numeric_comparison_operand(&r)?.unwrap_or(r);
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::FALSE);
