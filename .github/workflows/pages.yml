@@ -31,7 +31,7 @@ on: # zizmor: ignore[dangerous-triggers]
   # fix that — only a release can, which the `Release` workflow_run below
   # already picks up.
   #
-  # The burst case is already handled by the `concurrency` group further down
+  # The burst case is already handled by the `build` job's `concurrency` group
   # (`cancel-in-progress: true`): when several PRs merge within a minute — which
   # happens here routinely — the superseded runs are cancelled and only the last
   # one deploys. That is what makes an unfiltered trigger safe rather than a way
@@ -71,9 +71,6 @@ on: # zizmor: ignore[dangerous-triggers]
 permissions:
   contents: read
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -92,6 +89,17 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        (github.event.workflow_run.name != 'Release' ||
         github.event.workflow_run.event == 'push'))
+    # The burst-cancelling group lives on the JOB, not the workflow. A
+    # workflow-level group is entered by every run, including the
+    # `workflow_run` ones the `if:` above skips. Each push to main queues a
+    # Bench run and cancels the previous push's still-pending one (bench.yml's
+    # own concurrency group); that cancelled Bench run completes within a
+    # second of the new push, so its skipped Pages run started right after the
+    # new push's deploy and cancelled it. On 2026-10-03 that cancelled every
+    # push deploy in a row. A job whose `if:` is false never enters the group.
+    concurrency:
+      group: pages-build
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,6 +209,11 @@ jobs:
 
   deploy:
     needs: build
+    # Queued, not cancelled: a deploy that started publishes a complete
+    # artifact, and a newer pending one replaces an older pending one anyway.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     permissions:
       pages: write
