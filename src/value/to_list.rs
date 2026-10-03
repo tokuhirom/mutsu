@@ -49,6 +49,9 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             items.to_vec()
         }
         ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+        // `Capture.list` is its positional part (`Any.list` on a Capture), so
+        // `\(1, 2).join(",")`, `.grep`, `.reverse`, `for \(1, 2)` see 1 and 2.
+        ValueView::Capture { positional, .. } => positional.to_vec(),
         // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
         // NOT flatten to its pairs (mirrors the itemized-Array arm above).
         ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
