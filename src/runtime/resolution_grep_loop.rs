@@ -343,7 +343,9 @@ impl Interpreter {
                                 let pred = vm
                                     .last_stack_value()
                                     .cloned()
-                                    .or_else(|| vm.env().get("_").cloned())
+                                    .or_else(|| {
+                                        vm.env().get_sym(crate::symbol::wk::topic()).cloned()
+                                    })
                                     .unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
                                     vm.env()

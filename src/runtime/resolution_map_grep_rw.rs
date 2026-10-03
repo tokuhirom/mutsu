@@ -326,7 +326,7 @@ impl Interpreter {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| vm.env().get("_").cloned())
+                                .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
                             writeback(list_items, vm);
                             let val = vm.reify_finite_pipe_value(val)?;
