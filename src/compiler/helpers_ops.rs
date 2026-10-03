@@ -197,9 +197,19 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
     })
 }
 
+/// Resolve a prefix spelling separately where it collides with an infix.
+pub(crate) fn prefix_op_name_to_token_kind(name: &str) -> Option<TokenKind> {
+    match name {
+        "+^" => Some(TokenKind::IntBitNeg),
+        "?^" => Some(TokenKind::BoolBitNeg),
+        "~^" => Some(TokenKind::StrBitNeg),
+        _ => op_name_to_token_kind(name),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{op_name_to_token_kind, token_kind_to_op_name};
+    use super::{op_name_to_token_kind, prefix_op_name_to_token_kind, token_kind_to_op_name};
     use crate::token_kind::TokenKind;
 
     /// Every infix token the parser emits lowers back from its own spelling.
@@ -278,6 +288,18 @@ mod tests {
         for token in infixes {
             let name = token_kind_to_op_name(&token);
             assert_eq!(op_name_to_token_kind(&name), Some(token), "`{name}`");
+        }
+    }
+
+    #[test]
+    fn prefix_spellings_round_trip() {
+        for token in [
+            TokenKind::IntBitNeg,
+            TokenKind::BoolBitNeg,
+            TokenKind::StrBitNeg,
+        ] {
+            let name = token_kind_to_op_name(&token);
+            assert_eq!(prefix_op_name_to_token_kind(&name), Some(token), "`{name}`");
         }
     }
 }
