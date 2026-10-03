@@ -1388,7 +1388,11 @@ impl Interpreter {
         // back: a body loop var shadowing a same-named consumer lexical would
         // otherwise clobber it (see CompiledCode::self_declared_names).
         let body_declared = cc.self_declared_names();
-        for (k, v) in gather_result_env.iter() {
+        // The body's writes are all in the env's own overlay: a layered capture
+        // (`Env::layered_capture`) keeps its shared system-name layers in a
+        // fallback no write reaches, so walking those too would only compare
+        // every unchanged system name in scope on every force (#9170).
+        for (k, v) in gather_result_env.overlay_iter() {
             if !saved_env.contains_key_sym(*k) {
                 continue;
             }

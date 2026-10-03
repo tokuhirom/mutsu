@@ -12,13 +12,6 @@ pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
 
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
-    /// One-entry memo of the last closure-capture env, so a closure literal
-    /// created over and over from an unchanged scope (`.map({...})` in a loop)
-    /// stops rebuilding the same map every time. See
-    /// [`crate::vm::vm_capture_cache`]. Boxed like `cur_repo`: it is touched
-    /// only by closure creation, and inlining ~180 bytes of it would push the
-    /// per-opcode hot fields apart for every program.
-    pub(crate) capture_cache: Box<crate::vm::vm_capture_cache::CaptureCache>,
     pub(super) protect_block_cache: ProtectBlockCache,
     /// See `CarrierCompileCache`: reuses `eval_block_value_inner`'s carrier
     /// compile across repeated calls to the same `SubData` id instead of
@@ -415,10 +408,7 @@ pub(crate) struct ResolutionCaches {
 }
 
 impl ResolutionCaches {
-    /// A spawned thread rebuilds its caches on demand. Starting empty is also
-    /// required, not only cheap, for `capture_cache`: its entry holds `Arc`s on
-    /// the parent thread's env tiers, which the child neither shares nor
-    /// should pin.
+    /// A spawned thread rebuilds its caches on demand.
     // Cost: O(1).
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self::default()

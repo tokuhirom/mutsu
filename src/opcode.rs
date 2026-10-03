@@ -7540,6 +7540,8 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Memo of [`Self::capture_hidden_set`].
+    pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
     /// instead of finding them by walking a tier -- see
     /// [`Self::capture_probe_keys`].
@@ -8080,6 +8082,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
@@ -8325,6 +8328,34 @@ impl CompiledCode {
                 self.locals.iter().map(|s| Symbol::intern(s)).collect()
             }
         })
+    }
+
+    /// The system names this chunk's own parameters and locals shadow — the
+    /// ones a closure capture of it must not inherit from its creating scope
+    /// (`capture_keeps`'s own-locals rule), plus their `__mutsu_type::`
+    /// shadows, which that rule decides by their subject. `None` when there
+    /// are none. The layered capture hides these from its shared layers
+    /// ([`crate::env::Env::layered_capture`]); a plain user lexical is never in
+    /// a layer, so it is not listed.
+    pub(crate) fn capture_hidden_set(&self) -> Option<&Arc<rustc_hash::FxHashSet<Symbol>>> {
+        self.capture_hidden_set
+            .get_or_init(|| {
+                let free = self.capture_free_var_set();
+                let mut hidden = rustc_hash::FxHashSet::default();
+                for &sym in self.capture_local_set() {
+                    if sym.flags() & crate::symbol::flags::PLAIN_USER_LEXICAL != 0
+                        || free.contains(&sym)
+                    {
+                        continue;
+                    }
+                    hidden.insert(sym);
+                    hidden.insert(sym.with_str(|name| {
+                        Symbol::intern(&format!("{}{name}", crate::symbol::TYPE_META_PREFIX))
+                    }));
+                }
+                (!hidden.is_empty()).then(|| Arc::new(hidden))
+            })
+            .as_ref()
     }
 
     /// The `Symbol` for the string constant at `idx`, read out of the

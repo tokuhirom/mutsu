@@ -60,6 +60,10 @@ CASES=(
     '&f read vs frame locals|500|1|sub f { 1 }; LOCALS my $c;|for ^20000 { $c = &f }'
     '-> { $q } creation vs env|2000|1|LOCALS my $c;|for ^20000 { my $q = $_; $c = -> { $q } }'
     'sub returning -> { } vs env|2000|1|sub mk { my $q = 1; -> { $q } }; LOCALS my $s = 0;|for ^20000 { $s += mk()() }'
+    # The system names a capture keeps (types, constants, dynamics, uppercase
+    # lexicals) are shared layers, not a copy per closure (ADR-9170).
+    '-> { $q } creation vs constants in scope|1000|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "constant C$_ = $_" }).join(";") ~ "; 1"; my $c;|for ^20000 { my $q = $_; $c = -> { $q } }'
+    'gather { take } vs constants in scope|1000|1|use MONKEY-SEE-NO-EVAL; EVAL (^NN).map({ "constant C$_ = $_" }).join(";") ~ "; 1"; my $s = 0;|for ^20000 { my @g = gather { take 1 }; $s += @g[0] }'
     'gather { take } vs env|2000|1|LOCALS my $s = 0;|for ^20000 { my @g = gather { take 1 }; $s += @g[0] }'
     'eager gather vs frame locals|2000|1|LOCALS my $s = 0;|for ^5000 { $s += (eager gather { take 1 })[0] }'
     'but True vs frame locals|500|1|LOCALS|for ^20000 { my $y = 5 but True }'
