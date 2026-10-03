@@ -518,11 +518,17 @@ Dispatch it by hand for anything *other* than the whole corpus — one shard, on
 distribution, one status — or to re-measure immediately rather than waiting for
 the night: `.github/workflows/ecosystem-sweep.yml`, **Run workflow** (or
 `gh workflow run ecosystem-sweep.yml -f scope=…`). One dispatch does the whole
-runbook: plan, build, measure, roll up, open the pull request.
+runbook: plan, build, measure, roll up, push the records branch. The pull request
+is opened from that branch by a scheduled Claude Code routine that runs the
+[`ecosystem-sweep-landing`](../.agents/skills/ecosystem-sweep-landing/SKILL.md)
+skill. The workflow cannot usefully open it itself, because a pull request opened
+with the default `GITHUB_TOKEN` never starts CI. The routine opens it under the
+maintainer's account, verifies that the branch touches only `ecosystem/`, enables
+auto-merge, and files issues for new root-cause clusters (§9).
 
 A dispatched run and the nightly one never overlap (`concurrency:
 ecosystem-sweep`, queued rather than cancelled — a cancelled sweep throws away
-hours of measurement), and a night that changes nothing opens no pull request.
+hours of measurement), and a night that changes nothing pushes no branch.
 
 > **Editing the workflow's inputs:** on a `schedule` event `inputs.*` are **all
 > empty** — a `workflow_dispatch` default does not apply to it. Every input is
@@ -542,7 +548,9 @@ hours of measurement), and a night that changes nothing opens no pull request.
 otherwise; `letters` forces it, which is what a large `stale` selection wants);
 `jobs` / `attempts` / `file_timeout` are the harness flags; `raku_version` pins
 the oracle; `rollup` regenerates `summary.*`; `history` asks for a `history.tsv`
-row; `publish` chooses `pull-request` (default), `branch`, or `none`.
+row; `publish` chooses `pull-request` (default: an `ecosystem/sweep-*` branch the
+landing routine turns into a pull request), `branch` (an `ecosystem/hold-*` branch
+the routine leaves for a human), or `none`.
 
 **The pull request auto-merges** (merge, never squash) as soon as CI passes — the
 records are not reviewed and are not meant to be. A diff of thousands of
@@ -569,9 +577,8 @@ each runner and the job fails rather than measuring unsandboxed.
 
 Dispatch it **from `main`**. Measuring a feature ref is supported and sometimes
 what you want (it measures that ref's mutsu), but the records are then only
-pushed to a branch: a pull request from a feature ref into `main` would carry
-that ref's other commits alongside the records, so the workflow declines to open
-one and says so.
+pushed as an `ecosystem/hold-*` branch: those are not main's numbers, so the
+landing routine leaves them for a human.
 
 ### 8.2 What happens when the ledger moves during a sweep
 
@@ -625,11 +632,11 @@ does make the measurable baseline slightly smaller than a local sweep's. The
 escalated retry of §2.8 recovers the files that only just exhaust the budget,
 which is most of what that gap was.
 
-If the pull request opens with no CI running on it, the repository's GitHub App
-credentials (`TAGPR_APP_CLIENT_ID` / `TAGPR_APP_PRIVATE_KEY`) are not configured
-and it was opened with the default `GITHUB_TOKEN`, which GitHub does not let
-trigger workflows; the run summary says so. Push one commit to the branch from a
-clone to start CI.
+If an `ecosystem/sweep-*` branch sits without a pull request, the landing routine
+has not run, or it refused the branch. It reports why: for example, a path outside
+`ecosystem/`, or more than one commit on top of `main`. Run the
+[`ecosystem-sweep-landing`](../.agents/skills/ecosystem-sweep-landing/SKILL.md)
+skill by hand to land it.
 
 ## 9. From the ledger to tickets (P5)
 

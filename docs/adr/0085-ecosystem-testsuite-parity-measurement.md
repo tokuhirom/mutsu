@@ -371,6 +371,32 @@ turns out not to pay for itself, the cron moves to weekly with no other change.
 What must not change quietly is the `scope: all` + all-shards-green condition on
 the history row, which is what keeps the series comparable.
 
+#### Third amendment, 2026-10-03: the workflow pushes a branch; a Claude Code routine opens the PR
+
+Until now the `collect` job opened the records pull request itself. A pull
+request opened with the default `GITHUB_TOKEN` never starts CI, so the job minted
+a token from the release GitHub App. That App is a bypass actor on the `main`
+ruleset, and its private key sat in a job that handles third-party test output
+(docs/security.md, "CI, release and agents").
+
+Now the job pushes `ecosystem/sweep-<date>-<run>` with `GITHUB_TOKEN` and holds no
+secret. A scheduled Claude Code routine runs the
+[`ecosystem-sweep-landing`](../../.agents/skills/ecosystem-sweep-landing/SKILL.md)
+skill. That skill verifies the branch: exactly one commit on a `main` ancestor,
+only `ecosystem/` paths, and valid JSON. It then opens the pull request under the
+maintainer's account, enables auto-merge and drives it to merged. It also files
+issues for new root-cause clusters (§9), which the workflow never did.
+
+Everything this ADR decided about the numbers is unchanged:
+- one binary, one rakudo and one index per run;
+- the sandbox;
+- "the newer mutsu commit wins" (applied in `collect`, and again by the skill if
+  it has to rebuild a conflicted branch);
+- the guards on the summary and the history row.
+
+`publish: branch` and sweeps from a feature ref push `ecosystem/hold-*` instead,
+and the routine never lands those.
+
 ## Consequences
 
 - The project gains a compatibility number that is defensible, reproducible, and
