@@ -19,7 +19,9 @@ is_run 'say 42; nosuchsub()', {
 is_run "\nsub bar \{\n    pfff();\n\}\n\nbar()", {
     :out(''),
     :status({ $_ != 0 }),
-    :err({ $_ ~~ /pfff/ and $_ ~~ /3/ }),
+    # `line 3` (rakudo) or `<file>:3` (mutsu); a bare /3/ would also match the
+    # digits of the temporary file's name.
+    :err({ $_ ~~ /pfff/ and $_ ~~ / [ 'line ' | ':' ] 3 <!before \d> / }),
 }, 'call inside a sub body reports the body line';
 
 # A case typo of a phaser gets the phaser suggested.

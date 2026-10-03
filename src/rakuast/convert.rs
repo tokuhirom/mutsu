@@ -362,53 +362,16 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 std::slice::from_ref(expr),
             )?)))
         }
-        Stmt::VarDecl {
-            name,
-            expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic,
-            custom_traits,
-            where_constraint,
-            ..
-        } => {
-            // `my`/`our`/`state` with an optional simple type. Dynamic (`$*x`),
-            // `where` constraints, parameterised/definite/coercion types, and
-            // real `is`/`does` traits carry richer shape, deferred.
-            if *is_dynamic || where_constraint.is_some() {
-                return Err(unsupported("dynamic / where-constrained declaration"));
-            }
-            // `constant X = 5` is a distinct raku node, not a scoped `my`.
-            // mutsu marks it with a `__constant` pseudo-trait (plus a
-            // `__constant_sigil` recording the declared sigil) and sets
-            // `is_our` for the package-scoped default spelling.
-            if custom_traits.iter().any(|(n, _)| n == "__constant") {
-                return constant_declaration(name, expr, custom_traits, type_constraint, *is_our);
-            }
-            if custom_traits
-                .iter()
-                .any(|(n, arg)| n != "__has_initializer" && !decl_traits::is_rendered(n, arg))
-            {
-                return Err(unsupported("declaration with traits"));
-            }
-            // build_type_node validates simple/definite and defers the rest.
-            let type_name = type_constraint.as_deref();
-            let scope = if *is_our {
-                Some("our")
-            } else if *is_state {
-                Some("state")
-            } else {
-                None
-            };
-            let has_initializer = custom_traits
-                .iter()
-                .any(|(name, _)| name == "__has_initializer");
-            let init = has_initializer.then_some(expr);
-            let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
-            decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
-            Ok(Some(statement_expression(decl)))
+        // A binding declaration (`my $x := …`, `my @a := …`, `my %h := …`):
+        // the statement is exactly `ast::bind_decl::expand`'s form of the
+        // declaration inside it.
+        Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_)
+            if crate::ast::bind_decl::declaration(stmt).is_some() =>
+        {
+            let decl = crate::ast::bind_decl::declaration(stmt).expect("just checked");
+            var_decl_statement(var_decl_parts(decl)?, true)
         }
+        Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
@@ -1173,7 +1136,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             };
             let mut decl = var_declaration(
                 &full_name,
-                explicit_default,
+                explicit_default.map(Initializer::Assign),
                 Some("has"),
                 type_name,
                 Some(twigil),
@@ -1359,12 +1322,120 @@ fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
     }
 }
 
+/// A `my`/`our`/`state` declaration with an optional simple type, as a
+/// `VarDeclaration::Simple` statement; `is_binding` renders its right-hand side
+/// as an `Initializer::Bind` (`:=`) rather than an `Initializer::Assign`.
+fn var_decl_statement(
+    parts: VarDeclParts<'_>,
+    is_binding: bool,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let VarDeclParts {
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        custom_traits,
+        where_constraint,
+    } = parts;
+    // Dynamic (`$*x`), `where` constraints, parameterised/definite/coercion
+    // types, and real `is`/`does` traits carry richer shape, deferred.
+    if is_dynamic || where_constraint {
+        return Err(unsupported("dynamic / where-constrained declaration"));
+    }
+    // `constant X = 5` is a distinct raku node, not a scoped `my`.
+    // mutsu marks it with a `__constant` pseudo-trait (plus a
+    // `__constant_sigil` recording the declared sigil) and sets
+    // `is_our` for the package-scoped default spelling.
+    if !is_binding && custom_traits.iter().any(|(n, _)| n == "__constant") {
+        return constant_declaration(name, expr, custom_traits, type_constraint, is_our);
+    }
+    let is_internal = |n: &str| {
+        n == "__has_initializer" || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
+    };
+    if custom_traits
+        .iter()
+        .any(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+    {
+        return Err(unsupported("declaration with traits"));
+    }
+    // build_type_node validates simple/definite and defers the rest.
+    let type_name = type_constraint.as_deref();
+    let scope = if is_our {
+        Some("our")
+    } else if is_state {
+        Some("state")
+    } else {
+        None
+    };
+    let init = if is_binding {
+        Some(Initializer::Bind(expr))
+    } else {
+        custom_traits
+            .iter()
+            .any(|(name, _)| name == "__has_initializer")
+            .then_some(Initializer::Assign(expr))
+    };
+    let mut decl = var_declaration(name, init, scope, type_name, None, None)?;
+    decl_traits::insert(&mut decl, decl_traits::convert(custom_traits)?);
+    Ok(Some(statement_expression(decl)))
+}
+
+/// The fields of a `Stmt::VarDecl` that a `VarDeclaration::Simple` renders.
+/// Taken apart in one place so the rendering function is not one more step of
+/// the converter's recursion over `Stmt` (`make check-ast-walkers`).
+struct VarDeclParts<'a> {
+    name: &'a str,
+    expr: &'a Expr,
+    type_constraint: &'a Option<String>,
+    is_state: bool,
+    is_our: bool,
+    is_dynamic: bool,
+    custom_traits: &'a [(String, Option<Expr>)],
+    where_constraint: bool,
+}
+
+fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
+    let Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        custom_traits,
+        where_constraint,
+        ..
+    } = stmt
+    else {
+        return Err(unsupported("variable declaration"));
+    };
+    Ok(VarDeclParts {
+        name,
+        expr,
+        type_constraint,
+        is_state: *is_state,
+        is_our: *is_our,
+        is_dynamic: *is_dynamic,
+        custom_traits,
+        where_constraint: where_constraint.is_some(),
+    })
+}
+
+/// A declaration's initializer: `= EXPR` or `:= EXPR`.
+#[derive(Clone, Copy)]
+enum Initializer<'a> {
+    Assign(&'a Expr),
+    Bind(&'a Expr),
+}
+
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
 /// implicit (`$`) when mutsu already stripped it from the name; otherwise the
 /// name carries its `@`/`%`/`&` sigil.
 fn var_declaration(
     name: &str,
-    init: Option<&Expr>,
+    init: Option<Initializer<'_>>,
     scope: Option<&'static str>,
     type_name: Option<&str>,
     twigil: Option<&str>,
@@ -1401,12 +1472,16 @@ fn var_declaration(
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
         });
     }
-    if let Some(init_expr) = init {
-        let assign = RakuAstNode {
-            class: RakuAstClass::InitializerAssign,
+    if let Some(init) = init {
+        let (class, init_expr) = match init {
+            Initializer::Assign(e) => (RakuAstClass::InitializerAssign, e),
+            Initializer::Bind(e) => (RakuAstClass::InitializerBind, e),
+        };
+        let initializer = RakuAstNode {
+            class,
             fields: vec![node_field(None, convert_expr(init_expr)?)],
         };
-        fields.push(node_field(Some("initializer"), assign));
+        fields.push(node_field(Some("initializer"), initializer));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::VarDeclarationSimple,
@@ -1828,15 +1903,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, semilist)],
             })
         }
-        // `($x = EXPR)` as an expression -> the same `ApplyInfix(Assignment)` as a
-        // statement assignment. `:=` binding stays the boundary.
+        // `($x = EXPR)` / `($x := EXPR)` as an expression -> the same
+        // `ApplyInfix` as the statement form.
         Expr::AssignExpr {
             name,
             expr,
             is_bind,
         } => {
             if *is_bind {
-                return Err(unsupported("`:=` binding expression"));
+                return bind_infix(name, expr);
             }
             assignment_infix(name, expr)
         }
@@ -2964,7 +3039,7 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
         {
             return Err(unsupported("scoped/typed variable declaration"));
         }
-        let init = (!expr_is_nil(expr)).then_some(expr);
+        let init = (!expr_is_nil(expr)).then_some(Initializer::Assign(expr));
         return var_declaration(name, init, None, None, None, None);
     }
     // Assignment / expression setups convert normally, then get unwrapped.
