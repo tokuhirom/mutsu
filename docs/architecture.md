@@ -51,7 +51,10 @@ helpers.
 Executes compiled bytecode. `src/vm.rs` declares the submodules; the unified `Interpreter`
 (`src/interpreter.rs`) *is* the VM. The opcode dispatch match lives in `vm/vm_exec_dispatch.rs`
 (`exec_one_dispatch`, every arm carrying a `// Cost:` line), and each arm delegates to an
-`exec_*_op` handler in a family file. There are ~170 files; the prefix names the family:
+`exec_*_op` handler in a family file. Which of `Interpreter`'s ~440 fields each part of the
+source touches, and the subsystems they group into, is mapped in
+[interpreter-state-map.md](interpreter-state-map.md) (#10779). There are ~170 files; the prefix
+names the family:
 
 - `vm_arith_*`, `vm_bitwise_ops`, `vm_comparison_*`, `vm_set_*`: arithmetic, comparison, set ops
 - `vm_call_*`, `vm_method_dispatch`, `vm_native_*`: sub/method calls and native fast lanes
