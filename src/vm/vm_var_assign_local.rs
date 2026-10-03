@@ -265,6 +265,12 @@ impl Interpreter {
             Self::itemize_scalar_store(name, Self::normalize_scalar_assignment_value(raw_val))
         };
         if val.is_nil()
+            && let Some(decayed) = self.sigilless_alias_nil_decay(code, idx)
+        {
+            // A sigilless alias of another variable: the Nil decays against
+            // that variable's container, not this name (#11110).
+            val = decayed;
+        } else if val.is_nil()
             && let Some(def) = self.var_default(name)
         {
             val = def.clone();

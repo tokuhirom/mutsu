@@ -147,3 +147,30 @@ outside the module, and a family a module imported is not visible to that
 module's own importer. Both match Rakudo. Candidates the *main script*
 declares are still unscoped. A module whose family shares a name with them
 still sees the script's candidates (#11081).
+
+## Amendment (2026-10-03): a contested main-script family is scoped too (#11081)
+
+**Context.** The 2026-10-02 amendment scoped a loaded module's package-less
+families. Candidates the *main script* declares still had no record, and a
+candidate with no record is visible everywhere. So a script's
+`multi sub f(Str)` joined the dispatch of a module's own `multi sub f(Int)`
+inside that module. In Rakudo the module sees only its own lexical family.
+
+**Decision.** When a name already has a scoped family, the main script's own
+package-less family of that name is recorded too, scoped to the main unit
+with no importers. This happens at the script's registration
+(`scope_main_family_if_contested`) or, for a script candidate registered
+before the load, in `scope_unit_multi_families`. An uncontested script multi
+keeps no record, so its dispatch keeps the unit-blind caches.
+
+Supporting changes:
+
+- A TRIR routine body now runs in its declaring compilation unit
+  (`run_trir_routine`), as the untyped entries do through
+  `enter_compilation_unit`. Before, a module routine entered through TRIR
+  kept the caller's `current_unit`. That anchor then made the script's family
+  visible inside the module.
+- `func_multi_resolve_cache` (type-keyed winners) is bypassed for a scoped
+  name, like the other unit-blind dispatch caches.
+- The `X::Multi::NoMatch` signature list and `.candidates`
+  (`routine_candidate_defs`) list only the visible candidates.

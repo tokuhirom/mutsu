@@ -2,7 +2,8 @@
 
 Phase 2 of #10779: which parts of the source touch each of `struct Interpreter`'s fields, and
 which subsystems those fields fall into. This is analysis only; it changes no code. It is the
-input to the phase-3 ADR that decides the subsystem boundaries. Measured 2026-10-03 on
+input to the phase-3 ADR that decides the subsystem boundaries,
+[ADR-10779](adr/10779-interpreter-subsystems-and-upward-call-traits.md). Measured 2026-10-03 on
 `main` at `b3fd61e43`.
 
 Regenerate the full tables (per-field file counts, co-occurrence clusters, every field's
@@ -31,8 +32,9 @@ The count is textual, so read it with these limits in mind:
 - An access through a longer helper method is attributed to the helper's file, not to the
   helper's callers.
 - Two files walk the whole state rather than use part of it. `runtime/runtime_thread.rs`
-  (`clone_for_thread`) touches 133 fields, and `runtime/gc_roots.rs` touches 63. They are left
-  out of the clustering and the coupling counts below.
+  (`clone_for_thread`) reads 133 fields from the parent (and builds all 438 in one struct
+  literal), and `runtime/gc_roots.rs` (`visit_roots`, used only by its own tests today) reads
+  63. They are left out of the clustering and the coupling counts below.
 
 ## How widely the fields are used
 
@@ -131,8 +133,8 @@ whole-state files):
    state only: resolution memos, method/multi caches, call-lane tables and compile caches.
    About ten of them are `GenCache`s, and most of the others are invalidated by a generation
    counter (`fn_resolve_gen`, `method_cache_generation`, ...). They would fit in one
-   `ResolutionCaches` type with a single invalidation entry point. Because the state is
-   derived, a spawned thread could also start with empty caches instead of cloning them.
+   `ResolutionCaches` type with a single invalidation entry point. `clone_for_thread` already
+   gives a spawned thread empty caches, so that type's thread policy is simply "fresh".
 
 5. **`types` is pervasive because of its read side.** `registry` is already its own type
    behind `registry()`/`registry_mut()` guards (184 files). What spreads `types` is
@@ -140,11 +142,13 @@ whole-state files):
    `current_package` arguably belongs to the frame, since it is the lexical package of the
    running code.
 
-6. **The whole-state walks are where extraction pays first.** `clone_for_thread` names 133
-   fields one by one, and the GC root scan names 63. With subsystem types, each type would
-   implement its own thread-clone policy and root tracing. A field added to a subsystem then
-   could not be forgotten by either walk. Today, forgetting it is a silent bug: the field is
-   not inherited by a thread, or not rooted for the GC.
+6. **The thread clone gets simpler, but it is not unsafe today.** `clone_for_thread` builds
+   the child in one 438-field struct literal, so the compiler already rejects a forgotten field.
+   What extraction improves is locality: today each field's thread policy (share the `Arc`,
+   copy, or start fresh) sits in that literal, far from the field's own definition. With
+   subsystem types, each type states its own policy next to its state, and the literal shrinks
+   to one line per subsystem. `visit_roots` (`runtime/gc_roots.rs`) enumerates fields by hand
+   and so *can* miss one, but it is test-only: the cycle collector does not enumerate roots.
 
 7. **There are precedents.** `OutputSink`, `TapState`, `IoHandleTable`, `Registry`,
    `RoutineStack`, `SharedStore`, `OnceStore`, `CurRepoState`, `MarkContextState` and

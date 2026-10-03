@@ -23,12 +23,10 @@ instructions (-25%)**, and from ~950 to ~700 page faults per process:
   borrows from the class table, the composed-role loop moves its lists
   instead of cloning them three times, and the accessor sync interns class
   names straight from the map's keys.
-- **The Linux `mutsu` binary is linked non-PIE** (`build.rs`). A PIE binary
-  made the loader apply ~49,000 relative relocations to ~930 KiB of
-  `.data.rel.ro` on every start, each page a copy-on-write fault; at a fixed
-  address there is nothing to relocate. Only the `mutsu` executable on
-  Linux/glibc is affected: the `cdylib`, `mzef` and macOS stay PIE, and the
-  shared libraries keep their ASLR.
+- The change also linked the Linux `mutsu` binary non-PIE to skip the
+  loader's ~49,000 start-up relocations. That gave up ASLR for the main
+  executable and was reverted: the binary is PIE again, and the page-fault
+  and timing figures below include the part it contributed.
 
 ## The `~=` loop
 

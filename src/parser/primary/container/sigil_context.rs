@@ -1,4 +1,4 @@
-use crate::ast::Expr;
+use crate::ast::{ContextKind, Expr};
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 
@@ -25,6 +25,8 @@ pub(crate) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     {
         return Ok((
             block_rest,
+            // TODO: render as `Contextualizer::Item` once a multi-statement
+            // `$(a; b)` has a RakuAST statement-sequence form.
             Expr::MethodCall {
                 target: Box::new(block_expr),
                 name: Symbol::intern("item"),
@@ -35,15 +37,12 @@ pub(crate) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
         ));
     }
     let (rest, inner) = paren_expr(rest)?;
-    // Lower $(expr) to expr.item — wraps the value in a Scalar container
+    // $(expr) compiles to expr.item — wraps the value in a Scalar container
     Ok((
         rest,
-        Expr::MethodCall {
-            target: Box::new(inner),
-            name: Symbol::intern("item"),
-            args: vec![],
-            modifier: None,
-            quoted: false,
+        Expr::Contextualizer {
+            kind: ContextKind::Item,
+            inner: Box::new(inner),
         },
     ))
 }
@@ -68,12 +67,9 @@ pub(crate) fn itemized_context_paren_expr(input: &str) -> PResult<'_, Expr> {
     };
     Ok((
         rest,
-        Expr::MethodCall {
-            target: Box::new(inner),
-            name: Symbol::intern("item"),
-            args: vec![],
-            modifier: None,
-            quoted: false,
+        Expr::Contextualizer {
+            kind: ContextKind::Item,
+            inner: Box::new(inner),
         },
     ))
 }
@@ -92,12 +88,9 @@ pub(crate) fn list_context_paren_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, inner) = paren_expr(rest)?;
     Ok((
         rest,
-        Expr::MethodCall {
-            target: Box::new(inner),
-            name: Symbol::intern("list"),
-            args: vec![],
-            modifier: None,
-            quoted: false,
+        Expr::Contextualizer {
+            kind: ContextKind::List,
+            inner: Box::new(inner),
         },
     ))
 }
@@ -116,12 +109,9 @@ pub(crate) fn hash_context_paren_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, inner) = paren_expr(rest)?;
     Ok((
         rest,
-        Expr::MethodCall {
-            target: Box::new(inner),
-            name: Symbol::intern("hash"),
-            args: vec![],
-            modifier: None,
-            quoted: false,
+        Expr::Contextualizer {
+            kind: ContextKind::Hash,
+            inner: Box::new(inner),
         },
     ))
 }

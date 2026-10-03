@@ -1067,6 +1067,11 @@ impl Interpreter {
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
             return self.resolve_function_with_types(name, args);
         };
+        // A compunit-scoped family's winner depends on the executing unit,
+        // which the key does not carry (#11081, `runtime/unit_multi_scope.rs`).
+        if self.operator_has_import_scope_sym(name_sym) {
+            return self.resolve_function_with_types(name, args);
+        }
         // The atomic mirror, not `current_package()`: the owned form is a
         // `RwLock` read plus a `String` heap allocation on a path that runs on
         // every multi call, and both spellings intern to the same symbol.
