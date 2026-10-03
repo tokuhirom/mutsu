@@ -159,9 +159,12 @@ pub(crate) fn bind_loop_topic(
 /// guard's own comment at each call site).
 pub(crate) fn set_loop_topic_readonly(vm: &mut Interpreter, immutable_topic: bool) {
     if immutable_topic {
-        vm.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+        vm.mark_readonly_sym_with(
+            crate::symbol::wk::topic(),
+            crate::ast::ReadonlyKind::Immutable,
+        );
     } else {
-        vm.unmark_readonly("_");
+        vm.unmark_readonly_topic();
     }
 }
 
@@ -761,7 +764,7 @@ impl Interpreter {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| vm.env().get("_").cloned())
+                                .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
                             // A callback that returns a finite lazy `.map`/`.grep`
                             // pipe (e.g. `{ gather {...}.grep(...) }`) must reify
@@ -1050,7 +1053,7 @@ impl Interpreter {
                             let pred = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| vm.env().get("_").cloned())
+                                .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
                             // A regex used as the predicate leaves its match
                             // in the dynamically scoped `$/`, even though

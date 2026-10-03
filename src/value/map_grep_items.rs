@@ -144,6 +144,12 @@ impl MapGrepItems {
         }
     }
 
+    /// The source element at `index` as it is now, `None` past the end.
+    // Cost: O(1).
+    pub(crate) fn get(&self, index: usize) -> Option<Value> {
+        self.with_items(|items| items.get(index).cloned())
+    }
+
     /// A copy of the source elements `start..end` (clamped to the length).
     // Cost: O(end - start).
     pub(crate) fn slice(&self, start: usize, end: usize) -> Vec<Value> {

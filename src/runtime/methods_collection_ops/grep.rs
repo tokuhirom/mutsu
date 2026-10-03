@@ -370,8 +370,10 @@ impl Interpreter {
             func,
             grep_adverb,
             0..len,
+            None,
             &mut crate::runtime::map_grep_plan::MapGrepPlanSlot::default(),
         )
+        .map(|(result, _)| result)
     }
 
     /// [`Self::grep_over_array_promoting`] over the source slots `range`
@@ -380,7 +382,12 @@ impl Interpreter {
     /// indices the `:k`/`:kv`/`:p` adverbs see are absolute. `plan` carries
     /// what earlier chunks computed about the callback
     /// (`runtime/map_grep_plan.rs`).
-    // Cost: one callback call per slot of `range`, plus O(m) promotions,
+    ///
+    /// With `max_matches`, the grep reads the slots from `range.start` on as
+    /// it reaches them and stops at that many matches instead of at
+    /// `range.end` (a prefix pull, #11515). Returns the result and the end of
+    /// the slots it consumed.
+    // Cost: one callback call per slot consumed, plus O(m) promotions,
     // m = matched slots.
     pub(crate) fn grep_over_array_promoting_range(
         &mut self,
@@ -388,12 +395,22 @@ impl Interpreter {
         func: Option<Value>,
         grep_adverb: &GrepAdverb,
         range: std::ops::Range<usize>,
+        max_matches: Option<usize>,
         plan: &mut crate::runtime::map_grep_plan::MapGrepPlanSlot,
-    ) -> Result<Value, RuntimeError> {
+    ) -> Result<(Value, usize), RuntimeError> {
         let start = range.start.min(items.len());
-        let end = range.end.min(items.len()).max(start);
-        let (filtered, mutated_items, matched_indices) =
-            self.eval_grep_over_items_planned(func, items[start..end].to_vec(), plan)?;
+        let (filtered, mutated_items, matched_indices) = match max_matches {
+            Some(max_matches) => {
+                let fetch = |i: usize| items.get(start + i).cloned();
+                let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
+                self.eval_grep_over_feed_planned(func, feed, plan)?
+            }
+            None => {
+                let end = range.end.min(items.len()).max(start);
+                self.eval_grep_over_items_planned(func, items[start..end].to_vec(), plan)?
+            }
+        };
+        let end = start + mutated_items.len();
         // Which source positions matched, so those slots can be shared
         // with the result as first-class element containers. The grep
         // loop reports them; they used to be re-derived here by scanning
@@ -494,7 +511,9 @@ impl Interpreter {
         } else {
             filtered
         };
-        grep_adverb.transform_result(filtered, &indices)
+        grep_adverb
+            .transform_result(filtered, &indices)
+            .map(|result| (result, end))
     }
 }
 

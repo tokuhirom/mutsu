@@ -977,6 +977,7 @@ mod resolution_call_by_name;
 mod resolution_call_sub;
 mod resolution_deferral;
 mod resolution_eval;
+pub(crate) mod resolution_grep_loop;
 mod resolution_lazy;
 pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
