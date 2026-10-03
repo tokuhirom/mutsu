@@ -53,6 +53,11 @@ impl Interpreter {
                     'r' => EscResult::Char('\r'),
                     'e' => EscResult::Char('\u{001B}'), // escape (ESC)
                     'f' => EscResult::Char('\u{000C}'),
+                    // The upper case of a class letter is its negation (#11444).
+                    'T' => EscResult::NegChar('\t'),
+                    'R' => EscResult::NegChar('\r'),
+                    'E' => EscResult::NegChar('\u{001B}'),
+                    'F' => EscResult::NegChar('\u{000C}'),
                     'b' => EscResult::Char('\u{0008}'), // backspace
                     'B' => EscResult::NegChar('\u{0008}'), // not backspace
                     '0' => EscResult::Char('\0'),
