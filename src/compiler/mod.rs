@@ -1077,6 +1077,7 @@ mod declaration_plan_tests {
 mod adverb_interp;
 mod amp_scope;
 mod begin_use;
+mod bind_ternary;
 mod body_scans;
 mod const_fold;
 pub(crate) mod control_block;
@@ -1109,7 +1110,6 @@ pub(crate) mod frame_lexical_routines;
 mod helpers;
 mod helpers_ast_utils;
 mod helpers_block_inline;
-mod bind_ternary;
 mod helpers_call_args;
 mod helpers_control_flow;
 mod helpers_do_expr;
