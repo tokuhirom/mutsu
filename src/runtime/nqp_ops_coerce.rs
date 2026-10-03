@@ -47,7 +47,7 @@ fn int_value(n: NumBigInt) -> Value {
     }
 }
 
-/// MoarVM's "This type cannot unbox to a native <kind>" error.
+/// MoarVM's "This type cannot unbox to a native `kind`" error.
 fn cannot_unbox(kind: &str, v: &Value) -> RuntimeError {
     RuntimeError::new(format!(
         "This type cannot unbox to a native {kind}: P6opaque, {}",
