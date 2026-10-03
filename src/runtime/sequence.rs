@@ -1272,19 +1272,26 @@ impl Interpreter {
                     crate::value::LazyList::new_sequence(result, spec),
                 )))
             } else if matches!(mode, SeqMode::Closure)
-                && !closure_generation_finished
                 && let Some(gen_fn) = generator
             {
-                // Infinite closure-based sequence (`1, 1, * + * ... *`): keep the
+                // Endpoint-less closure sequence (`1, 1, * + * ... *`): keep the
                 // generator so elements past the eager prefix are produced on
                 // demand instead of truncating to the initial cache.
+                //
+                // A generator that already ended the sequence inside the eager
+                // prefix (`1, { last if $_ >= 5; $_ + 1 } ... *`) still yields
+                // the same closure-sequence shape, born `finished`: laziness is
+                // a property of the `... *` iterator in Rakudo, not of whether
+                // it happens to end, so `.is-lazy` stays True, `my @a = ...`
+                // keeps `@a` lazy (`.elems` throws `X::Cannot::Lazy`), and only
+                // a strict force (`.eager`) answers the complete list (#11098).
                 let state = crate::value::ClosureSeqState {
                     generator: gen_fn,
                     generator_shape,
                     endpoint: None,
                     exclude_endpoint: false,
                     post_endpoint: Vec::new(),
-                    finished: false,
+                    finished: closure_generation_finished,
                 };
                 let mut ll = crate::value::LazyList::new_closure_sequence(result, state);
                 // A sequence deferred after a re-entrant generator error must
