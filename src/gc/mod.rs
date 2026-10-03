@@ -22,6 +22,7 @@
 mod borrow_shapes;
 mod collect;
 mod gc_ptr;
+mod interpreter_thread;
 mod root_visitor;
 mod safepoint;
 #[cfg(test)]
@@ -38,6 +39,7 @@ pub(crate) use gc_ptr::{
     ContainerMakeMut, ErasedGc, Gc, GcBox, Trace, WeakGc, enter_mutator_worker,
     exit_mutator_worker, gc_contents_mut, gc_enabled,
 };
+pub(crate) use interpreter_thread::register_interpreter_thread;
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 pub(crate) use safepoint::{
     SafepointKind, armed as gc_safepoints_armed, collect_on_request,
@@ -46,7 +48,8 @@ pub(crate) use safepoint::{
 };
 pub(crate) use stw::{
     DEADLOCK_MESSAGE, abort_unborn_worker, block_quiescent, mark_thread_registered,
-    park_at_safepoint as gc_park_point, preregister_worker_quiescent, wait_until, worker_started,
+    park_at_safepoint as gc_park_point, preregister_worker_quiescent, thread_is_registered,
+    wait_until, worker_started,
 };
 
 /// Test-only serialization for every unit test that touches the process-global

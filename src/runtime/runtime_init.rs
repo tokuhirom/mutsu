@@ -3081,6 +3081,10 @@ impl Interpreter {
     }
 
     pub fn new() -> Self {
+        // Every thread that runs an interpreter is a GC mutator: register it
+        // before this constructor's first `Gc` write and before the safepoint
+        // below, which may itself collect (#11714).
+        crate::gc::register_interpreter_thread();
         // Constructing a top-level interpreter is a GC re-entry boundary (no
         // borrow, no lock, no `gc_contents_mut` is held here), and for an
         // embedder that drives mutsu by building one interpreter per request it

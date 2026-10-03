@@ -140,12 +140,18 @@ static ALLOC: alloc_stats::CountingAllocator = alloc_stats::CountingAllocator;
 /// point calls this once on its big-stack main thread; its quiescence
 /// (blocked in `await`/`.finish`/`sleep`) then counts toward — and is
 /// required by — a collector's rendezvous, exactly like a `spawn_user_thread`
-/// worker's. Embedders that drive `Interpreter` from a long-lived thread and
-/// enable `MUTSU_GC` should call this on that thread too.
+/// worker's. Any other thread is registered automatically by its first
+/// `Interpreter::new` (#11714), so embedders need not call this.
 pub fn gc_register_main_thread() {
     // Initialize the process-local mutsu thread identity before any worker can
     // ask for its fallback OS-thread-derived id.
     let _ = runtime::current_mutsu_thread_id();
+    // Idempotent: an `Interpreter::new` on this thread may already have
+    // registered it (`gc::register_interpreter_thread`), and counting one
+    // thread twice would leave every collector waiting for a phantom.
+    if gc::thread_is_registered() {
+        return;
+    }
     gc::enter_mutator_worker();
     gc::mark_thread_registered(true);
 }

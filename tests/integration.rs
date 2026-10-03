@@ -24,6 +24,7 @@ mod crash_report;
 mod dispatch_poll_placement;
 mod dynamic_method_intern_budget;
 mod flaky_retry;
+mod gc_parallel_interpreters;
 mod gc_stress;
 mod issue_7228;
 mod jit_diff;
