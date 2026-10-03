@@ -3258,6 +3258,11 @@ impl Interpreter {
                 if type_args.is_empty() {
                     Value::package(name)
                 } else {
+                    // Rakudo selects the parametric role variant when the
+                    // type is parameterized: arguments no candidate's
+                    // signature accepts (`R[Any:D]` given `Int`) throw
+                    // X::Role::Parametric::NoSuchCandidate right here.
+                    self.resolve_role_candidate_with_args(&name.resolve(), Some(&type_args))?;
                     Value::parametric_role(name, type_args)
                 }
             }
