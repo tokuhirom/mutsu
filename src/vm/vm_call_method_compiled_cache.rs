@@ -1,4 +1,5 @@
 use super::*;
+use crate::vm::vm_method_call_attrs::CallAttrs;
 
 /// Cache-key stand-in for the parser's synthetic test-assertion callsite-line
 /// marker. Deliberately the marker's own reserved key name: it can never
@@ -699,7 +700,6 @@ impl Interpreter {
             self.pop_method_samewith_context();
             result
         } else {
-            let attributes = attrs_cell.as_ref().map(|c| c.to_map()).unwrap_or_default();
             // The real receiver, never its type object: a deferral candidate
             // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
             let invocant_for_dispatch = target.clone();
@@ -714,7 +714,9 @@ impl Interpreter {
                 method_sym,
                 method_def,
                 cc,
-                &attributes,
+                attrs_cell
+                    .as_ref()
+                    .map_or(CallAttrs::Empty, CallAttrs::Cell),
                 args,
                 invocant,
                 fns_ref,
@@ -784,7 +786,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let empty_fns = CompiledFns::default();
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-        let attributes = attrs_cell.to_map();
         let pushed_dispatch = loan_env!(
             self,
             push_method_dispatch_frame(cn, method, &args, target.clone(),)
@@ -796,7 +797,7 @@ impl Interpreter {
             crate::symbol::Symbol::intern(method),
             method_def,
             cc,
-            &attributes,
+            CallAttrs::Cell(attrs_cell),
             args,
             invocant,
             fns_ref,

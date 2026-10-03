@@ -282,7 +282,7 @@ impl Interpreter {
 
     /// [`Self::method_attr_cells`] for a caller that already knows whether
     /// `owner` is a role (the running method's frame memoizes it).
-    fn method_attr_cells_for(
+    pub(crate) fn method_attr_cells_for(
         val: &Value,
         owner: &str,
         owner_is_role: bool,

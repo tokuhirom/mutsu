@@ -1,8 +1,9 @@
+use super::vm_method_call_attrs::CallAttrs;
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::AttrMap;
 
-pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
+pub(crate) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl Interpreter {
     /// Call a compiled method body (MethodDef with compiled_code).
@@ -15,7 +16,7 @@ impl Interpreter {
         method_sym: Symbol,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
-        attributes: &AttrMap,
+        attributes: CallAttrs<'_>,
         args: Vec<Value>,
         invocant: Option<Value>,
         compiled_fns: &CompiledFns,
@@ -59,13 +60,16 @@ impl Interpreter {
         // Build the base (self) value
         let mut base = if let Some(inv) = invocant {
             inv
-        } else if attributes.is_empty() {
-            Value::package(crate::symbol::Symbol::intern(receiver_class_name))
         } else {
-            Value::make_instance(
-                crate::symbol::Symbol::intern(receiver_class_name),
-                attributes.clone(),
-            )
+            let attributes = attributes.materialize();
+            if attributes.is_empty() {
+                Value::package(crate::symbol::Symbol::intern(receiver_class_name))
+            } else {
+                Value::make_instance(
+                    crate::symbol::Symbol::intern(receiver_class_name),
+                    attributes.into_owned(),
+                )
+            }
         };
         // Pre-compute whether we can skip the expensive env merge on exit.
         // `is raw` is included alongside `is rw`: an `is raw` param bound to an
@@ -135,9 +139,7 @@ impl Interpreter {
         // `attr_alias_local` scan over ALL attributes (O(env keys x attrs) on
         // every full-path method exit) in the overwhelmingly common no-alias
         // case.
-        let has_attr_aliases = attributes
-            .keys()
-            .any(|k| k.starts_with(ATTR_ALIAS_META_PREFIX));
+        let has_attr_aliases = attributes.has_alias_meta();
 
         // Fast path: bypass env entirely and populate locals directly from
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
@@ -347,6 +349,9 @@ impl Interpreter {
             }
         }
 
+        // Only the full binder below reads the attributes as a map (#8880).
+        let attributes = attributes.materialize();
+        let attributes: &AttrMap = &attributes;
         self.push_call_frame();
         // See `call_compiled_function_named_inner`: an END registered inside
         // this method closes over a frame that dies on return, so the return
@@ -1421,7 +1426,6 @@ impl Interpreter {
         code: &CompiledCode,
         param_defs: &[crate::ast::ParamDef],
     ) -> Option<AttrMap> {
-        let cell = self.method_attr_cell(base, owner_class)?;
         // A `:=` attr override can only be observed as a ContainerRef value in
         // THIS frame's locals or env overlay (the bind op writes it there).
         // Deliberately overlay-only: a caller-frame ContainerRef (e.g. a boxed
@@ -1440,6 +1444,9 @@ impl Interpreter {
         if frame_refs.is_empty() {
             return None;
         }
+        // Looked up only now: the common exit has no ContainerRef in scope
+        // and needs no cell at all (#8880).
+        let cell = self.method_attr_cell(base, owner_class)?;
         // Each ContainerRef name, read as each attribute spelling it could be:
         // (bare attribute name, candidate rank, value). The rank is the
         // candidate order the per-attribute scan used to probe — bare, `!x`,
@@ -1766,8 +1773,16 @@ impl Interpreter {
         self.guard_native_stack()?;
         crate::alloc_scope!("mfast");
         crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
-        let attrs_cell = self.method_attr_cell(&base, owner_class);
-        let fallback_attrs_cell = self.method_attr_cells(&base, owner_class).1.filter(|cell| {
+        // The owner's role-ness is asked here once per call and handed to the
+        // frame, so the body's attribute accesses never ask it again.
+        let owner_is_role = self.is_role(owner_class);
+        // One walk for both cells: the primary is the role cell when `self`
+        // composes the owner role, else the instance cell, which then also
+        // serves as the fallback for keys the role cell lacks.
+        let (role_attrs_cell, inner_attrs_cell) =
+            Self::method_attr_cells_for(&base, owner_class, owner_is_role);
+        let attrs_cell = role_attrs_cell.or_else(|| inner_attrs_cell.clone());
+        let fallback_attrs_cell = inner_attrs_cell.filter(|cell| {
             attrs_cell.as_ref().is_some_and(|primary| {
                 crate::gc::Gc::as_ptr(primary) != crate::gc::Gc::as_ptr(cell)
             })
@@ -1819,9 +1834,6 @@ impl Interpreter {
             self.set_env(scoped);
         }
         let saved_var_bindings = self.take_var_bindings();
-        // The owner's role-ness is asked here once per call and handed to the
-        // frame, so the body's attribute accesses never ask it again.
-        let owner_is_role = self.is_role(owner_class);
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // See the matching comment in `call_compiled_method`.
         if cc.uses_dispatcher {
@@ -2275,7 +2287,7 @@ impl Interpreter {
         {
             let attrs_guard = attrs_cell.as_ref().map(|c| c.as_map());
             let fallback_attrs_guard = fallback_attrs_cell.as_ref().map(|c| c.as_map());
-            let role_state = if self.is_role(owner_class) {
+            let role_state = if owner_is_role {
                 match base.view() {
                     ValueView::Mixin(_, mixins)
                         if mixins.contains_key(MetaNs::Role.str_key_for_str(owner_class)) =>
