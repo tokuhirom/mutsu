@@ -869,6 +869,20 @@ impl Interpreter {
         self.env
             .get(&qualified)
             .cloned()
+            // A module's top-level type or enum value is not bound in the env
+            // under its qualified name (ADR-0084 §2 group 2): the registry
+            // answers for the type, the package-symbol table for the value.
+            .or_else(|| {
+                if sigil.is_some() {
+                    return None;
+                }
+                self.toplevel_package_symbol(&qualified)
+                    .cloned()
+                    .or_else(|| {
+                        self.has_type_direct(&qualified)
+                            .then(|| Value::package(crate::symbol::Symbol::intern(&qualified)))
+                    })
+            })
             // The requested compunit path can differ from its declared unit
             // package. In that case the exported role/class value lives under
             // the declared package, even though its export metadata is also

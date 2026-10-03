@@ -11,8 +11,9 @@ use Test;
 # the package stash.
 
 use ToplevelQualifiedNames;
+use ToplevelQualifiedExport;
 
-plan 17;
+plan 19;
 
 is ToplevelQualifiedNames::Color::Green.Str, 'Green', 'Pkg::E::K from the importer';
 is ToplevelQualifiedNames::Red.Str, 'Red', 'Pkg::K from the importer';
@@ -39,3 +40,10 @@ is (start { ToplevelQualifiedNames::Color::Red }).result.Str, 'Red',
     'reachable from another thread';
 ok ToplevelQualifiedNames::Thing.new ~~ ToplevelQualifiedNames::Thing,
     'a module class by its qualified name';
+
+# An exported class nested in another class under a qualified name of its own
+# is imported by the type object the module throws, not by a fresh package.
+is TQE::Diag.^name, 'ToplevelQualifiedExport::TQE::Diag',
+    'an exported nested qualified class imports its real type object';
+throws-like { ToplevelQualifiedExport.go }, TQE::Diag,
+    'and an exception the module throws matches it';
