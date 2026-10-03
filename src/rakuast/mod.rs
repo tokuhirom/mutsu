@@ -22,6 +22,7 @@ mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
 mod lower;
+mod method_assign_decl;
 mod name_parts;
 mod render;
 mod routine_traits;
@@ -135,6 +136,7 @@ pub enum RakuAstClass {
     VarPackage,
     VarDeclarationSimple,
     InitializerAssign,
+    InitializerCallAssign,
     VarDeclarationSignature,
     InitializerBind,
     ApplyInfix,
@@ -389,6 +391,7 @@ impl RakuAstClass {
             VarPackage => "RakuAST::Var::Package",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
+            InitializerCallAssign => "RakuAST::Initializer::CallAssign",
             VarDeclarationSignature => "RakuAST::VarDeclaration::Signature",
             InitializerBind => "RakuAST::Initializer::Bind",
             ApplyInfix => "RakuAST::ApplyInfix",
@@ -974,6 +977,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarPackage,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
+    RakuAstClass::InitializerCallAssign,
     RakuAstClass::VarDeclarationSignature,
     RakuAstClass::InitializerBind,
     RakuAstClass::ApplyInfix,
@@ -1687,7 +1691,9 @@ pub fn construct(
                 initializer.view(),
                 ValueView::RakuAst(n) if matches!(
                     n.class,
-                    RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
+                    RakuAstClass::InitializerAssign
+                        | RakuAstClass::InitializerBind
+                        | RakuAstClass::InitializerCallAssign
                 )
             );
             if !is_initializer {
@@ -2600,6 +2606,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
+        ("RakuAST::Initializer::CallAssign", "new") => RakuAstClass::InitializerCallAssign,
         ("RakuAST::Initializer::Bind", "new") => RakuAstClass::InitializerBind,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
@@ -2911,6 +2918,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ParameterTargetTerm
             | RakuAstClass::VarDeclarationSimple
             | RakuAstClass::InitializerAssign
+            | RakuAstClass::InitializerCallAssign
             | RakuAstClass::InitializerBind
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeEnum

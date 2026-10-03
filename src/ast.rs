@@ -2500,6 +2500,7 @@ pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
 mod lvalue;
+pub(crate) mod method_assign_decl;
 mod placeholder_kind;
 pub(crate) mod placeholders;
 pub(crate) mod signature_decl;

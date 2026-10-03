@@ -7,6 +7,7 @@
 //! silently-wrong node.
 
 use super::bareword::simple_type_node;
+use super::method_assign_decl::call_method;
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
@@ -165,9 +166,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
         // source form as the expansion's first statement.
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(form) => Ok(Some(statement_expression(super::signature_decl::convert(
-                form,
-            )?))),
+            Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
+                super::signature_decl::convert(decl)?,
+            ))),
+            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
+                super::method_assign_decl::convert(decl)?,
+            ))),
             None => Err(unsupported("source form")),
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
@@ -1323,15 +1327,16 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
 
 /// A declaration's initializer: `= EXPR` or `:= EXPR`.
 #[derive(Clone, Copy)]
-enum Initializer<'a> {
+pub(super) enum Initializer<'a> {
     Assign(&'a Expr),
     Bind(&'a Expr),
+    CallAssign(&'a crate::ast::method_assign_decl::MethodAssignDecl),
 }
 
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
 /// implicit (`$`) when mutsu already stripped it from the name; otherwise the
 /// name carries its `@`/`%`/`&` sigil.
-fn var_declaration(
+pub(super) fn var_declaration(
     name: &str,
     init: Option<Initializer<'_>>,
     scope: Option<&'static str>,
@@ -1371,13 +1376,22 @@ fn var_declaration(
         });
     }
     if let Some(init) = init {
-        let (class, init_expr) = match init {
-            Initializer::Assign(e) => (RakuAstClass::InitializerAssign, e),
-            Initializer::Bind(e) => (RakuAstClass::InitializerBind, e),
-        };
-        let initializer = RakuAstNode {
-            class,
-            fields: vec![node_field(None, convert_expr(init_expr)?)],
+        let initializer = match init {
+            Initializer::Assign(e) => RakuAstNode {
+                class: RakuAstClass::InitializerAssign,
+                fields: vec![node_field(None, convert_expr(e)?)],
+            },
+            Initializer::Bind(e) => RakuAstNode {
+                class: RakuAstClass::InitializerBind,
+                fields: vec![node_field(None, convert_expr(e)?)],
+            },
+            Initializer::CallAssign(form) => RakuAstNode {
+                class: RakuAstClass::InitializerCallAssign,
+                fields: vec![node_field(
+                    None,
+                    call_method(&form.method.resolve(), &form.args, None)?,
+                )],
+            },
         };
         fields.push(node_field(Some("initializer"), initializer));
     }
@@ -1757,7 +1771,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
-            Some(form) => super::signature_decl::convert(form),
+            Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
+                super::signature_decl::convert(decl)
+            }
+            Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
+                super::method_assign_decl::convert(decl)
+            }
             None => Err(unsupported("source form")),
         },
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
@@ -3694,31 +3713,6 @@ fn method_call_postfix(
     call_method(name, args, modifier)
 }
 
-/// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
-fn call_method(
-    name: &str,
-    args: &[Expr],
-    modifier: Option<char>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = RakuAstNode {
-        class: RakuAstClass::Name,
-        fields: vec![leaf_field(None, Value::str(name.to_string()))],
-    };
-    // Field order matches raku: name, args, dispatch.
-    let mut fields = vec![node_field(Some("name"), name_node)];
-    if !args.is_empty() {
-        fields.push(node_field(Some("args"), arg_list(args)?));
-    }
-    if let Some(m) = modifier {
-        // `.?` / `.+` / `.*` become a `dispatch` string.
-        fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));
-    }
-    Ok(RakuAstNode {
-        class: RakuAstClass::CallMethod,
-        fields,
-    })
-}
-
 /// `."foo"` / `."foo"(args)` -> `Call::QuotedMethod(name => QuotedString,
 /// [args => ArgList])`. Unlike `Call::Method`, the name is a QuotedString
 /// (a string literal) rather than a `Name.from-identifier`.
@@ -4073,7 +4067,7 @@ fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::with_capacity(args.len());
     for a in args {
         // mutsu's parser attaches a `__mutsu_test_callsite_line => N` named
