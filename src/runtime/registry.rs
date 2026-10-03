@@ -665,6 +665,19 @@ impl Registry {
         entries.into_iter().map(|entry| entry.name).collect()
     }
 
+    /// Whether `owner` (a class, or a role, whose methods live on its
+    /// `RoleDef` until composition) declares a `new` of its own. A qualified
+    /// `self.Owner::new(...)` runs that method on the original invocant
+    /// instead of constructing `Owner` itself.
+    // Cost: O(1) hash probes.
+    pub(crate) fn declares_user_new(&self, owner: &str) -> bool {
+        self.user_method_overloads(owner, "new").is_some()
+            || self
+                .roles
+                .get(owner)
+                .is_some_and(|role| role.methods.contains_key("new"))
+    }
+
     pub(crate) fn user_method_overloads(
         &self,
         class_name: &str,
