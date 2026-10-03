@@ -330,13 +330,11 @@ pub(crate) fn try_interpolate_var<'a>(
                 // following subscript indexes the Match: `"$<>[0]"`.
                 parse_postcircumfix_index(var_rest, var_expr)
             } else {
-                let index = Expr::Literal(literal_str(key.to_string()));
-                let expr = Expr::Index {
-                    target: Box::new(var_expr),
-                    index: Box::new(index),
-                    is_positional: false,
-                };
-                (expr, var_rest)
+                // The same capture-variable read a bare `$<key>` compiles to,
+                // so it also works where `$/` is not a Match yet — a
+                // subrule's argument list (`<.panic: "dup $<name>">`) is
+                // evaluated against the in-progress captures.
+                (Expr::CaptureVar(key.to_string()), var_rest)
             };
             let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);

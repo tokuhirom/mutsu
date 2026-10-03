@@ -897,6 +897,16 @@ impl Interpreter {
         // parameterized-subrule resolution that reaches here is not a function
         // of its memo key.
         super::regex_arg_purity::note_opaque_read();
+        // Inside an inline `[ ... ]` / `||` level the captures the enclosing
+        // regex already took are visible too, as they are to an embedded
+        // `{ ... }` (`<name> [ <.panic: "dup $<name>"> || ... ]`).
+        let view;
+        let caps = if caps.outer_backref().is_some() {
+            view = caps.inline_capture_view();
+            &view
+        } else {
+            caps
+        };
         let env = self.make_regex_eval_env(caps);
         // The expression may assign to a caller lexical (`<x($c++)>`). The
         // swapped-in env is dropped afterwards, so carry those writes out the
@@ -930,7 +940,17 @@ impl Interpreter {
         self.writeback_assertion_free_var_writes(&names, &[]);
         match result {
             Ok(v) => Some(v),
-            Err(e) => e.return_value,
+            Err(e) if e.return_value.is_some() => e.return_value,
+            Err(e) => {
+                // An exception while evaluating a subrule's argument list
+                // (`<.panic: "dup $<name>">`) propagates out of the match, as
+                // one in an embedded `{ ... }` does; it is not a silent
+                // non-match.
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    slot.borrow_mut().get_or_insert(e);
+                });
+                None
+            }
         }
     }
 }

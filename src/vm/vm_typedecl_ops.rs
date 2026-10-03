@@ -682,6 +682,9 @@ impl Interpreter {
                 self.register_lexical_class(resolved_name.clone());
                 // Also mark as my-scoped so it's excluded from the parent package stash
                 self.mark_my_scoped_package_item(storage_name.clone());
+                if crate::qualified::is_qualified(Symbol::intern(&resolved_name)) {
+                    self.mark_namespaced_lexical_type(qualified_name.clone());
+                }
             }
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&storage_name, language_version);

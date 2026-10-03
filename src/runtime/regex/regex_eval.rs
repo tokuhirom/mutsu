@@ -209,6 +209,16 @@ impl Interpreter {
         matched_so_far: &str,
         writes_back_to_caller: bool,
     ) -> InlineCodeOutcome {
+        // An exception already raised in this match ends it: the engine may
+        // still be unwinding through later alternatives, but raku's cursor
+        // never reaches them, so their code must not run.
+        if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+            return InlineCodeOutcome {
+                value: None,
+                writes: ValueMap::default(),
+                made: None,
+            };
+        }
         let (stmts, code_cache_id) = if let Some(body) = parsed_body {
             (std::sync::Arc::clone(body), parsed_cache_id)
         } else {
