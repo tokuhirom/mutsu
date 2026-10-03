@@ -973,7 +973,11 @@ impl Interpreter {
         // puns it, but its instances still report the role as their class — so
         // resolve the attribute's declared type from the role registry. Punning
         // eagerly instead would change how a later `class C does R` composes.
+        // A same-named parametric role (`role S[::T] { has T $.value }` beside
+        // `role S { has $.value }`) shares the (role, attr) key, so the type
+        // counts only if this plain role declares it.
         if self.registry().roles.contains_key(class_name)
+            && self.role_owner_declares_typed_attribute(class_name, attr_name)
             && let Some(tc) = self
                 .registry()
                 .role_attribute_types
@@ -1282,8 +1286,15 @@ impl Interpreter {
         let mut attribute_smileys: HashMap<String, String> = HashMap::new();
         for owner in composed_roles_list.iter().rev() {
             let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
-            for ((r, attr), tc) in &self.registry().role_attribute_types {
-                if r == base {
+            let typed: Vec<(String, String)> = self
+                .registry()
+                .role_attribute_types
+                .iter()
+                .filter(|((r, _), _)| r == base)
+                .map(|((_, attr), tc)| (attr.clone(), tc.clone()))
+                .collect();
+            for (attr, tc) in typed {
+                if self.role_owner_declares_typed_attribute(owner, &attr) {
                     let tc = tc.replace("::?CLASS", role_name);
                     attribute_types.insert(
                         attr.clone(),

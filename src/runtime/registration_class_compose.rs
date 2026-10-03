@@ -414,7 +414,18 @@ impl Interpreter {
             .registry()
             .role_attribute_types
             .iter()
-            .filter(|((r, _), _)| r == base_role_name)
+            // Same-named roles (`role Some[::T] { has T $.value }` beside
+            // `role Some { has $.value }`) share this (role, attr) key, so
+            // take the type only where the candidate being composed declares
+            // that attribute with one (Definitely's plain `Some` was checking
+            // its untyped `$.value` against the parametric role's `T`).
+            .filter(|((r, attr), _)| {
+                r == base_role_name
+                    && role
+                        .attributes
+                        .iter()
+                        .any(|a| &a.name == attr && a.type_constraint.is_some())
+            })
             .map(|((_, attr), tc)| {
                 (
                     attr.clone(),
