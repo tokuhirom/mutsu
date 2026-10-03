@@ -57,8 +57,9 @@ pub(in crate::runtime) use state::{
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
-    PromiseCombinator, collect_supplier_values, next_supplier_id, supplier_done, supplier_quit,
-    supplier_register_promise, supplier_sink_register, supplier_sink_unregister,
+    PromiseCombinator, collect_supplier_values, next_supplier_id, supplier_add_setup_hold,
+    supplier_done, supplier_quit, supplier_register_promise, supplier_remove_setup_hold,
+    supplier_sink_register, supplier_sink_unregister,
     supplier_sinks_register_batch, supplier_snapshot, take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
@@ -394,9 +395,15 @@ impl Interpreter {
             "Proc" => self.native_proc_mut(attributes, method, args, publish),
             "Promise" => self.native_promise_mut(attributes, method, args, publish),
             "Channel" => self.native_channel_mut(attributes, method, args, publish),
-            "Supply" => self.native_supply_mut(attributes, method, args, publish),
+            "Supply" => {
+                let result = self.native_supply_mut(attributes, method, args, publish);
+                self.sync_after_synchronous_delivery();
+                result
+            }
             "Supplier" | "Supplier::Preserving" => {
-                self.native_supplier_mut(attributes, method, args, publish)
+                let result = self.native_supplier_mut(attributes, method, args, publish);
+                self.sync_after_synchronous_delivery();
+                result
             }
             "Proc::Async" => self.native_proc_async_mut(attributes, method, args, publish),
             "Encoding::Decoder" => {
@@ -582,8 +589,16 @@ impl Interpreter {
             "Thread" => self.native_thread(attributes, method),
             "Proc::Async" => self.native_proc_async(attributes, method, args),
             "Proc" => Ok(self.native_proc(attributes, method)),
-            "Supply" => self.native_supply(attributes, method, args),
-            "Supplier" | "Supplier::Preserving" => self.native_supplier(attributes, method, args),
+            "Supply" => {
+                let result = self.native_supply(attributes, method, args);
+                self.sync_after_synchronous_delivery();
+                result
+            }
+            "Supplier" | "Supplier::Preserving" => {
+                let result = self.native_supplier(attributes, method, args);
+                self.sync_after_synchronous_delivery();
+                result
+            }
             "Tap" => self.native_tap(attributes, method),
             "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),

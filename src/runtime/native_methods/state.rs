@@ -314,6 +314,66 @@ struct SupplierRuntimeState {
     /// scheme both busy-spun consumers and lost events when `Supplier.done`
     /// reset the state before the consumer's next poll.
     sinks: Vec<SupplierSink>,
+    /// Wakers of `react` bodies whose `whenever` tapped this supplier but whose
+    /// drive loop has not registered its sink yet (`react_setup.rs`). Their
+    /// producers wait for the registration — Rakudo taps at the `whenever`.
+    setup_holds: Vec<crate::value::waker::ReactWaker>,
+}
+
+impl SupplierRuntimeState {
+    /// Push one event to every registered sink at `seq` (under the registry
+    /// lock, which the caller holds), returning the sinks whose react consumes
+    /// synchronously on another thread: the producer waits for those with
+    /// [`await_sink_delivery`] once it has released the lock.
+    // Cost: O(k), k = registered sinks.
+    fn push_to_sinks(
+        &self,
+        seq: u64,
+        event: impl Fn() -> crate::value::waker::SinkEvent,
+    ) -> Vec<crate::value::waker::ReactWaker> {
+        let mut waits: Vec<_> = self
+            .sinks
+            .iter()
+            .filter(|s| s.waker.push_sync(s.key, event(), seq))
+            .map(|s| s.waker.clone())
+            .collect();
+        waits.extend(
+            self.setup_holds
+                .iter()
+                .filter(|w| w.holds_producer())
+                .cloned(),
+        );
+        waits
+    }
+}
+
+/// A `react` body's `whenever` tapped `supplier_id`: hold its producers until
+/// the drive loop registers the sink (see `SupplierRuntimeState::setup_holds`).
+pub(crate) fn supplier_add_setup_hold(supplier_id: u64, waker: &crate::value::waker::ReactWaker) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let holds = &mut map.entry(supplier_id).or_default().setup_holds;
+        if !holds.iter().any(|w| w.id() == waker.id()) {
+            holds.push(waker.clone());
+        }
+    }
+}
+
+pub(crate) fn supplier_remove_setup_hold(supplier_id: u64, waker_id: usize) {
+    if let Ok(mut map) = supplier_state_map().lock()
+        && let Some(state) = map.get_mut(&supplier_id)
+    {
+        state.setup_holds.retain(|w| w.id() != waker_id);
+    }
+}
+
+/// A live `Supplier` delivers synchronously: `emit`/`done`/`quit` return only
+/// after every react tapping it has run its handler (#11268, see
+/// `ReactWaker::await_delivery`). Must be called without the registry lock.
+// Cost: O(k), k = synchronous sinks, each waiting for its react's handler.
+fn await_sink_delivery(wakers: Vec<crate::value::waker::ReactWaker>, seq: u64) {
+    for waker in wakers {
+        waker.await_delivery(seq);
+    }
 }
 
 #[derive(Debug)]
@@ -372,6 +432,7 @@ pub(crate) fn supplier_sink_register(
         } else if state.done {
             waker.push_at(key, crate::value::waker::SinkEvent::Done, terminal_seq);
         }
+        state.setup_holds.retain(|w| w.id() != waker.id());
         state.sinks.push(SupplierSink {
             sink_id,
             key,
@@ -426,6 +487,7 @@ pub(crate) fn supplier_sinks_register_batch(
                 };
                 replay.push((seq, key, event));
             }
+            state.setup_holds.retain(|w| w.id() != waker.id());
             state.sinks.push(SupplierSink {
                 sink_id,
                 key,
@@ -545,6 +607,9 @@ pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::
             for s in &state.sinks {
                 s.waker.visit_roots(visitor);
             }
+            for w in &state.setup_holds {
+                w.visit_roots(visitor);
+            }
         }
     }
 }
@@ -618,15 +683,13 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
             return;
         }
         let seq = next_emit_seq();
-        for s in &state.sinks {
-            s.waker.push_at(
-                s.key,
-                crate::value::waker::SinkEvent::Emit(value.clone()),
-                seq,
-            );
-        }
+        let waits = state.push_to_sinks(seq, || {
+            crate::value::waker::SinkEvent::Emit(value.clone())
+        });
         state.emitted.push(value);
         state.emitted_seq.push(seq);
+        drop(map);
+        await_sink_delivery(waits, seq);
     }
 }
 
@@ -686,12 +749,13 @@ pub(crate) fn supplier_done(supplier_id: u64) {
         state.done = true;
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
-        for s in &state.sinks {
-            s.waker
-                .push_at(s.key, crate::value::waker::SinkEvent::Done, seq);
-        }
+        let waits = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Done);
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
+        drop(map);
+        // The reacts handle `done` (their LAST phasers, `whenever` completion)
+        // before an `await` on the supply sees it end.
+        await_sink_delivery(waits, seq);
         for promise in pending {
             promise.keep(result.clone(), String::new(), String::new());
         }
@@ -712,12 +776,11 @@ pub(in crate::runtime) fn supplier_done_deferred(
         state.done = true;
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
-        for s in &state.sinks {
-            s.waker
-                .push_at(s.key, crate::value::waker::SinkEvent::Done, seq);
-        }
+        let waits = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Done);
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
+        drop(map);
+        await_sink_delivery(waits, seq);
         pending.into_iter().map(|p| (p, result.clone())).collect()
     } else {
         Vec::new()
@@ -733,14 +796,12 @@ pub(crate) fn supplier_quit(supplier_id: u64, reason: Value) {
         state.quit_reason = Some(reason.clone());
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
-        for s in &state.sinks {
-            s.waker.push_at(
-                s.key,
-                crate::value::waker::SinkEvent::Quit(reason.clone()),
-                seq,
-            );
-        }
+        let waits = state.push_to_sinks(seq, || {
+            crate::value::waker::SinkEvent::Quit(reason.clone())
+        });
         let pending = std::mem::take(&mut state.pending_promises);
+        drop(map);
+        await_sink_delivery(waits, seq);
         for promise in pending {
             promise.break_with(reason.clone(), String::new(), String::new());
         }

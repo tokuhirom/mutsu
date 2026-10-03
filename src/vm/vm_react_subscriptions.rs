@@ -41,7 +41,12 @@ impl Interpreter {
         progressed: &mut bool,
         policy: &SupplyDrivePolicy,
     ) -> Result<bool, RuntimeError> {
+        // Producers on other threads wait until their event is handled
+        // (synchronous delivery, #11268); the guard releases them on every
+        // exit, including an early `done`/`Err` that drops the rest.
+        let _dispatching = crate::value::waker::DispatchGuard::enter(waker);
         loop {
+            waker.finish_in_flight();
             let events = waker.drain();
             if events.is_empty() {
                 return Ok(false);
@@ -361,8 +366,10 @@ impl Interpreter {
         // sink replay found nothing and the react hung forever
         // (t/react-whenever-kept-promise-nested-supply.t).
         self.arm_pending_promise_whenevers();
+        let synchronous = crate::value::waker::SynchronousDelivery::begin(&waker);
         let result =
             self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker, &mut sink_regs);
+        drop(synchronous);
         self.current_react_waker = prev_waker;
         for (sid, sink_id) in sink_regs {
             supplier_sink_unregister(sid, sink_id);
