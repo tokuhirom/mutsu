@@ -951,7 +951,11 @@ pub(crate) fn native_method_1arg(
                             ValueView::Instance { .. }
                                 | ValueView::Mixin(..)
                                 | ValueView::Junction { .. }
-                        )
+                                // A deferred inner `.map` Seq must run its
+                                // callback, which only the runtime can do.
+                                | ValueView::LazyList(_)
+                                | ValueView::LazyThunk(_)
+                        ) || matches!(inner.descalarize().view(), ValueView::Seq(s) if s.awaits_vm_reify())
                     })
                 }) {
                     return None;
