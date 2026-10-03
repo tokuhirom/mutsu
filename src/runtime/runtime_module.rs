@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Default)]
+pub(crate) struct ModuleOwnedTypes {
+    pub(crate) declared: HashSet<String>,
+    pub(crate) exported: HashSet<String>,
+}
+
 impl Interpreter {
     /// Attribute a type declaration to the module whose body is currently
     /// running. Nested module loads push their own name, so the outer module
@@ -14,7 +20,18 @@ impl Interpreter {
         crate::runtime::cow_table_mut(&mut self.module_owned_types)
             .entry(module)
             .or_default()
+            .declared
             .insert(name.to_string());
+    }
+
+    /// Remember which of a module's own type aliases may cross an import.
+    pub(crate) fn record_module_exported_type_alias(&mut self, module: &str, name: &str) {
+        let owned = crate::runtime::cow_table_mut(&mut self.module_owned_types)
+            .entry(module.to_string())
+            .or_default();
+        if owned.declared.contains(name) {
+            owned.exported.insert(name.to_string());
+        }
     }
 
     pub(crate) fn module_load_in_progress(&self) -> bool {
@@ -633,8 +650,14 @@ impl Interpreter {
                 let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                     .entry(importer_package)
                     .or_default();
+                let exported = self.module_owned_types.get(module);
                 for (short, qualified) in module_aliases {
-                    entry.entry(short).or_insert(qualified);
+                    // The module's own alias table also holds private types
+                    // and aliases it imported from dependencies. Copy only a
+                    // type this module declared and exported.
+                    if exported.is_some_and(|types| types.exported.contains(&qualified)) {
+                        entry.entry(short).or_insert(qualified);
+                    }
                 }
             }
             // #7797: same gap as the aliasing copy just above, for package-
