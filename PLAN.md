@@ -41,9 +41,10 @@ mutsu's unique position. Four components:
   [BATTERIES.md](BATTERIES.md): adopt the upstream module verbatim and grow mutsu until it runs.
   Providing a module "natively" is banned going forward, and a performance measurement does not
   buy an exemption — speed justifies a transparent optimization, never a substitution under the
-  real module's name. The exception list is two entries (ADR-0096 §D4): `NativeCall`, justified;
-  the JSON interception, scheduled for retirement
-  ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)).
+  real module's name. The JSON interception is retired
+  ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)), and `NativeCall` is being moved to
+  the vendored upstream module ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
+  [#11203](https://github.com/tokuhirom/mutsu/issues/11203)).
 
 ---
 
@@ -176,11 +177,11 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       that measurement does *not* say is "mutsu has no `nqp::` ops" — it has **111**
       (`src/runtime/nqp_ops*.rs`, `src/vm/vm_call_nqp.rs`), each added because a real dist needed it,
       starting with `nqp::sha1` for zef. Do not cite the 2026-07 record as a blanket ban.
-- [ ] **NativeCall**: measured non-vendorable, stays a justified rung-3 provider
-      ([#7560](https://github.com/tokuhirom/mutsu/issues/7560)) — the blockers are structural
-      (`use QAST:from<NQP>`, MoarVM dispatch programs), so they do not move as the op set grows;
-      native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
-      pick up only when a real consumer needs it).
+- [ ] **NativeCall → vendored upstream** ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
+      tracking issue [#11203](https://github.com/tokuhirom/mutsu/issues/11203)). Upstream's QAST
+      import is dead and its dispatcher is optional, so the vendored files
+      (`modules/Rakudo-Core/lib/NativeCall*`) need interpreter growth only. Next: #11209 (REPRs),
+      #11211 (FFI ops), #11207 (`Code.$!do`); measure with `scripts/nativecall-upstream-trial.sh`.
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 
 ---

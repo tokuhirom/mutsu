@@ -20,8 +20,30 @@ genuine upstream implementation instead of reimplementing it natively.
 | --------------- | ------------------------- | ---------------------------------- |
 | `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |
 | `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |
+| `NativeCall`    | `lib/NativeCall.rakumod`  | `4bd77651da44cd061a50a582457b278f`  |
+| `NativeCall::Types` | `lib/NativeCall/Types.rakumod` | `c9f3a7912199f91a89a27bbcd81e2f78` |
+| `NativeCall::Dispatcher` | `lib/NativeCall/Dispatcher.rakumod` | `1591768e4f6679935f4cc4640cdb0dc8` |
+| `NativeCall::Compiler::GNU` | `lib/NativeCall/Compiler/GNU.rakumod` | `e4137971eea209f610fa1415449c2a6c` |
+| `NativeCall::Compiler::MSVC` | `lib/NativeCall/Compiler/MSVC.rakumod` | `0eef1fd91fb8080009fb70c14a6e9776` |
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
+
+### `NativeCall` is vendored but not yet loaded
+
+The five `NativeCall` files are here, verbatim, ahead of the switch
+([ADR-11203](../../docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
+[#11203](https://github.com/tokuhirom/mutsu/issues/11203)). `use NativeCall` and
+`use NativeCall::Types` are still intercepted by name and served by the native
+provider (`src/runtime/nativecall*.rs`) until the interpreter runs these files
+and every bundled-library suite passes under them; they are deliberately absent
+from `META6.json`'s `provides` until then. `NativeCall::Dispatcher` is never
+loaded on mutsu even after the switch: upstream only `require`s it when
+`$*RAKU.compiler.?supports-op('dispatch_v')` is true, and mutsu takes the
+backend-neutral `nqp::nativecall` path instead.
+
+To see how far the real module gets today, run `scripts/nativecall-upstream-trial.sh`:
+it copies these files under a renamed namespace (`UNC`, so the name interception
+does not apply) and runs a probe script against them.
 
 ### `Test` runs verbatim, and is what `use Test` resolves to
 
@@ -52,9 +74,10 @@ Bundling the real file replaces the private dialect with the upstream behaviour
 and turns any remaining gap into an interpreter bug we can fix.
 
 Other Rakudo core modules mutsu still provides natively (`NativeCall`,
-`experimental`, `newline`, ...) belong here too, once the interpreter runs them —
-except `NativeCall`, measured on 2026-08-01 as genuinely out of reach
-(`todo/deep/nativecall-cannot-be-vendored.md`).
+`experimental`, `newline`, ...) belong here too, once the interpreter runs them.
+`NativeCall` was measured on 2026-08-01 as out of reach; that verdict was
+re-decided on 2026-10-03 (ADR-11203: its QAST import is dead and its dispatcher
+is optional upstream), and its files are now vendored ahead of the switch.
 
 ## Updating
 

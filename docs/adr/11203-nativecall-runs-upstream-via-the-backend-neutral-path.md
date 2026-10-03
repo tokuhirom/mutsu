@@ -1,6 +1,6 @@
 # ADR-11203: NativeCall runs upstream verbatim through its backend-neutral path
 
-- **Status**: Accepted (user decision 2026-10-03). Not yet implemented; see §5.
+- **Status**: Accepted (user decision 2026-10-03). In progress; see §5.
 - **Date**: 2026-10-03
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11203](https://github.com/tokuhirom/mutsu/issues/11203)
@@ -109,10 +109,21 @@ Each is a general compatibility gap; none is NativeCall-specific.
 
 | Step | State |
 | --- | --- |
-| Decision recorded; ADR-0096 E1 marked superseded | Done (this ADR) |
-| #11204 – #11211 | Open |
+| Decision recorded; ADR-0096 E1 marked superseded | Done (#11225) |
+| #11206 non-FFI `nqp::` ops | Done (#11239) |
+| #11208 `Str.naive-word-wrapper` | Done (#11248) |
+| #11204 native type semantics | Done (#11260) |
+| #11205 `multi` term evaluates to its candidate | Done (#11278) |
+| Upstream files vendored (`modules/Rakudo-Core/lib/NativeCall*`), not yet in `provides` | Done |
+| #11209 REPRs selected by `is repr<...>` | Open (next) |
+| #11211 the six VM FFI ops | Open |
+| #11207 `Code.$!do` | Open |
 | Vendored module is what `use NativeCall` loads | Not started |
 | Native provider deleted | Not started |
+
+`scripts/nativecall-upstream-trial.sh` measures the frontier: it loads the vendored
+files under a renamed namespace (the real names are still intercepted) and runs
+one probe per step; the first `FAIL` is where the next slice starts.
 
 ## 6. Consequences
 
