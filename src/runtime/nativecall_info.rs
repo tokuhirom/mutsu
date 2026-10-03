@@ -199,8 +199,8 @@ impl CallsiteKey {
             ValueView::Instance { id, .. } => Some(CallsiteKey::Instance(id)),
             ValueView::Sub(data) => Some(CallsiteKey::Code(data.id)),
             ValueView::WeakSub(w) => w.upgrade().map(|s| CallsiteKey::Code(s.id)),
-            ValueView::Mixin(inner, _) => CallsiteKey::of(&inner),
-            ValueView::Scalar(inner) => CallsiteKey::of(&inner),
+            ValueView::Mixin(inner, _) => CallsiteKey::of(inner),
+            ValueView::Scalar(inner) => CallsiteKey::of(inner),
             _ => None,
         }
     }
