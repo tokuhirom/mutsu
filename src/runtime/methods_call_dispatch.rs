@@ -4156,6 +4156,12 @@ impl Interpreter {
         {
             return Ok(stored);
         }
+        // STORE on a native Hash/Array: re-initialize its node in place.
+        if method == "STORE"
+            && let Some(stored) = self.native_container_store(&target, &args)
+        {
+            return stored;
+        }
 
         // .pick/.roll/.grab/.grabpairs/.pickpairs with Callable arg on
         // Bag/BagHash/Set/SetHash/Mix/MixHash/Array/List/Range:

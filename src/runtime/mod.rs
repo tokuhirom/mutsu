@@ -742,6 +742,7 @@ pub(crate) mod locals;
 mod lock_async_recursion;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
+mod container_store;
 mod lvalue_container_return;
 mod main_args;
 mod main_usage;

@@ -832,6 +832,9 @@ impl Interpreter {
             return Ok(None);
         }
         let name = name.to_string();
+        if self.maybe_mixin_container_store(Some(idx), &name)?.is_some() {
+            return Ok(Some(()));
+        }
         // The tied instance normally lives in the local slot, but when this store
         // runs inside a block invoked by another sub (`runit({ %h = "a" })`, or a
         // `throws-like { %h = ... }` block) the hash is a captured lexical held in
@@ -895,6 +898,9 @@ impl Interpreter {
     ) -> Result<Option<()>, RuntimeError> {
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
+        }
+        if self.maybe_mixin_container_store(None, name)?.is_some() {
+            return Ok(Some(()));
         }
         let Some(raw) = self.tied_candidate_outside_slot(name) else {
             return Ok(None);
