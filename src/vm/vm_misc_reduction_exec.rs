@@ -395,6 +395,18 @@ impl Interpreter {
             self.stack.push(Value::seq(out));
             return Ok(());
         }
+        // A user infix declared `is assoc<list>` takes the whole list in one
+        // call: `[op] 0, 1, 2` is `op(0, 1, 2)` (OneSeq's `[>>>] @a, @b`
+        // chains iterables). The empty list keeps the zero-argument call below.
+        if matches!(assoc, ReductionAssoc::List)
+            && !list.is_empty()
+            && let Some(c) = callable.clone()
+        {
+            let v = self.reduction_step_with_args(op_shape.as_ref(), Some(&c), list.clone())?;
+            let result = if negate { Value::truth(!v.truthy()) } else { v };
+            self.stack.push(result);
+            return Ok(());
+        }
         // [^^] and [xor] are list-associative: they check that exactly one element
         // is truthy.  Returns:
         //   - the truthy value if exactly one is truthy
