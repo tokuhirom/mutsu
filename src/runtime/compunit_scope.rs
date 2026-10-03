@@ -283,9 +283,7 @@ impl Interpreter {
         if Self::top_segment_is_setting_package(top) {
             return true;
         }
-        let granted = self.package_granted_in_unit_chain(executing, top)
-            || self.package_granted_in_unit_chain(self.current_unit, top)
-            || self.package_merged_here(top);
+        let granted = self.package_granted_from(executing, top);
         // A package a module published bare (`package OuterPkg { }` in a
         // package-less module) is the module's own declaration: visible where
         // the module is merged, or where another merged module granted the
@@ -355,6 +353,21 @@ impl Interpreter {
     /// `Interpreter::load_module_inner`'s registration). Same EVAL-parent
     /// walk as [`Self::package_visible_in_unit_chain`], without that
     /// function's declaring-unit self-check — this is purely a grant lookup.
+    /// Whether a `use` live here granted the top-level package `top`, from
+    /// the executing unit's chain, the current unit's, or a block-level merge.
+    // Cost: O(d + m), d = EVAL-parent depth, m = modules that granted `top`.
+    fn package_granted_from(&self, executing: Symbol, top: &str) -> bool {
+        self.package_granted_in_unit_chain(executing, top)
+            || self.package_granted_in_unit_chain(self.current_unit, top)
+            || self.package_merged_here(top)
+    }
+
+    /// [`Self::package_granted_from`] for the running code.
+    // Cost: as `package_granted_from`.
+    pub(crate) fn package_granted_here(&self, top: &str) -> bool {
+        self.package_granted_from(self.executing_unit_sym_for_module_load(), top)
+    }
+
     fn package_granted_in_unit_chain(&self, start: Symbol, top: &str) -> bool {
         let mut unit = Some(start);
         for _ in 0..64 {
