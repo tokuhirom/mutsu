@@ -293,6 +293,18 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
     ))
 }
 
+/// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
+/// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
+/// parser leaves as the collapsed anonymous-state name `__ANON_STATE__`.
+fn temp_method_invocant_name(invocant: &Expr) -> Option<String> {
+    match invocant {
+        Expr::Var(name) if name == "__ANON_STATE__" => Some("self".to_string()),
+        Expr::Var(name) => Some(name.clone()),
+        Expr::BareWord(name) if name == "self" => Some("self".to_string()),
+        _ => None,
+    }
+}
+
 /// Parse `temp` statement — same semantics as `let` (save/restore at scope exit).
 pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
@@ -349,7 +361,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         if let Expr::Call { name, args } = &expr
             && name == "__mutsu_assign_method_lvalue"
             && args.len() == 5
-            && let Expr::Var(var_name) = &args[0]
+            && let Some(var_name) = temp_method_invocant_name(&args[0])
             && let Expr::Literal(mlit) = &args[1]
             && let Some(method_name) = mlit.as_str()
             && let Expr::ArrayLiteral(method_args) = &args[2]
@@ -357,10 +369,65 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(
                 expr_rest,
                 Stmt::TempMethodAssign {
-                    var_name: var_name.clone(),
+                    var_name,
                     method_name: method_name.to_string(),
                     method_args: method_args.clone(),
                     value: args[3].clone(),
+                },
+            );
+        }
+        // temp on a compound assignment through a method lvalue:
+        // `temp $obj.indent ~= '  '`, `temp $.indent ~= '  '` (CSS::Writer).
+        // The expanded writeback call already carries the combined value
+        // (`$obj.indent ~ '  '`), so temporize the invocant exactly as the
+        // plain `temp $obj.method = value` form above does.
+        if let Expr::CompoundAssign {
+            target, expanded, ..
+        } = &expr
+            && let Expr::MethodCall {
+                target: invocant,
+                name: method_name,
+                args: method_args,
+                ..
+            } = target.as_ref()
+            && let Some(var_name) = temp_method_invocant_name(invocant)
+            && let Expr::Call { name, args } = expanded.as_ref()
+            && name == "__mutsu_assign_method_lvalue"
+            && args.len() >= 4
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::TempMethodAssign {
+                    var_name,
+                    method_name: method_name.resolve(),
+                    method_args: method_args.clone(),
+                    value: args[3].clone(),
+                },
+            );
+        }
+        // `temp $.attr = value` / `temp $.attr ~= value`: the `$.attr` lvalue
+        // is `self.attr`, so it is the method-lvalue form on `self`. The
+        // compound form's expansion is the plain assignment of the combined
+        // value.
+        let plain_assign = match &expr {
+            Expr::CompoundAssign { expanded, .. } => expanded.as_ref(),
+            other => other,
+        };
+        if let Expr::AssignExpr {
+            name,
+            expr: value,
+            is_bind: false,
+        } = plain_assign
+            && let Some(method_name) = name.strip_prefix('.')
+            && method_name.starts_with(crate::parser::helpers::is_raku_identifier_start)
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::TempMethodAssign {
+                    var_name: "self".to_string(),
+                    method_name: method_name.to_string(),
+                    method_args: Vec::new(),
+                    value: (**value).clone(),
                 },
             );
         }
