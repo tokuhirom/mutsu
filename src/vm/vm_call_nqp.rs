@@ -205,6 +205,19 @@ impl Interpreter {
         self.fetch_nqp_proxy_operands(&mut ops[..site.operands()])?;
         let [obj, _class, val] = ops;
         let val = (site.operands() == 3).then_some(val);
+        if site.name.code_do
+            && let Some(done) = self.nqp_code_do_attr(&obj, "$!do", val.as_ref())
+        {
+            let result = match site.kind {
+                crate::runtime::nqp_attr::NqpAttrSiteKind::Get => {
+                    done.map(|b| site.conv.read(Some(b)))
+                }
+                crate::runtime::nqp_attr::NqpAttrSiteKind::Bind => done,
+                crate::runtime::nqp_attr::NqpAttrSiteKind::BindInvres => done.map(|_| obj),
+            };
+            self.stack.push(result?);
+            return Ok(());
+        }
         let saved_literals = std::mem::replace(&mut self.literal_native_args, 0);
         let result = site.run(obj, val);
         self.literal_native_args = saved_literals;

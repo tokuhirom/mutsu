@@ -228,6 +228,9 @@ impl Interpreter {
                     .unwrap_or_default();
                 let raw = args.get(3).cloned().unwrap_or(Value::NIL);
                 let val = super::nqp_attr::NqpAttrConv::of_op(op).bind(raw);
+                if let Some(done) = self.nqp_code_do_attr(&obj, &attr, Some(&val)) {
+                    return Some(done);
+                }
                 match Self::nqp_bindattr_value(op, &obj, &attr, val.clone()) {
                     Ok(()) => Ok(val),
                     Err(e) => Err(e),
@@ -370,6 +373,11 @@ impl Interpreter {
                     .get(2)
                     .map(|v| v.string_value_cow())
                     .unwrap_or_default();
+                if let Some(body) = self.nqp_code_do_attr(obj, &name, None) {
+                    return Some(
+                        body.map(|b| super::nqp_attr::NqpAttrConv::of_op(op).read(Some(b))),
+                    );
+                }
                 let value = Self::nqp_attr_value(obj, &name);
                 Ok(super::nqp_attr::NqpAttrConv::of_op(op).read(value))
             }
