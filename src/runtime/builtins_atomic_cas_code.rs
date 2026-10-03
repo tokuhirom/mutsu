@@ -19,10 +19,15 @@ impl Interpreter {
             return Some(c);
         }
         let node = {
-            self.shared_vars
+            self.threads
+                .shared_vars
                 .get(atomic_lane_str_key(name, false))
-                .or_else(|| self.shared_vars.get(atomic_lane_str_key(name, true)))
-                .or_else(|| self.shared_vars.get(name))
+                .or_else(|| {
+                    self.threads
+                        .shared_vars
+                        .get(atomic_lane_str_key(name, true))
+                })
+                .or_else(|| self.threads.shared_vars.get(name))
         }
         .or_else(|| self.env.get(name).cloned())?;
         match node.view() {
@@ -124,7 +129,7 @@ impl Interpreter {
         let cell = self.celled_array_elem(atomic_key, &arr_name, index);
         let r = self.cas_cell_code_loop(&arr_name, &cell, &code);
         if r.is_ok()
-            && let Ok(mut dirty) = self.shared_vars_dirty.write()
+            && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
         {
             dirty.insert(arr_name.clone());
         }
@@ -165,7 +170,7 @@ impl Interpreter {
         if inner_dims.is_empty() {
             let r = self.cas_cell_code_loop(&arr_name, &cell, &code);
             if r.is_ok()
-                && let Ok(mut dirty) = self.shared_vars_dirty.write()
+                && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
             {
                 dirty.insert(arr_name.clone());
             }
@@ -194,7 +199,7 @@ impl Interpreter {
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             if Self::cas_retry_matches(&current, &Self::multidim_get(&guard, inner_dims)) {
                 *guard = Self::multidim_set(&guard, inner_dims, new_val);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                     dirty.insert(arr_name.clone());
                 }
                 return Ok(Value::NIL);

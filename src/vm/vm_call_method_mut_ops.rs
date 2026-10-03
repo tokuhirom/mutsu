@@ -1379,7 +1379,7 @@ impl Interpreter {
         // `news/2026-08/threaded-array-mutation-escapes-to-the-caller.md`).
         if target_name.starts_with('@')
             && matches!(target.view(), ValueView::Array(..))
-            && self.shared_vars_active
+            && self.threads.shared_vars_active
             && !self.container_name_is_redeclared(target_name)
         {
             // Only a plain *lexical* `@name` is a single variable shared across
@@ -3353,7 +3353,7 @@ impl Interpreter {
         // 1,2,3; @a.append(Nil)` stored `Any`, where both push (which has its
         // own dedicated opcode/fast path, already routed through
         // `assign_store_nil_default`) and real raku store `42`.
-        if (self.shared_vars_active && !self.container_name_is_redeclared(target_name))
+        if (self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
             || self.container_default(target).is_some()
         {
             return None;
@@ -3731,7 +3731,7 @@ impl Interpreter {
         // Shared / type-constrained / metadata-bearing containers need the
         // interpreter's element checks, native-array semantics, and identity
         // sharing; let it own those.
-        if self.shared_vars_active
+        if self.threads.shared_vars_active
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
         {

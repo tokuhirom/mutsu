@@ -153,7 +153,7 @@ impl Interpreter {
         // Blocks queued by a recursive `Lock::Async
         // .protect-or-queue-on-recursion` and not yet drained by the outer
         // frame (see `runtime::lock_async_recursion`).
-        for (_, block, _) in &self.lock_async_deferred {
+        for (_, block, _) in &self.threads.lock_async_deferred {
             visitor.visit_value(block);
         }
         for (_, _, args, _, _) in &self.multi_dispatch_stack {
@@ -282,7 +282,7 @@ impl Interpreter {
         // (ADR-0010): an ancestor lineage's entries are just as reachable from
         // here as this one's, and missing them would under-approximate the root
         // set — i.e. collect live data.
-        for value in self.shared_vars.chain_values() {
+        for value in self.threads.shared_vars.chain_values() {
             visitor.visit_value(&value);
         }
         visit_map_values(visitor, &self.rebless_map);
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn visit_roots_finds_env_and_shared_vars() {
         let interp = Interpreter::new();
-        interp.shared_vars.declare("x", Value::int(42));
+        interp.threads.shared_vars.declare("x", Value::int(42));
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);

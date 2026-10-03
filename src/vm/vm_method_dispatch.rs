@@ -759,7 +759,7 @@ impl Interpreter {
                     // routing's alias-table lookup (Phase 3 Stage 2c (ii)), and
                     // spoil the JIT's inline local read, which skips exactly
                     // that lookup (`vm_jit::LOCAL_READ_SPOILERS`).
-                    self.sigilless_attrs_active = true;
+                    self.threads.sigilless_attrs_active = true;
                     crate::vm::vm_jit::note_local_read_spoiler();
                     // Set up bidirectional alias: !x ↔ alias_name
                     let attr_var = format!("!{actual_attr}");

@@ -386,7 +386,7 @@ impl Interpreter {
                 self.read_attr_cell_by_key(self_val, Some((code, idx)), bare, is_private, sigil)
             }
             None => {
-                if !self.sigilless_attrs_active {
+                if !self.threads.sigilless_attrs_active {
                     return None;
                 }
                 self.read_self_attr_cell(code.locals.get(idx)?)
@@ -561,7 +561,7 @@ impl Interpreter {
             // Borrow it — this used to allocate a `String` on every attribute read.
             return Some(Cow::Borrowed(name));
         }
-        if !self.sigilless_attrs_active {
+        if !self.threads.sigilless_attrs_active {
             return None;
         }
         self.sigilless_attr_twigil(name).map(Cow::Owned)

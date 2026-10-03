@@ -1740,14 +1740,15 @@ impl Interpreter {
             // cross-thread liveness this lane provides for a *declared* lexical,
             // which a parameter never needed: it cannot have been snapshotted by
             // an earlier `start` before it existed.
-            if self.shared_vars_active && !code.param_locals.contains(sym) {
+            if self.threads.shared_vars_active && !code.param_locals.contains(sym) {
                 // The cell now OWNS this binding, which is exactly what the
                 // re-declaration mask was standing in for, so the mask must not
                 // block the replacement below: leaving the stale plain snapshot
                 // in place lets `sync_shared_vars_to_env` write it back over the
                 // cell after the next await and disconnect the parent.
-                self.thread_redeclared_vars.borrow_mut().remove(&s);
-                self.thread_redeclared_vars
+                self.threads.thread_redeclared_vars.borrow_mut().remove(&s);
+                self.threads
+                    .thread_redeclared_vars
                     .borrow_mut()
                     .remove(s.trim_start_matches('$'));
                 loan_env!(self, set_shared_var(&s, container.clone()));

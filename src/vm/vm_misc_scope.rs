@@ -257,7 +257,7 @@ impl Interpreter {
         // the parent after `await`. `StateVarInit` is emitted only for genuine
         // `state` declarations, so `ff`/`fff`/smart-match internal state (which
         // uses `set_state_var` directly, never a cell) is unaffected.
-        let val = if self.shared_vars_active {
+        let val = if self.threads.shared_vars_active {
             let coerced_initial = if name.starts_with('@') {
                 // `=` init copies (container identity §3) — see the non-shared
                 // branch below.

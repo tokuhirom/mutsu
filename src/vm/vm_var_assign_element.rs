@@ -16,7 +16,7 @@ impl Interpreter {
         name_idx: u32,
     ) -> Option<Result<(), RuntimeError>> {
         // Cheap early-out: only meaningful while a thread shares this env.
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return None;
         }
         if !self.local_bind_pairs.is_empty() {
@@ -130,7 +130,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Option<Result<(), RuntimeError>> {
-        if !self.shared_vars_active {
+        if !self.threads.shared_vars_active {
             return None;
         }
         if !self.local_bind_pairs.is_empty() {

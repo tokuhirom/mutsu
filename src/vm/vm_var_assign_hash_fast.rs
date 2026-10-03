@@ -128,7 +128,7 @@ impl Interpreter {
         // The name-keyed cross-thread lane (`try_shared_hash_element_assign`)
         // is skipped by running here, and it owns the store whenever a thread
         // shares this env. Its own gate is this exact flag.
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             return false;
         }
         // Once a second VM mutator thread exists the store is routed by the

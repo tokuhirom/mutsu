@@ -139,7 +139,7 @@ impl Interpreter {
         // under the shared_vars write lock instead of clobbering each other's
         // stale local snapshots (lost update). Non-Array targets keep the
         // interpreter fallback.
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let val = self.push_nil_to_elem_default(target_name, val);
             // The declared element type governs this push exactly as it does the

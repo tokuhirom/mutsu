@@ -110,7 +110,7 @@ impl Interpreter {
             // assignment's result value is node-shared with what the shared
             // store inserted, so mutating it writes through to the canonical
             // (the parent observes it after the join).
-            if self.shared_vars_active
+            if self.threads.shared_vars_active
                 && (elem.is_nil() || matches!(elem.view(), ValueView::Package(_)))
             {
                 elem = assigned.descalarize().clone();

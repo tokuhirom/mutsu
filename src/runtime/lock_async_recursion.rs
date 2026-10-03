@@ -17,7 +17,7 @@
 //!   `raku` v2026.06: the call completes even while another thread holds the
 //!   lock.
 //!
-//! The "caller chain" is modelled by [`Interpreter::lock_async_recursion`], a
+//! The "caller chain" is modelled by [`ThreadSharing::lock_async_recursion`](crate::runtime::thread_sharing::ThreadSharing::lock_async_recursion), a
 //! per-interpreter stack of lock ids. A spawned thread gets a fresh (empty)
 //! one from `clone_for_thread`, which is exactly the "locked by something
 //! outside the caller chain" case the documentation describes.
@@ -38,23 +38,24 @@ impl Interpreter {
         lock_id: u64,
         code_val: Value,
     ) -> Result<Value, RuntimeError> {
-        if self.lock_async_recursion.contains(&lock_id) {
+        if self.threads.lock_async_recursion.contains(&lock_id) {
             // Recursion on this lock within the current caller chain: queue the
             // code for the outer frame's drain and hand back a Promise.
             let promise = SharedPromise::new();
-            self.lock_async_deferred
+            self.threads
+                .lock_async_deferred
                 .push((lock_id, code_val, promise.clone()));
             return Ok(Value::promise(promise));
         }
 
-        let drain_base = self.lock_async_deferred.len();
+        let drain_base = self.threads.lock_async_deferred.len();
         let result = self.run_lock_async_recursion_block(lock_id, &code_val);
         // Anything queued while this frame held the lock now runs, in FIFO
         // order, with the lock re-taken for each entry. A queued block may
         // itself queue more; those are appended past `drain_base` and picked up
         // by the same loop.
-        while self.lock_async_deferred.len() > drain_base {
-            let (queued_id, block, promise) = self.lock_async_deferred.remove(drain_base);
+        while self.threads.lock_async_deferred.len() > drain_base {
+            let (queued_id, block, promise) = self.threads.lock_async_deferred.remove(drain_base);
             match self.run_lock_async_recursion_block(queued_id, &block) {
                 Ok(value) => {
                     let _ = promise.try_keep(value);
@@ -82,10 +83,12 @@ impl Interpreter {
         lock_id: u64,
         code_val: Value,
     ) -> Result<Value, RuntimeError> {
-        let saved = self.lock_async_recursion.clone();
-        self.lock_async_recursion.retain(|id| *id != lock_id);
+        let saved = self.threads.lock_async_recursion.clone();
+        self.threads
+            .lock_async_recursion
+            .retain(|id| *id != lock_id);
         let result = self.call_sub_value(code_val, vec![], false);
-        self.lock_async_recursion = saved;
+        self.threads.lock_async_recursion = saved;
         result
     }
 
@@ -101,9 +104,9 @@ impl Interpreter {
         let me = crate::runtime::native_methods::current_thread_id();
         crate::runtime::native_methods::acquire_lock(&lock, me)?;
         self.enter_critical_section();
-        self.lock_async_recursion.push(lock_id);
+        self.threads.lock_async_recursion.push(lock_id);
         let result = self.call_sub_value(code_val.clone(), vec![], false);
-        self.lock_async_recursion.pop();
+        self.threads.lock_async_recursion.pop();
         self.leave_critical_section();
         let _ = crate::runtime::native_methods::release_lock(&lock, me);
         result

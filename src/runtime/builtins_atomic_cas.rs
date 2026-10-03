@@ -80,7 +80,7 @@ impl Interpreter {
             let mut did_swap = false;
             let current = loop {
                 // ADR-0010: atomics are process-wide shared state -> the root lineage.
-                let atomic_root = self.shared_vars.root_store();
+                let atomic_root = self.threads.shared_vars.root_store();
                 let mut shared = atomic_root.own_map().write().unwrap();
                 if !Self::atomic_lane_is_live(&shared, &name, &value_key) {
                     drop(shared);
@@ -96,7 +96,7 @@ impl Interpreter {
             };
             if did_swap {
                 self.env.insert(name.clone(), coerced);
-                if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                if let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name.clone());
                 }
@@ -204,7 +204,7 @@ impl Interpreter {
                         .unwrap_or(Value::NIL)
                 } else {
                     // ADR-0010: atomics are process-wide shared state -> the root lineage.
-                    let atomic_root = self.shared_vars.root_store();
+                    let atomic_root = self.threads.shared_vars.root_store();
                     let shared = atomic_root.own_map().read().unwrap();
                     self.atomic_current_value(&shared, &name, &value_key)
                 };
@@ -378,7 +378,7 @@ impl Interpreter {
                     swapped
                 } else {
                     // ADR-0010: atomics are process-wide shared state -> the root lineage.
-                    let atomic_root = self.shared_vars.root_store();
+                    let atomic_root = self.threads.shared_vars.root_store();
                     let mut shared = atomic_root.own_map().write().unwrap();
                     if !Self::atomic_lane_is_live(&shared, &name, &value_key) {
                         // Retired mid-`cas`: the attempt fails and the next one
@@ -400,7 +400,7 @@ impl Interpreter {
                 if updated {
                     self.env.insert(name.clone(), coerced.clone());
                     if attr_cell.is_none()
-                        && let Ok(mut dirty) = self.shared_vars_dirty.write()
+                        && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
                     {
                         dirty.insert(value_key);
                         dirty.insert(name.clone());
@@ -476,7 +476,7 @@ impl Interpreter {
             }
         }
 
-        if did_swap && let Ok(mut dirty) = self.shared_vars_dirty.write() {
+        if did_swap && let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
             dirty.insert(arr_name.clone());
         }
         // Note: don't update env["@values"] here — a later locals restore could

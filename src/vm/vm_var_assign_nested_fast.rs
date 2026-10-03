@@ -105,7 +105,7 @@ impl Interpreter {
         }
         // The name-keyed cross-thread lanes own the store whenever a thread
         // shares this env, and this is their own gate.
-        if self.shared_vars_active {
+        if self.threads.shared_vars_active {
             return None;
         }
         // Once a second VM mutator thread exists, a chained store is ADR-0068 §4

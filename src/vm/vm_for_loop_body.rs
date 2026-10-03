@@ -112,7 +112,7 @@ impl Interpreter {
     /// exit path, including the error returns, so a mask can never outlive the
     /// binding it describes.
     fn unmask_for_params(&mut self, names: &[String]) {
-        let mut redeclared = self.thread_redeclared_vars.borrow_mut();
+        let mut redeclared = self.threads.thread_redeclared_vars.borrow_mut();
         for name in names {
             redeclared.remove(name);
         }
@@ -523,7 +523,8 @@ impl Interpreter {
             .chain(param_name.iter())
             .filter(|name| !name.starts_with('&') && name.as_str() != "_")
             .filter(|name| {
-                self.thread_redeclared_vars
+                self.threads
+                    .thread_redeclared_vars
                     .borrow_mut()
                     .insert((*name).clone())
             })
