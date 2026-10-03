@@ -171,6 +171,20 @@ impl Compiler {
         let mut pre_ph = Vec::new();
         let mut post_ph = Vec::new();
         let mut body_main = Vec::new();
+        // Extract ENTER phaser expressions (PhaserExpr { kind: Enter }) from
+        // the body's statements -- an exit phaser's body included
+        // (`LEAVE take now - ENTER now`) -- and replace each with a temp the
+        // loop body's ENTER section assigns.
+        let mut enter_exprs = Vec::new();
+        let rewritten_body;
+        let body = if Self::stmts_have_enter_phaser_expr(body) {
+            let (rewritten, exprs) = Self::extract_enter_phaser_exprs_from_stmts(body);
+            enter_exprs = exprs;
+            rewritten_body = rewritten;
+            rewritten_body.as_slice()
+        } else {
+            body
+        };
         for stmt in body {
             if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
@@ -190,12 +204,8 @@ impl Compiler {
             }
         }
 
-        // Extract ENTER phaser expressions (PhaserExpr { kind: Enter }) from
-        // within expressions in body_main and replace with temp variables.
         let mut enter_expr_vars: Vec<String> = Vec::new();
-        if Self::stmts_have_enter_phaser_expr(&body_main) {
-            let (rewritten, enter_exprs) = Self::extract_enter_phaser_exprs_from_stmts(&body_main);
-            body_main = rewritten;
+        {
             for (var_name, phaser_body) in enter_exprs {
                 enter_expr_vars.push(var_name.clone());
                 let assign_stmt = if phaser_body.len() == 1 {
