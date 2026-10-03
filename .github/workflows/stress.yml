@@ -50,6 +50,8 @@ jobs:
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
 
@@ -128,6 +130,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
@@ -294,6 +297,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Download the release binary
@@ -423,6 +427,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
@@ -539,6 +544,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           submodules: true
 
       - name: Download the release binary

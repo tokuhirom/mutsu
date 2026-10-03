@@ -401,6 +401,10 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    run between wakes. A red run: fix forward on the same branch and push. Aggregator
    jobs report a cancelled run on a superseded commit as red — judge by the current head
    (`docs/ci-pipeline.md`).
+   A PR touching a path in `.github/CODEOWNERS` (workflows, `.claude/`, `.agents/`, `AGENTS.md`,
+   privileged CI scripts) also waits for the maintainer's review — report it and move on. You act
+   under the maintainer's admin account, so **never merge a PR yourself or bypass the ruleset**:
+   auto-merge is the only way your PRs land.
 6. **A PR is done when GitHub reports it `MERGED`** and its merge commit is reachable from
    `origin/main` — not when checks pass or auto-merge was requested.
 7. **Before going idle, decide the next slice** from `PLAN.md` / `TODO_roast/BLOCKERS.md` / the
