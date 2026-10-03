@@ -4,6 +4,10 @@
 
 use super::*;
 
+/// How many cells of a binding-cell chain a readonly probe follows. A binding
+/// cell holds a container (ADR-0097 §14), so a real chain is 1-2 cells long.
+const MAX_BINDING_CHAIN: usize = 8;
+
 impl Interpreter {
     /// Refuse an assignment to the readonly variable `code.constants[name_idx]`,
     /// or let it through. A sigilless/`constant` term bound to an object with a
@@ -36,6 +40,16 @@ impl Interpreter {
             ) {
                 return Ok(());
             }
+        }
+        // A free variable (not a local of this code) resolves to a binding in
+        // another frame. When that binding is a readonly binding cell, the
+        // cell's kind is the answer: the registry below is keyed by name and
+        // may hold a same-named mark of whichever frame called this one
+        // (ADR-11142, #11142). Gated on any such cell existing at all.
+        if crate::value::readonly_binding_cells_possible()
+            && let Some((kind, bound)) = self.free_var_readonly_binding(code, name_idx)
+        {
+            return Err(Self::readonly_binding_error(kind, &bound));
         }
         // Probe through the pre-interned constant Symbol:
         // `check_readonly_for_modify(name)` would re-intern the name on each
@@ -81,5 +95,75 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// The error an assignment through a binding readonly for the reason
+    /// `kind` raises, worded from the value `bound` the binding holds (not
+    /// from a by-name lookup, which may see another frame's same-named
+    /// variable).
+    fn readonly_binding_error(kind: crate::ast::ReadonlyKind, bound: &Value) -> RuntimeError {
+        use crate::ast::ReadonlyKind;
+        match kind {
+            ReadonlyKind::Alias => RuntimeError::readonly_variable(),
+            ReadonlyKind::Immutable | ReadonlyKind::ImmutableDeep => {
+                RuntimeError::immutable_value()
+            }
+            ReadonlyKind::ImmutableValue => RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(bound),
+                &bound.to_string_value(),
+            ),
+            ReadonlyKind::TypeObject => {
+                let type_name = match bound.view() {
+                    ValueView::Package(sym) => sym.to_string(),
+                    _ => "Any".to_string(),
+                };
+                RuntimeError::assign_requires_concrete_object(&type_name)
+            }
+        }
+    }
+
+    /// The readonly kind of the binding the free variable
+    /// `code.constants[name_idx]` resolves to, with the value it is bound to,
+    /// when that binding is a readonly binding cell. `None` for one of
+    /// `code`'s own locals (the registry still answers for those) and for any
+    /// binding without a recorded kind.
+    // Cost: O(d), d = env tiers walked to resolve the name (the by-name read's
+    // cost); the cell chain is bounded by `MAX_BINDING_CHAIN`.
+    fn free_var_readonly_binding(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Option<(crate::ast::ReadonlyKind, Value)> {
+        let sym = code.const_sym(name_idx);
+        if !code.local_slots_of(sym).is_empty() {
+            return None;
+        }
+        // The order a by-name read resolves a scalar in (a unit lexical the
+        // running routine captured, then the env chain), but on the raw
+        // binding: the read itself derefs the unit lexical's cell.
+        let name = Self::const_str(code, name_idx);
+        let binding = match self.unit_lexical_slot(name) {
+            Some(v) => v.clone(),
+            None => self.env().get_sym(sym)?.clone(),
+        };
+        // A binding cell (ADR-0097 §14) holds the variable's container: the
+        // kind is on whichever cell of the chain was seated for the bind.
+        // Bounded: no Raku container contains itself, but a cell cycle left by
+        // a bug elsewhere must not hang a store (see `value_is_defined`).
+        let mut cur = binding;
+        for _ in 0..MAX_BINDING_CHAIN {
+            let ValueView::ContainerRef(cell) = cur.view() else {
+                return None;
+            };
+            let inner = cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            if let Some(kind) = cell.readonly_kind() {
+                return Some((kind, inner));
+            }
+            cur = inner;
+        }
+        None
     }
 }
