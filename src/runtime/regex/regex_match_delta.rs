@@ -79,8 +79,8 @@ fn alternation_padding_slot(flags: &AlternationListFlags, idx: usize) -> PosSlot
     }
 }
 
-/// What [`alternation_branch_delta`] adds to a branch that wrote its captures
-/// straight into the enclosing level (the compiled engine, ADR-0135): the
+/// What an alternation adds to a branch that wrote its captures straight
+/// into the enclosing level (the compiled engine, ADR-0135): the
 /// padding slots after the `taken` positionals the branch produced, and every
 /// list-valued name marked quantified. `suppress_padding` is the compiled
 /// form of [`super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH`] for an

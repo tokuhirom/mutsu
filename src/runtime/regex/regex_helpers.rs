@@ -1312,7 +1312,7 @@ fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> V
 /// bound: an empty LIST where Raku's static per-pattern analysis (see
 /// [`NameMult`]) marks the slot/name list-valued, absent (`Nil`) otherwise.
 /// Computed once per alternation atom and shared by every branch/candidate
-/// transform ([`super::regex_match_delta::alternation_branch_delta`]).
+/// transform ([`super::regex_match_delta::alternation_tail_delta`]).
 ///
 /// Positional capture GROUPS don't need the name side's "bound more than
 /// once in a sequence" rule — each `(...)` occurrence is its own slot index,

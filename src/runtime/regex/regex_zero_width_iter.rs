@@ -31,7 +31,6 @@ mod tests {
         assert!(zero_width_iter_counts(0, 2, Some(2)));
         assert!(zero_width_iter_counts(1, 2, Some(2)));
         assert!(!zero_width_iter_counts(2, 2, Some(2)));
-        assert_eq!(zero_width_saturated_count(0, 3, Some(5)), 5);
     }
 
     #[test]
@@ -39,7 +38,5 @@ mod tests {
         assert!(zero_width_iter_counts(0, 1, None));
         assert!(!zero_width_iter_counts(1, 1, None));
         assert!(!zero_width_iter_counts(0, 0, None));
-        assert_eq!(zero_width_saturated_count(0, 1, None), 1);
-        assert_eq!(zero_width_saturated_count(3, 1, None), 3);
     }
 }

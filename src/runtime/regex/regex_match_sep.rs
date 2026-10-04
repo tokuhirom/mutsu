@@ -15,8 +15,10 @@ pub(super) fn separator_stride(sep: &RegexPattern) -> usize {
     count_pattern_capture_groups(sep)
 }
 
-/// [`separated_capture_delta`] for names already interned (the compiled
-/// engine's, interned when the pattern compiled).
+/// The capture delta of a whole separated-quantifier chain: every name in
+/// `names` marked quantified, then the atom and separator iterations folded
+/// side by side (`append_separated_captures`). The names are already interned
+/// (the compiled engine's, interned when the pattern compiled).
 // Cost: O(n + c), n = the names, c = the captures across the chain.
 pub(super) fn separated_capture_delta_syms(
     names: impl IntoIterator<Item = Symbol>,
