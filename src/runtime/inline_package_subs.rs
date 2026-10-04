@@ -179,18 +179,19 @@ impl Interpreter {
                     Some(&compiled),
                 );
 
-                if matches!(
-                    &result,
-                    Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
-                ) {
+                if let Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+                    multi_keys,
+                }) = &result
+                {
                     if is_export && !self.suppress_exports {
                         // Rakudo's `is export` installs the symbol into the
                         // EXPORT package of every package lexically enclosing
                         // the declaration, not just the innermost one.
-                        self.register_exported_sub(
+                        self.register_exported_multi_candidates(
                             package.clone(),
                             name.resolve(),
                             export_tags.clone(),
+                            multi_keys,
                         );
                         for outer in &outer_packages {
                             self.export_nested_sub_into(
@@ -202,7 +203,7 @@ impl Interpreter {
                         }
                     }
                     if multi && !self.suppress_exports {
-                        self.refresh_exported_multi_family(&name.resolve());
+                        self.refresh_exported_multi_family(&name.resolve(), multi_keys);
                     }
                     for (alt_params, alt_param_defs) in &signature_alternates {
                         let alt_metadata = crate::opcode::compiled_routine_metadata(
@@ -221,7 +222,7 @@ impl Interpreter {
                             is_rw,
                             is_raw,
                         );
-                        self.register_sub_alternate_decl(
+                        let alt_outcome = self.register_sub_alternate_decl(
                             &name.resolve(),
                             alt_params,
                             alt_param_defs,
@@ -237,6 +238,14 @@ impl Interpreter {
                             Some(&alt_metadata),
                             Some(&alt_compiled),
                         )?;
+                        if multi
+                            && !self.suppress_exports
+                            && let crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+                                multi_keys,
+                            } = &alt_outcome
+                        {
+                            self.refresh_exported_multi_family(&name.resolve(), multi_keys);
+                        }
                     }
                 }
                 result
@@ -244,7 +253,7 @@ impl Interpreter {
 
             let installed = matches!(
                 &result,
-                Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
+                Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed { .. })
             );
             self.set_current_package(saved_package);
             // A routine nested below the package body's own statement list
