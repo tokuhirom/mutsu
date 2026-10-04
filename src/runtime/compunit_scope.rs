@@ -294,7 +294,17 @@ impl Interpreter {
             && let Some(&module) = self.module_visibility.module_name_providers.get(&sym)
             && !self.module_visibility.unit_package_names.contains(&sym)
         {
-            return granted || self.module_merged_here(module);
+            // A sibling compunit can declare a package beneath this module's
+            // name without importing the root module itself. Its own routines
+            // must still see that package. Otherwise `use Zef` makes
+            // `Zef::Identity.new` fail inside Zef::Identity's str2identity.
+            let declared_here =
+                self.longest_declared_package_prefix(name)
+                    .is_some_and(|(_, declaring_unit)| {
+                        self.unit_chain_contains_unit(executing, declaring_unit)
+                            || self.unit_chain_contains_unit(self.current_unit, declaring_unit)
+                    });
+            return granted || self.module_merged_here(module) || declared_here;
         }
         if granted {
             return true;
