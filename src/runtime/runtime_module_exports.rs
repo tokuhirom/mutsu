@@ -595,7 +595,53 @@ impl Interpreter {
         &mut self,
         package: String,
         name: String,
+        tags: Vec<String>,
+    ) {
+        self.register_exported_sub_inner(package, name, tags, None);
+    }
+
+    /// [`Self::register_exported_sub`] for a `multi` candidate that was just
+    /// installed under `new_keys`. When every tag is already recorded for the
+    /// family, every earlier candidate was aliased when it arrived, so only
+    /// `new_keys` need aliases: O(k) instead of a registry scan that re-aliases
+    /// the whole family (#11761). Otherwise (first export of the family, a new
+    /// tag) it falls back to the full scan.
+    // Cost: O(t·k) once the family's tags are recorded, t = tags, k = new keys;
+    // otherwise O(r + t·c), r = registered functions, c = family candidates.
+    pub(crate) fn register_exported_multi_candidates(
+        &mut self,
+        package: String,
+        name: String,
+        tags: Vec<String>,
+        new_keys: &[Symbol],
+    ) {
+        self.register_exported_sub_inner(package, name, tags, Some(new_keys));
+    }
+
+    /// Whether `tags` are all recorded as exports of `package`'s `name` and,
+    /// during a module load, of the loading module too — i.e. whether an
+    /// earlier registration already aliased the family under every tag.
+    // Cost: O(t), t = tags.
+    fn exported_family_covers(&self, package: &str, name: &str, tags: &[String]) -> bool {
+        let covers = |recorded: Option<&HashSet<String>>| {
+            recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag)))
+        };
+        covers(self.exported_subs.get(package).and_then(|e| e.get(name)))
+            && self.module_load_stack.last().is_none_or(|module| {
+                covers(
+                    self.module_owned_exports
+                        .get(module)
+                        .and_then(|e| e.get(name)),
+                )
+            })
+    }
+
+    fn register_exported_sub_inner(
+        &mut self,
+        package: String,
+        name: String,
         mut tags: Vec<String>,
+        new_keys: Option<&[Symbol]>,
     ) {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
@@ -613,13 +659,25 @@ impl Interpreter {
         // aliases also let imports recover a family when a distribution's
         // `unit module` name differs from its provided module path.
         let candidate_prefix = format!("{}::{}/", package, name);
-        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
-            // Compared in place on the interned key: a module exporting a multi
-            // family re-registers its exports once per candidate, so this scan
-            // runs O(candidates) times per load, and resolving every key to an
-            // owned `String` first made it the costliest part of `use Test`.
-            // (The base-name index cannot narrow it: each registration in
-            // between clears that index.)
+        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_some() {
+            Vec::new()
+        } else if let Some(new_keys) = new_keys
+            && self.exported_family_covers(&package, &name, &tags)
+        {
+            let registry = self.registry();
+            new_keys
+                .iter()
+                .filter_map(|key| {
+                    let suffix = key.as_str().strip_prefix(&candidate_prefix)?;
+                    let candidate = registry.functions.get(key)?;
+                    Some((suffix.to_string(), candidate.clone()))
+                })
+                .collect()
+        } else {
+            // Compared in place on the interned key: resolving every key to
+            // an owned `String` first made this scan the costliest part of
+            // `use Test`. (The base-name index cannot narrow it: each
+            // registration in between clears that index.)
             self.registry()
                 .functions
                 .iter()
@@ -629,8 +687,6 @@ impl Interpreter {
                         .map(|suffix| (suffix.to_string(), candidate.clone()))
                 })
                 .collect()
-        } else {
-            Vec::new()
         };
         let owner = self
             .module
@@ -751,7 +807,11 @@ impl Interpreter {
     /// proto commonly appears before those candidates in a module body. The
     /// first export registration therefore cannot create the arity-qualified
     /// aliases until the candidates exist.
-    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
+    ///
+    /// `new_keys` are the registry keys the arriving candidate was installed
+    /// under (empty when nothing new was installed); see
+    /// [`Self::register_exported_multi_candidates`].
+    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str, new_keys: &[Symbol]) {
         let package = self.current_package();
         let tags = if package == "GLOBAL" {
             self.module
@@ -775,7 +835,12 @@ impl Interpreter {
             }
         });
         if let Some(tags) = tags {
-            self.register_exported_sub(package, name.to_string(), tags.into_iter().collect());
+            self.register_exported_multi_candidates(
+                package,
+                name.to_string(),
+                tags.into_iter().collect(),
+                new_keys,
+            );
         }
     }
 

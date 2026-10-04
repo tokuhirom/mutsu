@@ -299,7 +299,7 @@ impl Interpreter {
             }
             if preregistered {
                 if *multi && !self.module.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name);
+                    self.refresh_exported_multi_family(&resolved_name, &[]);
                 }
                 return Ok(());
             }
@@ -366,7 +366,9 @@ impl Interpreter {
             // below (cache invalidation, `&`-param shadow tracking, export, native
             // descriptor, signature alternates) needs to re-run — they were all
             // done by the first installation and persist.
-            if outcome == crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+            if let crate::runtime::registration_sub::SubRegisterOutcome::Installed { multi_keys } =
+                &outcome
+            {
                 // If this sub carries the `is native(...)` trait, record its C-FFI
                 // descriptor so calls route through NativeCall instead of the body.
                 if custom_traits.iter().any(|(t, _)| t == "native") {
@@ -406,10 +408,11 @@ impl Interpreter {
                 self.note_amp_param_shadowed_names(param_defs);
                 if *is_export && !self.module.suppress_exports {
                     let pkg = self.current_package();
-                    self.register_exported_sub(
+                    self.register_exported_multi_candidates(
                         pkg.clone(),
                         resolved_name.clone(),
                         export_tags.clone(),
+                        multi_keys,
                     );
                     // If a custom `is` trait mixed a role into this routine, the
                     // resulting Mixin lives in the lexical env as `&name` but would
@@ -453,7 +456,7 @@ impl Interpreter {
                     self.export_implicit_stash_proto(&resolved_name);
                 }
                 if *multi && !self.module.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name);
+                    self.refresh_exported_multi_family(&resolved_name, multi_keys);
                 }
                 // mutsu#10050: `is export` routines nested in this body are
                 // exported at compile time, not when this routine runs.
@@ -467,7 +470,7 @@ impl Interpreter {
                     // own fingerprint/facts, so its caches never need a lazy
                     // walk over the (possibly empty) plan body.
                     let alt_metadata = alternate_metadata.get(slot);
-                    self.loan_env_for(|i| {
+                    let alt_outcome = self.loan_env_for(|i| {
                         i.register_sub_alternate_decl(
                             &resolved_name,
                             alt_params,
@@ -485,6 +488,16 @@ impl Interpreter {
                             alt_compiled,
                         )
                     })?;
+                    // An alternate is a candidate of the same family: alias it
+                    // into the family's export stash as it arrives (#11761).
+                    if *multi
+                        && !self.module.suppress_exports
+                        && let crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+                            multi_keys,
+                        } = &alt_outcome
+                    {
+                        self.refresh_exported_multi_family(&resolved_name, multi_keys);
+                    }
                 }
             }
             // An `our sub` declared in a bare block closes over the block's `my`
