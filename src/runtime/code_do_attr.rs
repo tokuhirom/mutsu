@@ -75,6 +75,45 @@ fn is_direct(data: &SubData) -> bool {
     )
 }
 
+/// The `(class, method, candidate)` slot of a method code object -- one a
+/// method trait handler or a `.^lookup(...).candidates[N]` holds -- whose
+/// `$!do` is the body method dispatch runs (ADR-11827 §2.4). `None` for a
+/// plain routine.
+// Cost: O(1).
+fn method_do_slot(data: &SubData) -> Option<(String, String, usize)> {
+    let cls = data.env.get("__mutsu_lookup_class")?;
+    let meth = data.env.get("__mutsu_lookup_method")?;
+    let ValueView::Int(idx) = data.env.get("__mutsu_lookup_candidate_idx")?.view() else {
+        return None;
+    };
+    Some((
+        cls.to_string_value(),
+        meth.to_string_value(),
+        usize::try_from(idx).ok()?,
+    ))
+}
+
+/// The method-candidate slot of a `Method` *object* (the `Instance` shape
+/// `.^find_method` / `.^lookup` builds, possibly with roles mixed in) when an
+/// nqp attribute op addresses its `$!do`.
+// Cost: O(1).
+fn method_object_do_slot(obj: &Value, name: &str) -> Option<(String, String, usize)> {
+    if name != "$!do" {
+        return None;
+    }
+    let obj = Interpreter::unwrap_callable_mixin(obj.clone());
+    let ValueView::Instance { attributes, .. } = obj.view() else {
+        return None;
+    };
+    let attrs = attributes.as_map();
+    let cls = attrs.get("__mutsu_lookup_class")?.to_string_value();
+    let meth = attrs.get("__mutsu_lookup_method")?.to_string_value();
+    let ValueView::Int(idx) = attrs.get("__mutsu_lookup_candidate_idx")?.view() else {
+        return None;
+    };
+    Some((cls, meth, usize::try_from(idx).ok()?))
+}
+
 /// `data` as a direct code object: the same body and captures, marked so a
 /// call runs it without entering a wrap chain, and linked back to `data` for
 /// its name. A code object that already is direct is answered as itself, so
@@ -177,6 +216,14 @@ impl Interpreter {
     // Cost: O(1) when nothing is wrapped; otherwise O(w + c), w = wrapped
     // routines, c = wrappers on this routine.
     fn bound_do_body(&self, data: &SubData) -> Option<Value> {
+        if let Some((cls, meth, idx)) = method_do_slot(data) {
+            return self
+                .registry()
+                .method_wrap_chain(&cls, &meth, idx)?
+                .iter()
+                .find(|(h, _)| *h == DO_BODY_HANDLE)
+                .map(|(_, body)| body.clone());
+        }
         if self.dispatch.wrap_chains.is_empty() {
             return None;
         }
@@ -275,6 +322,14 @@ impl Interpreter {
             )));
         };
         let body = direct_code(&body_data);
+        // A method's body is what dispatch runs for its candidate: the
+        // innermost entry of that candidate's wrap chain, called with the
+        // invocant first, as rakudo calls a Method's `$!do`.
+        if let Some((cls, meth, idx)) = method_do_slot(data) {
+            self.registry_mut()
+                .bind_method_do_body(&cls, &meth, idx, body);
+            return Ok(());
+        }
         let (sub_id, func_name) = self.routine_wrap_key(data);
         let chain = crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains)
             .entry(sub_id)
@@ -283,6 +338,30 @@ impl Interpreter {
         chain.insert(0, (DO_BODY_HANDLE, body));
         self.note_routine_wrap_chain(sub_id, func_name, target);
         Ok(())
+    }
+
+    /// `nqp::bindattr($method, Code, '$!do', $body)` on a `Method` object:
+    /// `body` becomes what dispatch runs for that candidate.
+    // Cost: O(c + e), c = wrappers on the candidate, e = entries of the
+    // body's captured environment.
+    fn bind_method_object_do(
+        &mut self,
+        cls: &str,
+        meth: &str,
+        idx: usize,
+        body: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let body_code = Self::unwrap_callable_mixin(body.clone());
+        let ValueView::Sub(body_data) = body_code.view() else {
+            return Err(RuntimeError::new(format!(
+                "nqp::bindattr: Code.$!do must be bound to a code object, got {}",
+                crate::value::what_type_name(body)
+            )));
+        };
+        let direct = direct_code(&body_data);
+        self.registry_mut()
+            .bind_method_do_body(cls, meth, idx, direct);
+        Ok(body.clone())
     }
 
     /// The `$!do` case of the nqp attribute ops, shared by the generic op
@@ -298,7 +377,19 @@ impl Interpreter {
         name: &str,
         bind: Option<&Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let data = code_do_target(obj, name)?;
+        let Some(data) = code_do_target(obj, name) else {
+            // A `Method` object `.^find_method` / `.^lookup` handed out: its
+            // `$!do` is its candidate's body for dispatch (ADR-11827 §2.4).
+            let (cls, meth, idx) = method_object_do_slot(obj, name)?;
+            return Some(match bind {
+                None => Ok(self
+                    .registry()
+                    .method_wrap_chain(&cls, &meth, idx)
+                    .and_then(|chain| chain.iter().find(|(h, _)| *h == DO_BODY_HANDLE))
+                    .map_or(Value::NIL, |(_, body)| body.clone())),
+                Some(body) => self.bind_method_object_do(&cls, &meth, idx, body),
+            });
+        };
         Some(match bind {
             None => Ok(self.code_do_get(&data)),
             Some(body) => self.code_do_bind(obj, &data, body).map(|()| body.clone()),

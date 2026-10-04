@@ -616,6 +616,7 @@ impl Interpreter {
             proto_body,
             false,
             true,
+            return_type.as_deref(),
             trait_args,
         )
     }

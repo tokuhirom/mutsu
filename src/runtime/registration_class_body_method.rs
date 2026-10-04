@@ -335,6 +335,7 @@ impl Interpreter {
             &decl.body,
             decl.is_rw,
             false,
+            decl.return_type.as_deref(),
             &decl.custom_traits,
         )?;
         // `Method::Also` implements `is also<NAME>` through a custom

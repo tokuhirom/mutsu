@@ -24,14 +24,19 @@ pub(crate) trait SubsetBases {
     /// `^parameterize`) already evaluated to, or `None` when it has not been
     /// evaluated or is not such a spelling.
     fn parameterized_type(&self, constraint: &str) -> Option<Value>;
+
+    /// The type object an imported term binds the short spelling `name` to
+    /// (`size_t` under `use NativeCall` is NativeCall's own type), or `None`.
+    fn type_term(&self, name: &str) -> Option<Value>;
 }
 
 /// The type object a type spelling in a signature denotes: an evaluated
-/// `C[T]` (see [`SubsetBases::parameterized_type`]), else the name itself.
+/// `C[T]` (see [`SubsetBases::parameterized_type`]), an imported type term
+/// ([`SubsetBases::type_term`]), else the name itself.
 // Cost: O(1) expected.
 fn signature_type_value(name: &str, interp: Option<&dyn SubsetBases>) -> Value {
     interp
-        .and_then(|i| i.parameterized_type(name))
+        .and_then(|i| i.parameterized_type(name).or_else(|| i.type_term(name)))
         .unwrap_or_else(|| Value::Package(Symbol::intern(name)))
 }
 
@@ -308,8 +313,8 @@ fn sig_param_from_parameter_value(v: &Value) -> SigParam {
         // untyped (verified against `raku`: `Signature.new(:params(&f.signature.params)).raku`
         // shows `Any $x`, even though `&f.signature.raku` itself — never
         // passing back through `Signature.new` — shows plain `$x`).
-        if let Some(ValueView::Package(name)) = map.get("type").map(Value::view) {
-            p.type_constraint = Some(name.resolve());
+        if let Some(spelling) = parameter_type_spelling(&map) {
+            p.type_constraint = Some(spelling);
         }
     }
     p
@@ -926,6 +931,13 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
         // resolve when `interp` is available (not the case for parse-time
         // signature literals, which leave the subset name unresolved).
         Some(t) => {
+            // `.type` is the nominal type; a definedness smiley is reported
+            // by `.modifier` instead (rakudo: `sub f(Mem:D $x)` has `.type`
+            // Mem, `.modifier` ":D").
+            let t = t
+                .strip_suffix(definedness_modifier(Some(t)))
+                .filter(|base| !base.is_empty())
+                .unwrap_or(t);
             let base = builtin_subset_base(t)
                 .map(str::to_string)
                 .or_else(|| resolve_subset_base(t, interp));
@@ -1130,18 +1142,33 @@ fn is_named_alias_sub_signature(p: &SigParam, sub: &[SigParam]) -> bool {
     p.named_alias && sub.iter().all(|child| child.sub_signature.is_none())
 }
 
+/// A `Parameter`'s type as declared: its nominal `.type` plus the
+/// definedness smiley `.modifier` reports (`Int:D`). `None` when `.type` is
+/// not a type object.
+// Cost: O(n), n = chars of the type name.
+fn parameter_type_spelling(attrs: &AttrMap) -> Option<String> {
+    let base = match attrs.get("type")?.view() {
+        ValueView::Package(sym) => sym.resolve(),
+        ValueView::CustomType(c) => c.name.resolve(),
+        _ => return None,
+    };
+    let modifier = attrs
+        .get("modifier")
+        .map(Value::to_string_value)
+        .unwrap_or_default();
+    Some(if base.ends_with(modifier.as_str()) {
+        base
+    } else {
+        base + &modifier
+    })
+}
+
 /// Construct the `.raku` string for a Parameter instance from its attributes.
 pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
     let mut parts = Vec::new();
 
     // Type constraint
-    let mut type_name = attrs
-        .get("type")
-        .map(|v| match v.view() {
-            ValueView::Package(sym) => sym.resolve(),
-            _ => v.to_string_value(),
-        })
-        .unwrap_or_default();
+    let mut type_name = parameter_type_spelling(attrs).unwrap_or_default();
     // The sigil-implied container role is not spelled out (`@x`, not
     // `Positional @x`), and `Positional[Int] @x` renders as `Int @x`.
     let sigil = attrs
