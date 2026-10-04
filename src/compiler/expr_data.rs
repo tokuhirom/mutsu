@@ -93,8 +93,17 @@ impl Compiler {
         // explicit `$obj.attr = expr` so dynamically added rw accessors (for
         // example a Metamodel-generated Proxy accessor) are not mistaken for
         // a lexical `.attr` name and silently written nowhere.
+        //
+        // The same lowering serves `%.attr = ...` / `@.attr = ...`: a by-name
+        // `AssignExpr("%.attr")` stores into whatever container env holds under
+        // that name, which inside a method entered from another instance's
+        // method is the CALLER's attribute — `%.d = Hash.new` in `$other.set`
+        // emptied the calling object's own `%.d`.
         if !dot_twigil_rmw
-            && let Some(attr_name) = name.strip_prefix('.')
+            && let Some(attr_name) = name.strip_prefix('.').or_else(|| {
+                name.strip_prefix(['@', '%'])
+                    .and_then(|n| n.strip_prefix('.'))
+            })
             && !attr_name.is_empty()
         {
             // Use the ordinary call producer so accessor-ref markers, closure
