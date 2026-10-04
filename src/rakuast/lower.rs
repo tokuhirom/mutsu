@@ -492,7 +492,8 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (param, param_def, params, params_def) = match block.class {
         RakuAstClass::Block => (None, None, Vec::new(), Vec::new()),
         RakuAstClass::PointyBlock => {
-            let (names, mut defs) = signature_positional_params(block)?;
+            let (mut names, mut defs) = signature_positional_params(block)?;
+            name_for_unpack_params(&mut names, &mut defs);
             match defs.len() {
                 // `for @x -> { … }` is the parser's `explicit_zero_params`
                 // form, which the converter never renders.
@@ -521,6 +522,35 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_statement_modifier: false,
         uses_block_magic: false,
     })
+}
+
+/// A `for` loop names its anonymous destructuring parameters apart from a
+/// signature's `@` / `__subsig__`: `__for_unpack[_array]` when it is the only
+/// parameter, numbered by position among several, as the parser does.
+// Cost: O(p), p = parameters.
+fn name_for_unpack_params(names: &mut [String], defs: &mut [ParamDef]) {
+    use super::convert::{ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE};
+    use crate::parser::{FOR_UNPACK, FOR_UNPACK_ARRAY};
+    let several = defs.len() > 1;
+    for (index, (name, def)) in names.iter_mut().zip(defs.iter_mut()).enumerate() {
+        if def.sub_signature.is_none() || def.slurpy || def.named {
+            continue;
+        }
+        let form = match def.name.as_str() {
+            ANONYMOUS_ARRAY_SUBSIGNATURE => FOR_UNPACK_ARRAY,
+            ANONYMOUS_SUBSIGNATURE => "",
+            _ => continue,
+        };
+        let renamed = if several {
+            crate::parser::indexed_unpack_name(form, index)
+        } else if form.is_empty() {
+            FOR_UNPACK.to_string()
+        } else {
+            form.to_string()
+        };
+        def.name = renamed.clone();
+        *name = renamed;
+    }
 }
 
 /// Lower `sub NAME (SIG) { … }` to `Stmt::SubDecl`. Only bare positional scalar

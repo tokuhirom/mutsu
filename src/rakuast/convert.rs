@@ -3698,10 +3698,6 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if pd.sub_signature.is_some()
         && (pd.slurpy || pd.double_slurpy || pd.sigilless || pd.name.starts_with("__"))
     {
-        if pd.name.starts_with("__for_unpack") {
-            // The parser does not keep whether it was `[…]` or `(…)`.
-            return Err(unsupported("`for` loop destructuring parameter"));
-        }
         return Err(unsupported("non-positional signature sub-signature"));
     }
     let type_capture = match type_capture_name(pd) {
@@ -3840,6 +3836,27 @@ pub(super) const ANONYMOUS_ARRAY_SUBSIGNATURE: &str = "@";
 /// The parser's name for an anonymous `(…)` destructuring parameter.
 pub(super) const ANONYMOUS_SUBSIGNATURE: &str = "__subsig__";
 
+/// Whether `name` is the parser's name for an anonymous destructuring
+/// parameter, and if so whether it was the `[…]` form: `@` / `__subsig__` in
+/// a signature, `__for_unpack[_array][_N]` in a `for` loop's.
+fn anonymous_destructuring_form(name: &str) -> Option<bool> {
+    use crate::parser::{FOR_UNPACK, FOR_UNPACK_ARRAY};
+    let numbered = |base: &str| {
+        name == base
+            || name
+                .strip_prefix(base)
+                .and_then(|rest| rest.strip_prefix('_'))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    };
+    match name {
+        ANONYMOUS_ARRAY_SUBSIGNATURE => Some(true),
+        ANONYMOUS_SUBSIGNATURE => Some(false),
+        _ if numbered(FOR_UNPACK_ARRAY) => Some(true),
+        _ if numbered(FOR_UNPACK) => Some(false),
+        _ => None,
+    }
+}
+
 /// An anonymous destructuring parameter, `[$a, $b]` or `($a, $b)`: rakudo's
 /// `Parameter` with no target, holding the `sub-signature`; the bracket form
 /// marks it `is-array`, and the parenthesised one carries the implicit `Any`
@@ -3851,10 +3868,8 @@ fn anonymous_destructuring(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    let is_array = match pd.name.as_str() {
-        ANONYMOUS_ARRAY_SUBSIGNATURE => true,
-        ANONYMOUS_SUBSIGNATURE => false,
-        _ => return Ok(None),
+    let Some(is_array) = anonymous_destructuring_form(&pd.name) else {
+        return Ok(None);
     };
     let Some(sub_params) = pd.sub_signature.as_deref() else {
         return Ok(None);

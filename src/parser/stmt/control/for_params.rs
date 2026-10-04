@@ -74,7 +74,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 return parse_multi_destructuring_params(stripped, rw_block);
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            let unpack_name = "__for_unpack".to_string();
+            let unpack_name = FOR_UNPACK.to_string();
             let unpack_def = ParamDef {
                 type_capture: None,
                 name: unpack_name.clone(),
@@ -142,7 +142,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 return parse_multi_destructuring_params(stripped, rw_block);
             }
             let (r, _) = skip_pointy_return_type(r)?;
-            let unpack_name = "__for_unpack".to_string();
+            let unpack_name = FOR_UNPACK_ARRAY.to_string();
             let unpack_def = ParamDef {
                 type_capture: None,
                 name: unpack_name.clone(),
@@ -233,8 +233,8 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 // (`-> $a, [$b, $c]`); it binds one chunk element and unpacks it,
                 // so give it a synthetic name for the compiler to bind first.
                 let (r2, mut next) = parse_destructuring_or_plain_param(r2)?;
-                if next.name.is_empty() {
-                    next.name = format!("__for_unpack_{}", params_def.len());
+                if next.name.is_empty() || next.name == FOR_UNPACK_ARRAY {
+                    next.name = indexed_unpack_name(&next.name, params_def.len());
                 }
                 if next.traits.iter().any(|t| t == "rw") {
                     any_rw = true;
@@ -313,8 +313,8 @@ fn parse_multi_destructuring_params(input: &str, rw_block: bool) -> PResult<'_, 
             break;
         }
         let (r2, mut def) = parse_destructuring_or_plain_param(r2)?;
-        if def.sub_signature.is_some() && def.name.is_empty() {
-            def.name = format!("__for_unpack_{}", params_def.len());
+        if def.sub_signature.is_some() && (def.name.is_empty() || def.name == FOR_UNPACK_ARRAY) {
+            def.name = indexed_unpack_name(&def.name, params_def.len());
         }
         if def.traits.iter().any(|t| t == "rw") {
             any_rw = true;
@@ -392,11 +392,17 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
     let (r, sub_params) = super::super::parse_param_list_pub(r)?;
     let (r, _) = ws(r)?;
     let (r, _) = parse_char(r, close)?;
+    // The caller numbers the name; a bracket pattern keeps its form in it.
+    let name = if open == '[' {
+        FOR_UNPACK_ARRAY.to_string()
+    } else {
+        String::new()
+    };
     Ok((
         r,
         ParamDef {
             type_capture: None,
-            name: String::new(),
+            name,
             default: None,
             multi_invocant: true,
             required: false,
@@ -616,4 +622,22 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             code: Default::default(),
         },
     ))
+}
+
+/// The name a `for` loop's lone `(…)` destructuring pattern binds under.
+/// Only the parser and RakuAST read these names: the compiler declares and
+/// unpacks the parameter under whatever name it carries.
+pub(crate) const FOR_UNPACK: &str = "__for_unpack";
+/// The same for a `[…]` pattern, kept apart so the source form survives.
+pub(crate) const FOR_UNPACK_ARRAY: &str = "__for_unpack_array";
+
+/// The name of the `index`th destructuring pattern among several:
+/// `__for_unpack_N`, or `__for_unpack_array_N` for a `[…]` pattern (`form`
+/// is the pattern's unnumbered name, empty for `(…)`).
+pub(crate) fn indexed_unpack_name(form: &str, index: usize) -> String {
+    if form == FOR_UNPACK_ARRAY {
+        format!("{FOR_UNPACK_ARRAY}_{index}")
+    } else {
+        format!("{FOR_UNPACK}_{index}")
+    }
 }
