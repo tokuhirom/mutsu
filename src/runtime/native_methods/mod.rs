@@ -27,6 +27,7 @@ mod supply_collector;
 mod supply_derive;
 mod supply_quit_forwarder;
 mod system;
+pub(crate) mod thread_lock_count;
 
 // Re-export public items from state submodules so that
 // `crate::runtime::native_methods::X` paths continue to work.

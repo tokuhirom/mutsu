@@ -680,6 +680,7 @@ mod nqp_ops_str;
 mod nqp_ops_string;
 pub(crate) mod nqp_ops_sys;
 pub(crate) mod nqp_ops_text;
+mod nqp_ops_thread;
 mod nqp_ops_unicode;
 pub(crate) mod nqp_pure;
 mod nqp_radix;
@@ -1120,9 +1121,7 @@ pub(crate) use crate::value::regex_caps::{NamedCaptureMap, NamedSlot};
 pub(crate) use utils::*;
 
 // Re-export thread utility functions for VM access
-pub(crate) use methods_collection_ops::{
-    current_mutsu_thread_id, current_thread_object, is_initial_thread,
-};
+pub(crate) use methods_collection_ops::{current_mutsu_thread_id, current_thread_value};
 pub(crate) use methods_raku_dispatch::container_needs_raku_dispatch;
 
 use self::unicode::check_unicode_property;
