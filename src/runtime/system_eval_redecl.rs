@@ -43,7 +43,7 @@ impl Interpreter {
             let body_no_sl: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
             body_no_sl.len() == 1
                 && matches!(body_no_sl[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                    if *fn_name == "__mutsu_stub_die" || *fn_name == "__mutsu_stub_warn")
+                    if crate::ast::stub::is_marker(fn_name.as_str()))
         };
 
         // Within one class/role/grammar body, two `my`/`our`-scoped methods (or

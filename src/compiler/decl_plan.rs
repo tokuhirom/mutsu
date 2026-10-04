@@ -883,7 +883,7 @@ impl Compiler {
             if matches!(
                 raw.as_ref(),
                 Stmt::Expr(Expr::Call { name, .. })
-                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+                    if crate::ast::stub::is_marker(name.as_str())
             ) {
                 continue;
             }

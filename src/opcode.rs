@@ -5333,7 +5333,7 @@ fn is_stub_routine_body(body: &[Stmt]) -> bool {
         (
             Some(Stmt::Expr(Expr::Call { name, .. })),
             None
-        ) if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+        ) if crate::ast::stub::is_marker(name.as_str())
     )
 }
 
@@ -5469,7 +5469,7 @@ fn role_body_prescan(body: &[Stmt]) -> (Vec<Symbol>, Vec<String>, Vec<String>) {
 fn role_body_is_stub(body: &[Stmt]) -> bool {
     body.iter().any(|s| {
         matches!(s, Stmt::Expr(Expr::Call { name, .. })
-            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
+            if crate::ast::stub::is_marker(name.as_str()))
     })
 }
 
@@ -6113,7 +6113,7 @@ fn is_stub_marker_stmt(stmt: &Stmt) -> bool {
     matches!(
         stmt,
         Stmt::Expr(Expr::Call { name, .. })
-            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            if crate::ast::stub::is_marker(name.as_str())
     )
 }
 

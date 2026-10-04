@@ -3950,7 +3950,7 @@ impl Interpreter {
         let meaningful: Vec<&Stmt> = body.iter().filter(|s| !s.is_marker()).collect();
         meaningful.len() == 1
             && matches!(meaningful[0], Stmt::Expr(Expr::Call { name, .. })
-                if *name == "__mutsu_stub_die" || *name == "__mutsu_stub_warn")
+                if crate::ast::stub::is_marker(name.as_str()))
     }
 }
 

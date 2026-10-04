@@ -564,17 +564,34 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("X::StubCode"), attrs)
     }
 
-    pub(super) fn builtin_stub_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+    /// The message of a stub operator: its arguments joined, or
+    /// `ast::stub::DEFAULT_MESSAGE` when the source wrote none.
+    fn stub_message(args: &[Value]) -> String {
+        if args.is_empty() {
+            return crate::ast::stub::DEFAULT_MESSAGE.to_string();
+        }
         let mut message = String::new();
         for arg in args {
             message.push_str(&arg.to_string_value());
         }
-        let ex = Self::make_stub_exception(message);
+        message
+    }
+
+    // Cost: O(m), m = length of the message.
+    pub(super) fn builtin_stub_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let ex = Self::make_stub_exception(Self::stub_message(args));
         // Raku's `...` uses `fail` semantics: the stub returns a Failure to
         // its direct caller rather than throwing immediately.  At the top
         // level (or when sunk outside a sub boundary) the Failure propagates
         // as an exception, matching rakudo's behaviour.
-        Err(self.runtime_error_from_die_value(&ex, "Stub code executed", true))
+        Err(self.runtime_error_from_die_value(&ex, crate::ast::stub::DEFAULT_MESSAGE, true))
+    }
+
+    /// `!!!`: unlike `...`, the stub dies at once instead of failing.
+    // Cost: O(m), m = length of the message.
+    pub(super) fn builtin_stub_fatal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let ex = Self::make_stub_exception(Self::stub_message(args));
+        Err(self.runtime_error_from_die_value(&ex, crate::ast::stub::DEFAULT_MESSAGE, false))
     }
 
     /// Compile-target for constructs the parser recognizes as an undeclared
@@ -597,13 +614,7 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_stub_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mut message = String::new();
-        for arg in args {
-            message.push_str(&arg.to_string_value());
-        }
-        if message.is_empty() {
-            message = "Warning: something's wrong".to_string();
-        }
+        let message = Self::stub_message(args);
         // Resolve inline (like `builtin_warn`) rather than returning a bare
         // `warn_signal` error: `???` now parses at list-prefix precedence
         // (#9780) and can appear as the left operand of `or`/`andthen`/...,
