@@ -61,6 +61,13 @@ impl Interpreter {
         }
 
         let saved_topic = self.env().get("_").cloned();
+        // The body's `$_` is a fresh, untyped lexical: an enclosing routine's
+        // typed `$_` parameter (`method load(IO() $_)`) must not coerce or
+        // check what the body assigns to it.
+        let saved_topic_type = self.var_type_constraint("_");
+        if saved_topic_type.is_some() {
+            self.set_var_type_constraint("_", None);
+        }
         let saved_when = self.when_matched();
         let saved_topic_source = self.topic_state.topic_source_var.take();
         let saved_container_source = self.topic_state.topic_container_source.take();
@@ -215,6 +222,9 @@ impl Interpreter {
                 this.env_mut().insert("_".to_string(), v);
             } else {
                 this.env_mut().remove("_");
+            }
+            if let Some(tc) = &saved_topic_type {
+                this.set_var_type_constraint("_", Some(tc.clone()));
             }
             // Restore the outer `$_` local slot (the sub `$_` param / `my $_`
             // shadowed by this given/with) to its entry value.
