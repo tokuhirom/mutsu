@@ -23,7 +23,7 @@ use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dyn
 use crate::runtime::regex_types::{NamedAtom, RegexAtom, RegexCaptures};
 use crate::symbol::Symbol;
 use crate::value::Value;
-use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk as walk_use};
+use crate::vm::vm_stats_regex_vm::record_regex_eager;
 
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
 type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallVerdict)>;
@@ -438,10 +438,10 @@ impl Interpreter {
             grammar_dynvar_scope_push(keys.iter().cloned());
         }
         // The growing-seed loop evaluates the candidates eagerly, through the
-        // all-ends entry: a leaf on `MUTSU_VM_STATS`.
+        // all-ends entry: an eager call on `MUTSU_VM_STATS`.
         match target {
-            CallTarget::Eager(_, why) => walk_use(WalkUse::Leaf, why),
-            CallTarget::CustomHow(_) => walk_use(WalkUse::Leaf, "custom-how"),
+            CallTarget::Eager(_, why) => record_regex_eager(why),
+            CallTarget::CustomHow(_) => record_regex_eager("custom-how"),
             _ => {}
         }
         let mut out = match target {

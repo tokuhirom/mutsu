@@ -875,6 +875,7 @@ impl Interpreter {
                     | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
+                    | RxOp::EmptyRange
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
                         if let RxOp::Code(_) = op {

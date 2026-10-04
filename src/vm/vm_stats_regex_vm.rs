@@ -11,6 +11,13 @@
 //! not (`WalkUse`): the whole residue §4 E must bring to zero.
 //!
 //! `regex-walk: walked=N (reason=count …) bridged=M (…) leaf=L (…)`
+//!
+//! A third line counts the compiled engine's *eager* calls: a `<subrule>`
+//! call whose ends the growing-seed loop computes up front (`regex_lr_seed`)
+//! instead of a frame resuming them. They run compiled programs, not the
+//! walk; the reasons say why the call is not a frame.
+//!
+//! `regex-eager: calls=N (reason=count …)`
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -96,6 +103,21 @@ pub(crate) fn record_regex_walk(kind: WalkUse, reason: &'static str) {
     }
 }
 
+fn eager_calls() -> &'static Mutex<HashMap<&'static str, u64>> {
+    static MAP: std::sync::OnceLock<Mutex<HashMap<&'static str, u64>>> = std::sync::OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
+/// One eager `<subrule>` call of the compiled engine, with why it is not a
+/// frame.
+#[inline]
+pub(crate) fn record_regex_eager(reason: &'static str) {
+    if enabled() {
+        let mut map = eager_calls().lock().unwrap_or_else(|e| e.into_inner());
+        *map.entry(reason).or_insert(0) += 1;
+    }
+}
+
 /// `n=… (reason=count …)` for the counts in `counts`, highest first.
 fn reason_list(counts: &mut [(&'static str, u64)]) -> String {
     counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
@@ -129,4 +151,11 @@ pub(super) fn dump() {
         format!("{}={total} ({})", kind.label(), reason_list(&mut counts))
     });
     eprintln!("[mutsu vm-stats] regex-walk: {}", groups.join(" "));
+    let eager = eager_calls().lock().unwrap_or_else(|e| e.into_inner());
+    let mut counts: Vec<(&'static str, u64)> = eager.iter().map(|(k, n)| (*k, *n)).collect();
+    let total: u64 = counts.iter().map(|(_, n)| *n).sum();
+    eprintln!(
+        "[mutsu vm-stats] regex-eager: calls={total} ({})",
+        reason_list(&mut counts)
+    );
 }

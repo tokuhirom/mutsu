@@ -1359,6 +1359,54 @@ rakudo's values. Under `MUTSU_RX_DIFF=1`, the same 16 files fail here and on `ma
 the same first disagreement. The new grammar test also disagrees there: the walk still evaluates
 the qq-thunk callee eagerly, so its replay runs the block a third time.
 
+### Slice E, twenty-first part: the D7 counter reads zero
+
+The survey now covers all of `t/` and the roast whitelist, 7,879 files, where earlier parts
+covered `t/grammar`, `t/regex` and `t/modules`. Before this part, it found the walk reached in
+four places. This part closes all four:
+
+- **`context:ltm-declarative` (LTM measurement).** An LTM measurement (ADR-0125) ran nested
+  matches through the walk in two places. The compiled engine declines any match under
+  `LTM_DECLARATIVE_MODE`, so both were walked whole. Both are now measured by the rule's own NFA,
+  as a dynamic call already is:
+  - a `WsLead` node evaluated a user-defined `<ws>` with the walk's plural producer. It now goes
+    through `dyn_call`. A `ws` method is now a fate, as in Rakudo's NFA. Before, measuring called
+    the method.
+  - a character class that holds a grammar token (`<+alpha -[q]>` when the grammar defines
+    `alpha`) matched the token's pattern.
+- **`ignoremark-no-target`.** A `:m` match outside a published subject took the walk. It now
+  builds the subject from the chars it is given (`ignoremark_target`).
+- **`empty-range`.** These patterns were declined whole.
+  - An empty quantifier range (`a ** 3..1`, also with a separator) compiles to `EmptyRange`. The
+    op raises "Quantifier range is empty" where the cursor reaches it, as the walk did. The
+    separated form now raises too; the walk returned no match there. Rakudo rejects both at
+    compile time.
+  - `** 0 % sep` compiles to its zero-iteration arm only. An `AtLeast` on the zero counter shuts
+    the first iteration.
+- **Eager calls.** Calls the growing-seed loop evaluates up front were counted as walk leaves:
+  `lr-seed`, `ignoremark-callee`, `custom-how` and `wrapped-candidate`. They run compiled
+  programs through `regex_lr_seed.rs`, not the walk. The `lr-seed` ones are the LrCall of §4 E,
+  confined to calls the call graph cannot prove free of left re-entry. They now go on a
+  `MUTSU_VM_STATS` line of their own, `regex-eager: calls=N (reason=n …)`, which the survey sums
+  separately.
+
+Survey (all of `t/` and the roast whitelist, 7,879 files, debug build):
+
+| | before | after |
+|---|---:|---:|
+| walked | 11 (`declined` 8, all `empty-range`; `context:vm-off` 3) | 3 (`context:vm-off`) |
+| bridged | 0 | 0 |
+| leaf | 501 (all eager) | 0 |
+
+Over `t/grammar`, `t/regex` and `t/modules` alone, walked `context:ltm-declarative` 20 and
+`ignoremark-no-target` 2 go to 0. That subset has no `empty-range` patterns.
+
+The 3 left are tests that switch the compiled engine off on purpose with `MUTSU_RX_VM=0`, and they
+go with the walk. So D7's criterion is met: `walked=` and `bridged=` read zero apart from the
+switch itself, and no `leaf=` reason is left. The next step is the deletion: the walk, the
+`MUTSU_RX_VM` switch and D6's differential mode. `t/regex/regex-walk-residue-compiled.t` pins
+rakudo's values for this part.
+
 ### Reproducing §2
 
 ```raku

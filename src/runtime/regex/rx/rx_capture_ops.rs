@@ -17,7 +17,8 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Run one capture op at `pos`: the new position, or `None` on failure.
-    /// Only `CapAtom` can move the cursor; it and `Look` can fail.
+    /// Only `CapAtom` can move the cursor; it, `Look`, `GoalFail` and
+    /// `EmptyRange` can fail.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_capture_op(
         &mut self,
@@ -331,6 +332,11 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(merged));
             }
             // Cost: O(1).
+            // Cost: O(1).
+            RxOp::EmptyRange => {
+                Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");
+                return None;
+            }
             RxOp::GoalFail { tok } => {
                 let RegexAtom::GoalMatch { goal_text, .. } = &program.toks[tok as usize].atom
                 else {
