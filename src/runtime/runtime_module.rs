@@ -101,7 +101,7 @@ impl Interpreter {
                 imported_routine_aliases: self.imported_routine_aliases.clone(),
                 own_routine_imports: HashSet::new(),
                 imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
-                newline_mode: self.newline_mode,
+                newline_mode: self.io.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
                 lexical_fatal_mode: self.lexical_fatal_mode,
@@ -484,7 +484,7 @@ impl Interpreter {
             if scope_classes {
                 self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
             }
-            self.newline_mode = newline_mode;
+            self.io.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
             self.lexical_fatal_mode = lexical_fatal_mode;

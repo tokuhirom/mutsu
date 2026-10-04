@@ -492,7 +492,7 @@ impl Interpreter {
     /// reentrant). Use as `self.io_handles().map.get(&id)`.
     #[inline]
     pub(crate) fn io_handles(&self) -> io_handles::IoHandlesReadGuard<'_> {
-        io_handles::IoHandlesReadGuard::new(&self.io_handles, "io_handles")
+        io_handles::IoHandlesReadGuard::new(&self.io.io_handles, "io_handles")
     }
 
     /// Read access to the shared [`OutputSink`]. Same guard discipline as
@@ -500,21 +500,21 @@ impl Interpreter {
     /// re-enters another output operation.
     #[inline]
     pub(crate) fn output_sink(&self) -> output_sink::OutputSinkReadGuard<'_> {
-        output_sink::OutputSinkReadGuard::new(&self.output_sink, "output_sink")
+        output_sink::OutputSinkReadGuard::new(&self.io.output_sink, "output_sink")
     }
 
     /// Write access to the shared [`OutputSink`]. Same guard discipline as
     /// [`Self::output_sink`].
     #[inline]
     pub(crate) fn output_sink_mut(&self) -> output_sink::OutputSinkWriteGuard<'_> {
-        output_sink::OutputSinkWriteGuard::new(&self.output_sink, "output_sink")
+        output_sink::OutputSinkWriteGuard::new(&self.io.output_sink, "output_sink")
     }
 
     /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
     /// Same guard discipline as [`Self::io_handles`].
     #[inline]
     pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
-        io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
+        io_handles::IoHandlesWriteGuard::new(&self.io.io_handles, "io_handles")
     }
 
     /// Allocate a fresh handle id, store `state` under it, and return the id.

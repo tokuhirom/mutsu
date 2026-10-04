@@ -214,7 +214,7 @@ impl Interpreter {
     /// it went to. Lets a test assert on warnings without capturing stderr.
     #[cfg(test)]
     pub(crate) fn warnings_emitted(&self) -> &str {
-        &self.warn_output
+        &self.io.warn_output
     }
 
     /// Emit a batch of parse warnings (module export scan, module load, EVAL,
@@ -228,7 +228,7 @@ impl Interpreter {
     /// those sites would print the same warning once per parse. The file tag
     /// (see `parser::add_parse_warning`) keeps this from conflating two
     /// *different* files that happen to produce identical warning text.
-    /// `self.surfaced_parse_warnings` is reset at the top of `run()`, so a
+    /// `self.io.surfaced_parse_warnings` is reset at the top of `run()`, so a
     /// later, separate top-level program sharing this `Interpreter` (a new
     /// REPL line, for instance) still sees its own warnings independently.
     /// See `todo/tickets/module-parse-warning-reported-twice.md`.
@@ -238,7 +238,7 @@ impl Interpreter {
     {
         for (file, message) in warnings {
             let key = (canonicalize_warning_file(file), message);
-            if self.surfaced_parse_warnings.insert(key.clone()) {
+            if self.io.surfaced_parse_warnings.insert(key.clone()) {
                 self.write_warn_to_stderr(&key.1);
             }
         }
@@ -277,13 +277,13 @@ impl Interpreter {
             }
         };
         // Read the thread-clone shared stderr Arc out under a scoped guard so it
-        // is dropped before `self.warn_output` / `emit` re-borrow self.
+        // is dropped before `self.io.warn_output` / `emit` re-borrow self.
         // Rakudo's default `warn` handler prints through the dynamic `$*ERR`,
         // so a `my $*ERR = Trap.new` (silently, Test::Output) captures the
         // warning too. Only the process stderr handle takes the direct path.
         if self.dynamic_err_redirected() && self.write_to_named_handle("$*ERR", &msg, false).is_ok()
         {
-            self.warn_output.push_str(&msg);
+            self.io.warn_output.push_str(&msg);
             return;
         }
         let thread_shared_stderr = {
@@ -296,10 +296,10 @@ impl Interpreter {
         };
         if let Some(shared) = thread_shared_stderr {
             shared.lock().unwrap().push_str(&msg);
-            self.warn_output.push_str(&msg);
+            self.io.warn_output.push_str(&msg);
             return;
         }
-        self.warn_output.push_str(&msg);
+        self.io.warn_output.push_str(&msg);
         // In nested mode (e.g. in-process `is_run`), buffer to
         // `stderr_output` so the caller can inspect captured stderr.
         // Otherwise emit directly to the real stderr; if we also pushed
@@ -330,22 +330,23 @@ impl Interpreter {
     }
 
     pub(crate) fn push_warn_suppression(&mut self) {
-        self.warn_suppression_depth += 1;
-        self.warn_suppression_boundaries
+        self.io.warn_suppression_depth += 1;
+        self.io
+            .warn_suppression_boundaries
             .push(self.control.control_handlers.len());
     }
 
     pub(crate) fn pop_warn_suppression(&mut self) {
-        self.warn_suppression_depth = self.warn_suppression_depth.saturating_sub(1);
-        self.warn_suppression_boundaries.pop();
+        self.io.warn_suppression_depth = self.io.warn_suppression_depth.saturating_sub(1);
+        self.io.warn_suppression_boundaries.pop();
     }
 
     /// The current warning-suppression state, to hand back to
     /// [`Self::restore_warn_suppression`] when an unwind leaves a region.
     pub(crate) fn warn_suppression_mark(&self) -> (usize, usize) {
         (
-            self.warn_suppression_depth,
-            self.warn_suppression_boundaries.len(),
+            self.io.warn_suppression_depth,
+            self.io.warn_suppression_boundaries.len(),
         )
     }
 
@@ -353,12 +354,12 @@ impl Interpreter {
     /// frames of `quietly` regions an error unwound out of before their
     /// `WarnSuppressPop` ran.
     pub(crate) fn restore_warn_suppression(&mut self, mark: (usize, usize)) {
-        self.warn_suppression_depth = mark.0;
-        self.warn_suppression_boundaries.truncate(mark.1);
+        self.io.warn_suppression_depth = mark.0;
+        self.io.warn_suppression_boundaries.truncate(mark.1);
     }
 
     pub(crate) fn warning_suppressed(&self) -> bool {
-        self.warn_suppression_depth > 0
+        self.io.warn_suppression_depth > 0
     }
 
     /// How far `try_control_inline` may search `control_handlers` for a `warn`
@@ -366,7 +367,8 @@ impl Interpreter {
     /// those registered since the innermost active suppression began.
     pub(crate) fn warn_control_handler_floor(&self) -> usize {
         if self.warning_suppressed() {
-            self.warn_suppression_boundaries
+            self.io
+                .warn_suppression_boundaries
                 .last()
                 .copied()
                 .unwrap_or(0)

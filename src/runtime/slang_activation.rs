@@ -202,7 +202,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.program_path.clone());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
         let result = crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref());
         crate::parser::clear_parser_lib_paths();
         result

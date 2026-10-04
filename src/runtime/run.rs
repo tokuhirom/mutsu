@@ -568,7 +568,7 @@ impl Interpreter {
         // `#[test]` helpers, ... — see `surfaced_parse_warnings`), so this
         // run's warnings are not silently swallowed by a stale entry from an
         // unrelated earlier program.
-        self.surfaced_parse_warnings.clear();
+        self.io.surfaced_parse_warnings.clear();
         // `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect right at program start.
         crate::gc::startup_collect_if_requested();
         let preprocessed = Self::maybe_preprocess_roast_directives(input);
@@ -590,6 +590,7 @@ impl Interpreter {
         // `$=pod`.
         self.collect_pod_sources(&preprocessed)?;
         let file_name = self
+            .io
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
@@ -626,7 +627,7 @@ impl Interpreter {
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(unit_file));
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.program_path.clone());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
         crate::parser::set_parser_preload_modules(self.preload_modules.clone());
         // `$?FILE` folds to the file of the compilation unit being parsed (see
         // the parser's scalar-var twigil handling); for the mainline that is the

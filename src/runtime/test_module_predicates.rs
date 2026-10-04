@@ -21,7 +21,7 @@ impl Interpreter {
     /// state exists), indicating that test function names should be resolved
     /// as function calls rather than bare words.
     pub(crate) fn test_mode_active(&self) -> bool {
-        self.tap.active()
+        self.io.tap.active()
     }
 
     /// True when a `Test` (or `Test::*`) module is loaded. Unlike

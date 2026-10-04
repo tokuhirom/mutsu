@@ -646,7 +646,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some(object_id) = object_id
-            && let Some(pod) = self.why_object_cache.get(&object_id)
+            && let Some(pod) = self.declarator_docs.why_object_cache.get(&object_id)
         {
             return Ok(pod.clone());
         }
@@ -661,7 +661,9 @@ impl Interpreter {
                 .and_then(|code| code.declarator_doc.clone())
         {
             let pod = Self::make_pod_declarator(&doc, target.clone());
-            self.why_object_cache.insert(sub_data.id, pod.clone());
+            self.declarator_docs
+                .why_object_cache
+                .insert(sub_data.id, pod.clone());
             return Ok(pod);
         }
         if let ValueView::Instance {
@@ -887,12 +889,12 @@ impl Interpreter {
         };
         // Try to find matching doc comment, checking cache first for each key
         for key in keys {
-            if let Some(cached) = self.why_cache.get(&key) {
+            if let Some(cached) = self.declarator_docs.why_cache.get(&key) {
                 return Ok(cached.clone());
             }
-            if let Some(doc) = self.doc_comments.get(&key) {
+            if let Some(doc) = self.declarator_docs.doc_comments.get(&key) {
                 let pod = Self::make_pod_declarator(&doc.doc, target.clone());
-                self.why_cache.insert(key, pod.clone());
+                self.declarator_docs.why_cache.insert(key, pod.clone());
                 return Ok(pod);
             }
         }

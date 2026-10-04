@@ -68,3 +68,8 @@ unit_module_packages
 unit_private_names
 unit_private_routines
 use_attach_depth
+declarator_docs
+doc_comment_list
+doc_comments
+why_cache
+why_object_cache

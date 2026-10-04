@@ -215,7 +215,7 @@ impl Interpreter {
     }
 
     pub(super) fn translate_newlines_for_decode_native(&self, input: &str) -> String {
-        match self.newline_mode {
+        match self.io.newline_mode {
             NewlineMode::Lf => input.to_string(),
             NewlineMode::Cr => input.replace('\r', "\n"),
             NewlineMode::Crlf => input.replace("\r\n", "\n"),

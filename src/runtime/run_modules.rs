@@ -530,7 +530,7 @@ impl Interpreter {
 
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.program_path.clone());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
         // `$?FILE` inside a module is the module's own file, not the script's.
         // Module parses nest (this module's `use` triggers another load), so
         // the previous value is restored rather than cleared.
@@ -1113,10 +1113,7 @@ impl Interpreter {
             // metadata for the rest of its run. Nested module loads apply the
             // same save/restore pair and therefore return to this module's
             // document while its body is still executing.
-            let saved_doc_comments = self.doc_comments.clone();
-            let saved_doc_comment_list = self.doc_comment_list.clone();
-            let saved_why_cache = self.why_cache.clone();
-            let saved_why_object_cache = self.why_object_cache.clone();
+            let saved_declarator_docs = self.declarator_docs.clone();
             // `_from_stmts`, not the source-only form: the module's AST is
             // already in hand here, so its declarator blocks get the concrete
             // routine/attribute `WHEREFORE` (and the matching `.WHY` identity)
@@ -1144,10 +1141,7 @@ impl Interpreter {
                 Err(err) => Err(err),
             };
             self.import_target_package = saved_import_target;
-            self.doc_comments = saved_doc_comments;
-            self.doc_comment_list = saved_doc_comment_list;
-            self.why_cache = saved_why_cache;
-            self.why_object_cache = saved_why_object_cache;
+            self.declarator_docs = saved_declarator_docs;
             // Snapshot the env exactly as the module body left it, before any
             // of the restoration below (the `leaked_packages` removal, the
             // `saved_plain_env` restore, `unit_lexicals` extraction) strips
