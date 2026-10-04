@@ -95,10 +95,15 @@ pub(crate) fn routine_mixin_roles(qualified_name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SubRegisterOutcome {
     /// The declaration was (re-)derived and installed; resolution state changed.
-    Installed,
+    ///
+    /// `multi_keys` names the registry keys a `multi` candidate was installed
+    /// under (empty for a single sub), so the export path can alias just the
+    /// new candidate instead of rescanning the registry for its whole family
+    /// (#11761).
+    Installed { multi_keys: Vec<Symbol> },
     /// An identical declaration was already installed under this key; nothing
     /// was derived or installed beyond refreshing the routine's callable id.
     Unchanged,
@@ -234,9 +239,16 @@ impl Interpreter {
     /// `match self.registry_mut().functions.entry(..) { Occupied => self.registry_mut()... }`
     /// shape acquired a second write lock inside the arm and deadlocked (the
     /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
-    pub(super) fn insert_multi_overload(&mut self, base_key: &str, def: FunctionDef) {
+    ///
+    /// Returns the key the candidate was installed under, or `None` when the
+    /// identical candidate was already present and nothing was written.
+    pub(super) fn insert_multi_overload(
+        &mut self,
+        base_key: &str,
+        def: FunctionDef,
+    ) -> Option<Symbol> {
         let def = std::sync::Arc::new(def);
-        {
+        let installed = {
             let mut registry = self.registry_mut();
             let funcs = registry.functions_mut();
             let mut key = Symbol::intern(base_key);
@@ -245,7 +257,7 @@ impl Interpreter {
                 match funcs.entry(key) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
-                        break;
+                        break key;
                     }
                     // A parametric role body re-runs once per composition, so
                     // the same `multi sub` declaration arrives again under the
@@ -255,14 +267,14 @@ impl Interpreter {
                         if existing.get().package == def.package
                             && existing.get().body_fingerprint() == def.body_fingerprint() =>
                     {
-                        return;
+                        return None;
                     }
                     std::collections::hash_map::Entry::Occupied(_) => {}
                 }
                 key = Symbol::intern(&format!("{}__m{}", base_key, idx));
                 idx += 1;
             }
-        }
+        };
         // This adds a KEY to the functions map, so every name-keyed cache built
         // over it — the base-name key index above all — is stale until it is
         // told. It was not told: the registration path that calls this bumps
@@ -281,6 +293,7 @@ impl Interpreter {
         // tiebreak sits inside the arity suffix, so both spell the same base
         // name and one eviction covers whichever was taken (#8314).
         self.invalidate_fn_resolution_for_keys([Symbol::intern(base_key)]);
+        Some(installed)
     }
 
     /// If `name` is an operator (`infix:<…>`/`prefix:<…>`/`postfix:<…>`) that was
@@ -1052,7 +1065,9 @@ impl Interpreter {
                     self.mark_my_scoped_package_item(fq);
                 }
                 self.note_registration_callable_id(&pkg, name);
-                return Ok(SubRegisterOutcome::Installed);
+                return Ok(SubRegisterOutcome::Installed {
+                    multi_keys: Vec::new(),
+                });
             }
         }
         if metadata.is_some_and(|metadata| metadata.has_param_return_redeclaration) {
@@ -1584,6 +1599,9 @@ impl Interpreter {
             crate::runtime::cow_table_mut(&mut self.dispatch.operator_assoc)
                 .insert(qualified, assoc.clone());
         }
+        // The keys this `multi` candidate is installed under, handed to the
+        // export path so it aliases only this candidate (#11761).
+        let mut installed_multi_keys: Vec<Symbol> = Vec::new();
         if multi {
             let arity = if def.param_defs.is_empty() && !params.is_empty() {
                 // Auto-params ($^a, $^b): param_defs is empty but params
@@ -1625,16 +1643,19 @@ impl Interpreter {
                         arity,
                         type_sig.join(",")
                     );
-                    self.insert_multi_overload(&typed_fq, def.clone());
+                    installed_multi_keys.extend(self.insert_multi_overload(&typed_fq, def.clone()));
                 }
                 let fq = format!("{}::{}/{}", self.current_package(), reg_name, arity);
                 if !has_types || reg_name == "trait_mod:<is>" {
-                    self.insert_multi_overload(&fq, def.clone());
+                    installed_multi_keys.extend(self.insert_multi_overload(&fq, def.clone()));
                 } else {
-                    self.registry_mut()
-                        .functions_mut()
-                        .entry(Symbol::intern(&fq))
-                        .or_insert(std::sync::Arc::new(def.clone()));
+                    let fq_sym = Symbol::intern(&fq);
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        self.registry_mut().functions_mut().entry(fq_sym)
+                    {
+                        entry.insert(std::sync::Arc::new(def.clone()));
+                        installed_multi_keys.push(fq_sym);
+                    }
                     // Same missed invalidation as `insert_multi_overload`: this
                     // arm also adds a key (#8300) — a single one, named here so
                     // the base-name index keeps the rest (#8314).
@@ -1712,10 +1733,11 @@ impl Interpreter {
                 .and_then(|exports| exports.get(name))
                 .cloned()
         {
-            self.register_exported_sub(
+            self.register_exported_multi_candidates(
                 self.current_package().to_string(),
                 name.to_string(),
                 tags.into_iter().collect(),
+                &installed_multi_keys,
             );
         }
         // A prelude splice declared as a `multi` registers under arity-suffixed
@@ -2034,7 +2056,9 @@ impl Interpreter {
             self.env.remove(&format!("&{name}"));
             self.env.remove(&format!("&{package}::{name}"));
         }
-        Ok(SubRegisterOutcome::Installed)
+        Ok(SubRegisterOutcome::Installed {
+            multi_keys: installed_multi_keys,
+        })
     }
 
     /// Resolve a name to a type object (Package value) if the name refers to a known class or role.

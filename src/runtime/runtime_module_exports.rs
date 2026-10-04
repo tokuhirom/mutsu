@@ -15,6 +15,33 @@ fn insert_export_alias(
     touched.push(key);
 }
 
+/// Record `tags` as exports of `name` in `table[key]`. A family's later
+/// candidates re-record tags that are already there, so check before taking
+/// the copy-on-write table: `cow_table_mut` copies a shared table whole.
+// Cost: O(t), t = tags, when every tag is recorded already; otherwise O(t)
+// plus a copy of `table` when it is shared.
+fn record_export_tags(
+    table: &mut std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    key: &str,
+    name: &str,
+    tags: &[String],
+) {
+    let recorded = table.get(key).and_then(|exports| exports.get(name));
+    if recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag))) {
+        return;
+    }
+    let entry = crate::runtime::cow_table_mut(table)
+        .entry(key.to_string())
+        .or_default()
+        .entry(name.to_string())
+        .or_default();
+    for tag in tags {
+        if !entry.contains(tag) {
+            entry.insert(tag.clone());
+        }
+    }
+}
+
 impl Interpreter {
     /// Record a trait-modified routine value for an exported sub, so that
     /// `import_module` can restore the `&name` env binding with the role mixed in.
@@ -595,7 +622,58 @@ impl Interpreter {
         &mut self,
         package: String,
         name: String,
+        tags: Vec<String>,
+    ) {
+        self.register_exported_sub_inner(package, name, tags, None);
+    }
+
+    /// [`Self::register_exported_sub`] for a `multi` candidate that was just
+    /// installed under `new_keys`. When every tag is already recorded for the
+    /// family, every earlier candidate was aliased when it arrived, so only
+    /// `new_keys` need aliases: O(k) instead of a registry scan that re-aliases
+    /// the whole family (#11761). Otherwise (first export of the family, a new
+    /// tag) it falls back to the full scan.
+    // Cost: O(t·k) once the family's tags are recorded, t = tags, k = new keys;
+    // otherwise O(r + t·c), r = registered functions, c = family candidates.
+    pub(crate) fn register_exported_multi_candidates(
+        &mut self,
+        package: String,
+        name: String,
+        tags: Vec<String>,
+        new_keys: &[Symbol],
+    ) {
+        self.register_exported_sub_inner(package, name, tags, Some(new_keys));
+    }
+
+    /// Whether `tags` are all recorded as exports of `package`'s `name` and,
+    /// during a module load, of the loading module too — i.e. whether an
+    /// earlier registration already aliased the family under every tag.
+    // Cost: O(t), t = tags.
+    fn exported_family_covers(&self, package: &str, name: &str, tags: &[String]) -> bool {
+        let covers = |recorded: Option<&HashSet<String>>| {
+            recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag)))
+        };
+        covers(
+            self.module
+                .exported_subs
+                .get(package)
+                .and_then(|e| e.get(name)),
+        ) && self.module.module_load_stack.last().is_none_or(|module| {
+            covers(
+                self.module
+                    .module_owned_exports
+                    .get(module)
+                    .and_then(|e| e.get(name)),
+            )
+        })
+    }
+
+    fn register_exported_sub_inner(
+        &mut self,
+        package: String,
+        name: String,
         mut tags: Vec<String>,
+        new_keys: Option<&[Symbol]>,
     ) {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
@@ -613,13 +691,25 @@ impl Interpreter {
         // aliases also let imports recover a family when a distribution's
         // `unit module` name differs from its provided module path.
         let candidate_prefix = format!("{}::{}/", package, name);
-        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
-            // Compared in place on the interned key: a module exporting a multi
-            // family re-registers its exports once per candidate, so this scan
-            // runs O(candidates) times per load, and resolving every key to an
-            // owned `String` first made it the costliest part of `use Test`.
-            // (The base-name index cannot narrow it: each registration in
-            // between clears that index.)
+        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_some() {
+            Vec::new()
+        } else if let Some(new_keys) = new_keys
+            && self.exported_family_covers(&package, &name, &tags)
+        {
+            let registry = self.registry();
+            new_keys
+                .iter()
+                .filter_map(|key| {
+                    let suffix = key.as_str().strip_prefix(&candidate_prefix)?;
+                    let candidate = registry.functions.get(key)?;
+                    Some((suffix.to_string(), candidate.clone()))
+                })
+                .collect()
+        } else {
+            // Compared in place on the interned key: resolving every key to
+            // an owned `String` first made this scan the costliest part of
+            // `use Test`. (The base-name index cannot narrow it: each
+            // registration in between clears that index.)
             self.registry()
                 .functions
                 .iter()
@@ -629,8 +719,6 @@ impl Interpreter {
                         .map(|suffix| (suffix.to_string(), candidate.clone()))
                 })
                 .collect()
-        } else {
-            Vec::new()
         };
         let owner = self
             .module
@@ -696,54 +784,31 @@ impl Interpreter {
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.unit_module_exported_subs)
-                .entry(unit_mod)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+        if let Some(unit_mod) = self.module.unit_module_loading_stack.last() {
+            record_export_tags(
+                &mut self.module.unit_module_exported_subs,
+                unit_mod,
+                &name,
+                &tags,
+            );
         }
         // Attribute this export to the module currently being loaded (any kind:
         // unit, package-block, or bare-file). The `use MOD` tag-filter uses this
         // to hide only MOD's own exports, never a symbol MOD imported from a
         // transitively-`use`d module.
-        if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let owned = crate::runtime::cow_table_mut(&mut self.module.module_owned_exports)
-                .entry(owner)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                owned.insert(tag.clone());
-            }
+        if let Some(owner) = self.module.module_load_stack.last() {
+            record_export_tags(&mut self.module.module_owned_exports, owner, &name, &tags);
         }
         // The module load stack names the requested compunit path. Keep a
         // second metadata entry under that path when the declared unit package
         // is different, so `use Lingua::EN::Numbers :short` can validate the
         // export even though the file says `unit module Numbers`.
         if self.module.unit_module_loading_stack.last().is_some()
-            && let Some(module) = self.module.module_load_stack.last().cloned()
+            && let Some(module) = self.module.module_load_stack.last()
         {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-                .entry(module)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+            record_export_tags(&mut self.module.exported_subs, module, &name, &tags);
         }
-        let entry = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-            .entry(package)
-            .or_default()
-            .entry(name)
-            .or_default();
-        for tag in tags {
-            entry.insert(tag);
-        }
+        record_export_tags(&mut self.module.exported_subs, &package, &name, &tags);
     }
 
     /// Refresh the export aliases for a multi family after a later candidate
@@ -751,7 +816,11 @@ impl Interpreter {
     /// proto commonly appears before those candidates in a module body. The
     /// first export registration therefore cannot create the arity-qualified
     /// aliases until the candidates exist.
-    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
+    ///
+    /// `new_keys` are the registry keys the arriving candidate was installed
+    /// under (empty when nothing new was installed); see
+    /// [`Self::register_exported_multi_candidates`].
+    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str, new_keys: &[Symbol]) {
         let package = self.current_package();
         let tags = if package == "GLOBAL" {
             self.module
@@ -775,7 +844,12 @@ impl Interpreter {
             }
         });
         if let Some(tags) = tags {
-            self.register_exported_sub(package, name.to_string(), tags.into_iter().collect());
+            self.register_exported_multi_candidates(
+                package,
+                name.to_string(),
+                tags.into_iter().collect(),
+                new_keys,
+            );
         }
     }
 
