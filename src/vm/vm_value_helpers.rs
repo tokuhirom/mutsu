@@ -375,15 +375,6 @@ impl Interpreter {
             }
     }
 
-    /// Resolve type aliases (e.g., Cursor -> Match).
-    /// Returns the canonical name if the input is an alias, or the input unchanged.
-    pub(super) fn resolve_type_alias(name: &str) -> &str {
-        match name {
-            "Cursor" => "Match",
-            _ => name,
-        }
-    }
-
     /// Check if a name is a type with a smiley suffix (:U, :D, :_).
     pub(super) fn is_type_with_smiley(name: &str, interp: &crate::runtime::Interpreter) -> bool {
         let (base, smiley) = crate::runtime::types::strip_type_smiley(name);

@@ -565,11 +565,7 @@ impl Interpreter {
     ) -> bool {
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
-        let constraint = if constraint == "Cursor" {
-            "Match"
-        } else {
-            constraint
-        };
+        let constraint = self.resolve_core_type_alias(constraint);
         // A core native type object matches a native constraint only by name:
         // `uint8` and `int16` both sit under `Int`, but neither is the other,
         // so `array[uint8] ~~ array[int16]` is False (raku). Without this the
