@@ -836,6 +836,22 @@ impl Interpreter {
         // lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
 
+        // Push routine_stack so &?ROUTINE can find the current method. This is
+        // done BEFORE parameter binding: a parameter default (`:$n = helper()`)
+        // is evaluated in the method's lexical scope, so a routine the method's
+        // own file imported must resolve through this frame's lexical package.
+        self.push_method_routine_with_location(
+            owner_sym,
+            method_def.lexical_package,
+            method_sym,
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            method_def.source_file_sym(),
+            method_def.is_submethod,
+            method_def.is_hidden_from_backtrace,
+            method_callable_id,
+        );
+
         // Bind method parameters
         self.pending_skip_constraint_recheck = skip_constraint_recheck;
         let rw_bindings = match loan_env!(
@@ -844,6 +860,7 @@ impl Interpreter {
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
+                self.pop_routine();
                 self.restore_var_bindings(saved_var_bindings);
                 if cc.uses_dispatcher {
                     self.pop_method_samewith_context();
@@ -922,19 +939,6 @@ impl Interpreter {
             method_def.captured_readonly.as_ref(),
             cc,
             method_def.is_rw,
-        );
-
-        // Push routine_stack so &?ROUTINE can find the current method
-        self.push_method_routine_with_location(
-            owner_sym,
-            method_def.lexical_package,
-            method_sym,
-            self.current_source_line(),
-            self.executing_source_file_sym(),
-            method_def.source_file_sym(),
-            method_def.is_submethod,
-            method_def.is_hidden_from_backtrace,
-            method_callable_id,
         );
 
         // Execute bytecode

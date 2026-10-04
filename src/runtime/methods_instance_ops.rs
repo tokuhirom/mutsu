@@ -2626,7 +2626,11 @@ impl Interpreter {
                             if let Some(delegate) = delegate {
                                 match self.call_method_with_values(delegate, method, args.clone()) {
                                     Ok(val) => return Ok(val),
-                                    Err(_) => continue,
+                                    // A failure raised BY the delegate's method
+                                    // propagates; only "the delegate has no such
+                                    // method" moves on to the next delegate.
+                                    Err(e) if e.is_method_not_found_for(method) => continue,
+                                    Err(e) => return Err(e),
                                 }
                             }
                             continue;
@@ -2643,7 +2647,10 @@ impl Interpreter {
                             // Try calling the method on the delegate; if it succeeds, return
                             match self.call_method_with_values(delegate, method, args.clone()) {
                                 Ok(val) => return Ok(val),
-                                Err(_) => continue, // delegate doesn't handle it either
+                                // See the regex arm above: only a missing method
+                                // falls through; the delegate's own error propagates.
+                                Err(e) if e.is_method_not_found_for(method) => continue,
+                                Err(e) => return Err(e),
                             }
                         }
                     }
