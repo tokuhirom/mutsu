@@ -118,6 +118,10 @@ impl Interpreter {
             // declared type says a pointer lives there. Same trust every
             // NativeCall signature already gets.
             let held = unsafe { (addr as *const usize).read_unaligned() };
+            // Upstream NativeCall's own Pointer type, when it is loaded.
+            if let Some(built) = self.native_pointer_of_declared(target, held, false) {
+                return built;
+            }
             return Ok(crate::runtime::nativecall::make_pointer_object(held));
         }
         // A CStruct/CUnion/CPointer target: the variable holds a pointer to the
