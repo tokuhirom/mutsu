@@ -686,6 +686,7 @@ impl Interpreter {
         // above, and it closes over the unit scope, which is still alive at
         // exit — so there is nothing for the `PhaserEnd` opcode to capture.
         let body_main: Vec<Stmt> = body_main
+            .into_owned()
             .into_iter()
             .filter(|stmt| {
                 !matches!(
