@@ -17,7 +17,7 @@ impl Interpreter {
     /// "Unknown method ... new on C".
     pub(super) fn type_object_name_for_bareword(&self, name: &str) -> String {
         self.resolve_bareword_type_name(name)
-            .unwrap_or_else(|| Self::resolve_type_alias(name).to_string())
+            .unwrap_or_else(|| self.resolve_core_type_alias(name).to_string())
     }
 
     /// [`Self::type_object_name_for_bareword`] as a probe: `Some(qualified)`
@@ -34,7 +34,7 @@ impl Interpreter {
             return Some(relative);
         }
         if self.has_type_direct(name) || Self::is_builtin_type(name) {
-            return Some(Self::resolve_type_alias(name).to_string());
+            return Some(self.resolve_core_type_alias(name).to_string());
         }
         self.package_type_alias(name)
             .or_else(|| self.resolve_type_in_current_package(name))
@@ -548,7 +548,7 @@ impl Interpreter {
             // where the bareword `Params` is `Foo::Params`.
             Value::package(Symbol::intern(&qualified))
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
-            Value::package(Symbol::intern(Self::resolve_type_alias(name)))
+            Value::package(Symbol::intern(self.resolve_core_type_alias(name)))
         } else if let Some(enum_val) =
             self.resolve_enum_member_in_current_package(Symbol::intern(name))
         {
@@ -691,7 +691,7 @@ impl Interpreter {
                         || Self::is_type_with_smiley(bare, self)
                         || self.package_namespace_exists(bare))
                 {
-                    Value::package(Symbol::intern(Self::resolve_type_alias(bare)))
+                    Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
                 } else {
                     Value::package(Symbol::intern(name))
                 }

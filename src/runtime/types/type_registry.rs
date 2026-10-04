@@ -787,6 +787,28 @@ impl Interpreter {
         !subsets.is_empty() && subsets.contains_key(name)
     }
 
+    /// The core type a core alias name stands for (`Cursor` is `Match`),
+    /// unless the program declared a type of that very name: rakudo keeps
+    /// `Cursor` only as a GLOBAL alias, so `grammar Cursor { … }` /
+    /// `class Cursor { … }` is its own type (#11705). A `my`-scoped one is
+    /// registered under a mangled key and reached through the `env` binding
+    /// of its short name, so that binding counts as a declaration too.
+    // Cost: O(1) hash probes.
+    pub(crate) fn resolve_core_type_alias<'a>(&self, name: &'a str) -> &'a str {
+        match name {
+            "Cursor"
+                if !self.has_type_direct(name)
+                    && !matches!(
+                        self.env.get(name).map(Value::view),
+                        Some(ValueView::Package(_))
+                    ) =>
+            {
+                "Match"
+            }
+            _ => name,
+        }
+    }
+
     /// `has_type` without short-name alias resolution — checks the type
     /// registries directly (classes/roles/enums/subsets, including parametric
     /// base names).
