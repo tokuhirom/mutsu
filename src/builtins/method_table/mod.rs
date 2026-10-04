@@ -41,6 +41,7 @@ mod list;
 mod map;
 mod num;
 mod rational;
+pub(crate) mod real;
 pub(crate) mod str;
 
 use crate::symbol::Symbol;
@@ -83,6 +84,11 @@ static FAMILIES: &[&[MethodRow]] = &[
     rational::RAT_ROWS,
     rational::FAT_RAT_ROWS,
     complex::ROWS,
+    real::INT_ROWS,
+    real::NUM_ROWS,
+    real::RAT_ROWS,
+    real::FAT_RAT_ROWS,
+    real::COMPLEX_ROWS,
 ];
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.
