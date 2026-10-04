@@ -557,6 +557,24 @@ impl Interpreter {
                 };
                 Ok(Value::package(Symbol::intern(&base)))
             }
+            // `$obj.^mixin_base`: the type a role mixin was composed onto
+            // (`(A | B) but R` -> Junction). MUGS::Util::StructureValidator's
+            // `Optional.ACCEPTS` delegates to it.
+            // Cost: O(k) + the base's `.WHAT`, k = number of mixin override keys.
+            "mixin_base" if args.len() == 1 => {
+                if let ValueView::Mixin(inner, mixins) = args[0].view() {
+                    return self.mixin_base_what(inner, mixins, &[]);
+                }
+                let how = self.dispatch_how(&args[0], &[])?;
+                let how_name = match how.view() {
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => "Mu".to_string(),
+                };
+                Err(crate::runtime::did_you_mean::method_not_found(
+                    "mixin_base",
+                    &how_name,
+                ))
+            }
             "ver" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
                 if let Some(meta) = self.types.type_metadata.get(&name)
