@@ -792,7 +792,12 @@ pub(crate) fn value_c_address(v: &Value) -> usize {
             _ if crate::value::value_carray::is_native_carray_class(&class_name.resolve()) => {
                 crate::value::value_carray::carray_storage_address(&attributes).unwrap_or(0)
             }
-            _ => 0,
+            // A `Blob`/`Buf` is the storage `marshal_arg` hands C for a `Buf`
+            // parameter, so `nativecast(Pointer, $blob)` is that address
+            // (empty storage stays NULL).
+            _ => crate::value::value_buf::buf_storage_node(&attributes)
+                .filter(|node| !node.bytes.is_empty())
+                .map_or(0, |node| node.bytes.as_ptr() as usize),
         },
         ValueView::Array(data, _) => data.native_storage_address().unwrap_or(0),
         ValueView::Scalar(inner) => value_c_address(inner),
