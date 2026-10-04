@@ -6947,6 +6947,7 @@ impl Interpreter {
                 local_slot,
                 reset,
                 type_follows,
+                bind_declaration,
             } => {
                 self.exec_set_var_dynamic_op(
                     code,
@@ -6955,6 +6956,7 @@ impl Interpreter {
                     *local_slot,
                     *reset,
                     *type_follows,
+                    *bind_declaration,
                 );
                 *ip += 1;
             }

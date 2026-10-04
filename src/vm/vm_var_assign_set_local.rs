@@ -3515,6 +3515,7 @@ impl Interpreter {
         local_slot: Option<u32>,
         reset: crate::opcode::DeclReset,
         type_follows: bool,
+        bind_declaration: bool,
     ) {
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
@@ -3709,8 +3710,9 @@ impl Interpreter {
             // A typed scalar also resets on its first execution when it
             // shadows an outer binding: SetVarType must see this declaration's
             // Nil seed, not the outer value, before the initializer runs.
+            let seed_declared_type = type_follows && !bind_declaration;
             let reset_existing = reset == crate::opcode::DeclReset::Shadow
-                || reset == crate::opcode::DeclReset::Fresh && type_follows
+                || reset == crate::opcode::DeclReset::Fresh && seed_declared_type
                 || reset == crate::opcode::DeclReset::Fresh
                     && had_binding
                     && self
@@ -3718,7 +3720,7 @@ impl Interpreter {
                         .loop_local_vars
                         .last()
                         .is_some_and(|set| set.contains(&name_sym));
-            let default = if type_follows && !name.starts_with(['@', '%']) {
+            let default = if seed_declared_type && !name.starts_with(['@', '%']) {
                 // The following SetVarType seeds the declared type object (or
                 // a native default). Resetting to Any would leave that seed
                 // blocked when an initializer throws in a later iteration.

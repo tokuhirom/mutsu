@@ -1468,6 +1468,10 @@ impl Compiler {
                     reset,
                     // The early registration below is the very next op.
                     type_follows: !defer_type_constraint && type_constraint.is_some(),
+                    bind_declaration: bind_vardecl
+                        || custom_traits
+                            .iter()
+                            .any(|(trait_name, _)| trait_name == "__scalar_bind"),
                 });
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");

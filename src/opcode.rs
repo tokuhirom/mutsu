@@ -4525,6 +4525,9 @@ pub(crate) enum OpCode {
         /// is skipped: clearing an entry only to re-insert it on the next op
         /// cost a remove plus an insert per execution of a typed `my` (#11467).
         type_follows: bool,
+        /// `:=` binds the initializer's container. Its pre-initializer value
+        /// must not be replaced with a type-object seed.
+        bind_declaration: bool,
     },
     /// Register a variable declared `is export`, after its value has been
     /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the
