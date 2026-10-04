@@ -309,9 +309,7 @@ impl Interpreter {
                 target_is_coerced_list = true;
                 target_is_coerced_scalar = true;
                 Value::real_array(vec![t.with_hash_itemized(false)])
-            } else if subscript_is_positional == Some(true)
-                && self.is_user_positional_object(&t)
-            {
+            } else if subscript_is_positional == Some(true) && self.is_user_positional_object(&t) {
                 // Rich Positional instances (including roles whose methods are
                 // kept in the role registry) need the same value/key/exists
                 // machinery as a plain list for slice adverbs. Snapshot their

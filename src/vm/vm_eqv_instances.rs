@@ -104,13 +104,15 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         {
             return None;
         }
-        let render = |hook: &mut Self, value: &Value| {
-            match hook.interp.call_method_with_values(value.clone(), "raku", vec![]) {
-                Ok(rendered) => Some(rendered.to_string_value()),
-                Err(err) => {
-                    hook.error.get_or_insert(err);
-                    None
-                }
+        let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
+            value.clone(),
+            "raku",
+            vec![],
+        ) {
+            Ok(rendered) => Some(rendered.to_string_value()),
+            Err(err) => {
+                hook.error.get_or_insert(err);
+                None
             }
         };
         let ra = render(self, a)?;

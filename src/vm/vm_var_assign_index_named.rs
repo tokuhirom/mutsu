@@ -608,7 +608,11 @@ impl Interpreter {
         // (`my @a is R`) goes to the role's BIND-POS/BIND-KEY, as it does for
         // a class instance below; replacing the object with a plain Array
         // would drop the role.
-        let bind_method = if is_positional { "BIND-POS" } else { "BIND-KEY" };
+        let bind_method = if is_positional {
+            "BIND-POS"
+        } else {
+            "BIND-KEY"
+        };
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
@@ -630,7 +634,8 @@ impl Interpreter {
                 ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
                 _ => val.clone(),
             };
-            let result = self.call_method_with_values(target, bind_method, vec![idx_arg, val_arg])?;
+            let result =
+                self.call_method_with_values(target, bind_method, vec![idx_arg, val_arg])?;
             self.apply_pending_rw_writeback(code);
             self.stack.push(result);
             return Ok(());
