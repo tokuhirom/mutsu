@@ -175,7 +175,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
         VarDeclarationPlaceholderSlurpyArray => &[],
         VarDeclarationPlaceholderSlurpyHash => &[],
-        StubFail | StubDie | StubWarn => &[("args", Absent::TypeObject("RakuAST::ArgList"))],
+        StubFail | StubDie | StubWarn => &[("args", Absent::EmptyNode(ArgList))],
         Sub | Method | Submethod => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
             ("signature", Absent::EmptyNode(Signature)),
