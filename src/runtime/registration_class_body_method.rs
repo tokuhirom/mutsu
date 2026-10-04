@@ -105,6 +105,14 @@ impl Interpreter {
                 }
             }
         }
+        // A `constant` alias of a type names the aliased type, resolved here
+        // in the declaring scope as for a sub (#11555). A multi keeps its
+        // spellings, as `register_sub_decl_with_metadata` does.
+        if !decl.multi
+            && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs)
+        {
+            effective_param_defs = defs;
+        }
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
         // signature-less method body that reads a bare `@_` directly (ADR-
         // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads
@@ -206,7 +214,9 @@ impl Interpreter {
                 // scope as parameter constraints.  Resolve a nested short
                 // name here so a class such as `class Attribute` shadows a
                 // core type with the same leaf name in `--> Attribute`.
-                self.resolve_method_type_name(cx.name, &resolved)
+                let resolved = self.resolve_method_type_name(cx.name, &resolved);
+                self.declared_type_alias_target(&resolved)
+                    .unwrap_or(resolved)
             }),
             compiled_code: installed_compiled_code,
             compiled_fns: installed_compiled_fns,
