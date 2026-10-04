@@ -94,6 +94,30 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         }
     }
 
+    // Cost: O(r), r = the cost of the two user `raku` calls.
+    fn mixin_eqv(&mut self, a: &Value, b: &Value) -> Option<bool> {
+        if self.error.is_some() {
+            return Some(false);
+        }
+        if !(self.interp.mixin_composes_method(a, "raku")
+            && self.interp.mixin_composes_method(b, "raku"))
+        {
+            return None;
+        }
+        let render = |hook: &mut Self, value: &Value| {
+            match hook.interp.call_method_with_values(value.clone(), "raku", vec![]) {
+                Ok(rendered) => Some(rendered.to_string_value()),
+                Err(err) => {
+                    hook.error.get_or_insert(err);
+                    None
+                }
+            }
+        };
+        let ra = render(self, a)?;
+        let rb = render(self, b)?;
+        Some(ra == rb)
+    }
+
     // Cost: O(1) plus `class_mode`'s miss cost; a class with a user `raku`
     // adds two calls of it.
     fn instance_eqv(&mut self, a: &Value, b: &Value) -> InstanceEqv {

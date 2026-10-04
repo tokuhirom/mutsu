@@ -27,6 +27,15 @@ pub(crate) trait EqvInstanceHook {
     fn routine_eqv(&mut self, _a: &Value, _b: &Value) -> bool {
         false
     }
+
+    /// Two role mixins whose roles supply a user `.raku`: Rakudo compares
+    /// them by `.WHAT` and that rendering. The role's attributes live in the
+    /// mixin (a punned `R.new`, or `my @a is R` over a native Array), so the
+    /// method must run on the mixin itself, not its base value. `None` when
+    /// the hook cannot decide (the walk then compares the mixins structurally).
+    fn mixin_eqv(&mut self, _a: &Value, _b: &Value) -> Option<bool> {
+        None
+    }
 }
 
 /// The interpreter-free hook: every attribute slot takes part.
@@ -654,6 +663,9 @@ impl Value {
             }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
             (ValueView::Mixin(a, a_mix), ValueView::Mixin(b, b_mix)) => {
+                if let Some(answer) = seen.hook.mixin_eqv(self, other) {
+                    return answer;
+                }
                 // A punned role (`R.new`) is a mixin over an instance of the
                 // role, its attribute values in the mixin map. When a user
                 // `raku` decides the pair, those values are part of what it

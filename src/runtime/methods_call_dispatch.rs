@@ -782,6 +782,20 @@ impl Interpreter {
                 }
             }
         }
+        // A role mixed into a native container (`my @a is R`, R `does
+        // Array::Agnostic`) keeps its elements behind the role's `iterator`.
+        // Any's iteration methods read that iterator, not the native storage
+        // the mixin wraps (which would answer `.head(3)` with the mixin as one
+        // item, or `.tail` with the whole inner array).
+        if matches!(method, "head" | "tail" | "first")
+            && matches!(target.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&target, "iterator")
+            && !self.mixin_composes_method(&target, method)
+        {
+            // Cost: O(n) in the iterator's length, plus the method itself.
+            let items = self.drive_user_iterator_items(&target)?;
+            return self.call_method_with_values(Value::array(items), method, args);
+        }
         // Scalar containers are transparent for method dispatch (except .item,
         // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper
         // so an itemized aggregate shows its `$` sigil (`${a=>1}.raku` →
