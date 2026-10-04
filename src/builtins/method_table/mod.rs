@@ -38,6 +38,7 @@
 //! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+pub(crate) mod coerce;
 mod complex;
 mod int;
 mod list;
@@ -104,6 +105,11 @@ static FAMILIES: &[&[MethodRow]] = &[
     real::RAT_ROWS,
     real::FAT_RAT_ROWS,
     real::COMPLEX_ROWS,
+    coerce::INT_ROWS,
+    coerce::NUM_ROWS,
+    coerce::RAT_ROWS,
+    coerce::FAT_RAT_ROWS,
+    coerce::COMPLEX_ROWS,
 ];
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.
