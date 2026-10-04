@@ -190,20 +190,13 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::Conjunction(_) => {
-                // Every branch must match the SAME span; the capture matcher
-                // decides that, so this position-only form asks it rather than
-                // keeping a second definition (it used to take the longest
-                // branch end, so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`).
-                return self
-                    .regex_match_atom_with_capture_in_pkg(
-                        atom,
-                        chars,
-                        pos,
-                        &RegexCaptures::default(),
-                        pkg,
-                        ignore_case,
-                    )
-                    .map(|(end, _)| end);
+                // Every branch must match the SAME span; the compiled engine
+                // decides that, so this position-only form runs the
+                // conjunction as a one-token pattern rather than keeping a
+                // second definition (it used to take the longest branch end,
+                // so `"ab cd".comb(/ \w+ & <[a..c]>+ /)` found `cd`).
+                let pattern = super::regex_casefold::one_atom_pattern(atom.clone(), ignore_case);
+                return self.regex_match_end_from_in_pkg(&pattern, chars, pos, pkg);
             }
             RegexAtom::ZeroWidth => {
                 return Some(pos);

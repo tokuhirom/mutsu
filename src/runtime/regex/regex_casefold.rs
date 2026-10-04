@@ -295,7 +295,7 @@ fn casefold_char_class(class: &CharClass) -> RegexAtom {
         branches.push(one_atom_pattern(RegexAtom::CharClass(CharClass {
             negated: false,
             items: single_items,
-        })));
+        }), false));
     }
     branches.extend(expanded.into_iter().map(|chars| {
         RegexPattern {
@@ -339,7 +339,7 @@ fn casefold_char_class(class: &CharClass) -> RegexAtom {
     }
 }
 
-fn one_atom_pattern(atom: RegexAtom) -> RegexPattern {
+pub(super) fn one_atom_pattern(atom: RegexAtom, ignore_case: bool) -> RegexPattern {
     RegexPattern {
         tokens: vec![RegexToken {
             atom,
@@ -356,7 +356,7 @@ fn one_atom_pattern(atom: RegexAtom) -> RegexPattern {
         }],
         anchor_start: false,
         anchor_end: false,
-        ignore_case: false,
+        ignore_case,
         ignore_mark: false,
         derived: Default::default(),
     }
