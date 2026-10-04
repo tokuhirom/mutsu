@@ -21,6 +21,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod keyed_hash;
 mod lower;
 mod method_assign_decl;
 mod name_parts;

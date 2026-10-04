@@ -2540,6 +2540,7 @@ pub(crate) enum AssignOp {
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
+pub(crate) mod keyed_hash;
 mod lvalue;
 pub(crate) mod method_assign_decl;
 mod placeholder_kind;
