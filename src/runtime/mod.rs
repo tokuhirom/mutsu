@@ -36,7 +36,7 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::ToSocketAddrs;
 #[cfg(unix)]
-use std::os::unix::fs::{self as unix_fs, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 #[cfg(windows)]
 use std::os::windows::fs as windows_fs;
 use std::path::{Path, PathBuf};

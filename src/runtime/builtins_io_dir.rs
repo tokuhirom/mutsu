@@ -249,6 +249,7 @@ impl Interpreter {
         ))
     }
 
+    // Cost: O(|target| + |link|) plus one `link(2)`.
     pub(super) fn builtin_link(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let target = args
             .first()
@@ -258,43 +259,25 @@ impl Interpreter {
             .get(1)
             .map(|v| v.to_string_value())
             .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
-        let target_buf = self.resolve_path(&target);
-        let link_buf = self.resolve_path(&link);
         // Creates a new hard link `$link` pointing at `$target`. On failure
         // (target missing, link already exists, ...) Raku returns a Failure
         // carrying X::IO::Link rather than throwing immediately.
-        match fs::hard_link(&target_buf, &link_buf) {
-            Ok(()) => Ok(Value::TRUE),
-            Err(err) => Ok(Self::make_link_failure(&target, &link, &err)),
+        Ok(self.hard_link_op(&self.resolve_path(&target), &link))
+    }
+
+    /// `link` and `IO::Path.link`: make `link` (as written; resolved against
+    /// the cwd here) a hard link to the already-resolved `target`. Returns
+    /// `True`, or a `Failure` carrying `X::IO::Link`.
+    // Cost: O(|target| + |link|) plus one `link(2)`.
+    pub(super) fn hard_link_op(&self, target: &std::path::Path, link: &str) -> Value {
+        let link_buf = self.resolve_path(link);
+        match crate::runtime::native_io::fs_syscalls::hard_link(target, &link_buf) {
+            Ok(()) => Value::TRUE,
+            Err(reason) => Self::link_failure("X::IO::Link", "link", target, &link_buf, &reason),
         }
     }
 
-    pub(super) fn make_link_failure(target: &str, link: &str, err: &std::io::Error) -> Value {
-        use crate::symbol::Symbol;
-        let msg = format!(
-            "Failed to create hard link '{}' for target '{}': {}",
-            link, target, err
-        );
-        let target_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
-            let mut a = std::collections::HashMap::new();
-            a.insert("path".to_string(), Value::str_from(target));
-            a
-        });
-        let name_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
-            let mut a = std::collections::HashMap::new();
-            a.insert("path".to_string(), Value::str_from(link));
-            a
-        });
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(msg));
-        attrs.insert("target".to_string(), target_io);
-        attrs.insert("name".to_string(), name_io);
-        let ex = Value::make_instance(Symbol::intern("X::IO::Link"), attrs);
-        let mut failure_attrs = std::collections::HashMap::new();
-        failure_attrs.insert("exception".to_string(), ex);
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
-    }
-
+    // Cost: O(|target| + |link|) plus one `symlink(2)`.
     pub(super) fn builtin_symlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Platforms with no symlink syscall refuse before touching the args, so
         // the rest of the body compiles only where it can run.
@@ -315,57 +298,76 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
             // The target path is passed to the OS as-is (relative stays relative).
             // The link path is resolved to handle CWD.
-            let target_buf = std::path::PathBuf::from(&target);
-            let link_buf = self.resolve_path(&link);
-            #[cfg(unix)]
-            {
-                match unix_fs::symlink(&target_buf, &link_buf) {
-                    Ok(()) => Ok(Value::TRUE),
-                    Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
-                }
+            Ok(self.symlink_op(
+                &self.resolve_path(&target),
+                std::path::Path::new(&target),
+                &link,
+            ))
+        }
+    }
+
+    /// `symlink` and `IO::Path.symlink`: make `link` (as written; resolved
+    /// against the cwd here) a symbolic link whose contents are `target_os`;
+    /// `target` is the resolved target the failure message names. Returns
+    /// `True`, or a `Failure` carrying `X::IO::Symlink`.
+    // Cost: O(|target| + |link|) plus one `symlink(2)`.
+    #[cfg(any(unix, windows))]
+    pub(super) fn symlink_op(
+        &self,
+        target: &std::path::Path,
+        target_os: &std::path::Path,
+        link: &str,
+    ) -> Value {
+        let link_buf = self.resolve_path(link);
+        #[cfg(unix)]
+        let result = crate::runtime::native_io::fs_syscalls::symlink(target_os, &link_buf);
+        #[cfg(windows)]
+        let result = {
+            let metadata = fs::metadata(target_os);
+            if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                windows_fs::symlink_dir(target_os, &link_buf)
+            } else {
+                windows_fs::symlink_file(target_os, &link_buf)
             }
-            #[cfg(windows)]
-            {
-                let metadata = fs::metadata(&target_buf);
-                let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                    windows_fs::symlink_dir(&target_buf, &link_buf)
-                } else {
-                    windows_fs::symlink_file(&target_buf, &link_buf)
-                };
-                match result {
-                    Ok(()) => Ok(Value::TRUE),
-                    Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
-                }
+            .map_err(|err| {
+                format!(
+                    "Failed to symlink file: {}",
+                    crate::runtime::native_io::fs_errors::libuv_text(&err)
+                )
+            })
+        };
+        match result {
+            Ok(()) => Value::TRUE,
+            Err(reason) => {
+                Self::link_failure("X::IO::Symlink", "symlink", target, &link_buf, &reason)
             }
         }
     }
 
-    /// Only the platforms that can actually create a symlink report a failure
-    /// this way; elsewhere `symlink` refuses outright.
-    #[cfg(any(unix, windows))]
-    pub(super) fn make_symlink_failure(target: &str, link: &str, err: &std::io::Error) -> Value {
+    /// The `Failure` a failed `link` / `symlink` returns, worded as Rakudo's
+    /// `X::IO::Link` / `X::IO::Symlink`: both paths absolute, and `reason` the
+    /// libuv-worded `os-error` (`fs_syscalls`).
+    // Cost: O(|target| + |link| + |reason|).
+    fn link_failure(
+        class_name: &str,
+        noun: &str,
+        target: &std::path::Path,
+        link: &std::path::Path,
+        reason: &str,
+    ) -> Value {
         use crate::symbol::Symbol;
-        let msg = format!(
-            "Failed to create symlink '{}' for target '{}': {}",
-            link, target, err
-        );
-        let target_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
-            let mut a = std::collections::HashMap::new();
-            a.insert("path".to_string(), Value::str_from(target));
-            a
-        });
-        let name_io = Value::make_instance_without_destroy(Symbol::intern("IO::Path"), {
-            let mut a = std::collections::HashMap::new();
-            a.insert("path".to_string(), Value::str_from(link));
-            a
-        });
+        let absolute = |p: &std::path::Path| Self::canonpath_unix(&Self::stringify_path(p), false);
+        let target = absolute(target);
+        let link = absolute(link);
+        let msg = format!("Failed to create {noun} called '{link}' on target '{target}': {reason}");
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(msg));
-        attrs.insert("target".to_string(), target_io);
-        attrs.insert("name".to_string(), name_io);
-        let ex = Value::make_instance(Symbol::intern("X::IO::Symlink"), attrs);
-        let mut failure_attrs = std::collections::HashMap::new();
-        failure_attrs.insert("exception".to_string(), ex);
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+        attrs.insert("target".to_string(), Value::str(target));
+        attrs.insert("name".to_string(), Value::str(link));
+        attrs.insert("os-error".to_string(), Value::str(reason.to_string()));
+        crate::runtime::native_io::fs_errors::failure_of(Value::make_instance(
+            Symbol::intern(class_name),
+            attrs,
+        ))
     }
 }
