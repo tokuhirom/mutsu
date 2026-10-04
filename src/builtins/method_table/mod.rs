@@ -41,13 +41,14 @@
 pub(crate) mod coerce;
 mod complex;
 mod int;
-mod list;
+pub(crate) mod list;
 mod map;
 mod num;
 mod rational;
 pub(crate) mod real;
 pub(crate) mod str;
 pub(crate) mod str_search;
+mod stringify;
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -95,6 +96,7 @@ static FAMILIES: &[&[MethodRow]] = &[
     str_search::COOL_ROWS,
     str_search::STR_SUBSTR_2,
     str_search::COOL_SUBSTR_2,
+    stringify::ROWS,
     int::ROWS,
     num::ROWS,
     rational::RAT_ROWS,

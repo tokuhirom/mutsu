@@ -356,27 +356,10 @@ pub(super) fn dispatch(
                     .join("");
                 return Some(Some(Ok(Value::str(joined))));
             }
-            if let Some(items) = target.as_list_items() {
-                // If any item is an Instance, fall through to runtime
-                // so user-defined Str() methods can be called. A `ContainerRef`
-                // element (grep rw alias / `:=`-bound slot) is decontainerized
-                // first so a cell-wrapped Instance is also routed to runtime.
-                // A Junction likewise falls through — it must thread the
-                // whole `join` over its eigenstates, not stringify in place.
-                // A nested list holding an instance (`([$cell],).join`) needs
-                // it too: the inner list's `.Str` stringifies its elements.
-                if items.iter().any(|v| {
-                    v.with_deref(|inner| matches!(inner.view(), ValueView::Junction { .. }))
-                        || crate::value::gist::str_needs_dispatch(v)
-                }) {
-                    return Some(None);
-                }
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join("");
-                Some(Some(Ok(Value::str(joined))))
+            // A list's elements: the `List.join` row's implementation
+            // (ADR-11276, `method_table::list`).
+            if let Some(items) = crate::builtins::method_table::list::join_source_items(target) {
+                Some(crate::builtins::method_table::list::join_items(&items, "").map(Ok))
             } else if target.is_range() {
                 // A Range has no materialized backing slice, so `as_list_items`
                 // returns None. Expand it to its elements and join with the

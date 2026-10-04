@@ -968,56 +968,15 @@ pub(crate) fn native_method_1arg(
                     .join(&sep);
                 return Some(Ok(Value::str(joined)));
             }
-            // A hole joins as the container's `is default(...)` value, not the
-            // `Any` marker the slot holds: only an array that has both copies.
-            let default_resolved = match target.view() {
-                ValueView::Array(data, _) => match data.items_with_default() {
-                    std::borrow::Cow::Owned(resolved) => Some(resolved),
-                    std::borrow::Cow::Borrowed(_) => None,
-                },
-                _ => None,
-            };
-            if let Some(items) = default_resolved
-                .as_deref()
-                .or_else(|| target.as_list_items())
-            {
-                // If any item is an Instance, fall through to runtime
-                // so user-defined Str() methods can be called. A `ContainerRef`
-                // element (grep rw alias / `:=`-bound slot) is decontainerized
-                // first so a cell-wrapped Instance is also routed to runtime,
-                // and an ITEMIZED one (`my @h = $x` compiles an `ItemizeVar`)
-                // is descalarized for the same reason -- `.join` stringifies
-                // each element with `.Str`, whose dispatch deconts its invocant,
-                // so `my @h = $c` with an `is Array` subclass instance must not
-                // be answered here with the pure `SA()` fallback.
-                // A Junction likewise falls through — it must thread the
-                // whole `join` over its eigenstates, not stringify in place.
-                if items.iter().any(|v| {
-                    v.with_deref(|inner| {
-                        matches!(
-                            inner.descalarize().view(),
-                            ValueView::Instance { .. }
-                                | ValueView::Mixin(..)
-                                | ValueView::Junction { .. }
-                                // A deferred inner `.map` Seq must run its
-                                // callback, which only the runtime can do.
-                                | ValueView::LazyList(_)
-                                | ValueView::LazyThunk(_)
-                        ) || matches!(inner.descalarize().view(), ValueView::Seq(s) if s.awaits_vm_reify())
-                    })
-                    // A nested list holding an instance: the inner list's
-                    // `.Str` stringifies its elements with their own `.Str`.
-                    || crate::value::gist::str_needs_dispatch(v)
-                }) {
-                    return None;
-                }
-                let sep = arg.to_string_value();
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                return Some(Ok(Value::str(joined)));
+            // A list's elements (a hole reads as the array's `is default`
+            // value): the `List.join` row's implementation (ADR-11276,
+            // `method_table::list`).
+            if let Some(items) = crate::builtins::method_table::list::join_source_items(target) {
+                return crate::builtins::method_table::list::join_items(
+                    &items,
+                    &arg.to_string_value(),
+                )
+                .map(Ok);
             }
             match target.view() {
                 ValueView::Capture { positional, .. } => {
@@ -1045,23 +1004,11 @@ pub(crate) fn native_method_1arg(
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
                 }
-                ValueView::Pair(k, v) => {
-                    let sep = arg.to_string_value();
-                    Some(Ok(Value::str(format!(
-                        "{}{}{}",
-                        k,
-                        sep,
-                        v.to_string_value()
-                    ))))
-                }
-                ValueView::ValuePair(k, v) => {
-                    let sep = arg.to_string_value();
-                    Some(Ok(Value::str(format!(
-                        "{}{}{}",
-                        k.to_string_value(),
-                        sep,
-                        v.to_string_value()
-                    ))))
+                // A Pair is a one-element list (`Any.join` is `self.list.join`),
+                // so the separator never appears: the result is the Pair's
+                // own `.Str`, `key\tvalue`.
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    Some(Ok(Value::str(target.to_string_value())))
                 }
                 ValueView::Hash(map) => {
                     let sep = arg.to_string_value();
