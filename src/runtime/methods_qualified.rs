@@ -740,7 +740,8 @@ impl Interpreter {
         // subclass: the Associative state lives in `__mutsu_hash_storage`, so
         // run the base method on it rather than on a storage-less `Hash`.
         if Self::is_associative_base(qualifier)
-            && let Some(res) = self.try_hash_storage_delegate_qualified(target, actual_method, &args)
+            && let Some(res) =
+                self.try_hash_storage_delegate_qualified(target, actual_method, &args)
         {
             return Some(res);
         }
