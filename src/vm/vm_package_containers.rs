@@ -14,21 +14,26 @@ use super::*;
 impl Interpreter {
     /// The `our_vars` key a package-qualified name persists under: the name
     /// itself, unless only its pseudo-package-stripped spelling is stored (a
-    /// top-level `our %h` reached as `%GLOBAL::h`).
+    /// top-level `our %h` reached as `%GLOBAL::h`), or its qualifier is a
+    /// constant naming another package. An explicitly stored spelling wins.
     fn package_container_key(&self, name: &str) -> String {
-        if self.get_our_var(name).is_none()
-            && let Some(bare) = Self::pseudo_package_unqualified_name(name)
-            && self.get_our_var(&bare).is_some()
-        {
-            return bare;
+        if self.get_our_var(name).is_none() {
+            if let Some(bare) = Self::pseudo_package_unqualified_name(name)
+                && self.get_our_var(&bare).is_some()
+            {
+                return bare;
+            }
+            if let Some(real) = self.package_alias_var_name(name) {
+                return real;
+            }
         }
         name.to_string()
     }
 
     /// The name a whole-container store to `name` lands on: the bare
-    /// spelling when `name` is a pseudo-package-qualified `@`/`%` variable
-    /// (`@GLOBAL::d`) whose only declaration is a bare `our @d`, else `name`.
-    // Cost: O(1) hash probes; only a `::`-qualified `@`/`%` name probes at all.
+    /// spelling for a pseudo-package name, or the real package spelling for
+    /// a constant package alias, else `name`.
+    // Cost: O(n) for a qualified name, n = the length of `name`; O(1) otherwise.
     pub(crate) fn package_container_store_name(&self, name_sym: Symbol) -> String {
         let name = name_sym.as_str();
         if crate::qualified::is_package_array(name_sym)
@@ -56,8 +61,8 @@ impl Interpreter {
     /// `PROCESS::` dynamic) is left to the ordinary list assignment. The
     /// `our @a = ...` declaration itself publishes through this same store
     /// before the slot exists, which `code.our_locals` identifies.
-    // Cost: O(o) + hash probes, o = `our` declarations of the running chunk
-    // (only for a package-qualified `@`/`%` name; O(1) flag lookup otherwise).
+    // Cost: O(o + n), o = `our` declarations of the running chunk, n = the
+    // length of a qualified name; O(1) for an unqualified name.
     pub(crate) fn package_container_item_assign(
         &mut self,
         code: &CompiledCode,
@@ -79,17 +84,15 @@ impl Interpreter {
         if bare.as_deref().is_some_and(|b| b[1..].starts_with('*')) {
             return false;
         }
-        let existing = self
-            .get_our_var(name)
-            .or_else(|| bare.as_deref().and_then(|b| self.get_our_var(b)))
-            .or_else(|| self.env().get(name));
+        let key = self.package_container_key(name);
+        let existing = self.get_our_var(&key).or_else(|| self.env().get(name));
         if existing.is_some_and(|v| Self::is_declared_package_container(v, positional)) {
             return false;
         }
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
         let stored = Self::itemize_scalar_store_value(rhs);
         self.env_mut().insert(name.to_string(), stored.clone());
-        self.set_our_var(name.to_string(), stored);
+        self.set_our_var(key, stored);
         true
     }
 
@@ -100,7 +103,7 @@ impl Interpreter {
     /// fresh container (`${...}` / `$[...]`); the element ops themselves only
     /// vivify a declared container. Returns the container the op starts from,
     /// for [`Self::package_container_elem_epilogue`].
-    // Cost: O(1) (flag lookup per symbol, then hash probes).
+    // Cost: O(n) for a qualified name, n = the length of `name`; O(1) otherwise.
     pub(crate) fn package_container_elem_prologue(&mut self, name_sym: Symbol) -> Option<Value> {
         let positional = crate::qualified::is_package_array(name_sym);
         let name = name_sym.as_str();
@@ -135,7 +138,7 @@ impl Interpreter {
 
     /// After the element write: persist env's container into `our_vars` unless
     /// the op mutated the prologue's container in place.
-    // Cost: O(1).
+    // Cost: O(n) for a qualified name, n = the length of `name`; O(1) otherwise.
     pub(crate) fn package_container_elem_epilogue(&mut self, name_sym: Symbol, pre: Option<Value>) {
         let name = name_sym.as_str();
         let Some(val) = self.env().get(name).cloned() else {
