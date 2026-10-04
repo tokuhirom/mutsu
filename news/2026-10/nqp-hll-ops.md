@@ -22,5 +22,5 @@ calls that collection makes due. It is the same routine as
 `$*VM.request-garbage-collection`, which was moved out of the method body so
 both callers share it.
 
-The `nqp::` coverage table now counts 491 of 577 ops; the HLL-specific family
+The `nqp::` coverage table now counts 493 of 577 ops; the HLL-specific family
 is complete at 13 of 13.
