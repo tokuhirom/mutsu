@@ -601,8 +601,13 @@ impl Interpreter {
         // Array value, so expose that same backing value to nqp code such as
         // Array::Sorted::Util's `insert-also`.
         let bare = Self::nqp_attr_bare(name);
-        if matches!(obj.view(), ValueView::Array(..)) && matches!(bare, "reified" | "storage") {
-            return Some(obj.clone());
+        if let ValueView::Array(items, _) = obj.view()
+            && matches!(bare, "reified" | "storage")
+        {
+            // A List-kind alias of the same node: the VMArray the high-level
+            // Array wraps, which the positional ops accept (and the Array
+            // itself they reject).
+            return Some(Value::array_with_kind(items.clone(), crate::value::ArrayKind::List));
         }
         match obj.view() {
             ValueView::Pair(key, value) => {

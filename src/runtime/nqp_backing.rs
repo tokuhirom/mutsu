@@ -3,7 +3,7 @@
 
 use super::nqp_ops_list::iteration_buffer_items_key;
 use crate::runtime::{Interpreter, RuntimeError};
-use crate::value::{NqpElemKind, Value, ValueView};
+use crate::value::{ArrayKind, NqpElemKind, Value, ValueView};
 
 /// The array a list-ish nqp value is backed by, as a `Value` that shares the
 /// target's `Gc` node — so an in-place write through it is visible to every
@@ -135,10 +135,26 @@ pub(crate) fn resolve_index(idx: i64, len: usize) -> Result<usize, RuntimeError>
     Ok(from_end as usize)
 }
 
+/// A high-level `Array` is not a VMArray: rakudo's positional `nqp::` ops die on
+/// one and want its `$!reified` storage, which mutsu hands out as a List-kind
+/// alias of the same node (see `nqp_attr_value`). So an `Array`-kind value
+/// reaching a positional op is the user's own `@a`. A `List` is
+/// indistinguishable from a VMArray here and is accepted.
+// Cost: O(1).
+fn reject_high_level_array(target: &Value) -> Result<(), RuntimeError> {
+    if let ValueView::Array(_, ArrayKind::Array | ArrayKind::ItemArray) = target.view() {
+        return Err(RuntimeError::new(
+            "This type (Array) does not support positional operations",
+        ));
+    }
+    Ok(())
+}
+
 /// The element at `idx` of a list-ish nqp value (see [`resolve_index`]).
 /// `Ok(None)` past the end, or when the value has no elements at all.
 // Cost: O(1).
 pub(crate) fn elem_at(target: &Value, idx: i64) -> Result<Option<Value>, RuntimeError> {
+    reject_high_level_array(target)?;
     let Some(len) = Interpreter::nqp_elems_len_of(target) else {
         return Ok(None);
     };
@@ -184,6 +200,7 @@ pub(crate) fn bind_elem(
     val: Value,
     fill: Value,
 ) -> Result<Value, RuntimeError> {
+    reject_high_level_array(target)?;
     let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
     let i = resolve_index(idx, len)?;
     if let Some((_, attrs)) = crate::value::value_buf::buf_target(target)
