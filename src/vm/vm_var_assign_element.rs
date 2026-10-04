@@ -583,6 +583,20 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // A package-block `my %h` reached from one of the package's routines
+        // lives in the package store, which every path below is blind to.
+        self.with_package_lexical_seeded(code, name_idx, |vm| {
+            vm.exec_index_assign_expr_named_op_unseeded(code, name_idx, is_positional, target_slot)
+        })
+    }
+
+    fn exec_index_assign_expr_named_op_unseeded(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        is_positional: bool,
+        target_slot: Option<u32>,
+    ) -> Result<(), RuntimeError> {
         // `self[...] = ...` in a role method names the implicit invocant, not
         // an ordinary lexical aggregate.  Handle a role-mixed aggregate before
         // the name-keyed fast lanes: those lanes quite correctly only recognize

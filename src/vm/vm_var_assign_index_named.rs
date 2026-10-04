@@ -4683,6 +4683,21 @@ impl Interpreter {
             // SAFETY: `descended` was derived from `root` just above.
             return Some(unsafe { &mut *descended });
         }
+        // A package-block `my @a`/`my %h` read by one of the block's routines
+        // resolves to the package store when the frame's env does not hold the
+        // name (`GetArrayVar`/`GetHashVar` consult it last), so its in-place
+        // mutations land there too (#10343).
+        if !self.env().contains_key(var_name)
+            && let Some(root) = self.package_scope_lexical_root_mut(var_name)
+        {
+            let root = root as *mut Value;
+            // SAFETY: `root` points into a `package_lexicals` entry, which
+            // nothing else borrows while the returned reference is held (see
+            // `descend_container_ref`).
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
+            // SAFETY: `descended` was derived from `root` just above.
+            return Some(unsafe { &mut *descended });
+        }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
         Some(unsafe { &mut *descended })
