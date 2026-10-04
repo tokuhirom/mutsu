@@ -512,11 +512,13 @@ impl Interpreter {
             // `constant X` module both declaring `TRIM-BEFORE`).
             && {
                 let key = crate::term_names::term_key(name);
-                self.module_scope_lexical(&key).is_none()
+                let pkg = self.current_package_sym();
+                (pkg.as_str().is_empty() || crate::qualified::is_global_package(pkg))
+                    || (self.module_scope_lexical(&key).is_none()
                     && self
                         .package_chain_var_fallback(crate::symbol::Symbol::intern(&key))
                         .is_none()
-                    && self.get_our_var(&key).is_none()
+                    && self.get_our_var(&key).is_none())
             }
     }
 
