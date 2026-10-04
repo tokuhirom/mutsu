@@ -1100,6 +1100,17 @@ impl Registry {
                     seq.push(base.to_string());
                 }
                 seqs.push(seq);
+            } else if let Some(core) = parent.strip_prefix("CORE::")
+                && let Some(info) = crate::builtin_types::catalog::builtin_type_info(core)
+            {
+                // A `CORE::`-spelled core parent (the core type a top-level
+                // role's own name shadows, `role Exception is Exception`,
+                // #11072) keeps that spelling at its own level, so it stays
+                // distinct from the same-named role, and inherits the core
+                // type's ancestors.
+                let mut seq = vec![parent.clone()];
+                seq.extend(info.mro.iter().skip(1).map(|s| s.to_string()));
+                seqs.push(seq);
             } else if let Some(mro) = crate::rakuast::type_object_mro(parent) {
                 // A RakuAST node class parent contributes its model-layer
                 // hierarchy (ADR-0011), up to and including `Any`/`Mu`.

@@ -345,6 +345,14 @@ impl Interpreter {
                 .iter()
                 .map(|p| self.lexical_env_remap_name(p))
                 .collect();
+            // ... and qualified the way `parents` is below, so a sibling role
+            // written `does R` inside `module M` is `M::R` in both lists. The
+            // two are matched by name: left unqualified, the composition read
+            // as an `is R` pun and the role stayed in the class's MRO (#11072).
+            let does_parents: Vec<String> = does_parents
+                .iter()
+                .map(|p| self.qualify_class_header_parent_name(&qualified_name, p, &does_parents))
+                .collect();
             let does_parents = &does_parents;
             let (mapped_parents, parent_pre_args): (
                 Vec<String>,
@@ -367,6 +375,23 @@ impl Interpreter {
                 .map(|(p, pre_args)| {
                     let p =
                         self.qualify_class_header_parent_name(&qualified_name, &p, does_parents);
+                    // While a class is declared its own name is not yet
+                    // visible to its traits, so a top-level `class Exception
+                    // is Exception` (or `is ::Exception`) inherits the core
+                    // type it shadows (#11072). Spelled `CORE::` so it does
+                    // not resolve back to the class; a name with no core type
+                    // (`class Foo is Foo`) stays a self-inheritance error.
+                    let written = crate::qualified::type_capture_name(&p).unwrap_or(&p);
+                    // A `my class DateTime is DateTime` already resolves its
+                    // parent to the outer type through its mangled storage
+                    // name (`lexical_class_shadows_package_type`).
+                    if !*is_lexical
+                        && written == qualified_name
+                        && !does_parents.contains(&p)
+                        && crate::builtin_types::catalog::builtin_type_info(written).is_some()
+                    {
+                        return (format!("CORE::{written}"), pre_args);
+                    }
                     // A `does` role keeps its spelling: `does_parents` is
                     // matched against these names by equality.
                     let p = if does_parents.contains(&p) {

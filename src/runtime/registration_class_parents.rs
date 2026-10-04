@@ -219,7 +219,13 @@ impl Interpreter {
                     // the parent is the outer CORE type, not the new class.
                     || BUILTIN_TYPES.contains(&name.as_ref())
                     || BUILTIN_INHERITABLE_TYPES.contains(&name.as_ref()));
-            if resolved_parent == name.as_ref() && !lexical_class_shadows_package_type {
+            // A `CORE::` parent names the core type even when the class
+            // shadows its name (`class Exception is Exception`, #11072).
+            let names_core_type = parent.starts_with("CORE::");
+            if resolved_parent == name.as_ref()
+                && !lexical_class_shadows_package_type
+                && !names_core_type
+            {
                 let mut attrs = ValueMap::default();
                 attrs.insert("name".to_string(), Value::str(name.to_string()));
                 attrs.insert(

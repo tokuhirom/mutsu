@@ -779,10 +779,15 @@ impl Interpreter {
                             registry.push_user_method(owner, method_sym, def);
                         }
                     }
-                } else if (self.registry().classes.contains_key(parent_base)
+                } else if ((self.registry().classes.contains_key(parent_base)
                     || BUILTIN_PARENT_TYPES.contains(&parent_base)
                     || BUILTIN_INHERITABLE_TYPES.contains(&parent_base))
                     && !self.is_role_type_name(parent_base)
+                    // A role's `CORE::`-spelled parent: the core type its own
+                    // name shadows (`role Exception is Exception`, #11072).
+                    || parent_base.strip_prefix("CORE::").is_some_and(|core| {
+                        crate::builtin_types::catalog::builtin_type_info(core).is_some()
+                    }))
                     && !cx.class_def.parents.iter().any(|p| p == &resolved_parent)
                 {
                     cx.class_def.parents.push(resolved_parent.clone());

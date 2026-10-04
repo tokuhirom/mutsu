@@ -357,13 +357,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
             // `role SubModelHOW is Metamodel::SubsetHOW`.  Reading only the
             // first identifier leaves `::SubsetHOW` in the input and turns
             // the real parent into an unrelated `Metamodel` trait/role.
-            // A leading `::` names the type from the outside, past a
-            // same-named package-scoped declaration: SQL::Abstract's
-            // `role Exception is ::Exception` (inside `unit class
-            // SQL::Abstract`) inherits the core `Exception`.
-            // TODO: resolve `::Name` past the lexical/package scope instead of
-            // as the bare name; a top-level `role Exception is ::Exception`
-            // still finds the role itself and drops the parent.
+            // A leading `::` adds nothing here: while a role is declared its
+            // own name is not visible to its traits, so `is ::Exception` and
+            // `is Exception` both name the outer type (SQL::Abstract's
+            // `role Exception is ::Exception` inherits the core `Exception`).
+            // The runtime resolves that (`role_body_does_decl`, #11072).
             let (r, trait_name) = qualified_ident(r.strip_prefix("::").unwrap_or(r))?;
             if trait_name == "hidden" {
                 is_hidden_role = true;
