@@ -111,6 +111,19 @@ impl Interpreter {
         crate::qualified::unqualified_part(p)
             .with_str(|short| short.split('\u{0}').next() == Some(name))
     }
+
+    /// The role a `does`/`but` initializer `R(v)` names
+    /// ([`OpCode::JumpIfNotRole`]), if `name` names one, resolved as a bare
+    /// type name in call position is (a lexical `my role R`, or `M::R` from
+    /// inside package `M`; see [`Interpreter::resolve_bare_type_name`]).
+    // Cost: O(p*|name|), p = packages on the bare-name search path.
+    pub(crate) fn mixin_role_sym(&self, name: Symbol) -> Option<Symbol> {
+        let spelled = name.resolve();
+        match self.resolve_bare_type_name(&spelled) {
+            Some(resolved) => self.has_role(&resolved).then(|| Symbol::intern(&resolved)),
+            None => self.has_role(&spelled).then_some(name),
+        }
+    }
 }
 
 /// Whether a bareword spelled `name` may be remembered once it resolved to

@@ -45,6 +45,7 @@ pub(crate) mod bit {
     pub(crate) const EXPLICIT_INITIALIZER: u16 = 1 << 7;
     pub(crate) const VARDECL: u16 = 1 << 8;
     pub(crate) const DECL_TYPECHECKED: u16 = 1 << 9;
+    pub(crate) const SHAPED_DECL: u16 = 1 << 10;
 }
 
 /// The whole mark-context flag family in one allocation.
@@ -92,7 +93,8 @@ impl MarkContextState {
         | bit::ARRAY_SHARE
         | bit::EXPLICIT_INITIALIZER
         | bit::VARDECL
-        | bit::DECL_TYPECHECKED;
+        | bit::DECL_TYPECHECKED
+        | bit::SHAPED_DECL;
 
     /// Whether *no* store-flavour mark is pending: the next store is a plain
     /// `=` into an already-declared variable, with no bind, rebind, `constant`,
@@ -170,6 +172,10 @@ impl MarkFlags {
     #[inline]
     pub(crate) fn decl_typechecked(self) -> bool {
         self.0 & bit::DECL_TYPECHECKED != 0
+    }
+    #[inline]
+    pub(crate) fn shaped_decl(self) -> bool {
+        self.0 & bit::SHAPED_DECL != 0
     }
 }
 
@@ -274,6 +280,15 @@ impl crate::runtime::Interpreter {
         MarkFlag::new(&self.mark_ctx.flags, bit::DECL_TYPECHECKED)
     }
 
+    /// Set by `MarkShapedDeclContext` just before the store of a shaped
+    /// declaration (`my @a[5] = ...`), so the store keeps the declared shape
+    /// instead of stripping it the way an unshaped value copy (`my @u =
+    /// @shaped`) does.
+    #[inline]
+    pub(crate) fn shaped_decl_context(&self) -> MarkFlag<'_> {
+        MarkFlag::new(&self.mark_ctx.flags, bit::SHAPED_DECL)
+    }
+
     /// The one non-`Copy` member of the family — see
     /// `MarkContextState::share_source`.
     #[inline]
@@ -318,6 +333,8 @@ mod tests {
             bit::ARRAY_SHARE,
             bit::EXPLICIT_INITIALIZER,
             bit::VARDECL,
+            bit::DECL_TYPECHECKED,
+            bit::SHAPED_DECL,
         ];
         let mut seen: u16 = 0;
         for b in all {

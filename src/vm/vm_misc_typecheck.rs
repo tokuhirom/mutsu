@@ -356,8 +356,11 @@ impl Interpreter {
         // a known constraint is matched once, not twice (#11467; a subset's
         // `where` block shadowing the name would also have run twice).
         let mut known_matched: Option<bool> = None;
+        // Why a subset rejected the value, if its `where` failed by throwing.
+        let mut why = None;
         if runtime::is_known_type_constraint(base_constraint) {
-            let matched = !value.is_nil() && self.type_matches_value(constraint, &value);
+            let matched =
+                !value.is_nil() && self.type_matches_value_why(constraint, &value, &mut why);
             known_matched = Some(matched);
             if matched {
                 self.decl_typechecked_context().set(true);
@@ -366,7 +369,7 @@ impl Interpreter {
                 // A subset `where { … or fail "msg" }` that failed by throwing
                 // surfaces its own exception (custom message) rather than the
                 // generic type-check error.
-                if let Some(fail) = self.subset_where_fail.take() {
+                if let Some(fail) = why.take() {
                     return Err(*fail);
                 }
                 if base_constraint == "Int"
@@ -485,7 +488,7 @@ impl Interpreter {
         }
         let matched = match known_matched {
             Some(matched) => matched,
-            None => !value.is_nil() && self.type_matches_value(constraint, &value),
+            None => !value.is_nil() && self.type_matches_value_why(constraint, &value, &mut why),
         };
         if matched {
             self.decl_typechecked_context().set(true);
@@ -493,7 +496,7 @@ impl Interpreter {
         if !value.is_nil() && !matched && !self.is_container_subclass(constraint) {
             // A subset `where { … or fail "msg" }` that failed by throwing surfaces
             // its own exception (custom message), not the generic type-check error.
-            if let Some(fail) = self.subset_where_fail.take() {
+            if let Some(fail) = why.take() {
                 return Err(*fail);
             }
             // A generic type capture (`sub c(::T $x, ...) { my T $zz = ... }`)

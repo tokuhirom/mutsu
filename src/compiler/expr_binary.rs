@@ -915,11 +915,7 @@ impl Compiler {
                 let is_bareword = matches!(left, Expr::BareWord(_));
                 if let Some(name) = var_name {
                     self.compile_expr(left);
-                    // Set does-context flag so role calls with args return Pairs
-                    // instead of throwing X::Coerce::Impossible.
-                    self.code.emit(OpCode::SetDoesContext(true));
-                    self.compile_expr(right);
-                    self.code.emit(OpCode::SetDoesContext(false));
+                    self.compile_mixin_rhs(right);
                     let slot = self.local_map.get(&name).copied();
                     let name_idx = self.code.add_constant(Value::str(name));
                     self.code.emit(OpCode::DoesVar(name_idx, slot, is_bareword));
@@ -928,18 +924,12 @@ impl Compiler {
             }
             let native_unsigned = self.native_int_binary_mode(left, right, &opcode);
             self.compile_expr(left);
-            // `but`/`does` with a role-applied RHS (`X but R(v)`, `99 does R(v)`)
-            // must let the role call return a role-application Pair instead of
-            // coercing. The `does`+variable path above already does this; cover
-            // the remaining cases (`but`, and `does` on a non-variable LHS).
-            let does_context =
-                matches!(op, TokenKind::Ident(name) if name == "but" || name == "does");
-            if does_context {
-                self.code.emit(OpCode::SetDoesContext(true));
-            }
-            self.compile_expr(right);
-            if does_context {
-                self.code.emit(OpCode::SetDoesContext(false));
+            // `but`/`does` with a role initializer (`X but R(v)`, `99 does
+            // R(v)`); the `does`+variable path above does the same.
+            if matches!(op, TokenKind::Ident(name) if name == "but" || name == "does") {
+                self.compile_mixin_rhs(right);
+            } else {
+                self.compile_expr(right);
             }
             // For `!=` between native int typed variables, emit a native-aware
             // opcode that replicates Rakudo's MoarVM behaviour: cross-signed

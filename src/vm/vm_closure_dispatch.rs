@@ -1,5 +1,53 @@
 use super::*;
 
+/// What the caller of a closure knows about the block's implicit `$_`.
+#[derive(Default)]
+pub(crate) struct ClosureTopic {
+    /// For Pair-shaped source elements of the native `.map` loop: a positional
+    /// `Pair` passed to the general call machinery is bound as a *named*
+    /// argument (and skipped when setting the implicit `$_`), so the block
+    /// would see no topic. When `Some`, the topic `$_` (and a lone positional
+    /// param) is force-bound to the element value regardless of its pair-ness.
+    pub(crate) explicit: Option<Value>,
+    /// The native `.map` loop wants the block's final `$_` stashed in
+    /// `self.async_state.rw_map_topic_capture` (read from the live frame just
+    /// after the body runs), to implement `@a.map({ $_++ })` writing back.
+    pub(crate) capture_rw: bool,
+    /// What a value-call site knew about the argument.
+    pub(crate) site: TopicArgSite,
+}
+
+impl ClosureTopic {
+    pub(crate) fn from_loop(explicit: Option<Value>, capture_rw: bool) -> Self {
+        ClosureTopic {
+            explicit,
+            capture_rw,
+            site: TopicArgSite::default(),
+        }
+    }
+
+    pub(crate) fn from_site(site: TopicArgSite) -> Self {
+        ClosureTopic {
+            site,
+            ..ClosureTopic::default()
+        }
+    }
+}
+
+/// What a value-call site (`$b(...)`, `&b(...)`) knows about its arguments,
+/// for a bare block's implicit `$_`. Every other caller passes the default.
+#[derive(Default)]
+pub(crate) struct TopicArgSite {
+    /// Every positional argument is a container-less expression, so the
+    /// implicit `$_` has nothing behind it to assign to: raku's `{ $_ = 5 }(7)`
+    /// is "Cannot assign to an immutable value".
+    pub(crate) bare: bool,
+    /// The caller's variable name behind the sole positional argument, when it
+    /// is a plain scalar lexical: raku binds the implicit `$_` raw, so `my $b =
+    /// { $_ = 9 }; $b($v)` leaves `$v` at 9.
+    pub(crate) source: Option<String>,
+}
+
 impl Interpreter {
     fn is_forced_outer_scalar_param(cc: &CompiledCode, sym: crate::symbol::Symbol) -> bool {
         cc.forced_free_var_syms.contains(&sym) && cc.param_locals.contains(&sym)
@@ -140,6 +188,19 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        self.call_compiled_closure_at(data, cc, args, compiled_fns, TopicArgSite::default())
+    }
+
+    /// [`Self::call_compiled_closure`] from a value-call site that knows what
+    /// its sole argument is ([`TopicArgSite`]).
+    pub(crate) fn call_compiled_closure_at(
+        &mut self,
+        data: &crate::gc::Gc<crate::value::SubData>,
+        cc: &CompiledCode,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        site: TopicArgSite,
+    ) -> Result<Value, RuntimeError> {
         // ADR-0058: a slurpy/`@_` parameter FLATTENS a `Seq` argument
         // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements), and the
         // binder reads them through pure code -- so pull a still-deferred
@@ -166,8 +227,13 @@ impl Interpreter {
         // inside this closure's body is gated on ITS OWN lexical state too,
         // not the caller's.
         guard.module.lexical_fatal_mode = data.captured_fatal_mode;
-        let result =
-            guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
+        let result = guard.call_compiled_closure_with_topic(
+            data,
+            cc,
+            args,
+            ClosureTopic::from_site(site),
+            compiled_fns,
+        );
         // Under `use fatal` (active at this point, before the guard drops
         // below), a returned Failure must throw rather than propagate
         // silently. This makes a WhateverCode like `*.Int` throw when it
@@ -187,22 +253,13 @@ impl Interpreter {
         }
     }
 
-    /// Like [`Self::call_compiled_closure`] but with an optional explicit topic
-    /// and optional rw-topic capture, both used by the native `.map` loop.
+    /// Like [`Self::call_compiled_closure`], with what the caller knows about
+    /// the block's implicit `$_` ([`ClosureTopic`]: the native `.map` loop's
+    /// explicit topic and rw-topic capture, or a value-call site's
+    /// [`TopicArgSite`]). The rw capture reads the topic from the live frame
+    /// rather than relying on the `__mutsu_rw_map_topic__` signal, so it also
+    /// covers `$_++`/`$_--` (which the signal-based writeback misses).
     ///
-    /// `explicit_topic`: for Pair-shaped source elements, a positional `Pair`
-    /// passed to the general call machinery is bound as a *named* argument (and
-    /// skipped when setting the implicit `$_`), so the block would see no topic.
-    /// When `Some`, the topic `$_` (and a lone positional param) is force-bound to
-    /// the element value regardless of its pair-ness.
-    ///
-    /// `capture_rw_topic`: when true, the block's final `$_` value is stashed in
-    /// `self.async_state.rw_map_topic_capture` (read from the live frame just after the body
-    /// runs, before the frame is popped) so the native map loop can implement
-    /// Raku's rw binding — `@a.map({ $_++ })` mutates `@a`. This captures the
-    /// topic value directly rather than relying on the `__mutsu_rw_map_topic__`
-    /// signal, so it also covers `$_++`/`$_--` (which the interpreter's
-    /// signal-based writeback misses).
     /// Enter the closure's own compilation unit for the duration of the call.
     ///
     /// A block is lexical to the unit it was WRITTEN in, so a block from the
@@ -215,20 +272,12 @@ impl Interpreter {
         data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,
         args: Vec<Value>,
-        explicit_topic: Option<Value>,
-        capture_rw_topic: bool,
+        topic: ClosureTopic,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let unit = self.unit_of_source_sym(data.source_file_sym());
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
-        let result = self.call_compiled_closure_in_unit(
-            data,
-            cc,
-            args,
-            explicit_topic,
-            capture_rw_topic,
-            compiled_fns,
-        );
+        let result = self.call_compiled_closure_in_unit(data, cc, args, topic, compiled_fns);
         self.current_unit = saved_unit;
         result
     }
@@ -238,10 +287,14 @@ impl Interpreter {
         data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,
         args: Vec<Value>,
-        explicit_topic: Option<Value>,
-        capture_rw_topic: bool,
+        topic: ClosureTopic,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        let ClosureTopic {
+            explicit: explicit_topic,
+            capture_rw: capture_rw_topic,
+            site,
+        } = topic;
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
@@ -259,17 +312,10 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
-        // One-shot, and read BEFORE `push_call_frame` (which clears it): the
-        // call site said every positional argument is a container-less
-        // expression, so this block's implicit `$_` has nothing behind it to
-        // assign to. See `Interpreter::pending_call_topic_bare`.
-        let topic_arg_is_bare = std::mem::take(&mut self.pending_call_topic_bare);
-        // The other half of the same question, read at the same instant and for
-        // the same reason: when the sole argument DOES name a caller container,
-        // a bare block's implicit `$_` aliases it rather than copying its value
-        // (`my $b = { $_ = 9 }; $b($v)` leaves `$v` at 9). See
-        // `Interpreter::pending_call_topic_source`.
-        let topic_alias_source = std::mem::take(&mut self.pending_call_topic_source)
+        // What the call site knew about the argument (see [`TopicArgSite`]).
+        let topic_arg_is_bare = site.bare;
+        let topic_alias_source = site
+            .source
             .filter(|_| !cc.is_routine && explicit_topic.is_none() && !capture_rw_topic);
         // Resolve an existing source cell while the caller's env is still
         // current. The closure may later install its captured `$_` over that
@@ -340,8 +386,7 @@ impl Interpreter {
                     data,
                     cc,
                     threaded_args,
-                    explicit_topic.clone(),
-                    capture_rw_topic,
+                    ClosureTopic::from_loop(explicit_topic.clone(), capture_rw_topic),
                     compiled_fns,
                 )?);
             }

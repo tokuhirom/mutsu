@@ -254,3 +254,20 @@ these preconditions:
   - Next: phase 3 has extracted every bounded subsystem. What is left on `Interpreter` is the
     `frame` core (D1) and the `handoff`/`eval` side channels, which D3 turns into explicit
     parameters.
+- D3, first batch (2026-10-04): 102 → 94 fields. Each side channel took the form its data
+  flow already had, and three of them were leaking:
+  - `subset_where_fail` is returned through `type_matches_value_why`'s out-parameter. As a
+    field, a smartmatch's rejection was reported by a later, unrelated type check.
+  - `in_does_rhs` is a compile-time shape, as in Rakudo: a top-level single-argument call on
+    the right of `does`/`but` is a role initializer (`JumpIfNotRole` + `MakeRoleInit`). As a
+    flag, an operand that died left every later `R(v)` answering a Pair.
+  - `recorded_free_var_writes` reaches EVAL through the carrier's existing
+    `free_var_writes_out` parameter.
+  - `pending_call_topic_bare`/`pending_call_topic_source` are a `TopicArgSite` parameter of
+    `vm_call_on_value_at` → `call_compiled_closure_at` → the closure entry.
+  - `shaped_decl_context` is bit `SHAPED_DECL` of the mark-context family it always behaved
+    like (set by a `Mark*` op, consumed by the next store, isolated across calls).
+  - `type_meta_key_cache` and `container_element_proxy` were misfiled: they are memos, now in
+    `ResolutionCaches`.
+  - Not every pair has a call path: `sigilless_bind_source` crosses a statement boundary
+    between its two opcodes, so it needs the compiler to fuse them first.

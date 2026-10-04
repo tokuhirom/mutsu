@@ -47,7 +47,7 @@ impl Interpreter {
     /// The cached closure described in the module docs. Parsed once per
     /// process, built once per interpreter.
     pub(crate) fn container_element_proxy_base(&mut self) -> Option<Value> {
-        if let Some(cached) = self.container_element_proxy.clone() {
+        if let Some(cached) = self.caches.container_element_proxy.clone() {
             return Some(cached);
         }
         use std::sync::OnceLock;
@@ -63,7 +63,7 @@ impl Interpreter {
         let built: Result<Value, RuntimeError> = self.eval_block_value(stmts);
         let value = built.ok()?;
         value.as_sub()?;
-        self.container_element_proxy = Some(value.clone());
+        self.caches.container_element_proxy = Some(value.clone());
         Some(value)
     }
 }

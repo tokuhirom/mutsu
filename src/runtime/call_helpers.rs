@@ -20,7 +20,7 @@ impl Interpreter {
     }
 
     /// The caller's variable name a bare block's implicit `$_` may ALIAS for
-    /// this call — `Interpreter::pending_call_topic_source`. `None` for every
+    /// this call (`TopicArgSite::source`). `None` for every
     /// shape that is not a lone positional argument naming a plain scalar
     /// lexical, because those are the only ones raku binds the topic raw to.
     ///

@@ -2428,30 +2428,6 @@ pub struct Interpreter {
     /// between one method-call opcode's arm and its matching disarm.
     pub(crate) pending_raw_invocant:
         Option<Box<crate::vm::vm_raw_invocant_arrival::PendingRawInvocant>>,
-    /// Every positional argument of the value-call currently being dispatched
-    /// (`$b(7)` / `&b(7)` — `OpCode::CallOnValue`/`CallOnCodeVar`'s `bare_args`)
-    /// is a syntactically container-less expression, so a bare block's implicit
-    /// `$_` aliases a value with no container and raku refuses `$_ = ...`
-    /// inside it. Read (and cleared) by `call_compiled_closure_with_topic`
-    /// BEFORE it pushes its call frame; `push_call_frame` clears it too, so the
-    /// flag can never leak past one call boundary into an unrelated block.
-    pub(crate) pending_call_topic_bare: bool,
-    /// The caller's variable name behind the sole positional argument of the
-    /// value-call currently being dispatched (`$b($v)` / `&b($v)`), when that
-    /// argument is a plain scalar lexical.
-    ///
-    /// raku binds a bare block's implicit `$_` **raw** — `my $b = { $_ = 9 };
-    /// $b($v)` leaves `$v` at 9 — so the topic must be the caller's container,
-    /// not a copy of its value. This is the exact sibling of
-    /// `pending_call_topic_bare`, which answers the same question's other half
-    /// (the argument has no container at all), and it shares that flag's
-    /// lifecycle: set by the two value-call opcodes, read (and cleared) by
-    /// `call_compiled_closure_with_topic` BEFORE it pushes its frame, and
-    /// cleared by `push_call_frame` so it can never leak past one call boundary
-    /// into an unrelated block — which is what keeps a native `.map`/`.first`
-    /// loop's own `pending_call_arg_sources` from being mistaken for the
-    /// block's.
-    pub(crate) pending_call_topic_source: Option<String>,
     /// Companion to `pending_call_arg_sources` (§1.4/§1.5): the compiler-baked
     /// `arg-source name -> caller local slot` for the current call, decoded from the
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
@@ -2488,12 +2464,6 @@ pub struct Interpreter {
     /// letting a JIT-compiled nqp op leave a stale line behind. Everything else
     /// still goes through `set_pending_callsite_line`.
     pub(crate) test_pending_callsite_line: Option<i64>,
-    /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
-    /// probe every typed store makes (`var_type_constraint_value_sym`). The
-    /// mapping is a pure function of the name, so caching it is sound
-    /// unconditionally; one entry suffices because a hot loop stores to the
-    /// same variable every iteration.
-    type_meta_key_cache: std::cell::Cell<Option<(Symbol, Symbol)>>,
     /// Operand buffer reused by every `OpCode::NqpOp` execution.
     ///
     /// An nqp op's operand list is statically shaped and dies with the op, so
@@ -2618,17 +2588,6 @@ pub struct Interpreter {
     /// `supply` block body) has no `CompiledCode` on its `SubData`, so the
     /// compile-time `my_declared_sym` is otherwise unreachable from there.
     last_block_my_declared: Vec<Symbol>,
-    /// Append-only log of the free variables that carrier bodies run with
-    /// `record_free_var_writes` (an `EVAL`'d compilation unit, a `where` clause)
-    /// WROTE. `parse_and_eval_with_operators` reads back the slice its own snippet
-    /// appended: those names are assignments to *outer* lexicals, so they must
-    /// survive the "drop the EVAL's own `my` lexicals" cleanup even though the
-    /// caller's env had no entry for them before (a caller's `my $a;` with no
-    /// initializer materializes no env key, so `EVAL '$a = 32'` looks exactly like
-    /// a snippet-local declaration to a key-set diff). Names the snippet really
-    /// DECLARED are locals of its code, never free variables, so they never land
-    /// here.
-    pub(crate) recorded_free_var_writes: Vec<String>,
     /// The subset of [`Self::pending_caller_var_writeback`] that came from a write
     /// whose TARGET NAME was resolved at RUN TIME — `$::($n) = v`, `::('$x') = v`,
     /// an assignment inside an `EVAL`'d snippet. Only these names are carried
@@ -2647,19 +2606,6 @@ pub struct Interpreter {
     /// moment the main list drops them: when a frame that actually owns the slot
     /// has absorbed the value.
     pub(crate) pending_runtime_name_writes: Vec<String>,
-    /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
-    /// container subclass's NATIVE `AT-KEY` when a user override asks for it
-    /// with `nextcallee`. Built on first use; see `container_element_proxy`.
-    container_element_proxy: Option<Value>,
-    /// Side-channel: the exception raised by the most recent subset `where`
-    /// predicate that failed by *throwing* (a `fail "msg"` inside the `where`,
-    /// e.g. `subset Even of Int where { $_ %% 2 or fail "..." }`). `type_matches_value`
-    /// records it here (returning `false` as usual), so the ASSIGNMENT/binding
-    /// type-check can surface the custom message instead of the generic
-    /// "expected X, got Y". Smartmatch / dispatch callers ignore it (a `where`
-    /// that fails is just "no match" there). Set to `None` before each subset
-    /// predicate runs; consumed (and cleared) by the type-check op.
-    pub(crate) subset_where_fail: Option<Box<RuntimeError>>,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a bare block is evaluating the tail of an `is rw` routine
@@ -2667,10 +2613,6 @@ pub struct Interpreter {
     /// around the indirect block call; ordinary block calls still
     /// decontainerize as usual.
     pub(crate) rw_return_context: bool,
-    /// When true, a role call with non-matching args returns a Pair instead of
-    /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
-    /// so that `$x does Role("arg")` works as a role application.
-    pub(crate) in_does_rhs: bool,
     /// When set, `does` on a routine parameter inside `trait_mod:<is>` will
     /// store the resulting Mixin value for writeback to the outer scope.
     pub(crate) trait_mod_writeback_key: Option<String>,
@@ -2875,10 +2817,6 @@ pub struct Interpreter {
     /// (vs a true `:=` bind). Consumed by `exec_index_assign_expr_named_op`,
     /// which marks the written element `__mutsu_elem_share::` after the store.
     pub(crate) element_share_pending: bool,
-    /// Set by `MarkShapedDeclContext` before a `SetLocal` whose `my @a[N]` /
-    /// `my @a[N;M] = ...` declaration is itself shaped — so the assignment KEEPS
-    /// the shape instead of dropping it as a value copy (`my @u = @shaped` does).
-    pub(crate) shaped_decl_context: bool,
     /// Set by `StashVarDeclInit`: the raw, uncoerced initializer of the `@`/`%`
     /// declaration currently being processed, so `ApplyVarTrait`'s
     /// custom-container branches can hand the class's `STORE` the RHS with its

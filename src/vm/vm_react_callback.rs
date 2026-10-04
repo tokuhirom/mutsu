@@ -86,6 +86,12 @@ impl Interpreter {
             cc.is_pointy_block = true;
             (cc, compiler.take_compiled_functions())
         };
-        self.call_compiled_closure_with_topic(&data, &cc, args, topic, false, &fns)
+        self.call_compiled_closure_with_topic(
+            &data,
+            &cc,
+            args,
+            super::vm_closure_dispatch::ClosureTopic::from_loop(topic, false),
+            &fns,
+        )
     }
 }

@@ -1105,13 +1105,10 @@ impl Interpreter {
             {
                 return coerced;
             }
-            // Role called with args but no CALL-ME/COERCE/new:
-            // In `does` context, return a Pair for role application.
-            // Otherwise, throw X::Coerce::Impossible.
+            // Role called with args but no CALL-ME/COERCE/new: X::Coerce::Impossible.
+            // (A `does`/`but` initializer `R(v)` never gets here: the compiler
+            // builds it with `MakeRoleInit`.)
             if !args.is_empty() {
-                if self.in_does_rhs {
-                    return Ok(Value::pair(name.to_string(), Value::array(args.to_vec())));
-                }
                 let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
                 let msg = format!(
                     "Impossible coercion from '{}' into '{}': no acceptable coercion method found",

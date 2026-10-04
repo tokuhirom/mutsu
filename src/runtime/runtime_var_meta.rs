@@ -571,11 +571,11 @@ impl Interpreter {
     ///
     /// [`MetaNs::key`]: crate::meta_ns::MetaNs::key
     fn type_meta_key_cached(&self, name_sym: Symbol) -> Symbol {
-        match self.type_meta_key_cache.get() {
+        match self.caches.type_meta_key_cache.get() {
             Some((cached_name, key)) if cached_name == name_sym => key,
             _ => {
                 let key = Self::type_meta_key_for_sym(name_sym);
-                self.type_meta_key_cache.set(Some((name_sym, key)));
+                self.caches.type_meta_key_cache.set(Some((name_sym, key)));
                 key
             }
         }

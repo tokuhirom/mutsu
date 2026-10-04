@@ -224,20 +224,20 @@ impl Interpreter {
                 // undo it. Pop runs unconditionally (mirrors the block cleanup
                 // being exception-safe), so a failing snippet is cleaned up too.
                 self.push_lexical_class_scope();
-                let free_var_writes_mark = self.recorded_free_var_writes.len();
+                let mut free_var_writes = Vec::new();
                 // `nqp::getcomp("Raku").eval` keeps what this unit declares for
                 // the next line of a REPL session (runtime::repl_compiler); the
                 // snapshot has to be taken before the cleanup below drops it.
                 self.begin_unit_capture();
-                let mut outcome = self.eval_block_value_opts(&stmts, true);
+                let mut outcome = self.eval_unit_value(&stmts, &mut free_var_writes);
                 self.end_unit_capture();
                 // The free variables this snippet WROTE (`EVAL '$a = 32'`). They are
                 // assignments to the caller's lexicals, not the snippet's own `my`,
                 // so the leaked-lexical cleanup below must leave them alone.
-                let snippet_free_var_writes: HashSet<crate::symbol::Symbol> = self
-                    .recorded_free_var_writes
-                    .drain(free_var_writes_mark..)
-                    .map(|n| crate::symbol::Symbol::intern(&n))
+                let snippet_free_var_writes: HashSet<crate::symbol::Symbol> = free_var_writes
+                    .iter()
+                    .filter(|n| crate::env::is_plain_user_lexical(n))
+                    .map(|n| crate::symbol::Symbol::intern(n))
                     .collect();
                 self.pop_lexical_class_scope();
                 if let Ok(value) = &outcome
