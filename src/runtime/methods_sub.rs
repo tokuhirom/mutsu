@@ -1095,6 +1095,11 @@ impl Interpreter {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());
+            // `--> C[T]` for a `C` with its own `^parameterize` denotes the
+            // type object that meta-method returns, not a name.
+            if let Some(ty) = self.meta_parameterized_type(&type_name) {
+                return Some(Ok(ty));
+            }
             // The return constraint is recorded by its source spelling; a
             // lexical type (`my subset ofTest ...; --> ofTest`) lives under a
             // mangled storage name (ADR-0047), so answer the type object the

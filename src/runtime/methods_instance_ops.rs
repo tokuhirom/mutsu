@@ -3046,6 +3046,15 @@ impl Interpreter {
                     if let Some(repr) = crate::runtime::native_decl::builtin_native_repr(&name) {
                         return Ok(Value::str_from(repr));
                     }
+                    // A role type object -- `Blob`, `Positional[Int]`, a user
+                    // role, a curried `Buf[uint8]` -- cannot be instantiated
+                    // until it is punned, so it reports `Uninstantiable`, as a
+                    // role's `ParametricRoleGroupHOW`/`CurriedRoleHOW` does in
+                    // rakudo. Upstream NativeCall's `validnctype` relies on it
+                    // to accept a `Blob` parameter.
+                    if self.is_role_type_name(&Self::optional_type_object_name(&name)) {
+                        return Ok(Value::str_from("Uninstantiable"));
+                    }
                 }
                 // Type objects only. An *instance* reaches here when it has no C
                 // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`

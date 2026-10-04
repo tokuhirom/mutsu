@@ -797,6 +797,7 @@ impl Interpreter {
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
         compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
+        self.resolve_decl_parameterizations(param_defs, return_type.map(String::as_str));
         if name.starts_with("infix:<") {
             // Declared here: record the compilation unit so the operator stays
             // lexically scoped to it (and to any EVAL unit nested inside it).
