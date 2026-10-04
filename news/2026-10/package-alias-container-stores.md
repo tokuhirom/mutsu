@@ -1,0 +1,1 @@
+Array and hash assignments through a constant package alias now update the real package variable. This covers indexed and keyed writes, whole-container assignments, and undeclared package slots (#11566).

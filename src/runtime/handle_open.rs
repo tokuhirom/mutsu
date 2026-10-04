@@ -285,6 +285,18 @@ impl IoHandleState {
         }
     }
 
+    /// The local TCP port of a socket handle (a listener or a connected
+    /// stream) — `nqp::getport`. `None` for any other kind of handle.
+    // Cost: O(1) plus one `getsockname(2)`.
+    pub(crate) fn local_port(&self) -> Option<u16> {
+        let addr = match (&self.listener, &self.socket) {
+            (Some(SocketListener::Tcp(l)), _) => l.local_addr(),
+            (_, Some(SocketStream::Tcp(s))) => s.local_addr(),
+            _ => return None,
+        };
+        addr.ok().map(|a| a.port())
+    }
+
     /// The raw OS file descriptor backing this handle, if any. Used by `.lock` /
     /// `.unlock` to place fcntl advisory record locks directly on the fd.
     #[cfg(unix)]
@@ -431,21 +443,6 @@ impl Interpreter {
         encoding: Option<String>,
     ) -> Result<String, RuntimeError> {
         self.with_handle_mut(handle_value, |state| Ok(state.encoding_setting(encoding)))
-    }
-
-    /// POSIX seconds since the epoch, **keeping the sub-second part**.
-    ///
-    /// The file-timestamp accessors (`.created`/`.modified`/`.accessed`) build a
-    /// Raku `Instant` out of this, and raku reports those to nanosecond
-    /// resolution. Truncating to whole seconds made two writes inside the same
-    /// second compare equal, so a cache keyed on "is the file on disk newer than
-    /// the copy I indexed?" never invalidated (`Template::Nest::Fast`'s
-    /// `:advanced-indexing` re-index check).
-    pub(super) fn system_time_to_secs(time: SystemTime) -> f64 {
-        match time.duration_since(UNIX_EPOCH) {
-            Ok(duration) => duration.as_secs_f64(),
-            Err(_) => 0.0,
-        }
     }
 
     #[allow(clippy::type_complexity)]

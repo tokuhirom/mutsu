@@ -262,6 +262,28 @@ pub(crate) fn is_qualified(name: Symbol) -> bool {
     flags::of(name) & flags::QUALIFIED != 0
 }
 
+/// [`is_qualified`] for a caller that holds only the name's text.
+///
+/// The name is looked up rather than interned: on a resolution path every
+/// name it is asked about has almost always been interned already (by the
+/// compiler's constant pool or the registry), so re-interning it would only
+/// inflate the per-call intern count the `*_intern_budget` tests pin. A name
+/// seen for the first time is interned once, and from then on answered by
+/// the lookup.
+// Cost: O(|name|) for the lookup's hash, then O(1).
+pub(crate) fn is_qualified_str(name: &str) -> bool {
+    is_qualified(known_symbol(name))
+}
+
+/// `name`'s `Symbol`, looked up first and interned only when it has never been
+/// seen: the per-execution counterpart of `Symbol::intern` for a path that
+/// holds only text but almost always asks about an already-interned name (see
+/// [`is_qualified_str`]).
+// Cost: O(|name|) for the lookup's hash.
+pub(crate) fn known_symbol(name: &str) -> Symbol {
+    Symbol::lookup(name).unwrap_or_else(|| Symbol::intern(name))
+}
+
 /// Whether a variable key (`P::x`, `@P::a`, ...) addresses a real package
 /// stash -- a global package variable -- rather than a lexical (pseudo-stash
 /// spellings such as `OUTER::x` and the compiler's `__mutsu_outer::` keys are

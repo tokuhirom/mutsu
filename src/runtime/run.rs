@@ -1226,7 +1226,7 @@ impl Interpreter {
         } else {
             self.run_mainline_leave_phasers()
         };
-        if !self.control.end_phasers.is_empty() {
+        if !self.control.end_phasers.is_empty() && !self.control.skip_end_phasers {
             // Rakudo latches the process status at the *first* `exit`
             // (`the-end-is-nigh`): an `exit` raised while one is already
             // unwinding still ends the block it runs in, but it neither

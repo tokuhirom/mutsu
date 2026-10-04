@@ -50,7 +50,7 @@ fn signature_captures<'a>(sigs: impl IntoIterator<Item = &'a [ParamDef]>) -> Vec
     sigs.into_iter()
         .flatten()
         .filter_map(|pd| pd.captured_type_name())
-        .filter(|name| !name.is_empty() && !name.contains("::"))
+        .filter(|name| !name.is_empty() && !crate::qualified::is_qualified_str(name))
         .map(str::to_string)
         .collect()
 }
@@ -324,7 +324,7 @@ pub(super) struct CaptureInheritance {
 impl CaptureInheritance {
     fn check_parents(&mut self, name: &str, parents: &[String]) {
         for parent in parents {
-            let base = parent.strip_prefix("::").unwrap_or(parent);
+            let base = crate::qualified::type_capture_name(parent).unwrap_or(parent);
             if !self.captures.contains(base) {
                 continue;
             }

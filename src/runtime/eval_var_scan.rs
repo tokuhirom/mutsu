@@ -78,7 +78,7 @@ fn bare_var_name(name: &str) -> &str {
 fn is_exempt(name: &str) -> bool {
     matches!(name, "_" | "/" | "!" | "self" | "¢")
         || name.starts_with(['*', '?', '^', '~', '.', '!', ':', '='])
-        || name.contains("::")
+        || crate::qualified::is_qualified_str(name)
         || name.starts_with("CALLER")
         || name.starts_with("DYNAMIC")
         || name.starts_with("__")

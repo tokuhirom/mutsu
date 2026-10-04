@@ -973,6 +973,22 @@ impl Interpreter {
         }
     }
 
+    /// The type object a `::T` capture binds for `value`, like `value.WHAT`.
+    ///
+    /// A role-mixed value (`C.^mixin(R)`, `$obj but R`, an upstream
+    /// NativeCall `CArray[int32]`) is its composed `C+{R}` type, built by the
+    /// same composition-keyed cache `.WHAT` uses; flattening it to its base
+    /// value's type name answered `Package` or `Any`.
+    // Cost: O(1), or O(k) for a mixin, k = number of mixin override keys.
+    pub(crate) fn captured_type_object_of(&mut self, value: &Value) -> Value {
+        if let ValueView::Mixin(..) = value.view()
+            && let Ok(what) = self.dispatch_what(value, Vec::new())
+        {
+            return what;
+        }
+        Self::captured_type_object(value)
+    }
+
     pub(crate) fn captured_type_object(value: &Value) -> Value {
         match value.view() {
             ValueView::Package(name) => Value::package(name),
@@ -1030,7 +1046,7 @@ static TYPE_CAPTURE_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::Ato
 impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
         TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
-        let captured = Self::captured_type_object(value);
+        let captured = self.captured_type_object_of(value);
         self.env.insert(name.to_string(), captured.clone());
         let pkg = self.current_package_sym();
         if pkg != crate::symbol::wk::global_package()

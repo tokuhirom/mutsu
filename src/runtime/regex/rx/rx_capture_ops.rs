@@ -12,7 +12,7 @@ use super::super::regex_match_sep::{separated_capture_delta_syms, separator_stri
 use super::rx_levels::Levels;
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
-use crate::runtime::regex_types::{RegexAtom, RegexCaptures};
+use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexPattern};
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -400,4 +400,25 @@ fn walk_leaf_use(atom: &RegexAtom) {
         _ => (WalkUse::Leaf, "other"),
     };
     record_regex_walk(kind, reason);
+}
+
+/// Does `pattern` hold a `<(` / `)>` marker at its own capture level -- not
+/// inside a nested capture group (which scopes its own markers) or a
+/// lookaround (a nested run)? A capture group whose body does is its own
+/// Match, so the markers must land on the group's level (#11570).
+// Cost: O(n), n = atoms of `pattern` at its own level.
+pub(super) fn pattern_sets_capture_marker(pattern: &RegexPattern) -> bool {
+    pattern.tokens.iter().any(|t| {
+        t.separator
+            .as_ref()
+            .is_some_and(|sep| pattern_sets_capture_marker(&sep.pattern))
+            || match &t.atom {
+                RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => true,
+                RegexAtom::Group(p) => pattern_sets_capture_marker(p),
+                RegexAtom::Alternation(alts)
+                | RegexAtom::SequentialAlternation(alts)
+                | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_sets_capture_marker),
+                _ => false,
+            }
+    })
 }

@@ -1,5 +1,4 @@
 use super::*;
-use std::sync::atomic::Ordering;
 
 impl Compiler {
     /// Borrow the functions compiled so far (routines declared within the body
@@ -1327,7 +1326,7 @@ impl Compiler {
         // Give closures a unique package name so their state variables don't
         // collide with state variables in the enclosing code that happen to
         // share the same variable name.
-        let closure_id = STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let closure_id = super::compile_session::mint();
         let closure_package = format!("{}::&<closure>/{}", self.current_package, closure_id);
         // Preserve the enclosing package for $?PACKAGE resolution.
         // If the parent already has an enclosing_package, propagate it;

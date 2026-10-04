@@ -651,8 +651,11 @@ impl Interpreter {
 
         // Return type
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());
-        attrs.insert("returns".to_string(), Value::package(Symbol::intern(&rt)));
-        attrs.insert("of".to_string(), Value::package(Symbol::intern(&rt)));
+        let rt_value = self
+            .cached_meta_parameterized_type(&rt)
+            .unwrap_or_else(|| Value::package(Symbol::intern(&rt)));
+        attrs.insert("returns".to_string(), rt_value.clone());
+        attrs.insert("of".to_string(), rt_value);
 
         // For a multi method dispatcher, attach one Method object per
         // candidate so that `.candidates` returns them. A non-multi (single)

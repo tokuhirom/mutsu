@@ -56,17 +56,62 @@ impl Interpreter {
         constraint: &str,
         value: &Value,
     ) -> Option<bool> {
-        let ty = match self.caches.meta_parameterized_types.get(constraint) {
-            Some(ty) => ty.clone(),
-            None => {
-                let ty = self.eval_meta_parameterized(constraint)?;
-                self.caches
-                    .meta_parameterized_types
-                    .insert(constraint.to_string(), ty.clone());
-                ty
-            }
-        };
+        let ty = self.meta_parameterized_type(constraint)?;
         Some(self.smart_match(value, &ty))
+    }
+
+    /// The type object the constraint `C[T, ...]` denotes, for a `C` that
+    /// declares `method ^parameterize`; `None` for any other spelling. The
+    /// meta-method runs once per spelling and the result is cached, so a
+    /// later [`Self::cached_meta_parameterized_type`] can answer without
+    /// running code.
+    // Cost: O(n) to split the spelling, n = its chars; the meta-method runs
+    // once per spelling (cached).
+    pub(crate) fn meta_parameterized_type(&mut self, constraint: &str) -> Option<Value> {
+        if let Some(ty) = self.caches.meta_parameterized_types.get(constraint) {
+            return Some(ty.clone());
+        }
+        let ty = self.eval_meta_parameterized(constraint)?;
+        self.caches
+            .meta_parameterized_types
+            .insert(constraint.to_string(), ty.clone());
+        Some(ty)
+    }
+
+    /// The cached result of [`Self::meta_parameterized_type`], without
+    /// evaluating a spelling that has not been seen yet.
+    // Cost: O(1) expected, one hash probe.
+    pub(crate) fn cached_meta_parameterized_type(&self, constraint: &str) -> Option<Value> {
+        self.caches
+            .meta_parameterized_types
+            .get(constraint)
+            .cloned()
+    }
+
+    /// Evaluate every `C[T]` type a routine declaration names -- its
+    /// parameters' and its return type -- so that a later `Signature` value,
+    /// built with only shared access to the interpreter, reports
+    /// `Parameter.type` and `.returns` as the type objects the declaration
+    /// denotes. Rakudo evaluates `C[T]` once, when it compiles the signature;
+    /// a trait handler (upstream NativeCall's `check_routine_sanity`) reads
+    /// `.REPR` and `.^can` off those type objects.
+    // Cost: O(p * n) plus each new spelling's meta-method, p = parameters,
+    // n = chars of a constraint.
+    pub(crate) fn resolve_decl_parameterizations(
+        &mut self,
+        param_defs: &[crate::ast::ParamDef],
+        return_type: Option<&str>,
+    ) {
+        let pending: Vec<String> = param_defs
+            .iter()
+            .filter_map(|p| p.type_constraint.as_deref())
+            .chain(return_type)
+            .filter(|t| t.contains('[') && !self.caches.meta_parameterized_types.contains_key(*t))
+            .map(str::to_string)
+            .collect();
+        for t in pending {
+            self.meta_parameterized_type(&t);
+        }
     }
 
     /// The type object `C[T, ...]` evaluates to, by calling `C`'s

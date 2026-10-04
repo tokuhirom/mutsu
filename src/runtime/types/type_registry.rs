@@ -315,46 +315,12 @@ impl Interpreter {
     /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
     /// built-in registry template).
     pub(in crate::runtime) fn signal_enum_variants() -> Vec<(String, EnumValue)> {
-        // Use libc constants on Unix, standard POSIX numbers on other platforms
-        vec![
-            // Signals that share value 0 on this platform (Rakudo lists them so
-            // `Signal.keys` is complete, e.g. `Signal.keys.sort[^3]` needs SIGBREAK).
-            ("SIGINFO".to_string(), EnumValue::Int(Self::sig_num(0))),
-            ("SIGTHR".to_string(), EnumValue::Int(Self::sig_num(0))),
-            ("SIGBREAK".to_string(), EnumValue::Int(Self::sig_num(0))),
-            ("SIGEMT".to_string(), EnumValue::Int(Self::sig_num(0))),
-            ("SIGHUP".to_string(), EnumValue::Int(Self::sig_num(1))),
-            ("SIGINT".to_string(), EnumValue::Int(Self::sig_num(2))),
-            ("SIGQUIT".to_string(), EnumValue::Int(Self::sig_num(3))),
-            ("SIGILL".to_string(), EnumValue::Int(Self::sig_num(4))),
-            ("SIGTRAP".to_string(), EnumValue::Int(Self::sig_num(5))),
-            ("SIGABRT".to_string(), EnumValue::Int(Self::sig_num(6))),
-            ("SIGBUS".to_string(), EnumValue::Int(Self::sig_num(7))),
-            ("SIGFPE".to_string(), EnumValue::Int(Self::sig_num(8))),
-            ("SIGKILL".to_string(), EnumValue::Int(Self::sig_num(9))),
-            ("SIGSEGV".to_string(), EnumValue::Int(Self::sig_num(11))),
-            ("SIGPIPE".to_string(), EnumValue::Int(Self::sig_num(13))),
-            ("SIGALRM".to_string(), EnumValue::Int(Self::sig_num(14))),
-            ("SIGTERM".to_string(), EnumValue::Int(Self::sig_num(15))),
-            ("SIGSTKFLT".to_string(), EnumValue::Int(Self::sig_num(16))),
-            ("SIGUSR1".to_string(), EnumValue::Int(Self::sig_num(10))),
-            ("SIGUSR2".to_string(), EnumValue::Int(Self::sig_num(12))),
-            ("SIGCHLD".to_string(), EnumValue::Int(Self::sig_num(17))),
-            ("SIGCONT".to_string(), EnumValue::Int(Self::sig_num(18))),
-            ("SIGSTOP".to_string(), EnumValue::Int(Self::sig_num(19))),
-            ("SIGTSTP".to_string(), EnumValue::Int(Self::sig_num(20))),
-            ("SIGTTIN".to_string(), EnumValue::Int(Self::sig_num(21))),
-            ("SIGTTOU".to_string(), EnumValue::Int(Self::sig_num(22))),
-            ("SIGURG".to_string(), EnumValue::Int(Self::sig_num(23))),
-            ("SIGXCPU".to_string(), EnumValue::Int(Self::sig_num(24))),
-            ("SIGXFSZ".to_string(), EnumValue::Int(Self::sig_num(25))),
-            ("SIGVTALRM".to_string(), EnumValue::Int(Self::sig_num(26))),
-            ("SIGPROF".to_string(), EnumValue::Int(Self::sig_num(27))),
-            ("SIGWINCH".to_string(), EnumValue::Int(Self::sig_num(28))),
-            ("SIGIO".to_string(), EnumValue::Int(Self::sig_num(29))),
-            ("SIGPWR".to_string(), EnumValue::Int(Self::sig_num(30))),
-            ("SIGSYS".to_string(), EnumValue::Int(Self::sig_num(31))),
-        ]
+        // Every signal MoarVM lists, including the ones this platform lacks
+        // (value 0), so `Signal.keys` is complete as in Rakudo.
+        crate::runtime::signal_table::SIGNALS
+            .iter()
+            .map(|(name, num)| (name.to_string(), EnumValue::Int(*num)))
+            .collect()
     }
 
     /// Record the process-constant built-in enum types (`Endian`,
@@ -391,11 +357,6 @@ impl Interpreter {
             "PromiseStatus".to_string(),
             Self::promise_status_enum_variants(),
         );
-    }
-
-    /// Get signal number — use the POSIX default value on all platforms.
-    fn sig_num(default: i64) -> i64 {
-        default
     }
 
     pub(in crate::runtime) fn version_from_value(arg: Value) -> Value {

@@ -69,7 +69,7 @@ impl Interpreter {
                     enc.as_deref(),
                 ))
             }
-            "mkdir" => match self.mkdir_op(&path_buf) {
+            "mkdir" => match self.mkdir_op(&path_buf, super::fs_ops::mkdir_mode(args.first())) {
                 Ok(()) => Ok(Value::make_instance(
                     Symbol::intern(class_name),
                     attributes.clone(),
@@ -82,15 +82,13 @@ impl Interpreter {
             // and fails softly (a Failure carrying X::IO::Unlink) for
             // any other error (e.g. the path is a directory) so `without`/`try`
             // can handle it rather than the method throwing.
-            "unlink" => match fs::remove_file(&path_buf) {
+            "unlink" => match super::fs_syscalls::unlink_file(&path_buf) {
                 Ok(()) => Ok(Value::TRUE),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::TRUE),
-                Err(err) => {
+                Err(reason) => {
                     // Rakudo reports libuv's wording ("illegal operation on a
                     // directory" for a directory target).
-                    let reason = super::fs_errors::libuv_text(&err);
                     let msg = format!(
-                        "Failed to remove the file '{}': Failed to delete file: {}",
+                        "Failed to remove the file '{}': {}",
                         Self::stringify_path(&path_buf),
                         reason
                     );

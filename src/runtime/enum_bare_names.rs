@@ -86,7 +86,7 @@ impl Interpreter {
         // cost a `format!` on every bareword resolution.
         if !ENUM_BARE_KEY_SEEN.load(std::sync::atomic::Ordering::Relaxed)
             || name.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }
@@ -103,7 +103,7 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Result<(), crate::value::RuntimeError> {
-        if crate::runtime::utils::has_double_colon(name) {
+        if crate::qualified::is_qualified_str(name) {
             return Ok(());
         }
         let Some(pkg_name) = self.is_poisoned_enum_alias(name) else {

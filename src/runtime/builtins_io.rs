@@ -327,12 +327,8 @@ impl Interpreter {
         for arg in &paths {
             let path = arg.to_string_value();
             let resolved = self.resolve_path(&path);
-            match fs::remove_file(&resolved) {
-                Ok(()) => names.push(Value::str(path)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    names.push(Value::str(path))
-                }
-                Err(_) => {}
+            if native_io::fs_syscalls::unlink_file(&resolved).is_ok() {
+                names.push(Value::str(path));
             }
         }
         // `unlink` returns an `Array` (not a List), so `say unlink <...>` gists

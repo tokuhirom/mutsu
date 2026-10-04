@@ -216,6 +216,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         ParameterTargetVar | ParameterTargetTerm => &[("name", Absent::Required)],
         VarDeclarationSimple => &[
+            ("type", Absent::TypeObject("RakuAST::Type")),
+            ("shape", Absent::TypeObject("RakuAST::SemiList")),
             ("sigil", Absent::Required),
             ("desigilname", Absent::Required),
             ("traits", Absent::EmptyList),

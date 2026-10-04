@@ -1749,6 +1749,8 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     let (mut custom_traits, dynamic_trait) = super::decl_traits::lower(node)?;
     let sigil = leaf_str(node, "sigil")?;
+    let type_constraint =
+        super::keyed_hash::lower(node, &sigil, type_constraint, &mut custom_traits)?;
     let desigil_node = named_child(node, "desigilname")?;
     let desigil = match positional_leaf(desigil_node)?.view() {
         ValueView::Str(s) => s.to_string(),

@@ -10,6 +10,9 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
     if let Some(v) = crate::runtime::nqp_control_const_value(konst) {
         return Some(v);
     }
+    if let Some(v) = crate::runtime::nqp_ops_sys::uname_const_value(konst) {
+        return Some(v);
+    }
     // Cost: O(1) at run time (every constant folds to an integer literal at compile time).
     Some(match konst {
         "BINARY_ENDIAN_NATIVE" => 0,

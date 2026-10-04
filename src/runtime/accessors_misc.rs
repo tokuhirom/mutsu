@@ -19,9 +19,8 @@ impl Interpreter {
             || key
                 .strip_prefix("GLOBAL::")
                 .is_some_and(|name| self.need_hidden_classes.contains(name))
-            || key
-                .rsplit_once("::")
-                .is_some_and(|(_, short)| self.need_hidden_classes.contains(short))
+            || crate::qualified::split_qualified(Symbol::intern(key))
+                .is_some_and(|(_, short)| self.need_hidden_classes.contains(short.as_str()))
             || self
                 .need_hidden_classes
                 .iter()

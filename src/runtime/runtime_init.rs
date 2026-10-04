@@ -6,14 +6,14 @@ use crate::value::ValueMap;
 /// wasm32 has no process environment to sweep, so the browser build starts
 /// with an empty `%*ENV` that scripts can still write to.
 #[cfg(not(target_family = "wasm"))]
-fn os_env_hash() -> ValueMap {
+pub(crate) fn os_env_hash() -> ValueMap {
     std::env::vars()
         .map(|(key, value)| (key, builtins_collection::builtin_val(&[Value::str(value)])))
         .collect()
 }
 
 #[cfg(target_family = "wasm")]
-fn os_env_hash() -> ValueMap {
+pub(crate) fn os_env_hash() -> ValueMap {
     ValueMap::default()
 }
 
@@ -1266,6 +1266,8 @@ impl Interpreter {
                     "signals",
                     "signal",
                     "cpu-cores",
+                    "free-memory",
+                    "total-memory",
                     "endian",
                     "gist",
                     "raku",

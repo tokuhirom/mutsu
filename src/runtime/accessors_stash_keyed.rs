@@ -38,16 +38,12 @@ impl Interpreter {
         if key_s.starts_with("__mutsu_") {
             return None;
         }
-        if (package_name == "MY" || package_name == "GLOBAL")
-            && self.should_hide_from_my_global_stash(key_s)
-        {
+        let is_global = Symbol::intern(package_name) == crate::symbol::wk::global_package();
+        if (package_name == "MY" || is_global) && self.should_hide_from_my_global_stash(key_s) {
             return None;
         }
         // Skip env entries hidden from package stash lookups (transitive deps)
-        if package_name != "MY"
-            && package_name != "GLOBAL"
-            && self.package_stash_hidden.contains(key_s)
-        {
+        if package_name != "MY" && !is_global && self.package_stash_hidden.contains(key_s) {
             return None;
         }
         // Skip my-scoped items (they should not appear in the package stash).
@@ -62,7 +58,7 @@ impl Interpreter {
         // `our` (`GLOBAL::o` alongside bare `o`, see the `our_vars` loop
         // in `package_stash_value`) -- strip it so it is recognized as the
         // same symbol rather than a sub-package named literally "GLOBAL".
-        let effective_key: &str = if package_name == "GLOBAL" {
+        let effective_key: &str = if is_global {
             key_s.strip_prefix("GLOBAL::").unwrap_or(key_s)
         } else {
             key_s
@@ -78,7 +74,7 @@ impl Interpreter {
         // `.WHO` carries the members (`my $foo::bar = 1` gives
         // `OUR::.keys` == `(foo)` and `OUR::<foo>.WHO.keys` == `($bar)`,
         // not a flat `foo::bar` key).
-        if let Some((head, _)) = rest.split_once("::") {
+        if let Some(head) = Self::stash_tail_sub_package(rest) {
             // `__mutsu_constant_var::C` and similar internal markers
             // are qualified-looking but are not a real sub-package --
             // only GLOBAL's unconditional `stash_member_tail` match
@@ -99,7 +95,7 @@ impl Interpreter {
         // scalars are already covered by the dedicated `our_vars` loop,
         // so this flat mirror would only be a harmless-but-wrong
         // duplicate at best.
-        if package_name == "GLOBAL" && !Self::is_global_root_symbol(rest) {
+        if is_global && !Self::is_global_root_symbol(rest) {
             return None;
         }
         Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
@@ -119,7 +115,7 @@ impl Interpreter {
             return Some(stash_key);
         }
         let rest = Self::stash_member_tail(key, package_name)?;
-        if rest.is_empty() || rest.contains("::") {
+        if rest.is_empty() || crate::qualified::is_qualified(Symbol::intern(rest)) {
             return None;
         }
         Some(Self::stash_symbol_key_from_env_tail(rest))
@@ -143,7 +139,8 @@ impl Interpreter {
         // require), so without stripping it here the tail would still
         // carry the self-qualification and get misread as a `::`-nested
         // sub-package name a few lines down, dropping the sub entirely.
-        let effective_key: &str = if package_name == "GLOBAL" {
+        let package = Symbol::intern(package_name);
+        let effective_key: &str = if package == crate::symbol::wk::global_package() {
             key_s.strip_prefix("GLOBAL::").unwrap_or(key_s)
         } else {
             key_s
@@ -154,11 +151,14 @@ impl Interpreter {
         } else {
             rest
         };
-        if base.is_empty() || base.contains("::") || base.contains(':') {
+        // No `:` at all, so in particular no `::` qualifier.
+        if base.is_empty() || base.contains(':') {
             return None;
         }
         // Skip my-scoped subs (they should not appear in the package stash)
-        if self.is_my_scoped_package_item(&format!("{}::{}", package_name, base)) {
+        if self.is_my_scoped_package_item(
+            crate::qualified::qualified(package, Symbol::intern(base)).as_str(),
+        ) {
             return None;
         }
         Some(base)

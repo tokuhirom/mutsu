@@ -552,7 +552,8 @@ fn scan_to_delim_inner(
                     match chars.next() {
                         Some((_, q)) if honor_quotes && is_regex_quote_open(q) => loop {
                             match chars.next() {
-                                Some((_, '\\')) => {
+                                // `｢...｣` is raw (Q): a backslash is literal.
+                                Some((_, '\\')) if q != '\u{FF62}' => {
                                     chars.next();
                                 }
                                 Some((_, ch)) if is_regex_quote_terminator(q, ch) => break,
@@ -594,7 +595,8 @@ fn scan_to_delim_inner(
             // from prematurely ending the regex literal.
             loop {
                 match chars.next() {
-                    Some((_, '\\')) => {
+                    // `｢...｣` is raw (Q): a backslash is literal.
+                    Some((_, '\\')) if c != '\u{FF62}' => {
                         chars.next(); // skip escaped char
                     }
                     Some((_, ch)) if is_regex_quote_terminator(c, ch) => break,

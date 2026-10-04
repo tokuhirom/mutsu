@@ -558,4 +558,9 @@ impl crate::value::signature::SubsetBases for crate::runtime::Interpreter {
     fn subset_base(&self, name: &str) -> Option<String> {
         self.registry().subsets.get(name).map(|s| s.base.clone())
     }
+
+    // Cost: O(1) expected, one cache hash probe.
+    fn parameterized_type(&self, constraint: &str) -> Option<Value> {
+        self.cached_meta_parameterized_type(constraint)
+    }
 }

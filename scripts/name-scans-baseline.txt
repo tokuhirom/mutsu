@@ -4,32 +4,6 @@
 # A drop needs no re-cut. Tighten every row at once (optional) with
 #   scripts/check-name-scans.sh --update
 
-src/runtime/accessors_misc.rs                               0    0    1
-src/runtime/accessors_resolve.rs                            2    0    2
-src/runtime/accessors_stack.rs                              1    4    1
-src/runtime/accessors_stash.rs                              1    2    7
-src/runtime/accessors_stash_keyed.rs                        1    5    3
-src/runtime/accessors_stash_package.rs                      1    7    4
-src/runtime/accessors_state.rs                              1    0    3
-src/runtime/builtins_atomic_shared.rs                       0    1    0
-src/runtime/builtins_control_flow.rs                        2    0    0
-src/runtime/builtins_eval_misc.rs                           1    3    0
-src/runtime/builtins_operators_fallback.rs                  0    3    1
-src/runtime/builtins_system_require.rs                      7    1    4
-src/runtime/calls.rs                                        0    0    2
-src/runtime/compunit_scope.rs                               0    1    5
-src/runtime/cstruct_layout.rs                               0    0   11
-src/runtime/dispatch_key.rs                                 2    0    0
-src/runtime/dispatch_proto.rs                               0    0    2
-src/runtime/dispatch_proto_call.rs                          0    0    1
-src/runtime/dispatch_resolve.rs                             2    1    4
-src/runtime/end_phasers.rs                                  1    2    2
-src/runtime/enum_bare_names.rs                              0    0    2
-src/runtime/eval_check.rs                                   0    0    1
-src/runtime/eval_import_scope.rs                            0    0    1
-src/runtime/eval_name_scans.rs                              0    0    1
-src/runtime/eval_type_scans.rs                              0    0    2
-src/runtime/eval_var_scan.rs                                0    0    1
 src/runtime/hoist_visibility.rs                             2    0    0
 src/runtime/main_args.rs                                    0    1    0
 src/runtime/methods_call_dispatch.rs                        0    0    1
