@@ -1073,7 +1073,11 @@ impl Interpreter {
                 "postcircumfix:<{ }>"
             };
             let args = vec![target.clone(), index.clone()];
-            if let Some(def) = self.resolve_function_with_types(op_name, &args) {
+            if let Some(def) = self
+                .resolve_function_with_types(op_name, &args)
+                .ok()
+                .flatten()
+            {
                 let result = self.call_routine_def(&def, args)?;
                 self.stack.push(result);
                 return Ok(());
@@ -2538,8 +2542,10 @@ impl Interpreter {
                     // must see the mixin's current role-attribute overrides.
                     let dispatch_target = target.clone();
                     let args = vec![dispatch_target, Value::int(i)];
-                    let value = if let Some(def) =
-                        self.resolve_function_with_types("postcircumfix:<[ ]>", &args)
+                    let value = if let Some(def) = self
+                        .resolve_function_with_types("postcircumfix:<[ ]>", &args)
+                        .ok()
+                        .flatten()
                     {
                         self.call_routine_def(&def, args)?
                     } else {

@@ -196,7 +196,7 @@ impl Interpreter {
                 .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
             ValueView::Routine { name, .. } => self
                 .resolve_function_with_types(&name.resolve(), args)
-                .is_some(),
+                .is_ok_and(|def| def.is_some()),
             _ => false,
         }
     }

@@ -11,6 +11,8 @@ impl Interpreter {
         export_args: &[Value],
     ) -> Option<Arc<FunctionDef>> {
         self.resolve_function_with_types("EXPORT", export_args)
+            .ok()
+            .flatten()
             .or_else(|| self.resolve_function("EXPORT"))
     }
 

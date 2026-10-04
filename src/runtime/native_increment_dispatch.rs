@@ -133,7 +133,7 @@ impl Interpreter {
         // call site built it (the operand still wrapped in its `VarRef`) so an
         // `is rw` user parameter still binds — both resolution and the ranking
         // metrics unwrap it themselves.
-        let Some(def) = self.resolve_function_with_types(name, args) else {
+        let Some(def) = self.resolve_function_with_types(name, args).ok().flatten() else {
             return Some(true);
         };
         if core_constraint == "Mu" {

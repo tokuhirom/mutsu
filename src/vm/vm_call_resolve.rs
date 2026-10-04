@@ -116,10 +116,13 @@ impl Interpreter {
         // resolution itself is still cacheable whenever the candidates are
         // type+arity deterministic, and for a `multi` this call was otherwise a
         // full candidate walk on every single dispatch.
+        // A dispatch error is raised by the fallback path's own re-resolve.
         let resolved_def = loan_env!(
             self,
             resolve_function_multi_cached_sym(name, name_sym, args)
-        );
+        )
+        .ok()
+        .flatten();
         memo.clone_from(&resolved_def);
         let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.

@@ -205,6 +205,8 @@ impl Interpreter {
             && self.has_type(name)
             && (self.has_declared_function(name) || self.has_multi_function(name))
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+                .ok()
+                .flatten()
         {
             let result = self.call_routine_def(&def, Vec::new())?;
             self.stack.push(result);
@@ -457,6 +459,8 @@ impl Interpreter {
                 // no-paren listop argument (`ok-time localtime`).
                 if imported_routine
                     && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+                        .ok()
+                        .flatten()
                 {
                     self.call_routine_def(&def, Vec::new())?
                 } else {
@@ -508,6 +512,8 @@ impl Interpreter {
             enum_val
         } else if name_is_qualified
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+                .ok()
+                .flatten()
         {
             let name_sym = crate::symbol::Symbol::intern(name);
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &[]) {
@@ -588,7 +594,10 @@ impl Interpreter {
                 let pkg_sym = self.current_package_sym();
                 // Slice 6.3 step 2: precise env_dirty from the named-call merge.
                 self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)?
-            } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[])) {
+            } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+                .ok()
+                .flatten()
+            {
                 // A user routine imported under a name that also has a native
                 // nullary form must win in term position. This matters for
                 // modules such as Time::localtime: `localtime` is a term in

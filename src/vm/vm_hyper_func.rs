@@ -496,7 +496,10 @@ impl Interpreter {
         {
             return cf.param_defs.first().map(writable).unwrap_or(false);
         }
-        if let Some(def) = loan_env!(self, resolve_function_with_types(name, &probe)) {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(name, &probe))
+            .ok()
+            .flatten()
+        {
             return def.param_defs.first().map(writable).unwrap_or(false);
         }
         false

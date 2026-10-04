@@ -2188,7 +2188,9 @@ impl Interpreter {
                     // candidates' `where` clauses.
                     let resolved_def = match multi_def_memo.clone() {
                         memoised @ Some(_) => memoised,
-                        None => loan_env!(self, resolve_function_with_types(name, &args)),
+                        None => loan_env!(self, resolve_function_with_types(name, &args))
+                            .ok()
+                            .flatten(),
                     };
                     if let Some(ref def) = resolved_def {
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args)
@@ -2298,12 +2300,9 @@ impl Interpreter {
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
                     // winner is unambiguous and OTF-compilable, run it as compiled
                     // bytecode instead of tree-walking through the interpreter.
-                    // For functions, ambiguity is signalled by returning None +
-                    // a pending_dispatch_error (dispatch.rs choose_best_matching_
-                    // candidate), so a Some(def) here is already an unambiguous
-                    // winner. Clear any stale pending error first (mirrors
-                    // resolve_function_with_alias) so a prior call's ambiguity
-                    // can't leak. Non-otf-compilable (where/default/code-param) and
+                    // Ambiguity is the resolver's `Err` (`Resolved`), so a
+                    // Some(def) here is already an unambiguous winner.
+                    // Non-otf-compilable (where/default/code-param) and
                     // no-match/ambiguous all fall through to call_function_fallback,
                     // which re-resolves and raises X::Multi::Ambiguous / NoMatch.
                     // The selected candidate's own redispatch (`nextsame`/`callsame`/
@@ -2316,7 +2315,6 @@ impl Interpreter {
                     // and corrupts behaviour (regressed S16-io/words.t,
                     // S32-io/slurp.t via is-eqv). Mirrors the non-builtin OTF path's
                     // is_interpreter_handled_function gate below.
-                    let _ = self.take_pending_dispatch_error();
                     if !self.is_interpreter_handled_function(name)
                         // Sound multi-function resolution cache: for a type+arity-
                         // deterministic multi this returns the winner without the
@@ -2328,7 +2326,7 @@ impl Interpreter {
                             // above, and only ever memoised when that answer is
                             // a pure function of the argument type keys.
                             memoised @ Some(_) => memoised,
-                            None => loan_env!(self, resolve_function_multi_cached(name, &args)),
+                            None => loan_env!(self, resolve_function_multi_cached(name, &args)).ok().flatten(),
                         }
                         // A genuine multi candidate: the name is multi-cached, so
                         // `compile_and_call_function_def` never name-caches this
@@ -2370,6 +2368,8 @@ impl Interpreter {
                     if !self.has_proto_cached_sym(name, name_sym)
                         && !self.has_multi_candidates_cached_sym(name_sym)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
+                            .ok()
+                            .flatten()
                     {
                         let is_builtin = crate::runtime::Interpreter::is_builtin_function(name);
                         // Prefer the cross-thread shared captured body for a
@@ -2466,7 +2466,7 @@ impl Interpreter {
                     native_result
                 } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached_sym(name_sym)
-                && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
+                && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args)).ok().flatten()
                 // Only OTF-compile simple functions: no default params, no
                 // code params (&foo), no where constraints, no closures.
                 && Self::def_is_otf_compilable(&def)
@@ -2695,11 +2695,12 @@ impl Interpreter {
         if !proto_matches && !proto_allows_candidate {
             return None;
         }
-        // Ambiguity is signalled by `None` + a pending dispatch error; clear any
-        // stale one first (mirrors the non-proto multi fork) so a prior call's
-        // ambiguity can't leak into this resolution.
-        let _ = self.take_pending_dispatch_error();
-        let def = self.resolve_proto_candidate_with_types(name, args)?;
+        // A dispatch error (ambiguity) falls through to the interpreter path, which
+        // re-resolves and raises it.
+        let def = self
+            .resolve_proto_candidate_with_types(name, args)
+            .ok()
+            .flatten()?;
         if def.empty_sig && !args.is_empty() {
             return None;
         }
@@ -2853,9 +2854,6 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let proto_name = frame.name.clone();
         let args = frame.args.clone();
-        // Clear any stale pending dispatch error (mirrors the trivial-proto fork)
-        // so a prior call's ambiguity can't leak into this resolution.
-        let _ = self.take_pending_dispatch_error();
         // `{*}` rw-redispatch (ledger §D): when the proto declares a scalar
         // `is rw`/`is raw` parameter, Rakudo redispatches `{*}` using the proto's
         // CURRENT (body-mutated) parameter, so a candidate's own rw write chains
@@ -2880,7 +2878,7 @@ impl Interpreter {
         if had_rw_sources {
             self.set_pending_call_arg_sources(rw_arg_sources);
         }
-        if let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)
+        if let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args).ok().flatten()
             && (!def.empty_sig || args.is_empty())
             // A proto candidate is a genuine multi candidate: its caching profile
             // in `compile_and_call_function_def` is identical with or without a

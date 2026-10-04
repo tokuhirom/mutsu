@@ -407,7 +407,7 @@ impl Interpreter {
                 acc = value;
                 continue;
             }
-            if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args) {
+            if let Some(def) = self.resolve_function_with_types(&infix_name, &pair_args)? {
                 crate::trace::trace_log!("call", "call_infix_routine dispatch def: {}", infix_name);
                 acc = self.call_routine_def(&def, pair_args)?;
                 continue;
@@ -548,7 +548,7 @@ impl Interpreter {
                     };
                 let expr_args = vec![expr_left.clone(), expr_right.clone()];
                 let expr_infix_name = format!("infix:<{}>", expr_op);
-                if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args) {
+                if let Some(def) = self.resolve_function_with_types(&expr_infix_name, &expr_args)? {
                     crate::trace::trace_log!(
                         "call",
                         "call_infix_routine fallback dispatch def: {}",

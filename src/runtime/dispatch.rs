@@ -3,6 +3,11 @@ use super::*;
 type DispatchShape = (Option<String>, bool, bool, bool, bool, bool, bool);
 type TokenCallCandidate = (String, Option<String>);
 
+/// A routine resolution: the winning candidate, no candidate, or the
+/// exception the dispatch itself raised (`X::Multi::Ambiguous`, a `where`
+/// clause that died, a proto that refuses the arguments).
+pub(crate) type Resolved = Result<Option<Arc<FunctionDef>>, RuntimeError>;
+
 impl Interpreter {
     pub(crate) fn constraint_base_name(constraint: &str) -> &str {
         // A `::` here is a package separator (`Foo::Base`), not the start of
@@ -30,18 +35,6 @@ impl Interpreter {
             }
         }
         &constraint[..end]
-    }
-
-    pub(super) fn clear_pending_dispatch_error(&mut self) {
-        self.pending_dispatch_error = None;
-    }
-
-    pub(crate) fn take_pending_dispatch_error(&mut self) -> Option<RuntimeError> {
-        self.pending_dispatch_error.take()
-    }
-
-    pub(crate) fn set_pending_dispatch_error(&mut self, err: RuntimeError) {
-        self.pending_dispatch_error = Some(err);
     }
 
     pub(super) fn dispatch_visible_params(def: &FunctionDef) -> Vec<&ParamDef> {

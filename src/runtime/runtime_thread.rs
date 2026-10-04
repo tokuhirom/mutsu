@@ -574,7 +574,6 @@ impl Interpreter {
             topic_state: self.topic_state.fork_for_thread(),
             async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
-            pending_dispatch_error: None,
             pending_sigilless_store: None,
             regex_state: self.regex_state.fork_for_thread(),
             closure_env_overrides: self.closure_env_overrides.clone(),

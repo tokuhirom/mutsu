@@ -717,6 +717,7 @@ pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
+pub(crate) use dispatch::Resolved;
 mod dispatch_candidates;
 pub(crate) mod dispatch_key;
 mod dispatch_narrow;
@@ -2507,7 +2508,6 @@ pub struct Interpreter {
     pub(crate) regex_quant_scratch: Vec<Vec<usize>>,
     block_stack: Vec<CodeFrame>,
     block_scope_depth: usize,
-    pending_dispatch_error: Option<RuntimeError>,
     /// A sigilless name (`my \foo = Obj.new`) whose assignment `CheckReadOnly`
     /// let through because the bound object has a user `STORE`: the store that
     /// follows routes through `STORE` instead of rebinding the name (#9551).

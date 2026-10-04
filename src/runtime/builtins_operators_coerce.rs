@@ -318,7 +318,7 @@ impl Interpreter {
             };
             let infix_name = format!("infix:<{}>", inner);
             let pair_result = if let Some(v) =
-                self.resolve_function_with_types(&infix_name, &[l.clone(), r.clone()])
+                self.resolve_function_with_types(&infix_name, &[l.clone(), r.clone()])?
             {
                 self.call_routine_def(&v, vec![l, r])?
             } else if inner == "=~=" || inner == "\u{2245}" {

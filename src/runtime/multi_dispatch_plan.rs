@@ -89,12 +89,11 @@ impl Interpreter {
         arg_values: &[Value],
         search_pkgs: &[String],
         arity: usize,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         let plan = self.bare_multi_plan(name, arg_values, search_pkgs, arity);
         // Fingerprints of candidates an earlier pass already tried and that
         // did not bind; each wider pass re-gathers them, so skip them there.
         let mut rejected = std::collections::HashSet::new();
-        let had_pending_error = self.pending_dispatch_error.is_some();
         for (stage, program) in plan.stages.iter().zip(&plan.programs) {
             // A program is specific to the argument-type key, so only a plan
             // the cache keyed may build one (an unkeyed plan is per call).
@@ -105,30 +104,30 @@ impl Interpreter {
             } else {
                 None
             };
-            let winner = match program {
-                Some(program) => self.run_stage_program(name, arg_values, program, &mut rejected),
-                None => self.choose_from_plan_stage(name, arg_values, stage, &mut rejected),
-            };
-            if let Some(def) = winner {
-                return Some(def);
-            }
             // A stage that ended in `X::Multi::Ambiguous` (or a `where` that
             // died) has decided the call: a wider pass must not pick a
             // candidate out of the tie. `multi f(*%m)` and `multi f()` tie
             // in the exact-arity stage for `f()`; the slurpy stage, which
             // holds only `(*%m)`, would otherwise run it.
-            if !had_pending_error && self.pending_dispatch_error.is_some() {
-                return None;
+            let winner = match program {
+                Some(program) => {
+                    self.run_stage_program(name, arg_values, program, &mut rejected)?
+                }
+                None => self.choose_from_plan_stage(name, arg_values, stage, &mut rejected)?,
+            };
+            if let Some(def) = winner {
+                return Ok(Some(def));
             }
         }
         // Fall back to arity-only if no proto declared and no multi candidates were found.
         // When multi candidates exist but none matched (e.g., sub-signature arity mismatch),
         // falling back would bypass the sub-signature check.
         if self.has_proto(name) || plan.found_multi_candidates {
-            None
+            Ok(None)
         } else {
-            self.resolve_function_with_arity(name, arity)
-                .and_then(|def| self.visible_operator_def(name, def))
+            Ok(self
+                .resolve_function_with_arity(name, arity)
+                .and_then(|def| self.visible_operator_def(name, def)))
         }
     }
 
@@ -460,7 +459,7 @@ impl Interpreter {
         args: &[Value],
         stage: &[PlanEntry],
         rejected: &mut std::collections::HashSet<u64>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         let mut seen: Vec<u64> = Vec::with_capacity(stage.len());
         let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::with_capacity(stage.len());
         for entry in stage {
@@ -477,7 +476,7 @@ impl Interpreter {
             ranked.push((key, entry.def.clone()));
         }
         if ranked.is_empty() {
-            return None;
+            return Ok(None);
         }
         ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
         self.bind_ranked_candidates(name, args, ranked, Some(rejected))

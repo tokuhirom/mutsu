@@ -145,6 +145,8 @@ impl Interpreter {
                     result?
                 } else if let Some(def) =
                     loan_env!(self, resolve_function_with_types(&infix_name, &call_args))
+                        .ok()
+                        .flatten()
                 {
                     self.compile_and_call_function_def(&def, call_args.clone(), compiled_fns)?
                 } else {
@@ -173,7 +175,10 @@ impl Interpreter {
         right: &Value,
     ) -> bool {
         let args = [left.clone(), right.clone()];
-        let Some(def) = loan_env!(self, resolve_function_with_types(infix_name, &args)) else {
+        let Some(def) = loan_env!(self, resolve_function_with_types(infix_name, &args))
+            .ok()
+            .flatten()
+        else {
             return false;
         };
         let takes = |idx: usize| {

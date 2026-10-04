@@ -37,8 +37,10 @@ impl Interpreter {
             .dispatch
             .user_declared_infix_ops
             .contains_key(op_eq_name)
-            && let Some(def) =
-                self.resolve_function_with_types(op_eq_name, &[left.clone(), right.clone()])
+            && let Some(def) = self
+                .resolve_function_with_types(op_eq_name, &[left.clone(), right.clone()])
+                .ok()
+                .flatten()
         {
             let empty_fns = CompiledFns::default();
             return self.compile_and_call_function_def(&def, vec![left, right], &empty_fns);

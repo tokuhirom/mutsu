@@ -53,11 +53,8 @@ impl Interpreter {
             .strip_prefix("prefix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            if let Some(def) = self.resolve_function_with_alias(name, args) {
+            if let Some(def) = self.resolve_function_with_alias(name, args)? {
                 return self.call_routine_def(&def, args.to_vec());
-            }
-            if let Some(err) = self.take_pending_dispatch_error() {
-                return Err(err);
             }
             if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
                 return self.call_sub_value(callable, args.to_vec(), false);
@@ -157,11 +154,8 @@ impl Interpreter {
             .strip_prefix("postfix:<")
             .and_then(|s| s.strip_suffix('>'))
         {
-            if let Some(def) = self.resolve_function_with_alias(name, args) {
+            if let Some(def) = self.resolve_function_with_alias(name, args)? {
                 return self.call_routine_def(&def, args.to_vec());
-            }
-            if let Some(err) = self.take_pending_dispatch_error() {
-                return Err(err);
             }
             if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {
                 return self.call_sub_value(callable, args.to_vec(), false);
@@ -411,7 +405,9 @@ impl Interpreter {
         // without it `sub pick(Int, Int)` lost `pick(1, "two")` to the native
         // `pick`, turning a binding failure into a silent success).
         let user_shadows_builtin = (Self::is_builtin_function(name)
-            && self.resolve_function_with_alias(name, args).is_some())
+            && self
+                .resolve_function_with_alias(name, args)
+                .is_ok_and(|def| def.is_some()))
             || self.user_only_sub_hides_builtin(name, args);
         if !user_shadows_builtin {
             // A core routine can be wrapped through its first-class code value
@@ -561,7 +557,7 @@ impl Interpreter {
         {
             return self.call_sub_value(sub_val, args.to_vec(), false);
         }
-        if let Some(def) = self.resolve_function_with_alias(name, args) {
+        if let Some(def) = self.resolve_function_with_alias(name, args)? {
             // Collect remaining candidates for callsame/nextcallee/callwith.
             // Use all multi candidates (not just matching ones) because callwith()
             // can re-dispatch with different arguments.
@@ -874,9 +870,6 @@ impl Interpreter {
                 };
                 self.maybe_fetch_rw_proxy(v, routine_is_rw)
             });
-        }
-        if let Some(err) = self.take_pending_dispatch_error() {
-            return Err(err);
         }
         // Check for callable in env (e.g. &name) before proto dispatch failure.
         // This handles subs with CALL-ME mixed in via trait_mod.
