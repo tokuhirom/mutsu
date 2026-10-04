@@ -623,7 +623,7 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
-                native_methods: ["cue", "uncaught_handler", "loads", "max_threads"]
+                native_methods: ["cue", "uncaught_handler", "loads", "max_threads", "usage"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
@@ -3108,6 +3108,7 @@ impl Interpreter {
             env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
             env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
             env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
+            crate::vm::process_start_epoch_nanos();
             // Populate %*ENV with all OS environment variables so that
             // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
             let env_hash = os_env_hash();

@@ -264,6 +264,12 @@ impl Compiler {
     }
 
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
+        // A native `str` read into a native int: a fresh int, nothing shared.
+        if self.native_str_to_int_coercion(name, expr) {
+            self.compile_expr(expr);
+            self.emit_native_str_to_int();
+            return;
+        }
         if self.try_emit_array_share(name, expr) {
             return;
         }

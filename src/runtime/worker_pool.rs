@@ -329,61 +329,29 @@ mod native {
         BlockingGuard { counted: true }
     }
 
+    /// The pool's size and backlog for `$*SCHEDULER.usage`: live workers and
+    /// queued tasks.
+    // Cost: O(1) under the pool lock.
+    pub(crate) fn usage() -> (usize, usize) {
+        let st = lock_pool();
+        (st.live, st.queue.len())
+    }
+
     #[cfg(test)]
-    mod tests {
-        use super::*;
+    mod tests;
+}
 
-        fn state(
-            queue: usize,
-            idle: usize,
-            live: usize,
-            starting: usize,
-            blocked: usize,
-        ) -> PoolState {
-            let mut q = VecDeque::new();
-            for _ in 0..queue {
-                q.push_back(Task {
-                    run: Box::new(|| {}),
-                    reject: None,
-                });
-            }
-            PoolState {
-                queue: q,
-                idle,
-                live,
-                starting,
-                blocked,
-            }
-        }
-
-        #[test]
-        fn no_unclaimed_work_means_no_growth() {
-            // One queued task, one idle worker about to take it.
-            assert_eq!(state(1, 1, 1, 0, 0).growth(8), None);
-            // One queued task, one worker starting for it.
-            assert_eq!(state(1, 0, 1, 1, 0).growth(8), None);
-        }
-
-        #[test]
-        fn grows_within_the_soft_cap() {
-            assert_eq!(state(1, 0, 2, 0, 0).growth(8), Some(StackPolicy::Budgeted));
-        }
-
-        #[test]
-        fn queues_past_the_soft_cap_while_someone_runs() {
-            assert_eq!(state(5, 0, 8, 0, 0).growth(8), None);
-            // Blocked workers do not count toward the cap.
-            assert_eq!(state(5, 0, 8, 0, 3).growth(8), Some(StackPolicy::Budgeted));
-        }
-
-        #[test]
-        fn all_blocked_forces_growth() {
-            assert_eq!(state(1, 0, 8, 0, 8).growth(8), Some(StackPolicy::Required));
-            // Nobody at all (first submit).
-            assert_eq!(state(1, 0, 0, 0, 0).growth(8), Some(StackPolicy::Required));
-            // A starting worker is spoken for by another task.
-            assert_eq!(state(2, 0, 3, 1, 2).growth(8), Some(StackPolicy::Required));
-        }
+/// `ThreadPoolScheduler.usage`'s general-worker figures: live workers and
+/// queued tasks (none on wasm, which runs tasks inline).
+// Cost: O(1).
+pub(crate) fn usage() -> (usize, usize) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        native::usage()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        (0, 0)
     }
 }
 
@@ -447,9 +415,14 @@ pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
 
 /// Box `task` to run as a stack of its own (`$*STACK-ID`, see
 /// `runtime::stack_id`): every pooled task is one, like a Rakudo `start`.
+/// A task that returns normally counts as completed (`$*SCHEDULER.usage`),
+/// whichever way it ran: pool worker, thread per task, or inline on wasm.
 // Cost: O(1).
 fn on_fresh_stack(task: impl FnOnce() + Send + 'static) -> Box<dyn FnOnce() + Send + 'static> {
-    Box::new(move || super::stack_id::run_on_fresh_stack(task))
+    Box::new(move || {
+        super::stack_id::run_on_fresh_stack(task);
+        super::thread_usage::note_task_completed();
+    })
 }
 
 /// [`submit`], calling `reject` (on the submitting thread, or on the worker

@@ -51,7 +51,9 @@ impl CreateKind {
     fn of(name: &str, vm_hash: bool, vm_array: bool) -> Self {
         if matches!(name, "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
             Self::Uni
-        } else if vm_hash {
+        } else if vm_hash || name == "Rakudo::Internals::IterationSet" {
+            // The setting's own `is repr('VMHash')` class (`IterationSet`,
+            // what core modules such as `Telemetry` build lookup tables from).
             Self::VmHash
         } else if vm_array {
             Self::VmArray

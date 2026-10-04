@@ -821,6 +821,7 @@ pub(crate) mod process_routines;
 pub(crate) mod process_stash;
 mod str_subclass_stringy;
 mod subscript_adverb_assoc;
+pub(crate) mod thread_usage;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};
 mod methods_introspect;
 pub(crate) use methods_introspect::embedded_container_type_name;

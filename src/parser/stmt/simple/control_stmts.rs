@@ -750,6 +750,11 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("known function call"));
     }
     let had_ws = rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n');
+    // A `<` glued to the name is a key subscript on the call result
+    // (`T<cpu>` is `T()<cpu>`), left to the expression parser.
+    if !had_ws && rest.starts_with('<') && !rest.starts_with("<=") && !rest.starts_with("<<") {
+        return Err(PError::expected("known function call"));
+    }
     let (rest, _) = ws(rest)?;
     if name == "int" && had_ws && !is_user_declared_sub("int") {
         return Err(PError::expected("known function call"));

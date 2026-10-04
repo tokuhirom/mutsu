@@ -111,7 +111,9 @@ static STARTED_THREADS: std::sync::LazyLock<Mutex<std::collections::HashSet<u64>
 /// front (rakudo reports a real `.id` on a not-yet-run thread), and
 /// `Thread.start` allocates one as it spawns.
 pub(in crate::runtime) fn next_thread_id() -> u64 {
-    NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    let id = NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    crate::runtime::thread_usage::note_thread_id(id);
+    id
 }
 
 /// Mark `thread_id` as started. Returns false if it already was.
