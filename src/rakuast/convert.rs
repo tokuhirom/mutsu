@@ -215,7 +215,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 if let Some(stub) = stub_node(name.as_str(), &args) {
                     return Ok(Some(statement_expression(stub?)));
                 }
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args)
+                    .or_else(|| call_lvalue_parts(name.as_str(), &args))
+                {
                     return Ok(Some(statement_expression(method_lvalue_assignment(
                         convert_expr(&call)?,
                         convert_expr(value)?,
@@ -1308,6 +1310,58 @@ fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
 }
 
 /// `ApplyInfix(left, Assignment, right)` over already converted operands.
+/// `f(ARGS) = EXPR` and `$c(ARGS) = EXPR` parse to the internal
+/// `__mutsu_assign_named_sub_lvalue("f", [ARGS], value)` /
+/// `__mutsu_assign_callable_lvalue($c, [ARGS], value)` writeback calls. Rakudo
+/// models both as a plain assignment whose left side is the call: this
+/// returns that call and the assigned value. Lowering hands the call back to
+/// `parser::assign_to_target_expr`, so only the record that function builds
+/// renders: a plain routine name (`postcircumfix:<[ ]>` and its kin become
+/// subscript assignments there), and an invocant variable for the callable
+/// form (the compound forms' `do`-statement and internal-call targets stay
+/// the boundary).
+// Cost: O(1).
+fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
+    let [target, Expr::ArrayLiteral(call_args), value] = args else {
+        return None;
+    };
+    let call = match name {
+        "__mutsu_assign_named_sub_lvalue" => {
+            let (Expr::Literal(routine) | Expr::LiteralSrc(routine, _)) = target else {
+                return None;
+            };
+            let ValueView::Str(routine) = routine.view() else {
+                return None;
+            };
+            let plain = routine
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                && routine
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''));
+            if !plain || is_desugar_marker(&routine) {
+                return None;
+            }
+            Expr::Call {
+                name: crate::symbol::Symbol::intern(&routine),
+                args: call_args.clone(),
+            }
+        }
+        "__mutsu_assign_callable_lvalue" => {
+            if !matches!(target, Expr::Var(_) | Expr::CodeVar(_)) {
+                return None;
+            }
+            Expr::CallOn {
+                target: Box::new(target.clone()),
+                args: call_args.clone(),
+            }
+        }
+        _ => return None,
+    };
+    Some((call, value))
+}
+
 fn method_lvalue_assignment(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
     let assignment = RakuAstNode {
         class: RakuAstClass::Assignment,
@@ -1768,7 +1822,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return stub;
             }
             if is_desugar_marker(name.as_str()) {
-                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
+                if let Some((call, value)) = method_lvalue_parts(name.as_str(), args)
+                    .or_else(|| call_lvalue_parts(name.as_str(), args))
+                {
                     return Ok(method_lvalue_assignment(
                         convert_expr(&call)?,
                         convert_expr(value)?,
@@ -3371,7 +3427,12 @@ fn pointy_block_from_lambda(
     sigilless: bool,
     body: &[Stmt],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut parameter = simple_parameter("$", param, None, None, false, None)?;
+    let desigil = if param == ANONYMOUS_SCALAR_PARAM {
+        ""
+    } else {
+        param
+    };
+    let mut parameter = simple_parameter("$", desigil, None, None, false, None)?;
     if sigilless {
         sigilless_target(&mut parameter, param);
     }
@@ -3766,7 +3827,15 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         }
         return Ok(sigilless_slurpy_parameter(pd, type_setting));
     }
-    let (sigil, desigil) = split_sigil(&pd.name);
+    // The parser names an anonymous `$` / `@` / `%` parameter
+    // `__ANON_STATE__` / `@__ANON_ARRAY__` / `%__ANON_HASH__`; rakudo's
+    // target is the bare sigil.
+    let (sigil, desigil) = match pd.name.as_str() {
+        ANONYMOUS_SCALAR_PARAM => ("$", ""),
+        ANONYMOUS_ARRAY_PARAM => ("@", ""),
+        ANONYMOUS_HASH_PARAM => ("%", ""),
+        name => split_sigil(name),
+    };
     let mut node = if pd.slurpy || pd.double_slurpy {
         // A typed or where-constrained slurpy carries richer shape; defer.
         if pd.type_constraint.is_some() || pd.where_constraint.is_some() {
@@ -3850,6 +3919,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     Ok(node)
 }
+
+/// The parser's names for an anonymous `$` / `@` / `%` parameter.
+pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE__";
+pub(super) const ANONYMOUS_ARRAY_PARAM: &str = "@__ANON_ARRAY__";
+pub(super) const ANONYMOUS_HASH_PARAM: &str = "%__ANON_HASH__";
 
 /// The parser's name for an anonymous `[…]` destructuring parameter.
 pub(super) const ANONYMOUS_ARRAY_SUBSIGNATURE: &str = "@";

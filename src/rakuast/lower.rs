@@ -304,9 +304,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
-            match subscript_assign(node)?
-                .map_or_else(|| method_call_assign(node), |a| Ok(Some(a)))?
-            {
+            let assign = match subscript_assign(node)? {
+                Some(assign) => Some(assign),
+                None => match method_call_assign(node)? {
+                    Some(assign) => Some(assign),
+                    None => call_assign(node)?,
+                },
+            };
+            match assign {
                 Some(assign) => Ok(Stmt::Expr(assign)),
                 None => lower_assign(node),
             }
@@ -1293,7 +1298,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         match target.class {
             RakuAstClass::ParameterTargetVar => {
                 let raw = leaf_str(target, "name")?;
-                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
+                match raw.as_str() {
+                    "$" => super::convert::ANONYMOUS_SCALAR_PARAM.to_string(),
+                    "@" => super::convert::ANONYMOUS_ARRAY_PARAM.to_string(),
+                    "%" => super::convert::ANONYMOUS_HASH_PARAM.to_string(),
+                    _ => raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
+                }
             }
             // `\x`: the term's name is the parameter's, with no sigil to strip.
             RakuAstClass::ParameterTargetTerm => {
@@ -1746,6 +1756,26 @@ fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> 
     }
     let target = lower_expr(left)?;
     if !matches!(target, Expr::MethodCall { .. }) {
+        return Ok(None);
+    }
+    let value = lower_expr(named_child(node, "right")?)?;
+    Ok(Some(crate::parser::assign_to_target_expr(target, value)))
+}
+
+/// `ApplyInfix(left => <call>, Assignment, right)` -- an rw routine or
+/// callable lvalue (`f(1) = v`, `$c(2) = v`) -- through the parser's own
+/// `assign_to_target_expr`, or `None` when the left side is not a call.
+// Cost: O(n), n = size of the node.
+fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    let is_call = left.class == RakuAstClass::CallName
+        || (left.class == RakuAstClass::ApplyPostfix
+            && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
+    if !is_call {
+        return Ok(None);
+    }
+    let target = lower_expr(left)?;
+    if !matches!(target, Expr::Call { .. } | Expr::CallOn { .. }) {
         return Ok(None);
     }
     let value = lower_expr(named_child(node, "right")?)?;
@@ -3391,6 +3421,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(assign);
             }
             if let Some(assign) = method_call_assign(node)? {
+                return Ok(assign);
+            }
+            if let Some(assign) = call_assign(node)? {
                 return Ok(assign);
             }
             let (name, expr) = lower_assign_parts(node)?;
