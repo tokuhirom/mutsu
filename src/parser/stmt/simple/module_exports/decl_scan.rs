@@ -239,6 +239,15 @@ impl<'ast> Visit<'ast> for DeclScan {
                 }
                 self.enter_package(stmt, composed, *is_unit, package);
             }
+            // A subset is a type name the importer can write as a bare `when`
+            // matcher (`when Base64Binary { }`, from FHIR::Base), so it travels
+            // with the module exactly like a class does.
+            Stmt::SubsetDecl { name, is_my, .. } => {
+                if self.spine || !*is_my {
+                    let name = name.resolve();
+                    self.push_type(compose_type_name(&self.prefix, &name), name, false);
+                }
+            }
             Stmt::EnumDecl {
                 name,
                 variants,
