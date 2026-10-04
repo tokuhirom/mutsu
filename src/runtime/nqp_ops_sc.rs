@@ -124,7 +124,9 @@ impl ScState {
     }
 
     fn registry(&self) -> MutexGuard<'_, ScRegistry> {
-        self.shared.lock().unwrap_or_else(|poison| poison.into_inner())
+        self.shared
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
     }
 
     /// Every value the SC state holds, for the GC root walk.
@@ -254,10 +256,12 @@ impl Interpreter {
             "scgetdesc" => {
                 let handle = sc_handle(op, &operand(args, 0))?;
                 let registry = sc_state.registry();
-                Ok(match registry.contexts.get(&handle).and_then(|b| b.desc.as_ref()) {
-                    Some(desc) => Value::str_from(desc),
-                    None => Value::NIL,
-                })
+                Ok(
+                    match registry.contexts.get(&handle).and_then(|b| b.desc.as_ref()) {
+                        Some(desc) => Value::str_from(desc),
+                        None => Value::NIL,
+                    },
+                )
             }
             // nqp::scsetobj($sc, $idx, $obj): make $obj the SC's root object
             // $idx; answers $obj. Does not make $sc the object's owning SC,
@@ -298,7 +302,10 @@ impl Interpreter {
             "scobjcount" => {
                 let handle = sc_handle(op, &operand(args, 0))?;
                 let registry = sc_state.registry();
-                let count = registry.contexts.get(&handle).map_or(0, |b| b.objects.len());
+                let count = registry
+                    .contexts
+                    .get(&handle)
+                    .map_or(0, |b| b.objects.len());
                 Ok(Value::int(i64::try_from(count).unwrap_or(i64::MAX)))
             }
             // nqp::scgetobjidx($sc, $obj): the object's cached index when $sc
