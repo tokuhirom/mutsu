@@ -18,7 +18,7 @@
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
   dynamic-argument, and typed-scalar, defaulted-scalar, typed-defaulted-scalar,
-  and named-scalar explicit-signature slices implemented
+  named-scalar, and named-defaulted-scalar explicit-signature slices implemented
   2026-09-12 through
   2026-09-19; word-only literals, character-class, codepoint-escape,
   enumerated-class, quantifier-range, backtracking-modifier, separator,
@@ -1533,3 +1533,24 @@ The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the named parameter
 nodes, direct constructed-call binding, constructed regex lowering, and source
 grammar match-time lexical behavior.
+
+## 63. Named defaulted scalar explicit-signature block-valued colonpair slice (2026-10-04)
+
+A named scalar parameter with a default in an explicit pointy block, such as
+`<word(:expected(-> :$candidate = 42 { ... }))>`, already had the correct
+`RakuAST::Parameter` name, target, and default on the read side. The parser and
+signature binder also supplied the default in ordinary execution. The remaining
+gap was the constructed regex write direction: the regex colonpair renderer
+refused to reconstruct the `:$candidate = expression` parameter and stopped at
+`RakuAST::ColonPair::Value`.
+
+The renderer now accepts one untyped named scalar parameter with a default and
+reconstructs that spelling. It uses the same signature-bearing `AnonSubParams`
+representation as the previous named and defaulted slices; the existing
+Parser -> Compiler -> VM matcher evaluates the default when the callable is
+invoked at match time. Typed, slurpy, trait-bearing, aliased, and multiple
+named parameters remain separate boundaries.
+
+`t/rakuast/rakuast-regex-named-default-pointy.t` pins the read tree, source and
+hand-built RakuAST lowering, explicit named override, and outer-lexical
+reassignment at match time.
