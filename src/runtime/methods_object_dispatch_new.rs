@@ -358,6 +358,30 @@ impl Interpreter {
         {
             return Ok(Self::make_collation_instance(1, 1, 1, 1));
         }
+        // The `Systemic` classes (`Compiler`, `VM`, `Distro`, `Kernel`) default
+        // every attribute from the running process, so `Compiler.new.name` is
+        // what `$*RAKU.compiler.name` is (META::constants relies on it). Like
+        // Rakudo, constructor arguments do not override them.
+        // Cost: O(a), a = attribute count of the process instance.
+        if let ValueView::Package(name) = target.view()
+            && let Some(base) = match name.resolve().as_str() {
+                "Compiler" => Some(self.native_perl(&AttrMap::new(), "compiler")),
+                "VM" => Some(Self::cached_vm_instance()),
+                "Distro" => Some(Self::cached_distro_instance()),
+                "Kernel" => Some(Self::cached_kernel_instance()),
+                _ => None,
+            }
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = base.view()
+        {
+            return Ok(Value::make_instance(
+                class_name,
+                attributes.as_map().clone(),
+            ));
+        }
         // Calling .new() on an instance delegates to the class constructor
         if let ValueView::Instance { class_name, .. } = target.view() {
             return self.dispatch_new(Value::package(class_name), args);
