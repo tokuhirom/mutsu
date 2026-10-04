@@ -518,7 +518,16 @@ impl Interpreter {
                 } => Some((base.clone(), predicate.clone(), version.clone())),
                 _ => None,
             })?;
-        self.register_subset_decl(&name, &base, predicate.as_ref(), None, &version, true, 0);
+        self.register_subset_decl(
+            &name,
+            &base,
+            predicate.as_ref(),
+            None,
+            None,
+            &version,
+            true,
+            0,
+        );
         self.types
             .inline_subset_constraints
             .insert(constraint.to_string(), name.clone());

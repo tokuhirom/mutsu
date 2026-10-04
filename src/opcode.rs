@@ -4428,14 +4428,20 @@ pub(crate) enum OpCode {
     AugmentClass { idx: u32, site_id: u64 },
     /// Register a `subset X of Y where ...`, and the anonymous subset a
     /// `where` clause on a scalar declaration creates (`my Int $x where * > 0`).
-    /// Stack: `[] → []`, or `[closure] → []` when `with_closure`.
+    /// Stack: `[] → []`, or `[closure] → []` when `with_closure` or `with_refinement`.
     ///
     /// `idx` indexes `CompiledCode::stmt_pool` (a `Stmt::SubsetDecl`), handed
     /// to the runtime `register_subset_decl`. A subset declared in a class
     /// body is scoped to that class. With `with_closure`, the predicate was
     /// built as a closure at the declaration site (it reads or writes outer
-    /// lexicals) and the type check calls it (#10868).
-    RegisterSubset { idx: u32, with_closure: bool },
+    /// lexicals) and the type check calls it (#10868). With
+    /// `with_refinement` the stack carries the predicate as a callable for
+    /// `.^refinement` (`with_closure` implies it: one value serves both).
+    RegisterSubset {
+        idx: u32,
+        with_closure: bool,
+        with_refinement: bool,
+    },
     /// `react { ... }`. Stack: `[] → []`.
     ///
     /// Runs the body `[ip+1, body_end)` (typically `whenever`s, which register

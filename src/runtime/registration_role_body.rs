@@ -593,6 +593,7 @@ impl Interpreter {
                 base,
                 predicate.as_ref(),
                 None,
+                None,
                 version,
                 *is_my,
                 0,
