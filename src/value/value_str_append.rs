@@ -27,6 +27,26 @@ impl Value {
         }
     }
 
+    /// This value's string, moved out of the payload when this value holds
+    /// its only reference, copied otherwise; a non-`Str` is stringified.
+    /// What lets a state machine keep a growing text queue in an attribute
+    /// without copying it on every step (the streaming decoder's queues).
+    ///
+    /// Cost: O(1) for a unique flat `Str`, O(n) otherwise, n = bytes.
+    pub(crate) fn into_owned_string(self) -> String {
+        match self.into_str_arc() {
+            Ok(mut arc) => match Arc::get_mut(&mut arc) {
+                Some(owned) => owned.take_flat(),
+                None => {
+                    let mut copied = String::with_capacity(arc.len());
+                    copied.push_str(&arc);
+                    copied
+                }
+            },
+            Err(other) => other.to_string_value(),
+        }
+    }
+
     /// Append `plan`'s suffix to this `Str` where it stands, when this value
     /// holds the only reference to its buffer: `true` when appended, `false`
     /// with `self` untouched (not a `Str`, or a shared buffer — the caller

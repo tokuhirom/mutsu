@@ -50,8 +50,6 @@ my $high = Buf.new(0xE1, 0xE2, 0xB5);   # latin-1 for a-acute, a-circumflex, mic
     $d.add-bytes($bytes.subbuf(0, 1));           # first half of the 2-byte sequence
     is $d.consume-available-chars(), '',
         'an incomplete utf-8 sequence is held back';
-    # (`consume-available-chars` alone is not pinned here: raku holds the final
-    # grapheme back in case a combining mark follows, mutsu does not.)
     $d.add-bytes($bytes.subbuf(1));
     is $d.consume-all-chars(), "\c[LATIN SMALL LETTER E WITH ACUTE]x",
         'and completes once the rest arrives';
