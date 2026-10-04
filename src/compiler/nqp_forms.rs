@@ -172,12 +172,21 @@ impl Compiler {
                 true
             }
             // nqp::bind($var, value) — bind the variable to the value,
-            // exactly `$var := value` (#11499). Yields the value.
+            // exactly `$var := value` (#11499). Yields the value. Any other
+            // first operand is the error Rakudo's QAST compiler reports.
             // Cost: O(1) (compiles to the binding).
             "nqp::bind" if args.len() == 2 => {
                 let name = match &args[0] {
                     Expr::Var(name) | Expr::BareWord(name) => name.clone(),
-                    _ => return false,
+                    _ => {
+                        self.compile_expr(&Expr::Call {
+                            name: crate::symbol::Symbol::intern("die"),
+                            args: vec![Expr::Literal(Value::str_from(
+                                "First child of a 'bind' op must be a variable",
+                            ))],
+                        });
+                        return true;
+                    }
                 };
                 self.compile_expr(&Expr::AssignExpr {
                     name,
