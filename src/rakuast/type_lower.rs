@@ -7,9 +7,12 @@
 //! `type`, a `returns` or a trait's type goes through [`type_constraint`], so
 //! a type spelling the converter can render is one every site can lower.
 
-use super::lower::{named_child, named_child_or_positional, unsupported};
+use super::lower::{
+    lower_expr, named_child, named_child_or_positional, regex_subrule_argument_source, unsupported,
+};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
+use crate::ast::Expr;
 use crate::value::{RuntimeError, ValueView};
 
 /// The parser's spelling of `type_node`; `owner` names the node a refusal
@@ -71,12 +74,49 @@ pub(super) fn type_constraint(
                 if field.name.is_some() {
                     return Err(unsupported(owner));
                 }
-                parts.push(type_constraint(owner, arg)?);
+                parts.push(match arg.class {
+                    RakuAstClass::TypeSimple
+                    | RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeCoercion
+                    | RakuAstClass::TypeParameterized => type_constraint(owner, arg)?,
+                    _ => regex_subrule_argument_source(arg)?,
+                });
             }
             Ok(format!("{base}[{}]", parts.join(", ")))
         }
         _ => Err(unsupported(owner)),
     }
+}
+
+/// Preserve argument expressions for `is`/`does` role applications when
+/// lowering a parameterized type from RakuAST.
+pub(super) fn type_application_args(
+    owner: &RakuAstNode,
+    type_node: &RakuAstNode,
+) -> Result<Option<Vec<Expr>>, RuntimeError> {
+    if type_node.class != RakuAstClass::TypeParameterized {
+        return Ok(None);
+    }
+    let args = named_child(type_node, "args")?;
+    if args.class != RakuAstClass::ArgList {
+        return Err(unsupported(owner));
+    }
+    args.fields
+        .iter()
+        .map(|field| {
+            if field.name.is_some() {
+                return Err(unsupported(owner));
+            }
+            let RakuAstFieldValue::Node(value) = &field.value else {
+                return Err(unsupported(owner));
+            };
+            let ValueView::RakuAst(node) = value.view() else {
+                return Err(unsupported(owner));
+            };
+            lower_expr(node)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 /// The `base-type` of a definedness / coercion / parameterized type, which the
