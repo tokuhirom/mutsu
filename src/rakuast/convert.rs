@@ -3490,6 +3490,9 @@ fn constant_declaration(
     // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
     // it in the name for `@` / `%` / `&` and strips a `$`.
     let name = match sigil.as_deref().unwrap_or("") {
+        // `constant term:<$bar>`: a sigiled name without a sigil of its own
+        // is a term, which rakudo names `term:<$bar>`.
+        "" if name.starts_with(['$', '@', '%', '&']) => format!("term:<{name}>"),
         "" => name.to_string(),
         "$" => format!("${name}"),
         sigil @ ("@" | "%" | "&") if name.starts_with(sigil) => name.to_string(),

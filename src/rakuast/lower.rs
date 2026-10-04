@@ -663,6 +663,15 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // The parser strips a `$` sigil into `__constant_sigil` and keeps the
     // others in the name.
     let (name, sigil) = match written.chars().next() {
+        _ if written.starts_with("term:<") && written.ends_with('>') => {
+            let term = &written["term:<".len()..written.len() - 1];
+            if !term.starts_with(['$', '@', '%', '&']) {
+                // A sigilless term is the plain constant name the parser
+                // records; the converter never renders `term:<foo>`.
+                return Err(unsupported(node));
+            }
+            (term.to_string(), "")
+        }
         Some('$') => (written[1..].to_string(), "$"),
         Some('@') => (written.clone(), "@"),
         Some('%') => (written.clone(), "%"),
