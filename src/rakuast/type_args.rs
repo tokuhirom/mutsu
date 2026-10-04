@@ -89,7 +89,7 @@ pub(super) fn parameterized_type_node(
                 } else {
                     return Err(unsupported("parameterised type colonpair form"));
                 }
-            } else if is_simple_type(source) {
+            } else if matches!(expr, Expr::BareWord(_)) && is_simple_type(source) {
                 build_type_node(source)?
             } else {
                 convert_expr(expr)?
