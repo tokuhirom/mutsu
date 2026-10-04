@@ -2,6 +2,7 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    // Cost: O(h + a), h = host-name length, a = resolved addresses; excludes network waits.
     pub(in crate::runtime) fn dispatch_socket_connect(
         &mut self,
         args: &[Value],
@@ -27,7 +28,12 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::new(format!("No addresses found for '{}'", addr)))?,
             Duration::from_secs(10),
         )
-        .map_err(|e| RuntimeError::new(format!("Failed to connect to '{}': {}", addr, e)))?;
+        .map_err(|e| {
+            RuntimeError::new(format!(
+                "Could not connect to socket: {}",
+                crate::runtime::native_io::fs_errors::strerror_text(&e)
+            ))
+        })?;
         let state = IoHandleState {
             target: IoHandleTarget::Socket,
             mode: IoHandleMode::ReadWrite,
@@ -187,6 +193,7 @@ impl Interpreter {
         ))
     }
 
+    // Cost: O(h + a), h = host-name length, a = resolved addresses; excludes network waits.
     pub(in crate::runtime) fn dispatch_socket_async_connect(
         &mut self,
         args: &[Value],
@@ -258,7 +265,7 @@ impl Interpreter {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert(
                     "message".to_string(),
-                    Value::str(format!("Failed to connect to '{}:{}': {}", host, port, e)),
+                    Value::str(crate::runtime::native_io::fs_errors::libuv_text(&e)),
                 );
                 let _ =
                     promise.try_break(Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs));

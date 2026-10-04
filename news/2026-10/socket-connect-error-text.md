@@ -1,0 +1,1 @@
+Socket connection errors now use Rakudo-compatible wording: `IO::Socket::Async.connect` reports the libuv reason (such as `connection refused`), while `IO::Socket::INET.connect` reports `Could not connect to socket: ...`.
