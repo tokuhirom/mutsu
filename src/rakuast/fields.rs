@@ -185,6 +185,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         Signature => &[
             ("parameters", Absent::EmptyList),
             ("returns", Absent::TypeObject("RakuAST::Node")),
+            ("is-array", Absent::False),
         ],
         MetaInfixAssign => &[("infix", Absent::Required)],
         MetaInfixHyper => &[

@@ -3666,12 +3666,42 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if let Some(what) = refusal {
         return Err(unsupported(what));
     }
+    if let Some(node) = anonymous_destructuring(pd, type_setting)? {
+        return Ok(node);
+    }
     // Capture parameters also use the internal `sub_signature` slot, but
     // RakuAST represents those with fields other than `sub-signature`. A named
     // alias's chain is read by `named_param`.
+    // `|c ($x)` / `| ($a, $b)`: a capture parameter destructured through a
+    // sub-signature, the anonymous one without a target.
+    if let Some(sub_params) = pd.sub_signature.as_deref()
+        && pd.sigilless
+        && pd.slurpy
+        && !pd.onearg
+        && !pd.double_slurpy
+        && !pd.named
+        && pd.type_constraint.is_none()
+        && pd.where_constraint.is_none()
+        && pd.default.is_none()
+        && pd.traits.is_empty()
+    {
+        let mut node = sigilless_slurpy_parameter(pd, type_setting);
+        if pd.name == ANONYMOUS_SUBSIGNATURE {
+            node.fields.retain(|f| f.name != Some("target"));
+        }
+        node.fields.push(node_field(
+            Some("sub-signature"),
+            signature(sub_params, type_setting, None)?,
+        ));
+        return Ok(node);
+    }
     if pd.sub_signature.is_some()
         && (pd.slurpy || pd.double_slurpy || pd.sigilless || pd.name.starts_with("__"))
     {
+        if pd.name.starts_with("__for_unpack") {
+            // The parser does not keep whether it was `[…]` or `(…)`.
+            return Err(unsupported("`for` loop destructuring parameter"));
+        }
         return Err(unsupported("non-positional signature sub-signature"));
     }
     let type_capture = match type_capture_name(pd) {
@@ -3803,6 +3833,66 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         });
     }
     Ok(node)
+}
+
+/// The parser's name for an anonymous `[…]` destructuring parameter.
+pub(super) const ANONYMOUS_ARRAY_SUBSIGNATURE: &str = "@";
+/// The parser's name for an anonymous `(…)` destructuring parameter.
+pub(super) const ANONYMOUS_SUBSIGNATURE: &str = "__subsig__";
+
+/// An anonymous destructuring parameter, `[$a, $b]` or `($a, $b)`: rakudo's
+/// `Parameter` with no target, holding the `sub-signature`; the bracket form
+/// marks it `is-array`, and the parenthesised one carries the implicit `Any`
+/// type where a sub signature does, and a written type (`Pair (…)`) is the
+/// parameter's (measured on rakudo 2026.09). `None` for any other parameter;
+/// one with a default, `where` or trait is refused.
+// Cost: O(s), s = size of the sub-signature.
+fn anonymous_destructuring(
+    pd: &ParamDef,
+    type_setting: bool,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let is_array = match pd.name.as_str() {
+        ANONYMOUS_ARRAY_SUBSIGNATURE => true,
+        ANONYMOUS_SUBSIGNATURE => false,
+        _ => return Ok(None),
+    };
+    let Some(sub_params) = pd.sub_signature.as_deref() else {
+        return Ok(None);
+    };
+    // A capture `| (…)` and the like are not this form.
+    if pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless {
+        return Ok(None);
+    }
+    if pd.optional_marker
+        || pd.default.is_some()
+        || pd.type_capture.is_some()
+        || pd.where_constraint.is_some()
+        || !pd.traits.is_empty()
+    {
+        return Err(unsupported(
+            "anonymous sub-signature with a default, `where` or trait",
+        ));
+    }
+    let mut sub = signature(sub_params, type_setting, None)?;
+    if is_array {
+        sub.fields
+            .push(leaf_field(Some("is-array"), Value::truth(true)));
+    }
+    let mut fields = Vec::with_capacity(3);
+    // `Pair (…)` / `Positional […]` carry the written type.
+    match pd.type_constraint.as_deref() {
+        Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
+        None if type_setting && !is_array => {
+            fields.push(node_field(Some("type"), type_setting_any()));
+        }
+        None => {}
+    }
+    fields.push(leaf_field(Some("optional"), Value::truth(false)));
+    fields.push(node_field(Some("sub-signature"), sub));
+    Ok(Some(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    }))
 }
 
 /// The `::T` type capture `pd` declares. Unlike `ParamDef::captured_type_name`

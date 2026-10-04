@@ -1272,9 +1272,27 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             && matches!(&f.value, RakuAstFieldValue::Node(v)
                 if super::slurpy_marker_class(v) == Some(RakuAstClass::ParameterSlurpyCapture))
     }) {
-        // An anonymous capture `|` binds under the parser's placeholder name.
+        // An anonymous capture `|` binds under the parser's placeholder name,
+        // and `| (…)` under its anonymous sub-signature's.
         sigilless = true;
-        ANONYMOUS_CAPTURE.to_string()
+        if parameter
+            .fields
+            .iter()
+            .any(|f| f.name == Some("sub-signature"))
+        {
+            super::convert::ANONYMOUS_SUBSIGNATURE.to_string()
+        } else {
+            ANONYMOUS_CAPTURE.to_string()
+        }
+    } else if let Ok(sub_signature) = named_child(parameter, "sub-signature") {
+        // An anonymous destructuring parameter: `[$a, $b]` marks its
+        // signature `is-array`, `($a, $b)` does not; each binds under the
+        // parser's placeholder name for its form.
+        if bool_field(sub_signature, "is-array")? {
+            super::convert::ANONYMOUS_ARRAY_SUBSIGNATURE.to_string()
+        } else {
+            super::convert::ANONYMOUS_SUBSIGNATURE.to_string()
+        }
     } else {
         return Err(unsupported(owner));
     };
