@@ -285,3 +285,25 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     `$s.trim` -72.2%, `$s.flip` -68.1%, `$s.uc` -25.3% (the case map itself dominates),
     `$i.flip` (Int, through `Cool`) -60.8%, `@a.flip` -63.4%. Calls the table does not
     answer: `$i.abs` +0.2%, `$s.comb` 0.0%, the empty loop unchanged.
+- 2026-10-04, slice 3, the numeric family: `abs`, `sign`, `floor`, `ceiling`, `round` and
+  `truncate` with no arguments are rows owned by `Int`, `Num`, `Rat`, `FatRat` and `Complex`
+  (Rakudo has a copy in each type's method table, some composed from `Real` and `Rational`).
+  `Complex` has no `sign` row, because Rakudo's `Complex.sign` comes from `Cool`. Every owner's
+  row points at one handler per method in `method_table/real.rs`. The cascade arms call the
+  same `*_of` functions and keep only the receivers with no shape (`Bool`, enums,
+  `Duration`/`Instant`).
+  - The rational rounding goes through `int_div`, the one floored-division routine
+    (ADR-0118, enforced by `check-prims`): `ceiling` is `-((-n) div d)` and `round` is
+    `(2n + d) div 2d`.
+  - Three wrong answers are fixed on the way:
+    - a `Num` past a machine word floors, ceilings and truncates to a big `Int` instead of
+      saturating at `i64`;
+    - a word-sized `Rat` rounds exactly instead of through an `f64`;
+    - `arith_negate` keeps a rational with an `i64::MIN` numerator `Rational` instead of
+      degrading it to a `Num`, which also fixes its `.abs`.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `$c.abs` (Complex) 1,854M to 325M (-82.5%), `$r.floor` -80.1%, `$n.round`
+    -73.2%, `$i.sign` -72.8%, `$i.abs` -72.4%, `$n.floor` -72.4%, `$r.round` -48.5% (the
+    exact rounding costs three integer operations through the shared arithmetic
+    routines). A call the table does not answer (`$i.chars`) and the empty loop are
+    unchanged.
