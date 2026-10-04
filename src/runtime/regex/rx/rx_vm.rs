@@ -599,6 +599,27 @@ impl Interpreter {
                                             }
                                         }
                                     }
+                                    Ok(CallTarget::Symbolic) => {
+                                        crate::vm::vm_stats_regex_vm::record_regex_eager(
+                                            "symbolic-name",
+                                        );
+                                        let slot = frame
+                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
+                                        let mut ends = self.rx_symbolic_call_ends(
+                                            name,
+                                            chars,
+                                            pos,
+                                            levels.top().caps(),
+                                            pkg,
+                                            |interp| interp.rx_cursor_of(slot, chars, pos, pkg),
+                                            (commit, ic),
+                                        );
+                                        if commit && ends.len() > 1 {
+                                            ends.drain(..ends.len() - 1);
+                                        }
+                                        pc += 1;
+                                        enter_cands!(ends)
+                                    }
                                     Ok(CallTarget::Single) => {
                                         pc += 1;
                                         match self.regex_builtin_named(name.spec(), chars, pos, pkg)
@@ -865,6 +886,7 @@ impl Interpreter {
                     | RxOp::Code(_)
                     | RxOp::VarDecl(_)
                     | RxOp::Named { .. }
+                    | RxOp::HashCap { .. }
                     | RxOp::ZeroArm { .. }
                     | RxOp::QuantNames { .. }
                     | RxOp::Fold { .. }

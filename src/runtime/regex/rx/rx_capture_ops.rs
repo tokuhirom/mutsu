@@ -332,6 +332,20 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(merged));
             }
             // Cost: O(1).
+            // Cost: O(k), k = the characters of the key and value it files.
+            RxOp::HashCap {
+                tok,
+                start,
+                pos_base,
+            } => {
+                let token = &program.toks[tok as usize];
+                let (from, base) = (regs[start as usize], regs[pos_base as usize]);
+                levels.edit(|s| {
+                    super::super::regex_match_delta::apply_hash_capture(
+                        s, chars, token, from, pos, base,
+                    )
+                });
+            }
             // Cost: O(1).
             RxOp::EmptyRange => {
                 Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");

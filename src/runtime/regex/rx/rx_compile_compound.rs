@@ -344,9 +344,8 @@ impl Compiler {
         // `** 0 % sep`: only the zero-iteration arm, whose captures (empty
         // lists, an alias over the empty span) the loop's exit files.
         let no_iteration = max == Some(0);
-        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
-        else {
-            return Err("too-large");
+        let Some((min, max)) = self.counted_bounds(min, max) else {
+            return Ok(());
         };
         // `atom ** { code } % sep`: the count is evaluated where the
         // quantifier is reached, as `x ** { code }` does (`repeat_code`), and

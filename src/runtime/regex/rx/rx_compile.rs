@@ -327,9 +327,6 @@ impl Compiler {
     }
 
     fn token(&mut self, token: &RegexToken) -> Result<(), Decline> {
-        if token.hash_capture.is_some() {
-            return Err("hash-capture");
-        }
         if let Some(sep) = &token.separator {
             return self.separated(token, &sep.pattern, sep.allow_trailing);
         }
@@ -338,7 +335,9 @@ impl Compiler {
             return self.zero_or_one(token);
         }
         // A quantified token applies its alias once per iteration; see `repeat`.
-        let alias = if token.named_capture.is_some() && matches!(token.quant, RegexQuant::One) {
+        let alias = if (token.named_capture.is_some() || token.hash_capture.is_some())
+            && matches!(token.quant, RegexQuant::One)
+        {
             let (pos_base, start) = (self.reg(), self.reg());
             self.ops.push(RxOp::PosBase(pos_base));
             self.ops.push(RxOp::Mark(start));
@@ -364,11 +363,20 @@ impl Compiler {
         if let Some((pos_base, start)) = alias {
             let tok = self.toks.len() as u32;
             self.toks.push(token.clone());
-            self.ops.push(RxOp::Named {
-                tok,
-                start,
-                pos_base,
-            });
+            if token.named_capture.is_some() {
+                self.ops.push(RxOp::Named {
+                    tok,
+                    start,
+                    pos_base,
+                });
+            }
+            if token.hash_capture.is_some() {
+                self.ops.push(RxOp::HashCap {
+                    tok,
+                    start,
+                    pos_base,
+                });
+            }
         }
         Ok(())
     }
@@ -640,6 +648,13 @@ impl Compiler {
                 pos_base,
             });
         }
+        if token.hash_capture.is_some() {
+            self.ops.push(RxOp::HashCap {
+                tok,
+                start,
+                pos_base,
+            });
+        }
         if let Some(h) = height {
             self.ops.push(RxOp::Cut(h));
         }
@@ -697,11 +712,32 @@ impl Compiler {
         min: usize,
         max: Option<usize>,
     ) -> Result<(), Decline> {
-        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
-        else {
-            return Err("too-large");
+        let Some((min, max)) = self.counted_bounds(min, max) else {
+            return Ok(());
         };
         self.repeat_bounded(token, Bounds::Fixed(min, max))
+    }
+
+    /// `min`/`max` of a counted quantifier as the loop's `u32` bounds, where
+    /// `u32::MAX` is "no bound". A maximum past it is no bound at all (no
+    /// subject is that long), and a minimum past it can never be met: the
+    /// quantifier then compiles to a failure and the bounds are `None`.
+    pub(super) fn counted_bounds(&mut self, min: usize, max: Option<usize>) -> Option<(u32, u32)> {
+        let max = max.map_or(u32::MAX, |max| u32::try_from(max).unwrap_or(u32::MAX));
+        match u32::try_from(min) {
+            Ok(min) => Some((min, max)),
+            Err(_) => {
+                self.never();
+                None
+            }
+        }
+    }
+
+    /// Ops that never match: a zero counter checked against a minimum of one.
+    pub(super) fn never(&mut self) {
+        let ctr = self.reg();
+        self.ops.push(RxOp::CtrZero(ctr));
+        self.ops.push(RxOp::AtLeast { ctr, min: 1 });
     }
 
     /// `x ** { code }`: the walk evaluates the count where the quantifier is
@@ -731,9 +767,14 @@ impl Compiler {
             && !is_assertion(&token.atom)
             && !matches!(token.atom, RegexAtom::Named(_));
         let named = token.named_capture.is_some();
+        // `%<h>=` files one entry per iteration, over its span; its positional
+        // base is the iteration's for `*` / `+` and the token's for `**`, as
+        // `grow_one_iter` has it.
+        let hashed = token.hash_capture.is_some();
+        let hash_per_iter = matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore);
         if let (Bounds::Fixed(min, max), true) = (
             bounds,
-            !nullable && is_consuming(&token.atom) && !token.frugal && !named,
+            !nullable && is_consuming(&token.atom) && !token.frugal && !named && !hashed,
         ) {
             // A single one-grapheme atom needs no loop: the iterations are
             // scanned up front and given back from a position list.
@@ -751,7 +792,7 @@ impl Compiler {
         // alias) were marked quantified up front — `walk_quant_chain` /
         // `descend_folded`'s order. The alias itself is applied per
         // iteration, over that iteration's span, as `grow_one_iter` does.
-        let fold = if named || atom_captures(&token.atom) {
+        let fold = if named || hashed || atom_captures(&token.atom) {
             let pos_base = self.reg();
             self.ops.push(RxOp::PosBase(pos_base));
             let tok = self.toks.len() as u32;
@@ -774,9 +815,13 @@ impl Compiler {
         let head = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let body = self.pc();
-        let iter_start = (nullable || named).then(|| self.reg());
+        let iter_start = (nullable || named || hashed).then(|| self.reg());
         if let Some(r) = iter_start {
             self.ops.push(RxOp::Mark(r));
+        }
+        let iter_pos_base = (hashed && hash_per_iter).then(|| self.reg());
+        if let Some(r) = iter_pos_base {
+            self.ops.push(RxOp::PosBase(r));
         }
         // Ratchet commits each iteration to the body's first candidate. So
         // does the walk's chain (`grow_one_iter` takes the single-candidate
@@ -811,6 +856,13 @@ impl Compiler {
                 tok,
                 start,
                 pos_base,
+            });
+        }
+        if let (true, Some((pos_base, tok)), Some(start)) = (hashed, fold, iter_start) {
+            self.ops.push(RxOp::HashCap {
+                tok,
+                start,
+                pos_base: iter_pos_base.unwrap_or(pos_base),
             });
         }
         if let Some(start) = iter_start.filter(|_| nullable) {

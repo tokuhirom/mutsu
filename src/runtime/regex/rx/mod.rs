@@ -29,6 +29,7 @@
 
 mod rx_atom;
 mod rx_call;
+mod rx_call_symbolic;
 mod rx_capture_ops;
 mod rx_compile;
 mod rx_compile_compound;
@@ -209,6 +210,14 @@ pub(super) enum RxOp {
     /// Apply `toks[tok]`'s `$<name>=` / `$N=` alias over `regs[start]..pos`,
     /// with the positional count at token start in `regs[pos_base]`.
     Named {
+        tok: u32,
+        start: u16,
+        pos_base: u16,
+    },
+    /// Apply `toks[tok]`'s `%<name>=` hash capture over `regs[start]..pos`,
+    /// with the positional count its key and value slots start at in
+    /// `regs[pos_base]` (`apply_hash_capture`).
+    HashCap {
         tok: u32,
         start: u16,
         pos_base: u16,

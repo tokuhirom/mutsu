@@ -87,6 +87,9 @@ pub(super) enum CallTarget {
     /// does not, the candidates are evaluated eagerly as for
     /// [`CallTarget::Eager`], with left-recursion bookkeeping forced.
     CustomHow(Arc<TokenCandidates>),
+    /// `<::(EXPR)>`: the rule's name is computed where the call is reached,
+    /// then the call is evaluated eagerly (`rx_symbolic_call_ends`).
+    Symbolic,
 }
 
 impl Interpreter {
@@ -117,10 +120,10 @@ impl Interpreter {
         caps: &crate::runtime::regex_types::RegexCaptures,
     ) -> Option<ResolvedCall> {
         let spec = name.spec();
-        if let Err(why) = self.rx_call_blockers(name, pkg) {
-            // Bridged without evaluating: the producer evaluates them itself.
+        // `<::(EXPR)>`: its single argument is the name, evaluated by the call.
+        if spec.lookup_name == "::" {
             return Some(ResolvedCall {
-                verdict: Err(why),
+                verdict: Ok(CallTarget::Symbolic),
                 args: None,
                 window: None,
             });
@@ -313,18 +316,6 @@ impl Interpreter {
         target
     }
 
-    /// What keeps any call of `<name>` off the compiled engine, whatever its
-    /// arguments: a name resolved per call.
-    // Cost: O(1).
-    fn rx_call_blockers(&self, name: &NamedAtom, _pkg: Symbol) -> Result<(), &'static str> {
-        let spec = name.spec();
-        // `<::(EXPR)>`: the rule's name is computed per call.
-        if spec.lookup_name == "::" {
-            return Err("symbolic-name");
-        }
-        Ok(())
-    }
-
     /// [`Self::rx_call_target`] with the one verdict a method definition can
     /// change, and so is never cached: a call with no rule of its name that
     /// names a plain grammar METHOD calls the method.
@@ -368,11 +359,12 @@ impl Interpreter {
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
             return Ok(CallTarget::Eager(candidates, "ignoremark-callee"));
         }
-        // Several candidates without a proto dedup their ends across each
-        // other; a mix of both is not a shape the walk's proto dispatch names.
+        // Several candidates without a proto (multi rules) dedup their ends
+        // across each other, which the growing-seed loop does; so does a mix
+        // of both.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
-            return Err("multi-candidate");
+            return Ok(CallTarget::Eager(candidates, "multi-candidate"));
         }
         // A wrapped proto candidate (`^find_method('p:sym<a>').wrap(..)`) is
         // user code around that candidate's invocation, like a wrapped rule.
@@ -384,12 +376,12 @@ impl Interpreter {
         {
             return Ok(CallTarget::Eager(candidates, "wrapped-candidate"));
         }
-        // The walk's eager arm scopes the caller's `:i` over a proto candidate's
-        // body (`subrule_candidate_ends`), which needs the body compiled under it:
-        // that call bridges. A plain call is the walk's streamed shape, which
-        // does not inherit `:i` — and neither does rakudo.
+        // The caller's `:i` is scoped over a proto candidate's body
+        // (`subrule_candidate_ends`), which needs the body compiled under it:
+        // the growing-seed loop evaluates such a call. A plain call does not
+        // inherit `:i` — and neither does rakudo.
         if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
-            return Err("proto-inherited-i");
+            return Ok(CallTarget::Eager(candidates, "proto-inherited-i"));
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
             return Ok(CallTarget::Eager(candidates, "lr-seed"));

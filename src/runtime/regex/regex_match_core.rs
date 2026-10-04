@@ -593,61 +593,6 @@ impl Interpreter {
         }
     }
 
-    /// Apply a `%<name>=(...)` hash capture for `token` to the store.
-    fn store_apply_hash_capture(
-        store: &mut CapStore,
-        chars: &[char],
-        token: &RegexToken,
-        from: usize,
-        to: usize,
-        pos_base: usize,
-    ) {
-        let Some(name) = token.hash_capture.as_ref() else {
-            return;
-        };
-        let (key, value) = {
-            let caps = store.caps();
-            // Count how many new positional captures this atom produced
-            let new_count = caps.positional.len().saturating_sub(pos_base);
-            // Look for inner subcaptures on the group's slot
-            let subcap_idx = if new_count >= 1 {
-                pos_base
-            } else {
-                caps.positional.len()
-            };
-            let inner_positionals = caps
-                .positional
-                .get(subcap_idx)
-                .and_then(|slot| slot.subcap.as_ref())
-                .map(|sc| &sc.kids().positional);
-            // The inner slots' text derives from their spans through the same
-            // `chars` this pattern level is matching against (ADR-0016 P4).
-            let slot_text = |slot: &PosSlot| -> String {
-                let a = slot.from.min(chars.len());
-                let b = slot.to.min(chars.len()).max(a);
-                chars[a..b].iter().collect()
-            };
-            if let Some(inner) = inner_positionals {
-                if inner.len() >= 2 {
-                    // Two+ inner subcaptures: first = key, second = value
-                    (slot_text(&inner[0]), Some(slot_text(&inner[1])))
-                } else if inner.len() == 1 {
-                    // One inner subcapture: it is the key, no value
-                    (slot_text(&inner[0]), None)
-                } else {
-                    // No inner subcaptures in subcaps: use matched text
-                    let k: String = chars[from..to].iter().collect();
-                    (k, None)
-                }
-            } else {
-                // No subcaptures: use matched text
-                let k: String = chars[from..to].iter().collect();
-                (k, None)
-            }
-        };
-        store.push_hash_capture(name, (key, value));
-    }
-
     /// Fold the quantified capture block (if the atom captures) and descend to
     /// the token after `idx`, rewinding the fold afterwards.
     #[allow(clippy::too_many_arguments)]
@@ -774,7 +719,9 @@ impl Interpreter {
                     let m = store.mark();
                     store.merge_delta(delta);
                     Self::store_apply_named_capture(store, token, pos, next, pos_base);
-                    Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
+                    super::regex_match_delta::apply_hash_capture(
+                        store, ctx.chars, token, pos, next, pos_base,
+                    );
                     let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                     store.rewind(m);
                     stop
@@ -858,7 +805,7 @@ impl Interpreter {
                         let m = store.mark();
                         store.merge_delta(delta);
                         Self::store_apply_named_capture(store, token, pos, next, pos_base);
-                        Self::store_apply_hash_capture(
+                        super::regex_match_delta::apply_hash_capture(
                             store, ctx.chars, token, pos, next, pos_base,
                         );
                         let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
@@ -1115,7 +1062,9 @@ impl Interpreter {
                 let m = store.mark();
                 store.merge_delta(delta);
                 Self::store_apply_named_capture(store, token, pos, next, pos_base);
-                Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
+                super::regex_match_delta::apply_hash_capture(
+                    store, ctx.chars, token, pos, next, pos_base,
+                );
                 let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
                 store.rewind(m);
                 if stop {
@@ -1265,7 +1214,9 @@ impl Interpreter {
         } else {
             pos_base
         };
-        Self::store_apply_hash_capture(store, ctx.chars, token, current, next, hash_base);
+        super::regex_match_delta::apply_hash_capture(
+            store, ctx.chars, token, current, next, hash_base,
+        );
         if hash_per_iter {
             // Reduce-time grammar action: when a `<subrule>` quantifier
             // iteration commits inside an action-driven parse whose
@@ -1533,7 +1484,9 @@ impl Interpreter {
                 } else {
                     pos_base
                 };
-                Self::store_apply_hash_capture(store, ctx.chars, token, current, end, hash_base);
+                super::regex_match_delta::apply_hash_capture(
+                    store, ctx.chars, token, current, end, hash_base,
+                );
                 if hash_per_iter {
                     interp.maybe_run_reduce_time_dynvar_action(token, store.caps());
                 }
