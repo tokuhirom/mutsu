@@ -148,29 +148,6 @@ pub(super) enum StreamDecline {
 }
 
 impl StreamDecline {
-    /// Short stable name for the `MUTSU_VM_STATS` histogram.
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Arguments => "call-arguments",
-            Self::Symbolic => "symbolic-indirection",
-            Self::NotARule => "not-a-rule",
-            Self::SeveralCandidates => "several-candidates",
-            Self::Proto => "proto-candidate",
-            Self::IgnoreMark => "ignore-mark",
-            Self::ReentersOwnName => "reenters-own-name",
-            Self::CalleeIsMethod => "callee-is-grammar-method",
-            Self::CalleeInterpolates => "callee-interpolates",
-            Self::CalleeEdgeUnresolvable => "callee-edge-unresolvable",
-            Self::ReachableSetTooLarge => "reachable-set-too-large",
-            Self::DynamicRuleParam => "dynamic-rule-param",
-            Self::QqThunk => "qq-thunk",
-            Self::GrammarDynvar => "grammar-dynvar",
-            Self::CustomHow => "custom-how-grammar",
-            Self::MethodWrapInstalled => "method-wrap-installed",
-            Self::LrKeyActive => "lr-key-active",
-            Self::SeedConsulted => "seed-consulted",
-        }
-    }
 }
 
 thread_local! {
@@ -202,29 +179,6 @@ fn token_defs_gen() -> u64 {
 }
 
 impl Interpreter {
-    /// May a `<name>` call in `pkg` be streamed as far as its call cone is
-    /// concerned? `None` when it may; otherwise the reason it may not.
-    ///
-    /// A rule whose cone never calls `name` again trivially qualifies. So does
-    /// a recursive one whose calls to `name` all sit after something that
-    /// consumes input (`regex A { '{' [ <A> | . ]*? '}' }`,
-    /// `regex_left_call_graph`): each nested call runs under a different
-    /// left-recursion key (the key carries the position), so the growing-seed
-    /// loop is as much of a formality for it as for a non-recursive rule, and
-    /// the streamed path's own runtime escapes (`LrKeyActive`,
-    /// `SeedConsulted`) still cover user code re-entering the key by hand.
-    /// Declining it instead made every nested call enumerate its whole end set
-    /// before the caller could try the first, which is exponential in the
-    /// nesting depth (#9596).
-    fn reenter_decline(&mut self, name: &str, pkg: Symbol) -> Option<StreamDecline> {
-        let mut reaches_own_name = false;
-        let (decline, _) = self.cone_walk(name, pkg, Some(&mut reaches_own_name));
-        if decline.is_some() {
-            return decline;
-        }
-        (reaches_own_name && !self.subrule_cannot_left_reenter(Symbol::intern(name), pkg))
-            .then_some(StreamDecline::ReentersOwnName)
-    }
 
     /// The walk itself, reporting both facts it can establish about the cone:
     /// why the key may be re-entered (`None` = proven unreachable), and whether
@@ -370,40 +324,6 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    /// Whether the streamed `<subrule>` path in `regex_match_lazy_subrule.rs`
-    /// may take this call at all: the memoized front door, consulted BEFORE the
-    /// call is resolved so an ineligible one costs a hash lookup instead of a
-    /// resolution plus a call-graph walk.
-    ///
-    /// `atom_text` is the subrule atom exactly as written,
-    /// so `<foo>` and `<&foo>` get their own entries rather than sharing one.
-    pub(super) fn subrule_call_stream_decline(
-        &mut self,
-        atom_text: &str,
-        pkg: Symbol,
-    ) -> Option<StreamDecline> {
-        let generation = token_defs_gen();
-        if let Some(hit) = STREAMABLE.with(|c| {
-            let c = c.borrow();
-            (c.0 == generation)
-                .then(|| c.1.get(&pkg).and_then(|m| m.get(atom_text)).copied())
-                .flatten()
-        }) {
-            return hit;
-        }
-        let verdict = self.compute_stream_decline(atom_text, pkg);
-        STREAMABLE.with(|c| {
-            let mut c = c.borrow_mut();
-            if c.0 != generation {
-                c.0 = generation;
-                c.1.clear();
-            }
-            c.1.entry(pkg)
-                .or_default()
-                .insert(atom_text.to_string(), verdict);
-        });
-        verdict
-    }
 
     /// May a `<name>` call in `pkg` skip its left-recursion activation
     /// entirely?
@@ -457,38 +377,6 @@ impl Interpreter {
         let verdict = decline.is_none() && code_free;
         super::regex_lr_state::lr_record_skip_verdict(name, pkg, generation, verdict);
         verdict
-    }
-
-    fn compute_stream_decline(&mut self, atom_text: &str, pkg: Symbol) -> Option<StreamDecline> {
-        let spec = Self::parse_named_regex_lookup_spec(atom_text);
-        // A rule call with arguments, and `<::(EXPR)>` symbolic indirection,
-        // both resolve per call; neither is a shape this path handles.
-        if !spec.arg_exprs.is_empty() {
-            return Some(StreamDecline::Arguments);
-        }
-        if spec.lookup_name == "::" {
-            return Some(StreamDecline::Symbolic);
-        }
-        let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
-        // Exactly one plain candidate. A proto keeps its rank-then-match
-        // dispatch (ADR-0046), several candidates need the cross-candidate dedup
-        // the eager arm performs, and `:m` remaps positions across the whole
-        // result set. All three are properties of the rule's DEFINITIONS, so the
-        // verdict holds for the whole token generation even when the body's
-        // parse does not.
-        if raw_empty || candidates.is_empty() {
-            return Some(StreamDecline::NotARule);
-        }
-        let [(parsed, _, sym)] = &candidates[..] else {
-            return Some(StreamDecline::SeveralCandidates);
-        };
-        if sym.is_some() {
-            return Some(StreamDecline::Proto);
-        }
-        if parsed.ignore_mark {
-            return Some(StreamDecline::IgnoreMark);
-        }
-        self.reenter_decline(&spec.lookup_name, pkg)
     }
 
     /// `true` when every definition answering to `<name>` in `pkg` compiles to

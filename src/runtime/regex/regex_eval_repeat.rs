@@ -10,7 +10,7 @@ impl Interpreter {
     pub(super) fn regex_repeat_count(
         &mut self,
         code: &str,
-        pos: usize,
+        _pos: usize,
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
         'run: {

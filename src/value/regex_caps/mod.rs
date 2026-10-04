@@ -19,7 +19,6 @@ pub(crate) use cap_node::{
     SILENT_ACTION_MARKER_PREFIX,
 };
 pub(crate) use captures::{CaptureAliasMap, RegexCaptures};
-pub(crate) use marks::strip_marks_text;
 pub(crate) use match_target::MatchTarget;
 pub(crate) use named_caps::*;
 pub(crate) use numbered::{has_numbered_captures, settle_numbered_captures};

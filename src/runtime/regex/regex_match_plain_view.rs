@@ -16,7 +16,7 @@
 //! `rx_levels::Levels::open_plain_iter`) that reads the same view.
 
 use super::super::*;
-use super::regex_helpers::{InlineCaptureScope, atom_contains_code, fold_quantified_captures};
+use super::regex_helpers::{atom_contains_code, fold_quantified_captures};
 
 /// Does an iteration of an unseparated quantifier over `atom`, which takes
 /// `stride` positional captures per iteration, need the folded view? Only a
@@ -25,7 +25,7 @@ use super::regex_helpers::{InlineCaptureScope, atom_contains_code, fold_quantifi
 /// own level, and a quantifier that captures nothing has nothing to fold.
 // Cost: O(1) (the code scan is memoized on the pattern).
 pub(crate) fn plain_iter_needs_view(atom: &RegexAtom, stride: usize) -> bool {
-    stride > 0 && Interpreter::atom_shares_backref_scope(atom) && atom_contains_code(atom)
+    stride > 0 && atom_shares_backref_scope(atom) && atom_contains_code(atom)
 }
 
 /// `caps` with the iterations appended since `pos_base` folded into the
@@ -45,18 +45,25 @@ pub(crate) fn plain_iter_view(
     (view, caps.inline_view_slot(pos_base))
 }
 
-/// The view and fold scope an iteration's atom matches under, when it needs
-/// one (`plain_iter_needs_view`). The scope stays armed while the guard lives.
-// Cost: O(c) when the atom needs the view, c = `caps`'s captures; else O(1).
-pub(super) fn arm_plain_iter_view(
-    atom: &RegexAtom,
-    caps: &RegexCaptures,
-    pos_base: usize,
-    stride: usize,
-) -> Option<(RegexCaptures, InlineCaptureScope)> {
-    if !plain_iter_needs_view(atom, stride) {
-        return None;
-    }
-    let (view, start) = plain_iter_view(caps, pos_base, stride);
-    Some((view, InlineCaptureScope::enter(start, stride)))
+/// Is this atom's sub-pattern matched *in the same capture scope* as the
+/// pattern containing it, as far as a backreference is concerned?
+///
+/// Verified against real `raku`: a non-capturing group, either flavour of
+/// alternation, a conjunction and a `~` goal all see the enclosing level's
+/// captures (`/ $<x>=(\w) [ $<x> ] /` matches "aa"), while a **capturing**
+/// group and a lookaround do NOT — rakudo gives each of those its own
+/// cursor, so `/ $<x>=(\w) ( $<x> ) /` and
+/// `/ $<x>=(\w) <?before $<x>> . /` both fail there. Those two therefore
+/// arm a barrier rather than a read-through, and the barrier also hides the
+/// outer level from anything nested deeper inside them
+/// (`/ $<x>=(\w) ( [ $<x> ] ) /` fails in raku too).
+pub(super) fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
+    matches!(
+        atom,
+        RegexAtom::Group(_)
+            | RegexAtom::Alternation(_)
+            | RegexAtom::SequentialAlternation(_)
+            | RegexAtom::Conjunction(_)
+            | RegexAtom::GoalMatch { .. }
+    )
 }

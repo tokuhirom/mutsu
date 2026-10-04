@@ -385,3 +385,45 @@ impl Interpreter {
         }
     }
 }
+
+impl Interpreter {
+    /// Keep a rule frame's final values on the subrule's own capture node. They
+    /// must not remain in the caller's delta: the subrule's action needs them,
+    /// but its caller's action runs after the subrule frame has ended.
+    pub(super) fn attach_grammar_dynvars_to_named_caps(
+        caps: &mut RegexCaptures,
+        atom: &RegexAtom,
+        values: &[(String, Value)],
+    ) {
+        let RegexAtom::Named(name) = atom else {
+            return;
+        };
+        let spec = name.spec();
+        let capture_symbols = if spec.silent {
+            vec![spec.silent_marker_sym]
+        } else {
+            let mut symbols = Vec::with_capacity(2);
+            if let Some(capture_sym) = spec.capture_sym {
+                symbols.push(capture_sym);
+            }
+            if !spec.alias_replaces_original && !symbols.contains(&spec.lookup_sym) {
+                symbols.push(spec.lookup_sym);
+            }
+            symbols
+        };
+        for capture_sym in capture_symbols {
+            let Some(slot) = caps.named.get_mut(&capture_sym) else {
+                continue;
+            };
+            for node in &mut slot.nodes {
+                let node = std::sync::Arc::make_mut(node);
+                let node_vars = &mut node.kids_mut().regex_vars;
+                for (key, value) in values {
+                    node_vars
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
+                }
+            }
+        }
+    }
+}

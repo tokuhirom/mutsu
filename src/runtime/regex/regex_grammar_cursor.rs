@@ -120,23 +120,6 @@ impl Interpreter {
         }
     }
 
-    /// The cursor of the innermost walked rule invocation, created on the first
-    /// request; `None` outside any (the method then gets a throwaway instance).
-    // Cost: O(1) once created; the first request is `new_grammar_cursor`'s.
-    pub(super) fn walk_rule_cursor(
-        &mut self,
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-    ) -> Option<Value> {
-        if let Some(cursor) = self.regex_state.walk_cursors.last()? {
-            return Some(cursor.clone());
-        }
-        let cursor = self.new_grammar_cursor(chars, pos, pkg);
-        *self.regex_state.walk_cursors.last_mut()? = Some(cursor.clone());
-        Some(cursor)
-    }
-
     /// The cursor `slot` (the calling rule invocation's) holds, created on the
     /// first request: an instance of grammar `pkg` at `pos`.
     // Cost: O(1) once created; the first request is `new_grammar_cursor`'s.
@@ -227,33 +210,6 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn publish_rx_code_invocant(&mut self, invocant: Option<Value>) {
         self.regex_state.start_invocant.rx_code = Some(invocant);
-    }
-
-    /// Open the walk's scope for the start rule's own pattern: a rule
-    /// invocation like any other ([`Self::enter_rule_cursor`]) that also takes
-    /// the armed invocant. Pair with [`Self::leave_start_rule_cursor`].
-    // Cost: O(1) amortized.
-    pub(super) fn enter_start_rule_cursor(&mut self) -> Option<(usize, Value)> {
-        self.enter_rule_cursor();
-        let scope = self
-            .regex_state
-            .start_invocant
-            .armed
-            .take()
-            .map(|inv| (self.regex_state.walk_cursors.len(), inv));
-        std::mem::replace(&mut self.regex_state.start_invocant.walk, scope)
-    }
-
-    // Cost: O(1).
-    pub(super) fn leave_start_rule_cursor(
-        &mut self,
-        saved: Option<(usize, Value)>,
-    ) -> Option<Value> {
-        if let Some((_, inv)) = std::mem::replace(&mut self.regex_state.start_invocant.walk, saved)
-        {
-            self.regex_state.start_invocant.armed = Some(inv);
-        }
-        self.leave_rule_cursor()
     }
 
     /// The invocant a code block at the current point runs on when it is the

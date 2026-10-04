@@ -9,7 +9,6 @@
 //! [`Interpreter::try_regex_subrule_as_method`].
 
 use super::super::*;
-use super::regex_helpers::NamedRegexLookupSpec;
 
 impl Interpreter {
     /// Call the grammar method `name` of `pkg` on `invocant` (the cursor of the
@@ -149,37 +148,4 @@ impl Interpreter {
         (end <= chars.len()).then_some(end)
     }
 
-    /// The walk's method-call subrule: `None` when `<spec>` called from `pkg`
-    /// does not name a plain grammar method (the caller falls through to its
-    /// other paths), else the call's ends, [`Self::regex_grammar_method_end`]'s
-    /// at most one. The invocant is the cursor the compiled engine published
-    /// for this one call (a call it bridged) or the walked rule invocation's.
-    // Cost: O(1) expected to decide, plus `regex_grammar_method_end`'s.
-    // TODO: compile to bytecode — this is the walk's entry; it goes with the
-    // walk (ADR-0135 D7).
-    pub(super) fn try_regex_subrule_as_method(
-        &mut self,
-        spec: &NamedRegexLookupSpec,
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-        args: &[Value],
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        // The cursor the engine published for this one call, if any: taken at
-        // once so a call nested inside the method never sees it.
-        let published = self.regex_state.rx_cursor.take();
-        if !self.subrule_names_user_method(spec, pkg) {
-            return None;
-        }
-        let invocant = match published.or_else(|| self.walk_rule_cursor(chars, pos, pkg)) {
-            Some(cursor) => cursor,
-            None => self.new_grammar_cursor(chars, pos, pkg),
-        };
-        Some(
-            self.regex_grammar_method_end(&spec.lookup_name, chars, pos, pkg, args, invocant)
-                .map(|end| (end, RegexCaptures::default()))
-                .into_iter()
-                .collect(),
-        )
-    }
 }

@@ -183,109 +183,6 @@ pub(crate) fn note_regex_code_lowered() {
     REGEX_CAPTURE_READER_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-pub(crate) fn any_regex_capture_reader_lowered() -> bool {
-    REGEX_CAPTURE_READER_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Arms [`INLINE_OUTER_CAPS_SEED`] for the duration of one atom match,
-/// restoring the enclosing atom's seed on drop.
-pub(crate) struct OuterCapsSeed {
-    prev: Option<std::sync::Arc<OuterBackrefCaps>>,
-    armed: bool,
-    /// The quantifier fold this atom consumed (`consume_capture_scope`),
-    /// restored when the atom's match is done.
-    _scope: Option<InlineCaptureScope>,
-}
-
-impl OuterCapsSeed {
-    /// Publish `next` (or, with `None`, a barrier that hides every enclosing
-    /// level) for the nested stores this atom's match is about to build.
-    pub(crate) fn arm(next: Option<std::sync::Arc<OuterBackrefCaps>>) -> Self {
-        let prev = INLINE_OUTER_CAPS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
-        OuterCapsSeed {
-            prev,
-            armed: true,
-            _scope: None,
-        }
-    }
-
-    /// Withdraw the [`INLINE_CAPTURE_SCOPE`] fold for as long as this atom
-    /// matches. The fold names the slots of the one atom an iteration of a
-    /// quantifier is matching, and that atom's seed (built before this call)
-    /// already carries it as `merge_positional`; a sub-pattern nested deeper
-    /// in the atom, or the rest of the pattern a lazily driven candidate
-    /// continues into, is not that atom and must not fold into those slots.
-    // Cost: O(1).
-    pub(crate) fn consume_capture_scope(mut self) -> Self {
-        self._scope = InlineCaptureScope::suspend();
-        self
-    }
-
-    /// Leave the enclosing atom's seed in place untouched.
-    #[inline]
-    pub(crate) fn inert() -> Self {
-        OuterCapsSeed {
-            prev: None,
-            armed: false,
-            _scope: None,
-        }
-    }
-}
-
-impl Drop for OuterCapsSeed {
-    #[inline]
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        let prev = self.prev.take();
-        INLINE_OUTER_CAPS_SEED.with(|s| *s.borrow_mut() = prev);
-    }
-}
-
-/// The enclosing-level captures a freshly built capture store should read
-/// backreferences through (see [`INLINE_OUTER_CAPS_SEED`]).
-pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
-    let scope = INLINE_CAPTURE_SCOPE.with(Cell::get);
-    if !any_regex_capture_reader_lowered() && scope.is_none() {
-        return None;
-    }
-    INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
-}
-
-/// Arms the capture-fold context used while matching one separated-quantifier
-/// atom, restoring the previous context when the atom candidate is done.
-pub(crate) struct InlineCaptureScope {
-    previous: Option<(usize, usize)>,
-}
-
-impl InlineCaptureScope {
-    pub(crate) fn enter(start: usize, stride: usize) -> Self {
-        let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.replace(Some((start, stride))));
-        Self { previous }
-    }
-
-    /// Clear the fold until the guard drops; `None` (nothing to restore) when
-    /// no fold is armed.
-    // Cost: O(1).
-    pub(crate) fn suspend() -> Option<Self> {
-        let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.take())?;
-        Some(Self {
-            previous: Some(previous),
-        })
-    }
-}
-
-impl Drop for InlineCaptureScope {
-    fn drop(&mut self) {
-        INLINE_CAPTURE_SCOPE.with(|scope| scope.set(self.previous));
-    }
-}
-
-pub(crate) fn inline_capture_scope() -> Option<(usize, usize)> {
-    INLINE_CAPTURE_SCOPE.with(Cell::get)
-}
-
 /// Does this atom's sub-pattern contain a backreference anywhere inside it?
 /// Only such an atom needs to pay for snapshotting the enclosing captures.
 pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
@@ -313,15 +210,6 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
         RegexAtom::GoalMatch { goal, inner, .. } => pattern_has(goal) || pattern_has(inner),
         _ => false,
     }
-}
-
-/// Is an enclosing same-scope sub-pattern publishing its level's captures right
-/// now (see [`INLINE_OUTER_CAPS_SEED`])? The continuation after that sub-pattern
-/// runs inside its dynamic extent, so an atom that starts a regex of its own
-/// must check before it builds a capture store.
-#[inline]
-pub(crate) fn outer_caps_seed_published() -> bool {
-    INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().is_some())
 }
 
 /// [`atom_contains_code`] for a whole pattern (memoized on the pattern).
@@ -356,78 +244,6 @@ pub(crate) fn atom_contains_code(atom: &RegexAtom) -> bool {
         RegexAtom::GoalMatch { goal, inner, .. } => pattern_has(goal) || pattern_has(inner),
         _ => false,
     }
-}
-
-/// Is anything published in [`INLINE_REGEX_VARS_SEED`] right now? A `false`
-/// means an atom that has no lexicals of its own to publish cannot change what
-/// any nested store would see, so it need not arm the seed at all.
-#[inline]
-pub(crate) fn inline_regex_vars_active() -> bool {
-    INLINE_REGEX_VARS_ACTIVE.with(Cell::get)
-}
-
-/// Arms the [`INLINE_REGEX_VARS_SEED`] for the duration of one atom match,
-/// restoring the enclosing atom's seed on drop. An atom that is an inline
-/// sub-pattern arms it with the lexicals in scope; every other atom — a subrule
-/// reference above all — arms it *empty*, which is what stops a `:my` lexical
-/// from leaking into a different regex.
-pub(crate) struct InlineVarsSeed {
-    prev: Option<std::sync::Arc<crate::runtime::RegexVarMap>>,
-    armed: bool,
-}
-
-impl InlineVarsSeed {
-    /// Publish `vars` (already a shared handle — `None` means "publish
-    /// nothing", which is what a subrule reference arms) for the duration of
-    /// one atom match.
-    #[inline]
-    pub(crate) fn arm(vars: Option<&std::sync::Arc<crate::runtime::RegexVarMap>>) -> Self {
-        let active = INLINE_REGEX_VARS_ACTIVE.with(Cell::get);
-        if vars.is_none() && !active {
-            // Nothing to publish and nothing published: the atom cannot change
-            // what any nested store would see, so leave the slot untouched.
-            return InlineVarsSeed {
-                prev: None,
-                armed: false,
-            };
-        }
-        let next = vars.cloned();
-        INLINE_REGEX_VARS_ACTIVE.with(|f| f.set(next.is_some()));
-        let prev = INLINE_REGEX_VARS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
-        InlineVarsSeed { prev, armed: true }
-    }
-
-    /// Leave the enclosing atom's seed in place untouched. Equivalent to
-    /// [`Self::arm`]`(None)` when nothing is published, without asking the
-    /// thread-local whether anything is.
-    #[inline]
-    pub(crate) fn inert() -> Self {
-        InlineVarsSeed {
-            prev: None,
-            armed: false,
-        }
-    }
-}
-
-impl Drop for InlineVarsSeed {
-    #[inline]
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        let prev = self.prev.take();
-        INLINE_REGEX_VARS_ACTIVE.with(|f| f.set(prev.is_some()));
-        INLINE_REGEX_VARS_SEED.with(|s| *s.borrow_mut() = prev);
-    }
-}
-
-/// The in-regex lexicals a freshly built capture store should start from (see
-/// [`INLINE_REGEX_VARS_SEED`]).
-pub(crate) fn take_inline_regex_vars_seed() -> Option<std::sync::Arc<crate::runtime::RegexVarMap>> {
-    if !INLINE_REGEX_VARS_ACTIVE.with(Cell::get) {
-        return None;
-    }
-    INLINE_REGEX_VARS_SEED.with(|s| s.borrow().clone())
 }
 
 thread_local! {
@@ -566,20 +382,6 @@ pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>)
             log.entries.push((rule.to_string(), caps.clone()));
         }
     });
-}
-
-/// Run `f` with the reduce log set aside, then put it back: the walk's replay of
-/// a compiled run (`MUTSU_RX_DIFF`, ADR-0135 D6) must not log the reductions of a
-/// match the compiled run already logged, or an action would run twice.
-pub(crate) fn isolate_reduced_log<R>(f: impl FnOnce() -> R) -> R {
-    let saved = REDUCED_SUBRULES.with(|slot| slot.borrow_mut().as_mut().map(std::mem::take));
-    let out = f();
-    REDUCED_SUBRULES.with(|slot| {
-        if let (Some(log), Some(saved)) = (slot.borrow_mut().as_mut(), saved) {
-            *log = saved;
-        }
-    });
-    out
 }
 
 /// Activates the reduce log for one `Grammar.parse(:actions(...))`, restoring any
@@ -1368,48 +1170,6 @@ pub(super) fn is_grapheme_boundary(chars: &[char], pos: usize) -> bool {
     // A conjunct linker in the mark run just before `pos` can pull this
     // codepoint into the preceding cluster (GB9c, as in `grapheme_end`).
     grapheme_end(chars, run_start - 1) <= pos
-}
-
-/// Check if an atom is "simple" — it only advances position without producing
-/// any captures. Used to enable a fast path in ratcheted quantifier loops
-/// that avoids cloning RegexCaptures on every iteration.
-/// Returns true when a Named regex atom is "silent" (produces no implicit
-/// named capture).  Silent names start with `.` (e.g. `<.ws>`).
-pub(super) fn is_silent_named_atom(atom: &RegexAtom) -> bool {
-    if let RegexAtom::Named(name) = atom {
-        name.trim().starts_with('.')
-    } else {
-        false
-    }
-}
-
-/// Check if a Named atom is non-silent (produces named captures) and has no arguments.
-/// Such atoms can use a fast path for ratcheted quantifiers.
-pub(super) fn is_named_atom_no_args(atom: &RegexAtom) -> bool {
-    if let RegexAtom::Named(name) = atom {
-        let trimmed = name.trim();
-        !trimmed.starts_with('.')
-            && !trimmed.starts_with('&')
-            && !trimmed.contains('(')
-            && !trimmed.contains(':')
-            && !trimmed.contains('=')
-    } else {
-        false
-    }
-}
-
-pub(super) fn is_simple_atom(atom: &RegexAtom) -> bool {
-    matches!(
-        atom,
-        RegexAtom::Literal(_)
-            | RegexAtom::LiteralGrapheme(_)
-            | RegexAtom::CharClass(_)
-            | RegexAtom::Any
-            | RegexAtom::Newline
-            | RegexAtom::NotNewline
-            | RegexAtom::UnicodeProp { .. }
-            | RegexAtom::CompositeClass { .. }
-    )
 }
 
 pub(super) fn merge_regex_captures(

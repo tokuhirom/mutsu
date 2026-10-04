@@ -190,24 +190,6 @@ pub(super) fn lr_name_active(name: Symbol) -> bool {
     })
 }
 
-/// `true` when this key is already being evaluated further up the stack, i.e.
-/// entering it again would be a left-recursive re-entry.
-pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
-    LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()))
-}
-
-/// Mark `key` as under evaluation with an empty seed, returning the enclosing
-/// activation's "seed was consulted" flag for [`lr_end_activation`] to restore.
-pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
-    LR_STATE.with(|s| {
-        let mut s = s.borrow_mut();
-        s.bump(key.name);
-        let entry = s.keys.entry(key.clone()).or_default();
-        entry.seed = Some(Vec::new());
-        std::mem::take(&mut entry.seed_read)
-    })
-}
-
 /// The gate [`super::regex_call_graph`] decides and this module caches: may a
 /// `<name>` call in `pkg` skip its activation entirely?
 ///

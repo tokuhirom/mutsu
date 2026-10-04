@@ -221,7 +221,7 @@ impl Interpreter {
         code: &str,
         list: bool,
         chars: &[char],
-        pos: usize,
+        _pos: usize,
         current_caps: &RegexCaptures,
         ignore_case: bool,
     ) -> Option<std::sync::Arc<RegexPattern>> {
@@ -254,28 +254,6 @@ impl Interpreter {
             .collect();
         out.reverse();
         out
-    }
-
-    /// Every end at which the [`RegexAtom::CodeInterp`] atom matches at
-    /// `pos` (the walk's arm): [`Self::regex_code_interp_parsed`], then
-    /// [`Self::regex_code_interp_pattern_ends`].
-    ///
-    /// Cost: as those two.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn regex_code_interp_ends(
-        &mut self,
-        code: &str,
-        list: bool,
-        chars: &[char],
-        pos: usize,
-        current_caps: &RegexCaptures,
-        pkg: Symbol,
-        ignore_case: bool,
-    ) -> Vec<(usize, RegexCaptures)> {
-        match self.regex_code_interp_parsed(code, list, chars, pos, current_caps, ignore_case) {
-            Some(parsed) => self.regex_code_interp_pattern_ends(&parsed, chars, pos, pkg),
-            None => Vec::new(),
-        }
     }
 
     /// [`Self::regex_code_interp_ends`] without the D6 record, for the
