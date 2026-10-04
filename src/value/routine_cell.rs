@@ -27,6 +27,12 @@ struct Inner {
     /// NativeCall's `nativecast(Signature, $ptr)`), which `.signature`
     /// answers from then on.
     signature: RwLock<Option<super::Value>>,
+    /// The type object the routine's return-type spelling names in its
+    /// declaring scope (a `my class` storage name, an imported or `constant`
+    /// type term), recorded where that scope is visible so `.returns` asked
+    /// from elsewhere -- upstream NativeCall's `$routine.returns` -- answers
+    /// the same type.
+    return_type: RwLock<Option<super::Value>>,
 }
 
 /// See the module docs. Cloning shares the cell: a clone of the handle is the
@@ -73,6 +79,22 @@ impl RoutineCell {
         }
     }
 
+    /// The return type object recorded for the routine, if any.
+    // Cost: O(1).
+    pub(crate) fn return_type(&self) -> Option<super::Value> {
+        self.0.return_type.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Record the routine's return type object, unless one is recorded.
+    // Cost: O(1).
+    pub(crate) fn note_return_type(&self, ty: super::Value) {
+        if let Ok(mut slot) = self.0.return_type.write()
+            && slot.is_none()
+        {
+            *slot = Some(ty);
+        }
+    }
+
     /// A new, unshared cell starting from this one's composition: what a
     /// Raku-level `.clone` of the routine gets (ADR-11827 §2.3).
     // Cost: O(1).
@@ -83,6 +105,9 @@ impl RoutineCell {
         }
         if let Some(signature) = self.bound_signature() {
             fresh.bind_signature(signature);
+        }
+        if let Some(ty) = self.return_type() {
+            fresh.note_return_type(ty);
         }
         fresh
     }

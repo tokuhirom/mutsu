@@ -501,6 +501,14 @@ impl Interpreter {
             None
         };
         let signature = make_signature_value_with_owner(info, owner_key, Some(self));
+        // The return type the routine's declaring scope resolved (a `my class`,
+        // a `constant` alias): `.signature.returns` must be that type object
+        // wherever it is asked from (upstream NativeCall's `return_hash_for`).
+        if let Some(ty) = data.routine_cell.return_type()
+            && let ValueView::Instance { attributes, .. } = signature.view()
+        {
+            attributes.bind_attr_through("returns", ty);
+        }
         if let Some(key) = cache_key {
             cache_sub_signature(key, signature.clone());
         }

@@ -222,6 +222,13 @@ impl Interpreter {
                 "__mutsu_return_type".to_string(),
                 Value::str(return_type.clone()),
             );
+            // Where the spelling names a scope-specific type object, record
+            // it on the routine for `.returns` asked from another scope.
+            if def.routine_cell.return_type().is_none()
+                && let Some(ty) = self.scoped_type_object(return_type)
+            {
+                def.routine_cell.note_return_type(ty);
+            }
         }
         if let Some(callable_type) = def.declarator.callable_type() {
             captured_env.insert(
