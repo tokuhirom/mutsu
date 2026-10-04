@@ -605,6 +605,8 @@ pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
 mod param_copy;
+pub(crate) mod routine_cell;
+pub(crate) use routine_cell::RoutineCell;
 mod quanthash_store;
 pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;
@@ -1647,6 +1649,9 @@ pub struct SubData {
     /// object reconciles the registry against this record instead
     /// (`Interpreter::reconcile_captured_readonly`).
     pub(crate) captured_readonly: Option<CapturedReadonly>,
+    /// The routine's identity for `does` (ADR-11827): the roles composed into
+    /// it, shared by every value of the same routine.
+    pub(crate) routine_cell: RoutineCell,
 }
 
 /// See [`SubData::captured_readonly`].

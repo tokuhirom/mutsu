@@ -270,11 +270,12 @@ impl Interpreter {
             }
         });
         // Preserve empty_sig from the FunctionDef (arity checks, e.g. sort
-        // rejecting 0-arity callables) and stabilize the id, in one rewrap.
-        if (empty_sig || stable_id.is_some() || captured_readonly.is_some())
-            && let ValueView::Sub(data) = sub_val.view()
-        {
+        // rejecting 0-arity callables), stabilize the id, and share the def's
+        // composition cell (ADR-11827: this rebuild IS the routine, so a
+        // `does` on it is seen by every other value of it), in one rewrap.
+        if let ValueView::Sub(data) = sub_val.view() {
             let mut new_data = (**data).clone();
+            new_data.routine_cell = def.routine_cell.clone();
             new_data.empty_sig = empty_sig;
             if let Some(id) = stable_id {
                 new_data.id = id;

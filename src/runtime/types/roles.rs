@@ -371,7 +371,12 @@ impl Interpreter {
         {
             return Ok(reblessed);
         }
-        self.eval_does_values(left, right)
+        // A routine composes in place (ADR-11827): onto its current
+        // composition, which the result then becomes.
+        let left = Self::routine_current_view(&left).unwrap_or(left);
+        let composed = self.eval_does_values(left, right)?;
+        Self::note_routine_composition(&composed);
+        Ok(composed)
     }
 
     /// The mutating form of `$obj does (RoleA, RoleB)`.
@@ -390,7 +395,10 @@ impl Interpreter {
         {
             return Ok(reblessed);
         }
-        self.eval_does_values_list(left, roles)
+        let left = Self::routine_current_view(&left).unwrap_or(left);
+        let composed = self.eval_does_values_list(left, roles)?;
+        Self::note_routine_composition(&composed);
+        Ok(composed)
     }
 
     pub(crate) fn eval_does_values(
@@ -1138,7 +1146,17 @@ impl Interpreter {
         // so composing a role onto *this* instance does not by itself make a
         // later rebuild of the same routine carry it. Record the composition
         // so those rebuild sites can re-apply it.
-        if let ValueView::Sub(sub_data) = inner.view() {
+        //
+        // Only for a Method object now: a sub's rebuilds share the def's
+        // composition cell (ADR-11827), which `does` writes, while this
+        // name-keyed record also caught a `but` copy and a `.clone`. Method
+        // traits move to the cell in ADR-11827 phase 2.
+        if let ValueView::Sub(sub_data) = inner.view()
+            && matches!(
+                sub_data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(t)) if t.as_str() == "Method"
+            )
+        {
             crate::runtime::registration_sub::note_routine_mixin_role(
                 crate::qualified::qualified(sub_data.package, sub_data.name).as_str(),
                 role_name,

@@ -179,6 +179,7 @@ impl Interpreter {
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard,
             captured_readonly,
+            routine_cell: Default::default(),
         }))
     }
 

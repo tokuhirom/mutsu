@@ -563,6 +563,11 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // A routine does the roles composed into it, through every alias
+        // (ADR-11827).
+        if let Some(current) = Self::routine_current_view(value) {
+            return self.type_matches_value_why(constraint, &current, why);
+        }
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = if constraint == "Cursor" {

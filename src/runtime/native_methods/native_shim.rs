@@ -87,5 +87,6 @@ pub(in crate::runtime) fn native_method_shim(
         source_file_sym_cache: std::sync::OnceLock::new(),
         state_scope_guard: None,
         captured_readonly: None,
+        routine_cell: Default::default(),
     }))
 }

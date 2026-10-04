@@ -262,11 +262,16 @@ impl Interpreter {
                 }
                 inner_args.push(arg.clone());
             }
-            let inner_clone = match self.call_method_with_values(inner_owned, "clone", inner_args) {
-                Ok(v) => v,
-                Err(e) => return Some(Err(e)),
-            };
-            return Some(Ok(Value::mixin_with_state(inner_clone, new_mixins)));
+            let inner_clone =
+                match self.call_method_with_values_unviewed(inner_owned, "clone", inner_args) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+            let cloned = Value::mixin_with_state(inner_clone, new_mixins);
+            // A cloned routine's own cell holds the copied composition
+            // (ADR-11827 §2.3).
+            Self::note_routine_composition(&cloned);
+            return Some(Ok(cloned));
         }
 
         if method == "of"

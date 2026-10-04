@@ -41,7 +41,7 @@ impl Interpreter {
         if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
             return Ok(Value::package(crate::symbol::Symbol::intern(&allo)));
         }
-        self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.to_vec())
+        self.call_method_with_values_unviewed(inner.as_ref().clone(), "WHAT", args.to_vec())
     }
 
     /// Get-or-create the shared `Gc<MixinOverrides>` node for a composition

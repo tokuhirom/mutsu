@@ -170,6 +170,7 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
         };
         // Register as a typed multi candidate under the class package, mirroring
         // the `multi sub` registration keys so `import` copies it and operator

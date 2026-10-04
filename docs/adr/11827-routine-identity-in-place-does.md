@@ -6,7 +6,7 @@
 - **Issue**: [#11827](https://github.com/tokuhirom/mutsu/issues/11827)
 - **Related**: [ADR-11203](11203-nativecall-runs-upstream-via-the-backend-neutral-path.md) (upstream
   NativeCall, whose `is native is symbol` and `is native` methods depend on this),
-  [ADR-0060](0060-mixin-what-composition-cache.md) (the composition-keyed `.WHAT` cache),
+  [ADR-0060](0060-mixin-what-is-a-composition-keyed-type-object.md) (the composition-keyed `.WHAT` cache),
   #11479 (`Code.$!do` rebinding)
 
 ## 1. Context

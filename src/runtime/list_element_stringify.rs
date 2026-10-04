@@ -141,7 +141,7 @@ impl crate::Interpreter {
                 inner.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)
             ) {
-                let s = self.call_method_with_values(inner.clone(), "Str", vec![])?;
+                let s = self.call_method_with_values_unviewed(inner.clone(), "Str", vec![])?;
                 out.push(Value::str(s.to_string_value()));
             } else if Self::list_str_needs_interpreter(&item) {
                 out.push(self.resolve_list_element_stringifiers(&item)?);

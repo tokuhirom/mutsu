@@ -1325,6 +1325,7 @@ impl Interpreter {
                 }
                 cell
             },
+            routine_cell: Default::default(),
         };
         // The seeded values must equal what the lazy fill would compute while
         // the body is still attached — a divergence here would silently change
@@ -2156,6 +2157,7 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
         };
         self.insert_token_def_in(package, name, def, multi);
     }
@@ -2357,6 +2359,7 @@ impl Interpreter {
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
+                routine_cell: Default::default(),
             }),
         );
         Ok(())
@@ -2437,6 +2440,7 @@ impl Interpreter {
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
+                routine_cell: Default::default(),
             }),
         );
         Ok(())
