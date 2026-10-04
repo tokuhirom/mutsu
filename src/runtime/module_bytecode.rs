@@ -17,7 +17,8 @@
 //! session and with its inputs recorded. A first compile that the codec
 //! accepts is then written to the cache.
 //!
-//! The feature is off unless `MUTSU_PRECOMP_BYTECODE=1`.
+//! The feature is on by default (ADR-11756 step 5);
+//! `MUTSU_PRECOMP_BYTECODE=0` turns it off, as does `--no-precomp`.
 //! `MUTSU_PRECOMP_VERIFY=1` makes every hit compile anyway and compare the
 //! two encodings byte for byte; a difference stops the run with status 70.
 
@@ -109,7 +110,7 @@ impl ModuleCodeSlot {
 // Cost: O(1) after the first call.
 fn enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_PRECOMP_BYTECODE").is_ok_and(|v| v != "0"))
+    *ON.get_or_init(|| std::env::var("MUTSU_PRECOMP_BYTECODE").map_or(true, |v| v != "0"))
 }
 
 // Cost: O(1) after the first call.

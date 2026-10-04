@@ -1,12 +1,12 @@
 use Test;
 
-# ADR-11756 step 4: with MUTSU_PRECOMP_BYTECODE=1 a module's mainline compile is
+# ADR-11756: a module's mainline compile is (by default, since step 5)
 # written to the precompilation cache and served to the next process. With
 # MUTSU_PRECOMP_VERIFY=1 a hit is compiled afresh as well and the two encodings
 # must be byte-identical, or the run stops with status 70. So the warm run below
 # proves that the cached compile is exactly what this process would have built,
 # for a module holding every construct that once differed between processes.
-plan 6;
+plan 9;
 
 my $lib = $?FILE.IO.parent(2).sibling('lib').Str;
 my $cache = $*TMPDIR.add("mutsu-bytecode-precomp-{$*PID}");
@@ -19,10 +19,12 @@ $script.spurt: qq:to/PROBE/;
     say probe();
     PROBE
 
-sub run-probe() {
+sub run-probe(Str $bytecode = '1') {
     my %env = %*ENV;
     %env<XDG_CACHE_HOME> = $cache.Str;
-    %env<MUTSU_PRECOMP_BYTECODE> = '1';
+    # An undefined $bytecode leaves the setting at its default.
+    %env<MUTSU_PRECOMP_BYTECODE>:delete;
+    %env<MUTSU_PRECOMP_BYTECODE> = $bytecode with $bytecode;
     %env<MUTSU_PRECOMP_VERIFY> = '1';
     %env<MUTSU_PRECOMP_TRACE> = '1';
     my $proc = run($*EXECUTABLE, $script.Str, :out, :err, :%env);
@@ -46,6 +48,15 @@ like $warm-err, /'PrecompBytecodeProbe.rakumod: hit'/,
     'warm run: the mainline is served from the cache';
 is $warm-out, $expected, 'warm run: the cached compile gives the same answers';
 is $cold-code, 0, 'cold run exits cleanly';
+
+my ($default-code, $default-out, $default-err) = run-probe(Str);
+like $default-err, /'PrecompBytecodeProbe.rakumod: hit'/,
+    'the cache is on by default';
+
+my ($off-code, $off-out, $off-err) = run-probe('0');
+is $off-out, $expected, 'MUTSU_PRECOMP_BYTECODE=0: the module still answers correctly';
+unlike $off-err, /'precomp bytecode:'/,
+    'MUTSU_PRECOMP_BYTECODE=0 turns the cache off';
 
 END {
     try $cache.&rmtree if $cache.e;

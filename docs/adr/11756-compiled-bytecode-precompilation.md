@@ -314,3 +314,10 @@ Phase 2 (registration) gets its own ADR after step 5 lands and is measured.
   and 64.7M with it**. Of the rest, routine registration takes 23.5M (phase 2)
   and the decode 8.7M. A module whose compile holds a Signature literal is not
   cached yet ([#11841](https://github.com/tokuhirom/mutsu/issues/11841)).
+
+- **Step 5**: the compiled section is on by default.
+  `MUTSU_PRECOMP_BYTECODE=0` (or `--no-precomp`) turns it off. The cache
+  prune now counts `.code` files alongside `.bin` entries, so the compiled
+  sections no longer grow the cache directory without bound. The nightly
+  stress workflow's `precomp-verify` job runs `t/` and the roast whitelist
+  with `MUTSU_PRECOMP_VERIFY=1` over one fresh shared cache.
