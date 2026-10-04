@@ -42,7 +42,7 @@ impl Interpreter {
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
             let mut symbols: ValueMap = ValueMap::default();
-            if let Some(subs) = self.exported_subs.get(module) {
+            if let Some(subs) = self.module.exported_subs.get(module) {
                 for (name, tags) in subs {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
@@ -66,7 +66,7 @@ impl Interpreter {
                     symbols.insert(format!("&{name}"), code);
                 }
             }
-            if let Some(vars) = self.exported_vars.get(module) {
+            if let Some(vars) = self.module.exported_vars.get(module) {
                 for (name, tags) in vars {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
@@ -82,12 +82,12 @@ impl Interpreter {
 
         if let Some(module) = Self::package_export_module(&package_name) {
             let mut tags = std::collections::BTreeSet::new();
-            if let Some(subs) = self.exported_subs.get(module) {
+            if let Some(subs) = self.module.exported_subs.get(module) {
                 for tagset in subs.values() {
                     tags.extend(tagset.iter().cloned());
                 }
             }
-            if let Some(vars) = self.exported_vars.get(module) {
+            if let Some(vars) = self.module.exported_vars.get(module) {
                 for tagset in vars.values() {
                     tags.extend(tagset.iter().cloned());
                 }
@@ -174,11 +174,34 @@ impl Interpreter {
         // A module's top-level package-qualified symbols live off the env
         // (ADR-0084 §2 group 2); an env binding of the same key shadows one.
         let package_symbols = self
+            .module
             .module_toplevel
             .package_symbols
             .iter()
             .filter(|(key, _)| !self.env.contains_key_sym(**key));
-        for (key, val) in self.env.iter().chain(package_symbols) {
+        // So do a package-less module's top-level enum keys, which are
+        // `GLOBAL` symbols; an env key of the same name shadows one.
+        let global_enum_keys: Vec<(Symbol, Value)> = self
+            .module
+            .module_toplevel
+            .enum_keys
+            .get("GLOBAL")
+            .into_iter()
+            .flat_map(|keys| keys.iter())
+            .map(|(name, val)| {
+                (
+                    Symbol::intern(&crate::runtime::enum_bare_names::enum_bare_key(name)),
+                    val.clone(),
+                )
+            })
+            .filter(|(key, _)| !self.env.contains_key_sym(*key))
+            .collect();
+        for (key, val) in self
+            .env
+            .iter()
+            .chain(package_symbols)
+            .chain(global_enum_keys.iter().map(|(k, v)| (k, v)))
+        {
             let key_s = key.resolve();
             // An enum key is a genuine package symbol, so it belongs in the stash
             // under its BARE name -- but it is stored in the enum-key namespace
@@ -207,7 +230,7 @@ impl Interpreter {
         // stored in the export-variable table rather than the routine
         // registry.  They are still ordinary members of the defining module's
         // stash (`Module::<&alias>`), so expose them alongside exported subs.
-        if let Some(vars) = self.exported_vars.get(package_name.as_str()) {
+        if let Some(vars) = self.module.exported_vars.get(package_name.as_str()) {
             for name in vars.keys() {
                 if let Some(value) = self.exported_var_value(&package_name, name) {
                     let key = crate::runtime::term_names::term_spelling(name).unwrap_or(name);
@@ -287,7 +310,7 @@ impl Interpreter {
         // custom EXPORT hook is running, before its module-qualified stash is
         // available through a lexical package binding.
         if is_lowercase_export_stash {
-            for (module, vars) in self.exported_vars.iter() {
+            for (module, vars) in self.module.exported_vars.iter() {
                 for name in vars.keys() {
                     if let Some(value) = self.exported_var_value(module, name) {
                         let value = if let (true, ValueView::Sub(data)) =
@@ -318,8 +341,14 @@ impl Interpreter {
         // `(&bar EXPORT)` in Rakudo). Without it, walking a name one component
         // at a time — which is what `::('Foo::EXPORT::ALL')` does — stopped at
         // `EXPORT` even though `Foo::EXPORT::ALL` resolves when spelled whole.
-        if self.exported_subs.contains_key(package_name.as_str())
-            || self.exported_vars.contains_key(package_name.as_str())
+        if self
+            .module
+            .exported_subs
+            .contains_key(package_name.as_str())
+            || self
+                .module
+                .exported_vars
+                .contains_key(package_name.as_str())
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
                 Value::package(Symbol::intern(&format!("{package_name}::EXPORT")))
@@ -349,15 +378,15 @@ impl Interpreter {
         for class_name in self.registry().classes.keys() {
             let class_short = crate::qualified::last_segment(Symbol::intern(class_name)).as_str();
             if (package_name == "MY" || pkg_is_global)
-                && (self.need_hidden_classes.contains(class_name)
-                    || self.need_hidden_classes.contains(class_short))
+                && (self.module.need_hidden_classes.contains(class_name)
+                    || self.module.need_hidden_classes.contains(class_short))
             {
                 continue;
             }
             // Skip classes hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && !pkg_is_global
-                && self.package_stash_hidden.contains(class_name)
+                && self.types.package_stash_hidden.contains(class_name)
             {
                 continue;
             }
@@ -368,7 +397,7 @@ impl Interpreter {
             // Raku keeps core types in the setting, not the user's GLOBAL --
             // only a class the user actually declared (`class`/`package`/
             // `module`/`grammar`) is a genuine GLOBAL member.
-            if pkg_is_global && !self.user_declared_classes.contains(class_name) {
+            if pkg_is_global && !self.types.user_declared_classes.contains(class_name) {
                 continue;
             }
             // Skip my-scoped classes (they should not appear in the package stash)
@@ -401,7 +430,7 @@ impl Interpreter {
             // Skip roles hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && !pkg_is_global
-                && self.package_stash_hidden.contains(role_name)
+                && self.types.package_stash_hidden.contains(role_name)
             {
                 continue;
             }
@@ -434,8 +463,8 @@ impl Interpreter {
             });
         }
 
-        if self.exported_subs.contains_key(&package_name)
-            || self.exported_vars.contains_key(&package_name)
+        if self.module.exported_subs.contains_key(&package_name)
+            || self.module.exported_vars.contains_key(&package_name)
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
                 Value::package(Symbol::intern(&Self::qualify_stash_name(

@@ -38,7 +38,7 @@ impl Interpreter {
         let prefix = format!("{name}::");
         self.env
             .keys()
-            .chain(self.module_toplevel.package_symbols.keys())
+            .chain(self.module.module_toplevel.package_symbols.keys())
             .any(|k| k.as_str().starts_with(&prefix))
             || self
                 .registry()
@@ -523,7 +523,7 @@ impl Interpreter {
         let prefix = format!("{package}::");
         self.env
             .keys()
-            .chain(self.module_toplevel.package_symbols.keys())
+            .chain(self.module.module_toplevel.package_symbols.keys())
             .any(|k| k.starts_with(&prefix))
             || self
                 .registry()
@@ -535,8 +535,8 @@ impl Interpreter {
                 .classes
                 .keys()
                 .any(|k| k.starts_with(&prefix))
-            || self.exported_subs.contains_key(package)
-            || self.exported_vars.contains_key(package)
+            || self.module.exported_subs.contains_key(package)
+            || self.module.exported_vars.contains_key(package)
     }
 
     pub(crate) fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
@@ -598,7 +598,7 @@ impl Interpreter {
         }
         // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
         // until they are merged into GLOBAL with `merge-symbols`.
-        if self.cur_repo.pending_global_symbols.contains(name) {
+        if self.module.cur_repo.pending_global_symbols.contains(name) {
             return Self::no_such_symbol_failure(name);
         }
         // A module's own bare declaration is visible only where that module
@@ -693,7 +693,7 @@ impl Interpreter {
             "tau" | "\u{03C4}" => return Value::num(std::f64::consts::TAU),
             _ => {}
         }
-        if !self.method_class_stack.is_empty() && self.loaded_modules.contains(name) {
+        if !self.types.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
             return Value::package(Symbol::intern(name));
         }
 

@@ -525,7 +525,7 @@ impl Interpreter {
             // `RegisterClass` op before the dispatch below and would otherwise
             // overwrite the field with its own snapshot. See
             // `Interpreter::deferred_trait_class_rollback`.
-            let deferred_trait_rollback = self.deferred_trait_class_rollback.take();
+            let deferred_trait_rollback = self.types.deferred_trait_class_rollback.take();
             // ADR-0019 Phase F box F5 shadow check: confirm this successful
             // registration bumped `Registry::method_generation` (see
             // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
@@ -700,7 +700,7 @@ impl Interpreter {
                             Value::package(Symbol::intern(&storage_name))
                         });
                     } else {
-                        crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                        crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                             .entry(parent)
                             .or_default()
                             .entry(short)
@@ -848,9 +848,9 @@ impl Interpreter {
                     // While this hook runs, `cname`'s own auto-generated
                     // accessors are not yet in `.^method_table` — see
                     // `classes_composing_accessors`'s doc comment (#8836).
-                    self.classes_composing_accessors.insert(cname.clone());
+                    self.types.classes_composing_accessors.insert(cname.clone());
                     let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
-                    self.classes_composing_accessors.remove(&cname);
+                    self.types.classes_composing_accessors.remove(&cname);
                     result?;
                 }
             }
@@ -868,7 +868,7 @@ impl Interpreter {
             // exported role is, so `import M` of an inline `module M` finds it
             // (#10557); a module file's scan records the same entry.
             if *is_lexical
-                && !self.suppress_exports
+                && !self.module.suppress_exports
                 && let Some((_, tags)) = custom_traits
                     .iter()
                     .find(|(t, _)| t == "__mutsu_export_type")
@@ -899,7 +899,7 @@ impl Interpreter {
             // NOT the source-level bare `name`) for `PushLastRegisteredClass`
             // to consume — see `Interpreter::last_registered_class_key`.
             self.record_module_owned_type(&storage_name);
-            self.last_registered_class_key = Some(storage_name.clone());
+            self.types.last_registered_class_key = Some(storage_name.clone());
 
             Ok(())
         } else {
@@ -915,7 +915,7 @@ impl Interpreter {
     /// somehow nothing was registered (defensive; should not happen given
     /// the emission discipline above).
     pub(super) fn exec_push_last_registered_class_op(&mut self) {
-        let val = match self.last_registered_class_key.take() {
+        let val = match self.types.last_registered_class_key.take() {
             Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
             None => Value::NIL,
         };
@@ -926,7 +926,7 @@ impl Interpreter {
     /// `RoleGroupToCandidate` immediately converts it to the individual role
     /// declaration that expression position must yield.
     pub(super) fn exec_push_last_registered_role_op(&mut self) {
-        let val = match self.last_registered_role_key.take() {
+        let val = match self.types.last_registered_role_key.take() {
             Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
             None => Value::NIL,
         };
@@ -961,7 +961,7 @@ impl Interpreter {
         // made `B.^name` answer `B` instead of falling through to the bareword
         // path after the failed declaration.
         if !snapshot.had_previous_class() {
-            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
+            crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(&name);
             self.registry_mut().compound_declared_types.remove(&name);
         }
     }
@@ -1251,7 +1251,7 @@ impl Interpreter {
             if !name_is_qualified && self.has_class(&current_package) {
                 self.register_class_scoped_short_name(&name_str);
             }
-            if *is_export && !self.suppress_exports {
+            if *is_export && !self.module.suppress_exports {
                 // The compiler may have pre-qualified the role name
                 // (e.g. `R1` → `GH2613::R1`) when compiling under a
                 // `unit module`. Exports use the short bare name and
@@ -1317,7 +1317,7 @@ impl Interpreter {
                 // would break every `when Pair` in the process). Mirrors the same
                 // guard on the class path above.
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(parent)
                         .or_default()
                         .entry(short)
@@ -1400,7 +1400,7 @@ impl Interpreter {
             self.record_role_body_bind_cells(code, &qualified_name, body_bind_source_slots);
 
             self.record_module_owned_type(&qualified_name);
-            self.last_registered_role_key = Some(qualified_name.clone());
+            self.types.last_registered_role_key = Some(qualified_name.clone());
 
             Ok(())
         } else {
@@ -1461,7 +1461,7 @@ impl Interpreter {
             // The subset type itself is already registered under its bare name
             // in the global env by `register_subset_decl`, so importing only
             // needs to make `import M` succeed (and validate export tags).
-            if *is_export && !self.suppress_exports {
+            if *is_export && !self.module.suppress_exports {
                 let (export_pkg, export_short) = if let Some((pkg, short)) = name_split {
                     (pkg.as_str().to_string(), short.as_str().to_string())
                 } else {

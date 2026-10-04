@@ -15,7 +15,7 @@ impl Interpreter {
         &mut self,
         name: &str,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
-        let cur = self.unit_lexical_slot(name)?.clone();
+        let cur = self.unit_lexical_slot(name, None)?.clone();
         if let ValueView::ContainerRef(c) = cur.view() {
             return Some(c.clone());
         }

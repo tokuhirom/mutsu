@@ -57,7 +57,7 @@ impl Interpreter {
         });
         // Drop any cached compiled predicate for this name so a redeclaration
         // recompiles against the new predicate (see `subset_predicate_cache`).
-        self.subset_predicate_cache.remove(name);
+        self.types.subset_predicate_cache.remove(name);
         // A subset defaults to `our` scope: declared inside a package/class/
         // module it is also reachable by its qualified name (`URI::Scheme`),
         // so register that alias too — smartmatch resolves the constraint by
@@ -97,9 +97,15 @@ impl Interpreter {
         // to be rejected during dispatch).
         let already_qualified =
             name == pkg || name.starts_with(&format!("{}::", pkg)) || name.starts_with("GLOBAL::");
-        if !is_my && !already_qualified && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
-            let qualified = format!("{}::{}", pkg, name);
-            self.subset_predicate_cache.remove(&qualified);
+        if !is_my
+            && !already_qualified
+            && !crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg))
+            && pkg != "Main"
+        {
+            let qualified = crate::qualified::qualified_text(&pkg, name)
+                .as_str()
+                .to_string();
+            self.types.subset_predicate_cache.remove(&qualified);
             self.registry_mut()
                 .subsets
                 .insert(qualified.clone(), def.clone());
@@ -135,7 +141,7 @@ impl Interpreter {
                     .to_string()
             };
             let storage = format!("{qualified}\u{0}{decl_id}");
-            self.subset_predicate_cache.remove(&storage);
+            self.types.subset_predicate_cache.remove(&storage);
             self.registry_mut()
                 .subsets
                 .insert(storage.clone(), def.clone());
@@ -149,13 +155,15 @@ impl Interpreter {
         // leaking a global short name.
         if !is_my
             && !pkg.is_empty()
-            && pkg != "GLOBAL"
+            && !crate::qualified::is_global_name(&pkg)
             && pkg != "Main"
-            && let Some((_, short)) = canonical.rsplit_once("::")
+            && let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(&canonical))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
             && !short.is_empty()
             && !Self::is_builtin_type(short)
         {
-            crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+            crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                 .entry(pkg.clone())
                 .or_default()
                 .entry(short.to_string())

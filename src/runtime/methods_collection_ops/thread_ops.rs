@@ -44,6 +44,24 @@ impl Interpreter {
         Ok(thread)
     }
 
+    /// A `Thread` that is created but not started (`Thread.new`,
+    /// `nqp::newthread`); `.run` / `nqp::threadrun` starts it. The id is
+    /// allocated here: rakudo reports a real `.id` on a not-yet-started thread.
+    // Cost: O(1).
+    pub(in crate::runtime) fn new_thread_object(
+        class_name: Symbol,
+        code: Value,
+        name: String,
+        app_lifetime: bool,
+    ) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("code".to_string(), code);
+        attrs.insert("id".to_string(), Value::int(super::next_thread_id() as i64));
+        attrs.insert("name".to_string(), Value::str(name));
+        attrs.insert("app_lifetime".to_string(), Value::truth(app_lifetime));
+        Value::make_instance(class_name, attrs)
+    }
+
     /// `Thread.run` — start a `Thread.new`-constructed (not yet started)
     /// thread, returning the invocant (rakudo: `method run(Thread:D:)` returns
     /// `self`).
@@ -176,6 +194,7 @@ impl Interpreter {
             // graph until the join returns).
             crate::gc::block_quiescent(|| handle.join())
                 .map_err(|_| RuntimeError::new("Thread panicked"))?;
+            crate::runtime::thread_usage::note_thread_joined();
         }
         // Sync shared variables back to env after thread completes
         self.sync_shared_vars_to_env();

@@ -73,7 +73,7 @@ impl Interpreter {
             }
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
-                let value = args.first().cloned().unwrap_or(Value::NIL);
+                let value = Self::supplier_emit_value(&args)?;
                 if Self::supply_is_terminated(attributes)
                     || self.on_demand_quit_pending(supplier_id_from_attrs(attributes))
                 {
@@ -335,6 +335,21 @@ impl Interpreter {
 
     // --- Supplier mutable ---
 
+    /// The value `Supplier.emit` publishes. A bareword `a => 1` argument is a
+    /// *named* argument (a `Pair` here, a `ValuePair` when positional), so it
+    /// leaves `emit` without a positional and fails like rakudo's
+    /// `method emit(Supplier:D: \value)` signature would.
+    // Cost: O(n), n = number of arguments.
+    fn supplier_emit_value(args: &[Value]) -> Result<Value, RuntimeError> {
+        match args.iter().find(|a| !a.is_string_pair_value()) {
+            Some(v) => Ok(v.clone()),
+            None if args.is_empty() => Ok(Value::NIL),
+            None => Err(RuntimeError::new(
+                "Too few positionals passed; expected 2 arguments but got 1",
+            )),
+        }
+    }
+
     pub(super) fn native_supplier_mut(
         &mut self,
         mut attrs: AttrMap,
@@ -350,7 +365,7 @@ impl Interpreter {
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         match method {
             "emit" => {
-                let value = args.first().cloned().unwrap_or(Value::NIL);
+                let value = Self::supplier_emit_value(&args)?;
                 if Self::supply_is_terminated(&attrs)
                     || self.on_demand_quit_pending(supplier_id_from_attrs(&attrs))
                 {
@@ -375,8 +390,7 @@ impl Interpreter {
                 }
                 let pushed = attrs.get_mut("emitted").and_then(|emitted| {
                     emitted.with_array_mut(|items, _kind| {
-                        crate::gc::Gc::make_mut(items)
-                            .push(args.first().cloned().unwrap_or(Value::NIL));
+                        crate::gc::Gc::make_mut(items).push(value.clone());
                     })
                 });
                 if pushed.is_none() {

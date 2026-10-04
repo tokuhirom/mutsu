@@ -42,8 +42,8 @@ impl Interpreter {
             || crate::runtime::utils::is_known_type_constraint(package)
             || Self::package_export_tag_parts(package).is_some()
             || Self::package_export_module(package).is_some()
-            || self.exported_subs.contains_key(package)
-            || self.exported_vars.contains_key(package)
+            || self.module.exported_subs.contains_key(package)
+            || self.module.exported_vars.contains_key(package)
             || self.registry().enum_types.contains_key(package)
             || self.get_env_with_main_alias(package).is_some()
         {

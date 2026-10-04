@@ -124,9 +124,7 @@ impl Interpreter {
             ValueView::Routine { is_regex: true, .. } => "Regex",
             // Keep in sync with `value_type_name`: a builtin-method lookup
             // handle (package = owning type) is a Method, otherwise a Sub.
-            ValueView::Routine { package, .. }
-                if !package.with_str(|p| p == "GLOBAL" || p.is_empty()) =>
-            {
+            ValueView::Routine { package, .. } if !crate::qualified::is_global_package(package) => {
                 "Method"
             }
             ValueView::Routine { .. } => "Sub",
@@ -284,7 +282,7 @@ impl Interpreter {
         // Return custom HOW for CustomType/CustomTypeInstance
         // Check rebless map first for reblessed instances
         if let ValueView::CustomTypeInstance(d) = target.view()
-            && let Some(new_how) = self.rebless_map.get(&d.id).cloned()
+            && let Some(new_how) = self.types.rebless_map.get(&d.id).cloned()
         {
             return Ok(new_how);
         }
@@ -609,7 +607,7 @@ impl Interpreter {
         why: Value,
     ) -> Result<Value, RuntimeError> {
         let name = self.mop_receiver_owner(target);
-        crate::runtime::cow_table_mut(&mut self.type_metadata)
+        crate::runtime::cow_table_mut(&mut self.types.type_metadata)
             .entry(name)
             .or_default()
             .insert("__set_why__".to_string(), why.clone());
@@ -632,6 +630,7 @@ impl Interpreter {
         if !matches!(target.view(), ValueView::Package(_) | ValueView::Sub(_)) {
             let owner = self.mop_receiver_owner(target);
             if let Some(why) = self
+                .types
                 .type_metadata
                 .get(&owner)
                 .and_then(|m| m.get("__set_why__"))
@@ -646,7 +645,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some(object_id) = object_id
-            && let Some(pod) = self.why_object_cache.get(&object_id)
+            && let Some(pod) = self.declarator_docs.why_object_cache.get(&object_id)
         {
             return Ok(pod.clone());
         }
@@ -661,7 +660,9 @@ impl Interpreter {
                 .and_then(|code| code.declarator_doc.clone())
         {
             let pod = Self::make_pod_declarator(&doc, target.clone());
-            self.why_object_cache.insert(sub_data.id, pod.clone());
+            self.declarator_docs
+                .why_object_cache
+                .insert(sub_data.id, pod.clone());
             return Ok(pod);
         }
         if let ValueView::Instance {
@@ -687,6 +688,7 @@ impl Interpreter {
         // same answer in Rakudo.
         if let ValueView::Package(name) = target.view()
             && let Some(why) = self
+                .types
                 .type_metadata
                 .get(&name.resolve())
                 .and_then(|m| m.get("__set_why__"))
@@ -740,7 +742,11 @@ impl Interpreter {
                         k.push(format!("&{}/multi.{}", name, idx));
                     }
                     if let (Some(owner), Some(name)) = (&owner, &method_name) {
-                        k.push(format!("{}::{}", owner, name));
+                        k.push(
+                            crate::qualified::qualified_text(owner, name)
+                                .as_str()
+                                .to_string(),
+                        );
                     }
                     if let Some(name) = &method_name {
                         k.push(format!("&{}", name));
@@ -793,7 +799,11 @@ impl Interpreter {
                                     })
                             });
                         if let Some(owner) = owner {
-                            k.push(format!("{}::{}", owner, *attr_name));
+                            k.push(
+                                crate::qualified::qualified_text(&owner, attr_name.as_str())
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                         k.push(attr_name.to_string());
                     }
@@ -824,11 +834,19 @@ impl Interpreter {
                     {
                         // Try scoped key with param name
                         if !param_name.is_empty() {
-                            k.push(format!("{}::{}", *owner, param_name));
+                            k.push(
+                                crate::qualified::qualified_text(owner.as_str(), &param_name)
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                         // For anonymous params, try with just the sigil
                         if param_name.is_empty() || !param_name.starts_with(&sigil) {
-                            k.push(format!("{}::{}", *owner, sigil));
+                            k.push(
+                                crate::qualified::qualified_text(owner.as_str(), &sigil)
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                     }
                     // Fallback: try plain param name
@@ -863,7 +881,11 @@ impl Interpreter {
                     }
                 }
                 if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
-                    k.push(format!("{}::{}", sub_data.package, sub_data.name));
+                    k.push(
+                        crate::qualified::qualified_text(sub_data.package, sub_data.name)
+                            .as_str()
+                            .to_string(),
+                    );
                 }
                 if !sub_data.name.is_empty() {
                     // Try &-prefixed key first (to disambiguate from package names)
@@ -875,7 +897,11 @@ impl Interpreter {
             ValueView::Routine { package, name, .. } => {
                 let mut k = Vec::new();
                 if !package.is_empty() && !name.is_empty() {
-                    k.push(format!("{}::{}", package.resolve(), name.resolve()));
+                    k.push(
+                        crate::qualified::qualified_text(package.resolve(), name.resolve())
+                            .as_str()
+                            .to_string(),
+                    );
                 }
                 if !name.is_empty() {
                     k.push(format!("&{}", name.resolve()));
@@ -887,12 +913,12 @@ impl Interpreter {
         };
         // Try to find matching doc comment, checking cache first for each key
         for key in keys {
-            if let Some(cached) = self.why_cache.get(&key) {
+            if let Some(cached) = self.declarator_docs.why_cache.get(&key) {
                 return Ok(cached.clone());
             }
-            if let Some(doc) = self.doc_comments.get(&key) {
+            if let Some(doc) = self.declarator_docs.doc_comments.get(&key) {
                 let pod = Self::make_pod_declarator(&doc.doc, target.clone());
-                self.why_cache.insert(key, pod.clone());
+                self.declarator_docs.why_cache.insert(key, pod.clone());
                 return Ok(pod);
             }
         }
@@ -940,7 +966,8 @@ impl Interpreter {
                 // builtin type this is a genuine process-wide rename,
                 // matching real Rakudo (`Hash.^set_name(...)` renames `Hash`
                 // for every hash in the program, not just the caller's).
-                self.type_metadata
+                self.types
+                    .type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
                     .map(Value::to_string_value)
@@ -949,6 +976,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
                 let base = self
+                    .types
                     .type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
@@ -1085,7 +1113,8 @@ impl Interpreter {
     /// resolved elsewhere (`Package`, `Instance`, `Mixin`, ...) have their
     /// own overrides and never reach this helper.
     pub(super) fn builtin_display_name(&self, base: &'static str) -> String {
-        self.type_metadata
+        self.types
+            .type_metadata
             .get(base)
             .and_then(|m| m.get("__set_name__"))
             .map(Value::to_string_value)

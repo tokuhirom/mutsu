@@ -39,7 +39,7 @@ fn no_row_is_registered_twice() {
     let mut seen = std::collections::HashSet::new();
     for row in rows() {
         assert!(
-            seen.insert((row.owner, row.name)),
+            seen.insert((row.owner, row.name, row.arity)),
             "{}.{} has two rows",
             row.owner,
             row.name
@@ -55,7 +55,7 @@ fn every_row_is_reached_and_answers() {
     for row in rows() {
         let mut reached = false;
         for shape in SHAPES {
-            let Some(found) = lookup(shape, Symbol::intern(row.name)) else {
+            let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
                 continue;
             };
             if !std::ptr::eq(found, row) {
@@ -81,17 +81,20 @@ fn every_row_is_reached_and_answers() {
 #[test]
 fn lookup_walks_the_mro() {
     let elems = Symbol::intern("elems");
-    assert_eq!(lookup(DispatchShape::Array, elems).unwrap().owner, "List");
-    assert_eq!(lookup(DispatchShape::List, elems).unwrap().owner, "List");
-    assert_eq!(lookup(DispatchShape::Hash, elems).unwrap().owner, "Map");
-    assert!(lookup(DispatchShape::Str, elems).is_none());
-    let numerator = Symbol::intern("numerator");
-    assert!(lookup(DispatchShape::Rat, numerator).is_some());
-    assert!(lookup(DispatchShape::Num, numerator).is_none());
-    // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
-    assert!(lookup(DispatchShape::Int, numerator).is_none());
     assert_eq!(
-        lookup(DispatchShape::FatRat, numerator).unwrap().owner,
+        lookup(DispatchShape::Array, elems, 0).unwrap().owner,
+        "List"
+    );
+    assert_eq!(lookup(DispatchShape::List, elems, 0).unwrap().owner, "List");
+    assert_eq!(lookup(DispatchShape::Hash, elems, 0).unwrap().owner, "Map");
+    assert!(lookup(DispatchShape::Str, elems, 0).is_none());
+    let numerator = Symbol::intern("numerator");
+    assert!(lookup(DispatchShape::Rat, numerator, 0).is_some());
+    assert!(lookup(DispatchShape::Num, numerator, 0).is_none());
+    // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
+    assert!(lookup(DispatchShape::Int, numerator, 0).is_none());
+    assert_eq!(
+        lookup(DispatchShape::FatRat, numerator, 0).unwrap().owner,
         "FatRat"
     );
 }
@@ -157,4 +160,33 @@ fn rows_are_declared_by_rakudo() {
             row.name
         );
     }
+}
+
+/// The name test carries the arity: a call with an argument count no row of
+/// that name takes is refused before any lookup.
+#[test]
+fn the_name_test_knows_the_arity() {
+    let index = Symbol::intern("index");
+    assert!(names_a_row(index, 1));
+    assert!(!names_a_row(index, 2));
+    let substr = Symbol::intern("substr");
+    assert!(names_a_row(substr, 1) && names_a_row(substr, 2));
+    assert!(!names_a_row(Symbol::intern("elems"), 1));
+    assert!(!names_a_row(substr, 200));
+}
+
+/// The shape test: a name with rows for other receivers is refused for this
+/// one before any lookup.
+#[test]
+fn the_shape_test_knows_the_receiver() {
+    assert!(
+        SHAPES.len() <= 16,
+        "a shape bit must fit Table::shapes' u16"
+    );
+    let int = Symbol::intern("Int");
+    assert!(shape_has_row(DispatchShape::Int, int));
+    assert!(shape_has_row(DispatchShape::Rat, int));
+    assert!(!shape_has_row(DispatchShape::Str, int));
+    // An inherited row sets the bit of the shape that reaches it.
+    assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
 }

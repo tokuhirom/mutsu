@@ -98,7 +98,6 @@ impl Interpreter {
         let mut pkg = root_pkg;
         let mut pc = 0u32;
         let mut pos = start;
-        let mut farthest = start;
         macro_rules! reg {
             ($r:expr) => {
                 regs[base + $r as usize]
@@ -180,7 +179,6 @@ impl Interpreter {
                     }
                     levels.edit(|s| s.merge_delta(delta));
                     pos = end;
-                    farthest = farthest.max(pos);
                     true
                 } else {
                     false
@@ -245,7 +243,6 @@ impl Interpreter {
                     RxOp::Atom(i) => match self.rx_atom_at(program, i as usize, chars, pos, pkg) {
                         Some(next) => {
                             pos = next;
-                            farthest = farthest.max(pos);
                             pc += 1;
                             true
                         }
@@ -280,7 +277,6 @@ impl Interpreter {
                             false
                         } else {
                             pos = ends[run + n as usize];
-                            farthest = farthest.max(pos);
                             if possessive || n == min {
                                 ends.truncate(run);
                             } else {
@@ -301,7 +297,6 @@ impl Interpreter {
                     RxOp::Ws => match self.rx_ws_at(chars, pos, pkg) {
                         Some(next) => {
                             pos = next;
-                            farthest = farthest.max(pos);
                             pc += 1;
                             true
                         }
@@ -480,23 +475,30 @@ impl Interpreter {
                                 // A frame's binding window: rewinding past the
                                 // call uninstalls it (`rx_scope`). An eager
                                 // evaluation installs its own around itself.
-                                let (window, lr_window) =
-                                    if matches!(verdict, Ok(CallTarget::Eager(..))) {
-                                        (None, window)
-                                    } else {
-                                        let window = window.map(|window| {
-                                            let k = self.rx_window_adopt(&mut scopes, window);
-                                            reg_trail.push((UNDO_ENTER, k));
-                                            k
-                                        });
-                                        (window, None)
-                                    };
+                                let (window, lr_window) = if matches!(
+                                    verdict,
+                                    Ok(CallTarget::Eager(..)
+                                        | CallTarget::Wrapped
+                                        | CallTarget::CustomHow(_))
+                                ) {
+                                    (None, window)
+                                } else {
+                                    let window = window.map(|window| {
+                                        let k = self.rx_window_adopt(&mut scopes, window);
+                                        reg_trail.push((UNDO_ENTER, k));
+                                        k
+                                    });
+                                    (window, None)
+                                };
                                 match verdict {
-                                    Ok(CallTarget::Eager(cands, why)) => {
-                                        walk_use(WalkUse::Leaf, why);
-                                        let mut ends = self.rx_lr_call_ends(
+                                    Ok(
+                                        target @ (CallTarget::Eager(..)
+                                        | CallTarget::Wrapped
+                                        | CallTarget::CustomHow(_)),
+                                    ) => {
+                                        let mut ends = self.rx_eager_call_ends(
                                             &program.atoms[atom as usize],
-                                            &cands,
+                                            &target,
                                             lr_window,
                                             call_args.as_deref().unwrap_or(&[]),
                                             chars,
@@ -598,20 +600,12 @@ impl Interpreter {
                                         }
                                     }
                                     Ok(CallTarget::Single) => {
-                                        walk_use(WalkUse::Leaf, "builtin-call");
                                         pc += 1;
-                                        match self.regex_match_atom_with_capture_in_pkg(
-                                            &program.atoms[atom as usize],
-                                            chars,
-                                            pos,
-                                            levels.top().caps(),
-                                            pkg,
-                                            ic,
-                                        ) {
+                                        match self.regex_builtin_named(name.spec(), chars, pos, pkg)
+                                        {
                                             Some((end, delta)) => {
                                                 levels.edit(|s| s.merge_delta(delta));
                                                 pos = end;
-                                                farthest = farthest.max(pos);
                                                 true
                                             }
                                             None => false,
@@ -635,7 +629,6 @@ impl Interpreter {
                                         ) {
                                             Some(end) => {
                                                 pos = end;
-                                                farthest = farthest.max(pos);
                                                 true
                                             }
                                             None => false,
@@ -882,6 +875,7 @@ impl Interpreter {
                     | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
+                    | RxOp::EmptyRange
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
                         if let RxOp::Code(_) = op {
@@ -904,7 +898,6 @@ impl Interpreter {
                         ) {
                             Some(next) => {
                                 pos = next;
-                                farthest = farthest.max(pos);
                                 true
                             }
                             None => false,
@@ -1270,7 +1263,6 @@ impl Interpreter {
         }
         self.rx_scopes_unwind(&mut scopes);
         self.restore_rx_start_invocant(root_invocant);
-        super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }
 }

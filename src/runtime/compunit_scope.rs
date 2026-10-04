@@ -63,7 +63,7 @@ impl Interpreter {
     pub(crate) fn unit_of_source_sym(&self, file: Option<Symbol>) -> Symbol {
         match file {
             None => crate::runtime::main_unit(),
-            Some(f) if Some(f) == self.program_path_sym => crate::runtime::main_unit(),
+            Some(f) if Some(f) == self.io.program_path_sym => crate::runtime::main_unit(),
             Some(f) => f,
         }
     }
@@ -115,7 +115,7 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(crate) fn has_prelude_functions(&self) -> bool {
-        !self.prelude_registered_functions.is_empty()
+        !self.module.prelude_registered_functions.is_empty()
     }
 
     /// Whether a routine registered under `key` is visible to the code that is
@@ -131,12 +131,12 @@ impl Interpreter {
     /// Every other key answers `true` without touching the map, and the whole
     /// check short-circuits on the (overwhelmingly common) empty prelude set.
     pub(crate) fn prelude_visible_here(&self, key: Symbol) -> bool {
-        if self.prelude_registered_functions.is_empty()
-            || !self.prelude_registered_functions.contains(&key)
+        if self.module.prelude_registered_functions.is_empty()
+            || !self.module.prelude_registered_functions.contains(&key)
         {
             return true;
         }
-        match self.prelude_declaring_units.get(&key) {
+        match self.module.prelude_declaring_units.get(&key) {
             // No provenance recorded (a thread clone that predates the splice,
             // a synthetic registration): stay permissive rather than hide a
             // helper the running code legitimately declared.
@@ -166,7 +166,7 @@ impl Interpreter {
     /// routine call happened, and `executing_unit_sym`'s normal
     /// frame-based answer (now reflecting that call) is correct instead.
     pub(crate) fn executing_unit_sym_for_module_load(&self) -> Symbol {
-        if let Some(&(unit, depth_at_push)) = self.module_loading_unit_stack.last()
+        if let Some(&(unit, depth_at_push)) = self.module.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push
         {
             return unit;
@@ -215,7 +215,7 @@ impl Interpreter {
     /// `Interpreter::resolve_type_in_current_package` already uses for the
     /// analogous "prepend each enclosing package in turn" problem.
     pub(crate) fn qualified_name_visible_here(&self, name: &str) -> bool {
-        if self.package_declaring_units.is_empty() {
+        if self.module.package_declaring_units.is_empty() {
             return true;
         }
         let name_sym = crate::qualified::known_symbol(name);
@@ -295,8 +295,16 @@ impl Interpreter {
         // module `RT123276` publishes) -- never by the permissive fallback
         // below (ADR-11136).
         if let Some(sym) = Symbol::lookup(top)
-            && let Some(&module) = self.module_visibility.module_name_providers.get(&sym)
-            && !self.module_visibility.unit_package_names.contains(&sym)
+            && let Some(&module) = self
+                .module
+                .module_visibility
+                .module_name_providers
+                .get(&sym)
+            && !self
+                .module
+                .module_visibility
+                .unit_package_names
+                .contains(&sym)
         {
             // A sibling compunit can declare a package beneath this module's
             // name without importing the root module itself. Its own routines
@@ -387,6 +395,7 @@ impl Interpreter {
         for _ in 0..64 {
             let Some(sym) = unit else { return false };
             if self
+                .module
                 .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
@@ -423,7 +432,8 @@ impl Interpreter {
         // `name` itself, then each enclosing package outwards.
         crate::qualified::package_ancestors(Symbol::intern(name)).find_map(|candidate| {
             let candidate = candidate.as_str();
-            self.package_declaring_units
+            self.module
+                .package_declaring_units
                 .get(candidate)
                 .map(|&unit| (candidate, unit))
         })
@@ -449,6 +459,7 @@ impl Interpreter {
                 return true;
             }
             if self
+                .module
                 .module_visibility
                 .compunit_visible_packages
                 .get(&sym)
@@ -518,6 +529,7 @@ impl Interpreter {
         // the first importer an `EVAL` unit routinely, so the script's own
         // `use` was the one that lost.
         let mut grant: HashSet<String> = self
+            .module
             .module_visibility
             .module_granted_packages
             .get(module)

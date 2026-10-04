@@ -856,53 +856,6 @@ impl Compiler {
                     self.compile_expr_method_generic(target, name, args, &None, false);
                 }
             }
-            // ADR-0048 Phase 2: `lazy {}` does not take a signature in raku.
-            // `lazy EXPR` parses to `EXPR.lazy` (see `parser/expr/postfix/
-            // loop_.rs`), so a bare `{ $^c }` operand reaches here as
-            // `target` already parsed into `AnonSubParams` — same shape and
-            // same reasoning as `Expr::Eager` above.
-            Expr::MethodCall {
-                target, name, args, ..
-            } if name.resolve().as_str() == "lazy"
-                && args.is_empty()
-                && matches!(
-                    target.as_ref(),
-                    Expr::AnonSubParams { .. } | Expr::AnonSub { is_block: true, .. }
-                ) =>
-            {
-                let body = match target.as_ref() {
-                    Expr::AnonSubParams { body, .. } | Expr::AnonSub { body, .. } => body,
-                    _ => unreachable!(),
-                };
-                if self.emit_block_placeholder_die(body) {
-                    return;
-                }
-                // The `lazy BLOCK` statement prefix RUNS the block eagerly and
-                // marks its *result* lazy -- measured against raku:
-                // `lazy { say "run"; 1,2,3 }` prints `run` before the next
-                // statement, and the value is a lazy `Seq`. Compiling the block
-                // as a closure value and calling `.lazy` on that instead
-                // produced an opaque one-element `LazyThunk`, so
-                // `my @a = lazy { (^3).map(*²) }` stored `[lazy(...)]` and even
-                // `.eager` could not unwrap it. Lower to `(do BLOCK).lazy`,
-                // which reuses the ordinary list `.lazy` marking.
-                let do_block = Expr::DoBlock {
-                    body: body.clone(),
-                    // The braces are the user's own block, merely re-hosted to
-                    // run inline instead of as a closure, so it keeps that
-                    // block's identity: `lazy { let $x = 2; Nil }` resolves the
-                    // save here (GH-7635).
-                    label: None,
-                    origin: crate::ast::DoBlockOrigin::SourceBlock,
-                };
-                self.compile_expr(&Expr::MethodCall {
-                    target: Box::new(do_block),
-                    name: *name,
-                    args: Vec::new(),
-                    modifier: None,
-                    quoted: false,
-                });
-            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,

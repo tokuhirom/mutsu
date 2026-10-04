@@ -307,3 +307,56 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     exact rounding costs three integer operations through the shared arithmetic
     routines). A call the table does not answer (`$i.chars`) and the empty loop are
     unchanged.
+- 2026-10-04, slice 3, the first rows that take arguments (Str's search family): `contains`,
+  `starts-with`, `ends-with`, `index` and `rindex` with one needle, and `substr` with a start
+  and an optional length, are rows owned by `Str` and by `Cool`, both pointing at one handler
+  per method in `method_table/str_search.rs`. The mechanism grows four things:
+  - Rows are keyed by `(shape, method, arity)`, so `substr` has a one- and a two-argument
+    row. The table's name test is a per-name bit set of arities, so a call with an argument
+    count no row of that name takes (`$s.index($n, $from)`) is refused before the receiver
+    is probed.
+  - A row is handed only plain scalar arguments (`Str`, `Int`, `Num`, `Rat`, `FatRat`;
+    `plain_args`). Named arguments reach the native layer as `Pair`s and are
+    indistinguishable from positional ones there. A `Junction` must autothread, a
+    `Failure` may explode under `use fatal`, and a lazy `Seq` must be reified; each of
+    those, and a `Regex` or list needle, takes the cascades.
+  - `Handler::Narrow` is a pure handler that may decline: `None` means the arguments are
+    outside the row's signature, the way a multi candidate fails to bind. `substr` binds
+    only a non-negative `Int` start inside the string; a negative or `WhateverCode`
+    position, a `Range` and an out-of-range start (which answers a `Failure`) decline.
+    This answers §8's second open question for now: the shape is an arity, and finer
+    binding lives in the handler.
+  - The call-site lane admits sites with up to two arguments. It requires the site's
+    argument-source descriptor to name only positional arguments (no named argument, no
+    `|` spread), and every argument to be plain. Its memo payload carries the arity, and
+    it remembers misses as well as rows. Without that, a name with a row for another shape
+    or arity repeated the lookup on every call.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `$s.contains($n)` 2,168M to 623M (-71.3%), `$s.starts-with($n)` -71.9%,
+    `$s.rindex($n)` -71.7%, `$s.index($n)` -70.5%, `$s.substr(6)` -65.6%,
+    `$s.substr(6, 5)` -64.4%. `$i.chars` (an `Int`, no row) -3.7% from the remembered
+    miss. `$s.index($n, 3)` (no row for two arguments) +0.2%, down from +3.2% before
+    the miss memo and the arity bits. The empty loop is unchanged.
+- 2026-10-04, slice 3, the numeric coercions: `Int`, `Num` and `Bool` with no arguments are
+  rows owned by `Int`, `Num`, `Rat` and `FatRat`, and `Complex` has a `Bool` row.
+  `Complex.Int` and `Complex.Num` read `$*TOLERANCE`, which needs the interpreter, so they
+  stay off the table (#11795 records that `.Int` ignores it today).
+  `method_table/coerce.rs` holds the one implementation. The cascade's `.Int`/`.Num` arms
+  and `Str.Int`'s numify-then-truncate path call it, which replaces the per-type copies
+  (`numeric_to_int` and the arm bodies). A `Num` past a machine word now truncates to a
+  big `Int` instead of saturating at `i64` (`1e30.Int`, `"1e30".Int`).
+  - The table gains a per-name shape mask next to the arity bits. A receiver whose shape
+    has no row of that name (`"42".Int`, once `Int` has rows on the numeric types) is
+    refused by a bit test, with no memo lock and no hash lookup.
+  - `try_native_method_raw` calls the 0-arg cascade without the table:
+    `try_native_method` asked the table first, and the raw path's lever-A gate refuses
+    every shaped receiver with an augment, so the second probe could only repeat the
+    first.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against
+    the same `main`: `$r.Num` 1,837M to 338M (-81.6%), `$r.Int` -77.7%, `$i.Int` -71.0%,
+    `$i.Num` -70.8%, `$n.Int` -69.6%. `$i.Bool` and `$n.Bool` are -38%: `Bool` is a name
+    the call-site lane leaves to the full path (`scalar_early_lane_skips`), so only the
+    table answers it. `"42".Int` (a `Str`, no row) is +1.3%, which is the lane's and the
+    native entry's shape probe and bit tests (about 50 instructions each); it was +6.8%
+    before the miss memo, the shape mask and the raw-path change. The empty loop is
+    unchanged.

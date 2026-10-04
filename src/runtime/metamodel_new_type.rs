@@ -74,7 +74,7 @@ impl Interpreter {
         }
         // A run-time-minted type is not a lexical import: it must outlive a
         // `use`-containing routine that created it (#9532).
-        crate::runtime::cow_table_mut(&mut self.persistent_classes).insert(name.clone());
+        crate::runtime::cow_table_mut(&mut self.types.persistent_classes).insert(name.clone());
         if let Some(short) = native_short {
             self.registry_mut()
                 .declared_native_how

@@ -27,7 +27,7 @@ impl Interpreter {
     /// and skip this placeholder body BEFORE `dispatch_tail`/`.Numeric` get a
     /// chance to resolve it (see that call site's comment).
     pub(crate) fn predictive_seq_iter_for(&self, seq_id: usize) -> Option<Value> {
-        if let Some(iter) = self.predictive_seq_iters.get(&seq_id) {
+        if let Some(iter) = self.types.predictive_seq_iters.get(&seq_id) {
             return Some(iter.clone());
         }
         self.env
@@ -137,7 +137,8 @@ impl Interpreter {
                     }
                     // Persist the advanced iterator state in both the non-scoped
                     // map (authoritative, survives scope) and the legacy env key.
-                    self.predictive_seq_iters
+                    self.types
+                        .predictive_seq_iters
                         .insert(seq_id, updated_iter.clone());
                     self.env.insert(key, updated_iter);
                 }

@@ -169,7 +169,8 @@ impl Interpreter {
                 return Some(frame.package.resolve());
             }
         }
-        self.method_class_stack
+        self.types
+            .method_class_stack
             .last()
             .map(|f| f.name.resolve())
             .or_else(|| Some(self.current_package().to_string()))
@@ -432,7 +433,9 @@ impl Interpreter {
         // `EVAL_UNIT_PARENTS` lock. On `benchmarks/bench-fib.raku`, which
         // declares no module and no `EVAL`, that dead work was 4.9% of the run
         // (#7788).
-        if self.unit_module_packages.is_empty() && self.module_source_packages.is_empty() {
+        if self.module.unit_module_packages.is_empty()
+            && self.module.module_source_packages.is_empty()
+        {
             return None;
         }
         // `def_file` is already interned; hand the `Symbol` straight to the
@@ -444,7 +447,7 @@ impl Interpreter {
             .map(|file| self.unit_of_source_sym(Some(file)))
             .unwrap_or(self.current_unit);
         loop {
-            if let Some(package) = self.unit_module_packages.get(&unit) {
+            if let Some(package) = self.module.unit_module_packages.get(&unit) {
                 return Some(*package);
             }
             let Some(parent) = crate::runtime::eval_unit_parent(unit) else {
@@ -452,7 +455,7 @@ impl Interpreter {
             };
             unit = parent;
         }
-        def_file.and_then(|file| self.module_source_packages.get(&file).copied())
+        def_file.and_then(|file| self.module.module_source_packages.get(&file).copied())
     }
 
     pub(crate) fn pop_routine(&mut self) {
@@ -615,7 +618,7 @@ impl Interpreter {
     /// methods unable to call them (zef's `role Plugin`'s `sub DEBUG`, caught by
     /// the bundled-library gate).
     pub(crate) fn executing_source_file_for_module_load(&self) -> Option<String> {
-        if let Some(&(_, depth_at_push)) = self.module_loading_unit_stack.last()
+        if let Some(&(_, depth_at_push)) = self.module.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push
         {
             return self.current_source_file();
@@ -871,6 +874,23 @@ impl Interpreter {
     /// [`Self::current_package_str`] or [`Self::current_package_sym`] on a hot
     /// path: this one allocates.
     // Cost: O(n), n = package name length (one allocation).
+    /// `<current package>::<name>`, built once per pair (see
+    /// [`crate::qualified::qualified`]); the interner's own `&'static str`.
+    // Cost: O(|name|) for the name's lookup hash, then one memo probe.
+    pub(crate) fn current_package_qualified(
+        &self,
+        name: impl crate::qualified::NamePart,
+    ) -> &'static str {
+        crate::qualified::qualified(self.current_package_sym(), name.name_sym()).as_str()
+    }
+
+    /// Whether the current package is exactly `GLOBAL` (an unset, empty
+    /// package is not; see [`Self::current_package_is_global`] for both).
+    // Cost: O(1).
+    pub(crate) fn current_package_is_global_name(&self) -> bool {
+        self.current_package_sym() == crate::symbol::wk::global_package()
+    }
+
     pub(crate) fn current_package(&self) -> String {
         self.current_package_str().to_owned()
     }

@@ -156,6 +156,15 @@ impl Interpreter {
             {
                 return None;
             }
+            // The same for a role mixed into a native container (`my @a is R`):
+            // its elements live behind the role's `iterator`, which the native
+            // impl cannot see.
+            if matches!(target.view(), ValueView::Mixin(..))
+                && self.mixin_composes_method(target, "iterator")
+                && !self.mixin_composes_method(target, method_name)
+            {
+                return None;
+            }
         }
         // A `Seq.new($iterator)`/`IO::Handle.lines` body whose source has not
         // been pulled yet (ADR-0034 §2.3) reads as an empty `Vec` through the
@@ -509,6 +518,9 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
             return Some(result);
         }
+        if let Some(result) = self.try_core_type_object_method(target, method_name, args) {
+            return Some(result);
+        }
         // Collection gist bypass
         if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
             return None;
@@ -632,7 +644,11 @@ impl Interpreter {
         } else if args.len() == 1 {
             crate::builtins::native_method_1arg(target, method_sym, &args[0])
         } else if args.is_empty() {
-            crate::builtins::native_method_0arg(target, method_sym)
+            // The cascade without the method table: `try_native_method` asked
+            // the table for this very receiver and method before calling here,
+            // and a row it would answer from but the lever-A gate above refused
+            // must not answer here either.
+            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
         } else {
             return None;
         };
@@ -869,7 +885,10 @@ impl Interpreter {
         // results are materialized once and callers need not spell the
         // constructor differently.
         if name_sym.with_str(|name| name == "Map")
-            && !self.user_declared_classes.contains(&name_sym.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&name_sym.resolve())
         {
             return Some(self.builtin_map_coerce(args));
         }

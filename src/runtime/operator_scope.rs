@@ -46,7 +46,7 @@ impl Interpreter {
             .map(|def| self.unit_of_source(def.source_file.as_deref()))
             .collect();
         if !create {
-            let Some(families) = self.operator_import_units.get(&name_sym) else {
+            let Some(families) = self.module.operator_import_units.get(&name_sym) else {
                 return;
             };
             decl_units.retain(|unit| {
@@ -58,8 +58,8 @@ impl Interpreter {
         if decl_units.is_empty() {
             return;
         }
-        self.operator_import_gen += 1;
-        let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
+        self.module.operator_import_gen += 1;
+        let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         let families = table.entry(name_sym).or_default();
         for unit in decl_units {
             families.entry(unit).or_default().insert(importer);
@@ -91,10 +91,10 @@ impl Interpreter {
     // Cost: O(e), e = EVAL nesting depth of the running code; O(1) when no
     // operator was ever imported.
     pub(crate) fn operator_candidate_visible(&self, name_sym: Symbol, def: &FunctionDef) -> bool {
-        if self.operator_import_units.is_empty() {
+        if self.module.operator_import_units.is_empty() {
             return true;
         }
-        let Some(families) = self.operator_import_units.get(&name_sym) else {
+        let Some(families) = self.module.operator_import_units.get(&name_sym) else {
             return true;
         };
         let decl_unit = self.unit_of_source(def.source_file.as_deref());
@@ -113,15 +113,17 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(crate) fn operator_has_import_scope(&self, name: &str) -> bool {
-        !self.operator_import_units.is_empty()
-            && Symbol::lookup(name).is_some_and(|sym| self.operator_import_units.contains_key(&sym))
+        !self.module.operator_import_units.is_empty()
+            && Symbol::lookup(name)
+                .is_some_and(|sym| self.module.operator_import_units.contains_key(&sym))
     }
 
     /// [`Self::operator_has_import_scope`] for an already-interned name.
     // Cost: O(1).
     #[inline]
     pub(crate) fn operator_has_import_scope_sym(&self, name: Symbol) -> bool {
-        !self.operator_import_units.is_empty() && self.operator_import_units.contains_key(&name)
+        !self.module.operator_import_units.is_empty()
+            && self.module.operator_import_units.contains_key(&name)
     }
 
     /// Drop the operator candidates of `name` that the running code cannot

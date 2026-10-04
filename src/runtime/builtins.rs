@@ -839,7 +839,7 @@ impl Interpreter {
                 let type_name = args[0].to_string_value();
                 let key = args[1].to_string_value();
                 let value = args[2].clone();
-                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                     .entry(type_name)
                     .or_default()
                     .insert(key, value);
@@ -851,7 +851,7 @@ impl Interpreter {
                 // name. Mirrors the sub `is export` path: the export package is
                 // the current package at declaration time. Suppressed exports
                 // (e.g. inside an inner block) are skipped, like other exports.
-                if self.suppress_exports {
+                if self.module.suppress_exports {
                     return Ok(Value::NIL);
                 }
                 let Some(name) = args.first() else {
@@ -887,7 +887,7 @@ impl Interpreter {
                 if !value.truthy() {
                     return Err(RuntimeError::new("use newline expects a true mode adverb"));
                 }
-                self.newline_mode = match name.as_str() {
+                self.io.newline_mode = match name.as_str() {
                     "lf" => NewlineMode::Lf,
                     "cr" => NewlineMode::Cr,
                     "crlf" => NewlineMode::Crlf,
@@ -895,7 +895,7 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!("Unknown newline mode: {}", name)));
                     }
                 };
-                let nl = match self.newline_mode {
+                let nl = match self.io.newline_mode {
                     NewlineMode::Lf => "\n",
                     NewlineMode::Cr => "\r",
                     NewlineMode::Crlf => "\r\n",
@@ -1371,6 +1371,7 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
             "__mutsu_cas_var" => self.builtin_cas_var(args),
+            "__mutsu_atomic_elem" => self.builtin_atomic_elem(&args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args),
             "__mutsu_cas_array_elem_code" => self.builtin_cas_array_elem_code(args),
             "__mutsu_cas_array_multidim_code" => self.builtin_cas_array_multidim_code(args),

@@ -297,7 +297,7 @@ impl Interpreter {
         // ever consulted.
         self.refresh_method_caches_for_generation();
         let private_rest = method.strip_prefix('!')?;
-        let split = private_rest.split_once("::");
+        let split = crate::qualified::split_first(crate::qualified::known_symbol(private_rest));
         let owner_class = split.map(|(o, _)| o);
         let pm_name = split.map(|(_, n)| n).unwrap_or(private_rest);
         let real = match owner_class {
@@ -379,7 +379,8 @@ impl Interpreter {
     }
 
     pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {
-        self.method_class_stack
+        self.types
+            .method_class_stack
             .last()
             .is_some_and(|caller| caller.name == owner_class)
     }

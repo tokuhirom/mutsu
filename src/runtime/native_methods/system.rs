@@ -83,7 +83,7 @@ impl Interpreter {
 
     // --- Kernel ---
 
-    pub(in crate::runtime) fn native_kernel(
+    pub(crate) fn native_kernel(
         &self,
         attributes: &AttrMap,
         method: &str,

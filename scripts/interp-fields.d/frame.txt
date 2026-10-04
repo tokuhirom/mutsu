@@ -11,6 +11,7 @@ closures_created
 cur_source_line
 current_code
 current_unit
+current_package_sym
 enter_result_stack
 env
 frame_authoritative

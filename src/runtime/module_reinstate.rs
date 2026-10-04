@@ -55,7 +55,7 @@ impl Interpreter {
         functions: &mut std::sync::Arc<crate::runtime::function_table::FunctionTable>,
         include_global_aliases: bool,
     ) {
-        if self.module_registered_functions.is_empty() {
+        if self.module.module_registered_functions.is_empty() {
             return;
         }
         let mut missing: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
@@ -63,7 +63,7 @@ impl Interpreter {
         // after a scope that loaded a module exits, not on an ordinary one.
         let mut exported: Option<std::collections::HashSet<String>> = None;
         let registry = self.registry();
-        for key in self.module_registered_functions.iter() {
+        for key in self.module.module_registered_functions.iter() {
             if functions.contains_key(key) {
                 continue;
             }
@@ -75,7 +75,7 @@ impl Interpreter {
             let key_str = key.resolve();
             if !include_global_aliases
                 && let Some(tail) = key_str.strip_prefix("GLOBAL::")
-                && !self.prelude_registered_functions.contains(key)
+                && !self.module.prelude_registered_functions.contains(key)
             {
                 let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(tail);
                 let exported = exported.get_or_insert_with(|| self.exported_routine_names());
@@ -98,7 +98,7 @@ impl Interpreter {
     /// Put back any `our` package global of `module` that has gone missing from
     /// `env` since the module was loaded. See `module_package_globals`.
     pub(crate) fn reinstate_module_package_globals(&mut self, module: &str) {
-        let Some(globals) = self.module_package_globals.get(module) else {
+        let Some(globals) = self.module.module_package_globals.get(module) else {
             return;
         };
         let missing: Vec<(Symbol, Value)> = globals

@@ -224,7 +224,8 @@ impl Interpreter {
                     .map(|c| c.language_version.clone())
             })
             .or_else(|| {
-                self.type_metadata
+                self.types
+                    .type_metadata
                     .get(&role_name)
                     .and_then(|m| m.get("language-revision"))
                     .map(|v| format!("6.{}", v.to_string_value()))
@@ -343,6 +344,7 @@ impl Interpreter {
         // the delegation below straight back here forever.
         if let ValueView::Package(name) = target.view()
             && !self
+                .types
                 .role_pun_construction
                 .iter()
                 .any(|n| n == &name.resolve())
@@ -559,7 +561,10 @@ impl Interpreter {
                                 .filter(|pd| !pd.named)
                                 .map(|pd| {
                                     let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
-                                        if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                        if crate::qualified::is_type_capture(tc)
+                                            || tc == "Any"
+                                            || tc == "Mu"
+                                        {
                                             1
                                         } else {
                                             5
@@ -658,9 +663,9 @@ impl Interpreter {
                 self.registry_mut()
                     .class_role_param_bindings
                     .insert(base_name_str.clone(), bindings);
-                self.role_pun_construction.push(base_name_str.clone());
+                self.types.role_pun_construction.push(base_name_str.clone());
                 let constructed = self.dispatch_new(Value::package(base_name), args.clone());
-                self.role_pun_construction.pop();
+                self.types.role_pun_construction.pop();
                 match saved_bindings {
                     Some(saved) => {
                         self.registry_mut()
@@ -764,11 +769,12 @@ impl Interpreter {
             // original base name for the generic class path below, but bypass
             // this builtin-constructor match so `class Set is Hash {}` creates
             // a Set instance rather than an immutable builtin QuantHash.
-            let constructor_dispatch_name = if self.user_declared_classes.contains(&cn_resolved) {
-                "__mutsu_user_class__"
-            } else {
-                base_class_name
-            };
+            let constructor_dispatch_name =
+                if self.types.user_declared_classes.contains(&cn_resolved) {
+                    "__mutsu_user_class__"
+                } else {
+                    base_class_name
+                };
             let is_datetime_subclass = cn_resolved != "DateTime"
                 && self
                     .class_mro(class_key)
@@ -1016,6 +1022,21 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 "Cancellation" => return Ok(Self::cancellation_instance()),
+                // Encoding::Decoder::Builtin.new($encoding, :translate-nl):
+                // Rakudo's `nqp::decoderconfigure(nqp::create(self), ...)`.
+                crate::runtime::stream_decoder_object::DECODER_CLASS => {
+                    let encoding = args
+                        .iter()
+                        .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                        .map(Value::to_string_value)
+                        .unwrap_or_default();
+                    let translate_nl =
+                        Self::named_value(&args, "translate-nl").is_some_and(|v| v.truthy());
+                    return crate::runtime::stream_decoder_object::new_decoder(
+                        &encoding,
+                        translate_nl,
+                    );
+                }
                 "FakeScheduler" => {
                     // Shared single implementation with the VM's native fast path.
                     return Ok(Self::build_native_fakescheduler_value());
@@ -1329,7 +1350,6 @@ impl Interpreter {
                     // creates the thread WITHOUT starting it -- `.run` does that.
                     // The id is allocated here, not at `.run`: rakudo reports a
                     // real `.id` on a not-yet-started Thread.
-                    let mut attrs = HashMap::new();
                     let mut code = None;
                     let mut thread_name = "<anon>".to_string();
                     let mut app_lifetime = false;
@@ -1350,14 +1370,12 @@ impl Interpreter {
                             "Required named parameter 'code' not passed to Thread.new",
                         ));
                     };
-                    attrs.insert("code".to_string(), code);
-                    attrs.insert(
-                        "id".to_string(),
-                        Value::int(super::methods_collection_ops::next_thread_id() as i64),
-                    );
-                    attrs.insert("name".to_string(), Value::str(thread_name));
-                    attrs.insert("app_lifetime".to_string(), Value::truth(app_lifetime));
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    return Ok(Self::new_thread_object(
+                        *class_name,
+                        code,
+                        thread_name,
+                        app_lifetime,
+                    ));
                 }
                 "Lock" | "Lock::Async" | "Lock::Soft" => {
                     // Shared with the VM's native fast path
@@ -1604,7 +1622,12 @@ impl Interpreter {
             // this very role is constructing through its own pun (see the
             // delegation at the end of the branch), so the re-entry falls
             // through to the class path below instead of looping here.
-            let role = if self.role_pun_construction.iter().any(|n| n == &cn_resolved) {
+            let role = if self
+                .types
+                .role_pun_construction
+                .iter()
+                .any(|n| n == &cn_resolved)
+            {
                 None
             } else {
                 self.registry().roles.get(&cn_resolved).cloned()
@@ -1715,9 +1738,9 @@ impl Interpreter {
                 // `new`-declaring branch above performs.
                 let pre_existing_class = self.registry().classes.contains_key(&cn_resolved);
                 self.ensure_role_punned_to_class(&cn_resolved)?;
-                self.role_pun_construction.push(cn_resolved.clone());
+                self.types.role_pun_construction.push(cn_resolved.clone());
                 let constructed = self.dispatch_new(target.clone(), args.clone());
-                self.role_pun_construction.pop();
+                self.types.role_pun_construction.pop();
                 if !pre_existing_class {
                     self.withdraw_role_pun(&cn_resolved);
                 }
@@ -2252,8 +2275,12 @@ impl Interpreter {
                 if let Some(role_bindings) = role_bindings {
                     for (name, value) in &role_bindings {
                         self.env.insert(name.clone(), value.clone());
-                        self.env
-                            .insert(format!("{}::{}", class_key, name), value.clone());
+                        self.env.insert(
+                            crate::qualified::qualified_text(class_key, name)
+                                .as_str()
+                                .to_string(),
+                            value.clone(),
+                        );
                     }
                 }
                 // The object under construction exists from here on: an
@@ -2581,7 +2608,9 @@ impl Interpreter {
                                 captured_env.as_ref(),
                                 captured_unit.or_else(|| {
                                     declaring_package
-                                        .and_then(|p| self.class_declaring_units.get(p.as_str()))
+                                        .and_then(|p| {
+                                            self.module.class_declaring_units.get(p.as_str())
+                                        })
                                         .copied()
                                 }),
                             );

@@ -584,6 +584,12 @@ impl Interpreter {
             // Cost: O(1).
             "elems" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
+                // An unmanaged CArray (a `nativecast` view) has no length.
+                if crate::runtime::CArrayView::of(&v).is_some() {
+                    return Some(Err(RuntimeError::new(
+                        "Don't know how many elements a C array returned from a library",
+                    )));
+                }
                 let n = match v.view() {
                     ValueView::Array(items, _) => items.len() as i64,
                     ValueView::Hash(map) => map.len() as i64,
@@ -656,6 +662,9 @@ impl Interpreter {
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(2).cloned().unwrap_or(Value::int(0));
+                if self.carray_bind_before_start(&target, iarg(args, 1)) {
+                    return Some(Ok(val));
+                }
                 // A native list holds natives: the value is converted, and a
                 // gap reads back as that type's zero.
                 let (val, fill) = if op == "bindpos_n" {

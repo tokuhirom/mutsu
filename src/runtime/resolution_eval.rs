@@ -314,8 +314,9 @@ impl Interpreter {
         };
         compiler.set_current_package(scope);
         // Resolve distribution context for $?DISTRIBUTION
-        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });
@@ -516,8 +517,9 @@ impl Interpreter {
         } else {
             self.current_package()
         };
-        let distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        let distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });
@@ -601,7 +603,8 @@ impl Interpreter {
         let bare = name
             .strip_prefix('&')
             .or_else(|| {
-                name.rsplit_once("::")
+                crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
                     .filter(|(head, _)| head.starts_with("__mutsu_callable_id::"))
                     .map(|(_, tail)| tail)
             })
@@ -665,6 +668,7 @@ impl Interpreter {
         // regardless of what the block does: only an actual registry write can
         // change the generation.
         let registry_gen_before = self
+            .types
             .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed);
         // `&`-code vars and their `__mutsu_callable_id::` markers are lexical to
@@ -824,6 +828,7 @@ impl Interpreter {
         // all three maps (one lock acquisition instead of three) — the moves
         // cannot re-enter user code, so holding the guard across them is safe.
         if self
+            .types
             .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed)
             != registry_gen_before

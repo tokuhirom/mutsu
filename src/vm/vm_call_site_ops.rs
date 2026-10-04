@@ -342,7 +342,7 @@ impl Interpreter {
         // `try { return $s.Num }` with a non-numeric `$s` lands in the try
         // (Rakudo: the try yields Nil and the routine carries on) instead of
         // returning the Failure (Template::Jinja2's `float` filter).
-        if self.fatal_mode
+        if self.module.fatal_mode
             && let Some(failure) = self.failure_to_runtime_error_if_unhandled(&val)
         {
             return Err(failure);

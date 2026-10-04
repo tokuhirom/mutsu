@@ -20,7 +20,7 @@ for <cglobal nativecast nativesizeof explicitly-manage refresh> -> $name {
 my &cast = &nativecast;
 my &sizeof = &nativesizeof;
 
-sub c_getenv(Str --> Pointer) is native('c') is symbol('getenv') { * }
+sub c_getenv(Str --> Pointer) is native('c', v6) is symbol('getenv') { * }
 my $path = c_getenv('PATH');
 
 ok cast(Str, $path).chars > 0, 'a bound &nativecast casts a Pointer to Str';
@@ -34,8 +34,8 @@ is nativesizeof(Pointer), 8, 'a type object binds as an argument';
 isa-ok nativecast(CArray[uint8], $path), CArray, 'a parameterized type binds';
 ok nativecast(Str, $path) ~~ Str, 'and the cast result is the target type';
 
-sub c_dlopen(Str, int32 --> Pointer) is native('c') is symbol('dlopen') { * }
-sub c_dlsym(Pointer, Str --> Pointer) is native('c') is symbol('dlsym') { * }
+sub c_dlopen(Str, int32 --> Pointer) is native('c', v6) is symbol('dlopen') { * }
+sub c_dlsym(Pointer, Str --> Pointer) is native('c', v6) is symbol('dlsym') { * }
 my $sqrt = nativecast(:(num64 --> num64), c_dlsym(c_dlopen('libm.so.6', 2), 'sqrt'));
 is $sqrt(16e0), 4e0, 'a Signature literal binds, and the cast pointer is callable';
 

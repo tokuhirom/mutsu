@@ -36,13 +36,13 @@ throws-like 'use nqp; nqp::objectid($_)', X::AdHoc,
 
 # (`nqp::substr` was the example here until the String::Utils slice implemented
 # it, then `nqp::chr` until the JSON::Fast slice did, then `nqp::sprintf` until
-# the string-op slice (#11495) did. The example must stay a real nqp op that
-# mutsu does NOT provide and whose Raku namesake would have answered
-# plausibly: raku's `cas($x, 1, 2)` answers the old value 1 and stores 2,
-# which is exactly what nqp's own `nqp::cas` does -- so aliasing to it would
-# look right and hide the gap.)
-throws-like 'use nqp; my $x = 1; nqp::cas($x, 1, 2)', X::AdHoc,
-    message => /'nqp::cas'/,
+# the string-op slice (#11495) did, then `nqp::cas` until the atomic-op slice
+# (#11502) did. The example must stay a real nqp op that mutsu does NOT
+# provide and whose Raku namesake would have answered plausibly: raku's
+# `signal(SIGINT)` answers a Supply, so aliasing to it would look right and
+# hide the gap.)
+throws-like 'use nqp; nqp::signal(SIGINT)', X::AdHoc,
+    message => /'nqp::signal'/,
     'including ops whose Raku namesake would have produced a plausible answer';
 
 # Regression guard: this must stay scoped to `nqp::`. An ordinary qualified

@@ -338,9 +338,7 @@ impl Interpreter {
                 }
                 // $*THREAD: the current thread's own Thread object.
                 if name == "*THREAD" || name == "$*THREAD" {
-                    self.stack.push(crate::runtime::current_thread_object(
-                        Self::make_thread_instance,
-                    ));
+                    self.stack.push(crate::runtime::current_thread_value());
                     *ip += 1;
                     return Ok(());
                 }
@@ -667,7 +665,7 @@ impl Interpreter {
                             Ok(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(&display),
                             ))
-                        } else if self.strict_mode && !Self::strict_read_exempt(name) {
+                        } else if self.module.strict_mode && !Self::strict_read_exempt(name) {
                             // Read-side counterpart of the `SetGlobal` write
                             // check above: a plain scalar name that resolved
                             // through NONE of the real stores tried above
@@ -1349,7 +1347,7 @@ impl Interpreter {
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
-                    && !self.lexical_fatal_mode
+                    && !self.module.lexical_fatal_mode
                     && {
                         let anon_state_val =
                             self.env().get(name_str).cloned().unwrap_or(Value::NIL);
@@ -1548,13 +1546,13 @@ impl Interpreter {
                 // `unit_scope_lexical`), so an `env`-only test reports a module
                 // writing its own module-level lexical as undeclared. It is
                 // declared; the write below goes to the same store.
-                if self.strict_mode
+                if self.module.strict_mode
                     && !self.vardecl_context().get()
                     && !is_attr_twigil
                     && !is_internal_temp
                     && !crate::qualified::is_qualified(name_sym)
                     && !self.env().contains_key(&name)
-                    && !self.has_unit_scope_lexical(&name)
+                    && !self.has_unit_scope_lexical(&name, Some(name_sym))
                     && !code.param_bind_names.iter().any(|n| n == &name)
                 {
                     return Err(self.strict_undeclared_error(&name));
@@ -2221,7 +2219,7 @@ impl Interpreter {
                     // raw parameter stores and declarations keep their value.
                     val = self.reset_nil_untyped_scalar(&name, val);
                 }
-                if self.lexical_fatal_mode
+                if self.module.lexical_fatal_mode
                     && !name.contains("__mutsu_")
                     && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                 {
@@ -2541,22 +2539,23 @@ impl Interpreter {
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
-                    let proxy_val = match self.unit_lexical_slot(&name).cloned().or_else(|| {
-                        // A `PROCESS::<$name> := Proxy.new(...)` install lives
-                        // only in the process stash, never in a frame's env
-                        // (#8682, ADR-11318) — without the redirect, a
-                        // `$*name = value` reaching this opcode would fall
-                        // through to a plain rebind below instead of firing
-                        // the Proxy's `STORE`.
-                        self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
-                    }) {
-                        Some(v) if v.is_proxy_value() => Some(v.clone()),
-                        Some(v) if v.is_container_ref() => {
-                            let inner = v.deref_container();
-                            inner.is_proxy_value().then_some(inner)
-                        }
-                        _ => None,
-                    };
+                    let proxy_val =
+                        match self.unit_lexical_slot(&name, None).cloned().or_else(|| {
+                            // A `PROCESS::<$name> := Proxy.new(...)` install lives
+                            // only in the process stash, never in a frame's env
+                            // (#8682, ADR-11318) — without the redirect, a
+                            // `$*name = value` reaching this opcode would fall
+                            // through to a plain rebind below instead of firing
+                            // the Proxy's `STORE`.
+                            self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
+                        }) {
+                            Some(v) if v.is_proxy_value() => Some(v.clone()),
+                            Some(v) if v.is_container_ref() => {
+                                let inner = v.deref_container();
+                                inner.is_proxy_value().then_some(inner)
+                            }
+                            _ => None,
+                        };
                     if let Some(proxy_val) = proxy_val
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
@@ -2607,7 +2606,7 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                if self.unit_scope_lexical_write(&name, &val) {
+                if self.unit_scope_lexical_write(&name, Some(name_sym), &val) {
                     *ip += 1;
                     return Ok(());
                 }
@@ -2805,7 +2804,7 @@ impl Interpreter {
                 // env as well would re-create the collision the store removes, so
                 // this write is exclusive — the env/`our`/shared-var stores below
                 // are skipped for it.
-                let unit_lexical_write = self.unit_scope_lexical_write(&name, &val);
+                let unit_lexical_write = self.unit_scope_lexical_write(&name, Some(name_sym), &val);
                 // An `our $x` of the package the running routine belongs to is
                 // reached by its BARE name from inside that package's own
                 // routines (the sub-body state-scope package disables
@@ -4422,11 +4421,11 @@ impl Interpreter {
                 }
                 // Deliberately no `unhandled_failure_in_list_for_fatal` descent
                 // here: unlike a bare Failure (created directly in this frame,
-                // so `self.fatal_mode` here really does describe the state it
+                // so `self.module.fatal_mode` here really does describe the state it
                 // was made under), a reified list/Seq may be the *return value*
                 // of a call that crossed its own `call_compiled_closure` save/
                 // restore boundary — by the time control gets back here,
-                // `self.fatal_mode` has been restored to *this* frame's state,
+                // `self.module.fatal_mode` has been restored to *this* frame's state,
                 // which can differ from the state the list's elements were
                 // actually produced under (e.g. `try { c() }` where `c`'s own
                 // body ran with fatal off, but `try` restores fatal on for its
@@ -4507,7 +4506,7 @@ impl Interpreter {
                             // An assignment statement is wanted, not sunk: the
                             // assigned Failure stays soft — unless `use fatal`
                             // is in effect.
-                            if self.lexical_fatal_mode
+                            if self.module.lexical_fatal_mode
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);
@@ -4651,7 +4650,7 @@ impl Interpreter {
                             // Deliberately no `unhandled_failure_in_list_for_fatal`
                             // descent here — see the identical note on
                             // `OpCode::ThrowIfFailure` above: the ambient
-                            // `self.fatal_mode` at this sink can be the
+                            // `self.module.fatal_mode` at this sink can be the
                             // *caller's* restored state, not the state the
                             // sunk list's elements were actually produced
                             // under, and `.map`/`.grep`'s own native loop
@@ -5871,7 +5870,7 @@ impl Interpreter {
                 //    reaching this statement a second (or first) time at
                 //    runtime is a no-op, never a re-declaration.
                 // 3. Neither: throw the pre-built X::Attribute error.
-                if let Some(class_name) = self.defining_class.clone() {
+                if let Some(class_name) = self.types.defining_class.clone() {
                     self.register_runtime_attribute(&class_name, spec)?;
                     *ip += 1;
                 } else if self
@@ -6196,7 +6195,7 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 *ip += 1;
@@ -6226,7 +6225,7 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 // Mark as my-scoped so the package is hidden from global
@@ -6972,21 +6971,8 @@ impl Interpreter {
             }
             // Cost: O(1) amortized (name-index probes; see exec_set_var_dynamic_op), so a sub with
             // K `my` declarations pays O(K) per call.
-            OpCode::SetVarDynamic {
-                name_idx,
-                dynamic,
-                local_slot,
-                reset,
-                type_follows,
-            } => {
-                self.exec_set_var_dynamic_op(
-                    code,
-                    *name_idx,
-                    *dynamic,
-                    *local_slot,
-                    *reset,
-                    *type_follows,
-                );
+            OpCode::SetVarDynamic { .. } => {
+                self.exec_set_var_dynamic_op(code, &code.ops[*ip]);
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.

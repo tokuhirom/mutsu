@@ -205,7 +205,7 @@ impl Interpreter {
         for def in self.registry().subsets.values() {
             visit_opt(visitor, &def.predicate_closure);
         }
-        for fallbacks in self.method_fallbacks.values() {
+        for fallbacks in self.types.method_fallbacks.values() {
             for (cond, calc) in fallbacks {
                 visitor.visit_value(cond);
                 visitor.visit_value(calc);
@@ -222,9 +222,9 @@ impl Interpreter {
     /// Name-keyed persistent stores and per-run caches that hold live
     /// `Value`s across statements/calls (as opposed to pure metadata).
     fn visit_persistent_caches(&self, visitor: &mut dyn RootVisitor) {
-        visit_map_values(visitor, &self.why_cache);
-        visit_map_values(visitor, &self.why_object_cache);
-        for inner in self.type_metadata.values() {
+        visit_map_values(visitor, &self.declarator_docs.why_cache);
+        visit_map_values(visitor, &self.declarator_docs.why_object_cache);
+        for inner in self.types.type_metadata.values() {
             visit_map_values(visitor, inner);
         }
         for vec in &self.async_state.gather_items {
@@ -233,10 +233,10 @@ impl Interpreter {
         for frame in &self.block_stack {
             frame.visit_roots(visitor);
         }
-        visit_map_values(visitor, &self.predictive_seq_iters);
-        visit_opt(visitor, &self.current_distribution);
-        visit_map_values(visitor, &self.package_distributions);
-        for inner in self.exported_sub_values.values() {
+        visit_map_values(visitor, &self.types.predictive_seq_iters);
+        visit_opt(visitor, &self.module.current_distribution);
+        visit_map_values(visitor, &self.module.package_distributions);
+        for inner in self.module.exported_sub_values.values() {
             visit_map_values(visitor, inner);
         }
         visit_opt(visitor, &self.trait_mod_writeback_value);
@@ -246,7 +246,7 @@ impl Interpreter {
         for inner in self.lexicals.package_lexicals.values() {
             visit_map_values(visitor, inner);
         }
-        for inner in self.module_scope_lexicals.values() {
+        for inner in self.module.module_scope_lexicals.values() {
             visit_map_values(visitor, inner);
         }
         for inner in self.lexicals.unit_lexicals.values() {
@@ -258,7 +258,7 @@ impl Interpreter {
         self.control
             .once_values
             .visit_done_values(|v| visitor.visit_value(v));
-        visit_map_values(visitor, &self.attr_var_defaults);
+        visit_map_values(visitor, &self.types.attr_var_defaults);
         for save in &self.control.let_saves {
             visitor.visit_value(&save.value);
             if let Some((container, key)) = &save.elem {
@@ -294,8 +294,8 @@ impl Interpreter {
         for value in self.threads.shared_vars.chain_values() {
             visitor.visit_value(&value);
         }
-        visit_map_values(visitor, &self.rebless_map);
-        for meta in self.squish_iterator_meta.values() {
+        visit_map_values(visitor, &self.types.rebless_map);
+        for meta in self.types.squish_iterator_meta.values() {
             visit_slice(visitor, &meta.source_items);
             visit_opt(visitor, &meta.as_func);
             visit_opt(visitor, &meta.with_func);

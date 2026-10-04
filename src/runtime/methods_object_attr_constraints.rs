@@ -26,8 +26,18 @@ impl Interpreter {
             .unwrap_or_else(|| Symbol::intern(fallback_class));
         let unit = attr
             .captured_unit
-            .or_else(|| self.class_declaring_units.get(package.as_str()).copied())
-            .or_else(|| self.class_declaring_units.get(fallback_class).copied());
+            .or_else(|| {
+                self.module
+                    .class_declaring_units
+                    .get(package.as_str())
+                    .copied()
+            })
+            .or_else(|| {
+                self.module
+                    .class_declaring_units
+                    .get(fallback_class)
+                    .copied()
+            });
         AttrWhereScope { unit, package }
     }
 
@@ -165,7 +175,8 @@ impl Interpreter {
             let storage_key = super::attribute_storage_key(class_attrs_info, attr_name, *sigil);
             if let Some(constraint) =
                 super::attribute_type_constraint(class_attrs_info, attr, &type_constraints)
-                && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
+                && (constraint.starts_with(char::is_uppercase)
+                    || crate::qualified::is_type_capture(&constraint))
                 && let Some(value) = attrs.get(storage_key)
                 && !value.is_nil()
             {

@@ -68,7 +68,7 @@ impl Interpreter {
         for param_def in type_param_defs {
             if param_def.name == "__type_only__"
                 && let Some(type_name) = param_def.type_constraint.as_deref()
-                && !type_name.starts_with("::")
+                && !crate::qualified::is_type_capture(type_name)
                 && !self.is_resolvable_type(type_name)
             {
                 let mut attrs = ValueMap::default();
@@ -398,13 +398,16 @@ impl Interpreter {
             }
             let saved_package = self.current_package();
             self.set_current_package(role_name.to_string());
-            let saved_target = self.import_target_package.replace(role_name.to_string());
+            let saved_target = self
+                .module
+                .import_target_package
+                .replace(role_name.to_string());
             let mark = self.deferred_body_import_mark();
             let result = self.run_role_deferred_use_stmt(|this| match &op.chunk {
                 Some(chunk) => this.run_compiled_block_raw(&chunk.code, &chunk.fns),
                 None => this.run_block_raw(std::slice::from_ref(&op.raw)),
             });
-            self.import_target_package = saved_target;
+            self.module.import_target_package = saved_target;
             self.set_current_package(saved_package);
             result?;
             self.record_deferred_body_imports(role_name, mark);

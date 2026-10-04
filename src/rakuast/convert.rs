@@ -753,6 +753,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             implicit_grammar_parent,
             is_grammar,
+            parent_args,
             ..
         } => {
             if *is_grammar {
@@ -807,7 +808,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
-            let traits = class_traits(parents, does_parents, *class_is_rw)?;
+            let traits = class_traits(parents, does_parents, parent_args, *class_is_rw)?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -1535,7 +1536,7 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
 /// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`)
 /// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
 /// `::`-separated segment must be a bare identifier.
-fn is_simple_type(t: &str) -> bool {
+pub(super) fn is_simple_type(t: &str) -> bool {
     is_pseudo_type(t)
         || !t.is_empty()
             && name_parts::identifier_segments(t).all(|seg| {
@@ -1564,6 +1565,11 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
             ],
         });
     }
+    if t.find('[')
+        .is_some_and(|bracket| t.find('(').is_none_or(|paren| bracket < paren))
+    {
+        return super::type_args::parameterized_type_node(t, None);
+    }
     // `Int()` coercion -> Type::Coercion(base-type); `Int(Cool)` adds the
     // `constraint` the value is coerced from.
     if let Some(open) = t.find('(')
@@ -1580,32 +1586,6 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
         return Ok(RakuAstNode {
             class: RakuAstClass::TypeCoercion,
             fields,
-        });
-    }
-    // `Array[Int]` / `Hash[Str, Int]` -> Type::Parameterized(base-type, args).
-    if let Some(open) = t.find('[') {
-        let inner = t
-            .strip_suffix(']')
-            .ok_or_else(|| unsupported("malformed parameterised type"))?;
-        let base = &t[..open];
-        let args_str = &inner[open + 1..];
-        if !is_simple_type(base) {
-            return Err(unsupported("parameterised type over a non-simple base"));
-        }
-        let mut args = Vec::new();
-        for a in args_str.split(',') {
-            args.push(node_field(None, build_type_node(a.trim())?));
-        }
-        let arglist = RakuAstNode {
-            class: RakuAstClass::ArgList,
-            fields: args,
-        };
-        return Ok(RakuAstNode {
-            class: RakuAstClass::TypeParameterized,
-            fields: vec![
-                node_field(Some("base-type"), simple_type_node(base)),
-                node_field(Some("args"), arglist),
-            ],
         });
     }
     if is_simple_type(t) {
@@ -2452,6 +2432,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // whose parameters carry the implicit
                 // `type => Type::Setting(Any)` that every sub/method signature
                 // has, where a pointy block's do not.
+                if let Some(class) = method_literal_class(*declarator) {
+                    return method_literal_node(class, param_defs, body, return_type.as_deref());
+                }
                 return anon_routine_node(param_defs, body, return_type.as_deref());
             }
             pointy_block(param_defs, body, return_type.as_deref())
@@ -3256,6 +3239,48 @@ fn anon_routine_node(
     })
 }
 
+/// The RakuAST class of a method literal's declarator, `None` for a `sub`.
+fn method_literal_class(declarator: crate::ast::RoutineDeclarator) -> Option<RakuAstClass> {
+    match declarator {
+        crate::ast::RoutineDeclarator::Method => Some(RakuAstClass::Method),
+        crate::ast::RoutineDeclarator::Submethod => Some(RakuAstClass::Submethod),
+        _ => None,
+    }
+}
+
+/// `method ($a) { … }` -> a nameless `Method` (or `Submethod`) over the
+/// written parameters. The parser prepends a synthetic receiver
+/// (`parser::anon_method_expr`); only that exact receiver drops out. A
+/// declared invocant (`method (Foo:D: $a)`, `method ($self: )`) is folded
+/// into it with a type or a body alias, so it stays the boundary.
+// Cost: O(n), n = size of the literal.
+fn method_literal_node(
+    class: RakuAstClass,
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+    returns: Option<&str>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let [receiver, rest @ ..] = param_defs else {
+        return Err(unsupported("method literal without a receiver"));
+    };
+    if !crate::parser::is_synthetic_invocant(receiver) || binds_invocant_alias(body) {
+        return Err(unsupported("method literal with a declared invocant"));
+    }
+    let mut node = anon_routine_node(rest, body, returns)?;
+    node.class = class;
+    Ok(node)
+}
+
+/// Whether a method literal's body opens with the `my $x := self` alias the
+/// parser writes for a declared invocant name.
+fn binds_invocant_alias(body: &[Stmt]) -> bool {
+    let stmt = match body.iter().find(|s| !matches!(s, Stmt::SetLine(_))) {
+        Some(Stmt::SyntheticBlock(inner)) => inner.first(),
+        other => other,
+    };
+    matches!(stmt, Some(Stmt::VarDecl { expr: Expr::BareWord(n), .. }) if n == "self")
+}
+
 /// A single-parameter pointy block (`-> $x { }`). mutsu's `Lambda` node strips
 /// the sigil from its single param and does NOT preserve `@`/`%` for a single
 /// non-scalar param (`-> @a` becomes `param: "a"`), so we assume `$` — a
@@ -3369,6 +3394,7 @@ fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
 fn class_traits(
     parents: &[String],
     does_parents: &[String],
+    parent_args: &[(String, Vec<Expr>)],
     is_rw: bool,
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut traits = Vec::new();
@@ -3381,13 +3407,16 @@ fn class_traits(
         }
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("type"), build_type_node(parent)?)],
+            fields: vec![node_field(
+                Some("type"),
+                parent_type_node(parent, parent_args)?,
+            )],
         })));
     }
     for role in does_parents {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitDoes,
-            fields: vec![node_field(None, build_type_node(role)?)],
+            fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
         })));
     }
     if is_rw {
@@ -3397,6 +3426,16 @@ fn class_traits(
         })));
     }
     Ok(traits)
+}
+
+fn parent_type_node(
+    name: &str,
+    parent_args: &[(String, Vec<Expr>)],
+) -> Result<RakuAstNode, RuntimeError> {
+    if let Some((_, args)) = parent_args.iter().find(|(parent, _)| parent == name) {
+        return super::type_args::parameterized_type_node(name, Some(args));
+    }
+    build_type_node(name)
 }
 
 /// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.

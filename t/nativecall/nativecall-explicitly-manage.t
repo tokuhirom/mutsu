@@ -34,8 +34,8 @@ isnt explicitly-manage('mutsu').address, $managed.address,
 # canonical one -- POSIX says the string becomes part of the environment, so the
 # caller must not free it. This is the same shape as nativecall.rakudoc's
 # set_version/get_version example.
-sub putenv(Str --> int32) is native('c') { * }
-sub getenv(Str --> Str) is native('c') { * }
+sub putenv(Str --> int32) is native('c', v6) { * }
+sub getenv(Str --> Str) is native('c', v6) { * }
 
 is putenv(explicitly-manage('MUTSU_MANAGED_A=first')), 0, 'putenv accepts a managed string';
 is getenv('MUTSU_MANAGED_A'), 'first', 'and the retained buffer is still live afterwards';

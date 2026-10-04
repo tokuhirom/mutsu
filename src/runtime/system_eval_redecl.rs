@@ -178,13 +178,15 @@ impl Interpreter {
             let current_package = self.current_package();
             if let Some(absolute) = name.strip_prefix("GLOBAL::") {
                 absolute.to_string()
-            } else if current_package == "GLOBAL"
+            } else if crate::qualified::is_global_name(&current_package)
                 || name == current_package
                 || name.starts_with(&format!("{current_package}::"))
             {
                 name.to_string()
             } else {
-                format!("{current_package}::{name}")
+                crate::qualified::qualified_text(&current_package, name)
+                    .as_str()
+                    .to_string()
             }
         };
 
@@ -308,7 +310,7 @@ impl Interpreter {
                     let qualified = qualify_type_name(&name);
                     if !is_stub
                         && !*is_lexical
-                        && !self.suppress_cross_eval_class_redeclaration_check
+                        && !self.module.suppress_cross_eval_class_redeclaration_check
                         && self.has_class(&qualified)
                         && !self.registry().lexical_classes.contains(&qualified)
                     {

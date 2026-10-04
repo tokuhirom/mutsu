@@ -55,9 +55,12 @@ impl Interpreter {
         if let Some(ValueView::Array(syms, _)) = symbols.as_ref().map(Value::view) {
             for sym in syms.iter() {
                 let name = sym.to_string_value();
-                self.cur_repo.pending_global_symbols.remove(&name);
-                if let Some((_, short)) = name.rsplit_once("::") {
-                    self.cur_repo.pending_global_symbols.remove(short);
+                self.module.cur_repo.pending_global_symbols.remove(&name);
+                if let Some((_, short)) =
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
+                    self.module.cur_repo.pending_global_symbols.remove(short);
                 }
             }
         }
@@ -193,6 +196,7 @@ impl Interpreter {
             }
             "loaded" => {
                 let loaded = self
+                    .module
                     .cur_repo
                     .loaded
                     .get(&prefix)
@@ -259,7 +263,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let bin_key = format!("bin/{script_name}");
         // Collect candidate script paths from the known lib_paths
-        let lib_paths_snapshot: Vec<String> = (*self.lib_paths).clone();
+        let lib_paths_snapshot: Vec<String> = (*self.module.lib_paths).clone();
         for p in &lib_paths_snapshot {
             if let Some(prefix) = p.strip_prefix("inst#") {
                 // Installation repo: scripts are stored as {prefix}/bin/{hash_id}
@@ -290,8 +294,8 @@ impl Interpreter {
                                 // Also add sources dir to lib_paths so 'use Module' works
                                 let sources_dir =
                                     prefix_path.join("sources").to_string_lossy().to_string();
-                                if !self.lib_paths.contains(&sources_dir) {
-                                    crate::runtime::cow_table_mut(&mut self.lib_paths)
+                                if !self.module.lib_paths.contains(&sources_dir) {
+                                    crate::runtime::cow_table_mut(&mut self.module.lib_paths)
                                         .push(format!("inst#{prefix}"));
                                 }
                                 return self.load_and_run_script(&script_path);
@@ -333,8 +337,8 @@ impl Interpreter {
         // We keep the inst# prefix so resolve_module_path can find installed sources.
         if let Some(bin_parent) = script_path.parent().and_then(|p| p.parent()) {
             let inst_path = format!("inst#{}", bin_parent.to_string_lossy());
-            if !self.lib_paths.contains(&inst_path) {
-                crate::runtime::cow_table_mut(&mut self.lib_paths).push(inst_path);
+            if !self.module.lib_paths.contains(&inst_path) {
+                crate::runtime::cow_table_mut(&mut self.module.lib_paths).push(inst_path);
             }
         }
         // Parse the script

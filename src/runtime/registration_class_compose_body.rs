@@ -47,7 +47,7 @@ impl Interpreter {
                 if env_before.contains(k) && !declared.contains(bare.as_str()) {
                     return None;
                 }
-                if bare.contains("::")
+                if crate::qualified::is_qualified_str(&bare)
                     || bare.starts_with("__")
                     || bare.starts_with('?')
                     || bare.starts_with('!')
@@ -217,8 +217,9 @@ impl Interpreter {
             .rename_method_owner(old_owner, new_owner);
         self.registry_mut().sync_accessor_entries(old_owner);
         self.registry_mut().sync_accessor_entries(new_owner);
-        if crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(old_name) {
-            crate::runtime::cow_table_mut(&mut self.user_declared_classes).insert(new_name.clone());
+        if crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(old_name) {
+            crate::runtime::cow_table_mut(&mut self.types.user_declared_classes)
+                .insert(new_name.clone());
         }
         // Register the new type object so `R::G::A[Int]` resolves; the caller
         // aliases the bare `G::A` reference to the same value.
@@ -380,6 +381,24 @@ impl Interpreter {
             {
                 continue;
             }
+            // A role's `proto method` dispatches the composing class's
+            // candidates: install it on the class, unless the class declared
+            // its own proto for the name.
+            if let Stmt::ProtoDecl {
+                name,
+                is_method: true,
+                ..
+            } = &op.raw
+            {
+                if self
+                    .registry()
+                    .method_entry_proto(cx.name, &name.resolve())
+                    .is_none()
+                {
+                    self.register_proto_method_decl(cx.name, &op.raw)?;
+                }
+                continue;
+            }
             let is_type_decl = op.kind == crate::opcode::DeferredBodyOpKind::TypeDecl;
             // A `token`/`rule`/`regex` in a role body is composed into
             // the consuming grammar, exactly like a method: it must
@@ -421,7 +440,7 @@ impl Interpreter {
                 // attribute defaults, which resolve in the role's package, see
                 // an empty alias table.
                 if is_use_decl {
-                    self.import_target_package = Some(base_role_name.to_string());
+                    self.module.import_target_package = Some(base_role_name.to_string());
                 }
             } else if is_regex_decl || is_proto_token_decl {
                 self.set_current_package(cx.name.to_string());
@@ -473,7 +492,7 @@ impl Interpreter {
                 self.set_current_package(saved_body_pkg.clone());
             }
             if is_use_decl {
-                self.import_target_package = None;
+                self.module.import_target_package = None;
                 // The role's compunit finished loading long before this body
                 // ran, so nothing will ever fold these names into the role's own
                 // package scope. Do it here (#8842).

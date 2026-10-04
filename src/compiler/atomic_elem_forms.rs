@@ -1,0 +1,74 @@
+//! The atomic routines on an array or hash ELEMENT (#11812):
+//! `atomic-fetch(@a[0])`, `atomic-assign(%h<k>, $v)`,
+//! `atomic-fetch-inc(@a[$i])`, `atomic-add-fetch(@a[0], 5)`, ... — and so
+//! `@a[0]⚛++`, `++⚛@a[0]` and `nqp::atomicinc_i(@a[0])`, which compile to
+//! these routines.
+//!
+//! A variable target compiles to the name-keyed `__mutsu_atomic_*_var` helpers
+//! (expr_call.rs). An element target compiles to the one
+//! `__mutsu_atomic_elem(container, key, op, operand?)` helper
+//! (runtime/builtins_atomic_elem.rs), which works on the same element cell
+//! `cas(@a[0], ...)` swaps.
+
+use super::*;
+
+impl Compiler {
+    /// Compile an atomic routine whose first argument is `@arr[i]` / `%h{k}`;
+    /// `false` (with nothing emitted) for any other routine or target.
+    pub(super) fn try_compile_atomic_elem_call(&mut self, name: &Symbol, args: &[Expr]) -> bool {
+        // (op, constant delta for inc/dec, whether the operand is negated)
+        let (op, delta, negate) = match (name.resolve().as_str(), args.len()) {
+            ("atomic-fetch", 1) => ("fetch", None, false),
+            ("atomic-assign", 2) => ("store", None, false),
+            ("atomic-fetch-inc", 1) => ("fetch-add", Some(1), false),
+            ("atomic-inc-fetch", 1) => ("add-fetch", Some(1), false),
+            ("atomic-fetch-dec", 1) => ("fetch-add", Some(-1), false),
+            ("atomic-dec-fetch", 1) => ("add-fetch", Some(-1), false),
+            ("atomic-fetch-add", 2) => ("fetch-add", None, false),
+            ("atomic-add-fetch", 2) => ("add-fetch", None, false),
+            ("atomic-fetch-sub", 2) => ("fetch-add", None, true),
+            ("atomic-sub-fetch", 2) => ("add-fetch", None, true),
+            _ => return false,
+        };
+        let Expr::Index { target, index, .. } = &args[0] else {
+            return false;
+        };
+        let Some(container) = target
+            .container_var_key()
+            .filter(|k| k.starts_with(['@', '%']))
+        else {
+            return false;
+        };
+        let container_idx = self.code.add_constant(Value::str(container));
+        self.code.emit(OpCode::LoadConst(container_idx));
+        self.compile_expr(index);
+        let op_idx = self.code.add_constant(Value::str_from(op));
+        self.code.emit(OpCode::LoadConst(op_idx));
+        let arity = match (delta, args.get(1)) {
+            (Some(d), _) => {
+                let d_idx = self.code.add_constant(Value::int(d));
+                self.code.emit(OpCode::LoadConst(d_idx));
+                4
+            }
+            (None, Some(operand)) => {
+                self.compile_expr(operand);
+                if negate {
+                    self.code.emit(OpCode::Negate);
+                }
+                4
+            }
+            (None, None) => 3,
+        };
+        let call_name_idx = self
+            .code
+            .add_constant(Value::str_from("__mutsu_atomic_elem"));
+        self.code.emit(OpCode::CallFunc {
+            name_idx: call_name_idx,
+            arity,
+            arg_sources_idx: None,
+            literal_native_args: 0,
+            static_arg_types: false,
+        });
+        true
+    }
+}

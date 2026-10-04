@@ -43,7 +43,7 @@ impl Interpreter {
             return None;
         }
         if crate::qualified::is_qualified(name_sym)
-            || self.export_amp_override_names.contains(&name_sym)
+            || self.module.export_amp_override_names.contains(&name_sym)
         {
             return None;
         }
@@ -125,7 +125,7 @@ impl Interpreter {
             if self.find_local_slot(code, amp).is_some() {
                 return None;
             }
-            self.unit_scope_lexical(amp)
+            self.unit_scope_lexical(amp, None)
                 .or_else(|| self.package_scope_lexical(amp))
         })
         .map(Value::into_deref)

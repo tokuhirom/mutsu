@@ -2,6 +2,7 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 
 use super::helpers::literal_str;
+use super::interp_hyper_subscript::try_parse_interp_hyper_subscript;
 /// Try to parse a postcircumfix call on an interpolated variable: "$var()" or "$var(args)".
 /// In Raku, `"$callable(args)"` invokes the callable during interpolation. Only triggers
 /// when `(` immediately follows the variable (or its index/postcircumfix). The argument
@@ -112,6 +113,13 @@ pub(crate) fn try_parse_interp_self_accessor_call<'a>(
 /// Also supports methods with arguments: "$var.substr(0,1)".
 /// Also supports indirect (quoted) method names: "$var.'method'()" or "$var."method"()".
 pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
+    // Hyper postfixes that end in a bracket (`>>.[0]`, `».{$k}`, `>>.<k>`)
+    // continue the interpolation, as any bracket-ending postfix does:
+    // `"%format{@columns}>>.[HEADER].join(' ')"` (Telemetry's report header).
+    let (mut target, mut input) = (target, input);
+    while let Some((expr, after)) = try_parse_interp_hyper_subscript(input, &target) {
+        (target, input) = (expr, after);
+    }
     let mut expr = target;
     let mut rest = input;
     // Collect chain of .method parts; only commit if chain ends with parens

@@ -314,13 +314,13 @@ impl Interpreter {
                         // per-composition anonymous type object to rename
                         // instead, when the caller wants a scoped rename rather
                         // than a global one.
-                        crate::runtime::cow_table_mut(&mut self.type_metadata)
+                        crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                             .entry(resolved)
                             .or_default()
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
                     ValueView::Instance { class_name, .. } => {
-                        crate::runtime::cow_table_mut(&mut self.type_metadata)
+                        crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                             .entry(class_name.resolve())
                             .or_default()
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
@@ -346,7 +346,7 @@ impl Interpreter {
                 } else {
                     Value::str(args[1].to_string_value())
                 };
-                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                     .entry(name)
                     .or_default()
                     .insert(key, stored.clone());
@@ -359,7 +359,7 @@ impl Interpreter {
             // Cost: O(1).
             "set_rw" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
-                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                     .entry(name)
                     .or_default()
                     .insert("rw".to_string(), Value::TRUE);
@@ -371,6 +371,7 @@ impl Interpreter {
             "rw" if args.len() == 1 && !self.is_role_reference_value(&args[0]) => {
                 let name = self.mop_receiver_owner(&args[0]);
                 let is_rw = self
+                    .types
                     .type_metadata
                     .get(&name)
                     .and_then(|m| m.get("rw"))
@@ -384,7 +385,7 @@ impl Interpreter {
             // (`Documented.WHY`, via `dispatch_why`).
             "set_why" if args.len() == 2 => {
                 let name = self.mop_receiver_owner(&args[0]);
-                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                     .entry(name)
                     .or_default()
                     .insert("__set_why__".to_string(), args[1].clone());
@@ -393,6 +394,7 @@ impl Interpreter {
             "WHY" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
                 if let Some(why) = self
+                    .types
                     .type_metadata
                     .get(&name)
                     .and_then(|m| m.get("__set_why__"))
@@ -470,6 +472,7 @@ impl Interpreter {
                 }
                 let name = match args[0].view() {
                     ValueView::Package(name) => self
+                        .types
                         .type_metadata
                         .get(&name.resolve())
                         .and_then(|m| m.get("__set_name__"))
@@ -478,6 +481,7 @@ impl Interpreter {
                             crate::value::user_facing_type_name(&name.resolve()).to_string()
                         }),
                     ValueView::Instance { class_name, .. } => self
+                        .types
                         .type_metadata
                         .get(&class_name.resolve())
                         .and_then(|m| m.get("__set_name__"))
@@ -555,7 +559,7 @@ impl Interpreter {
             }
             "ver" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
-                if let Some(meta) = self.type_metadata.get(&name)
+                if let Some(meta) = self.types.type_metadata.get(&name)
                     && let Some(value) = meta.get("ver").cloned()
                 {
                     return Ok(Self::version_from_value(value));
@@ -615,6 +619,7 @@ impl Interpreter {
                 // (`class C {}; C.^auth` eq ""), so default to "" rather than
                 // throwing -- same shape as `.^api` below.
                 if let Some(value) = self
+                    .types
                     .type_metadata
                     .get(&name)
                     .and_then(|meta| meta.get("auth").cloned())
@@ -636,6 +641,7 @@ impl Interpreter {
                 // `:api` has an empty-string api in Rakudo (`class C {}; C.^api` eq
                 // ""), so default to "" rather than throwing.
                 if let Some(value) = self
+                    .types
                     .type_metadata
                     .get(&name)
                     .and_then(|meta| meta.get("api").cloned())
@@ -920,9 +926,9 @@ impl Interpreter {
                     .classes
                     .get(&owner)
                     .is_some_and(|class_def| class_def.native_methods.contains(&method_name));
-                let grammar_token = registry
-                    .token_defs
-                    .contains_key(&Symbol::intern(&format!("{owner}::{method_name}")));
+                let grammar_token = registry.token_defs.contains_key(&Symbol::intern(
+                    crate::qualified::qualified_text(&owner, &method_name).as_str(),
+                ));
 
                 Ok(Value::int(
                     (user_method
@@ -1156,7 +1162,10 @@ impl Interpreter {
                 // handle with it — so the stub was created, populated, and never
                 // consulted, leaving `.add` "no such method" and `.succ`/`.pred`
                 // falling through to the numeric successor.
-                let class_name = match class_name.rsplit("::").next() {
+                let class_name = match Some(
+                    crate::qualified::last_segment(crate::qualified::known_symbol(&class_name))
+                        .as_str(),
+                ) {
                     Some(short)
                         if short != class_name
                             && !self.registry().classes.contains_key(&class_name)
@@ -1623,7 +1632,7 @@ impl Interpreter {
                 };
                 let condition = args[1].clone();
                 let calculator = args[2].clone();
-                crate::runtime::cow_table_mut(&mut self.method_fallbacks)
+                crate::runtime::cow_table_mut(&mut self.types.method_fallbacks)
                     .entry(class_name)
                     .or_default()
                     .push((condition, calculator));
@@ -1660,7 +1669,7 @@ impl Interpreter {
                 // This is the native step a custom `compose` hook's
                 // `callsame` reaches: from here on the class's auto-generated
                 // accessors count as installed (`classes_composing_accessors`).
-                self.classes_composing_accessors.remove(&class_name);
+                self.types.classes_composing_accessors.remove(&class_name);
                 self.caches.native_ctor_plan_cache.clear();
                 // Rakudo returns the composed type object. MOP clients use
                 // that result directly (for example Test::Mock calls
@@ -1996,7 +2005,7 @@ impl Interpreter {
                     return Ok(rev.clone());
                 }
                 let type_name = self.mop_receiver_owner(&args[0]);
-                if let Some(meta) = self.type_metadata.get(&type_name)
+                if let Some(meta) = self.types.type_metadata.get(&type_name)
                     && let Some(rev) = meta.get("language-revision")
                 {
                     return Ok(rev.clone());

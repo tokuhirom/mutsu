@@ -376,6 +376,11 @@ impl Compiler {
         {
             return;
         }
+        // An atomic routine on an array/hash element (#11812): see
+        // atomic_elem_forms.rs.
+        if self.try_compile_atomic_elem_call(name, args) {
+            return;
+        }
         // `substr-rw($s, ...)` / `subbuf-rw($b, ...)` outside an assignment
         // return a Proxy whose FETCH/STORE read and write `$s` BY NAME, from a
         // routine the free-var analysis never sees -- so keep `$s` env-synced

@@ -137,7 +137,6 @@ impl Interpreter {
                              _atom_store: &mut CapStore,
                              end: usize,
                              caps: RegexCaptures| {
-                super::regex_helpers::record_regex_farthest_position(end);
                 w.atom_caps
                     .push(super::regex_match_sep::with_iteration_capture(
                         token, start, end, caps,
@@ -189,7 +188,6 @@ impl Interpreter {
             return false;
         }
         walk.nodes += 1;
-        super::regex_helpers::record_regex_farthest_position(cur);
         if token.frugal && self.sep_emit_chain(walk, token, chars, cur, pkg, store, on) {
             return true;
         }
@@ -211,7 +209,6 @@ impl Interpreter {
                 false,
             );
             for (sep_end, scaps) in sep_ends {
-                super::regex_helpers::record_regex_farthest_position(sep_end);
                 // The separator is folded before the atom after it matches, so
                 // code in that atom sees it (rakudo's `$/[1]` there lists every
                 // separator so far).
@@ -231,7 +228,6 @@ impl Interpreter {
                                     _atom_store: &mut CapStore,
                                     atom_end: usize,
                                     acaps: RegexCaptures| {
-                        super::regex_helpers::record_regex_farthest_position(atom_end);
                         if atom_end <= cur {
                             return false;
                         }

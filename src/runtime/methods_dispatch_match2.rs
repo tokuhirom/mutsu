@@ -384,7 +384,7 @@ impl Interpreter {
         // thrown `X::Seq::Consumed` if it was already spent).
         if let ValueView::Seq(items) = target.view() {
             let seq_id = items.identity();
-            if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
+            if let Some(meta) = self.types.squish_iterator_meta.remove(&seq_id) {
                 for key in meta.revert_remove {
                     self.env.remove(&key);
                 }
@@ -638,7 +638,7 @@ impl Interpreter {
                 items,
                 pos: 0,
                 func: args.first().cloned(),
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::Map,
                 plan: Default::default(),
             }));
@@ -747,7 +747,7 @@ impl Interpreter {
             items,
             pos: 0,
             func: args.first().cloned(),
-            fatal: self.fatal_mode,
+            fatal: self.module.fatal_mode,
             mode,
             plan: Default::default(),
         }))

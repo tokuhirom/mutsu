@@ -55,11 +55,11 @@ impl Interpreter {
         // where `try` fatalizes only the calls written in its own body.
         // `fatal_mode` stays dynamic: a `.map`/`.grep` Seq built by a called
         // routine still captures it (`SeqSource::MapGrep::fatal`).
-        let saved_fatal_mode = self.fatal_mode;
-        let saved_lexical_fatal_mode = self.lexical_fatal_mode;
+        let saved_fatal_mode = self.module.fatal_mode;
+        let saved_lexical_fatal_mode = self.module.lexical_fatal_mode;
         if traps {
-            self.fatal_mode = true;
-            self.lexical_fatal_mode = true;
+            self.module.fatal_mode = true;
+            self.module.lexical_fatal_mode = true;
         }
         // ADR-0041 §9: a BEGIN-time region opened inside the protected body
         // (`constant X = die ...`, `BEGIN { die }`) never reaches its closing
@@ -90,8 +90,8 @@ impl Interpreter {
         self.begin_time_unwind_to(begin_time_base);
         self.restore_warn_suppression(warn_suppression_base);
         if traps {
-            self.fatal_mode = saved_fatal_mode;
-            self.lexical_fatal_mode = saved_lexical_fatal_mode;
+            self.module.fatal_mode = saved_fatal_mode;
+            self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         }
         if is_bare_block {
             self.truncate_routine_stack(routine_base);

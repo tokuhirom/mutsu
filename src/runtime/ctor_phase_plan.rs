@@ -35,6 +35,7 @@ impl Interpreter {
     ) -> Vec<ConstructionPhaseStep> {
         let mro = self.class_mro(cn);
         let class_lang_rev = self
+            .types
             .type_metadata
             .get(cn)
             .and_then(|m| m.get("language-revision"))
@@ -77,6 +78,7 @@ impl Interpreter {
                     .map(|(b, _)| b)
                     .unwrap_or(&role_name);
                 let role_lang_rev = self
+                    .types
                     .type_metadata
                     .get(role_base)
                     .and_then(|m| m.get("language-revision"))
@@ -227,7 +229,7 @@ impl Interpreter {
                     // registered after plan build re-routes through the full
                     // path (both are runtime-global prefilters there too).
                     let r = if let Some(def) = pinned
-                        && self.native_call_specs.is_empty()
+                        && self.module.native_call_specs.is_empty()
                         && !self.has_any_wrap_chains()
                     {
                         self.push_method_samewith_context(

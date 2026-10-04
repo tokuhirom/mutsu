@@ -21,15 +21,19 @@ impl Interpreter {
     /// state exists), indicating that test function names should be resolved
     /// as function calls rather than bare words.
     pub(crate) fn test_mode_active(&self) -> bool {
-        self.tap.active()
+        self.io.tap.active()
     }
 
     /// True when a `Test` (or `Test::*`) module is loaded. Unlike
     /// [`Self::test_mode_active`] it is already true for the very first test
     /// call (`plan`), before any `TestState` exists.
     pub(crate) fn test_module_loaded(&self) -> bool {
-        self.loaded_modules.contains("Test")
-            || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
+        self.module.loaded_modules.contains("Test")
+            || self
+                .module
+                .loaded_modules
+                .iter()
+                .any(|m| m.starts_with("Test::"))
     }
 
     /// Whether `name` is a routine `Test` or roast's `Test::Util` provides.

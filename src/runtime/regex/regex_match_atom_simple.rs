@@ -763,16 +763,27 @@ impl Interpreter {
                     {
                         return true;
                     }
+                    let measuring = LTM_DECLARATIVE_MODE.with(std::cell::Cell::get);
                     for (sub_pat, sub_pkg, _sym_key) in &candidates {
-                        if self
-                            .parse_regex_uncached(sub_pat, RegexParseMode::Match)
-                            .and_then(|pattern| {
-                                self.regex_match_end_from_caps_in_pkg(
-                                    &pattern, chars, pos, *sub_pkg,
-                                )
-                            })
-                            .is_some_and(|(end, _)| end > pos)
-                        {
+                        let Some(pattern) =
+                            self.parse_regex_uncached(sub_pat, RegexParseMode::Match)
+                        else {
+                            continue;
+                        };
+                        // Measuring an LTM prefix (ADR-0125), the token is
+                        // measured by its own NFA, whose fate is this class's.
+                        let consumes = if measuring {
+                            let nfa = self.ltm_nfa_for(&pattern, *sub_pkg, false);
+                            let run = nfa.run(self, chars, pos, &[]);
+                            if let Some(fate) = run.fate {
+                                ltm_record_fate(fate);
+                            }
+                            run.ends.iter().any(|&end| end > pos)
+                        } else {
+                            self.regex_match_end_from_caps_in_pkg(&pattern, chars, pos, *sub_pkg)
+                                .is_some_and(|(end, _)| end > pos)
+                        };
+                        if consumes {
                             return true;
                         }
                     }

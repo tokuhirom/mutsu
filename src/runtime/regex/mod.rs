@@ -1,5 +1,6 @@
 mod regex_alias_subcap;
 pub(crate) mod regex_arg_purity;
+mod regex_atom_leaf;
 mod regex_backref_scope;
 pub(crate) mod regex_builtin_rule;
 mod regex_call_graph;
@@ -68,7 +69,7 @@ mod regex_sub_eval;
 mod regex_subrule_filing;
 mod regex_subrule_lazy;
 mod regex_token_candidates;
-mod regex_token_method;
+pub(crate) mod regex_token_method;
 mod regex_token_resolve;
 mod regex_trail;
 mod regex_zero_width_iter;

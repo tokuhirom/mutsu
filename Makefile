@@ -111,14 +111,12 @@ check-panic-surface:
 	python3 scripts/check-panic-surface.py --self-test
 	python3 scripts/check-panic-surface.py
 
-# Ratchet on run-time package-name string surgery (#8899): `format!("{pkg}::
+# Ban on run-time package-name string surgery (#8899): `format!("{pkg}::
 # {name}")`, `== "GLOBAL"`, and `"::"` splitting/classification outside
 # src/parser/ and src/compiler/. A qualified name is derived from two things
 # the caller already holds, so it belongs in src/qualified.rs's memoizing
-# constructor, built once per pair. The baseline is per file and frozen
-# (#11507): a counter of a file may not rise above its row, and a drop needs
-# no re-cut, so shrinking PRs touch no shared file. Optional tightening:
-#   scripts/check-name-scans.sh --update
+# constructor, built once per pair. A ban since #11507 took the last of the
+# 577 original sites to zero: any match fails.
 check-name-scans:
 	scripts/check-name-scans.sh --self-test
 	scripts/check-name-scans.sh

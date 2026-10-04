@@ -182,7 +182,8 @@ impl Interpreter {
         self.clear_private_zeroarg_method_cache();
         // Mark this as a user-declared class so its collected attribute list is
         // authoritative for accessor resolution (undeclared `.name` -> NotFound).
-        crate::runtime::cow_table_mut(&mut self.user_declared_classes).insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.types.user_declared_classes)
+            .insert(name.to_string());
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
@@ -206,7 +207,11 @@ impl Interpreter {
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
         // `is ::Foo` means the same as `is Foo` in Raku.
-        let strip_colons = |s: &str| s.strip_prefix("::").unwrap_or(s).to_string();
+        let strip_colons = |s: &str| {
+            crate::qualified::type_capture_name(s)
+                .unwrap_or(s)
+                .to_string()
+        };
         // Resolve generic type captures in parent names so a class nested in a
         // parametric role body (`class A is Array[T] {}`, composed with `T = Int`)
         // inherits from the concrete `Array[Int]`. Outside a role composition no
@@ -249,17 +254,18 @@ impl Interpreter {
         // `type_metadata` slot `.^set_rw` writes; a redeclaration without
         // `is rw` clears it (a stub keeps whatever the real body set).
         if class_is_rw {
-            crate::runtime::cow_table_mut(&mut self.type_metadata)
+            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                 .entry(name.to_string())
                 .or_default()
                 .insert("rw".to_string(), Value::TRUE);
         } else if !is_stub_body
             && self
+                .types
                 .type_metadata
                 .get(name)
                 .is_some_and(|m| m.contains_key("rw"))
         {
-            crate::runtime::cow_table_mut(&mut self.type_metadata)
+            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                 .get_mut(name)
                 .map(|m| m.remove("rw"));
         }
@@ -386,7 +392,7 @@ impl Interpreter {
         // object). Hand `snapshot` on so that site can undo the declaration;
         // see `Interpreter::deferred_trait_class_rollback`.
         if !deferred_custom_traits.is_empty() {
-            self.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
+            self.types.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
         }
         if self.publish_class_shell(
             name,
@@ -446,7 +452,8 @@ impl Interpreter {
             // the dispatch site needs here too.
             if !outcome.unclaimed.is_empty() {
                 deferred_custom_traits.extend(outcome.unclaimed);
-                self.deferred_trait_class_rollback = Some((name.to_string(), snapshot.clone()));
+                self.types.deferred_trait_class_rollback =
+                    Some((name.to_string(), snapshot.clone()));
             }
             parents.iter().cloned().chain(outcome.parents).collect()
         };
@@ -462,7 +469,7 @@ impl Interpreter {
         // the declaring unit so those evaluations can still see this file's
         // private top-level routines.
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        crate::runtime::cow_table_mut(&mut self.class_declaring_units)
+        crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, &final_parents)?;
         Ok(deferred_custom_traits)

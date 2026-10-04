@@ -264,6 +264,12 @@ impl Compiler {
     }
 
     fn compile_assignment_rhs_for_target(&mut self, name: &str, expr: &Expr) {
+        // A native `str` read into a native int: a fresh int, nothing shared.
+        if self.native_str_to_int_coercion(name, expr) {
+            self.compile_expr(expr);
+            self.emit_native_str_to_int();
+            return;
+        }
         if self.try_emit_array_share(name, expr) {
             return;
         }
@@ -784,7 +790,7 @@ impl Compiler {
     /// never actually forces/sinks it, so a stored unhandled `Failure` must
     /// not explode merely because the bare mention was reached: Raku decides
     /// a Failure's fate at *construction* time (throwing immediately there
-    /// under `use fatal` — matched by the various `self.fatal_mode`
+    /// under `use fatal` — matched by the various `self.module.fatal_mode`
     /// assignment-time checks in the VM), not by re-examining it at every
     /// later mention. `my $f = "a".Int; { use fatal; $f; }` must not throw —
     /// `$f` was made without fatal, so it stays soft forever; the same is
@@ -1468,6 +1474,10 @@ impl Compiler {
                     reset,
                     // The early registration below is the very next op.
                     type_follows: !defer_type_constraint && type_constraint.is_some(),
+                    bind_declaration: bind_vardecl
+                        || custom_traits
+                            .iter()
+                            .any(|(trait_name, _)| trait_name == "__scalar_bind"),
                 });
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");

@@ -18,7 +18,7 @@ impl Interpreter {
         // A public attribute's auto-generated accessor is not yet installed
         // while `class_name`'s custom-HOW `compose` hook is still running
         // (see `classes_composing_accessors`'s doc comment, #8836).
-        if !self.classes_composing_accessors.contains(class_name) {
+        if !self.types.classes_composing_accessors.contains(class_name) {
             // First add accessor methods for public attributes (in order)
             for attr in &class_def.attributes {
                 if attr.is_public
@@ -127,7 +127,7 @@ impl Interpreter {
         // A public attribute's auto-generated accessor is not yet installed
         // while `class_name`'s custom-HOW `compose` hook is still running
         // (see `classes_composing_accessors`'s doc comment, #8836).
-        if !self.classes_composing_accessors.contains(class_name) {
+        if !self.types.classes_composing_accessors.contains(class_name) {
             for attr in &class_def.attributes {
                 if attr.is_public
                     && registry
@@ -637,7 +637,11 @@ impl Interpreter {
             // name"`), without which `__mutsu_owner_sub` was never set on the
             // Parameter object and the comment was unreachable (roast
             // S26-documentation/why-trailing.t's "invocant comment" case).
-            let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
+            let owner_key = owner_class.map(|owner| {
+                crate::qualified::qualified_text(owner, name)
+                    .as_str()
+                    .to_string()
+            });
             let signature = crate::value::signature::make_signature_value_with_owner(
                 sig_info,
                 owner_key,

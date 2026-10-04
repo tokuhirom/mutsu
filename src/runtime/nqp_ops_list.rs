@@ -184,7 +184,9 @@ impl Interpreter {
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_len(&attributes);
         }
-        None
+        // An unmanaged CArray has no length; 0 makes a negative index an
+        // out-of-bounds error and leaves a non-negative one to the C memory.
+        crate::runtime::CArrayView::of(target).map(|_| 0)
     }
 
     /// `nqp::elems` as a native int, for TRIR's typed `ElemsO`: the in-place
@@ -217,7 +219,7 @@ impl Interpreter {
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_elem_at(&attributes, idx);
         }
-        None
+        crate::runtime::CArrayView::of(target).and_then(|view| view.elem_at(idx))
     }
 
     /// The elements of a list-ish nqp value, read-only.
@@ -419,6 +421,9 @@ impl Interpreter {
             "bindpos" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(2).cloned().unwrap_or(Value::NIL);
+                if self.carray_bind_before_start(&target, iarg(args, 1)) {
+                    return Some(Ok(val));
+                }
                 if let Some(attrs) = crate::runtime::carray_ref::ref_attrs(&target) {
                     return Some(self.carray_ref_bind(&attrs, iarg(args, 1), val));
                 }

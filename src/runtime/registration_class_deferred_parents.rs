@@ -73,10 +73,14 @@ impl Interpreter {
     /// (`class Outer { class Inner { }; class Sub is Inner { } }`).
     fn resolve_deferred_body_parent(&self, class_name: &str, parent: &str) -> Option<String> {
         let user_facing = crate::value::user_facing_type_name(class_name);
-        let own_scope = if parent.contains("::") {
+        let own_scope = if crate::qualified::is_qualified_str(parent) {
             None
         } else {
-            Some(format!("{}::{}", user_facing, parent))
+            Some(
+                crate::qualified::qualified_text(&user_facing, parent)
+                    .as_str()
+                    .to_string(),
+            )
         };
         let candidates = own_scope
             .iter()
@@ -88,7 +92,7 @@ impl Interpreter {
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(resolved.as_str());
-            let base = base.strip_prefix("::").unwrap_or(base);
+            let base = crate::qualified::type_capture_name(base).unwrap_or(base);
             if self.parent_name_exists(base) {
                 return Some(resolved);
             }

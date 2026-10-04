@@ -25,6 +25,7 @@ impl Interpreter {
             return None;
         };
         let pod = self
+            .declarator_docs
             .why_object_cache
             .values()
             .find(|pod| Self::declarator_documents_attribute(pod, owner, name))
@@ -32,7 +33,9 @@ impl Interpreter {
         if let ValueView::Instance { attributes, .. } = pod.view() {
             attributes.insert("WHEREFORE", target.clone());
         }
-        self.why_object_cache.insert(id, pod.clone());
+        self.declarator_docs
+            .why_object_cache
+            .insert(id, pod.clone());
         Some(pod)
     }
 

@@ -312,7 +312,9 @@ impl Interpreter {
                 // class's own methods ("Unknown function"). Accept the multi
                 // key shape as well.
                 if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
-                    let fq = format!("{}::{}", cx.name, sub_name);
+                    let fq = crate::qualified::qualified_text(cx.name, sub_name)
+                        .as_str()
+                        .to_string();
                     let multi_prefix = format!("{fq}/");
                     let registered = {
                         let registry = self.registry();
@@ -456,11 +458,11 @@ impl Interpreter {
             };
             let type_obj = Value::package(Symbol::intern(&owner));
             if gate_accessors {
-                self.classes_composing_accessors.insert(owner.clone());
+                self.types.classes_composing_accessors.insert(owner.clone());
             }
             let result = self.call_method_with_values(receiver, "compose", vec![type_obj]);
             if gate_accessors {
-                self.classes_composing_accessors.remove(&owner);
+                self.types.classes_composing_accessors.remove(&owner);
             }
             result?;
         }
@@ -525,7 +527,9 @@ impl Interpreter {
             .sync_accessor_entries(Symbol::intern(cx.name));
         self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt))?;
         for outer_name in cx.saved_env.keys() {
-            let class_scoped_name = format!("{}::{}", cx.name, outer_name);
+            let class_scoped_name = crate::qualified::qualified_text(cx.name, outer_name)
+                .as_str()
+                .to_string();
             if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
                 self.env.insert_sym(*outer_name, updated);
             }
@@ -540,6 +544,17 @@ impl Interpreter {
     fn class_body_proto_method_decl(
         &mut self,
         cx: &mut ClassBodyCx<'_>,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
+        self.register_proto_method_decl(cx.name, stmt)
+    }
+
+    /// Install a `proto method` as the dispatcher of `owner`'s `NAME`
+    /// candidates -- the class's own, or a composed role's (the composing
+    /// class owns the copy).
+    pub(super) fn register_proto_method_decl(
+        &mut self,
+        owner: &str,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
         let Stmt::ProtoDecl {
@@ -563,7 +578,7 @@ impl Interpreter {
             .collect();
         let fdef = FunctionDef {
             is_cached: false,
-            package: Symbol::intern(cx.name),
+            package: Symbol::intern(owner),
             name: *proto_name,
             params: effective_params,
             param_defs: effective_param_defs,
@@ -591,9 +606,9 @@ impl Interpreter {
         let proto_params = fdef.params.clone();
         let proto_param_defs = fdef.param_defs.clone();
         self.registry_mut()
-            .set_proto_method(cx.name, &method_name, fdef);
+            .set_proto_method(owner, &method_name, fdef);
         self.apply_method_is_traits(
-            cx.name,
+            owner,
             &method_name,
             &proto_params,
             &proto_param_defs,
@@ -649,7 +664,7 @@ impl Interpreter {
         // `is_compile_time_phaser` is precomputed the same way
         // (`crate::opcode::is_compile_time_phaser_stmt`).
         let saved_defining = if is_compile_time_phaser {
-            Some(self.defining_class.replace(cx.name.to_string()))
+            Some(self.types.defining_class.replace(cx.name.to_string()))
         } else {
             None
         };
@@ -678,7 +693,7 @@ impl Interpreter {
             };
         }
         if let Some(saved) = saved_defining {
-            self.defining_class = saved;
+            self.types.defining_class = saved;
         }
         if let Err(e) = result {
             if !is_swallowable {
@@ -686,7 +701,9 @@ impl Interpreter {
             }
         } else {
             for outer_name in cx.saved_env.keys() {
-                let class_scoped_name = format!("{}::{}", cx.name, outer_name);
+                let class_scoped_name = crate::qualified::qualified_text(cx.name, outer_name)
+                    .as_str()
+                    .to_string();
                 if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
                     self.env.insert_sym(*outer_name, updated);
                 }

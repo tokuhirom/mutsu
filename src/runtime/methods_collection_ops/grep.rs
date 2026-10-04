@@ -73,6 +73,12 @@ impl Interpreter {
         } else {
             GrepAdverb::V
         };
+        // Every `grep` candidate takes a matcher (`($: Bool:D $t, *%_)` and
+        // `($: Mu $t, *%_)`), so a call without one resolves none of them
+        // (#11630) -- adverbs or not.
+        if positional_args.is_empty() {
+            return Err(Self::grep_no_matcher_error(&target, args));
+        }
         let args = &positional_args;
 
         // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the
@@ -85,7 +91,7 @@ impl Interpreter {
                 items,
                 pos: 0,
                 func: args.first().cloned(),
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::Grep,
                 plan: Default::default(),
             }));
@@ -170,7 +176,7 @@ impl Interpreter {
                         items: crate::value::MapGrepItems::Live(target.clone()),
                         pos: 0,
                         func: args.first().cloned(),
-                        fatal: self.fatal_mode,
+                        fatal: self.module.fatal_mode,
                         mode: crate::value::MapGrepMode::GrepArray(target.clone()),
                         plan: Default::default(),
                     }));
@@ -198,7 +204,7 @@ impl Interpreter {
                         items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(items)),
                         pos: 0,
                         func: args.first().cloned(),
-                        fatal: self.fatal_mode,
+                        fatal: self.module.fatal_mode,
                         mode: crate::value::MapGrepMode::Grep,
                         plan: Default::default(),
                     }));

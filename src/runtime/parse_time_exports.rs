@@ -84,10 +84,10 @@ impl Interpreter {
     // Cost: O(s + v), s = exported subs of `module`, v = its exported symbols.
     pub(crate) fn module_exported_routine_names(&self, module: &str) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        if let Some(subs) = self.exported_subs.get(module) {
+        if let Some(subs) = self.module.exported_subs.get(module) {
             names.extend(subs.keys().cloned());
         }
-        if let Some(vars) = self.exported_vars.get(module) {
+        if let Some(vars) = self.module.exported_vars.get(module) {
             names.extend(
                 vars.keys()
                     .filter_map(|name| name.strip_prefix('&'))

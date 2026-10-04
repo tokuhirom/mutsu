@@ -5,10 +5,10 @@
 # with the importer's own spliced copy as a hard X::Redeclaration — which is
 # what made every DBIish SQLCipher test file die.
 #
-# The first two assertions are the regression proper and pass under rakudo too.
-# The last two call through `is native('c')`, which rakudo cannot resolve on a
-# host where `libc.so` is a linker script rather than a shared object, so only
-# mutsu runs them.
+# The first two assertions are the regression proper. The last two call
+# through `is native('c', v6)`: the versioned name, because an unversioned
+# `is native('c')` resolves to `libc.so`, which is a linker script rather than
+# a shared object on glibc hosts and fails to load under rakudo.
 use Test;
 use NativeCall;
 use lib 't/lib';
@@ -28,7 +28,7 @@ ok defined(&cast-through), 'the module exports its own routine';
 
 # And it works: the helper is reachable from the module's body even though the
 # module declares it in no package of its own.
-sub c_getenv(Str --> Pointer) is native('c') is symbol('getenv') { * }
+sub c_getenv(Str --> Pointer) is native('c', v6) is symbol('getenv') { * }
 ok cast-through(Str, c_getenv('PATH')).chars > 0,
     'the module body reaches the helper it never declared';
 

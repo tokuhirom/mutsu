@@ -762,12 +762,13 @@ impl Interpreter {
             } = target.view()
         {
             let caller_class = self.private_calling_package();
-            let (owner_class, attr_name) =
-                if let Some((owner, attr)) = private_rest.split_once("::") {
-                    (owner.to_string(), attr.to_string())
-                } else {
-                    (class_name.resolve(), private_rest.to_string())
-                };
+            let (owner_class, attr_name) = if let Some((owner, attr)) =
+                crate::qualified::split_first(crate::qualified::known_symbol(private_rest))
+            {
+                (owner.to_string(), attr.to_string())
+            } else {
+                (class_name.resolve(), private_rest.to_string())
+            };
             // `owner_class` may be the short name as written in source
             // (`$a!A::foo = ...`); canonicalize it relative to the caller's
             // package chain before comparing/looking up trusts.
@@ -800,7 +801,7 @@ impl Interpreter {
 
         // Handle qualified method names early: Class::method (e.g., $o.Parent::x = 5)
         // Must be before call_method_mut_with_values which can't handle qualified names.
-        if method.contains("::")
+        if crate::qualified::is_qualified_str(method)
             && !method.starts_with('!')
             && let ValueView::Instance {
                 class_name,

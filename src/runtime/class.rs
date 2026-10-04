@@ -85,6 +85,7 @@ impl Interpreter {
     /// have been reset to the default, so reading that global would be wrong.
     pub(crate) fn type_decl_is_6e(&self, name: &str) -> bool {
         match self
+            .types
             .type_metadata
             .get(name)
             .and_then(|meta| meta.get("language-revision"))

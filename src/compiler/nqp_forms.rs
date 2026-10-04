@@ -179,6 +179,18 @@ impl Compiler {
             "nqp::with" | "nqp::without" | "nqp::defor" => {
                 self.try_compile_nqp_cond_form(name, args, sunk)
             }
+            // The atomic ops that name a container (#11502): see
+            // nqp_atomic_forms.rs.
+            "nqp::atomicload"
+            | "nqp::atomicload_i"
+            | "nqp::atomicstore"
+            | "nqp::atomicstore_i"
+            | "nqp::atomicinc_i"
+            | "nqp::atomicdec_i"
+            | "nqp::atomicadd_i"
+            | "nqp::cas"
+            | "nqp::cas_i"
+            | "nqp::atomicbindattr" => self.try_compile_nqp_atomic_form(name, args),
             // nqp::where(obj) — the object's identity integer. It is `.WHERE`
             // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
             // that method rather than keeping a second identity scheme (#9346).
@@ -398,6 +410,23 @@ impl Compiler {
         let Some(op) = name.strip_prefix(crate::symbol::NQP_OP_PREFIX) else {
             return false;
         };
+        // The parser marks a parenthesized zero-argument call (`nqp::cwd()`)
+        // with a synthetic call-site pair; it is not an operand.
+        let args = match args {
+            [
+                Expr::Binary {
+                    left,
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                },
+            ] if matches!(left.as_ref(), Expr::Literal(v)
+                if matches!(v.view(), crate::value::ValueView::Str(s)
+                    if s.as_str() == crate::parser::TEST_CALLSITE_LINE_KEY)) =>
+            {
+                &[]
+            }
+            _ => args,
+        };
         if args.len() > u8::MAX as usize || args.iter().any(Self::is_named_arg_expr) {
             return false;
         }
@@ -406,6 +435,9 @@ impl Compiler {
         };
         if self.try_compile_nqp_attr_op(op, args) || self.try_compile_nqp_create(op, args) {
             return true;
+        }
+        if matches!(op, "usecapture" | "savecapture") {
+            self.code.uses_capture = true;
         }
         for arg in args {
             self.compile_expr(arg);

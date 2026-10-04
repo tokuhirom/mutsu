@@ -215,7 +215,11 @@ impl Interpreter {
         class_sym: crate::symbol::Symbol,
     ) -> bool {
         let class_name = class_sym.resolve();
-        if !self.user_declared_classes.contains(class_name.as_str()) {
+        if !self
+            .types
+            .user_declared_classes
+            .contains(class_name.as_str())
+        {
             return false;
         }
         if self.cstruct_class_name(&class_name).is_some() {

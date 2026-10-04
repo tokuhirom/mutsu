@@ -17,11 +17,14 @@
 //! refuses everything the receiver-state checks in
 //! `vm_native_dispatch::try_native_method_raw` exist for (instances, type
 //! objects, mixins, containers, lazy and shaped values) — and looks
-//! `(shape, method symbol)` up in a map built once per process by walking each
-//! shape's MRO (`builtin_types::catalog`) most-derived first. A miss, or a
-//! call whose positional count is not the row's arity, returns `None` and the
-//! call takes the cascades exactly as before; that fallback is what lets the
-//! families migrate one at a time (ADR-11276 §6).
+//! `(shape, method symbol, arity)` up in a map built once per process by
+//! walking each shape's MRO (`builtin_types::catalog`) most-derived first. A
+//! row is handed only plain scalar arguments ([`plain_args`]): named arguments
+//! (which arrive as `Pair`s), Junctions, Failures, lazy Seqs and the like need
+//! probes the table skips. A miss, a call with any other argument, or a
+//! [`Handler::Narrow`] row that does not bind the arguments returns `None`, and
+//! the call takes the cascades exactly as before; that fallback is what lets
+//! the families migrate one at a time (ADR-11276 §6).
 //!
 //! # Adding a row
 //!
@@ -35,6 +38,7 @@
 //! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+pub(crate) mod coerce;
 mod complex;
 mod int;
 mod list;
@@ -43,11 +47,15 @@ mod num;
 mod rational;
 pub(crate) mod real;
 pub(crate) mod str;
+pub(crate) mod str_search;
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
 use rustc_hash::FxHashMap;
 use std::sync::OnceLock;
+
+/// A [`Handler::Narrow`] implementation.
+pub(crate) type NarrowFn = fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>;
 
 /// A built-in method's implementation.
 ///
@@ -57,8 +65,12 @@ use std::sync::OnceLock;
 #[derive(Clone, Copy)]
 pub(crate) enum Handler {
     /// Needs no interpreter. `args` are the positional arguments, exactly
-    /// [`MethodRow::arity`] of them.
+    /// [`MethodRow::arity`] of them, each a plain scalar ([`answer`]).
     Pure(fn(&Value, &[Value]) -> Result<Value, RuntimeError>),
+    /// A [`Self::Pure`] handler whose row binds only some argument values:
+    /// `None` means these arguments are outside the row's signature, and the
+    /// call takes the cascades (the way a multi candidate fails to bind).
+    Narrow(NarrowFn),
 }
 
 /// One built-in method: see the module docs.
@@ -79,6 +91,10 @@ static FAMILIES: &[&[MethodRow]] = &[
     str::ROWS,
     str::STR_TEXT_ROWS,
     str::COOL_TEXT_ROWS,
+    str_search::STR_ROWS,
+    str_search::COOL_ROWS,
+    str_search::STR_SUBSTR_2,
+    str_search::COOL_SUBSTR_2,
     int::ROWS,
     num::ROWS,
     rational::RAT_ROWS,
@@ -89,6 +105,11 @@ static FAMILIES: &[&[MethodRow]] = &[
     real::RAT_ROWS,
     real::FAT_RAT_ROWS,
     real::COMPLEX_ROWS,
+    coerce::INT_ROWS,
+    coerce::NUM_ROWS,
+    coerce::RAT_ROWS,
+    coerce::FAT_RAT_ROWS,
+    coerce::COMPLEX_ROWS,
 ];
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.
@@ -118,23 +139,43 @@ const SHAPES: [DispatchShape; 9] = [
     DispatchShape::Complex,
 ];
 
-/// `(shape, method) -> row`, resolved along each shape's MRO, plus the set of
-/// method names any row has.
+/// `(shape, method, arity) -> row`, resolved along each shape's MRO, plus the
+/// arities each method name has rows for.
 struct Table {
-    rows: FxHashMap<(DispatchShape, Symbol), RowId>,
+    rows: FxHashMap<(DispatchShape, Symbol, u8), RowId>,
     /// Every row once, indexed by [`RowId`].
     all: Vec<&'static MethodRow>,
-    /// One bit per `Symbol` id that names some row. Most calls are to methods
-    /// with no row yet; testing a bit answers those without hashing.
-    names: Vec<u64>,
+    /// Per `Symbol` id, one bit per arity some row with that name takes (bit
+    /// `a` for `a` arguments). Most calls are to methods with no row, or with
+    /// a row for another arity (`$s.index($n, $from)` beside the one-needle
+    /// row); testing a bit answers those without hashing.
+    arities: Vec<u8>,
+    /// Per `Symbol` id, one bit per [`DispatchShape`] some row with that name
+    /// is resolved for. A name with rows for other receivers (`Int` has rows
+    /// on the numeric types, none on `Str`) is refused for this one by a bit
+    /// test too, without the hash lookup or a call site's memo.
+    shapes: Vec<u16>,
 }
 
 impl Table {
-    fn has_name(&self, method: Symbol) -> bool {
-        let id = method.id() as usize;
-        self.names
-            .get(id / 64)
-            .is_some_and(|word| word & (1 << (id % 64)) != 0)
+    /// Whether some row with `method`'s name is resolved for `shape`.
+    // Cost: O(1), a bit test.
+    #[inline]
+    fn has_shape(&self, method: Symbol, shape: DispatchShape) -> bool {
+        self.shapes
+            .get(method.id() as usize)
+            .is_some_and(|bits| bits & (1 << (shape as u16)) != 0)
+    }
+
+    /// Whether some row is named `method` and takes `arity` arguments.
+    // Cost: O(1), a bit test.
+    #[inline]
+    fn has_name(&self, method: Symbol, arity: usize) -> bool {
+        arity < 8
+            && self
+                .arities
+                .get(method.id() as usize)
+                .is_some_and(|bits| bits & (1 << arity) != 0)
     }
 }
 
@@ -163,7 +204,8 @@ fn table() -> &'static Table {
     TABLE.get_or_init(|| {
         let all: Vec<&'static MethodRow> = FAMILIES.iter().flat_map(|rows| rows.iter()).collect();
         let mut rows = FxHashMap::default();
-        let mut names = Vec::new();
+        let mut arities = Vec::new();
+        let mut shapes = Vec::new();
         for shape in SHAPES {
             let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape_type(shape))
             else {
@@ -178,25 +220,45 @@ fn table() -> &'static Table {
                     {
                         let name = Symbol::intern(row.name);
                         let id = RowId(id);
-                        rows.entry((shape, name)).or_insert(id);
+                        rows.entry((shape, name, row.arity)).or_insert(id);
                         let id = name.id() as usize;
-                        if names.len() <= id / 64 {
-                            names.resize(id / 64 + 1, 0u64);
+                        if arities.len() <= id {
+                            arities.resize(id + 1, 0u8);
                         }
-                        names[id / 64] |= 1 << (id % 64);
+                        if row.arity < 8 {
+                            arities[id] |= 1 << row.arity;
+                        }
+                        if shapes.len() <= id {
+                            shapes.resize(id + 1, 0u16);
+                        }
+                        shapes[id] |= 1 << (shape as u16);
                     }
                 }
             }
         }
-        Table { rows, all, names }
+        Table {
+            rows,
+            all,
+            arities,
+            shapes,
+        }
     })
 }
 
-/// Whether any row is named `method`: the test every lookup makes first.
+/// Whether any row is named `method` and takes `arity` arguments: the test
+/// every lookup makes first.
 // Cost: O(1), a bit test.
 #[inline]
-pub(crate) fn names_a_row(method: Symbol) -> bool {
-    table().has_name(method)
+pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
+    table().has_name(method, arity)
+}
+
+/// Whether a receiver of `shape` may have a row for `method`: the second bit
+/// test, once the receiver's shape is known. `false` is definite.
+// Cost: O(1), a bit test.
+#[inline]
+pub(crate) fn shape_has_row(shape: DispatchShape, method: Symbol) -> bool {
+    table().has_shape(method, shape)
 }
 
 /// The row a plain receiver of `shape` dispatches `method` to when called
@@ -205,11 +267,11 @@ pub(crate) fn names_a_row(method: Symbol) -> bool {
 #[inline]
 pub(crate) fn resolve(shape: DispatchShape, method: Symbol, arity: usize) -> Option<RowId> {
     let table = table();
-    if !table.has_name(method) {
+    if !table.has_name(method, arity) || !table.has_shape(method, shape) {
         return None;
     }
-    let id = *table.rows.get(&(shape, method))?;
-    (usize::from(table.all[usize::from(id.0)].arity) == arity).then_some(id)
+    let arity = u8::try_from(arity).ok()?;
+    table.rows.get(&(shape, method, arity)).copied()
 }
 
 /// The row `id` names.
@@ -219,25 +281,54 @@ pub(crate) fn row(id: RowId) -> &'static MethodRow {
     table().all[usize::from(id.0)]
 }
 
-/// Run row `id`'s handler. `args` must have the row's arity, and `target`
-/// the shape the row was resolved for.
+/// Run row `id`'s handler, or `None` when a [`Handler::Narrow`] row does not
+/// bind these arguments. `args` must have the row's arity and be plain
+/// scalars ([`plain_args`]), and `target` must have the shape the row was
+/// resolved for.
 // Cost: O(1) plus the handler's own cost.
 #[inline]
-pub(crate) fn invoke(id: RowId, target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+pub(crate) fn invoke(
+    id: RowId,
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     match row(id).handler {
-        Handler::Pure(f) => f(target, args),
+        Handler::Pure(f) => Some(f(target, args)),
+        Handler::Narrow(f) => f(target, args),
     }
+}
+
+/// Whether every argument is a plain scalar a row may be handed: a `Str` or
+/// a number. Named arguments arrive as `Pair`s, and a `Junction` (which must
+/// autothread), a `Failure`, a lazy `Seq`, a `Regex`, a list or a type object
+/// each needs a probe the table skips, so a call carrying any of them takes
+/// the cascades.
+// Cost: O(a), a = arguments (one tag probe each).
+#[inline]
+pub(crate) fn plain_args(args: &[Value]) -> bool {
+    args.iter().all(|arg| {
+        matches!(
+            arg.dispatch_shape(),
+            Some(
+                DispatchShape::Str
+                    | DispatchShape::Int
+                    | DispatchShape::Num
+                    | DispatchShape::Rat
+                    | DispatchShape::FatRat
+            )
+        )
+    })
 }
 
 /// The row a plain receiver of `shape` dispatches `method` to, if any (the
 /// lookup [`try_dispatch`] makes, for tests).
 #[cfg(test)]
-fn lookup(shape: DispatchShape, method: Symbol) -> Option<&'static MethodRow> {
+fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
     let table = table();
-    if !table.has_name(method) {
+    if !table.has_name(method, usize::from(arity)) {
         return None;
     }
-    table.rows.get(&(shape, method)).map(|id| row(*id))
+    table.rows.get(&(shape, method, arity)).map(|id| row(*id))
 }
 
 /// Answer a built-in method call from its row, or `None` to take the cascades.
@@ -267,12 +358,16 @@ pub(crate) fn answer(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !table().has_name(method) {
+    if !table().has_name(method, args.len()) {
         return None;
     }
     let shape = target.dispatch_shape()?;
     let id = resolve(shape, method, args.len())?;
-    Some(invoke(id, target, args))
+    // After the lookup: a call that misses never pays for the argument scan.
+    if !plain_args(args) {
+        return None;
+    }
+    invoke(id, target, args)
 }
 
 /// In debug builds, re-answer a table hit through the cascades and assert

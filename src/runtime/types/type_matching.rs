@@ -446,7 +446,7 @@ impl Interpreter {
     /// from a stable package, and Raku closes `where` over the declaration
     /// scope, so this matches or improves on the prior behavior).
     fn compile_subset_predicate(&mut self, name: &str, body: &[Stmt]) -> SubsetPredicateCompiled {
-        if let Some(cached) = self.subset_predicate_cache.get(name) {
+        if let Some(cached) = self.types.subset_predicate_cache.get(name) {
             return cached.clone();
         }
         let mut compiler = crate::compiler::Compiler::new();
@@ -459,14 +459,16 @@ impl Interpreter {
             self.current_package()
         };
         compiler.set_current_package(scope);
-        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });
         let (code, compiled_fns) = compiler.compile(body);
         let compiled = Arc::new((code, compiled_fns));
-        self.subset_predicate_cache
+        self.types
+            .subset_predicate_cache
             .insert(name.to_string(), compiled.clone());
         compiled
     }
@@ -490,7 +492,7 @@ impl Interpreter {
         if rest.is_empty() {
             return None;
         }
-        if let Some(name) = self.inline_subset_constraints.get(constraint) {
+        if let Some(name) = self.types.inline_subset_constraints.get(constraint) {
             return Some(name.clone());
         }
 
@@ -499,7 +501,8 @@ impl Interpreter {
         constraint.hash(&mut hasher);
         let name = format!("__mutsu_anon_hash_key_subset_{:x}", hasher.finish());
         if self.registry().subsets.contains_key(&name) {
-            self.inline_subset_constraints
+            self.types
+                .inline_subset_constraints
                 .insert(constraint.to_string(), name.clone());
             return Some(name);
         }
@@ -516,7 +519,8 @@ impl Interpreter {
                 _ => None,
             })?;
         self.register_subset_decl(&name, &base, predicate.as_ref(), None, &version, true, 0);
-        self.inline_subset_constraints
+        self.types
+            .inline_subset_constraints
             .insert(constraint.to_string(), name.clone());
         Some(name)
     }
@@ -634,8 +638,8 @@ impl Interpreter {
         if (constraint.starts_with("::(")
             || constraint.contains('[')
             || Self::any_type_capture_seen()
-            || !self.package_type_aliases.is_empty()
-            || !self.module_scope_lexicals.is_empty())
+            || !self.types.package_type_aliases.is_empty()
+            || !self.module.module_scope_lexicals.is_empty())
             && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
         {
             return self.type_matches_value(&resolved_constraint, value);

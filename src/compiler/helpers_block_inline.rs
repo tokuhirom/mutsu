@@ -492,6 +492,7 @@ impl Compiler {
                                 DeclReset::Keep
                             },
                             type_follows: false,
+                            bind_declaration: false,
                         });
                         // Register the declared type constraint (e.g. `my Int %h`)
                         // so element type-checks and `:=` bind type-checks see it,

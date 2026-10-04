@@ -125,14 +125,18 @@ impl Interpreter {
         // Formatted::Named(:x(1))` names the role by its own written compound
         // short name, which is otherwise unresolvable from a call site
         // (issue #8578).
-        if name.contains("::") && (self.has_class(name) || self.has_role(name)) {
+        if crate::qualified::is_qualified_str(name) && (self.has_class(name) || self.has_role(name))
+        {
             return None;
         }
         self.bare_name_packages().into_iter().find_map(|pkg| {
-            if pkg == "GLOBAL" {
+            if crate::qualified::is_global_name(&pkg) {
                 return None;
             }
-            let key = format!("{}::{}", pkg.split("::&").next().unwrap_or(&pkg), name);
+            let key =
+                crate::qualified::qualified_text(pkg.split("::&").next().unwrap_or(&pkg), name)
+                    .as_str()
+                    .to_string();
             // `pkg` re-derived from a compound declared name is not a scope —
             // see `Registry::compound_declared_types`.
             if self.registry().compound_declared_types.contains_key(&key) {
@@ -154,10 +158,10 @@ impl Interpreter {
         // it). Without this, `{ my class A {} }; my A $x` would report the
         // in-scope "insufficiently type-like" BadType instead of raku's
         // "Type 'A' is not declared".
-        if !name.contains("::") && self.is_name_suppressed(name) {
+        if !crate::qualified::is_qualified_str(name) && self.is_name_suppressed(name) {
             return false;
         }
-        self.chain_declared_packages.contains(name)
+        self.module.chain_declared_packages.contains(name)
             || (!crate::env::is_magic_sigilless_key(name)
                 && matches!(
                     self.env.get(name).map(Value::view),
@@ -246,12 +250,16 @@ impl Interpreter {
         // ~220 entries, each one a `rsplit_once` substring search), because a
         // role name like `YAMLish::Single` reaches here on every `.new` of a
         // class that composes it (`seed_quanthash_storage`).
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             return None;
         }
         reg.classes
             .iter()
-            .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+            .find(|(k, _)| {
+                crate::qualified::split_qualified(crate::qualified::known_symbol(k))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                    .is_some_and(|(_, short)| short == name)
+            })
             .map(|(k, cd)| (k.clone(), cd.parents.clone()))
     }
 
@@ -462,7 +470,7 @@ impl Interpreter {
     /// [`RegistryReadGuard`](crate::runtime::registry::RegistryReadGuard)).
     #[inline]
     pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
-        crate::runtime::registry::RegistryReadGuard::new(&self.registry, "registry")
+        crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry")
     }
 
     /// Current registry write generation — bumped on every `registry_mut()`
@@ -471,7 +479,8 @@ impl Interpreter {
     /// caches only when the function set could actually have changed).
     #[inline]
     pub(crate) fn registry_write_generation(&self) -> u64 {
-        self.registry_write_gen
+        self.types
+            .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -481,9 +490,10 @@ impl Interpreter {
     pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
         // Any write access may mutate the registry, so bump the generation
         // several resolution caches consult (cheap relaxed increment).
-        self.registry_write_gen
+        self.types
+            .registry_write_gen
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        crate::runtime::registry::RegistryWriteGuard::new(&self.registry, "registry")
+        crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry, "registry")
     }
 
     /// Read access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
@@ -492,7 +502,7 @@ impl Interpreter {
     /// reentrant). Use as `self.io_handles().map.get(&id)`.
     #[inline]
     pub(crate) fn io_handles(&self) -> io_handles::IoHandlesReadGuard<'_> {
-        io_handles::IoHandlesReadGuard::new(&self.io_handles, "io_handles")
+        io_handles::IoHandlesReadGuard::new(&self.io.io_handles, "io_handles")
     }
 
     /// Read access to the shared [`OutputSink`]. Same guard discipline as
@@ -500,21 +510,21 @@ impl Interpreter {
     /// re-enters another output operation.
     #[inline]
     pub(crate) fn output_sink(&self) -> output_sink::OutputSinkReadGuard<'_> {
-        output_sink::OutputSinkReadGuard::new(&self.output_sink, "output_sink")
+        output_sink::OutputSinkReadGuard::new(&self.io.output_sink, "output_sink")
     }
 
     /// Write access to the shared [`OutputSink`]. Same guard discipline as
     /// [`Self::output_sink`].
     #[inline]
     pub(crate) fn output_sink_mut(&self) -> output_sink::OutputSinkWriteGuard<'_> {
-        output_sink::OutputSinkWriteGuard::new(&self.output_sink, "output_sink")
+        output_sink::OutputSinkWriteGuard::new(&self.io.output_sink, "output_sink")
     }
 
     /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
     /// Same guard discipline as [`Self::io_handles`].
     #[inline]
     pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
-        io_handles::IoHandlesWriteGuard::new(&self.io_handles, "io_handles")
+        io_handles::IoHandlesWriteGuard::new(&self.io.io_handles, "io_handles")
     }
 
     /// Allocate a fresh handle id, store `state` under it, and return the id.

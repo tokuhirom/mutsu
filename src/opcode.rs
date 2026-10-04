@@ -2481,7 +2481,7 @@ pub(crate) enum OpCode {
     /// actually forces it, so a stored unhandled `Failure` must not explode
     /// merely because the bare mention was reached — Raku decides a
     /// Failure's fate at *construction* time (throwing immediately there
-    /// under `use fatal`, matched by the various `self.fatal_mode`
+    /// under `use fatal`, matched by the various `self.module.fatal_mode`
     /// assignment-time checks), not by re-examining it at every later
     /// mention. Every other sunk shape (fresh calls, method calls, `sink`
     /// prefix, ...) keeps `true`, matching prior behavior.
@@ -4567,6 +4567,9 @@ pub(crate) enum OpCode {
         /// is skipped: clearing an entry only to re-insert it on the next op
         /// cost a remove plus an insert per execution of a typed `my` (#11467).
         type_follows: bool,
+        /// `:=` binds the initializer's container. Its pre-initializer value
+        /// must not be replaced with a type-object seed.
+        bind_declaration: bool,
     },
     /// Register a variable declared `is export`, after its value has been
     /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the
@@ -7450,6 +7453,11 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
+    /// Whether this code reads its call's argument capture
+    /// (`nqp::usecapture` / `nqp::savecapture`). Set by the compiler. Such
+    /// code is kept off the frameless fast/light call paths, and every other
+    /// entry records the capture for it (`runtime::call_capture`).
+    pub(crate) uses_capture: bool,
     /// True if this code calls `samewith` directly. `samewith` re-dispatches
     /// through the interpreter's samewith context stack, which only the full
     /// call paths push, so the light call paths exclude such a body (a plain
@@ -8104,6 +8112,7 @@ impl CompiledCode {
             mentions_native_scalar_type_name: false,
             has_once: false,
             uses_callframe: false,
+            uses_capture: false,
             uses_samewith: false,
             needs_reflective_capture: false,
             uses_dispatcher: false,

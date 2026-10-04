@@ -165,7 +165,27 @@ impl Interpreter {
             if is_nil || is_dead_seed {
                 let init_val = self.typed_scalar_nil_seed_value(name, &constraint);
                 self.set_env_with_main_alias(name, init_val.clone());
-                self.update_local_if_exists(code, name, &init_val);
+                // A declaration's SetVarDynamic directly precedes this op.
+                // Its slot is authoritative when an inner `my` shadows an
+                // outer variable with the same name: a by-name lookup would
+                // seed the outer slot and leave the inner one at Nil.
+                let declaration_slot =
+                    (*ip)
+                        .checked_sub(1)
+                        .and_then(|previous| match code.ops.get(previous) {
+                            Some(OpCode::SetVarDynamic {
+                                name_idx: preceding_name,
+                                local_slot: Some(slot),
+                                type_follows: true,
+                                ..
+                            }) if *preceding_name == name_idx => Some(*slot as usize),
+                            _ => None,
+                        });
+                if let Some(slot) = declaration_slot {
+                    self.update_local_at_slot(code, slot, name, &init_val);
+                } else {
+                    self.update_local_if_exists(code, name, &init_val);
+                }
             }
         } else if let Some(value) = (!hoisted)
             .then(|| self.get_env_with_main_alias(name))
@@ -217,7 +237,7 @@ impl Interpreter {
         tc_idx: u32,
         constraint: &str,
     ) -> bool {
-        if Self::any_type_capture_seen() || !self.package_type_aliases.is_empty() {
+        if Self::any_type_capture_seen() || !self.types.package_type_aliases.is_empty() {
             return false;
         }
         let generation = self.registry_write_generation();
@@ -333,6 +353,13 @@ impl Interpreter {
                 .then(|| loan_env!(self, type_arg_value_from_name(constraint)));
             match parametric {
                 Some(v) if matches!(v.view(), ValueView::ParametricRole { .. }) => v,
+                // A class with its own `^parameterize` (upstream NativeCall's
+                // `Pointer[uint16]`): the type object that meta-method built.
+                _ if constraint.contains('[')
+                    && let Some(v) = loan_env!(self, meta_parameterized_type(constraint)) =>
+                {
+                    v
+                }
                 _ => {
                     // The seeded package must carry the NOMINAL type name —
                     // smileys stripped (`my Int:_ $a` seeds `Int`, not
@@ -367,7 +394,7 @@ impl Interpreter {
         free_var_store: bool,
     ) -> (Option<String>, bool) {
         if free_var_store
-            && let Some(slot) = self.unit_lexical_slot(name)
+            && let Some(slot) = self.unit_lexical_slot(name, None)
             && let ValueView::ContainerRef(cell) = slot.view()
         {
             let constraint = crate::value::lookup_cell_constraint(&cell)

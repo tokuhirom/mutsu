@@ -298,8 +298,8 @@ impl Interpreter {
                 self.mark_hoisted_decl_reached(&resolved_name);
             }
             if preregistered {
-                if *multi && !self.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name);
+                if *multi && !self.module.suppress_exports {
+                    self.refresh_exported_multi_family(&resolved_name, &[]);
                 }
                 return Ok(());
             }
@@ -366,7 +366,9 @@ impl Interpreter {
             // below (cache invalidation, `&`-param shadow tracking, export, native
             // descriptor, signature alternates) needs to re-run — they were all
             // done by the first installation and persist.
-            if outcome == crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+            if let crate::runtime::registration_sub::SubRegisterOutcome::Installed { multi_keys } =
+                &outcome
+            {
                 // If this sub carries the `is native(...)` trait, record its C-FFI
                 // descriptor so calls route through NativeCall instead of the body.
                 if custom_traits.iter().any(|(t, _)| t == "native") {
@@ -404,12 +406,13 @@ impl Interpreter {
                 // `fn_base_name_registered` turns into a located panic.
                 self.invalidate_fn_resolution_for_keys([Symbol::intern(&resolved_name)]);
                 self.note_amp_param_shadowed_names(param_defs);
-                if *is_export && !self.suppress_exports {
+                if *is_export && !self.module.suppress_exports {
                     let pkg = self.current_package();
-                    self.register_exported_sub(
+                    self.register_exported_multi_candidates(
                         pkg.clone(),
                         resolved_name.clone(),
                         export_tags.clone(),
+                        multi_keys,
                     );
                     // If a custom `is` trait mixed a role into this routine, the
                     // resulting Mixin lives in the lexical env as `&name` but would
@@ -423,7 +426,7 @@ impl Interpreter {
                         self.record_exported_sub_value(pkg, resolved_name.clone(), val);
                     }
                 } else if !*is_export
-                    && !self.suppress_exports
+                    && !self.module.suppress_exports
                     && custom_traits.iter().any(|(t, _)| t == "__our_scoped")
                 {
                     // An `our`-scoped sub/multi declared directly inside a
@@ -439,7 +442,7 @@ impl Interpreter {
                     // stash.
                     self.export_implicit_stash_sub(&resolved_name, *multi);
                 } else if *multi
-                    && !self.suppress_exports
+                    && !self.module.suppress_exports
                     && self.is_our_scoped_proto(&resolved_name)
                 {
                     // A bare `multi sub` candidate is never itself `our`-scoped
@@ -452,8 +455,8 @@ impl Interpreter {
                     // the proto commonly precedes its candidates.
                     self.export_implicit_stash_proto(&resolved_name);
                 }
-                if *multi && !self.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name);
+                if *multi && !self.module.suppress_exports {
+                    self.refresh_exported_multi_family(&resolved_name, multi_keys);
                 }
                 // mutsu#10050: `is export` routines nested in this body are
                 // exported at compile time, not when this routine runs.
@@ -467,7 +470,7 @@ impl Interpreter {
                     // own fingerprint/facts, so its caches never need a lazy
                     // walk over the (possibly empty) plan body.
                     let alt_metadata = alternate_metadata.get(slot);
-                    self.loan_env_for(|i| {
+                    let alt_outcome = self.loan_env_for(|i| {
                         i.register_sub_alternate_decl(
                             &resolved_name,
                             alt_params,
@@ -485,6 +488,16 @@ impl Interpreter {
                             alt_compiled,
                         )
                     })?;
+                    // An alternate is a candidate of the same family: alias it
+                    // into the family's export stash as it arrives (#11761).
+                    if *multi
+                        && !self.module.suppress_exports
+                        && let crate::runtime::registration_sub::SubRegisterOutcome::Installed {
+                            multi_keys,
+                        } = &alt_outcome
+                    {
+                        self.refresh_exported_multi_family(&resolved_name, multi_keys);
+                    }
                 }
             }
             // An `our sub` declared in a bare block closes over the block's `my`
@@ -1170,10 +1183,10 @@ impl Interpreter {
             // `nativecast`ed handle carries only the short class name.
             let short = Self::native_struct_class_name(class_name);
             if short != class_name {
-                crate::runtime::cow_table_mut(&mut self.native_call_specs)
+                crate::runtime::cow_table_mut(&mut self.module.native_call_specs)
                     .insert(Self::native_method_key(&short, name), spec.clone());
             }
-            crate::runtime::cow_table_mut(&mut self.native_call_specs)
+            crate::runtime::cow_table_mut(&mut self.module.native_call_specs)
                 .insert(Self::native_method_key(class_name, name), spec);
             return Ok(());
         }
@@ -1187,9 +1200,10 @@ impl Interpreter {
         // `resolve_native_call_spec` can walk `bare_name_packages()` and find
         // this declaration at its own scope even when `pkg == "GLOBAL"`.
         let key = crate::qualified::qualified(self.current_package_sym(), Symbol::intern(name));
-        crate::runtime::cow_table_mut(&mut self.native_call_specs)
+        crate::runtime::cow_table_mut(&mut self.module.native_call_specs)
             .insert(key.as_str().to_string(), spec.clone());
-        crate::runtime::cow_table_mut(&mut self.native_call_specs).insert(name.to_string(), spec);
+        crate::runtime::cow_table_mut(&mut self.module.native_call_specs)
+            .insert(name.to_string(), spec);
         Ok(())
     }
 
@@ -1410,7 +1424,7 @@ impl Interpreter {
         // `token foo is export` installs a Regex under `&foo`, exactly like a
         // `sub foo is export` installs a Sub, so it is recorded in the same
         // export table and `use`-ing the module imports it by name.
-        if plan.is_export && !self.suppress_exports {
+        if plan.is_export && !self.module.suppress_exports {
             let pkg = self.current_package();
             let tags = plan.export_tags.clone();
             let key =
@@ -1496,11 +1510,11 @@ impl Interpreter {
             // Record the export so consumers/MAIN-dispatch see the whole multi
             // family. A `proto … is export` exports its candidates too (raku),
             // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
-            if !self.suppress_exports {
+            if !self.module.suppress_exports {
                 let pkg = self.current_package();
                 self.register_exported_sub(pkg, name_str.clone(), export_tags.clone());
             }
-        } else if *is_our && !self.suppress_exports {
+        } else if *is_our && !self.module.suppress_exports {
             // An `our proto sub` declared directly inside a module's own `my
             // package EXPORT::<tag> { ... }` block is part of that tag's
             // export list by construction, the proto-family counterpart of

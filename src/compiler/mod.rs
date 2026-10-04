@@ -1073,6 +1073,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod amp_scope;
+mod atomic_elem_forms;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
@@ -1125,6 +1126,8 @@ mod lazy_body_reads;
 pub(crate) mod lex_scope;
 mod lexical_stash;
 mod lexsub_aliases;
+mod native_str_coercion;
+mod nqp_atomic_forms;
 mod nqp_cond_forms;
 pub(crate) mod nqp_forms;
 mod nqp_p6_forms;

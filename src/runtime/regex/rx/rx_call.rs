@@ -23,6 +23,7 @@ use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dyn
 use crate::runtime::regex_types::{NamedAtom, RegexAtom, RegexCaptures};
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::vm::vm_stats_regex_vm::record_regex_eager;
 
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
 type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallVerdict)>;
@@ -77,6 +78,15 @@ pub(super) enum CallTarget {
     /// whose ends the all-ends entry finds by running its mark-stripped
     /// program (anything it does walk, that entry counts as walked).
     Eager(Arc<TokenCandidates>, &'static str),
+    /// A token with a wrap chain (`.^find_method('t').wrap(..)`): the wrapper
+    /// is user code around the rule's invocation, run once
+    /// (`try_wrapped_token_subrule_dispatch`) for at most one end.
+    Wrapped,
+    /// A rule of a grammar under a custom HOW, whose `find_method` may hand back
+    /// a wrapper to run instead (`try_custom_how_subrule_dispatch`); when it
+    /// does not, the candidates are evaluated eagerly as for
+    /// [`CallTarget::Eager`], with left-recursion bookkeeping forced.
+    CustomHow(Arc<TokenCandidates>),
 }
 
 impl Interpreter {
@@ -127,13 +137,13 @@ impl Interpreter {
                 let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, args);
                 // No candidate for these arguments: a grammar method runs with
                 // them. Anything else — a builtin, or a rule none of whose
-                // candidates binds them (a type error the producer raises) —
-                // is the walk's producer's to dispatch.
+                // candidates binds them (the resolution raised the type error)
+                // — is matched as a call of no rule.
                 if raw_empty {
                     if self.subrule_names_user_method(spec, pkg) {
                         Ok(CallTarget::Method)
                     } else {
-                        Err("args-unbound")
+                        Ok(CallTarget::Single)
                     }
                 } else {
                     self.call_target_from_candidates(name, pkg, ic, candidates)
@@ -150,15 +160,36 @@ impl Interpreter {
             }
             verdict => verdict,
         };
+        // User dispatch around the rule's invocation, which the walk's
+        // producer tries before anything else: a wrapped token, then a custom
+        // HOW's `find_method` for a call that names rules.
+        let verdict = if self.token_method_has_wrap_chain(pkg.as_str(), &spec.lookup_name) {
+            Ok(CallTarget::Wrapped)
+        } else if !self.registry().grammar_custom_how.is_empty()
+            && matches!(
+                verdict,
+                Ok(CallTarget::Plain(..) | CallTarget::Proto(_) | CallTarget::Eager(..))
+            )
+        {
+            let (candidates, _) =
+                self.parsed_subrule_candidates(spec, pkg, args.as_deref().unwrap_or(&[]));
+            Ok(CallTarget::CustomHow(candidates))
+        } else {
+            verdict
+        };
         // Only a call the engine evaluates keeps the window: the producer
         // installs its own.
         let window = match (&verdict, window) {
             (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => {
                 self.rx_call_rule_frame(name, pkg, window)
             }
-            // The seed loop pushes the routine frame itself, around each
+            // An eager call holds the window around its evaluation only; the
+            // seed loop pushes the routine frame itself, around each
             // candidate's evaluation (`subrule_candidate_ends_with_frame`).
-            (Ok(CallTarget::Eager(..)), window) => self
+            (
+                Ok(CallTarget::Eager(..) | CallTarget::Wrapped | CallTarget::CustomHow(_)),
+                window,
+            ) => self
                 .rx_call_rule_frame(name, pkg, window)
                 .map(|w| CallWindow { routine: None, ..w }),
             (_, Some(saved)) => {
@@ -195,7 +226,9 @@ impl Interpreter {
         if !ANY_DYNAMIC_TOKEN_PARAM.load(std::sync::atomic::Ordering::Relaxed)
             && !regex_args_have_opaque(args)
         {
-            return None;
+            // The callee's `"…"` atoms read their qq thunks' results, run at
+            // rule entry, from the window.
+            return self.install_subrule_qq_thunks(&spec.lookup_name, pkg, None);
         }
         self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, args, None)
     }
@@ -281,23 +314,13 @@ impl Interpreter {
     }
 
     /// What keeps any call of `<name>` off the compiled engine, whatever its
-    /// arguments: a name resolved per call, or dispatch the engine does not
-    /// model.
-    // Cost: O(1) while no method is wrapped anywhere; else O(m) for the
-    // caller package's MRO of m classes (`token_method_wrap_chain`).
-    fn rx_call_blockers(&self, name: &NamedAtom, pkg: Symbol) -> Result<(), &'static str> {
+    /// arguments: a name resolved per call.
+    // Cost: O(1).
+    fn rx_call_blockers(&self, name: &NamedAtom, _pkg: Symbol) -> Result<(), &'static str> {
         let spec = name.spec();
         // `<::(EXPR)>`: the rule's name is computed per call.
         if spec.lookup_name == "::" {
             return Err("symbolic-name");
-        }
-        // Dispatch the compiled engine does not model: a wrapped token (its
-        // wrapper is user code around the rule's invocation), a custom HOW.
-        if self.token_method_has_wrap_chain(pkg.as_str(), &spec.lookup_name) {
-            return Err("wrapped");
-        }
-        if !self.registry().grammar_custom_how.is_empty() {
-            return Err("custom-how");
         }
         Ok(())
     }
@@ -336,8 +359,9 @@ impl Interpreter {
         candidates: Arc<TokenCandidates>,
     ) -> CallVerdict {
         let spec = name.spec();
+        // Candidates none of which parses: a call of no rule, as in the walk.
         if candidates.is_empty() {
-            return Err("no-candidates");
+            return Ok(CallTarget::Single);
         }
         // `:m` remaps positions across the whole result set, which the all-ends
         // entry does over the mark-stripped subject.
@@ -358,7 +382,7 @@ impl Interpreter {
                 .filter_map(|(_, _, sym)| sym.as_deref())
                 .any(|k| self.proto_candidate_has_wrap_chain(pkg, &spec.lookup_name, k))
         {
-            return Err("wrapped");
+            return Ok(CallTarget::Eager(candidates, "wrapped-candidate"));
         }
         // The walk's eager arm scopes the caller's `:i` over a proto candidate's
         // body (`subrule_candidate_ends`), which needs the body compiled under it:
@@ -366,9 +390,6 @@ impl Interpreter {
         // does not inherit `:i` — and neither does rakudo.
         if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
             return Err("proto-inherited-i");
-        }
-        if self.subrule_has_qq_thunks(&spec.lookup_name, pkg) {
-            return Err("qq-thunks");
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
             return Ok(CallTarget::Eager(candidates, "lr-seed"));
@@ -389,18 +410,19 @@ impl Interpreter {
         ))
     }
 
-    /// Evaluate a [`CallTarget::Eager`] call: every end of the callee at `pos`
-    /// through the growing-seed loop, with the call's `window` installed for
+    /// Evaluate a call the engine does not enter as a frame — a
+    /// [`CallTarget::Eager`], [`CallTarget::Wrapped`] or
+    /// [`CallTarget::CustomHow`] call — with the call's `window` installed for
     /// the evaluation only (it is eager, so nothing resumes in it), and the
     /// window's final values filed on each end's Match for its action, as the
     /// walk's producer files them. LOWEST PRIORITY FIRST.
-    // Cost: the seed loop's (`subrule_seed_ends`), plus O(b + e·b) to install,
-    // read back and file a window of b bindings on e ends.
+    // Cost: the target's evaluation, plus O(b + e·b) to install, read back and
+    // file a window of b bindings on e ends.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn rx_lr_call_ends(
+    pub(super) fn rx_eager_call_ends(
         &mut self,
         atom: &RegexAtom,
-        candidates: &TokenCandidates,
+        target: &CallTarget,
         window: Option<CallWindow>,
         args: &[Value],
         chars: &[char],
@@ -411,19 +433,36 @@ impl Interpreter {
         let RegexAtom::Named(name) = atom else {
             return Vec::new();
         };
+        let spec = name.spec();
         if let Some(keys) = window.as_ref().and_then(|w| w.scope_keys.as_ref()) {
             grammar_dynvar_scope_push(keys.iter().cloned());
         }
-        let mut out = self.subrule_seed_ends(
-            name.spec(),
-            candidates,
-            chars,
-            pos,
-            pkg,
-            args,
-            false,
-            options,
-        );
+        // The growing-seed loop evaluates the candidates eagerly, through the
+        // all-ends entry: an eager call on `MUTSU_VM_STATS`.
+        match target {
+            CallTarget::Eager(_, why) => record_regex_eager(why),
+            CallTarget::CustomHow(_) => record_regex_eager("custom-how"),
+            _ => {}
+        }
+        let mut out = match target {
+            CallTarget::Eager(candidates, _) => {
+                self.subrule_seed_ends(spec, candidates, chars, pos, pkg, args, false, options)
+            }
+            CallTarget::Wrapped => self
+                .try_wrapped_token_subrule_dispatch(spec, chars, pos, pkg, args)
+                .unwrap_or_default(),
+            CallTarget::CustomHow(candidates) => {
+                match self.try_custom_how_subrule_dispatch(spec, chars, pos, pkg, args) {
+                    Some(ends) => ends,
+                    None => self
+                        .subrule_seed_ends(spec, candidates, chars, pos, pkg, args, true, options),
+                }
+            }
+            _ => {
+                debug_assert!(false, "not an eager call target");
+                Vec::new()
+            }
+        };
         let Some(window) = window else {
             return out;
         };

@@ -2248,7 +2248,8 @@ impl Interpreter {
                     method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
                 ) && matches!(target.view(), ValueView::Array(..))
-                    && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
+                    && let Some((attrs_ref, attr_name)) =
+                        self.types.pending_proxy_subclass_attr.take()
                 {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethod",

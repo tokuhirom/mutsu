@@ -291,7 +291,7 @@ impl Interpreter {
             // native part of `new_type` — creating and registering the type —
             // has already run, so the base candidate simply returns the type
             // object under registration.
-            "new_type" => Some(match self.pending_declare_new_type.clone() {
+            "new_type" => Some(match self.types.pending_declare_new_type.clone() {
                 Some(type_obj) => Ok(type_obj),
                 // No DECLARE in flight: this is a plain
                 // `MyHOW.new_type(:name<X>)` on a user subclass of a builtin
@@ -790,7 +790,7 @@ impl Interpreter {
             if self.class_is_grammar(&class_name) {
                 continue;
             }
-            if self.user_declared_classes.contains(&name) {
+            if self.types.user_declared_classes.contains(&name) {
                 continue;
             }
             if let Some(res) = self.try_native_builtin_construct(*cn, args) {
@@ -1032,7 +1032,14 @@ impl Interpreter {
                     // method now always has a frame, so "frame exists, remaining
                     // empty" is the single exhaustion signal (the #6349
                     // `wrap_chain_exhausted` bool is retired).
-                    let result = if let Some(res) =
+                    // A role-qualified call's frame (`self.R::new(|%a)`) names a
+                    // method outside every class's chain: there is no native
+                    // base candidate behind it either (#11592).
+                    let role_qualified =
+                        self.dispatch.method_dispatch_stack[frame_idx].role_qualified;
+                    let result = if role_qualified {
+                        Value::NIL
+                    } else if let Some(res) =
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
                     {
                         res?
@@ -1830,7 +1837,7 @@ impl Interpreter {
         // ADR-0019 E9b-2: the `wrap_chain_exhausted` bool (#6349) is retired — a
         // wrapped method now always has a `method_dispatch_stack` frame, so its
         // exhaustion is already handled by the Method branch above.
-        if !self.method_class_stack.is_empty() {
+        if !self.types.method_class_stack.is_empty() {
             if tail_call {
                 return Err(RuntimeError::return_signal(Value::NIL));
             }

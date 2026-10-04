@@ -184,7 +184,7 @@ these preconditions:
   crate grows to include the bytecode representation; or (b) make `SubData` hold the compiled
   body through an opaque handle that the upper crate downcasts. A downcast on every call costs
   something, so this needs measuring before phase 4.
-- **`current_package`'s home** (D2 step 5).
+- ~~**`current_package`'s home** (D2 step 5).~~ Settled: `frame` (see Implementation status, `types`).
 - **Thread policy of each cache.** `clone_for_thread` starts all caches empty today. Whether some
   (the resolution caches of a large loaded program) should be shared should be measured on a
   spawn-heavy benchmark, not assumed.
@@ -231,6 +231,26 @@ these preconditions:
     package/unit-lexical, `state`, escaping-`our`, lexsub-alias, nested-capture, readonly and
     block-declaration fields. `new()`/`fork_for_thread()` are exactly the entries
     `Interpreter::new`/`clone_for_thread` spelled out per field, comments included; 266 → 226.
-  - Next: `io` (most of it already lives in `OutputSink`/`IoHandleTable`/`TapState`; its
-    `doc_comments`/`why_*` fields are declarator docs and need re-classifying first), then
-    `module` and `types`.
+  - `io`: done. `IoState` (`src/runtime/io_state.rs`) holds the 14 output-sink, `warn`
+    suppression, IO-handle, program-path/chroot, newline-mode, encoding-registry and TAP
+    fields; `fork_for_thread` also takes over the per-thread output-sink and handle-snapshot
+    construction `clone_for_thread` did inline. The four declarator-doc fields
+    (`doc_comments`, `doc_comment_list`, `why_cache`, `why_object_cache`) were re-classified
+    from `io` to `module` -- they are per-compilation-unit metadata, saved and restored
+    around a module load -- and moved into their own `DeclaratorDocs` holder
+    (`src/runtime/declarator_docs.rs`), so that save/restore is one clone; 226 → 210.
+  - `module`: done. `ModuleState` (`src/runtime/module_state.rs`) holds the 69 search-path,
+    loaded-module, per-load compunit/package, export/import, operator-import, distribution
+    and lexical-pragma fields (`DeclaratorDocs` stays a sibling holder of the same
+    subsystem). `new()`/`fork_for_thread()` are exactly the entries `Interpreter::new`/
+    `clone_for_thread` spelled out per field, comments included; 210 → 142.
+  - `types`: done. `TypeState` (`src/runtime/type_state.rs`) holds the 41 registry,
+    type-metadata and class/role/enum/subset declaration fields; `fork_for_thread` keeps the
+    copy-on-write registry/instance-metadata snapshots and the declared-name tables and starts
+    the in-flight declaration state fresh; 142 → 102. The open question of D2 step 5 is settled:
+    `current_package_sym` is `frame`. The VM switches it on every method dispatch and restores it
+    on return, as it does the routine stack, so it describes the running code and not the type
+    registry. It stays a direct field.
+  - Next: phase 3 has extracted every bounded subsystem. What is left on `Interpreter` is the
+    `frame` core (D1) and the `handoff`/`eval` side channels, which D3 turns into explicit
+    parameters.

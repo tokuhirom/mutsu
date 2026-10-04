@@ -321,7 +321,10 @@ impl Interpreter {
                 let resolved = captured_regex
                     .and_then(|v| Self::regex_pattern_of_value(v))
                     .or_else(|| {
-                        let qualified = format!("{}::{}", package.resolve(), name.resolve());
+                        let qualified =
+                            crate::qualified::qualified_text(package.resolve(), name.resolve())
+                                .as_str()
+                                .to_string();
                         self.extract_token_regex_pattern(&qualified)
                             .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
                     });

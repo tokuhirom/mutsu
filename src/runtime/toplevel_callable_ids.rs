@@ -63,6 +63,10 @@ pub(crate) struct ModuleToplevel {
     /// level, keyed by the declaring package (group 3,
     /// `runtime::toplevel_markers`).
     pub(crate) constant_markers: std::sync::Arc<crate::runtime::PackageKeyed<()>>,
+    /// Bare enum keys a loaded module's mainline declared at its top level,
+    /// keyed by the declaring package (`GLOBAL` for a package-less module
+    /// file; `runtime::enum_bare_names`).
+    pub(crate) enum_keys: std::sync::Arc<crate::runtime::PackageKeyed<Value>>,
     /// The depths the executing module mainline started at, while one runs.
     /// See [`Interpreter::run_module_mainline`].
     pub(crate) depth: Option<ModuleToplevelDepth>,
@@ -71,12 +75,13 @@ pub(crate) struct ModuleToplevel {
 impl ModuleToplevel {
     /// A spawned thread's copy: it shares the tables copy-on-write (#7796)
     /// but is not itself running a module mainline.
-    // Cost: O(1), three `Arc` bumps.
+    // Cost: O(1), four `Arc` bumps.
     pub(crate) fn for_thread(&self) -> Self {
         Self {
             callable_ids: self.callable_ids.clone(),
             package_symbols: self.package_symbols.clone(),
             constant_markers: self.constant_markers.clone(),
+            enum_keys: self.enum_keys.clone(),
             depth: None,
         }
     }
@@ -103,9 +108,9 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         let depth = self.current_toplevel_depth();
-        let saved = self.module_toplevel.depth.replace(depth);
+        let saved = self.module.module_toplevel.depth.replace(depth);
         let result = body(self);
-        self.module_toplevel.depth = saved;
+        self.module.module_toplevel.depth = saved;
         result
     }
 
@@ -127,7 +132,8 @@ impl Interpreter {
             // it in place rather than leave a stale id in front.
             && !self.env.contains_key_sym(key)
         {
-            crate::runtime::cow_table_mut(&mut self.module_toplevel.callable_ids).insert(key, id);
+            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.callable_ids)
+                .insert(key, id);
             return;
         }
         self.env.insert_sym_noting(key, Value::int(id));
@@ -137,7 +143,8 @@ impl Interpreter {
     /// the depths it started at (see [`Self::run_module_mainline`]).
     // Cost: O(1).
     pub(crate) fn at_module_toplevel(&self) -> bool {
-        self.module_toplevel
+        self.module
+            .module_toplevel
             .depth
             .is_some_and(|depth| depth == self.current_toplevel_depth())
     }
@@ -149,7 +156,7 @@ impl Interpreter {
     pub(crate) fn registration_callable_id(&self, key: Symbol) -> Option<i64> {
         match self.env().get_sym(key) {
             Some(v) => v.as_int(),
-            None => self.module_toplevel.callable_ids.get(&key).copied(),
+            None => self.module.module_toplevel.callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
     }

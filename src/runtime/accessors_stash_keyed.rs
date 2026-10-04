@@ -43,7 +43,7 @@ impl Interpreter {
             return None;
         }
         // Skip env entries hidden from package stash lookups (transitive deps)
-        if package_name != "MY" && !is_global && self.package_stash_hidden.contains(key_s) {
+        if package_name != "MY" && !is_global && self.types.package_stash_hidden.contains(key_s) {
             return None;
         }
         // Skip my-scoped items (they should not appear in the package stash).
@@ -250,7 +250,7 @@ impl Interpreter {
         // 2. Code-valued `our constant &alias is export(...)` declarations.
         // A term export is recorded under its term key (#9962).
         let term_key = crate::runtime::term_names::term_key(key);
-        if let Some(vars) = self.exported_vars.get(package_name.as_str())
+        if let Some(vars) = self.module.exported_vars.get(package_name.as_str())
             && let Some(export_name) = [key, term_key.as_str()]
                 .into_iter()
                 .find(|name| vars.contains_key(*name))

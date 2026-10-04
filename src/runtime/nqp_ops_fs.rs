@@ -68,8 +68,8 @@ fn path_result(args: &[Value], r: Result<(), String>) -> Result<Value, RuntimeEr
 }
 
 impl Interpreter {
-    /// Try a file-handle / filesystem `nqp::` op. `None` means "not an op this
-    /// table knows" -- the end of the dispatch chain.
+    /// Try a file-handle / filesystem `nqp::` op. An op this table does not
+    /// know goes on to the stream-decoding table.
     pub(crate) fn call_nqp_op_fs(
         &mut self,
         op: &str,
@@ -255,7 +255,7 @@ impl Interpreter {
                         ))
                     })
             }
-            _ => return None,
+            _ => return self.call_nqp_op_decoder(op, args),
         })
     }
 }

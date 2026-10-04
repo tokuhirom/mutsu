@@ -91,7 +91,7 @@ impl Interpreter {
     /// Find an encoding by name (case-insensitive). Returns the entry index if found.
     pub(crate) fn find_encoding(&self, name: &str) -> Option<&EncodingEntry> {
         let name_fc = name.to_lowercase();
-        self.encoding_registry.iter().find(|e| {
+        self.io.encoding_registry.iter().find(|e| {
             e.name.to_lowercase() == name_fc
                 || e.alternative_names
                     .iter()
@@ -104,7 +104,7 @@ impl Interpreter {
     pub(crate) fn register_encoding(&mut self, entry: EncodingEntry) -> Result<(), String> {
         // Check for conflicts
         let name_fc = entry.name.to_lowercase();
-        for existing in self.encoding_registry.iter() {
+        for existing in self.io.encoding_registry.iter() {
             if existing.name.to_lowercase() == name_fc {
                 return Err(entry.name);
             }
@@ -118,7 +118,7 @@ impl Interpreter {
         }
         for alt in &entry.alternative_names {
             let alt_fc = alt.to_lowercase();
-            for existing in self.encoding_registry.iter() {
+            for existing in self.io.encoding_registry.iter() {
                 if existing.name.to_lowercase() == alt_fc {
                     return Err(alt.clone());
                 }
@@ -131,16 +131,16 @@ impl Interpreter {
                 }
             }
         }
-        crate::runtime::cow_table_mut(&mut self.encoding_registry).push(entry);
+        crate::runtime::cow_table_mut(&mut self.io.encoding_registry).push(entry);
         Ok(())
     }
 
     pub(crate) fn suppress_name(&mut self, name: &str) {
-        crate::runtime::cow_table_mut(&mut self.suppressed_names).insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.types.suppressed_names).insert(name.to_string());
     }
 
     pub(crate) fn unsuppress_name(&mut self, name: &str) {
-        crate::runtime::cow_table_mut(&mut self.suppressed_names).remove(name);
+        crate::runtime::cow_table_mut(&mut self.types.suppressed_names).remove(name);
     }
 
     /// Record that `name` is the short name of a type declared inside a class
@@ -148,13 +148,14 @@ impl Interpreter {
     /// even after `unsuppress_name` clears the suppression (see
     /// `class_scoped_short_names`).
     pub(crate) fn register_class_scoped_short_name(&mut self, name: &str) {
-        crate::runtime::cow_table_mut(&mut self.class_scoped_short_names).insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.types.class_scoped_short_names)
+            .insert(name.to_string());
     }
 
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
-        self.lexical_class_scopes.push(Vec::new());
-        self.lexical_class_pending_scopes.push(Vec::new());
+        self.types.lexical_class_scopes.push(Vec::new());
+        self.types.lexical_class_pending_scopes.push(Vec::new());
     }
 
     /// Pop a lexical class scope frame, suppressing all class names registered
@@ -171,15 +172,15 @@ impl Interpreter {
     /// bareword resolution outside the block does not fall back to a
     /// registry hit for the (now out-of-scope) storage name.
     pub(crate) fn pop_lexical_class_scope(&mut self) {
-        if let Some(names) = self.lexical_class_scopes.pop() {
+        if let Some(names) = self.types.lexical_class_scopes.pop() {
             for name in names {
-                crate::runtime::cow_table_mut(&mut self.suppressed_names).insert(name);
+                crate::runtime::cow_table_mut(&mut self.types.suppressed_names).insert(name);
             }
         }
-        if let Some(owned) = self.lexical_class_pending_scopes.pop() {
+        if let Some(owned) = self.types.lexical_class_pending_scopes.pop() {
             for (qualified, storage) in owned {
-                if self.lexical_class_pending.get(&qualified) == Some(&storage) {
-                    self.lexical_class_pending.remove(&qualified);
+                if self.types.lexical_class_pending.get(&qualified) == Some(&storage) {
+                    self.types.lexical_class_pending.remove(&qualified);
                 }
             }
         }
@@ -210,7 +211,7 @@ impl Interpreter {
     /// open — only a genuinely incomplete declaration is a continuation
     /// target.
     pub(crate) fn lexical_class_pending_stub(&self, qualified: &str) -> Option<String> {
-        let storage = self.lexical_class_pending.get(qualified)?;
+        let storage = self.types.lexical_class_pending.get(qualified)?;
         self.registry()
             .class_stubs
             .contains(storage)
@@ -224,13 +225,13 @@ impl Interpreter {
     /// (the whole map when no frame is open: the file's top level).
     // Cost: O(s), s = declarations recorded in the innermost scope frame.
     pub(crate) fn lexical_role_continuation(&self, qualified: &str) -> Option<String> {
-        let storage = match self.lexical_class_pending_scopes.last() {
+        let storage = match self.types.lexical_class_pending_scopes.last() {
             Some(frame) => frame
                 .iter()
                 .rev()
                 .find(|(q, _)| q == qualified)
                 .map(|(_, storage)| storage.clone())?,
-            None => self.lexical_class_pending.get(qualified)?.clone(),
+            None => self.types.lexical_class_pending.get(qualified)?.clone(),
         };
         self.registry()
             .roles
@@ -242,9 +243,10 @@ impl Interpreter {
     /// open lexical scope, so a later same-scope statement can find it via
     /// `lexical_class_pending_stub` if it is still a stub when that happens.
     pub(crate) fn record_lexical_class_pending(&mut self, qualified: String, storage: String) {
-        self.lexical_class_pending
+        self.types
+            .lexical_class_pending
             .insert(qualified.clone(), storage.clone());
-        if let Some(frame) = self.lexical_class_pending_scopes.last_mut() {
+        if let Some(frame) = self.types.lexical_class_pending_scopes.last_mut() {
             frame.push((qualified, storage));
         }
     }
@@ -253,7 +255,8 @@ impl Interpreter {
     /// consults this to keep a `my class` binding from propagating out with the
     /// general "a Package declared in a block stays visible" rule.
     pub(crate) fn lexical_class_scope_names(&self) -> &[String] {
-        self.lexical_class_scopes
+        self.types
+            .lexical_class_scopes
             .last()
             .map(Vec::as_slice)
             .unwrap_or(&[])
@@ -270,7 +273,7 @@ impl Interpreter {
     /// own (possibly mangled) storage-name binding leak out and permanently
     /// steal the name.
     pub(crate) fn register_lexical_class(&mut self, name: String) {
-        if let Some(scope) = self.lexical_class_scopes.last_mut() {
+        if let Some(scope) = self.types.lexical_class_scopes.last_mut() {
             scope.push(name.clone());
         }
         if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
@@ -323,7 +326,7 @@ impl Interpreter {
         // the existing package class. Keep the qualified name when that
         // package member exists; namespaced lexical types with no package
         // member continue through the env remap below.
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             let registry = self.registry();
             if registry.classes.contains_key(name)
                 || registry.roles.contains_key(name)
@@ -412,7 +415,7 @@ impl Interpreter {
     /// active `A`. Only out-of-scope (suppressed) types are removed — an in-scope
     /// same-named class is a genuine redeclaration handled elsewhere.
     pub(crate) fn shadow_suppressed_type_with_package(&mut self, name: &str) {
-        if name.contains("::") || !self.suppressed_names.contains(name) {
+        if crate::qualified::is_qualified_str(name) || !self.types.suppressed_names.contains(name) {
             return;
         }
         self.registry_mut().classes.remove(name);
@@ -426,7 +429,7 @@ impl Interpreter {
         let owner = crate::symbol::Symbol::intern(name);
         self.registry_mut().clear_user_methods_for_owner(owner);
         self.registry_mut().sync_accessor_entries(owner);
-        crate::runtime::cow_table_mut(&mut self.suppressed_names).remove(name);
+        crate::runtime::cow_table_mut(&mut self.types.suppressed_names).remove(name);
     }
 
     /// Mark a fully-qualified name as `my`-scoped within its parent package.
@@ -438,7 +441,7 @@ impl Interpreter {
     }
 
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
-        crate::runtime::cow_table_mut(&mut self.my_scoped_package_items).insert(fq_name);
+        crate::runtime::cow_table_mut(&mut self.types.my_scoped_package_items).insert(fq_name);
     }
 
     /// Mark a fully-qualified name as explicitly `our`-scoped, overriding any
@@ -447,27 +450,27 @@ impl Interpreter {
     /// `our proto sub` publishes the name while each bare `multi` candidate
     /// would otherwise mark it lexical.
     pub(crate) fn mark_our_scoped_package_item(&mut self, fq_name: String) {
-        crate::runtime::cow_table_mut(&mut self.my_scoped_package_items).remove(&fq_name);
-        crate::runtime::cow_table_mut(&mut self.our_scoped_package_items).insert(fq_name);
+        crate::runtime::cow_table_mut(&mut self.types.my_scoped_package_items).remove(&fq_name);
+        crate::runtime::cow_table_mut(&mut self.types.our_scoped_package_items).insert(fq_name);
     }
 
     /// Check if a fully-qualified name is `my`-scoped within its parent package.
     pub(crate) fn is_my_scoped_package_item(&self, fq_name: &str) -> bool {
-        self.my_scoped_package_items.contains(fq_name)
-            && !self.our_scoped_package_items.contains(fq_name)
+        self.types.my_scoped_package_items.contains(fq_name)
+            && !self.types.our_scoped_package_items.contains(fq_name)
     }
 
     /// Mark `name` as registered while loading a foreign compunit via runtime
-    /// `require` (see [`Self::require_loaded_type_names`]'s doc comment).
+    /// `require` (see [`ModuleState::require_loaded_type_names`](crate::runtime::module_state::ModuleState::require_loaded_type_names)'s doc comment).
     pub(crate) fn mark_require_loaded_type_name(&mut self, name: String) {
-        crate::runtime::cow_table_mut(&mut self.require_loaded_type_names).insert(name);
+        crate::runtime::cow_table_mut(&mut self.module.require_loaded_type_names).insert(name);
     }
 
     /// Check whether `name` was registered while loading a foreign compunit
     /// via runtime `require`, and so must not be trusted by a lookup that
     /// ignores the declaring call frame's lifetime.
     pub(crate) fn is_require_loaded_type_name(&self, name: &str) -> bool {
-        self.require_loaded_type_names.contains(name)
+        self.module.require_loaded_type_names.contains(name)
     }
 
     /// Check whether `fq_name` is the source-facing name of a lexically scoped
@@ -477,7 +480,7 @@ impl Interpreter {
     // Cost: O(1) expected, or O(t), t = registered type keys, for a name that
     // has lexically scoped (NUL-mangled) registrations.
     pub(crate) fn is_my_scoped_type_name(&self, fq_name: &str) -> bool {
-        if !fq_name.contains("::") {
+        if !crate::qualified::is_qualified_str(fq_name) {
             return false;
         }
         let registry = self.registry();
@@ -524,7 +527,10 @@ impl Interpreter {
         if fq_name == "X" || fq_name.starts_with("X::") {
             return true;
         }
-        let type_package = fq_name.rsplit_once("::").map(|(package, _)| package);
+        let type_package =
+            crate::qualified::split_qualified(crate::qualified::known_symbol(fq_name))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                .map(|(package, _)| package);
         let current_package = self.current_package();
         let method_class = self.method_class_stack_top_str();
         if let Some(type_package) = type_package
@@ -578,7 +584,7 @@ impl Interpreter {
         let Some(key) = key else {
             return true;
         };
-        let Some(&declaring_unit) = self.class_declaring_units.get(&key) else {
+        let Some(&declaring_unit) = self.module.class_declaring_units.get(&key) else {
             // Roles and enums do not currently record a declaring unit. Keep
             // their existing behavior until they have equivalent provenance.
             return true;
@@ -594,7 +600,7 @@ impl Interpreter {
     // Cost: O(m), m = `my`-scoped package items across all units.
     pub(crate) fn unit_lexical_types(&self) -> Vec<(String, Value)> {
         let mut out = Vec::new();
-        for item in self.my_scoped_package_items.iter() {
+        for item in self.types.my_scoped_package_items.iter() {
             let display = item.split('\u{0}').next().unwrap_or(item);
             if display.is_empty() || crate::qualified::is_qualified(Symbol::intern(display)) {
                 continue;
@@ -608,7 +614,7 @@ impl Interpreter {
             }
             // Only the running unit's own declarations: a type another unit
             // declared (a module this one imported) is not in this pad.
-            let Some(&declaring_unit) = self.class_declaring_units.get(item) else {
+            let Some(&declaring_unit) = self.module.class_declaring_units.get(item) else {
                 continue;
             };
             if self
@@ -628,16 +634,19 @@ impl Interpreter {
     /// in 'M'" for `M::f()` — from *inside* the declaring package as well as
     /// from outside. Only `our sub f` is a package symbol.
     pub(crate) fn qualified_name_hidden_here(&self, fq_name: &str) -> bool {
-        fq_name.contains("::") && self.is_my_scoped_package_item(fq_name)
+        crate::qualified::is_qualified_str(fq_name) && self.is_my_scoped_package_item(fq_name)
     }
 
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
-        self.suppressed_names.contains(name)
+        self.types.suppressed_names.contains(name)
     }
 
     /// Check if a bare enum variant name is poisoned (declared by multiple enums).
     pub(crate) fn is_poisoned_enum_alias(&self, name: &str) -> Option<&str> {
-        self.poisoned_enum_aliases.get(name).map(|s| s.as_str())
+        self.types
+            .poisoned_enum_aliases
+            .get(name)
+            .map(|s| s.as_str())
     }
 
     /// Record a bare enum name in the current scope for poisoning detection.
@@ -654,7 +663,7 @@ impl Interpreter {
             .last()
             .map_or(0, |frame| frame.invocation_id);
         // Check only the current scope for the same name from a different enum
-        if let Some(current_scope) = self.enum_scope_names.last()
+        if let Some(current_scope) = self.types.enum_scope_names.last()
             && current_scope
                 .iter()
                 .any(|(n, inv)| n == name && *inv == invocation)
@@ -664,25 +673,25 @@ impl Interpreter {
             }) = self.enum_bare_value(name).map(Value::view)
             && prev_type.resolve() != enum_type
         {
-            crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases)
+            crate::runtime::cow_table_mut(&mut self.types.poisoned_enum_aliases)
                 .insert(name.to_string(), enum_type.to_string());
         }
-        if let Some(scope) = self.enum_scope_names.last_mut() {
+        if let Some(scope) = self.types.enum_scope_names.last_mut() {
             scope.push((name.to_string(), invocation));
         }
     }
 
     /// Push a new enum scope frame (called on block enter).
     pub(crate) fn push_enum_scope(&mut self) {
-        self.enum_scope_names.push(Vec::new());
+        self.types.enum_scope_names.push(Vec::new());
     }
 
     /// Pop an enum scope frame, removing poisoned aliases for names
     /// that were introduced in the exiting scope.
     pub(crate) fn pop_enum_scope(&mut self) {
-        if let Some(names) = self.enum_scope_names.pop() {
+        if let Some(names) = self.types.enum_scope_names.pop() {
             for (name, _) in names {
-                crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases).remove(&name);
+                crate::runtime::cow_table_mut(&mut self.types.poisoned_enum_aliases).remove(&name);
             }
         }
     }
@@ -700,13 +709,17 @@ impl Interpreter {
     /// `Cro::HTTP::Header` dispatch to the foreign type instead of the class's own
     /// `my grammar Header`.
     pub(crate) fn resolve_suppressed_type(&self, name: &str) -> Option<String> {
-        if !self.suppressed_names.contains(name) && !self.class_scoped_short_names.contains(name) {
+        if !self.types.suppressed_names.contains(name)
+            && !self.types.class_scoped_short_names.contains(name)
+        {
             return None;
         }
         // Check current package
         let current_pkg = &self.current_package();
-        if current_pkg != "GLOBAL" {
-            let qualified = format!("{}::{}", current_pkg, name);
+        if !crate::qualified::is_global_name(current_pkg) {
+            let qualified = crate::qualified::qualified_text(current_pkg, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -732,7 +745,9 @@ impl Interpreter {
         }
         // Check method class stack
         for class_name in self.method_class_stack_syms_rev() {
-            let qualified = format!("{}::{}", class_name, name);
+            let qualified = crate::qualified::qualified_text(class_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -745,7 +760,9 @@ impl Interpreter {
         // method came from may lend its lexical types.
         if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
             let role_name = role.resolve();
-            let qualified = format!("{}::{}", role_name, name);
+            let qualified = crate::qualified::qualified_text(&role_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -772,11 +789,16 @@ impl Interpreter {
             // namespace prefix -- which is what real block nesting
             // guarantees.
             let mut scope = role_name.as_str();
-            while let Some((outer, _)) = scope.rsplit_once("::") {
+            while let Some((outer, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(scope))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 if !self.has_type_direct(outer) {
                     break;
                 }
-                let qualified = format!("{}::{}", outer, name);
+                let qualified = crate::qualified::qualified_text(outer, name)
+                    .as_str()
+                    .to_string();
                 if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                     return Some(key);
                 }
@@ -790,8 +812,10 @@ impl Interpreter {
         // only for the duration of attribute-default evaluation, so it does not
         // leak the suppressed name into outer lexical scopes (where raku keeps it
         // undeclared).
-        if let Some(class_name) = &self.constructing_class {
-            let qualified = format!("{}::{}", class_name, name);
+        if let Some(class_name) = &self.types.constructing_class {
+            let qualified = crate::qualified::qualified_text(class_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -804,8 +828,8 @@ impl Interpreter {
     }
 
     pub fn set_program_path(&mut self, path: &str) {
-        self.program_path = Some(path.to_string());
-        self.program_path_sym = Some(Symbol::intern(path));
+        self.io.program_path = Some(path.to_string());
+        self.io.program_path_sym = Some(Symbol::intern(path));
         let io_path = self.make_io_path_instance(path);
         self.env.insert("*PROGRAM".to_string(), io_path);
         self.env
@@ -851,7 +875,7 @@ impl Interpreter {
         if !lib_paths.is_empty() {
             options.insert("I".to_string(), one_or_list(lib_paths));
         }
-        self.preload_modules = preload_modules.to_vec();
+        self.module.preload_modules = preload_modules.to_vec();
         if !preload_modules.is_empty() {
             options.insert("M".to_string(), one_or_list(preload_modules));
         }
@@ -874,8 +898,8 @@ impl Interpreter {
         }
         let at = self
             .default_site_repo_position()
-            .unwrap_or(self.lib_paths.len());
-        crate::runtime::cow_table_mut(&mut self.lib_paths).insert(at, path);
+            .unwrap_or(self.module.lib_paths.len());
+        crate::runtime::cow_table_mut(&mut self.module.lib_paths).insert(at, path);
     }
 
     /// Index of the entry `add_default_site_repo` registered, if it is still in
@@ -883,7 +907,7 @@ impl Interpreter {
     fn default_site_repo_position(&self) -> Option<usize> {
         let dir = self.default_repo_dir("site")?;
         let marker = format!("inst#{}", dir.display());
-        self.lib_paths.iter().position(|p| *p == marker)
+        self.module.lib_paths.iter().position(|p| *p == marker)
     }
 
     /// Insert a search path at the FRONT of the chain, ahead of everything set up
@@ -901,12 +925,12 @@ impl Interpreter {
     /// already deeper in the chain must still promote it to the front
     /// (`t/modules/compunit/lib-path-precedence.t`).
     pub(crate) fn lib_path_is_front(&self, path: &str) -> bool {
-        self.lib_paths.first().is_some_and(|p| p == path)
+        self.module.lib_paths.first().is_some_and(|p| p == path)
     }
 
     pub fn prepend_lib_path(&mut self, path: String) {
         if !path.is_empty() {
-            crate::runtime::cow_table_mut(&mut self.lib_paths).insert(0, path);
+            crate::runtime::cow_table_mut(&mut self.module.lib_paths).insert(0, path);
         }
     }
 }

@@ -42,6 +42,7 @@ pub(crate) mod seq_coerce;
 pub(crate) mod sha1;
 pub(crate) mod split;
 pub(crate) mod str_prim;
+pub(crate) mod stream_decoder;
 pub(crate) mod string_pos;
 pub(crate) mod substr;
 pub(crate) mod transliterate;
@@ -223,17 +224,7 @@ pub(crate) fn decode_utf8_code_point(bytes: &[u8]) -> Result<String, RuntimeErro
     }
 }
 
-/// True when the label names a single-byte encoding, i.e. one where every byte
-/// is a complete character. A streaming decoder can hand back its whole buffer
-/// for these instead of holding an incomplete-sequence tail as it must for UTF-8.
-pub(crate) fn is_single_byte_encoding_label(label: &str) -> bool {
-    matches!(
-        normalize_builtin_encoding_label(label).as_deref(),
-        Some("ascii" | "iso-8859-1" | "windows-1251" | "windows-1252")
-    )
-}
-
-fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
+pub(crate) fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     let lowered = name.to_lowercase();
     let normalized = match lowered.as_str() {
         "utf8-c8" => "utf8-c8",

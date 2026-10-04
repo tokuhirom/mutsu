@@ -62,7 +62,7 @@ impl Interpreter {
         let key = MetaNs::ConstantVar.key_for_str(name);
         if self.at_module_toplevel() && !self.env.contains_key_sym(key) {
             let owner = self.current_package_str();
-            crate::runtime::cow_table_mut(&mut self.module_toplevel.constant_markers)
+            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.constant_markers)
                 .entry(owner.to_string())
                 .or_default()
                 .insert(name.to_string(), ());
@@ -99,7 +99,7 @@ impl Interpreter {
     // Cost: O(c * d * m), c = running package candidates (at most 4),
     // d = package nesting depth, m = markers of one package.
     pub(crate) fn visible_toplevel_constant_marker_names(&self) -> Vec<&str> {
-        let table = &self.module_toplevel.constant_markers;
+        let table = &self.module.module_toplevel.constant_markers;
         if table.is_empty() {
             return Vec::new();
         }
@@ -152,9 +152,9 @@ impl Interpreter {
 
     // Cost: O(c * d), as [`Self::lookup_in_running_package`].
     fn toplevel_constant_marker(&self, name: &str) -> bool {
-        !self.module_toplevel.constant_markers.is_empty()
+        !self.module.module_toplevel.constant_markers.is_empty()
             && self
-                .lookup_in_running_package(&self.module_toplevel.constant_markers, name)
+                .lookup_in_running_package(&self.module.module_toplevel.constant_markers, name)
                 .is_some()
     }
 }

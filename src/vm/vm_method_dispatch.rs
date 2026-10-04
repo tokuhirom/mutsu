@@ -860,6 +860,7 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(cc, &rw_bindings);
+        self.record_call_capture(cc.uses_capture, Some(&base), &args);
         // A method parameter is a fresh per-invocation binding, exactly like a
         // sub parameter (see the matching mark in
         // `call_compiled_function_named_inner`): while the cross-thread shared
@@ -955,7 +956,7 @@ impl Interpreter {
         // `use fatal` -- explicit, or implied by a caller's `try` -- is lexical
         // to where this method was declared, not the caller's state (#11391).
         let saved_lexical_fatal_mode =
-            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
+            std::mem::replace(&mut self.module.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1043,7 +1044,7 @@ impl Interpreter {
         // Restore the caller's `when_matched` — a bare `when` inside this method
         // body must not leak its match state to an enclosing given/with.
         self.set_when_matched(saved_when_matched);
-        self.lexical_fatal_mode = saved_lexical_fatal_mode;
+        self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
@@ -2211,6 +2212,7 @@ impl Interpreter {
             // captured `self` instead of a stale env snapshot.
             Self::insert_fast_param_values(env, &param_values);
         }
+        self.record_call_capture(cc.uses_capture, Some(&base), &args);
 
         if let Some((name, readonly)) = raw_invocant_readonly {
             let key = crate::runtime::sigilless_readonly_key(name);
@@ -2462,7 +2464,7 @@ impl Interpreter {
         // `use fatal` is lexical to the method's declaration (#11391) -- see
         // the slow path above.
         let saved_lexical_fatal_mode =
-            std::mem::replace(&mut self.lexical_fatal_mode, cc.method_fatal_pragma);
+            std::mem::replace(&mut self.module.lexical_fatal_mode, cc.method_fatal_pragma);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -2546,7 +2548,7 @@ impl Interpreter {
 
         // Restore the caller's `when_matched` — see the slow path above.
         self.set_when_matched(saved_when_matched);
-        self.lexical_fatal_mode = saved_lexical_fatal_mode;
+        self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
 
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {

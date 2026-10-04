@@ -74,7 +74,6 @@ impl Interpreter {
         {
             atom_caps.push(with_iteration_capture(token, start, end, caps));
             atom_ends.push(end);
-            super::regex_helpers::record_regex_farthest_position(end);
             cur = end;
             while can_extend(atom_caps.len()) {
                 let Some((sep_end, scaps)) = self
@@ -92,7 +91,6 @@ impl Interpreter {
                 else {
                     break;
                 };
-                super::regex_helpers::record_regex_farthest_position(sep_end);
                 // The separator is folded before the atom after it matches,
                 // so code in that atom sees it.
                 sep_caps.push(scaps);
@@ -108,7 +106,6 @@ impl Interpreter {
                     sep_caps.pop();
                     break;
                 };
-                super::regex_helpers::record_regex_farthest_position(atom_end);
                 if atom_end <= cur {
                     sep_caps.pop();
                     break;

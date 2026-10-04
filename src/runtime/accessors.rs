@@ -296,9 +296,9 @@ impl Interpreter {
     /// `MakeHash`/`MakeHashFromPairs`) collects its element values off the
     /// stack, before the composite becomes a stored value.
     ///
-    /// Gated on `self.lexical_fatal_mode` first so the common (non-fatal)
+    /// Gated on `self.module.lexical_fatal_mode` first so the common (non-fatal)
     /// case pays only a single bool check, not a scan of every element. See
-    /// [`crate::runtime::Interpreter::lexical_fatal_mode`]'s doc comment for
+    /// [`ModuleState::lexical_fatal_mode`](crate::runtime::module_state::ModuleState::lexical_fatal_mode)'s doc comment for
     /// why this is the LEXICAL channel, not the fully dynamic `fatal_mode`
     /// (#9521): a Failure-in-composite/call-argument explosion is governed by
     /// whether `use fatal` is lexically active where the composite/call is
@@ -308,7 +308,7 @@ impl Interpreter {
         &self,
         values: &[Value],
     ) -> Result<(), RuntimeError> {
-        if !self.lexical_fatal_mode {
+        if !self.module.lexical_fatal_mode {
             return Ok(());
         }
         self.explode_if_fatal_failure_in_composite_unconditional(values)
@@ -381,7 +381,7 @@ impl Interpreter {
     /// match either of these).
     ///
     /// Delegates to `explode_if_fatal_failure_in_composite`, which is gated
-    /// on `self.lexical_fatal_mode` first, so the common (non-fatal) case
+    /// on `self.module.lexical_fatal_mode` first, so the common (non-fatal) case
     /// pays only a single bool check plus a saturating-sub, not a scan of the
     /// stack.
     pub(crate) fn explode_if_fatal_failure_in_call_args(
@@ -389,7 +389,7 @@ impl Interpreter {
         name: &str,
         arity: usize,
     ) -> Result<(), RuntimeError> {
-        if !self.lexical_fatal_mode {
+        if !self.module.lexical_fatal_mode {
             return Ok(());
         }
         let start = self.stack.len().saturating_sub(arity);
@@ -406,7 +406,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
-        if !self.lexical_fatal_mode || matches!(name, "require" | "defined") {
+        if !self.module.lexical_fatal_mode || matches!(name, "require" | "defined") {
             return Ok(());
         }
         self.explode_if_fatal_failure_in_composite(args)

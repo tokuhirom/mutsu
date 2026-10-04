@@ -121,6 +121,7 @@ impl Encode for CompiledCode {
             has_calls,
             has_once,
             uses_callframe,
+            uses_capture,
             uses_samewith,
             needs_reflective_capture,
             uses_dispatcher,
@@ -262,6 +263,7 @@ impl Encode for CompiledCode {
         has_calls.encode(encoder)?;
         has_once.encode(encoder)?;
         uses_callframe.encode(encoder)?;
+        uses_capture.encode(encoder)?;
         uses_samewith.encode(encoder)?;
         needs_reflective_capture.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
@@ -392,6 +394,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             has_calls: Decode::decode(decoder)?,
             has_once: Decode::decode(decoder)?,
             uses_callframe: Decode::decode(decoder)?,
+            uses_capture: Decode::decode(decoder)?,
             uses_samewith: Decode::decode(decoder)?,
             needs_reflective_capture: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,

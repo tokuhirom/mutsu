@@ -123,7 +123,10 @@ impl Interpreter {
         }
         // Native QuantHash construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
-            && !self.user_declared_classes.contains(&class_name.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
             self.dispatch.method_dispatch_pure = true;
@@ -131,7 +134,10 @@ impl Interpreter {
         }
         // Native aggregate construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
-            && !self.user_declared_classes.contains(&class_name.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
             self.dispatch.method_dispatch_pure = true;
@@ -523,7 +529,10 @@ impl Interpreter {
             ValueView::Channel(_) => crate::symbol::Symbol::intern("Channel"),
             _ => return target,
         };
-        if self.user_declared_classes.contains(class_name.as_str())
+        if self
+            .types
+            .user_declared_classes
+            .contains(class_name.as_str())
             || self.has_user_method_sym(class_name.as_str(), method_sym)
         {
             return target;

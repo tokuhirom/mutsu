@@ -37,6 +37,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod subscript_adverb;
+mod type_args;
 mod type_lower;
 mod use_stmt;
 
@@ -2726,6 +2727,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
+        ("RakuAST::Trait::Does", "new") => RakuAstClass::TraitDoes,
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
@@ -2940,6 +2942,24 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         && let Some(sigil) = s.chars().next()
     {
         return Some(Value::str(sigil.to_string()));
+    }
+    // `Name.from-identifier("a")` stores one identifier leaf; `.parts` answers
+    // the one `Name::Part::Simple` it denotes (rakudo does not split on `::`).
+    if method == "parts"
+        && node.class == RakuAstClass::Name
+        && let Some(RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(v),
+        }) = node.fields.first()
+        && let ValueView::Str(s) = v.view()
+    {
+        return Some(Value::array(vec![name_parts::simple_part(&s)]));
+    }
+    // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.
+    if method == "canonicalize"
+        && let Some(name_parts::NameShape::Identifier(s)) = name_parts::name_shape(node)
+    {
+        return Some(Value::str(s));
     }
     // A field the class DECLARES but this node does not carry still answers:
     // rakudo models every field as an attribute, so an absent optional clause
