@@ -1592,7 +1592,17 @@ struct Parser {
 
 impl Parser {
     fn parse_alternation(&mut self, stops: &[char], top_level: bool) -> Option<RegexNode> {
-        let mut branches = vec![self.parse_sequence(stops, false)?];
+        // A leading `|` / `||` (`[ | a | b ]`, a grammar's one-alternative-
+        // per-line layout) opens no empty branch; rakudo drops it.
+        let before_leading = self.pos;
+        self.skip_whitespace();
+        let leading_sequential = if self.consume_if('|') {
+            Some(self.consume_if('|'))
+        } else {
+            self.pos = before_leading;
+            None
+        };
+        let mut branches = vec![self.parse_sequence(stops, leading_sequential == Some(true))?];
         let mut sequential_operators = Vec::new();
         while self.consume_if('|') {
             let sequential = self.consume_if('|');
