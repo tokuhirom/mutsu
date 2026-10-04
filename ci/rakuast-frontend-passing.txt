@@ -125,6 +125,7 @@ t/collections/hash/hash-numeric-key-str.t
 t/collections/hash/hash-odd-number-message-element-container.t
 t/collections/hash/hash-odd-number.t
 t/collections/hash/hash-on-undefined.t
+t/collections/hash/hash-pair-is-positional-argument.t
 t/collections/hash/hash-predicate-iteration.t
 t/collections/hash/hash-push-bound.t
 t/collections/hash/hash-push-named-argument.t
@@ -536,6 +537,7 @@ t/collections/transform/grep-without-matcher.t
 t/collections/transform/head-whatevercode.t
 t/collections/transform/invert-scalar-held-list.t
 t/collections/transform/invert.t
+t/collections/transform/join-nested-deferred-map-seq.t
 t/collections/transform/join-nested-list-user-str.t
 t/collections/transform/map-array-shared-loop.t
 t/collections/transform/map-block-my-shadow-leak.t
@@ -777,6 +779,7 @@ t/concurrency/supply/whenever-last-phaser.t
 t/concurrency/supply/whenever-nested-promise-emit-order.t
 t/concurrency/supply/whenever-next-signal.t
 t/concurrency/supply/whenever-object-supply-method.t
+t/concurrency/supply/whenever-pointy-outer-topic.t
 t/concurrency/supply/whenever-quit-phaser.t
 t/concurrency/supply/whenever-return-in-supply-block.t
 t/concurrency/supply/whenever-source-on-close.t
@@ -917,6 +920,7 @@ t/control/with-topic-alias.t
 t/control/with-topic-gist-ascii.t
 t/control/with-without.t
 t/control/with-writable-topic-under-loop.t
+t/exceptions/accepts-exception-propagates.t
 t/exceptions/anon-multi-exception-class.t
 t/exceptions/backtrace-anonymous-pointy-frames.t
 t/exceptions/backtrace-introspection.t
@@ -973,6 +977,7 @@ t/exceptions/failure-sink-handled.t
 t/exceptions/failure-string-interpolation.t
 t/exceptions/gather-lazy-consume-propagates-exception.t
 t/exceptions/get-out.t
+t/exceptions/handles-wildcard-delegate-error-propagates.t
 t/exceptions/invocant-marker-exception-classes.t
 t/exceptions/issue-7770-failure-method-rethrow.t
 t/exceptions/loop-exception-runs-leave-undo.t
@@ -1065,6 +1070,7 @@ t/grammar/subset-where-class-scoped-grammar.t
 t/grammar/token-wrap-callsame-failed-cursor.t
 t/grammar/token-zero-width-quantified-subrule.t
 t/io/argfiles-eof-stdin.t
+t/io/assuming-capture-slurpy-regression.t
 t/io/chdir-adverbs.t
 t/io/chdir-path-check.t
 t/io/chmod-allomorph.t
@@ -2357,6 +2363,7 @@ t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-allomorph-word-quote.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
+t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-attribute-default.t
 t/rakuast/rakuast-attribute-handles.t
@@ -2808,6 +2815,7 @@ t/routines/closure/closure-captured-var-writeback-coherence.t
 t/routines/closure/closure-container-capture.t
 t/routines/closure/closure-continuation.t
 t/routines/closure/closure-dynamic-var-restored-writeback.t
+t/routines/closure/closure-escaping-grandchild-owner-cell.t
 t/routines/closure/closure-literal-ends-statement.t
 t/routines/closure/closure-map-block-free-var-capture.t
 t/routines/closure/closure-meta-writeback-gate.t
@@ -2946,6 +2954,7 @@ t/routines/dispatch/proto-sub.t
 t/routines/dispatch/routine-candidates-multi-flag.t
 t/routines/dispatch/routine-code-object-dispatch.t
 t/routines/dispatch/rw-multi-dispatch-cache.t
+t/routines/dispatch/samewith-assuming-grep.t
 t/routines/dispatch/samewith-inside-lazy-gather.t
 t/routines/dispatch/samewith-only-sub.t
 t/routines/dispatch/samewith-proto-body-rerun.t
@@ -3066,6 +3075,7 @@ t/routines/signature/is-rw-traits.t
 t/routines/signature/lazy-array-param-pull.t
 t/routines/signature/lol-param-is-raw-binds-list.t
 t/routines/signature/map-array-optional-trailing-param.t
+t/routines/signature/map-signature-last-phaser.t
 t/routines/signature/meta-parameterize-type-constraint.t
 t/routines/signature/meta-parameterize-typed-declaration.t
 t/routines/signature/multi-aliased-named-param.t
@@ -3104,6 +3114,7 @@ t/routines/signature/nonconst-param-default-full-arity-light.t
 t/routines/signature/object-hash-param-binding.t
 t/routines/signature/optional-named-empty-list-comparison.t
 t/routines/signature/optional-param-where-runs-when-omitted.t
+t/routines/signature/pair-subsignature-dispatch.t
 t/routines/signature/param-bind-itemization.t
 t/routines/signature/param-default-before-return-arrow.t
 t/routines/signature/param-default-bool-conforms-int.t
@@ -3124,6 +3135,7 @@ t/routines/signature/parameterized-call.t
 t/routines/signature/parameterized-quanthash-key-typecheck.t
 t/routines/signature/parameterized-type-object.t
 t/routines/signature/pod-declarator-param-trailing-extent.t
+t/routines/signature/pointy-block-destructure-expr.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
 t/routines/signature/pointy-sigilless-param-traits.t
@@ -3142,6 +3154,7 @@ t/routines/signature/readonly-param-shadow.t
 t/routines/signature/recursion-loop-param-leak.t
 t/routines/signature/recursive-sub-trailing-comma-array-param.t
 t/routines/signature/reduce-block-typed-param-arg-source-leak.t
+t/routines/signature/reduce-destructuring-signature.t
 t/routines/signature/returns-parametrized-type.t
 t/routines/signature/routine-code-value-outer-var-ignores-callers-readonly-param.t
 t/routines/signature/rw-param-buf-element-assign.t
@@ -3172,6 +3185,7 @@ t/routines/signature/star-array-flattens-hash.t
 t/routines/signature/start-body-param-compiled.t
 t/routines/signature/sub-signature-array-param-iterable.t
 t/routines/signature/subsig-destructure-through-itemization.t
+t/routines/signature/subsig-destructure-varref.t
 t/routines/signature/subsig-positional-typecheck.t
 t/routines/signature/too-few-positionals-fixed-arity.t
 t/routines/signature/too-many-positionals-fixed-arity.t
@@ -3705,6 +3719,7 @@ t/vm/nqp-defined-list-unshift-ops.t
 t/vm/nqp-file-ops.t
 t/vm/nqp-gethllsym.t
 t/vm/nqp-getlexdyn.t
+t/vm/nqp-hll-ops.t
 t/vm/nqp-html-entity-ops.t
 t/vm/nqp-isfalse.t
 t/vm/nqp-iterkey-iterval.t
