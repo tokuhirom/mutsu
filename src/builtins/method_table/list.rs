@@ -34,6 +34,24 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 1,
         handler: Handler::Narrow(join),
     },
+    MethodRow {
+        owner: "List",
+        name: "keys",
+        arity: 0,
+        handler: Handler::Pure(keys),
+    },
+    MethodRow {
+        owner: "List",
+        name: "Numeric",
+        arity: 0,
+        handler: Handler::Pure(elems),
+    },
+    MethodRow {
+        owner: "List",
+        name: "Int",
+        arity: 0,
+        handler: Handler::Pure(elems),
+    },
 ];
 
 fn len(target: &Value) -> i64 {
