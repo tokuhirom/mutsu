@@ -63,6 +63,18 @@ _NATIVE_HASH = ("Rakudo dies on every reachable REPR: VMHash \"does not support 
 for _op in ("atkey_i", "atkey_n", "atkey_s", "atkey_u",
             "bindkey_i", "bindkey_n", "bindkey_s"):
     NOT_APPLICABLE[_op] = _NATIVE_HASH
+# The precompilation pair. Rakudo runs both, but what they read and write is
+# MoarVM's binary serialization format, laid out by MoarVM's REPRs and
+# bytecode; mutsu does not precompile to a serialized object graph, so there
+# is no format to write or blob it could read. The rest of the SC ops build
+# and query the context as a run-time structure (`nqp_ops_sc.rs`). No
+# ecosystem ledger record (2026-10-04) fails on either op.
+_PRECOMP = ("Writes / reads MoarVM's binary precompilation format (its REPR and "
+            "bytecode layouts); mutsu does not precompile to a serialized object "
+            "graph. No ecosystem distribution calls it at run time (ledger "
+            "2026-10-04).")
+for _op in ("serialize", "deserialize"):
+    NOT_APPLICABLE[_op] = _PRECOMP
 
 # Tracking issue per category (the campaign's sub-issues). Several small
 # categories share one issue.

@@ -296,6 +296,7 @@ impl Interpreter {
             visitor.visit_value(&value);
         }
         visit_map_values(visitor, &self.types.rebless_map);
+        self.types.sc.visit_roots(visitor);
         for meta in self.types.squish_iterator_meta.values() {
             visit_slice(visitor, &meta.source_items);
             visit_opt(visitor, &meta.as_func);

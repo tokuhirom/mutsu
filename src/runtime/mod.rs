@@ -677,6 +677,7 @@ mod nqp_ops_coerce;
 mod nqp_ops_compare;
 mod nqp_ops_decoder;
 mod nqp_ops_exception;
+pub(crate) mod nqp_ops_sc;
 mod routine_identity;
 pub(crate) use nqp_ops_exception::control_const_value as nqp_control_const_value;
 mod nqp_ops_fs;

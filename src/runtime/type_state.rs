@@ -250,6 +250,8 @@ pub(crate) struct TypeState {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// The serialization contexts the `nqp::` SC ops build (`nqp_ops_sc.rs`).
+    pub(crate) sc: super::nqp_ops_sc::ScState,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
@@ -306,6 +308,7 @@ impl TypeState {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            sc: super::nqp_ops_sc::ScState::new(),
         }
     }
 
@@ -371,6 +374,7 @@ impl TypeState {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            sc: self.sc.fork_for_thread(),
             user_declared_classes: self.user_declared_classes.clone(),
         }
     }

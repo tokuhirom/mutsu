@@ -57,7 +57,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Objects | 29 / 31 | 2 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
 | Profiling | 1 / 3 | 2 | #11504 |
-| Serialization context | 3 / 18 | 15 | #11504 |
+| Serialization context | 15 / 16 | 1 | #11504 |
 | Stream Decoding | 10 / 10 | 0 | #11503 |
 | String | 48 / 48 | 0 | #11495 |
 | System Introspection | 29 / 29 | 0 | #11501 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **495 / 577** | **82** | |
+| **Total** | **507 / 575** | **68** | |
 
 ## Missing ops by category
 
@@ -78,7 +78,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Objects** (#11499): `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
-- **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `getobjsc`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
+- **Serialization context** (#11504): `forceouterctx`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
@@ -93,5 +93,7 @@ Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `ad
 - `bindkey_i`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
 - `bindkey_n`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
 - `bindkey_s`: Rakudo dies on every reachable REPR: VMHash "does not support native type storage", CStruct "does not support associative access".
+- `deserialize`: Writes / reads MoarVM's binary precompilation format (its REPR and bytecode layouts); mutsu does not precompile to a serialized object graph. No ecosystem distribution calls it at run time (ledger 2026-10-04).
 - `for`: Rakudo rejects every Raku call at compile time ("The 'for' op expects a block as its second operand, got QAST::Op"): a Raku block literal compiles to a closure op, never the bare QAST::Block the op requires (NQP's own `nqp::for` fails the same way).
 - `list_b`: Rakudo rejects every Raku call at compile time ("The 'list_b' op needs a list of blocks, got QAST::Op"): a Raku block literal never compiles to the bare QAST::Block the op requires.
+- `serialize`: Writes / reads MoarVM's binary precompilation format (its REPR and bytecode layouts); mutsu does not precompile to a serialized object graph. No ecosystem distribution calls it at run time (ledger 2026-10-04).
