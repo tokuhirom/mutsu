@@ -151,7 +151,8 @@ pub(crate) enum TrOp {
     /// Push the cached value of pre-resolved outer lexical `n`
     /// ([`TrChunk::outers`](super::TrChunk::outers)).
     LoadOuter(u16),
-    /// Push the value of a dynamic variable (`$*ALLOW-JSONC`), or `Nil`.
+    /// Push the value of a dynamic variable (`$*ALLOW-JSONC`), or the
+    /// `X::Dynamic::NotFound` Failure when none is declared.
     LoadDynamic(u32),
 
     // ---- fused, operand-direct forms ----
