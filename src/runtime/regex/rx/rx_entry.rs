@@ -85,6 +85,15 @@ fn rx_program_for_run(
     Ok(Arc::clone(program))
 }
 
+/// The subject a `:m` match maps its stripped positions over: the published
+/// match target, or, for a match outside any (an internal caller's), one built
+/// from `chars`.
+// Cost: O(1) with a published target; else O(n), n = the chars.
+fn ignoremark_target(chars: &[char]) -> crate::value::regex_caps::MatchTarget {
+    super::super::regex_helpers::current_match_target()
+        .unwrap_or_else(|| crate::value::regex_caps::MatchTarget::from_chars(chars))
+}
+
 /// Count one match the walk answers instead of the compiled engine.
 #[inline]
 fn walked<T>(reason: &'static str) -> Option<T> {
@@ -183,7 +192,7 @@ impl Interpreter {
             return walked(why);
         }
         if pattern.ignore_mark {
-            return self.rx_try_ignoremark(pattern, start, pkg, allow_code);
+            return self.rx_try_ignoremark(pattern, chars, start, pkg, allow_code);
         }
         let program = match rx_program_for_run(pattern, allow_code) {
             Ok(program) => program,
@@ -215,19 +224,20 @@ impl Interpreter {
 
     /// A whole-pattern `:m`: the mark-stripped pattern's compiled program
     /// over the subject's stripped view, mapped back by the walk's own
-    /// `ignoremark_on_target`. `None` (take the walk) without a published
-    /// subject or when the stripped pattern does not compile.
-    // Cost: the stripped match, plus O(c) to map c capture spans back.
+    /// `ignoremark_on_target`. `None` (take the walk) when the stripped
+    /// pattern does not compile.
+    // Cost: the stripped match, plus O(c) to map c capture spans back; O(n)
+    // more to build the subject of `chars` when none is published, n = its
+    // chars.
     fn rx_try_ignoremark(
         &mut self,
         pattern: &RegexPattern,
+        chars: &[char],
         start: usize,
         pkg: Symbol,
         allow_code: bool,
     ) -> Option<Option<(usize, RegexCaptures)>> {
-        let Some(target) = super::super::regex_helpers::current_match_target() else {
-            return walked("ignoremark-no-target");
-        };
+        let target = ignoremark_target(chars);
         let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
         if let Err(why) = rx_program_for_run(&stripped, allow_code) {
             return walked(why);
@@ -246,19 +256,18 @@ impl Interpreter {
     /// [`Self::rx_try_ends`] for a `:m` pattern: the mark-stripped pattern's
     /// ends over the subject's stripped view, mapped back by the walk's own
     /// `ignoremark_on_target`, as the walk's all-ends entry does. `None` (take
-    /// the walk) without a published subject or when the stripped pattern does
-    /// not compile.
-    // Cost: the stripped run, plus O(c) per end to map its c capture spans back.
+    /// the walk) when the stripped pattern does not compile.
+    // Cost: the stripped run, plus O(c) per end to map its c capture spans
+    // back; O(n) more to build the subject of `chars` when none is published.
     fn rx_try_ignoremark_ends(
         &mut self,
         pattern: &RegexPattern,
+        chars: &[char],
         start: usize,
         pkg: Symbol,
         stop_at_full: bool,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        let Some(target) = super::super::regex_helpers::current_match_target() else {
-            return walked("ignoremark-no-target");
-        };
+        let target = ignoremark_target(chars);
         let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
         if let Err(why) = rx_program_for_run(&stripped, true) {
             return walked(why);
@@ -383,7 +392,7 @@ impl Interpreter {
             return walked(why);
         }
         if pattern.ignore_mark {
-            return self.rx_try_ignoremark_ends(pattern, start, pkg, stop_at_full);
+            return self.rx_try_ignoremark_ends(pattern, chars, start, pkg, stop_at_full);
         }
         let program = match rx_program_for_run(pattern, true) {
             Ok(program) => program,

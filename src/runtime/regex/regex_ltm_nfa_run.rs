@@ -299,7 +299,12 @@ impl LtmNfa {
                                 reach(end, *next, stack, work);
                             }
                         } else {
-                            for end in plural_ends(interp, atom, chars, pos, *pkg, *ic) {
+                            // A `<ws>` call: the rule the grammar resolves it to
+                            // is measured by its own NFA, as a dynamic call is.
+                            let names = stacks.names(stack);
+                            let region = dyn_call(interp, atom, chars, pos, *pkg, *ic, &names);
+                            out.absorb_region(stacks.origin(stack), &region);
+                            for end in region.ends {
                                 reach(end, *next, stack, work);
                             }
                         }
