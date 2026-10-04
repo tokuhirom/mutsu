@@ -105,7 +105,15 @@ impl Compiler {
             self.compile_condition_expr(&desugared_cond);
         } else {
             let saved_element_source_capture = self.with_element_source_capture.take();
-            let element_source_capture = crate::with_desugar::condition_element_source(cond);
+            // Only the topicalizing `given` of a plain `with` consumes the tag.
+            // A pointy `with X -> \v { }` has none; tagging it left the element
+            // pending for the first `given`/`with` of any routine its body
+            // called, which then wrote its own topic back into `X`.
+            let element_source_capture = then_branch
+                .iter()
+                .any(|stmt| matches!(stmt, Stmt::Given { .. }))
+                .then(|| crate::with_desugar::condition_element_source(cond))
+                .flatten();
             has_element_source_capture = element_source_capture.is_some();
             self.with_element_source_capture = element_source_capture;
             self.compile_condition_expr(cond);
@@ -161,7 +169,11 @@ impl Compiler {
         } else {
             let jump_end = self.code.emit(OpCode::Jump(0));
             self.code.patch_jump(jump_else);
-            if has_element_source_capture {
+            // A `with X { } else { }` else-block topicalizes the same element
+            // (`$_ = v` stores into `%h<k>`), so its `given` consumes the tag;
+            // any other else shape must not inherit it.
+            let else_topicalizes = matches!(else_branch, [Stmt::Given { .. }]);
+            if has_element_source_capture && !else_topicalizes {
                 self.code.emit(OpCode::ClearElementSource);
             }
             if needs_cond_value {

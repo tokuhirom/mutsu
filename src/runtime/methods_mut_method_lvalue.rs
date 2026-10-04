@@ -1130,6 +1130,38 @@ impl Interpreter {
                 self.resolve_user_method_or_accessor(&class_name.resolve(), method),
                 Some(UserMethodOrAccessor::Accessor)
             );
+        // `$obj.name = v` with no method or accessor `name`, on a class whose
+        // `is rw` FALLBACK answers for it, writes through the container the
+        // FALLBACK hands back (CSS::Properties: `$css.height = '5px'`).
+        if method_args.is_empty()
+            && !accessor_wins
+            && self
+                .resolve_method(&class_name.resolve(), method, &method_args)
+                .is_none()
+            && !self
+                .collect_class_attributes(&class_name.resolve())
+                .iter()
+                .any(|attr| attr.name == method && attr.is_public)
+            && let Some(fallback) = self.resolve_method(
+                &class_name.resolve(),
+                "FALLBACK",
+                &[Value::str(method.to_string())],
+            )
+            && Self::method_is_rw_capable(&fallback)
+        {
+            let invocant = Value::instance_parts(class_name, attributes.clone(), target_id);
+            let was_lvalue = self.in_lvalue_assignment;
+            self.in_lvalue_assignment = true;
+            let saved_sources = self.take_pending_call_arg_sources();
+            let result = self.call_method_with_values(
+                invocant,
+                "FALLBACK",
+                vec![Value::str(method.to_string())],
+            );
+            self.set_pending_call_arg_sources(saved_sources);
+            self.in_lvalue_assignment = was_lvalue;
+            return self.assign_through_rw_result(result?, value);
+        }
         let method_def = if let Some(def) = (!accessor_wins)
             .then(|| self.resolve_method(&class_name.resolve(), method, &method_args))
             .flatten()

@@ -424,8 +424,12 @@ pub(crate) fn match_user_declared_term_symbol(input: &str) -> Option<(String, us
     SCOPES.with(|s| {
         let scopes = s.borrow();
         let mut best: Option<(String, usize, bool)> = None;
+        // The scope (counted from the innermost) `best` came from: a same-length
+        // match from an OUTER scope never displaces it, so a sigilless `|c` / `\c`
+        // parameter shadows an enclosing `sub c`.
+        let mut best_depth = 0usize;
 
-        for scope in scopes.iter().rev() {
+        for (depth, scope) in scopes.iter().rev().enumerate() {
             for (symbol, binding) in &scope.term_symbols {
                 if !input.starts_with(symbol) {
                     continue;
@@ -459,11 +463,15 @@ pub(crate) fn match_user_declared_term_symbol(input: &str) -> Option<(String, us
                     None => true,
                     Some((_, best_len, best_callable)) => {
                         consumed > *best_len
-                            || (consumed == *best_len && candidate.2 && !*best_callable)
+                            || (consumed == *best_len
+                                && depth == best_depth
+                                && candidate.2
+                                && !*best_callable)
                     }
                 };
                 if replace {
                     best = Some(candidate);
+                    best_depth = depth;
                 }
             }
         }

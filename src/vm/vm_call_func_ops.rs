@@ -1794,9 +1794,24 @@ impl Interpreter {
         // resolve_code_var handles pseudo-package stripping internally
         // A routine's free `&name` is the binding visible at its declaration,
         // not a same-named `my &name` in the CALLER's env (#10483).
-        let mut target = match self.declared_scope_amp_var_for(code, &name) {
+        // `&!attr()` names the INVOCANT's attribute. When this frame holds no
+        // slot for it, the by-name env lookup below would find the CALLER's
+        // same-named private attribute (`$!index` of an unrelated class whose
+        // method is up the call chain), so ask `self` first.
+        let own_private_attr = if name.starts_with('!')
+            && self.find_local_slot(code, &name).is_none()
+            && self.find_local_slot(code, &format!("&{name}")).is_none()
+        {
+            self.self_private_code_attr(&name).filter(|v| !v.is_nil())
+        } else {
+            None
+        };
+        let mut target = match own_private_attr {
             Some(v) => v,
-            None => self.resolve_amp_var_for(code, &name),
+            None => match self.declared_scope_amp_var_for(code, &name) {
+                Some(v) => v,
+                None => self.resolve_amp_var_for(code, &name),
+            },
         };
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in
         // env — that is how a `&`-sigil named parameter binds (`sub f(:&cb)`,

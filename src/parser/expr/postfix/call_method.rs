@@ -18,6 +18,13 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
     {
         return Expr::BareWord(name);
     }
+    // A sigilless parameter or `my \name` in an inner scope (`sub f(|c) { c.hash }`)
+    // is the term, whatever routine of that name an outer scope declares.
+    if crate::parser::stmt::simple::match_user_declared_term_symbol(&name)
+        .is_some_and(|(_, consumed, callable)| !callable && consumed == name.len())
+    {
+        return Expr::BareWord(name);
+    }
     if crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name)
     {
