@@ -1111,6 +1111,17 @@ impl Interpreter {
             is_hoisted_shell: crate::runtime::HoistedShell::No,
         };
         self.register_class_decl(&pun_name, &parents, modifiers)?;
+        if from_defaults {
+            // Rakudo composes the default curry, which is named after the
+            // role: `E.new.^roles` is `(E)` and `E.new ~~ E[Any]` is False.
+            // Record that bare name instead of the spelled `E[Any]` curry, so
+            // the pun no longer matches an explicit parameterisation (#11535).
+            if let Some(composed) = self.registry_mut().class_composed_roles.get_mut(&pun_name) {
+                for role in composed.iter_mut().filter(|r| **r == parents[0]) {
+                    *role = base_name.to_string();
+                }
+            }
+        }
         self.store_language_revision_from_version(&pun_name, &language_version);
         Ok(Some(pun_name))
     }
