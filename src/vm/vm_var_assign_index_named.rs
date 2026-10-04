@@ -3259,6 +3259,10 @@ impl Interpreter {
         raw_key: &str,
         val: Value,
     ) -> Result<Value, RuntimeError> {
+        // A routine symbol has its own assignment rules (`process_routines`).
+        if let Some(name) = raw_key.strip_prefix('&') {
+            return self.store_process_routine(name, val);
+        }
         // Map the sigiled stash key to the env dynamic-var key:
         //   $name → *name, @name → @*name, %name → %*name, name → *name
         let env_key = match raw_key.chars().next() {

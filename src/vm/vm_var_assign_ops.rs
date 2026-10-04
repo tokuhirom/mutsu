@@ -394,6 +394,17 @@ impl Interpreter {
     /// single source variable when the bind is the common `LHS := $scalar`
     /// shape. Returns `(val, None)` for a plain (non-bind) value, so callers can
     /// treat the non-bind path unchanged.
+    /// Whether `val` is the marker a `:=` to an index carries (see
+    /// [`Self::unwrap_bind_index_value`]).
+    // Cost: O(1).
+    pub(crate) fn is_bind_index_value(val: &Value) -> bool {
+        match val.view() {
+            ValueView::Pair(name, _) => name == "__mutsu_bind_index_value",
+            ValueView::ValuePair(name, _) => name.as_str() == Some("__mutsu_bind_index_value"),
+            _ => false,
+        }
+    }
+
     pub(crate) fn unwrap_bind_index_value(val: Value) -> (Value, Option<String>) {
         let payload = match val.view() {
             ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => payload,
