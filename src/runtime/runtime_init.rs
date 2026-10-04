@@ -1384,15 +1384,15 @@ impl Interpreter {
             },
         );
         classes.insert(
-            "Encoding::Decoder".to_string(),
+            "Encoding::Decoder::Builtin".to_string(),
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 native_methods: [
-                    "decode-chars",
                     "add-bytes",
                     "consume-all-chars",
                     "consume-available-chars",
+                    "consume-exactly-chars",
                     "consume-line-chars",
                     "consume-exactly-bytes",
                     "bytes-available",
@@ -1402,7 +1402,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: sym_mro(&["Encoding::Decoder"]),
+                mro: sym_mro(&["Encoding::Decoder::Builtin"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -2579,6 +2579,10 @@ impl Interpreter {
         ccr.insert(
             "CompUnit::Repository::FileSystem".to_string(),
             vec!["CompUnit::Repository".to_string()],
+        );
+        ccr.insert(
+            "Encoding::Decoder::Builtin".to_string(),
+            vec!["Encoding::Decoder".to_string()],
         );
         // Built-in type role composition
         ccr.insert(

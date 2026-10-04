@@ -73,6 +73,7 @@ impl Interpreter {
             NqpOpTable::P6 => self.call_nqp_op_p6(op, args),
             NqpOpTable::Sys => self.call_nqp_op_sys(op, args),
             NqpOpTable::Fs => self.call_nqp_op_fs(op, args),
+            NqpOpTable::Decoder => self.call_nqp_op_decoder(op, args),
         };
         match claimed {
             Some(result) => result,

@@ -1016,6 +1016,21 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 "Cancellation" => return Ok(Self::cancellation_instance()),
+                // Encoding::Decoder::Builtin.new($encoding, :translate-nl):
+                // Rakudo's `nqp::decoderconfigure(nqp::create(self), ...)`.
+                crate::runtime::stream_decoder_object::DECODER_CLASS => {
+                    let encoding = args
+                        .iter()
+                        .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                        .map(Value::to_string_value)
+                        .unwrap_or_default();
+                    let translate_nl =
+                        Self::named_value(&args, "translate-nl").is_some_and(|v| v.truthy());
+                    return crate::runtime::stream_decoder_object::new_decoder(
+                        &encoding,
+                        translate_nl,
+                    );
+                }
                 "FakeScheduler" => {
                     // Shared single implementation with the VM's native fast path.
                     return Ok(Self::build_native_fakescheduler_value());

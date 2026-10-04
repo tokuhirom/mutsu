@@ -21,6 +21,7 @@ mod state_shared_supply;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
+mod stream_decoder;
 pub(crate) mod supply_channel;
 mod supply_collector;
 mod supply_derive;
@@ -321,6 +322,11 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // The decoder keeps its queues in its own cell and edits them there.
+        if let Some(result) = self.try_stream_decoder_method(attributes, class_name, method, &args)
+        {
+            return result;
+        }
         let working = attributes.to_map();
         let mut publisher = AttrPublisher::new(Some(attributes), working.bits_image());
         let (result, updated) = self.dispatch_native_instance_method_mut(
@@ -366,7 +372,6 @@ impl Interpreter {
                 | "Supplier"
                 | "Proc"
                 | "Proc::Async"
-                | "Encoding::Decoder"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 // `IO::Socket::Async::Listener` has no native MUTABLE method (its
@@ -393,7 +398,6 @@ impl Interpreter {
                             | "Supplier"
                             | "Proc"
                             | "Proc::Async"
-                            | "Encoding::Decoder"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                     )
@@ -422,9 +426,6 @@ impl Interpreter {
                 result
             }
             "Proc::Async" => self.native_proc_async_mut(attributes, method, args, publish),
-            "Encoding::Decoder" => {
-                Self::native_encoding_decoder_mut(attributes, method, args, publish)
-            }
             "ThreadPoolScheduler" | "CurrentThreadScheduler" => {
                 Interpreter::native_scheduler_mut(attributes, method, args, publish)
             }
@@ -503,7 +504,7 @@ impl Interpreter {
                 | "Cancellation"
                 | "Encoding::Builtin"
                 | "Encoding::Encoder"
-                | "Encoding::Decoder"
+                | "Encoding::Decoder::Builtin"
                 | "VM"
                 | "IO::Notification::Change"
         ) {
@@ -551,7 +552,7 @@ impl Interpreter {
                             | "Cancellation"
                             | "Encoding::Builtin"
                             | "Encoding::Encoder"
-                            | "Encoding::Decoder"
+                            | "Encoding::Decoder::Builtin"
                             | "VM"
                             | "IO::Notification::Change"
                     )
@@ -635,9 +636,9 @@ impl Interpreter {
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
-            "Encoding::Builtin" => Ok(Self::native_encoding_builtin(attributes, method, &args)),
+            "Encoding::Builtin" => Self::native_encoding_builtin(attributes, method, &args),
             "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
-            "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
+            "Encoding::Decoder::Builtin" => self.native_stream_decoder(attributes, method, &args),
             "VM" => self.native_vm(attributes, method, &args),
             "IO::Notification::Change" => self
                 .try_io_notification_change_method("IO::Notification::Change", attributes, method)
