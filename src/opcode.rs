@@ -7378,6 +7378,11 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
+    /// Whether this code reads its call's argument capture
+    /// (`nqp::usecapture` / `nqp::savecapture`). Set by the compiler. Such
+    /// code is kept off the frameless fast/light call paths, and every other
+    /// entry records the capture for it (`runtime::call_capture`).
+    pub(crate) uses_capture: bool,
     /// True if this code calls `samewith` directly. `samewith` re-dispatches
     /// through the interpreter's samewith context stack, which only the full
     /// call paths push, so the light call paths exclude such a body (a plain
@@ -8032,6 +8037,7 @@ impl CompiledCode {
             mentions_native_scalar_type_name: false,
             has_once: false,
             uses_callframe: false,
+            uses_capture: false,
             uses_samewith: false,
             needs_reflective_capture: false,
             uses_dispatcher: false,

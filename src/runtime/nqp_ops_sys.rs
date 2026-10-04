@@ -21,7 +21,7 @@ pub(crate) fn uname_const_value(name: &str) -> Option<i64> {
 
 impl Interpreter {
     /// Try a process / system / time `nqp::` op. `None` means "not an op this
-    /// table knows"; the caller then tries the filesystem table.
+    /// table knows"; the caller then tries the capture table.
     pub(crate) fn call_nqp_op_sys(
         &mut self,
         op: &str,
@@ -112,7 +112,7 @@ impl Interpreter {
                         .collect(),
                 ))
             }
-            _ => return self.call_nqp_op_fs(op, args),
+            _ => return self.call_nqp_op_capture(op, args),
         })
     }
 }

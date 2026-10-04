@@ -821,6 +821,7 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(cc, &rw_bindings);
+        self.record_call_capture(cc.uses_capture, None, &args);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
         self.static_call_args = false;

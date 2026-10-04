@@ -860,6 +860,7 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(cc, &rw_bindings);
+        self.record_call_capture(cc.uses_capture, Some(&base), &args);
         // A method parameter is a fresh per-invocation binding, exactly like a
         // sub parameter (see the matching mark in
         // `call_compiled_function_named_inner`): while the cross-thread shared
@@ -2211,6 +2212,7 @@ impl Interpreter {
             // captured `self` instead of a stale env snapshot.
             Self::insert_fast_param_values(env, &param_values);
         }
+        self.record_call_capture(cc.uses_capture, Some(&base), &args);
 
         if let Some((name, readonly)) = raw_invocant_readonly {
             let key = crate::runtime::sigilless_readonly_key(name);

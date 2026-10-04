@@ -63,7 +63,7 @@ const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 const CALLFRAME_BLOCKS_KEY: &str = "__callframe_blocks";
 
 #[inline]
-fn is_internal_named_arg(arg: &Value) -> bool {
+pub(crate) fn is_internal_named_arg(arg: &Value) -> bool {
     fn is_internal_key(key: &str) -> bool {
         matches!(
             key,
