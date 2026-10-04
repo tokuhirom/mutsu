@@ -241,9 +241,7 @@ mod native {
             // with it: catch, forget, move on — same process-level outcome as
             // a panicking dedicated thread (the panic is already turned into a
             // broken Promise by `guard_worker_panic` where that matters).
-            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(task.run)).is_ok() {
-                crate::runtime::thread_usage::note_task_completed();
-            }
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task.run));
             // Task end is a yield (ADR-0105 D2): deliver the wake-ups this
             // task deferred. Deferred starts need nothing: this worker is
             // about to dequeue them itself.
@@ -417,9 +415,14 @@ pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
 
 /// Box `task` to run as a stack of its own (`$*STACK-ID`, see
 /// `runtime::stack_id`): every pooled task is one, like a Rakudo `start`.
+/// A task that returns normally counts as completed (`$*SCHEDULER.usage`),
+/// whichever way it ran: pool worker, thread per task, or inline on wasm.
 // Cost: O(1).
 fn on_fresh_stack(task: impl FnOnce() + Send + 'static) -> Box<dyn FnOnce() + Send + 'static> {
-    Box::new(move || super::stack_id::run_on_fresh_stack(task))
+    Box::new(move || {
+        super::stack_id::run_on_fresh_stack(task);
+        super::thread_usage::note_task_completed();
+    })
 }
 
 /// [`submit`], calling `reject` (on the submitting thread, or on the worker
