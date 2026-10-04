@@ -13,9 +13,10 @@ impl Interpreter {
         pos: usize,
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {
-        self.rx_code_call(code, pos, caps, |interp| {
+        'run: {
+            let interp = &mut *self;
             interp.eval_regex_repeat_code(code, caps)
-        })
+        }
     }
 
     /// The environment a `** {code}` count runs in. Like a `{ ... }` block, the

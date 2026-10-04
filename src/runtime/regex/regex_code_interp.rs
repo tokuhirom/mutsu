@@ -225,9 +225,10 @@ impl Interpreter {
         current_caps: &RegexCaptures,
         ignore_case: bool,
     ) -> Option<std::sync::Arc<RegexPattern>> {
-        let source: Option<String> = self.rx_code_call(code, pos, current_caps, |interp| {
+        let source: Option<String> = 'run: {
+            let interp = &mut *self;
             interp.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)
-        });
+        };
         self.parse_regex(&source?)
     }
 

@@ -208,6 +208,8 @@ impl Interpreter {
         names
     }
 
+    /// The first (highest-priority) match of `pattern` at `start`.
+    // Cost: the match itself (`rx_match_first`).
     pub(super) fn regex_match_end_from_caps_in_pkg(
         &mut self,
         pattern: &RegexPattern,
@@ -215,31 +217,11 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<(usize, RegexCaptures)> {
-        // The compiled engine (ADR-0135) answers when it covers the pattern.
-        if let Some(found) = self.rx_try_match(pattern, chars, start, pkg) {
-            return found;
-        }
-        self.regex_walk_first_for_diff(pattern, chars, start, pkg)
+        self.rx_match_first(pattern, chars, start, pkg)
     }
 
-    /// The tree walk's first match at `start` — the answer the compiled
-    /// engine is held to under `MUTSU_RX_DIFF` (ADR-0135 D6), and the path
-    /// every pattern it declines takes.
-    pub(super) fn regex_walk_first_for_diff(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-    ) -> Option<(usize, RegexCaptures)> {
-        // Only the first (highest-priority / greedy) complete match is needed
-        // here, and the depth-first walk discovers it first, so stop as soon as
-        // one is found instead of exploring the whole backtracking tree.
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, true, false)
-            .into_iter()
-            .next()
-    }
-
+    /// Every end of `pattern` at `start`, highest priority first.
+    // Cost: the whole backtracking search (`rx_match_ends`).
     pub(in crate::runtime) fn regex_match_ends_from_caps_in_pkg(
         &mut self,
         pattern: &RegexPattern,
@@ -247,20 +229,15 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
-        // The compiled engine (ADR-0135) answers when it covers the pattern.
-        if let Some(found) = self.rx_try_all_ends(pattern, chars, start, pkg) {
-            return found;
-        }
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
+        self.rx_match_ends(pattern, chars, start, pkg, false)
     }
 
     /// Like `regex_match_ends_from_caps_in_pkg`, but stops as soon as a match
-    /// covers the whole subject. `Grammar.parse` wants exactly one such match
-    /// and the depth-first walk finds the highest-priority one first, so there
-    /// is nothing to gain from exploring the rest of the backtracking tree —
-    /// and something to lose: an ordered alternation would keep entering later
-    /// branches (running their `{ ... }` blocks) after the parse had already
-    /// succeeded through an earlier one.
+    /// covers the whole subject. `Grammar.parse` wants exactly one such match,
+    /// and an ordered alternation must not keep entering later branches
+    /// (running their `{ ... }` blocks) after the parse already succeeded
+    /// through an earlier one.
+    // Cost: the backtracking search up to the first full match.
     pub(in crate::runtime) fn regex_match_ends_stop_at_full(
         &mut self,
         pattern: &RegexPattern,
@@ -268,33 +245,7 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Vec<(usize, RegexCaptures)> {
-        // The compiled engine (ADR-0135) answers when it covers the pattern.
-        if let Some(found) = self.rx_try_ends_until_full(pattern, chars, start, pkg) {
-            return found;
-        }
-        // The start rule is itself a rule invocation: a grammar method it calls
-        // writes to its cursor, which is the parse's own Match (#9803).
-        // When it runs the parse's start rule, its code blocks also see the
-        // start rule's built invocant (#10848).
-        let saved = self.enter_start_rule_cursor();
-        let mut ends = self.regex_walk_ends_for_diff(pattern, chars, start, pkg, true);
-        let cursor = self.leave_start_rule_cursor(saved);
-        Self::file_rule_cursor(cursor, &mut ends);
-        ends
-    }
-
-    /// The tree walk's ends (up to the first full match with `stop_at_full`)
-    /// — the answer the compiled engine is held to under `MUTSU_RX_DIFF`
-    /// (ADR-0135 D6), and the path every pattern it declines takes.
-    pub(super) fn regex_walk_ends_for_diff(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-        stop_at_full: bool,
-    ) -> Vec<(usize, RegexCaptures)> {
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, stop_at_full)
+        self.rx_match_ends(pattern, chars, start, pkg, true)
     }
 
     /// Backtracking match returning the complete-match end positions (with

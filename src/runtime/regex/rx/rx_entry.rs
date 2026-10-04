@@ -1,12 +1,11 @@
-//! The entry points the walk's chokepoints consult to reach the compiled
-//! engine (ADR-0135 D5), the per-pattern program memo, and the pool of VM
-//! scratch state a run borrows.
+//! The regex engine's entry points (ADR-0135), the per-pattern program memo,
+//! and the pool of VM scratch state a run borrows.
 
 use std::sync::Arc;
 
 use super::rx_frame::{Choice, FMark, Frame};
 use super::rx_levels::Levels;
-use super::{RxProgram, rx_compile, rx_diff_enabled, rx_vm_enabled};
+use super::{RxProgram, rx_compile};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
 use crate::symbol::Symbol;
@@ -72,11 +71,6 @@ pub(super) fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
         .as_ref()
 }
 
-/// `pattern`'s program. `Err` names why the match takes the walk.
-fn rx_program_for_run(pattern: &RegexPattern) -> Result<Arc<RxProgram>, &'static str> {
-    program_for(pattern).cloned().ok_or("declined")
-}
-
 /// The subject a `:m` match maps its stripped positions over: the published
 /// match target, or, for a match outside any (an internal caller's), one built
 /// from `chars`.
@@ -86,121 +80,70 @@ fn ignoremark_target(chars: &[char]) -> crate::value::regex_caps::MatchTarget {
         .unwrap_or_else(|| crate::value::regex_caps::MatchTarget::from_chars(chars))
 }
 
-/// Count one match the walk answers instead of the compiled engine.
-#[inline]
-fn walked<T>(reason: &'static str) -> Option<T> {
-    crate::vm::vm_stats_regex_vm::record_regex_walk(
-        crate::vm::vm_stats_regex_vm::WalkUse::Walked,
-        reason,
-    );
+/// `pattern`'s program, or — for a pattern the compiler declines, which no
+/// pattern of the suites does (ADR-0135 D7) — an error raised for the match,
+/// naming why (`X::NYI`-style: the construct is not implemented).
+// Cost: O(1) after the pattern's first compile.
+fn program_or_raise(pattern: &RegexPattern) -> Option<Arc<RxProgram>> {
+    if let Some(program) = program_for(pattern) {
+        return Some(Arc::clone(program));
+    }
+    let why = rx_compile::compile(pattern).err().unwrap_or("declined");
+    let err = crate::value::RuntimeError::new(format!(
+        "This regex construct is not implemented by the regex engine ({why})"
+    ));
+    crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+        e.borrow_mut().get_or_insert(err);
+    });
     None
 }
 
 impl Interpreter {
-    /// The first (highest-priority) match of `pattern` at `start`, by the
-    /// compiled engine — or `None` when this match must take the walk: the
-    /// pattern is outside the compiled language, or the dynamic context carries
-    /// state the VM does not model (an enclosing regex's `:my` lexicals or
-    /// backreference captures, a grammar rule's dynamic declarations, LTM
-    /// measurement).
-    // Cost: O(1) to decline; otherwise the match itself.
-    pub(in crate::runtime::regex) fn rx_try_match(
+    /// The first (highest-priority) match of `pattern` at `start`.
+    // Cost: the match itself.
+    pub(in crate::runtime::regex) fn rx_match_first(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
-    ) -> Option<Option<(usize, RegexCaptures)>> {
-        self.rx_try_match_in(pattern, chars, start, pkg, true)
+    ) -> Option<(usize, RegexCaptures)> {
+        self.rx_match_first_in(pattern, chars, start, pkg, true)
     }
 
-    /// [`Self::rx_try_match`] for the position-only matcher
-    /// (`regex_match_end_from_in_pkg`). That matcher treats a code atom as an
-    /// inert zero-width pass — it is how the walk probes a group without running
-    /// the user's code — so a pattern with any code atom declines here and keeps
-    /// it.
-    // Cost: O(1) to decline; otherwise the match itself.
-    pub(in crate::runtime::regex) fn rx_try_match_no_code(
+    /// [`Self::rx_match_first`] for the position-only matcher
+    /// (`regex_match_end_from_in_pkg`), which treats a code atom as an inert
+    /// zero-width pass: it probes a pattern without running the user's code.
+    // Cost: the match itself.
+    pub(in crate::runtime::regex) fn rx_match_first_no_code(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
-    ) -> Option<Option<(usize, RegexCaptures)>> {
-        self.rx_try_match_in(pattern, chars, start, pkg, false)
+    ) -> Option<(usize, RegexCaptures)> {
+        self.rx_match_first_in(pattern, chars, start, pkg, false)
     }
 
-    /// Does the dynamic context let the compiled engine run at all? `Err`
-    /// names what keeps it out (`MUTSU_VM_STATS`'s `regex-walk:` line).
-    // Cost: O(1).
-    #[inline]
-    fn rx_context_allows(&mut self) -> Result<(), &'static str> {
-        use super::super::regex_helpers as h;
-        if !rx_vm_enabled() {
-            return Err("context:vm-off");
-        }
-        if h::inline_regex_vars_active() {
-            return Err("context:inline-regex-vars");
-        }
-        if h::INLINE_CAPTURE_SCOPE.with(std::cell::Cell::get).is_some() {
-            return Err("context:inline-capture-scope");
-        }
-        if h::take_inline_outer_caps_seed().is_some() {
-            return Err("context:inline-outer-seed");
-        }
-        if rx_diff_enabled() {
-            // D6: the walk's replay of a compiled run is the walk alone, so a
-            // nested pattern it matches is compared too instead of answering
-            // from the compiled engine on both sides.
-            if super::rx_diff::replaying() {
-                return Err("context:diff-replay");
-            }
-            // D6 can record and replay a code atom, but not user code reached
-            // through a wrapped token, a custom HOW or a reduce-time action:
-            // the walk's replay would run it a second time. Differential mode
-            // declines those matches.
-            if self.has_any_wrap_chains()
-                || !self.registry().grammar_custom_how.is_empty()
-                || super::super::regex_helpers::dynvar_overlay_active()
-            {
-                return Err("context:diff-user-code");
-            }
-        }
-        Ok(())
-    }
-
-    fn rx_try_match_in(
+    fn rx_match_first_in(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
         allow_code: bool,
-    ) -> Option<Option<(usize, RegexCaptures)>> {
+    ) -> Option<(usize, RegexCaptures)> {
         if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-            return Some(
-                self.rx_ltm_measured_ends(pattern, chars, start, pkg)
-                    .into_iter()
-                    .next(),
-            );
-        }
-        if let Err(why) = self.rx_context_allows() {
-            return walked(why);
+            return self
+                .rx_ltm_measured_ends(pattern, chars, start, pkg)
+                .into_iter()
+                .next();
         }
         if pattern.ignore_mark {
-            return self.rx_try_ignoremark(pattern, chars, start, pkg, allow_code);
+            return self.rx_match_ignoremark(pattern, chars, start, pkg, allow_code);
         }
-        let program = match rx_program_for_run(pattern) {
-            Ok(program) => program,
-            Err(why) => return walked(why),
-        };
+        let program = program_or_raise(pattern)?;
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
-        // D6: the compiled run records the code atoms it invokes and the walk
-        // replays them (`rx_diff`).
-        let diffing = rx_diff_enabled();
-        let mark = diffing.then(super::rx_diff::begin_record);
-        // The position-only matcher treats a code atom as an inert zero-width
-        // pass: it probes a pattern without running the user's code.
         let inert = !allow_code && program.has_code;
         let saved =
             inert.then(|| super::super::regex_helpers::CODE_ATOMS_INERT.with(|f| f.replace(true)));
@@ -208,22 +151,7 @@ impl Interpreter {
         if let Some(saved) = saved {
             super::super::regex_helpers::CODE_ATOMS_INERT.with(|f| f.set(saved));
         }
-        if let Some(mark) = mark {
-            super::rx_diff::begin_replay(mark);
-            let walked = super::super::regex_helpers::isolate_reduced_log(|| {
-                self.regex_walk_first_for_diff(pattern, chars, start, pkg)
-            });
-            let replay = super::rx_diff::end_replay();
-            let same = super::rx_diff::same_match(&result, &walked);
-            if let Err(why) = replay.and(same) {
-                super::rx_diff::disagreement(format!(
-                    "at start {start} of a {}-char subject: {why}\nprogram: {:?}",
-                    chars.len(),
-                    program.ops
-                ));
-            }
-        }
-        Some(result)
+        result
     }
 
     /// A match made while an LTM prefix is measured (ADR-0125): no code runs
@@ -250,62 +178,48 @@ impl Interpreter {
             .collect()
     }
 
-    /// A whole-pattern `:m`: the mark-stripped pattern's compiled program
-    /// over the subject's stripped view, mapped back by the walk's own
-    /// `ignoremark_on_target`. `None` (take the walk) when the stripped
-    /// pattern does not compile.
+    /// A whole-pattern `:m`: the mark-stripped pattern's program over the
+    /// subject's stripped view, mapped back (`ignoremark_on_target`).
     // Cost: the stripped match, plus O(c) to map c capture spans back; O(n)
     // more to build the subject of `chars` when none is published, n = its
     // chars.
-    fn rx_try_ignoremark(
+    fn rx_match_ignoremark(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
         allow_code: bool,
-    ) -> Option<Option<(usize, RegexCaptures)>> {
+    ) -> Option<(usize, RegexCaptures)> {
         let target = ignoremark_target(chars);
-        let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
-        if let Err(why) = rx_program_for_run(&stripped) {
-            return walked(why);
-        }
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
             interp
-                .rx_try_match_in(stripped, chars, 0, pkg, allow_code)
-                .flatten()
+                .rx_match_first_in(stripped, chars, 0, pkg, allow_code)
                 .into_iter()
                 .collect()
         };
-        let mut found = self.ignoremark_on_target(pattern, &target, start, &mut run);
-        Some(found.pop())
+        self.ignoremark_on_target(pattern, &target, start, &mut run)
+            .pop()
     }
 
-    /// [`Self::rx_try_ends`] for a `:m` pattern: the mark-stripped pattern's
-    /// ends over the subject's stripped view, mapped back by the walk's own
-    /// `ignoremark_on_target`, as the walk's all-ends entry does. `None` (take
-    /// the walk) when the stripped pattern does not compile.
+    /// [`Self::rx_match_ends`] for a `:m` pattern: the mark-stripped pattern's
+    /// ends over the subject's stripped view, mapped back
+    /// (`ignoremark_on_target`).
     // Cost: the stripped run, plus O(c) per end to map its c capture spans
     // back; O(n) more to build the subject of `chars` when none is published.
-    fn rx_try_ignoremark_ends(
+    fn rx_match_ignoremark_ends(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
         stop_at_full: bool,
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
+    ) -> Vec<(usize, RegexCaptures)> {
         let target = ignoremark_target(chars);
-        let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
-        if let Err(why) = rx_program_for_run(&stripped) {
-            return walked(why);
-        }
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
-            interp
-                .rx_try_ends(stripped, chars, 0, pkg, stop_at_full)
-                .unwrap_or_default()
+            interp.rx_match_ends(stripped, chars, 0, pkg, stop_at_full)
         };
-        Some(self.ignoremark_on_target(pattern, &target, start, &mut run))
+        self.ignoremark_on_target(pattern, &target, start, &mut run)
     }
 
     /// Run `program` at `start`.
@@ -376,83 +290,37 @@ impl Interpreter {
         result
     }
 
-    /// `Grammar.parse`'s entry (`regex_match_ends_stop_at_full`): every end of
-    /// `pattern` at `start`, highest priority first, up to and including the
-    /// first one that covers the whole subject — or `None` when the match must
-    /// take the walk.
-    // Cost: O(s) in the steps the backtracking search takes to the first full
-    // match, as `rx_run`; plus O(c) per end collected, c = its captures.
-    pub(in crate::runtime::regex) fn rx_try_ends_until_full(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        self.rx_try_ends(pattern, chars, start, pkg, true)
-    }
-
-    /// Every end of `pattern` at `start`, highest priority first
-    /// (`regex_match_ends_from_caps_in_pkg`: `:ov`/`:ex`, an alternation
-    /// branch, LTM lookahead fates, a cursor token method) — or `None` when
-    /// the match must take the walk.
-    // Cost: O(s) in the steps of the whole backtracking search, as `rx_run`
-    // run to exhaustion; plus O(c) per end collected, c = its captures.
-    pub(in crate::runtime::regex) fn rx_try_all_ends(
-        &mut self,
-        pattern: &RegexPattern,
-        chars: &[char],
-        start: usize,
-        pkg: Symbol,
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        self.rx_try_ends(pattern, chars, start, pkg, false)
-    }
-
-    fn rx_try_ends(
+    /// Every end of `pattern` at `start`, highest priority first: all of them
+    /// (`:ov`/`:ex`, an alternation branch, a cursor token method), or with
+    /// `stop_at_full` (`Grammar.parse`) up to and including the first that
+    /// covers the whole subject.
+    // Cost: O(s) in the steps of the backtracking search, as `rx_run` run to
+    // exhaustion (or to the first full match); plus O(c) per end collected,
+    // c = its captures.
+    pub(in crate::runtime::regex) fn rx_match_ends(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
         pkg: Symbol,
         stop_at_full: bool,
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
+    ) -> Vec<(usize, RegexCaptures)> {
         if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-            return Some(self.rx_ltm_measured_ends(pattern, chars, start, pkg));
-        }
-        if let Err(why) = self.rx_context_allows() {
-            return walked(why);
+            return self.rx_ltm_measured_ends(pattern, chars, start, pkg);
         }
         if pattern.ignore_mark {
-            return self.rx_try_ignoremark_ends(pattern, chars, start, pkg, stop_at_full);
+            return self.rx_match_ignoremark_ends(pattern, chars, start, pkg, stop_at_full);
         }
-        let program = match rx_program_for_run(pattern) {
-            Ok(program) => program,
-            Err(why) => return walked(why),
+        let Some(program) = program_or_raise(pattern) else {
+            return Vec::new();
         };
         crate::vm::vm_stats_regex_vm::record_regex_vm_run();
-        let diffing = rx_diff_enabled();
-        let mark = diffing.then(super::rx_diff::begin_record);
         let mut ends = Vec::new();
         let goal = Goal::Ends {
             out: &mut ends,
             stop_at_full,
         };
         self.rx_run_goal(&program, chars, start, pkg, goal);
-        if let Some(mark) = mark {
-            super::rx_diff::begin_replay(mark);
-            let walked = super::super::regex_helpers::isolate_reduced_log(|| {
-                self.regex_walk_ends_for_diff(pattern, chars, start, pkg, stop_at_full)
-            });
-            let replay = super::rx_diff::end_replay();
-            let same = super::rx_diff::same_ends(&ends, &walked);
-            if let Err(why) = replay.and(same) {
-                super::rx_diff::disagreement(format!(
-                    "on the ends from {start} of a {}-char subject: {why}\nprogram: {:?}",
-                    chars.len(),
-                    program.ops
-                ));
-            }
-        }
-        Some(ends)
+        ends
     }
 }

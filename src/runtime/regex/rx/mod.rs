@@ -33,7 +33,6 @@ mod rx_call_symbolic;
 mod rx_capture_ops;
 mod rx_compile;
 mod rx_compile_compound;
-mod rx_diff;
 mod rx_entry;
 mod rx_frame;
 mod rx_levels;
@@ -421,17 +420,4 @@ pub(super) struct LtmAltTable {
     /// The NFA of all the branches, measured once per ranking
     /// (`ltm_rank_alternation`).
     pub(super) nfa: super::regex_ltm_nfa::LtmNfaSlots,
-}
-
-/// `MUTSU_RX_VM=off` routes every pattern back to the tree walk.
-pub(super) fn rx_vm_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| !matches!(std::env::var("MUTSU_RX_VM").as_deref(), Ok("off" | "0")))
-}
-
-/// `MUTSU_RX_DIFF=1` (ADR-0135 D6) runs every compiled match through the walk
-/// as well and aborts on any disagreement.
-pub(super) fn rx_diff_enabled() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| matches!(std::env::var("MUTSU_RX_DIFF").as_deref(), Ok("1" | "on")))
 }

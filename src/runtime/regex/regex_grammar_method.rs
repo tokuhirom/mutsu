@@ -48,15 +48,15 @@ impl Interpreter {
         }
         // The pending-exception test is part of the recorded invocation: the
         // walk's replay runs after the compiled run raised it.
-        let end: Option<(usize, RegexCaptures)> =
-            self.rx_code_call(name, pos, &RegexCaptures::default(), |interp| {
-                if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                    return None;
-                }
-                interp
-                    .grammar_method_call(name, chars, pos, pkg, args, invocant)
-                    .map(|end| (end, RegexCaptures::default()))
-            });
+        let end: Option<(usize, RegexCaptures)> = 'run: {
+            let interp = &mut *self;
+            if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+                break 'run None;
+            }
+            interp
+                .grammar_method_call(name, chars, pos, pkg, args, invocant)
+                .map(|end| (end, RegexCaptures::default()))
+        };
         end.map(|(end, _)| end)
     }
 
