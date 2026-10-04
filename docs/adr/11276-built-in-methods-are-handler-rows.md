@@ -337,3 +337,26 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     `$s.substr(6, 5)` -64.4%. `$i.chars` (an `Int`, no row) -3.7% from the remembered
     miss. `$s.index($n, 3)` (no row for two arguments) +0.2%, down from +3.2% before
     the miss memo and the arity bits. The empty loop is unchanged.
+- 2026-10-04, slice 3, the numeric coercions: `Int`, `Num` and `Bool` with no arguments are
+  rows owned by `Int`, `Num`, `Rat` and `FatRat`, and `Complex` has a `Bool` row.
+  `Complex.Int` and `Complex.Num` read `$*TOLERANCE`, which needs the interpreter, so they
+  stay off the table (#11795 records that `.Int` ignores it today).
+  `method_table/coerce.rs` holds the one implementation. The cascade's `.Int`/`.Num` arms
+  and `Str.Int`'s numify-then-truncate path call it, which replaces the per-type copies
+  (`numeric_to_int` and the arm bodies). A `Num` past a machine word now truncates to a
+  big `Int` instead of saturating at `i64` (`1e30.Int`, `"1e30".Int`).
+  - The table gains a per-name shape mask next to the arity bits. A receiver whose shape
+    has no row of that name (`"42".Int`, once `Int` has rows on the numeric types) is
+    refused by a bit test, with no memo lock and no hash lookup.
+  - `try_native_method_raw` calls the 0-arg cascade without the table:
+    `try_native_method` asked the table first, and the raw path's lever-A gate refuses
+    every shaped receiver with an augment, so the second probe could only repeat the
+    first.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against
+    the same `main`: `$r.Num` 1,837M to 338M (-81.6%), `$r.Int` -77.7%, `$i.Int` -71.0%,
+    `$i.Num` -70.8%, `$n.Int` -69.6%. `$i.Bool` and `$n.Bool` are -38%: `Bool` is a name
+    the call-site lane leaves to the full path (`scalar_early_lane_skips`), so only the
+    table answers it. `"42".Int` (a `Str`, no row) is +1.3%, which is the lane's and the
+    native entry's shape probe and bit tests (about 50 instructions each); it was +6.8%
+    before the miss memo, the shape mask and the raw-path change. The empty loop is
+    unchanged.
