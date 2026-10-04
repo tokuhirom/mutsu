@@ -247,6 +247,14 @@ impl Parser {
             self.pos = start;
             return None;
         };
+        // The separator may itself be quantified (`<w>+ % \s+`), though not
+        // separated again.
+        if let Some(quantifier) = self.parse_quantifier() {
+            node = RegexNode::Quantified {
+                atom: Box::new(node),
+                quantifier,
+            };
+        }
         let before = self.pos;
         self.skip_whitespace();
         if self.pos != before {

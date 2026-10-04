@@ -122,6 +122,8 @@ pub enum RakuAstClass {
     RegexAnchorLeftWordBoundary,
     RegexAnchorRightWordBoundary,
     RegexMatchFrom,
+    RegexAssertionPass,
+    RegexAssertionFail,
     RegexMatchTo,
     RegexQuantifierRange,
     RegexBacktrackFrugal,
@@ -418,6 +420,8 @@ impl RakuAstClass {
             RegexAnchorLeftWordBoundary => "RakuAST::Regex::Anchor::LeftWordBoundary",
             RegexAnchorRightWordBoundary => "RakuAST::Regex::Anchor::RightWordBoundary",
             RegexMatchFrom => "RakuAST::Regex::MatchFrom",
+            RegexAssertionPass => "RakuAST::Regex::Assertion::Pass",
+            RegexAssertionFail => "RakuAST::Regex::Assertion::Fail",
             RegexMatchTo => "RakuAST::Regex::MatchTo",
             RegexQuantifierRange => "RakuAST::Regex::Quantifier::Range",
             RegexBacktrackFrugal => "RakuAST::Regex::Backtrack::Frugal",
@@ -618,6 +622,8 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAnchorLeftWordBoundary
                 | RakuAstClass::RegexAnchorRightWordBoundary
                 | RakuAstClass::RegexMatchFrom
+                | RakuAstClass::RegexAssertionPass
+                | RakuAstClass::RegexAssertionFail
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
                 | RakuAstClass::RegexQuantifierRange
@@ -761,6 +767,12 @@ impl RakuAstClass {
             RegexMatchFrom | RegexMatchTo => {
                 &["RakuAST::Regex::Atom", "RakuAST::Regex::Term", "RakuAST::Regex"]
             }
+            RegexAssertionPass | RegexAssertionFail => &[
+                "RakuAST::Regex::Assertion",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
             RegexCharClass(kind) => regex_char_class::ancestors(kind),
             RegexAssertionCharClass => &[
                 "RakuAST::Regex::Assertion",
@@ -1098,6 +1110,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RegexAnchorLeftWordBoundary,
     RakuAstClass::RegexAnchorRightWordBoundary,
     RakuAstClass::RegexMatchFrom,
+    RakuAstClass::RegexAssertionPass,
+    RakuAstClass::RegexAssertionFail,
     RakuAstClass::RegexMatchTo,
     RakuAstClass::RegexQuantifierRange,
     RakuAstClass::RegexBacktrackFrugal,
@@ -2652,6 +2666,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAnchorLeftWordBoundary
                     | RakuAstClass::RegexAnchorRightWordBoundary
                     | RakuAstClass::RegexMatchFrom
+                    | RakuAstClass::RegexAssertionPass
+                    | RakuAstClass::RegexAssertionFail
                     | RakuAstClass::RegexMatchTo
                     | RakuAstClass::RegexCharClass(_)
                     | RakuAstClass::RegexAssertionCharClass
@@ -2848,6 +2864,8 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
             RakuAstClass::RegexAnchorRightWordBoundary
         }
         ("RakuAST::Regex::MatchFrom", "new") => RakuAstClass::RegexMatchFrom,
+        ("RakuAST::Regex::Assertion::Pass", "new") => RakuAstClass::RegexAssertionPass,
+        ("RakuAST::Regex::Assertion::Fail", "new") => RakuAstClass::RegexAssertionFail,
         ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
@@ -3155,6 +3173,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexAnchorLeftWordBoundary
             | RakuAstClass::RegexAnchorRightWordBoundary
             | RakuAstClass::RegexMatchFrom
+            | RakuAstClass::RegexAssertionPass
+            | RakuAstClass::RegexAssertionFail
             | RakuAstClass::RegexMatchTo
             | RakuAstClass::RegexQuantifierRange
             | RakuAstClass::RegexCharClass(_)
