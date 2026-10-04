@@ -816,6 +816,7 @@ impl Interpreter {
     ///   what an END phaser declared in a `unit module` does. Resolved only when the
     ///   qualifier IS the current package: an explicitly written `$Other::x` is a
     ///   package variable and must never reach a `my` lexical.
+    ///
     /// `name_sym` is `name` interned when the caller holds it (a read path's
     /// constant-pool symbol); otherwise it is looked up only past the
     /// empty-store early-outs, so a program with no unit lexicals never pays
