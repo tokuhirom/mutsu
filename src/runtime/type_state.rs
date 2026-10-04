@@ -218,6 +218,13 @@ pub(crate) struct TypeState {
     /// owner-package-chain probe in `resolve_suppressed_type`, so a method body
     /// keeps seeing its own class's nested type (see `resolve_suppressed_type`).
     pub(crate) class_scoped_short_names: std::sync::Arc<HashSet<String>>,
+    /// Keys of enums declared inside a class body whose body has exited with
+    /// no outer binding of the same name (`class CC { enum E <bar> }`). A
+    /// bareword `bar` that nothing else resolves is undeclared out there
+    /// (rakudo: "Undeclared routine"), not the string "bar" (#11719). Only the
+    /// bareword fallback reads it, so unlike `suppressed_names` it never hides
+    /// a type of the same name (`enum F <array>` keeps `array[int]` working).
+    pub(crate) class_body_enum_keys: std::sync::Arc<HashSet<String>>,
     /// Bare enum variant names poisoned by redeclaration from different enums.
     /// Maps bare name -> latest enum package name.
     pub(crate) poisoned_enum_aliases: std::sync::Arc<HashMap<String, String>>,
@@ -296,6 +303,7 @@ impl TypeState {
             method_fallbacks: Default::default(),
             suppressed_names: Default::default(),
             class_scoped_short_names: Default::default(),
+            class_body_enum_keys: Default::default(),
             poisoned_enum_aliases: Default::default(),
             enum_scope_names: vec![Vec::new()],
             my_scoped_package_items: Default::default(),
@@ -361,6 +369,7 @@ impl TypeState {
             method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),
             class_scoped_short_names: self.class_scoped_short_names.clone(),
+            class_body_enum_keys: self.class_body_enum_keys.clone(),
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),

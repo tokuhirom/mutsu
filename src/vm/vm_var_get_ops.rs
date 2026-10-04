@@ -780,6 +780,15 @@ impl Interpreter {
                 "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
                 name,
             )));
+        } else if self.types.class_body_enum_keys.contains(name) {
+            // The key of an enum a class body declared, read outside that body
+            // with nothing else in scope by its name (#11719). Checked after
+            // every live route, like the suppression above, so any later
+            // declaration of the name still wins.
+            return Err(RuntimeError::new(format!(
+                "X::Undeclared::Symbols: Undeclared routine:\n    {} used at line 1",
+                name,
+            )));
         } else if name == "IterationEnd" {
             // The singleton sentinel, so `nqp::eqaddr($it.pull-one,
             // IterationEnd)` sees the same object `pull-one` returned (#9333).

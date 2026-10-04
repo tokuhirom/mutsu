@@ -281,6 +281,15 @@ impl Interpreter {
                 (!self.types.my_scoped_package_items.contains(short)).then(|| key.to_string())
             })
             .collect();
+        for key in &nested_enum_keys {
+            let short = key
+                .strip_prefix(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+                .unwrap_or(key);
+            if saved_env.get(key).is_none() && saved_env.get(short).is_none() {
+                crate::runtime::cow_table_mut(&mut self.types.class_body_enum_keys)
+                    .insert(short.to_string());
+            }
+        }
         for bare in nested_short_names.into_iter().chain(nested_enum_keys) {
             match saved_env.get(&bare) {
                 Some(previous) => {
