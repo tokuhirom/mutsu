@@ -32,7 +32,7 @@ impl Interpreter {
     /// the allomorph type when the mixin is itself an allomorph that also
     /// carries a role (`<42> but R` composes onto `IntStr`, not `Int`).
     // Cost: O(k) + inner's `.WHAT`, k = number of mixin override keys.
-    fn mixin_base_what(
+    pub(super) fn mixin_base_what(
         &mut self,
         inner: &Arc<Value>,
         mixins: &crate::value::MixinOverrides,

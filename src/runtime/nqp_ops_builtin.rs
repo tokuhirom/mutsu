@@ -567,6 +567,26 @@ impl Interpreter {
                     _ => None,
                 };
             }
+            // A Junction's `$!type` ("any"/"all"/"one"/"none") and
+            // `$!eigenstates`: MUGS::Util::StructureValidator reads both to
+            // validate against a junction schema. The eigenstates answer is a
+            // fresh list, as rakudo's is a buffer the caller only iterates.
+            // `(A | B) but Optional` is still a Junction underneath.
+            ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Junction { .. }) => {
+                return Self::nqp_attr_value(inner, name);
+            }
+            ValueView::Junction { kind, values } => {
+                return match bare {
+                    "type" => Some(Value::str_from(match kind {
+                        JunctionKind::Any => "any",
+                        JunctionKind::All => "all",
+                        JunctionKind::One => "one",
+                        JunctionKind::None => "none",
+                    })),
+                    "eigenstates" => Some(Value::array(values.to_vec())),
+                    _ => None,
+                };
+            }
             _ => {}
         }
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,
