@@ -34,7 +34,7 @@ ok $t > 0, 'and nqp::time is a positive epoch reading';
 is nqp::sha1('abc'), 'A9993E364706816ABA3E25717850C26C9CD0D89D', 'nqp::sha1';
 my %h = a => 1;
 is nqp::atkey(%h, 'a'), 1, 'nqp::atkey';
-is nqp::atpos([10, 20, 30], 1), 20, 'nqp::atpos';
+is nqp::atpos(nqp::list(10, 20, 30), 1), 20, 'nqp::atpos';
 is nqp::join('-', nqp::split(',', '1,2,3')), '1-2-3', 'nqp::join / nqp::split';
 
 # -- a user routine cannot capture an `nqp::` name ---------------------------
