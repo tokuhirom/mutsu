@@ -911,6 +911,7 @@ impl Interpreter {
                 // already ran their actions. Dispatch the longest partial tree
                 // (which includes the start rule's own action) when there is one,
                 // then replay whatever reduced outside it.
+                let partial_end = partial_match.as_ref().map_or(0, |caps| caps.to);
                 if let Some(best_end) = partial_match.as_ref().map(|caps| caps.to)
                     && let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
                     && best_end as i64 > current
@@ -948,7 +949,11 @@ impl Interpreter {
                 }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
-                    return Ok(self.parse_failure_for_pattern(&text, failure_pattern.as_deref()));
+                    return Ok(self.parse_failure_for_pattern_from(
+                        &text,
+                        failure_pattern.as_deref(),
+                        partial_end,
+                    ));
                 }
                 // A failed `.subparse` yields a failed Match, not a Failure.
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
@@ -2159,12 +2164,26 @@ impl Interpreter {
     }
 
     pub(super) fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {
+        self.parse_failure_for_pattern_from(text, pattern, 0)
+    }
+
+    /// [`Self::parse_failure_for_pattern`] when the live match already reached
+    /// `known_end` (the end of the start rule's longest partial match). The
+    /// probe cannot see past a grammar method it is not allowed to call, so the
+    /// live answer is its floor.
+    fn parse_failure_for_pattern_from(
+        &mut self,
+        text: &str,
+        pattern: Option<&str>,
+        known_end: usize,
+    ) -> Value {
         if let Some(goal) = pattern.and_then(Self::extract_tilde_goal_from_source) {
             return self.make_goal_failure_value(&goal, text.chars().count());
         }
         let best_end = pattern
             .map(|pat| self.longest_complete_prefix_end(pat, text))
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(known_end);
         if let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
             && best_end as i64 > current
         {
