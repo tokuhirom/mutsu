@@ -7,7 +7,8 @@
 //! answer holds until a declaration changes, so the chunk remembers it for one
 //! registry write generation: one word per string constant (a site is a call
 //! whose method name is that constant), holding the generation and an opaque
-//! payload the reader packs (the receiver shape and the row).
+//! payload the reader packs (the receiver shape, the argument count and
+//! the row, or a remembered miss).
 //!
 //! What the memo may assume, and what it re-checks on every hit, is decided by
 //! the reader (`Interpreter::try_method_site_lane`); this type only stores

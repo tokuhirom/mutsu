@@ -36,10 +36,14 @@
 //! # The inline cache
 //!
 //! The last two checks are what cost: a hash lookup and the registry probe.
-//! Both depend only on the receiver's shape, the method and the registry, so
-//! the site's memo (`CompiledCode::method_sites`, keyed by the method name's
-//! constant) remembers `(shape, row)` for one registry write generation. A hit
-//! is one lock, a generation compare and a shape compare, then the handler.
+//! Both depend only on the receiver's shape, the argument count, the method
+//! and the registry, so the site's memo (`CompiledCode::method_sites`, keyed
+//! by the method name's constant) remembers `(shape, arity, row)` for one
+//! registry write generation. It remembers a miss the same way: a name with a
+//! row for another shape or arity (`$i.chars` once `Str.chars` has a row,
+//! `$s.index($n, $from)` beside the one-needle row) would otherwise repeat the
+//! lookup on every call. A hit is one lock, a generation compare and a
+//! shape-and-arity compare, then the handler.
 //! The memo is never filled while a `native_base_bypass` is active, because
 //! that makes the augment gate answer "no" for the duration of one deferral.
 //!
@@ -113,25 +117,27 @@ impl Interpreter {
         let generation = self.registry_write_generation();
         let row = match code.method_sites.cached(sites, idx, generation) {
             // The memo is keyed by the method name, which sites calling it
-            // with another arity share, so the row's arity is checked too.
-            Some(payload)
-                if payload_shape(payload) == shape as u8
-                    && usize::from(method_table::row(RowId::from_bits(payload as u16)).arity)
-                        == arity =>
-            {
+            // with another arity share, so the arity is part of the payload.
+            Some(payload) if payload_matches(payload, shape, arity) => {
+                let row = payload_row(payload)?;
                 if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
                     return None;
                 }
-                RowId::from_bits(payload as u16)
+                row
             }
             _ => {
-                let row =
-                    self.resolve_method_site_lane(code, name_idx, target_name_idx, shape, arity)?;
+                let resolved =
+                    self.resolve_method_site_lane(code, name_idx, target_name_idx, shape, arity);
+                let row = match resolved {
+                    Resolved::Row(row) => Some(row),
+                    Resolved::Miss => None,
+                    Resolved::Skip => return None,
+                };
                 if self.dispatch.native_base_bypass.is_none() {
                     code.method_sites
-                        .remember(sites, idx, generation, pack(shape, row));
+                        .remember(sites, idx, generation, pack(shape, arity, row));
                 }
-                row
+                row?
             }
         };
         let (target, args) = self.stack[base..].split_first()?;
@@ -143,7 +149,7 @@ impl Interpreter {
     }
 
     /// The memo-miss half of [`Self::try_method_site_lane`]: every check whose
-    /// answer the memo remembers.
+    /// answer the memo remembers, and the one it cannot.
     // Cost: O(1) amortized: a name match, one table lookup and the memoized
     // augment probe.
     fn resolve_method_site_lane(
@@ -153,21 +159,30 @@ impl Interpreter {
         target_name_idx: u32,
         shape: crate::value::DispatchShape,
         arity: usize,
-    ) -> Option<RowId> {
+    ) -> Resolved {
+        // A property of this site's receiver, not of the method: the memo,
+        // which every site naming the method shares, must not remember it.
+        if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
+            return Resolved::Skip;
+        }
         let method = Self::const_str(code, name_idx);
         if Self::scalar_early_lane_skips(method)
             || Self::dispatch_branches_before_native_probe(method)
-            || Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx))
         {
-            return None;
+            return Resolved::Miss;
         }
         let method_sym = code.const_sym(name_idx);
-        let row = method_table::resolve(shape, method_sym, arity)?;
-        let target = self.stack[self.stack.len().checked_sub(arity + 1)?].clone();
+        let Some(row) = method_table::resolve(shape, method_sym, arity) else {
+            return Resolved::Miss;
+        };
+        let Some(base) = self.stack.len().checked_sub(arity + 1) else {
+            return Resolved::Skip;
+        };
+        let target = self.stack[base].clone();
         if self.native_lever_a_user_override_sym(&target, method_sym) {
-            return None;
+            return Resolved::Miss;
         }
-        Some(row)
+        Resolved::Row(row)
     }
 
     /// Complete the `CallMethodMut` at `code.ops[ip]` with the lane's answer:
@@ -282,12 +297,36 @@ fn site_args_are_positional(code: &CompiledCode, idx: u32) -> bool {
     })
 }
 
-/// The memo payload for `row` on a receiver of `shape`.
-fn pack(shape: crate::value::DispatchShape, row: RowId) -> u32 {
-    (u32::from(shape as u8) << 16) | u32::from(row.to_bits())
+/// What the memo-miss half of the lane decided.
+enum Resolved {
+    /// The row that answers; remembered.
+    Row(RowId),
+    /// No row answers this method for this shape and arity in this registry
+    /// generation; remembered, so later calls skip the lookup.
+    Miss,
+    /// Not answered at this site, for a reason of the site's own; not
+    /// remembered.
+    Skip,
 }
 
-/// The receiver shape a memo payload was filled for.
-fn payload_shape(payload: u32) -> u8 {
-    (payload >> 16) as u8
+/// The row bits a memo payload holds for a remembered miss.
+const MISS_ROW_BITS: u16 = u16::MAX;
+
+/// The memo payload: the row (or a miss) for a receiver of `shape` called
+/// with `arity` arguments.
+fn pack(shape: crate::value::DispatchShape, arity: usize, row: Option<RowId>) -> u32 {
+    let row = row.map_or(MISS_ROW_BITS, RowId::to_bits);
+    // `arity` is at most `MAX_LANE_ARITY`.
+    (u32::from(arity as u8) << 24) | (u32::from(shape as u8) << 16) | u32::from(row)
+}
+
+/// Whether a memo payload was filled for `shape` and `arity`.
+fn payload_matches(payload: u32, shape: crate::value::DispatchShape, arity: usize) -> bool {
+    payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(shape as u8)
+}
+
+/// The row a memo payload remembers, `None` for a remembered miss.
+fn payload_row(payload: u32) -> Option<RowId> {
+    let bits = payload as u16;
+    (bits != MISS_ROW_BITS).then(|| RowId::from_bits(bits))
 }
