@@ -13,7 +13,7 @@ isa-ok expr(Q[method ($n) { 2 }]), RakuAST::Method, '`method ($n) { }` is a Meth
 isa-ok expr(Q[submethod { 2 }]), RakuAST::Submethod, '`submethod { }` is a Submethod';
 is expr(Q[method ($a, $b) { 2 }]).signature.parameters.elems, 2,
     'the signature holds only the written parameters';
-nok expr(Q[method () { 2 }]).signature, 'an empty one has no signature';
+is expr(Q[method () { 2 }]).signature.parameters.elems, 0, 'an empty one has no parameters';
 
 is EVAL(Q[my $v = 5; my $p := Proxy.new(FETCH => method () { $v }, STORE => method ($n) { $v = $n }); $p = 7; $v].AST),
     7, 'Proxy methods survive the round trip';
