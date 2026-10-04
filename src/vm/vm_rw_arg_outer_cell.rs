@@ -42,6 +42,14 @@ impl Interpreter {
         sym: crate::symbol::Symbol,
     ) -> Option<Value> {
         let name = sym.as_str();
+        // An `@`/`%` variable is its own container: the argument is the
+        // aggregate the read produced, which is the store's own (shared)
+        // Array or Hash. Handing out the store's binding cell instead made
+        // the argument a Scalar, so a slurpy or a list routine took the whole
+        // aggregate as one item (`first { ... }, @users`, #10343).
+        if name.starts_with(['@', '%']) {
+            return None;
+        }
         if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(cell) = self.escaping_our_write_cell(code, name)
         {

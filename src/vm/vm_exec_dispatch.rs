@@ -5069,7 +5069,9 @@ impl Interpreter {
             // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot) => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_delete_index_named_op(code, *name_idx, *slot)?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_delete_index_named_op(code, *name_idx, *slot)
+                })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
@@ -5391,26 +5393,30 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostIncrementIndex(name_idx, slot, is_positional) => {
-                self.exec_inc_dec_index_dispatch(
-                    code,
-                    *name_idx,
-                    *slot,
-                    true,
-                    false,
-                    *is_positional,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_inc_dec_index_dispatch(
+                        code,
+                        *name_idx,
+                        *slot,
+                        true,
+                        false,
+                        *is_positional,
+                    )
+                })?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostDecrementIndex(name_idx, slot, is_positional) => {
-                self.exec_inc_dec_index_dispatch(
-                    code,
-                    *name_idx,
-                    *slot,
-                    false,
-                    false,
-                    *is_positional,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_inc_dec_index_dispatch(
+                        code,
+                        *name_idx,
+                        *slot,
+                        false,
+                        false,
+                        *is_positional,
+                    )
+                })?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -5494,12 +5500,14 @@ impl Interpreter {
                 inner_positional,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_index_assign_expr_nested_op(
-                    code,
-                    *name_idx,
-                    *outer_positional,
-                    *inner_positional,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_index_assign_expr_nested_op(
+                        code,
+                        *name_idx,
+                        *outer_positional,
+                        *inner_positional,
+                    )
+                })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
@@ -5510,12 +5518,14 @@ impl Interpreter {
                 positional_flags_idx,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_index_assign_deep_nested_op(
-                    code,
-                    *name_idx,
-                    *depth,
-                    *positional_flags_idx,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_index_assign_deep_nested_op(
+                        code,
+                        *name_idx,
+                        *depth,
+                        *positional_flags_idx,
+                    )
+                })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
@@ -5585,26 +5595,30 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreIncrementIndex(name_idx, slot, is_positional) => {
-                self.exec_inc_dec_index_dispatch(
-                    code,
-                    *name_idx,
-                    *slot,
-                    true,
-                    true,
-                    *is_positional,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_inc_dec_index_dispatch(
+                        code,
+                        *name_idx,
+                        *slot,
+                        true,
+                        true,
+                        *is_positional,
+                    )
+                })?;
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreDecrementIndex(name_idx, slot, is_positional) => {
-                self.exec_inc_dec_index_dispatch(
-                    code,
-                    *name_idx,
-                    *slot,
-                    false,
-                    true,
-                    *is_positional,
-                )?;
+                self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                    vm.exec_inc_dec_index_dispatch(
+                        code,
+                        *name_idx,
+                        *slot,
+                        false,
+                        true,
+                        *is_positional,
+                    )
+                })?;
                 *ip += 1;
             }
 

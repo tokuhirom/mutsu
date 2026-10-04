@@ -8,6 +8,11 @@
 //! `OpCode::PackageScope` that names those lexicals. They are bound from the
 //! store for the duration of the body, so a same-named outer lexical is
 //! shadowed as it is in the source, and written back to it afterwards.
+//!
+//! Outside the body, a routine of the package reaches such a `my @a` / `my %h`
+//! only through the store (`package_scope_lexical`), so an in-place mutation
+//! from the routine has to land in the store too, not in a copy under the
+//! name in the routine's own env (#10343).
 
 use super::*;
 use crate::compiler::CLASS_LEXICAL;
@@ -67,5 +72,72 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    /// The stored root of the package-block `@`/`%` lexical `name` resolves
+    /// to through [`Self::package_scope_lexical`], for a write chokepoint
+    /// that mutates the container in place (`env_root_descended_mut`). A
+    /// routine of the block reaches the lexical only through the store, so a
+    /// mutation made anywhere else (the routine's own env) is a copy no later
+    /// read consults (#10343).
+    // Cost: O(1) beyond `package_scope_lexical_key`'s; the table is copied
+    // (O(p), p = packages) only while a thread clone still shares it.
+    pub(crate) fn package_scope_lexical_root_mut(&mut self, name: &str) -> Option<&mut Value> {
+        if !name.starts_with(['@', '%']) {
+            return None;
+        }
+        let (cur, key) = self.package_scope_lexical_key(name)?;
+        let key = key.into_owned();
+        if !self
+            .lexicals
+            .package_lexicals
+            .get(cur)
+            .is_some_and(|m| m.contains_key(key.as_str()))
+        {
+            return None;
+        }
+        // `get_value_mut`: only the entry's value is reached, so the table's
+        // name filter stays valid.
+        crate::runtime::cow_table_mut(&mut self.lexicals.package_lexicals)
+            .get_value_mut(cur, &key)
+    }
+
+    /// Run the element store `store` on the package-block `@`/`%` lexical
+    /// `name` when that is what a frame with no binding of its own for `name`
+    /// resolves it to: the env-centric store paths find the container under
+    /// the name for the duration, and whatever they leave there is the
+    /// store's new value. Anything else runs `store` unchanged.
+    // Cost: O(1) around `store` (one env probe, one store lookup and, when the
+    // store ran against a package lexical, one store write).
+    pub(super) fn with_package_lexical_seeded<T>(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        store: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let name = Self::const_str(code, name_idx);
+        let sym = code.const_sym(name_idx);
+        let seed = if name.starts_with(['@', '%'])
+            && !self.lexicals.package_lexicals.is_empty()
+            && code.local_slots_of(sym).is_empty()
+            && !self.env().contains_key_sym(sym)
+        {
+            self.package_scope_lexical(name)
+        } else {
+            None
+        };
+        let Some(seed) = seed else {
+            return store(self);
+        };
+        self.env_mut().insert_sym(sym, seed);
+        let result = store(self);
+        if let Some(stored) = self.env_mut().remove_sym(sym)
+            && let Some(root) = self.package_scope_lexical_root_mut(name)
+        {
+            *root = stored;
+            // TRIR's free-variable cache may hold the replaced value.
+            self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
+        }
+        result
     }
 }

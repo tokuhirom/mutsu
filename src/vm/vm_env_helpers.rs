@@ -477,6 +477,21 @@ impl Interpreter {
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
+        let (cur, key) = self.package_scope_lexical_key(name)?;
+        self.lexicals
+            .package_lexicals
+            .get(cur)
+            .and_then(|m| m.get(key.as_ref()))
+            .cloned()
+    }
+
+    /// The package and the store key [`Self::package_scope_lexical`] looks
+    /// `name` up under, or `None` when no package-block lexical can be meant.
+    // Cost: O(|name|) for the memoized qualified-name split; O(1) otherwise.
+    pub(super) fn package_scope_lexical_key<'a>(
+        &self,
+        name: &'a str,
+    ) -> Option<(&'static str, std::borrow::Cow<'a, str>)> {
         // Most programs never run a bare `package P { my $x; ... }` block, so
         // the store is empty and nothing below can resolve: answer before the
         // package probe and the two name scans, which every free-variable read
@@ -546,11 +561,7 @@ impl Interpreter {
             } else {
                 std::borrow::Cow::Borrowed(name)
             };
-        self.lexicals
-            .package_lexicals
-            .get(cur)
-            .and_then(|m| m.get(key.as_ref()))
-            .cloned()
+        Some((cur, key))
     }
 
     /// Outer-lexical fallback for auto-qualified `@`/`%` reads, mirroring the
