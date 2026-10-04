@@ -16,28 +16,32 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "isNaN" if target.dispatch_shape().is_none() => Some(Ok(Value::FALSE)),
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
-            ValueView::Complex(r, _) => Some(Ok(Value::num(r))),
+            ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
             ValueView::Int(i) => Some(Ok(Value::num(i as f64))),
             ValueView::Num(f) => Some(Ok(Value::num(f))),
             _ => Some(Ok(Value::num(0.0))),
         },
         "im" => match target.view() {
-            ValueView::Complex(_, i) => Some(Ok(Value::num(i))),
+            ValueView::Complex(..) => Some(crate::builtins::method_table::complex::im(target, &[])),
             _ => Some(Ok(Value::num(0.0))),
         },
         "conj" => match target.view() {
-            ValueView::Complex(r, i) => Some(Ok(Value::complex(r, -i))),
+            ValueView::Complex(..) => {
+                Some(crate::builtins::method_table::complex::conj(target, &[]))
+            }
             ValueView::Int(_)
             | ValueView::BigInt(_)
             | ValueView::Num(_)
             | ValueView::Rat(_, _)
             | ValueView::FatRat(_, _)
-            | ValueView::Bool(_) => Some(Ok(target.clone())),
+            | ValueView::Bool(_) => Some(crate::builtins::method_table::complex::conj(target, &[])),
             // Str is handled by the Cool numeric coercion in native_method_0arg
             _ => None,
         },
         "reals" => match target.view() {
-            ValueView::Complex(r, i) => Some(Ok(Value::array(vec![Value::num(r), Value::num(i)]))),
+            ValueView::Complex(..) => {
+                Some(crate::builtins::method_table::complex::reals(target, &[]))
+            }
             _ => None,
         },
         "polar" => match target.view() {

@@ -403,3 +403,18 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     same `main`: `$s.comb` 1,971M to 931M (-52.8%), `$s.words` -52.8%, `$s.lines` -52.2%,
     `$s.ords` -48.1%, `$i.comb` (an `Int`, through `Cool`) -42.7%. `$s.flip` (an existing
     row, as a control) and the empty loop are unchanged.
+
+### 9.1 Complex component family (2026-10-04)
+
+`Complex.re`, `im`, `reals` and `conj` are zero-argument rows in
+`method_table/complex.rs`. The cascade's Complex cases call the same handlers,
+and the non-Complex `conj` cases share that handler's identity branch. The
+remaining `re` and `im` cascade cases on non-Complex numeric receivers disagree
+with Rakudo and are tracked separately as #11949; this slice does not change
+their behavior.
+
+Callgrind on profiling builds from the same `main`, 50,000 calls per benchmark,
+second run on each binary: `$z.re` went from 632,196,562 to 270,594,032
+instructions (-57.2%), and `$z.reals` from 733,841,605 to 341,787,961
+(-53.4%). The benchmarks have no module load and use the same loop and receiver
+on both sides. The `Complex` roast file and the focused method-row test pass.

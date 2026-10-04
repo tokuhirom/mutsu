@@ -39,7 +39,7 @@
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
 pub(crate) mod coerce;
-mod complex;
+pub(crate) mod complex;
 mod int;
 pub(crate) mod list;
 pub(crate) mod map;
