@@ -3,8 +3,9 @@
 - Status: Accepted (slice 1 implemented 2026-08-28; slice 1b — the vouch's
   complement — implemented 2026-09-06, which closes §1.2(b) for plain scalars
   and retires the prerequisite §7.3 recorded; slice 1b's one carve-out, the
-  parameter exclusion, was itself retired later the same day — §7.7; slices 2-5
-  not started. §7.6 records what the 2026-09-06 re-measurement corrected.)
+  parameter exclusion, was itself retired later the same day — §7.7; §7.9
+  closes the `@a.push({ ... })` escape-verdict gap; slices 2-5 not started.
+  §7.6 records what the 2026-09-06 re-measurement corrected.)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
   0054 belongs to the argument-list-interpolation ADR)
@@ -614,3 +615,27 @@ unspecified and, on this evidence, unmotivated by *this* family.
 Write-up and pin: `news/2026-09/free-var-lexical-resolution-inside-a-bare-block.md`,
 `t/free-var-in-bare-block-lexical-scope.t` (43 assertions, 12 of which failed
 before).
+
+### 7.9 A pushed closure's escape verdict bypassed the method-call rule (2026-10-04)
+
+The first §7.4 example, `for 1..3 { @callbacks.push({ $shared }) }`, did not
+take the intermediate-frame route described there. The compiler emits the
+`for` body inline in the owner's bytecode. The real lost signal was in the
+dedicated `@array.push(single_expr)` path: it called `compile_method_arg`,
+which marked the closure argument non-escaping, bypassing the ordinary method
+call's `is_closure_literal_arg` verdict. A debugger inspection of the compiled
+`readers` routine found `closure_escapes = [false]` and an empty
+`needs_cell_locals` even though the pushed closure outlived the routine.
+
+An externally called version made the latent error observable without changing
+the merge policy: the owner assigned `$shared = 42` after pushing three
+readers, and a caller with its own `$shared = 99` invoked one. Mutsu returned
+`99`; Rakudo returned `42`. The fast path now carries the same escaping verdict
+as the ordinary method-call path. The three-assertion
+`t/routines/closure/closure-escaping-grandchild-owner-cell.t` pins the owner
+write, sibling readers and a second invocation's independent binding.
+
+This correction covers the inlined-`for`/`ArrayPush` example. A genuine
+non-escaping intermediate closure, an `EVAL`-created closure and a CONTROL
+resume write remain in §7.4's cell-coverage prerequisite; Slice 2's merge flip
+still waits for them. See `news/2026-10/array-push-closure-escape-verdict.md`.
