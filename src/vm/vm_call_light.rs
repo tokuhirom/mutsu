@@ -885,6 +885,7 @@ impl Interpreter {
             let mut explicit_return: Option<Value> = None;
             let mut explicit_from_method = false;
             let mut fail_bypass = false;
+            let polls = crate::vm::vm_poll::DispatchPolls::current();
             while ip < cf.code.ops.len() {
                 // JIT entry (ADR-0004 J1): at body start, run the whole body
                 // natively when the chunk is hot and Tier A-compilable. The
@@ -897,7 +898,7 @@ impl Interpreter {
                     ip = cf.code.ops.len();
                     r
                 } else {
-                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns)
+                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns, polls)
                 };
                 match step {
                     Ok(()) => {}

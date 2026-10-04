@@ -211,3 +211,36 @@ fn routine_and_callsite_counts_are_exact() {
         off.callsite_calls()
     );
 }
+
+/// A routine body run on a call fast path counts its lines too (#11660).
+///
+/// The fast paths (`vm_call_fast`, `vm_call_light`, method dispatch, ...) run
+/// the callee's body through `exec_one_backedge_polled`, which polled only on
+/// backward transfers even with the profiler armed. With the JIT off the
+/// bodies of `f` and `g` were missing from the line table, while native code's
+/// `profile_line` hooks counted them: an ADR-0106 §8 gate 4 break the
+/// call-free fixture above could not show.
+#[test]
+fn fast_called_bodies_count_their_lines() {
+    let path = fixture_path(
+        "counts-fast-call-body",
+        "sub f() {\n    my $x = 1;\n    $x\n}\nmy $t = 0;\n$t += f() for ^20;\nsub g() { 1 }\n$t += g() for ^20;\nsay $t;\n",
+    );
+    let off = profile(&path, &[("MUTSU_JIT", "off")]);
+    let on = profile(&path, &[("MUTSU_JIT", "on"), ("MUTSU_JIT_THRESHOLD", "1")]);
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(off.stdout, "40\n");
+    assert_eq!(off.hits(2), Some(20), "`my $x = 1;` in `f`'s body");
+    assert_eq!(off.hits(3), Some(20), "`$x` in `f`'s body");
+    assert_eq!(
+        off.hits(7),
+        Some(21),
+        "`g`'s one-line body (and its declaration)"
+    );
+    assert_eq!(
+        off.line_hits(),
+        on.line_hits(),
+        "line counts diverge between JIT off and on"
+    );
+}

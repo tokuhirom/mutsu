@@ -222,8 +222,10 @@ impl Interpreter {
         );
         let mut sub_ip = 0;
         let mut exec_err = None;
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
         while sub_ip < block_cc.ops.len() {
-            if let Err(e) = self.exec_one_backedge_polled(&block_cc, &mut sub_ip, &block_fns) {
+            if let Err(e) = self.exec_one_backedge_polled(&block_cc, &mut sub_ip, &block_fns, polls)
+            {
                 exec_err = Some(e);
                 break;
             }
