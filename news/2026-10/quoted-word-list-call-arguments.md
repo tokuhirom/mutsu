@@ -1,0 +1,1 @@
+Allow quote word lists to start arguments of forward-referenced calls, and accept guillemet or double-angle word lists as named arguments in statement-level imported calls. This lets `Test::Run` reach its assertions instead of stopping at `:args«…»`.
