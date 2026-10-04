@@ -255,7 +255,10 @@ impl Compiler {
             && self.code.locals.contains(&target_name)
         {
             for arg in args {
-                self.compile_method_arg(arg);
+                // This bypasses the ordinary method-call argument loop below.
+                // A pushed closure survives the call, so preserve its escape
+                // verdict for captured-local cell boxing (#7546).
+                self.compile_method_arg_with_escape(arg, Self::is_closure_literal_arg(arg));
             }
             // When the pushed argument is a bare container variable (`@a.push(@b)`
             // / `@a.push(%h)`), record its name so the VM can share a cell with
