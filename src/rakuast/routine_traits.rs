@@ -245,7 +245,7 @@ pub(super) fn add_flags(
 fn is_generic_trait_name(name: &str) -> bool {
     !(name.starts_with("__")
         || name.starts_with("DEPRECATED")
-        || name.contains("::")
+        || crate::qualified::is_qualified_str(name)
         || matches!(
             name,
             "rw" | "raw"

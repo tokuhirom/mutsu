@@ -640,7 +640,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__") && !is_return_spelling_marker(t) && t != OUR_SCOPED
                             || t.starts_with("DEPRECATED")
-                            || t.contains("::")
+                            || crate::qualified::is_qualified_str(t)
                     }),
                     "sub with an internal or qualified trait",
                 ),
