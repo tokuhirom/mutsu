@@ -268,7 +268,8 @@ impl Interpreter {
         if self.pending_dispatch_error.is_some() {
             return None;
         }
-        if name.contains(':') || name.contains("::") {
+        // No `:` at all, so in particular no `::` qualifier.
+        if name.contains(':') {
             return None;
         }
         for alias in [format!("prefix:<{name}>"), format!("postfix:<{name}>")] {
@@ -319,7 +320,7 @@ impl Interpreter {
         name: &str,
         arity: usize,
     ) -> Option<Arc<FunctionDef>> {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             let multi_key = format!("{}/{}", name, arity);
             if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
                 return Some(def.clone());
@@ -407,7 +408,8 @@ impl Interpreter {
         if !self.fn_base_name_registered(name) {
             return None;
         }
-        if name.contains("::") {
+        let name_sym = crate::qualified::known_symbol(name);
+        if crate::qualified::is_qualified(name_sym) {
             // Block access to my-scoped (non-our) package items. Checked before
             // the arity-keyed candidate scan below, not only on the exact-name
             // hit: a `multi sub` is
@@ -497,33 +499,30 @@ impl Interpreter {
             // as a Package value in env).  This handles calls like
             // `Our::Package::pkg()` inside `PackageTest` where the nested
             // package was registered as `PackageTest::Our::Package`.
-            if self.current_package() != "GLOBAL" {
+            let cur = self.current_package_sym();
+            if cur != crate::symbol::wk::global_package() {
                 // Check if the prefix package (everything before the last `::`)
                 // is visible in env as a Package type object.
-                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
-                    self.env.get(pkg_prefix).is_some()
-                        || self
-                            .env
-                            .get(&format!("{}::{}", self.current_package(), pkg_prefix))
-                            .is_some()
-                } else {
-                    false
-                };
+                let prefix_visible =
+                    if let Some((pkg_prefix, _)) = crate::qualified::split_qualified(name_sym) {
+                        self.env.get(pkg_prefix.as_str()).is_some()
+                            || self
+                                .env
+                                .get(crate::qualified::qualified(cur, pkg_prefix).as_str())
+                                .is_some()
+                    } else {
+                        false
+                    };
                 if prefix_visible {
-                    let qualified = format!("{}::{}", self.current_package(), name);
-                    if let Some(def) = self
-                        .registry()
-                        .functions
-                        .get(&Symbol::intern(&qualified))
-                        .cloned()
-                    {
+                    let qualified = crate::qualified::qualified(cur, name_sym);
+                    if let Some(def) = self.registry().functions.get(&qualified).cloned() {
                         return Some(def);
                     }
                     let q_prefix = format!("{qualified}/{arity}:");
                     let q_untyped_key = format!("{qualified}/{}", arity);
                     let q_untyped_key_sym = Symbol::intern(&q_untyped_key);
                     let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
-                    let q_base_keys = self.fn_keys_for_base(&qualified);
+                    let q_base_keys = self.fn_keys_for_base(qualified.as_str());
                     let mut q_candidates: Vec<(String, Arc<FunctionDef>)> = {
                         let registry = self.registry();
                         q_base_keys
@@ -539,9 +538,11 @@ impl Interpreter {
                             .collect()
                     };
                     self.sort_candidates_by_specificity(&mut q_candidates);
-                    if let Some(def) =
-                        self.choose_best_matching_candidate(&qualified, arg_values, q_candidates)
-                    {
+                    if let Some(def) = self.choose_best_matching_candidate(
+                        qualified.as_str(),
+                        arg_values,
+                        q_candidates,
+                    ) {
                         return Some(def);
                     }
                 }

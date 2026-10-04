@@ -215,7 +215,11 @@ impl Interpreter {
     /// `Interpreter::resolve_type_in_current_package` already uses for the
     /// analogous "prepend each enclosing package in turn" problem.
     pub(crate) fn qualified_name_visible_here(&self, name: &str) -> bool {
-        if !name.contains("::") || self.package_declaring_units.is_empty() {
+        if self.package_declaring_units.is_empty() {
+            return true;
+        }
+        let name_sym = crate::qualified::known_symbol(name);
+        if !crate::qualified::is_qualified(name_sym) {
             return true;
         }
         // A qualified name is ALSO visible when the running code's own
@@ -238,7 +242,7 @@ impl Interpreter {
         // sibling/descendant files can reference each other by nesting
         // alone, the same way nested nested `package`/`class` blocks in ONE
         // file always could.
-        if self.current_package_is_ancestor_of(name) {
+        if self.current_package_is_ancestor_of(name_sym) {
             return true;
         }
         let executing = self.executing_unit_sym_for_module_load();
@@ -260,7 +264,7 @@ impl Interpreter {
         // than `Self::longest_declared_package_prefix`'s exact-prefix match
         // on purpose, and is why THAT match alone (checked below) is not
         // enough here.
-        let top = name.split_once("::").map_or(name, |(top, _)| top);
+        let top = crate::qualified::segments(name_sym)[0].as_str();
         // A package nested under a name the SETTING already provides is
         // visible from everywhere, however it was reached. Rakudo merges a
         // `use`d compunit's declarations stash-by-stash, so a
@@ -404,35 +408,25 @@ impl Interpreter {
     /// name, not a real declared package, and treating it as an ancestor of
     /// everything would defeat this gate for any code running outside a
     /// declared package.
-    fn current_package_is_ancestor_of(&self, name: &str) -> bool {
-        let owned = self.current_package();
-        let mut pkg: &str = &owned;
-        loop {
-            if !pkg.is_empty()
-                && pkg != "GLOBAL"
-                && (name == pkg || name.starts_with(&format!("{pkg}::")))
-            {
-                return true;
-            }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => return false,
-            }
-        }
+    fn current_package_is_ancestor_of(&self, name: Symbol) -> bool {
+        crate::qualified::package_ancestors(self.current_package_sym()).any(|pkg| {
+            pkg != crate::symbol::wk::global_package()
+                && (name == pkg || crate::qualified::is_inside_package(name, pkg))
+        })
     }
 
     /// The longest prefix of `name` (stopping at a `::` boundary each step)
     /// that `package_declaring_units` has an entry for, plus that entry's
     /// declaring unit. `None` when no ancestor of `name` was ever registered
     /// by a module load.
-    fn longest_declared_package_prefix<'a>(&self, name: &'a str) -> Option<(&'a str, Symbol)> {
-        let mut candidate = name;
-        loop {
-            if let Some(&unit) = self.package_declaring_units.get(candidate) {
-                return Some((candidate, unit));
-            }
-            candidate = candidate.rsplit_once("::")?.0;
-        }
+    fn longest_declared_package_prefix(&self, name: &str) -> Option<(&'static str, Symbol)> {
+        // `name` itself, then each enclosing package outwards.
+        crate::qualified::package_ancestors(Symbol::intern(name)).find_map(|candidate| {
+            let candidate = candidate.as_str();
+            self.package_declaring_units
+                .get(candidate)
+                .map(|&unit| (candidate, unit))
+        })
     }
 
     /// Whether `prefix` (a full package name `declaring_unit` owns) is
@@ -515,7 +509,7 @@ impl Interpreter {
     // Cost: O(g), g = packages the module's first load granted.
     pub(crate) fn replay_module_visibility_grant(&mut self, module: &str) {
         let importer_unit = self.executing_unit_sym_for_module_load();
-        let top = module.split_once("::").map_or(module, |(top, _)| top);
+        let top = crate::qualified::segments(Symbol::intern(module))[0].as_str();
         // Replay the FULL set the first load granted, not just the module's
         // own name: the packages a module declares are not derivable from the
         // name it is `use`d by. `Acme/Cow.rakumod` says `unit module Cow;`, so

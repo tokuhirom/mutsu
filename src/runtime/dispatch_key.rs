@@ -282,7 +282,7 @@ mod tests {
             ("GLOBAL::plain/", "GLOBAL", "plain"),
         ];
         for (key, pkg, name) in cases {
-            let expected = key.starts_with(&format!("{pkg}::{name}/"));
+            let expected = key.starts_with(&format!("{}/", qualified_intern(pkg, name).as_str()));
             assert_eq!(
                 key_is_candidate_of(key, pkg, name),
                 expected,
@@ -295,7 +295,7 @@ mod tests {
     fn builders_spell_the_same_keys_format_did() {
         assert_eq!(
             qualified_intern("GLOBAL", "plain").as_str(),
-            format!("{}::{}", "GLOBAL", "plain")
+            "GLOBAL::plain"
         );
         // The lookup forms find a key that exists and miss one that does not,
         // without interning the miss.

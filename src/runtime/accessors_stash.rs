@@ -18,7 +18,9 @@ impl Interpreter {
         {
             return rest.to_string();
         }
-        if rest.contains("::") || rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+        if rest.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            || crate::qualified::is_qualified(Symbol::intern(rest))
+        {
             return rest.to_string();
         }
         format!("${rest}")
@@ -130,9 +132,22 @@ impl Interpreter {
         Some(format!("{sigil}{bare}"))
     }
 
+    /// The first `::` segment of a stash member's tail when the tail is itself
+    /// qualified (`foo::bar` -> `foo`, the sub-package it names), else `None`.
+    // Cost: O(1) amortized (memoized per symbol).
+    pub(super) fn stash_tail_sub_package(rest: &str) -> Option<&'static str> {
+        let sym = Symbol::intern(rest);
+        if !crate::qualified::is_qualified(sym) {
+            return None;
+        }
+        crate::qualified::segments(sym)
+            .first()
+            .map(|head| head.as_str())
+    }
+
     pub(super) fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let package = package.trim_end_matches("::");
-        if package == "GLOBAL" {
+        if Symbol::intern(package) == crate::symbol::wk::global_package() {
             return Some(key);
         }
         let direct = format!("{package}::");
@@ -313,9 +328,12 @@ impl Interpreter {
     pub(crate) fn stash_class_for_package(package: &str) -> &'static str {
         let normalized = Self::normalize_stash_package(package);
         let is_pseudo = !normalized.is_empty()
-            && normalized.split("::").all(|part| {
-                Self::is_pseudo_package_name(part) && !matches!(part, "OUR" | "GLOBAL")
-            });
+            && crate::qualified::segments(Symbol::intern(&normalized))
+                .iter()
+                .map(|part| part.as_str())
+                .all(|part| {
+                    Self::is_pseudo_package_name(part) && !matches!(part, "OUR" | "GLOBAL")
+                });
         if is_pseudo { "PseudoStash" } else { "Stash" }
     }
 
@@ -323,8 +341,9 @@ impl Interpreter {
     /// `CALLER::` is depth one and `CALLER::CALLER::` is depth two.
     pub(crate) fn caller_stash_depth(name: &str) -> Option<usize> {
         let trimmed = name.trim_end_matches("::");
-        let parts: Vec<&str> = trimmed.split("::").collect();
-        (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
+        let parts = crate::qualified::segments(Symbol::intern(trimmed));
+        (!parts.is_empty() && parts.iter().all(|part| part.as_str() == "CALLER"))
+            .then_some(parts.len())
     }
 
     /// Parse `CALLER::...::OUR::`, the package stash of a caller frame's
@@ -464,7 +483,10 @@ impl Interpreter {
 
     pub(super) fn package_export_tag_parts(package: &str) -> Option<(&str, &str)> {
         let (module, rest) = package.split_once("::EXPORT::")?;
-        if module.is_empty() || rest.is_empty() || rest.contains("::") {
+        if module.is_empty()
+            || rest.is_empty()
+            || crate::qualified::is_qualified(Symbol::intern(rest))
+        {
             return None;
         }
         Some((module, rest))
@@ -475,11 +497,13 @@ impl Interpreter {
     }
 
     pub(crate) fn qualify_stash_name(package: &str, symbol: &str) -> String {
-        let package = package.trim_end_matches("::");
-        if package.is_empty() || package == "GLOBAL" {
+        let package = Symbol::intern(package.trim_end_matches("::"));
+        if crate::qualified::is_global_package(package) {
             symbol.to_string()
         } else {
-            format!("{package}::{symbol}")
+            crate::qualified::qualified(package, Symbol::intern(symbol))
+                .as_str()
+                .to_string()
         }
     }
 
@@ -694,8 +718,10 @@ impl Interpreter {
         // frame-scoped `env` check above for its (correctly frame-lifetime-
         // bound) visibility -- see `require_loaded_type_names`'s doc comment
         // and `roast/S11-modules/require.t`'s `GlobalOuter.load` case.
+        let name_sym = Symbol::intern(name);
+        let name_is_qualified = crate::qualified::is_qualified(name_sym);
         if !self.is_require_loaded_type_name(name)
-            && ((name.contains("::") && crate::runtime::utils::is_known_compound_type(name))
+            && ((name_is_qualified && crate::runtime::utils::is_known_compound_type(name))
                 || self.has_class(name)
                 || self.is_role(name)
                 || (self.registry().enum_types.contains_key(name)
@@ -704,7 +730,10 @@ impl Interpreter {
             return Value::package(Symbol::intern(name));
         }
 
-        let mut parts = name.split("::").filter(|part| !part.is_empty());
+        let mut parts = crate::qualified::segments(name_sym)
+            .iter()
+            .map(|part| part.as_str())
+            .filter(|part| !part.is_empty());
         let Some(first) = parts.next() else {
             return Self::no_such_symbol_failure(name);
         };
@@ -714,7 +743,7 @@ impl Interpreter {
         {
             value.clone()
         } else if crate::runtime::utils::is_known_type_constraint(first)
-            || (name.contains("::")
+            || (name_is_qualified
                 && (self.has_package_members(first)
                     || self.has_class(first)
                     || self.is_role(first)))

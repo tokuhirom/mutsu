@@ -259,18 +259,17 @@ impl Interpreter {
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
+            let pkg_sym = Symbol::intern(&pkg);
             let mut fn_aliases: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
             for (name, def) in self.registry().functions.iter() {
                 if before_function_keys.contains(name) {
                     continue;
                 }
-                let name_s = name.resolve();
-                let tail = name_s.rsplit_once("::").map(|(_, t)| t).unwrap_or(&name_s);
-                if tail.contains('/') || tail.contains(':') {
+                let tail = crate::qualified::last_segment(*name);
+                if tail.as_str().contains('/') || tail.as_str().contains(':') {
                     continue;
                 }
-                let alias = format!("{pkg}::{tail}");
-                let alias_sym = Symbol::intern(&alias);
+                let alias_sym = crate::qualified::qualified(pkg_sym, tail);
                 if !self.registry().functions.contains_key(&alias_sym) {
                     fn_aliases.push((alias_sym, def.clone()));
                 }
@@ -289,11 +288,11 @@ impl Interpreter {
                 if name.starts_with("$") || name.starts_with("@") || name.starts_with("%") {
                     continue;
                 }
-                let name_s = name.resolve();
-                let tail = name_s.rsplit_once("::").map(|(_, t)| t).unwrap_or(&name_s);
-                let alias = format!("{pkg}::{tail}");
-                if !self.env.contains_key(&alias) {
-                    env_aliases.push((alias, value.clone()));
+                let alias =
+                    crate::qualified::qualified(pkg_sym, crate::qualified::last_segment(*name))
+                        .as_str();
+                if !self.env.contains_key(alias) {
+                    env_aliases.push((alias.to_string(), value.clone()));
                 }
             }
             for (alias, value) in env_aliases {
@@ -305,10 +304,13 @@ impl Interpreter {
                 if before_class_keys.contains(name) {
                     continue;
                 }
-                let tail = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name);
-                let alias = format!("{pkg}::{tail}");
-                if !self.registry().classes.contains_key(&alias) {
-                    class_aliases.push((name.clone(), alias, class_def.clone()));
+                let alias = crate::qualified::qualified(
+                    pkg_sym,
+                    crate::qualified::last_segment(Symbol::intern(name)),
+                )
+                .as_str();
+                if !self.registry().classes.contains_key(alias) {
+                    class_aliases.push((name.clone(), alias.to_string(), class_def.clone()));
                 }
             }
             for (name, alias, class_def) in class_aliases {
@@ -345,7 +347,9 @@ impl Interpreter {
         let pkgs_with_main: Vec<String> = self
             .exported_subs
             .iter()
-            .filter(|(p, m)| p.as_str() != "GLOBAL" && m.contains_key("MAIN"))
+            .filter(|(p, m)| {
+                Symbol::intern(p) != crate::symbol::wk::global_package() && m.contains_key("MAIN")
+            })
             .map(|(p, _)| p.clone())
             .collect();
         if pkgs_with_main.is_empty() {
@@ -535,7 +539,7 @@ impl Interpreter {
                     return false;
                 }
                 let ks = k.resolve();
-                let after_pkg = ks.rsplit_once("::").map(|(_, t)| t).unwrap_or(&ks);
+                let after_pkg = crate::qualified::last_segment(**k).as_str();
                 let short = after_pkg.split(['/', ':']).next().unwrap_or(after_pkg);
                 if short != "MAIN" {
                     return false;
@@ -559,8 +563,9 @@ impl Interpreter {
             return true;
         }
         if let Some(name) = symbol.strip_prefix('&') {
-            let source_single = format!("{module}::{name}");
-            let source_prefix = format!("{module}::{name}/");
+            let source_single =
+                crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name)).as_str();
+            let source_prefix = format!("{source_single}/");
             let target_single = format!("GLOBAL::{name}");
             let target_prefix = format!("GLOBAL::{name}/");
             let mut found = false;
@@ -603,7 +608,9 @@ impl Interpreter {
             let candidates = [
                 format!("{sigil}{module}::{bare}"),
                 format!("{sigil}{bare}"),
-                format!("{module}::{bare}"),
+                crate::qualified::qualified(Symbol::intern(module), Symbol::intern(bare))
+                    .as_str()
+                    .to_string(),
                 bare.to_string(),
             ];
             for source in candidates {
@@ -616,7 +623,10 @@ impl Interpreter {
             return false;
         }
 
-        let source_single = format!("{module}::{symbol}");
+        let source_single =
+            crate::qualified::qualified(Symbol::intern(module), Symbol::intern(symbol))
+                .as_str()
+                .to_string();
         if self.has_class(&source_single) || self.is_role(&source_single) {
             self.env.insert(
                 symbol.to_string(),

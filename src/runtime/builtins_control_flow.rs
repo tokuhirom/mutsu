@@ -275,7 +275,11 @@ impl Interpreter {
                 }
             }
             Some(ValueView::Routine { package, name, .. }) => {
-                sig.set_leave_routine(Some(format!("{package}::{name}")));
+                sig.set_leave_routine(Some(
+                    crate::qualified::qualified(package, name)
+                        .as_str()
+                        .to_string(),
+                ));
             }
             Some(ValueView::Nil) => {}
             Some(ValueView::Package(name)) if name == "Any" => {}
@@ -291,7 +295,11 @@ impl Interpreter {
                 if let Some(id) = caller_callable_id {
                     sig.set_leave_callable_id(Some(id));
                 } else if let Some(frame) = self.routine_stack_top() {
-                    sig.set_leave_routine(Some(format!("{}::{}", frame.package, frame.name)));
+                    sig.set_leave_routine(Some(
+                        crate::qualified::qualified(frame.package, frame.name)
+                            .as_str()
+                            .to_string(),
+                    ));
                 }
             }
             Some(ValueView::Package(name)) if name == "Block" => {}

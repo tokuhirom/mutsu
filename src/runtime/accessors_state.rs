@@ -48,10 +48,13 @@ impl Interpreter {
     }
 
     pub(crate) fn infix_associativity(&self, full_name: &str) -> Option<String> {
-        let fq = format!("{}::{}", self.current_package(), full_name);
+        let fq = crate::qualified::qualified(
+            self.current_package_sym(),
+            crate::qualified::known_symbol(full_name),
+        );
         self.dispatch
             .operator_assoc
-            .get(&fq)
+            .get(fq.as_str())
             .cloned()
             .or_else(|| self.dispatch.operator_assoc.get(full_name).cloned())
             .or_else(|| {
@@ -77,8 +80,9 @@ impl Interpreter {
         }
         // Try stripping package prefix (e.g., "Main::foo" -> "foo")
         // when the function is in the current or GLOBAL package.
-        if let Some(pos) = full_name.rfind("::") {
-            let short_name = &full_name[pos + 2..];
+        if let Some((_, short_name)) = crate::qualified::split_qualified(Symbol::intern(full_name))
+        {
+            let short_name = short_name.as_str();
             if let Some(def) = self.resolve_function_with_alias(short_name, &args) {
                 return self.call_routine_def(&def, args);
             }
@@ -170,8 +174,8 @@ impl Interpreter {
     pub(crate) fn escaping_our_read(&self, name: &str) -> Option<Value> {
         if self.lexicals.escaping_our_lexical_names.is_empty()
             || self.routine_stack.is_empty()
-            || name.contains("::")
             || !self.lexicals.escaping_our_lexical_names.contains(name)
+            || crate::qualified::is_qualified_str(name)
             || !self.in_escaped_our_sub()
         {
             return None;
@@ -199,10 +203,10 @@ impl Interpreter {
         for frame in self.routine_stack.iter().rev() {
             let name = frame.name.as_str();
             if self.lexicals.escaped_our_sub_names.contains(name)
-                || name
-                    .rsplit("::")
-                    .next()
-                    .is_some_and(|bare| self.lexicals.escaped_our_sub_names.contains(bare))
+                || self
+                    .lexicals
+                    .escaped_our_sub_names
+                    .contains(crate::qualified::last_segment(frame.name).as_str())
             {
                 return true;
             }

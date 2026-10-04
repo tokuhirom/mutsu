@@ -24,7 +24,7 @@ fn is_dead_end_self_referential_routine(v: &Value, name: &str) -> bool {
     matches!(
         v.view(),
         ValueView::Routine { package, name: rname, .. }
-            if rname.resolve() == name && (package.is_empty() || package.resolve() == "GLOBAL")
+            if rname.resolve() == name && crate::qualified::is_global_package(package)
     )
 }
 
@@ -756,9 +756,8 @@ impl Interpreter {
             // unqualified function lookups inside the body resolve correctly
             // (e.g., imported functions from `use` inside a module).
             let saved_package = self.current_package();
-            let fn_pkg = def.package.resolve();
-            if !fn_pkg.is_empty() && fn_pkg != "GLOBAL" {
-                self.set_current_package(fn_pkg);
+            if !crate::qualified::is_global_package(def.package) {
+                self.set_current_package_sym(def.package);
             }
             self.prepare_definite_return_slot(return_spec.as_deref());
             // Tell the fresh-compiler body path which parameters are sigilless
@@ -1244,7 +1243,8 @@ impl Interpreter {
         // sub` is found and its plain `sub` is correctly `my`-scoped and
         // invisible, exactly as raku scopes them. A package qualifier is not a
         // decoration to be discarded.
-        if let Some(pos) = name.rfind("::") {
+        if let Some((package, short_name)) = crate::qualified::split_qualified(Symbol::intern(name))
+        {
             // A lexical constant naming a package (`my constant Meta =
             // A::Meta; Meta::index()`) is a valid qualifier: retry under the
             // package it stands for.
@@ -1256,9 +1256,7 @@ impl Interpreter {
             if let Some(real) = self.enclosing_qualified_routine_name(name) {
                 return self.call_function(&real, args.to_vec());
             }
-            let short_name = &name[pos + 2..];
-            let package = &name[..pos];
-            return Err(self.no_such_qualified_symbol(package, short_name));
+            return Err(self.no_such_qualified_symbol(package.as_str(), short_name.as_str()));
         }
 
         // The three `__mutsu_`-prefixed NativeCall helpers the VM's call
@@ -1402,7 +1400,7 @@ impl Interpreter {
         // while `Foo::Bar::index(…)` is "'&index' in 'GLOBAL::Foo::Bar'".
         let (package, sigil) = match package.strip_prefix("GLOBAL::") {
             Some(rest) => (rest, ""),
-            None if package == "GLOBAL" => ("", ""),
+            None if Symbol::intern(package) == crate::symbol::wk::global_package() => ("", ""),
             None => (package, "&"),
         };
         let known = self.is_known_package(package);

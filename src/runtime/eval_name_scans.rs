@@ -217,7 +217,7 @@ impl UndeclaredName<'_> {
         }
         is_core_term(name)
             // Package-qualified names are looked up elsewhere.
-            || name.contains("::")
+            || crate::qualified::is_qualified_str(name)
             || self.declared.contains(name)
             || interp.has_type(name)
             || interp.has_class(name)

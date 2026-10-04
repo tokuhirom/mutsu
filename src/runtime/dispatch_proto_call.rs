@@ -315,7 +315,7 @@ impl Interpreter {
             .iter()
             .filter(|value| !value.is_string_pair_value())
             .count();
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             let prefix = format!("{}/{arity}:", name);
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
