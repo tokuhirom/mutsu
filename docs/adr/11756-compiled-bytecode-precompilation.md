@@ -124,13 +124,35 @@ A value minted from a process-local counter means nothing in another process,
 and it can collide with a value minted freshly in the loading one. Before
 anything is cached:
 
-- **Names and site ids become compunit-relative.** Counter-derived names
-  (`Pkg::&<closure>/N`, `__do_decl_init_N`, `__mutsu_xx_target_N`,
-  `__mutsu_lexsub_*`) and the `site_id`s of `BeginOnceExpr`, `PhaserEnd`,
-  `FlipFlopExpr` and `AugmentClass` are derived from (compunit identity,
-  per-compile ordinal) instead of process-global counters. That keeps them
-  unique across compunits, and the same compile reproduces the same values.
-  This is a prerequisite slice that changes no behaviour on its own.
+- **Counter-minted names and site ids come from a compile session.** Every
+  value the compiler mints today from a process-global counter is minted
+  instead as (session, ordinal). The ordinal is a counter local to one
+  top-level compile, shared by its sub-compilers. The session is chosen per
+  top-level compile. That covers `STATE_COUNTER`'s `Pkg::&<closure>/N`,
+  `__do_decl_init_N`, `__mutsu_xx_target_N`, `__mutsu_cas_seen_N` and the
+  `site_id`s of `PhaserEnd`; `LEXSUB_ALIAS_SERIAL`'s `__mutsu_lexsub_*`; and,
+  through the package name they hash, `begin_site_id` / `augment_site_id`.
+  - For a **cacheable compile** (a module mainline), the session is
+    **content-addressed**: a hash of the module's source identity (canonical
+    path and content hash) and of how many times this process has already
+    compiled that same unit. The first compile of a module in any process gets
+    the same session, so a cached chunk is valid as is and needs no rewriting
+    on load. Loading it claims that occurrence, so a later recompile of the
+    same unit in the same process gets the next occurrence and fresh values,
+    exactly as today.
+  - **Every other compile** (EVAL, OTF, the main program) keeps drawing its
+    session from a process-global counter, as today. The two session spaces are
+    kept disjoint by one reserved bit.
+  - This preserves today's guarantee: each compile mints values no other
+    compile in the process shares. Making the values merely
+    compunit-relative would not preserve it. A recompile of the same source
+    (a block handed to `reduce`/`classify`, an OTF recompile) would then reuse
+    its predecessor's `state` scope, which is a behaviour change. It is a
+    prerequisite slice that changes no behaviour on its own.
+  - The parser's `ANON_STATE_COUNTER` names (`__ANON_STATE_N__`) are already
+    embedded in today's cached AST. This slice audits whether a collision
+    between a cached and a freshly parsed name is observable, and moves them
+    onto the same session scheme if it is.
 - **Constants that carry identity are not serialized.** The serializer accepts
   only identity-free constants. A chunk whose constant pool holds an object
   with an instance id (the compiler-built exception objects) or the
@@ -204,8 +226,8 @@ user-visible wrong answer.
 
 ## 5. Implementation plan
 
-1. **Deterministic, compunit-relative names and site ids** (§2.3). No caching
-   yet, and no behaviour change. Checked by the existing suites.
+1. **Compile sessions for counter-minted names and site ids** (§2.3). No
+   caching yet, and no behaviour change. Checked by the existing suites.
 2. **Serde for the compiled shape.** `OpCode`, `CompiledCode`, `CompiledFns`
    and the plan types, with runtime caches skipped, plus a round-trip test
    (`compile → serialize → deserialize → serialize` is byte-identical) over
