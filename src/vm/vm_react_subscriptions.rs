@@ -195,7 +195,7 @@ impl Interpreter {
                         Self::run_react_close_callbacks(self, react_subs);
                         let quit_err =
                             crate::runtime::Interpreter::runtime_error_from_supply_reason(error);
-                        return Err(crate::runtime::Interpreter::wrap_react_died(quit_err));
+                        return Err(self.wrap_react_died(quit_err));
                     }
                 }
             }
@@ -617,7 +617,7 @@ impl Interpreter {
                                 crate::runtime::Interpreter::runtime_error_from_supply_reason(
                                     reason,
                                 );
-                            return Err(crate::runtime::Interpreter::wrap_react_died(quit_err));
+                            return Err(self.wrap_react_died(quit_err));
                         }
                         continue;
                     }

@@ -118,14 +118,14 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
-        // `X::Promise::Broken` (composed into a broken promise's cause by
-        // `Promise.result`) overrides `gist` alone. The role carries no method
+        // `X::Promise::Broken` / `X::React::Died` (composed into the exception
+        // `Promise.result` / a dying `react` rethrows) override `gist` alone. The role carries no method
         // table, so the native exception-gist arm below would answer with the
         // bare cause message; intercept before it. This is the VM's fast-path
         // twin of the same check in `call_method_with_values`.
         if method_name == "gist"
             && args.is_empty()
-            && let Some(result) = self.promise_broken_gist(target)
+            && let Some(result) = self.wrapper_role_gist(target)
         {
             return Some(result);
         }

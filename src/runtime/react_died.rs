@@ -3,53 +3,98 @@
 
 use super::react_whenever::ReactSubscription;
 use super::*;
+use crate::meta_ns::MetaNs;
 use crate::runtime::native_methods::take_supply_channel;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
-use std::collections::HashMap;
 
 impl Interpreter {
-    /// Wrap a `RuntimeError` in `X::React::Died`.
-    /// The resulting exception reports as `X::React::Died` and includes
-    /// the original error message and backtrace in its gist.
+    /// Rethrow a `react` block's death the way rakudo does: the original
+    /// exception with the `X::React::Died` role mixed in, so `.message`,
+    /// `.Str` and type checks (`~~ X::AdHoc`) still see the original, and
+    /// only `.gist` explains it (see `wrapper_role_gist`). The role's
+    /// `react-backtrace` records where the react block was when it died.
     ///
     /// A `return` signal is not an exception: a `whenever` body is a block, so
     /// its `return` leaves the routine enclosing the `react` and passes through
-    /// unwrapped.
-    pub(crate) fn wrap_react_died(inner: RuntimeError) -> RuntimeError {
+    /// untouched.
+    pub(crate) fn wrap_react_died(&mut self, inner: RuntimeError) -> RuntimeError {
         if inner.is_return() {
             return inner;
         }
-        let original_message = inner.message.to_string();
-        let backtrace_str = inner.backtrace().unwrap_or_default().to_string();
-        let mut gist = format!(
-            "A react block:\n\nDied because of the exception:\n    {}",
-            original_message
-        );
-        if !backtrace_str.is_empty() {
-            gist.push_str(&format!("\n{}", backtrace_str));
-        }
-        let mut attrs = HashMap::new();
-        attrs.insert("message".to_string(), Value::str(gist.clone()));
-        attrs.insert("original-message".to_string(), Value::str(original_message));
-        if let Some(ref ex) = inner.exception {
-            attrs.insert("exception".to_string(), *ex.clone());
-        }
-        let exception = Value::make_instance(Symbol::intern("X::React::Died"), attrs);
+        // A broken promise's bare reason (`$p.break('nope')`) arrives as the
+        // payload itself; rakudo dies with it as an `X::AdHoc`.
+        let ex = match inner.exception.as_deref() {
+            Some(ex) if Self::is_exception_object(ex) => ex.clone(),
+            Some(payload) => Self::as_exception_value(payload.clone()),
+            None => Self::as_exception_value(Value::str(inner.message.to_string())),
+        };
+        let ex = Self::with_error_backtrace(ex, &inner);
+        let role = Value::package(Symbol::intern(
+            crate::runtime::wrapper_role_gist::REACT_DIED_ROLE,
+        ));
+        let Ok(mixed) = self.eval_does_values(ex, role) else {
+            return inner;
+        };
+        let mixed = match mixed.view() {
+            ValueView::Mixin(base, mixins) => {
+                let mut mixins = (**mixins).clone();
+                mixins.insert(
+                    MetaNs::Attr
+                        .owned_key_for_str(crate::runtime::wrapper_role_gist::REACT_BACKTRACE_ATTR),
+                    self.build_backtrace_value(),
+                );
+                Value::mixin_with_state(base.as_ref().clone(), mixins)
+            }
+            _ => mixed,
+        };
+        // An uncaught one reports its gist, as rakudo's top-level handler does.
+        let gist = match self.wrapper_role_gist(&mixed) {
+            Some(Ok(g)) => g.to_string_value(),
+            _ => inner.message.to_string(),
+        };
         let mut err = RuntimeError::new(gist);
-        err.exception = Some(Box::new(exception));
+        err.exception = Some(Box::new(mixed));
         err
     }
 
-    /// Wrap a `RuntimeError` in `X::React::Died` if not already wrapped.
-    pub(crate) fn wrap_react_died_if_needed(err: RuntimeError) -> RuntimeError {
+    /// `ex` with the backtrace `err` carries, unless the exception instance
+    /// already has one of its own.
+    fn with_error_backtrace(ex: Value, err: &RuntimeError) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = ex.view()
+        else {
+            return ex;
+        };
+        if attributes.contains_key("backtrace") {
+            return ex;
+        }
+        let Some(text) = err.backtrace().filter(|t| !t.is_empty()) else {
+            return ex;
+        };
+        let mut attrs = attributes.as_map().clone();
+        attrs.insert(
+            "backtrace".to_string(),
+            Self::backtrace_value_from_string_with_runtime(text, true),
+        );
+        Value::make_instance(class_name, attrs)
+    }
+
+    /// Rethrow a `react` block's death as `X::React::Died` unless the
+    /// exception already carries the role (a nested react).
+    pub(crate) fn wrap_react_died_if_needed(&mut self, err: RuntimeError) -> RuntimeError {
         if let Some(ref ex) = err.exception
-            && let ValueView::Instance { class_name, .. } = ex.as_ref().view()
-            && class_name.resolve() == "X::React::Died"
+            && let ValueView::Mixin(_, mixins) = ex.as_ref().view()
+            && mixins.contains_key(
+                &MetaNs::Role.owned_key_for_str(crate::runtime::wrapper_role_gist::REACT_DIED_ROLE),
+            )
         {
             return err;
         }
-        Self::wrap_react_died(err)
+        self.wrap_react_died(err)
     }
 
     /// Deliver an on-demand `supply { ... }` body failure to the subscribing

@@ -239,7 +239,7 @@ impl Interpreter {
                     if !handled {
                         let ch_quit_err =
                             crate::runtime::Interpreter::runtime_error_from_supply_reason(error);
-                        return Err(crate::runtime::Interpreter::wrap_react_died(ch_quit_err));
+                        return Err(self.wrap_react_died(ch_quit_err));
                     }
                 }
             }

@@ -436,7 +436,7 @@ impl Interpreter {
                                 self.async_state
                                     .supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
-                                return Err(crate::runtime::Interpreter::wrap_react_died(od_err));
+                                return Err(self.wrap_react_died(od_err));
                             }
                             // If the streaming consumer signalled `done`, the
                             // whole react has been satisfied by this supply — fire

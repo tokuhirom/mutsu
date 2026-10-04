@@ -1864,7 +1864,6 @@ impl Interpreter {
         register_x("X::Value", "Exception", &[]);
         register_x("X::Syntax", "X::Comp", &[]);
         register_x("X::Syntax::Signature", "X::Syntax", &[]);
-        register_x("X::React::Died", "Exception", &[]);
         register_x("X::Role::Composition::Conflict", "Exception", &[]);
 
         // ADR-0029 residue R2: `X::TooLateForREPR` is rakudo's one
@@ -2847,6 +2846,10 @@ impl Interpreter {
                 // registered here so `eval_does_values` can compose it
                 // and `~~ X::Promise::Broken` answers correctly.
                 "X::Promise::Broken",
+                // The same shape for a `react` block that dies: rakudo
+                // rethrows the exception `but X::React::Died` (its `gist`
+                // lives in `wrapper_role_gist`).
+                "X::React::Died",
                 // Also not a marker role: rakudo's
                 // `X::AdHoc.from-slurpy(...)` mixes this into the
                 // `Capture` it stores as `.payload`, so the payload's

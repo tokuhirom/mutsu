@@ -105,7 +105,7 @@ impl Interpreter {
             && !err.is_react_done()
         {
             // Wrap in X::React::Died if not already wrapped
-            return Err(crate::runtime::Interpreter::wrap_react_died_if_needed(err));
+            return Err(self.wrap_react_died_if_needed(err));
         }
         Ok(())
     }

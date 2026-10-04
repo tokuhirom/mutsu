@@ -147,7 +147,7 @@ impl Interpreter {
             if self.deliver_supply_body_quit(&quit_cbs, &e)? {
                 return Ok(Some(true));
             }
-            return Err(crate::runtime::Interpreter::wrap_react_died(e));
+            return Err(self.wrap_react_died(e));
         }
         if streamed_done {
             self.async_state
@@ -328,7 +328,7 @@ impl Interpreter {
             && !e.is_react_done()
         {
             self.async_state.supply_stream_consumers.truncate(idx);
-            return Err(crate::runtime::Interpreter::wrap_react_died(e));
+            return Err(self.wrap_react_died(e));
         }
         if !reached {
             for v in emitted {

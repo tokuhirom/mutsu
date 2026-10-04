@@ -5,7 +5,7 @@
 //!
 //! Split out of `methods_promise.rs` to keep that file under the 500-line
 //! limit. The `X::Promise::Broken` role's own gist rendering lives next door
-//! in `promise_broken_gist.rs`.
+//! in `wrapper_role_gist.rs`.
 
 use super::*;
 use crate::symbol::Symbol;
@@ -56,7 +56,7 @@ impl Interpreter {
     pub(super) fn compose_promise_broken_role(&mut self, ex: Value) -> Value {
         let ex = self.stamp_throw_site_backtrace(ex);
         let role = Value::package(Symbol::intern(
-            crate::runtime::promise_broken_gist::PROMISE_BROKEN_ROLE,
+            crate::runtime::wrapper_role_gist::PROMISE_BROKEN_ROLE,
         ));
         self.eval_does_values(ex.clone(), role).unwrap_or(ex)
     }
