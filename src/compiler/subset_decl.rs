@@ -41,8 +41,8 @@ impl Compiler {
                 // the declaration scope for it as well.
                 let mut names = TypeNameScan(false);
                 names.visit_expr(pred);
-                let with_closure = is_closure
-                    && (names.0 || !self.decl_time_expr_free_var_syms(pred).is_empty());
+                let with_closure =
+                    is_closure && (names.0 || !self.decl_time_expr_free_var_syms(pred).is_empty());
                 // `.^refinement` needs the predicate as a callable. A code
                 // literal is that already; anything else (`where /a/`) is
                 // wrapped as a block that smartmatches the value, as rakudo
