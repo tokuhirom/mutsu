@@ -183,7 +183,7 @@ impl Interpreter {
                     &result,
                     Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
                 ) {
-                    if is_export && !self.suppress_exports {
+                    if is_export && !self.module.suppress_exports {
                         // Rakudo's `is export` installs the symbol into the
                         // EXPORT package of every package lexically enclosing
                         // the declaration, not just the innermost one.
@@ -201,7 +201,7 @@ impl Interpreter {
                             );
                         }
                     }
-                    if multi && !self.suppress_exports {
+                    if multi && !self.module.suppress_exports {
                         self.refresh_exported_multi_family(&name.resolve());
                     }
                     for (alt_params, alt_param_defs) in &signature_alternates {
@@ -319,7 +319,7 @@ impl Interpreter {
                     .or_insert_with(|| def.clone());
             }
         }
-        let entry = crate::runtime::cow_table_mut(&mut self.exported_subs)
+        let entry = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
             .entry(outer.to_string())
             .or_default()
             .entry(name.to_string())

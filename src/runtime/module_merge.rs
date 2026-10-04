@@ -105,14 +105,14 @@ impl Interpreter {
         names: impl IntoIterator<Item = Symbol>,
     ) {
         let module_sym = Symbol::intern(module);
-        crate::runtime::cow_table_mut(&mut self.module_visibility.module_units)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_units)
             .insert(module_sym, unit);
         let mut names = names.into_iter().peekable();
         if names.peek().is_none() {
             return;
         }
         let table =
-            crate::runtime::cow_table_mut(&mut self.module_visibility.module_name_providers);
+            crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_name_providers);
         for name in names {
             table.entry(name).or_insert(module_sym);
         }
@@ -133,8 +133,9 @@ impl Interpreter {
             return;
         }
         let module_sym = Symbol::intern(module);
-        let table =
-            crate::runtime::cow_table_mut(&mut self.module_visibility.module_routine_providers);
+        let table = crate::runtime::cow_table_mut(
+            &mut self.module.module_visibility.module_routine_providers,
+        );
         for name in names {
             table.entry(name).or_insert(module_sym);
         }
@@ -147,7 +148,12 @@ impl Interpreter {
     // Cost: O(1) when no module published an `our sub`; otherwise one
     // provenance probe plus `module_merged_here` for a published one.
     pub(crate) fn module_routine_visible_here(&self, key: Symbol) -> bool {
-        if self.module_visibility.module_routine_providers.is_empty() {
+        if self
+            .module
+            .module_visibility
+            .module_routine_providers
+            .is_empty()
+        {
             return true;
         }
         let Some(name) =
@@ -155,7 +161,12 @@ impl Interpreter {
         else {
             return true;
         };
-        match self.module_visibility.module_routine_providers.get(&name) {
+        match self
+            .module
+            .module_visibility
+            .module_routine_providers
+            .get(&name)
+        {
             None => true,
             // An imported alias of the routine (`our sub f is export` is
             // imported under the very `GLOBAL::f` key) resolves wherever the
@@ -174,18 +185,32 @@ impl Interpreter {
     // Cost: O(1) when `name` is unattributed or declared by its own module;
     // otherwise a copy-on-write removal from the provenance table.
     pub(crate) fn release_foreign_provenance(&mut self, name: &str) {
-        if self.module_visibility.module_name_providers.is_empty() {
+        if self
+            .module
+            .module_visibility
+            .module_name_providers
+            .is_empty()
+        {
             return;
         }
         let Some(sym) = Symbol::lookup(name) else {
             return;
         };
-        let Some(&provider) = self.module_visibility.module_name_providers.get(&sym) else {
+        let Some(&provider) = self
+            .module
+            .module_visibility
+            .module_name_providers
+            .get(&sym)
+        else {
             return;
         };
-        let declaring_module = self.module_load_stack.last().map(|m| Symbol::intern(m));
+        let declaring_module = self
+            .module
+            .module_load_stack
+            .last()
+            .map(|m| Symbol::intern(m));
         if declaring_module != Some(provider) {
-            crate::runtime::cow_table_mut(&mut self.module_visibility.module_name_providers)
+            crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_name_providers)
                 .remove(&sym);
         }
     }
@@ -296,7 +321,7 @@ impl Interpreter {
         if modules.is_empty() {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module_visibility.unit_merged_modules)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
             .entry(unit)
             .or_default()
             .extend(modules);
@@ -321,8 +346,9 @@ impl Interpreter {
     ) {
         let module_sym = Symbol::intern(module);
         {
-            let inverse =
-                crate::runtime::cow_table_mut(&mut self.module_visibility.package_granting_modules);
+            let inverse = crate::runtime::cow_table_mut(
+                &mut self.module.module_visibility.package_granting_modules,
+            );
             for package in granted {
                 inverse
                     .entry(package.clone())
@@ -336,6 +362,7 @@ impl Interpreter {
         // module loaded *by* that preload merges its own `use`s at its unit
         // level as usual: nothing replays those.
         if self
+            .module
             .import_scope_stack
             .last()
             .is_some_and(|scope| !scope.scope_classes && scope.unit == importer)
@@ -343,13 +370,14 @@ impl Interpreter {
             return;
         }
         let block_level = self
+            .module
             .import_scope_stack
             .last()
             .is_some_and(|scope| scope.unit == importer);
         if block_level {
             let key = MetaNs::ModuleMerge.key(module_sym);
             let previous = self.env.get_sym(key).cloned();
-            if let Some(scope) = self.import_scope_stack.last_mut()
+            if let Some(scope) = self.module.import_scope_stack.last_mut()
                 && scope.imported_env_keys.insert(key)
                 && let Some(previous) = previous
             {
@@ -358,11 +386,11 @@ impl Interpreter {
             self.env.insert_sym(key, Value::TRUE);
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module_visibility.unit_merged_modules)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
             .entry(importer)
             .or_default()
             .insert(module_sym);
-        crate::runtime::cow_table_mut(&mut self.module_visibility.compunit_visible_packages)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.compunit_visible_packages)
             .entry(importer)
             .or_default()
             .extend(granted.iter().cloned());
@@ -377,7 +405,12 @@ impl Interpreter {
         if self.env.contains_key_sym(MetaNs::ModuleMerge.key(module)) {
             return true;
         }
-        let own_unit = self.module_visibility.module_units.get(&module).copied();
+        let own_unit = self
+            .module
+            .module_visibility
+            .module_units
+            .get(&module)
+            .copied();
         // Two anchors, as `prelude_visible_here` explains: `?FILE` is right
         // while a module's mainline runs, `current_unit` names an EVAL unit
         // whose `?FILE` a nested frame has moved on from.
@@ -387,6 +420,7 @@ impl Interpreter {
                 let Some(sym) = unit else { break };
                 if Some(sym) == own_unit
                     || self
+                        .module
                         .module_visibility
                         .unit_merged_modules
                         .get(&sym)
@@ -407,10 +441,20 @@ impl Interpreter {
     // `module_merged_here`.
     #[inline]
     pub(crate) fn bare_name_visible_here(&self, name: Symbol) -> bool {
-        if self.module_visibility.module_name_providers.is_empty() {
+        if self
+            .module
+            .module_visibility
+            .module_name_providers
+            .is_empty()
+        {
             return true;
         }
-        match self.module_visibility.module_name_providers.get(&name) {
+        match self
+            .module
+            .module_visibility
+            .module_name_providers
+            .get(&name)
+        {
             None => true,
             // A name imported explicitly into a live scope (an `is export`ed
             // type, `require M <Name>`) is visible however the module was
@@ -423,7 +467,7 @@ impl Interpreter {
             // rakudo), as the qualified gate already lets `Monad::Maybe` do.
             Some(&module) => {
                 self.module_merged_here(module)
-                    || self.imported_env_aliases.contains_key(&name)
+                    || self.module.imported_env_aliases.contains_key(&name)
                     || self.package_granted_here(name.as_str())
             }
         }
@@ -437,7 +481,12 @@ impl Interpreter {
     // Cost: as `bare_name_visible_here`, plus a nested-type probe for a name
     // that is hidden.
     pub(crate) fn module_name_hidden_here(&self, name: &str) -> bool {
-        if self.module_visibility.module_name_providers.is_empty() {
+        if self
+            .module
+            .module_visibility
+            .module_name_providers
+            .is_empty()
+        {
             return false;
         }
         let Some(sym) = Symbol::lookup(name) else {
@@ -457,7 +506,8 @@ impl Interpreter {
     /// qualified gate, whose unit-wide half is `compunit_visible_packages`.
     // Cost: O(m), m = modules that granted `top`.
     pub(crate) fn package_merged_here(&self, top: &str) -> bool {
-        self.module_visibility
+        self.module
+            .module_visibility
             .package_granting_modules
             .get(top)
             .is_some_and(|modules| {

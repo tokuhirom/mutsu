@@ -339,13 +339,13 @@ impl Interpreter {
         let role_before: std::collections::HashSet<String> =
             self.registry().roles.keys().cloned().collect();
         if source_path.exists() {
-            let saved = self.precomp_enabled;
-            self.precomp_enabled = false;
+            let saved = self.module.precomp_enabled;
+            self.module.precomp_enabled = false;
             // The module's own `use vX` pragma is lexical to it; restore ours
             // once its mainline has run (same contract as `load_module`).
             let saved_language_version = crate::parser::current_language_version();
             let parsed = self.parse_module_source(&short_name, &source_path);
-            self.precomp_enabled = saved;
+            self.module.precomp_enabled = saved;
             let ran = match parsed {
                 Ok((stmts, _)) => self.run_block(&stmts).map(|_| ()),
                 Err(_) => Ok(()),
@@ -366,7 +366,10 @@ impl Interpreter {
         }
         // Keep the freshly-loaded symbols hidden from indirect lookup until merge.
         for s in &new_symbols {
-            self.cur_repo.pending_global_symbols.insert(s.clone());
+            self.module
+                .cur_repo
+                .pending_global_symbols
+                .insert(s.clone());
         }
 
         // Build the CompUnit returned to the caller.

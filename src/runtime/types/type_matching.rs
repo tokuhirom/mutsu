@@ -459,8 +459,9 @@ impl Interpreter {
             self.current_package()
         };
         compiler.set_current_package(scope);
-        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });
@@ -635,7 +636,7 @@ impl Interpreter {
             || constraint.contains('[')
             || Self::any_type_capture_seen()
             || !self.package_type_aliases.is_empty()
-            || !self.module_scope_lexicals.is_empty())
+            || !self.module.module_scope_lexicals.is_empty())
             && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
         {
             return self.type_matches_value(&resolved_constraint, value);

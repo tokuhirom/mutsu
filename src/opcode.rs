@@ -2438,7 +2438,7 @@ pub(crate) enum OpCode {
     /// actually forces it, so a stored unhandled `Failure` must not explode
     /// merely because the bare mention was reached — Raku decides a
     /// Failure's fate at *construction* time (throwing immediately there
-    /// under `use fatal`, matched by the various `self.fatal_mode`
+    /// under `use fatal`, matched by the various `self.module.fatal_mode`
     /// assignment-time checks), not by re-examining it at every later
     /// mention. Every other sunk shape (fresh calls, method calls, `sink`
     /// prefix, ...) keeps `true`, matching prior behavior.

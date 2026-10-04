@@ -34,7 +34,7 @@ impl Interpreter {
         routine: &CompiledFunction,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        if self.suppress_exports || !self.module_load_in_progress() {
+        if self.module.suppress_exports || !self.module_load_in_progress() {
             return Ok(());
         }
         let code = &routine.code;

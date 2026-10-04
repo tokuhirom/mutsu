@@ -2603,7 +2603,9 @@ impl Interpreter {
                                 captured_env.as_ref(),
                                 captured_unit.or_else(|| {
                                     declaring_package
-                                        .and_then(|p| self.class_declaring_units.get(p.as_str()))
+                                        .and_then(|p| {
+                                            self.module.class_declaring_units.get(p.as_str())
+                                        })
                                         .copied()
                                 }),
                             );

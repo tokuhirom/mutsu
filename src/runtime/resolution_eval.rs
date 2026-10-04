@@ -314,8 +314,9 @@ impl Interpreter {
         };
         compiler.set_current_package(scope);
         // Resolve distribution context for $?DISTRIBUTION
-        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });
@@ -516,8 +517,9 @@ impl Interpreter {
         } else {
             self.current_package()
         };
-        let distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        let distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });

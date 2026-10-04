@@ -23,7 +23,7 @@ impl Interpreter {
     ) -> Result<T, RuntimeError> {
         self.push_import_scope();
         let result = body(self);
-        if let Some(snapshot) = self.import_scope_stack.pop() {
+        if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let ImportScopeSnapshot {
                 imported_env_keys,
                 mut shadowed_env_values,
@@ -31,7 +31,7 @@ impl Interpreter {
                 ..
             } = snapshot;
             self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
-            self.imported_env_aliases = imported_env_aliases;
+            self.module.imported_env_aliases = imported_env_aliases;
         }
         result
     }

@@ -288,6 +288,7 @@ impl Interpreter {
     /// Cost: O(1) hashed probes.
     pub(crate) fn lexical_amp_call_eligible(&mut self, name: &str) -> bool {
         let imported_alias = self
+            .module
             .imported_env_aliases
             .contains_key(&Symbol::intern(&format!("&{name}")));
         !(Self::is_control_flow_function_name(name)
@@ -607,7 +608,7 @@ impl Interpreter {
         // NativeCall: a sub declared `is native(...)` is dispatched through C
         // FFI rather than running its (`{ * }`) Raku body. The registry is
         // empty in the overwhelmingly common case, so this guard is free.
-        if !self.native_call_specs.is_empty() {
+        if !self.module.native_call_specs.is_empty() {
             let name_str = Self::const_str(code, name_idx);
             // A native descriptor is keyed by the sub's short name (and, when the
             // declaring package is known at registration, its qualified name). A
@@ -722,12 +723,12 @@ impl Interpreter {
         // override.
         let name_sym = code.const_sym(name_idx);
         let skip_name_caches = if self.lexicals.amp_param_shadowed_names.is_empty()
-            && self.export_amp_override_names.is_empty()
+            && self.module.export_amp_override_names.is_empty()
         {
             self.is_unit_scoped_routine_sym(name_sym)
         } else {
             self.lexicals.amp_param_shadowed_names.contains(&name_sym)
-                || self.export_amp_override_names.contains(&name_sym)
+                || self.module.export_amp_override_names.contains(&name_sym)
                 || self.is_unit_scoped_routine_sym(name_sym)
         };
         // ADR-0054 Slice 4: whether this call site wrote a `|EXPR` argument,
@@ -1232,7 +1233,7 @@ impl Interpreter {
                 // free-var case just below, it must be visible to a bareword
                 // call anywhere within that unit's reach, so it is not gated
                 // by `free_var_syms`.
-                let is_export_override = self.export_amp_override_names.contains(&name_sym);
+                let is_export_override = self.module.export_amp_override_names.contains(&name_sym);
                 // `&name` is fixed by the call site: memoized per name rather
                 // than rebuilt and re-interned on every call (#10961).
                 let amp_sym = dispatch_key::amp_sym(name_sym);
@@ -2442,6 +2443,7 @@ impl Interpreter {
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if self
+                    .module
                     .imported_env_aliases
                     .contains_key(&Symbol::intern(&format!("&{name}")))
                     && let Some(callable) = self.lexical_amp_var_callable(Some(code), name)
@@ -3220,14 +3222,14 @@ impl Interpreter {
         &self,
         def: &crate::ast::FunctionDef,
     ) -> Option<std::sync::Arc<CompiledFunction>> {
-        if self.imported_compiled_fns.is_empty()
+        if self.module.imported_compiled_fns.is_empty()
             || !Self::routine_body_facts(def).declares_state
             || !Self::def_module_single_sig_body_ok_ignoring_state(def)
         {
             return None;
         }
         let fp = def.body_fingerprint();
-        self.imported_compiled_fns.get(&fp).cloned()
+        self.module.imported_compiled_fns.get(&fp).cloned()
     }
 
     /// Invoke a shared captured module-sub body (`imported_state_body_for_def`)

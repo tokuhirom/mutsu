@@ -667,7 +667,7 @@ impl Interpreter {
                             Ok(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(&display),
                             ))
-                        } else if self.strict_mode && !Self::strict_read_exempt(name) {
+                        } else if self.module.strict_mode && !Self::strict_read_exempt(name) {
                             // Read-side counterpart of the `SetGlobal` write
                             // check above: a plain scalar name that resolved
                             // through NONE of the real stores tried above
@@ -1349,7 +1349,7 @@ impl Interpreter {
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
-                    && !self.lexical_fatal_mode
+                    && !self.module.lexical_fatal_mode
                     && {
                         let anon_state_val =
                             self.env().get(name_str).cloned().unwrap_or(Value::NIL);
@@ -1548,7 +1548,7 @@ impl Interpreter {
                 // `unit_scope_lexical`), so an `env`-only test reports a module
                 // writing its own module-level lexical as undeclared. It is
                 // declared; the write below goes to the same store.
-                if self.strict_mode
+                if self.module.strict_mode
                     && !self.vardecl_context().get()
                     && !is_attr_twigil
                     && !is_internal_temp
@@ -2221,7 +2221,7 @@ impl Interpreter {
                     // raw parameter stores and declarations keep their value.
                     val = self.reset_nil_untyped_scalar(&name, val);
                 }
-                if self.lexical_fatal_mode
+                if self.module.lexical_fatal_mode
                     && !name.contains("__mutsu_")
                     && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                 {
@@ -4422,11 +4422,11 @@ impl Interpreter {
                 }
                 // Deliberately no `unhandled_failure_in_list_for_fatal` descent
                 // here: unlike a bare Failure (created directly in this frame,
-                // so `self.fatal_mode` here really does describe the state it
+                // so `self.module.fatal_mode` here really does describe the state it
                 // was made under), a reified list/Seq may be the *return value*
                 // of a call that crossed its own `call_compiled_closure` save/
                 // restore boundary — by the time control gets back here,
-                // `self.fatal_mode` has been restored to *this* frame's state,
+                // `self.module.fatal_mode` has been restored to *this* frame's state,
                 // which can differ from the state the list's elements were
                 // actually produced under (e.g. `try { c() }` where `c`'s own
                 // body ran with fatal off, but `try` restores fatal on for its
@@ -4507,7 +4507,7 @@ impl Interpreter {
                             // An assignment statement is wanted, not sunk: the
                             // assigned Failure stays soft — unless `use fatal`
                             // is in effect.
-                            if self.lexical_fatal_mode
+                            if self.module.lexical_fatal_mode
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);
@@ -4651,7 +4651,7 @@ impl Interpreter {
                             // Deliberately no `unhandled_failure_in_list_for_fatal`
                             // descent here — see the identical note on
                             // `OpCode::ThrowIfFailure` above: the ambient
-                            // `self.fatal_mode` at this sink can be the
+                            // `self.module.fatal_mode` at this sink can be the
                             // *caller's* restored state, not the state the
                             // sunk list's elements were actually produced
                             // under, and `.map`/`.grep`'s own native loop
@@ -6196,7 +6196,7 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 *ip += 1;
@@ -6226,7 +6226,7 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 // Mark as my-scoped so the package is hidden from global

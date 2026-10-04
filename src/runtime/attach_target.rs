@@ -84,7 +84,7 @@ impl Interpreter {
     /// in-position `use` it answers for (see the module docs). Always a fresh
     /// binding: every `use` has its own attach targets.
     pub(super) fn bind_compile_time_resolver(&mut self) {
-        let depth = self.use_attach_depth.map_or(-1, |d| d as i64);
+        let depth = self.module.use_attach_depth.map_or(-1, |d| d as i64);
         let mut attrs = HashMap::new();
         attrs.insert("depth".to_string(), Value::int(depth));
         attrs.insert(
@@ -100,17 +100,20 @@ impl Interpreter {
     /// Run `body` as the in-position `use` at the current import-scope depth,
     /// so a `$*R` bound by its EXPORT resolves against this block.
     pub(crate) fn with_use_attach_depth<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
-        let saved = self.use_attach_depth.replace(self.import_scope_stack.len());
+        let saved = self
+            .module
+            .use_attach_depth
+            .replace(self.module.import_scope_stack.len());
         let result = body(self);
-        self.use_attach_depth = saved;
+        self.module.use_attach_depth = saved;
         result
     }
 
     /// Run `body` with no in-position `use` recorded: a BEGIN-time preload.
     pub(crate) fn without_use_attach_depth<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
-        let saved = self.use_attach_depth.take();
+        let saved = self.module.use_attach_depth.take();
         let result = body(self);
-        self.use_attach_depth = saved;
+        self.module.use_attach_depth = saved;
         result
     }
 
@@ -123,7 +126,7 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         self.control.compunit_leave_frames.push(CompunitLeaveFrame {
-            import_base: self.import_scope_stack.len(),
+            import_base: self.module.import_scope_stack.len(),
             phasers: Vec::new(),
         });
         let result = body(self);
@@ -145,7 +148,8 @@ impl Interpreter {
 
     /// Take the LEAVE phasers attached to the innermost open import scope.
     pub(crate) fn take_import_scope_leave_phasers(&mut self) -> Vec<Value> {
-        self.import_scope_stack
+        self.module
+            .import_scope_stack
             .last_mut()
             .map(|scope| std::mem::take(&mut scope.leave_phasers))
             .unwrap_or_default()
@@ -254,7 +258,7 @@ impl Interpreter {
         match place {
             Target::Block(depth) => match depth
                 .checked_sub(1)
-                .and_then(|i| self.import_scope_stack.get_mut(i))
+                .and_then(|i| self.module.import_scope_stack.get_mut(i))
             {
                 Some(scope) => scope.leave_phasers.push(code),
                 None => {
@@ -279,7 +283,8 @@ impl Interpreter {
 
     /// Every attached-but-not-yet-run LEAVE phaser, for the GC root walk.
     pub(crate) fn attached_leave_phasers(&self) -> impl Iterator<Item = &Value> {
-        self.import_scope_stack
+        self.module
+            .import_scope_stack
             .iter()
             .flat_map(|scope| scope.leave_phasers.iter())
             .chain(

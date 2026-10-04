@@ -308,7 +308,7 @@ impl Interpreter {
                     let qualified = qualify_type_name(&name);
                     if !is_stub
                         && !*is_lexical
-                        && !self.suppress_cross_eval_class_redeclaration_check
+                        && !self.module.suppress_cross_eval_class_redeclaration_check
                         && self.has_class(&qualified)
                         && !self.registry().lexical_classes.contains(&qualified)
                     {

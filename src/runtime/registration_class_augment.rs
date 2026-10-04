@@ -454,7 +454,7 @@ impl Interpreter {
                     // then `import Foo` exposes a `greet` sub — for any
                     // method name, not just an operator-categorical one; see
                     // the class walker's identical fix).
-                    if decl.is_export && !self.suppress_exports {
+                    if decl.is_export && !self.module.suppress_exports {
                         let tags = if decl.export_tags.is_empty() {
                             vec!["DEFAULT".to_string()]
                         } else {
@@ -1715,7 +1715,7 @@ impl Interpreter {
                 // import itself. See the twin in
                 // `run_composed_role_deferred_body` (#8842).
                 if is_use_or_need {
-                    self.import_target_package = Some(pkg.to_string());
+                    self.module.import_target_package = Some(pkg.to_string());
                 }
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
@@ -1758,7 +1758,7 @@ impl Interpreter {
                 self.set_current_package(saved_pkg.clone());
             }
             if is_use_or_need {
-                self.import_target_package = None;
+                self.module.import_target_package = None;
                 // See the twin in `run_composed_role_deferred_body` (#8842).
                 self.record_deferred_body_imports(type_owner, import_mark);
             }

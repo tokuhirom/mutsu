@@ -26,8 +26,18 @@ impl Interpreter {
             .unwrap_or_else(|| Symbol::intern(fallback_class));
         let unit = attr
             .captured_unit
-            .or_else(|| self.class_declaring_units.get(package.as_str()).copied())
-            .or_else(|| self.class_declaring_units.get(fallback_class).copied());
+            .or_else(|| {
+                self.module
+                    .class_declaring_units
+                    .get(package.as_str())
+                    .copied()
+            })
+            .or_else(|| {
+                self.module
+                    .class_declaring_units
+                    .get(fallback_class)
+                    .copied()
+            });
         AttrWhereScope { unit, package }
     }
 

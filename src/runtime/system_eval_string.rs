@@ -149,7 +149,7 @@ impl Interpreter {
         // Also include operators imported via `use Module` at runtime. This
         // captures prefix/infix/postfix operators declared with `is export`
         // in loaded modules, without exposing non-exported subs.
-        for name in self.imported_operator_names.iter() {
+        for name in self.module.imported_operator_names.iter() {
             seen.insert(name.clone());
         }
         let mut names: Vec<String> = seen.into_iter().collect();
@@ -363,8 +363,8 @@ impl Interpreter {
         // without this the *caller* kept throwing on every later soft Failure
         // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
         // common assertion shape, so one of them poisoned the rest of the file.)
-        let saved_fatal_mode = self.fatal_mode;
-        let saved_lexical_fatal_mode = self.lexical_fatal_mode;
+        let saved_fatal_mode = self.module.fatal_mode;
+        let saved_lexical_fatal_mode = self.module.lexical_fatal_mode;
         // ... and the EVAL'd unit does not INHERIT one either. `fatal` is
         // lexical to a compilation unit and EVAL compiles a fresh one, so a
         // caller's `use fatal` — or `try`'s implicit one — must not fatalize the
@@ -375,8 +375,8 @@ impl Interpreter {
         // -> X::OutOfRange case that once argued for inheriting it proves
         // nothing: an out-of-range subscript throws there with or without
         // `fatal`.)
-        self.fatal_mode = false;
-        self.lexical_fatal_mode = false;
+        self.module.fatal_mode = false;
+        self.module.lexical_fatal_mode = false;
         // Unlike `fatal` (a runtime dynamic-scope check the EVAL'd unit
         // legitimately inherits from its caller -- `raku -e 'use
         // MONKEY-SEE-NO-EVAL; use fatal; try { EVAL q["bar"[5]] }; say
@@ -390,8 +390,8 @@ impl Interpreter {
         // {} }] }; say $!.^name'` -> X::Syntax::Augment::WithoutMonkeyTyping,
         // not the method-clash error an inherited pragma would reach).
         // `roast/S12-class/augment-supersede.t` exercises exactly this shape.
-        let saved_monkey_typing = self.monkey_typing;
-        self.monkey_typing = false;
+        let saved_monkey_typing = self.module.monkey_typing;
+        self.module.monkey_typing = false;
         // CALLER:: from the EVAL'd unit's mainline must not resolve directly in
         // the scope that invoked EVAL (see push_eval_caller_frames for the
         // frame layout raku exposes).
@@ -500,9 +500,9 @@ impl Interpreter {
         } else {
             self.env.remove("__mutsu_in_eval");
         }
-        self.fatal_mode = saved_fatal_mode;
-        self.lexical_fatal_mode = saved_lexical_fatal_mode;
-        self.monkey_typing = saved_monkey_typing;
+        self.module.fatal_mode = saved_fatal_mode;
+        self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
+        self.module.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
         let eval_main_keys: Vec<Symbol> = self
             .registry()

@@ -628,7 +628,7 @@ impl Interpreter {
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        crate::parser::set_parser_preload_modules(self.preload_modules.clone());
+        crate::parser::set_parser_preload_modules(self.module.preload_modules.clone());
         // `$?FILE` folds to the file of the compilation unit being parsed (see
         // the parser's scalar-var twigil handling); for the mainline that is the
         // script itself.
@@ -1110,8 +1110,9 @@ impl Interpreter {
         // Resolve distribution context: prefer the current one, then look up
         // by the current package name in case we're running a function body
         // from a module that had a distribution.
-        compiler.current_distribution = self.current_distribution.clone().or_else(|| {
-            self.package_distributions
+        compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
+            self.module
+                .package_distributions
                 .get(&self.current_package())
                 .cloned()
         });

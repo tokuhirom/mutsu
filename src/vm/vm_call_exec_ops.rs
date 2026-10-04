@@ -28,7 +28,7 @@ impl Interpreter {
         name_sym: Symbol,
         code: &CompiledCode,
     ) -> Option<Value> {
-        if !self.export_amp_override_names.contains(&name_sym) || self.has_function(name) {
+        if !self.module.export_amp_override_names.contains(&name_sym) || self.has_function(name) {
             return None;
         }
         let installed =
@@ -59,8 +59,11 @@ impl Interpreter {
         let Some(file) = code.source_file else {
             return true;
         };
-        self.unit_imported_callables.contains_key(&(file, name_sym))
+        self.module
+            .unit_imported_callables
+            .contains_key(&(file, name_sym))
             || !self
+                .module
                 .unit_imported_callables
                 .keys()
                 .any(|(_, name)| *name == name_sym)
@@ -75,7 +78,10 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> Option<Value> {
         let file = code.source_file?;
-        self.unit_imported_callables.get(&(file, name_sym)).cloned()
+        self.module
+            .unit_imported_callables
+            .get(&(file, name_sym))
+            .cloned()
     }
 
     /// A statement-level call discards its value, so that value is *sunk* —
@@ -111,7 +117,7 @@ impl Interpreter {
                 // Under `use fatal`, a sunk list/Seq holding an unhandled Failure
                 // throws too; without the pragma such a list stays soft. Same
                 // rule as SinkPop.
-                if self.lexical_fatal_mode
+                if self.module.lexical_fatal_mode
                     && let Some(err) = self.unhandled_failure_in_list_for_fatal(value)
                 {
                     return Err(err);

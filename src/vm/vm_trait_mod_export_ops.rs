@@ -31,7 +31,7 @@ impl Interpreter {
                 args.len()
             ))));
         }
-        if self.suppress_exports {
+        if self.module.suppress_exports {
             return Some(Ok(Value::NIL));
         }
         let tags = Self::export_trait_tags(&args[1]);

@@ -282,7 +282,7 @@ impl Interpreter {
         // `register_exported_operator_method_sub`'s forwarding body is
         // name-agnostic despite the name — it dispatches on whatever
         // `resolved_method_name` is.
-        if decl.is_export && !self.suppress_exports {
+        if decl.is_export && !self.module.suppress_exports {
             let tags = if decl.export_tags.is_empty() {
                 vec!["DEFAULT".to_string()]
             } else {

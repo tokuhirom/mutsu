@@ -169,7 +169,7 @@ pub(crate) fn run_slang_activation(
             // slang when given one (`use L10N::BG 'no-slangification'`) must not
             // slang the importing unit here either (#9550).
             if let Some(args) = use_args {
-                interp.pending_use_export_args =
+                interp.module.pending_use_export_args =
                     Some(args.into_iter().map(SlangUseArg::into_value).collect());
             }
             interp

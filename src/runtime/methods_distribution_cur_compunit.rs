@@ -167,7 +167,8 @@ impl Interpreter {
 
     /// `$repo.loaded`: the CompUnits a repository has loaded, in load order.
     pub(crate) fn cur_repo_loaded(&self, prefix: &str) -> Vec<Value> {
-        self.cur_repo
+        self.module
+            .cur_repo
             .loaded
             .get(prefix)
             .cloned()
@@ -175,7 +176,8 @@ impl Interpreter {
     }
 
     pub(crate) fn cur_repo_loaded_push(&mut self, prefix: &str, compunit: Value) {
-        self.cur_repo
+        self.module
+            .cur_repo
             .loaded
             .entry(prefix.to_string())
             .or_default()

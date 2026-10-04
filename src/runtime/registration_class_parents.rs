@@ -270,8 +270,9 @@ impl Interpreter {
                 // package is not an unknown name, so rakudo passes it to
                 // `trait_mod:<is>` positionally (as the package object) rather
                 // than as the `:Name` named argument the deferral synthesises.
-                if self.chain_declared_packages.contains(base_parent)
+                if self.module.chain_declared_packages.contains(base_parent)
                     || self
+                        .module
                         .chain_declared_packages
                         .contains(resolved_parent_name.as_str())
                 {

@@ -43,7 +43,7 @@ impl Interpreter {
             return None;
         }
         if crate::qualified::is_qualified(name_sym)
-            || self.export_amp_override_names.contains(&name_sym)
+            || self.module.export_amp_override_names.contains(&name_sym)
         {
             return None;
         }
