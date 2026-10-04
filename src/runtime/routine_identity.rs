@@ -48,13 +48,29 @@ impl Interpreter {
     }
 
     /// Record `composed` -- the result of a `does` on a routine -- as that
-    /// routine's composition. A non-routine result is ignored.
-    // Cost: O(1).
-    pub(crate) fn note_routine_composition(composed: &Value) {
-        if let ValueView::Mixin(inner, overrides) = composed.view()
-            && let ValueView::Sub(data) = inner.view()
-        {
-            data.routine_cell.set(overrides.clone());
-        }
+    /// routine's composition, and return the value to hand back. When the
+    /// routine already had a composition (`earlier`), the new one keeps its
+    /// live role cell ([`crate::value::MixinOverrides::rebased_on`]): the
+    /// object is the same, so its role attributes are too. A non-routine
+    /// result is returned unchanged.
+    // Cost: O(1), plus O(m + a) to rebase (m = markers, a = role attributes).
+    pub(crate) fn note_routine_composition(
+        composed: Value,
+        earlier: Option<&crate::gc::Gc<crate::value::MixinOverrides>>,
+    ) -> Value {
+        let ValueView::Mixin(inner, overrides) = composed.view() else {
+            return composed;
+        };
+        let ValueView::Sub(data) = inner.view() else {
+            return composed;
+        };
+        let overrides = match earlier {
+            Some(earlier) if !crate::gc::Gc::ptr_eq(earlier, overrides) => {
+                crate::gc::Gc::new(overrides.rebased_on(earlier))
+            }
+            _ => overrides.clone(),
+        };
+        data.routine_cell.set(overrides.clone());
+        Value::mixin_parts(inner.clone(), overrides)
     }
 }

@@ -373,10 +373,10 @@ impl Interpreter {
         }
         // A routine composes in place (ADR-11827): onto its current
         // composition, which the result then becomes.
+        let earlier = Self::routine_cell_of(&left).and_then(|cell| cell.get());
         let left = Self::routine_current_view(&left).unwrap_or(left);
         let composed = self.eval_does_values(left, right)?;
-        Self::note_routine_composition(&composed);
-        Ok(composed)
+        Ok(Self::note_routine_composition(composed, earlier.as_ref()))
     }
 
     /// The mutating form of `$obj does (RoleA, RoleB)`.
@@ -395,10 +395,10 @@ impl Interpreter {
         {
             return Ok(reblessed);
         }
+        let earlier = Self::routine_cell_of(&left).and_then(|cell| cell.get());
         let left = Self::routine_current_view(&left).unwrap_or(left);
         let composed = self.eval_does_values_list(left, roles)?;
-        Self::note_routine_composition(&composed);
-        Ok(composed)
+        Ok(Self::note_routine_composition(composed, earlier.as_ref()))
     }
 
     pub(crate) fn eval_does_values(

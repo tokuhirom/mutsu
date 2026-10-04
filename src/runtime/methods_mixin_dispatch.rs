@@ -270,8 +270,7 @@ impl Interpreter {
             let cloned = Value::mixin_with_state(inner_clone, new_mixins);
             // A cloned routine's own cell holds the copied composition
             // (ADR-11827 §2.3).
-            Self::note_routine_composition(&cloned);
-            return Some(Ok(cloned));
+            return Some(Ok(Self::note_routine_composition(cloned, None)));
         }
 
         if method == "of"
