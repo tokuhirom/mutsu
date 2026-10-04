@@ -36,6 +36,16 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
+        // An imported type may also be registered as a sigilless term. Let the
+        // identifier parser consume its definiteness smiley as part of the
+        // type name; otherwise `(CArray:D)` leaves `:D` after `CArray`.
+        if !callable
+            && starts_with_type_smiley(&input[consumed_len..])
+            && (crate::runtime::utils::is_known_type_constraint(&name)
+                || crate::parser::stmt::simple::is_user_declared_type(&name))
+        {
+            return Err(PError::expected("definiteness-constrained type"));
+        }
         if is_identifier_name(&input[..consumed_len]) && is_fat_arrow_key(&input[consumed_len..]) {
             return Err(PError::expected("declared term symbol"));
         }
@@ -73,6 +83,9 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Ok((rest, name)) = crate::parser::stmt::parse_raku_ident(input)
         && crate::parser::stmt::simple::is_imported_value_term(name)
         && !is_fat_arrow_key(rest)
+        && !(starts_with_type_smiley(rest)
+            && (crate::runtime::utils::is_known_type_constraint(name)
+                || crate::parser::stmt::simple::is_user_declared_type(name)))
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
     {
         return Ok((rest, Expr::BareWord(name.to_string())));
