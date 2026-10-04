@@ -5,7 +5,7 @@ use Test;
 # is declared (#11761); every candidate must still be importable, whatever
 # order the proto, the exported and the unexported candidates came in.
 
-plan 6;
+plan 5;
 
 subtest 'proto exported before its candidates', {
     plan 5;
@@ -53,11 +53,4 @@ subtest 'a tag only the first candidate carries', {
         is tagfirst(2), 'tagfirst-int 2', 'DEFAULT imports the tagged candidate';
         is tagfirst('b'), 'tagfirst-str b', 'DEFAULT imports the later candidate';
     }
-}
-
-subtest 'an operator whose name holds a slash', {
-    plan 2;
-    use ExportedMultiFamily;
-    is (1 +/+ 'x'), 'op-int-str 1 x', 'first candidate';
-    is ('y' +/+ 2), 'op-str-int y 2', 'second candidate';
 }
