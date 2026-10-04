@@ -37,7 +37,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Arithmetic | 26 / 26 | 0 | #11490 |
 | Array | 60 / 60 | 0 | #11493 |
 | Asynchronous | 0 / 11 | 11 | #11502 |
-| Atomic | 0 / 11 | 11 | #11502 |
+| Atomic | 11 / 11 | 0 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
 | Bit | 15 / 15 | 0 | #11491 |
 | Captures | 5 / 5 | 0 | #11496 |
@@ -68,12 +68,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **449 / 577** | **128** | |
+| **Total** | **460 / 577** | **117** | |
 
 ## Missing ops by category
 
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
-- **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **NativeCall** (#11504): `nativecallinvoke`
