@@ -489,7 +489,8 @@ pub(crate) fn save_cached_unit(source_path: &Path, stmts: &[Stmt], effects: &Par
     }
 }
 
-/// Upper bound on cache entries before the oldest are evicted.
+/// Upper bound on cache entry files (`.bin`, plus `.code` in the precomp
+/// directory) before the oldest are evicted.
 const MAX_CACHE_ENTRIES: usize = 4096;
 
 /// Evict the oldest entries when the cache grows past `MAX_CACHE_ENTRIES`.
@@ -534,7 +535,10 @@ pub(crate) fn prune_cache_once(dir: &Path, once: &std::sync::OnceLock<()>) {
                 }
                 return false;
             }
-            path.extension().is_some_and(|ext| ext == "bin")
+            // An AST entry (`.bin`) and its compiled section (`.code`,
+            // `precomp::bytecode`) are pruned alike; each is validated on its
+            // own, so evicting one of a pair leaves the other usable.
+            path.extension().is_some_and(|ext| ext == "bin" || ext == "code")
         })
         .filter_map(|e| {
             let modified = e.metadata().ok()?.modified().ok()?;

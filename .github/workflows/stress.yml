@@ -7,6 +7,8 @@ name: Stress
 #   gc-stress:  MUTSU_GC=on, MUTSU_GC_EVERY_CANDIDATE=1024, MUTSU_GC_VERIFY=1
 #               (+ `cargo test` with the collector on)
 #   jit-stress: MUTSU_JIT=on, MUTSU_JIT_THRESHOLD=2
+#   precomp-verify: MUTSU_PRECOMP_VERIFY=1 over a fresh shared cache
+#               (ADR-11756 §2.5; t/ and roast on the release binary)
 #
 # These were blocking jobs in ci.yml on every PR while the cycle collector
 # (ADR-0003) and the JIT (ADR-0004) were being brought up. Both are shipped and
@@ -627,12 +629,106 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # ── `precomp-verify`: every compiled-bytecode cache hit checked ──────────
+  #
+  # ADR-11756 §2.5. The precompilation cache serves a module's compiled
+  # mainline (on by default since step 5). With MUTSU_PRECOMP_VERIFY=1 every
+  # hit compiles the module afresh as well and the process exits 70 unless the
+  # two encodings are byte-identical, so a compiler input that bypasses the
+  # `CompileInputs` recorder, a missed effect or a process-local id leaking
+  # into cached code fails a test file here instead of giving a wrong answer.
+  #
+  # Both suites share one cache that starts empty: the first file to load a
+  # module writes its entry, every later one hits and verifies it. The
+  # ordinary CI jobs also share a cache within a job, but run with verify off.
+  precomp-verify:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MUTSU_PRECOMP_VERIFY: "1"
+      # Absolute, so every mutsu in the process tree uses (and the clean step
+      # below empties) the one cache.
+      XDG_CACHE_HOME: ${{ github.workspace }}/tmp/precomp-verify-cache
+      MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Download the release binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mutsu-release-binary
+          path: target/release
+
+      - name: Restore the binary
+        # See `gc-stress-roast`'s step of the same name.
+        run: |
+          set -euo pipefail
+          chmod +x target/release/mutsu
+          target/release/mutsu --version
+
+      # A guard, not an install — see ci.yml's `test-suites` job for the reasoning,
+      # and for why the apt mirror pin sits inside the fallback branch.
+      - name: Ensure prove is available
+        run: |
+          if ! command -v prove >/dev/null; then
+            if [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+            fi
+            sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update && sudo apt-get install -y perl
+          fi
+          prove --version | head -1
+
+      - name: Clean precomp cache and restore roast files
+        run: |
+          rm -rf "$XDG_CACHE_HOME"
+          git checkout -- roast/
+
+      - name: TAP tests (prove t/, precomp verify)
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          prove -r -j4 --merge -e 'scripts/run-t-test.sh' t/ 2>&1 | tee tmp/precomp-verify-t.log
+        env:
+          MUTSU_BIN: target/release/mutsu
+          MUTSU_T_TIMEOUT: "60"
+
+      - name: Roast tests (make roast, precomp verify)
+        if: always()
+        run: |
+          set -o pipefail
+          prove -j4 --merge -e 'scripts/run-roast-test.sh' \
+            $(cat roast-whitelist.txt) 2>&1 | tee tmp/precomp-verify-roast.log
+        env:
+          MUTSU_BIN: target/release/mutsu
+
+      - name: Flaky quarantine retries used (precomp verify)
+        if: always()
+        run: scripts/report-flaky-retries.sh
+
+      - name: Crash reports (fatal signals, precomp verify)
+        if: always()
+        run: scripts/report-crash-reports.sh
+
+      - name: Upload precomp verify logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: precomp-verify-logs
+          path: tmp/precomp-verify-*.log
+          retention-days: 7
+          if-no-files-found: ignore
+
   # A red nightly run must reach a person: nobody watches a scheduled run's
   # checks. Open the `ci:stress` tracking issue, or comment on it if one is
   # already open, naming the failed jobs and the run. On-demand runs report to
   # whoever started them and file nothing.
   report:
-    needs: [build, gc-stress-tap, gc-stress-roast, jit-stress-tap, jit-stress-roast]
+    needs: [build, gc-stress-tap, gc-stress-roast, jit-stress-tap, jit-stress-roast, precomp-verify]
     if: failure() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -650,6 +746,7 @@ jobs:
             gc-stress-roast=${{ needs.gc-stress-roast.result }}
             jit-stress-tap=${{ needs.jit-stress-tap.result }}
             jit-stress-roast=${{ needs.jit-stress-roast.result }}
+            precomp-verify=${{ needs.precomp-verify.result }}
         run: |
           set -euo pipefail
           failed=""
