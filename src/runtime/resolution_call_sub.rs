@@ -1,17 +1,47 @@
 use super::*;
 
 /// (pre_phasers, enter_phasers, success_queue, failure_queue, post_phasers, body_main)
-pub(super) type SplitPhasers = (
+///
+/// `body_main` borrows the input when the block holds no phaser that is
+/// split off, which is the common case (a module mainline is hundreds of
+/// statements, and copying them on every load was a measurable share of it).
+pub(super) type SplitPhasers<'a> = (
     Vec<Stmt>,
     Vec<Stmt>,
     Vec<Stmt>,
     Vec<Stmt>,
     Vec<Stmt>,
-    Vec<Stmt>,
+    std::borrow::Cow<'a, [Stmt]>,
 );
 
 impl Interpreter {
-    pub(super) fn split_block_phasers(&self, stmts: &[Stmt]) -> SplitPhasers {
+    // Cost: O(n) to scan, n = statements; the body is only copied when a
+    // phaser is split off.
+    pub(super) fn split_block_phasers<'a>(&self, stmts: &'a [Stmt]) -> SplitPhasers<'a> {
+        let splits_off = |stmt: &Stmt| {
+            matches!(
+                stmt,
+                Stmt::Phaser {
+                    kind: PhaserKind::Pre
+                        | PhaserKind::Enter
+                        | PhaserKind::Post
+                        | PhaserKind::Leave
+                        | PhaserKind::Keep
+                        | PhaserKind::Undo,
+                    ..
+                }
+            )
+        };
+        if !stmts.iter().any(splits_off) {
+            return (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                std::borrow::Cow::Borrowed(stmts),
+            );
+        }
         let mut pre_ph = Vec::new();
         let mut enter_ph = Vec::new();
         let mut body_main = Vec::new();
@@ -55,7 +85,7 @@ impl Interpreter {
             success_queue,
             failure_queue,
             post_ph,
-            body_main,
+            std::borrow::Cow::Owned(body_main),
         )
     }
 
