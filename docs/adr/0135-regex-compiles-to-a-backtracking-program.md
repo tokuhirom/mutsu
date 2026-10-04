@@ -1484,8 +1484,10 @@ What is left of the old modules is shared by the engine: the position-only singl
 (`regex_lr_seed`) remain the one place a call's ends are computed up front. They run compiled
 programs.
 
-Survey after the deletion: no `regex-walk:` line exists. `declined` reads 0 over `t/` and the roast
-whitelist. `t/regex/regex-engine-only-compiled.t` replaces the counter's tests.
+Survey after the deletion (all of `t/` and the roast whitelist, 7,910 files, debug build): no
+`regex-walk:` line exists; `compiled=11242 declined=0 runs=211586`; 505 eager calls (`lr-seed`
+457, `ignoremark-callee` 25, `custom-how` 16, `wrapped-candidate` 3, `symbolic-name` 2,
+`proto-inherited-i` 2). `t/regex/regex-engine-only-compiled.t` replaces the counter's tests.
 
 ### Reproducing §2
 
