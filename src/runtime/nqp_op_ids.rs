@@ -98,7 +98,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 446] = [
+static NQP_OPS: [(&str, NqpOpTable); 456] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -142,6 +142,7 @@ static NQP_OPS: [(&str, NqpOpTable); 446] = [
     ("bindattr_n", NqpOpTable::Builtin),
     ("bindattr_s", NqpOpTable::Builtin),
     ("bindcomp", NqpOpTable::Builtin),
+    ("bindcurhllsym", NqpOpTable::Builtin),
     ("bindhllsym", NqpOpTable::Builtin),
     ("bindkey", NqpOpTable::Str),
     ("bindpos", NqpOpTable::List),
@@ -295,6 +296,7 @@ static NQP_OPS: [(&str, NqpOpTable); 446] = [
     ("getattr_s", NqpOpTable::Builtin),
     ("getcodename", NqpOpTable::Native),
     ("getcomp", NqpOpTable::Builtin),
+    ("getcurhllsym", NqpOpTable::Builtin),
     ("getenvhash", NqpOpTable::Sys),
     ("getextype", NqpOpTable::Builtin),
     ("gethllsym", NqpOpTable::Builtin),
@@ -317,7 +319,12 @@ static NQP_OPS: [(&str, NqpOpTable); 446] = [
     ("hash", NqpOpTable::List),
     ("hasuniprop", NqpOpTable::Text),
     ("hllbool", NqpOpTable::Text),
+    ("hllboxtype_i", NqpOpTable::Builtin),
+    ("hllboxtype_n", NqpOpTable::Builtin),
+    ("hllboxtype_s", NqpOpTable::Builtin),
+    ("hllhash", NqpOpTable::Builtin),
     ("hllize", NqpOpTable::Process),
+    ("hlllist", NqpOpTable::Builtin),
     ("ifnull", NqpOpTable::Builtin),
     ("index", NqpOpTable::Str),
     ("indexfrom", NqpOpTable::Str),
@@ -477,6 +484,7 @@ static NQP_OPS: [(&str, NqpOpTable); 446] = [
     ("setdebugtypename", NqpOpTable::Native),
     ("setelems", NqpOpTable::Builtin),
     ("setextype", NqpOpTable::Builtin),
+    ("sethllconfig", NqpOpTable::Builtin),
     ("setmessage", NqpOpTable::Builtin),
     ("setpayload", NqpOpTable::Builtin),
     ("sha1", NqpOpTable::Builtin),
@@ -539,6 +547,8 @@ static NQP_OPS: [(&str, NqpOpTable); 446] = [
     ("unshift_n", NqpOpTable::Process),
     ("unshift_s", NqpOpTable::Process),
     ("usecapture", NqpOpTable::Capture),
+    ("usecompileehllconfig", NqpOpTable::Builtin),
+    ("usecompilerhllconfig", NqpOpTable::Builtin),
     ("what", NqpOpTable::Process),
     ("writefh", NqpOpTable::Fs),
     ("writeint", NqpOpTable::Value),

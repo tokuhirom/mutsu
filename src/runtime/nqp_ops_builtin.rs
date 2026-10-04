@@ -200,6 +200,53 @@ impl Interpreter {
                 self.set_hll_sym(hll, name, value.clone());
                 Ok(value)
             }
+            // nqp::getcurhllsym($name) / nqp::bindcurhllsym($name, $value): the
+            // current HLL's symbol table, which is `Raku`'s -- the same table
+            // `gethllsym("Raku", ...)` / `bindhllsym("Raku", ...)` reach.
+            // Cost: O(m), m = chars of $name (copied, then hashed).
+            "getcurhllsym" => {
+                let name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                Ok(self.get_hll_sym("Raku", &name))
+            }
+            // Cost: O(m), m = chars of $name (copied, then hashed).
+            "bindcurhllsym" => {
+                let name = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let value = args.get(1).cloned().unwrap_or(Value::NIL);
+                self.set_hll_sym("Raku".to_string(), name, value.clone());
+                Ok(value)
+            }
+            // The types the HLL boxes a native int / num / str into.
+            // Cost: O(1).
+            "hllboxtype_i" => Ok(Value::package(Symbol::intern("Int"))),
+            "hllboxtype_n" => Ok(Value::package(Symbol::intern("Num"))),
+            "hllboxtype_s" => Ok(Value::package(Symbol::intern("Str"))),
+            // The HLL's list and hash types: the type of what `nqp::list` /
+            // `nqp::hash` build. Rakudo answers its `BOOTArray` / `BOOTHash`
+            // VM types; mutsu has no separate VM representations, and
+            // `nqp::list()` / `nqp::hash()` build a `List` / `Hash`, so those
+            // are the types answered here (see #11553 for the representation
+            // decision that would change both).
+            // Cost: O(1).
+            "hlllist" => Ok(Value::package(Symbol::intern("List"))),
+            "hllhash" => Ok(Value::package(Symbol::intern("Hash"))),
+            // nqp::sethllconfig($hll, $config): configure an HLL's boxing and
+            // error-reporting hooks. mutsu's boxing is fixed (the types above),
+            // so the configuration has nothing to change; answers null, as
+            // Rakudo does.
+            // Cost: O(1).
+            "sethllconfig" => Ok(Value::NIL),
+            // nqp::usecompileehllconfig() / nqp::usecompilerhllconfig(): switch
+            // the compilation unit between the compilee's and the compiler's
+            // HLL config while a compiler runs. mutsu has one HLL config, so
+            // there is nothing to switch; answers null.
+            // Cost: O(1).
+            "usecompileehllconfig" | "usecompilerhllconfig" => Ok(Value::NIL),
             // nqp::getlexdyn($name): resolve a dynamic variable by a
             // runtime-computed name, the same way a compiled `%*NAME`/`$*NAME`
             // read would (`get_env_with_main_alias` is the chokepoint every
