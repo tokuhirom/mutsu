@@ -116,7 +116,8 @@ impl Interpreter {
         if self.has_class("Perl6::Compiler") {
             return Ok(());
         }
-        let (stmts, _) = crate::parse_dispatch::parse_source(REPL_COMPILER_PRELUDE)?;
+        let (stmts, _) =
+            crate::runtime::prelude_source::parse_prelude_source(REPL_COMPILER_PRELUDE)?;
         let saved_package = self.current_package();
         self.set_current_package("GLOBAL".to_string());
         let result = self.eval_block_value(&stmts);

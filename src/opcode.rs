@@ -4538,19 +4538,18 @@ pub(crate) enum OpCode {
     Trace(u32),
 
     /// State variable initialization.
-    /// slot = local slot index, key_idx = interned `Symbol` id (see
-    /// `Symbol::from_id`/`Symbol::id`) for the unique state key — not a
-    /// constant-pool index.
+    /// slot = local slot index, key = the interned unique state key (a
+    /// `Symbol`, so precompiled code maps it through its symbol table).
     /// Pops init value from stack.
     /// If state_vars has key: set `locals[slot]` = stored value (discard init).
     /// If not: set `locals[slot]` = init value, store in state_vars.
-    StateVarInit(u32, u32),
+    StateVarInit(u32, crate::symbol::Symbol),
     /// Guard for state variable initialization.
-    /// Check if state key (arg 0, an interned `Symbol` id like `StateVarInit`)
+    /// Check if state key (arg 0, an interned `Symbol` like `StateVarInit`)
     /// exists. If yes: push stored value and jump to the absolute instruction
     /// offset (arg 1). If no: fall through so the RHS initializer can be
     /// compiled next.
-    StateVarInitGuard(u32, u32),
+    StateVarInitGuard(crate::symbol::Symbol, u32),
     /// Mark whether a declared variable should report `.VAR.dynamic` true.
     SetVarDynamic {
         name_idx: u32,

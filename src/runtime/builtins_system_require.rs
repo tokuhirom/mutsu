@@ -114,6 +114,7 @@ impl Interpreter {
             enum_type_names,
             enum_value_names,
             decl_docs: crate::parser::decl_doc::take_unit_docs(),
+            parse_session: None,
         };
         self.emit_parse_warnings(tagged_warnings);
         let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {

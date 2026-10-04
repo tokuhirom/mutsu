@@ -522,6 +522,7 @@ impl Interpreter {
         crate::opcode::note_dispatcher_mention(&code);
         let precomp_eligible = self.module_precomp_eligible(&code)
             && unit.is_none_or(super::module_bytecode::ModuleUnit::may_use_cache);
+        let parse_session = unit.map(super::module_bytecode::ModuleUnit::parse_session);
 
         // Try loading from precompilation cache when eligible. A hit skips the
         // parse, so the parser state the parse would have left behind must be
@@ -530,6 +531,11 @@ impl Interpreter {
         // appear. See `precomp::ParseEffects`.
         if precomp_eligible
             && let Some(unit) = crate::precomp::load_cached_unit(source_path, Some(&code))
+            // A load that claimed a unit needs the AST its own session mints:
+            // an entry another kind of load parsed (a `require`, a
+            // `CompUnit::Repository` load) carries counter ids, and the
+            // compile of it would be cached with them. Re-parse instead.
+            && (parse_session.is_none() || unit.effects.parse_session == parse_session)
         {
             crate::parser::set_current_language_version(&unit.effects.language_version);
             crate::parser::replay_cached_type_names(
@@ -589,6 +595,7 @@ impl Interpreter {
             enum_type_names,
             enum_value_names,
             decl_docs,
+            parse_session,
         };
         self.emit_parse_warnings(tagged_warnings);
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at

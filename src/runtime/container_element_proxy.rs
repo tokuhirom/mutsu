@@ -53,7 +53,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static PARSED: OnceLock<Vec<Stmt>> = OnceLock::new();
         let stmts = PARSED.get_or_init(|| {
-            crate::parse_dispatch::parse_source(CONTAINER_ELEMENT_PROXY_SRC)
+            crate::runtime::prelude_source::parse_prelude_source(CONTAINER_ELEMENT_PROXY_SRC)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

@@ -41,9 +41,10 @@ impl Interpreter {
         use std::sync::OnceLock;
         static TRAIT_MOD_IS_EXPORT_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_IS_EXPORT_STMTS.get_or_init(|| {
-            let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_EXPORT_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default();
+            let mut stmts =
+                crate::runtime::prelude_source::parse_prelude_source(TRAIT_MOD_IS_EXPORT_PRELUDE)
+                    .map(|(s, _)| s)
+                    .unwrap_or_default();
             Self::mark_prelude_subs(&mut stmts);
             stmts
         });

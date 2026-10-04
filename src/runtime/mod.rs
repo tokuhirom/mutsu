@@ -1013,6 +1013,7 @@ pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod control_state;
 pub(crate) mod dispatch_state;
 pub(crate) mod lexical_state;
+mod prelude_source;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;

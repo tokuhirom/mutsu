@@ -104,9 +104,9 @@ impl OpScanIndex {
     fn build(code: &CompiledCode) -> Self {
         let mut label_targets: FxHashMap<String, usize> = FxHashMap::default();
         let mut duplicate_label = None;
-        let mut state_slots: FxHashMap<(usize, u32), usize> = FxHashMap::default();
+        let mut state_slots: FxHashMap<(usize, Symbol), usize> = FxHashMap::default();
         for (i, (slot, key)) in code.state_locals.iter().enumerate() {
-            state_slots.entry((*slot, key.id())).or_insert(i);
+            state_slots.entry((*slot, *key)).or_insert(i);
         }
         let mut state_init_ips: Vec<Vec<usize>> = vec![Vec::new(); code.state_locals.len()];
         let mut block_facts: FxHashMap<usize, BlockRangeFacts> = FxHashMap::default();
@@ -139,7 +139,7 @@ impl OpScanIndex {
         // Several `state_locals` entries may share one `(slot, key)`; each must
         // see the same init ips, as the per-entry scan did.
         for (i, (slot, key)) in code.state_locals.iter().enumerate() {
-            let first = state_slots[&(*slot, key.id())];
+            let first = state_slots[&(*slot, *key)];
             if first != i {
                 state_init_ips[i] = state_init_ips[first].clone();
             }
@@ -219,7 +219,7 @@ impl CompiledCode {
         };
         self.ops[start..end].iter().any(|op| {
             matches!(op, OpCode::StateVarInit(s, k)
-                if *s as usize == slot && Symbol::from_id(*k) == key)
+                if *s as usize == slot && *k == key)
         })
     }
 }
@@ -254,7 +254,7 @@ mod tests {
         let k = Symbol::intern("$x@1");
         code.state_locals.push((0, k));
         code.ops.push(OpCode::Pop);
-        code.ops.push(OpCode::StateVarInit(0, k.id()));
+        code.ops.push(OpCode::StateVarInit(0, k));
         code.ops.push(OpCode::Pop);
         assert!(code.state_local_init_in_range(0, 0, 3));
         assert!(code.state_local_init_in_range(0, 1, 2));
@@ -270,7 +270,7 @@ mod tests {
             succeed_boundary: false,
         });
         code.ops
-            .push(OpCode::StateVarInit(4, Symbol::intern("$n@1").id()));
+            .push(OpCode::StateVarInit(4, Symbol::intern("$n@1")));
         code.ops.push(OpCode::SetTopic);
         code.ops.push(OpCode::Pop);
         let facts = code.block_range_facts(0, 3);

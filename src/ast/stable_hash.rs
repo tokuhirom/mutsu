@@ -13,6 +13,11 @@
 //! (fixed keys, so the result is stable across processes and runs). Nothing is
 //! allocated. Container lengths and enum variant indices are hashed too, so
 //! adjacent fields cannot run into each other.
+//!
+//! Two things a serialized form carries do not name the value and are left
+//! out: the iteration order of a map (a `HashMap` yields its entries in an
+//! order its random seed picks, so entries are combined order-independently),
+//! and an object id ([`ProcessLocalId`]), which is allocated per process.
 
 use serde::ser::{self, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -32,6 +37,15 @@ pub(crate) fn stable_hash<T: Serialize + ?Sized>(value: &T) -> u64 {
     stable_hash_into(value, &mut hasher);
     hasher.finish()
 }
+
+/// An object id inside a serialized value. It serializes as the bare number
+/// (a serde newtype, which bincode writes transparently), and [`stable_hash`]
+/// skips it: the id is allocated per process and says nothing about what the
+/// value is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ProcessLocalId(pub(crate) u64);
+
+const PROCESS_LOCAL_ID: &str = "ProcessLocalId";
 
 struct StableHasher<'a> {
     hasher: &'a mut DefaultHasher,
@@ -69,7 +83,7 @@ impl<'a, 'b> ser::Serializer for &'b mut StableHasher<'a> {
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
     type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
+    type SerializeMap = MapHasher<'b>;
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
@@ -162,9 +176,12 @@ impl<'a, 'b> ser::Serializer for &'b mut StableHasher<'a> {
     }
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
-        _name: &'static str,
+        name: &'static str,
         value: &T,
     ) -> Done {
+        if name == PROCESS_LOCAL_ID {
+            return Ok(());
+        }
         value.serialize(self)
     }
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
@@ -200,9 +217,13 @@ impl<'a, 'b> ser::Serializer for &'b mut StableHasher<'a> {
         len.hash(self.hasher);
         Ok(self)
     }
-    fn serialize_map(self, len: Option<usize>) -> Result<Self, Refused> {
+    fn serialize_map(self, len: Option<usize>) -> Result<MapHasher<'b>, Refused> {
         len.hash(self.hasher);
-        Ok(self)
+        Ok(MapHasher {
+            outer: self.hasher,
+            sum: 0,
+            entry: None,
+        })
     }
     fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self, Refused> {
         len.hash(self.hasher);
@@ -265,19 +286,33 @@ impl<'a, 'b> ser::SerializeTupleVariant for &'b mut StableHasher<'a> {
     }
 }
 
-/// Map entries are hashed in the order the map yields them. Every map the AST
-/// serializes is ordered or built in source order; a hash-ordered one would make
-/// this hash depend on that map's seed.
-impl<'a, 'b> ser::SerializeMap for &'b mut StableHasher<'a> {
+/// The entries of a map, combined so their order does not matter: each entry
+/// is hashed on its own and the entry hashes are summed (wrapping), which is
+/// commutative. A map's keys are distinct, so no two entries cancel out the
+/// way equal terms would under xor.
+struct MapHasher<'b> {
+    outer: &'b mut DefaultHasher,
+    sum: u64,
+    entry: Option<DefaultHasher>,
+}
+
+impl<'b> ser::SerializeMap for MapHasher<'b> {
     type Ok = ();
     type Error = Refused;
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Done {
-        key.serialize(&mut **self)
+        let mut entry = DefaultHasher::new();
+        key.serialize(&mut StableHasher { hasher: &mut entry })?;
+        self.entry = Some(entry);
+        Ok(())
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Done {
-        value.serialize(&mut **self)
+        let mut entry = self.entry.take().unwrap_or_default();
+        let result = value.serialize(&mut StableHasher { hasher: &mut entry });
+        self.sum = self.sum.wrapping_add(entry.finish());
+        result
     }
     fn end(self) -> Done {
+        self.sum.hash(self.outer);
         Ok(())
     }
 }
@@ -315,6 +350,27 @@ mod tests {
         let b = Symbol::intern("stable-hash-probe-b");
         assert_eq!(stable_hash(&a), stable_hash(&"stable-hash-probe-a"));
         assert_ne!(stable_hash(&a), stable_hash(&b));
+    }
+
+    #[test]
+    fn map_order_does_not_matter() {
+        let forward: Vec<(u32, u32)> = (0..64).map(|i| (i, i * 7)).collect();
+        let a: std::collections::HashMap<u32, u32> = forward.iter().copied().collect();
+        let b: std::collections::HashMap<u32, u32> = forward.iter().rev().copied().collect();
+        let btree: std::collections::BTreeMap<u32, u32> = forward.iter().copied().collect();
+        assert_eq!(stable_hash(&a), stable_hash(&b));
+        assert_eq!(stable_hash(&a), stable_hash(&btree));
+        let mut c = a.clone();
+        c.insert(3, 0);
+        assert_ne!(stable_hash(&a), stable_hash(&c));
+    }
+
+    #[test]
+    fn process_local_ids_are_skipped() {
+        assert_eq!(
+            stable_hash(&("x", ProcessLocalId(1))),
+            stable_hash(&("x", ProcessLocalId(2)))
+        );
     }
 
     #[test]

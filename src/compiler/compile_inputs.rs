@@ -209,16 +209,18 @@ pub(crate) fn uname_const_value(name: &str) -> Option<i64> {
 }
 
 /// The process environment the compiler reads once and keeps
-/// (`MUTSU_NO_SHADOW_SLOTS`, `MUTSU_CONST_FOLD`, `MUTSU_SLOT_READ_FILTER`), as
-/// one string a cache entry is keyed on.
-// Cost: O(1) (three environment reads).
+/// (`MUTSU_NO_SHADOW_SLOTS`, `MUTSU_CONST_FOLD`, `MUTSU_SLOT_READ_FILTER`,
+/// and `MUTSU_TRIR`, which decides whether routines get typed chunks), as one
+/// string a cache entry is keyed on.
+// Cost: O(1) (four environment reads).
 pub(crate) fn environment_fingerprint() -> String {
     let var = |name: &str| std::env::var(name).unwrap_or_else(|_| "\u{0}".to_string());
     format!(
-        "{}|{}|{}",
+        "{}|{}|{}|{}",
         var("MUTSU_NO_SHADOW_SLOTS"),
         var("MUTSU_CONST_FOLD"),
-        var("MUTSU_SLOT_READ_FILTER")
+        var("MUTSU_SLOT_READ_FILTER"),
+        var("MUTSU_TRIR")
     )
 }
 

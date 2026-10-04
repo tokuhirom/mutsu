@@ -280,6 +280,13 @@ pub(crate) struct ParseEffects {
     /// module's `$=pod` and `.WHY` are built from.
     #[serde(default)]
     pub(crate) decl_docs: Vec<crate::decl_doc::DocComment>,
+    /// The content-addressed parse session the AST was minted under
+    /// (`ModuleUnit::parse_session`), or `None` for a parse under the process
+    /// counters. Its declaration ids and anonymous names are then the ones a
+    /// fresh parse of that unit produces, so only such an entry may feed a
+    /// compile the bytecode cache stores (ADR-11756 §2.3).
+    #[serde(default)]
+    pub(crate) parse_session: Option<u64>,
 }
 
 /// A cached compilation unit: the AST plus the parse effects to replay.
@@ -775,6 +782,7 @@ mod tests {
                 kind: crate::decl_doc::DocDeclKind::Sub,
                 ..Default::default()
             }],
+            parse_session: Some(1 << 63 | 7),
         };
 
         let dir = tempdir("effects");
