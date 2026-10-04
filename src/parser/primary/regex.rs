@@ -9,7 +9,7 @@
 //!   - `trans`      (63 lines)  — tr/// escape processing + adverb parsing
 //!   - `adverbs`    (310 lines) — MatchAdverbs struct + all adverb parsing/building
 //!   - `subst`      (217 lines) — s/// / S/// building helpers
-//!   - `scan`       (250 lines) — scan_to_delim / scan_to_delim_inner (Raku delimiter scanner)
+//!   - `scan`       — regex delimiter scanning and embedded-code helpers
 //!   - `call_args`  (140 lines) — parse_call_arg_list + colon-method-arg helpers
 //!   - `lit`        (~1060 lines) — regex_lit (~800 ln, indivisible), version_lit, topic_method_call
 
