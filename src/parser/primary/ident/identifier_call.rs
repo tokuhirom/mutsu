@@ -2384,7 +2384,6 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == ':'
             || next == '\''
             || next == '"'
-            || next == '<'
             || next == '\u{00AB}'
             || next == '\u{2018}'
             || next == '\u{2019}'
