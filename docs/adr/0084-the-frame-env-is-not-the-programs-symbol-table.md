@@ -456,3 +456,25 @@ What remains of the env's non-lexical content is §7.6's list minus these
 markers. That is qualified names bound below a module's top level or under an
 alias, qualified `our constant`s, qualified `&` code bindings, and group 1 for
 the main program's own top-level routines.
+
+### 7.8 Slice 7 — qualified `our constant` package symbols
+
+A module's mainline publishes a qualified `our constant` through
+`SetGlobalRaw`. When the importing env has no binding under that qualified
+name, the store now uses `module_toplevel.package_symbols` instead. The
+existing qualified readers and package stash already consult that table after
+the env; an existing env binding continues to win. The bare binding used by
+the module itself, declarations below its top level, and the main program's
+declarations keep their former storage.
+
+On a current-main debug build, a 20-iteration closure-call probe after loading
+`FrameEnvConstants` deep-copied 31 env entries before this change and 30 after
+it. Both runs made 41 deep copies. This small fixture exposes only one fewer
+copied entry; it is a storage check, not a wall-clock speed claim.
+`t/modules/module-qualified-our-constants-off-env.t` checks the direct and
+indirect names, aggregate constants, the module's own reads and its stash
+against Rakudo.
+
+The remaining qualified env entries are bindings below a module's top level
+or under an alias, and qualified `&` code bindings; group 1 for the main
+program's own top-level routines also remains.

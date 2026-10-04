@@ -2838,6 +2838,15 @@ impl Interpreter {
                         .is_some_and(|s| s.contains(name.as_str()));
                 if unit_lexical_write || our_scalar_write {
                     // nothing further: the cell is the only home for this name
+                } else if raw_mode
+                    && crate::qualified::is_qualified(name_sym)
+                    && self.at_module_toplevel()
+                    && !self.env().contains_key_sym(name_sym)
+                {
+                    // A module's top-level `our constant` publishes a package
+                    // symbol, not a frame lexical. The qualified readers and
+                    // stash already consult this shared table after the env.
+                    self.bind_package_symbol(name.clone(), val.clone());
                 } else if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
                     // normalization so the container type (List) is preserved.
