@@ -425,3 +425,34 @@ name (`my` types with mangled storage names, `X::Malformed` aliasing
 `__mutsu_scalar_bind_no_container::` / `__mutsu_bound_decont::` companion markers
 of a block-form `module X { my $a := … }` body (20 per env, from `JSON::Fast`),
 and group 1 for the main program's own top-level routines.
+
+### 7.7 Slice 6 — a module block's `:=` binding markers
+
+Re-measured before the slice (§7.6's program and method): **3,195** entries
+per iteration. Each copied frame env carried 20 markers from
+`module JSON::Fast { … }`, one `__mutsu_bound_decont::<name>` and one
+`__mutsu_scalar_bind_no_container::<name>` per file-scope `my $x := …`
+(`$hexdigits`, `$escapees`, `$ws`, …).
+
+They were not module top-level declarations at all. A `package`/`module`
+block's exit (`exec_package_scope_op`) drops the bare keys the block
+introduced and carries every key containing `::` out, on the assumption that
+such a key is package-qualified. These markers name a bare binding but their
+key has a `::`, so they left the block while the binding they describe did
+not. The exit now drops a `BoundDecont` / `ScalarBindNoContainer` marker that
+the block introduced and whose subject is a bare name. A marker the outer
+scope already had is kept as before.
+
+No reader is affected. The package's routines never read these markers
+through the caller's env, which is what the leaked copy offered: a routine
+closing over a `:=`-bound list iterates it as one item whether the marker is
+present or not. That is a separate, pre-existing bug, filed as #11853.
+
+Result: the per-iteration deep-copy volume falls from **3,195** to **2,595**
+entries (−19%). `t/modules/module-block-bind-markers-off-frame-env.t` pins the
+bindings' behaviour.
+
+What remains of the env's non-lexical content is §7.6's list minus these
+markers. That is qualified names bound below a module's top level or under an
+alias, qualified `our constant`s, qualified `&` code bindings, and group 1 for
+the main program's own top-level routines.
