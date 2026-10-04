@@ -687,6 +687,22 @@ impl Interpreter {
                     let _ = self.run_block_raw(std::slice::from_ref(stmt));
                 }
                 other => {
+                    // #11596: a `proto method` conflicts with a method the
+                    // core type itself declares, exactly like a plain one.
+                    if let Stmt::ProtoDecl {
+                        name: proto_name,
+                        is_method: true,
+                        ..
+                    } = other
+                        && let Some(message) =
+                            crate::builtins::native_method_row::augment_core_method_conflict(
+                                name,
+                                &proto_name.resolve(),
+                                false,
+                            )
+                    {
+                        return Err(RuntimeError::new(message));
+                    }
                     let _ = self.eval_block_value(std::slice::from_ref(other));
                 }
             }
