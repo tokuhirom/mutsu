@@ -2882,7 +2882,7 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 /// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
 /// field value as a mutsu `Value`, or `None` if `method` is not an accessor for
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
-/// returns the positional children of a `StatementList`/`Blockoid` as a `List`.
+/// returns the positional children of a `StatementList`/`SemiList` as a `List`.
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     for f in &node.fields {
         if f.name == Some(method) {
@@ -2892,7 +2892,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if (method == "statements"
         && matches!(
             node.class,
-            RakuAstClass::StatementList | RakuAstClass::StatementSequence
+            RakuAstClass::StatementList
+                | RakuAstClass::StatementSequence
+                | RakuAstClass::SemiList
         ))
         || (method == "args" && node.class == RakuAstClass::ArgList)
     {
