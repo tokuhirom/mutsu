@@ -525,16 +525,6 @@ impl Interpreter {
         Some(name)
     }
 
-    /// Record the exception raised by a subset `where` predicate that failed by
-    /// throwing (a `fail "msg"` inside the `where`). Only genuine failures /
-    /// user exceptions are kept — a control-flow signal (`return`/`last`/…) is
-    /// not a type-check message. See `subset_where_fail`.
-    pub(super) fn record_subset_where_fail(&mut self, e: RuntimeError) {
-        if e.is_fail() || e.exception.is_some() {
-            self.subset_where_fail = Some(Box::new(e));
-        }
-    }
-
     /// Whether `value` can bind to an untyped `@` parameter: it is
     /// `Positional`, or it composes `PositionalBindFailover` (a `Seq`, which
     /// is cached into a List on bind). Multi dispatch must accept the latter
@@ -559,6 +549,20 @@ impl Interpreter {
     // miss path adds one registry-name probe and, on a hit, a scan of the type
     // tables.
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        self.type_matches_value_why(constraint, value, &mut None)
+    }
+
+    /// [`Interpreter::type_matches_value`], also reporting why a subset
+    /// rejected the value: a `where` predicate that failed by throwing (`fail
+    /// "msg"` inside the `where`) leaves its exception in `why`, so a
+    /// type-check error can surface that message instead of the generic one.
+    // Cost: as `type_matches_value`.
+    pub(crate) fn type_matches_value_why(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = if constraint == "Cursor" {
@@ -577,7 +581,7 @@ impl Interpreter {
         {
             return name == constraint;
         }
-        if self.type_matches_value_resolved(constraint, value) {
+        if self.type_matches_value_resolved_why(constraint, value, why) {
             return true;
         }
         if constraint.ends_with(']')
@@ -608,12 +612,21 @@ impl Interpreter {
             return false;
         }
         match self.unique_lexical_type_key(constraint) {
-            Some(key) => self.type_matches_value_resolved(&key, value),
+            Some(key) => self.type_matches_value_resolved_why(&key, value, why),
             None => false,
         }
     }
 
     pub(crate) fn type_matches_value_resolved(&mut self, constraint: &str, value: &Value) -> bool {
+        self.type_matches_value_resolved_why(constraint, value, &mut None)
+    }
+
+    fn type_matches_value_resolved_why(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
         // A nested type declared with a compound name is referenced by its
         // leaf inside the declaring package. Resolve that package-scoped alias
         // before the fast tag checks and subset lookup; assignment/type-check
@@ -642,7 +655,7 @@ impl Interpreter {
             || !self.module.module_scope_lexicals.is_empty())
             && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
         {
-            return self.type_matches_value(&resolved_constraint, value);
+            return self.type_matches_value_why(&resolved_constraint, value, why);
         }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
         // class matches the bare constraint name. Sound unless a user `subset`
@@ -771,7 +784,7 @@ impl Interpreter {
             return true;
         }
         if let ValueView::Scalar(inner) = value.view() {
-            return self.type_matches_value(constraint, inner);
+            return self.type_matches_value_why(constraint, inner, why);
         }
         // A `ContainerRef`/`ContainerView` (a `:=`-bound or aliased element —
         // e.g. an array slot or hash entry holding a shared cell) is checked
@@ -786,7 +799,7 @@ impl Interpreter {
             ValueView::ContainerRef(_) | ValueView::ContainerView(_)
         ) {
             let inner = value.deref_container();
-            return self.type_matches_value(constraint, &inner);
+            return self.type_matches_value_why(constraint, &inner, why);
         }
         // `PositionalBindFailover` is the implicit check `binding_signature.rs`
         // runs on every parameter bind, not just `@`-sigil ones (the flag is
@@ -830,7 +843,7 @@ impl Interpreter {
         if constraint.trim_start().starts_with("subset ::")
             && let Some(resolved) = self.resolve_inline_subset_constraint(constraint)
         {
-            return self.type_matches_value(&resolved, value);
+            return self.type_matches_value_why(&resolved, value, why);
         }
         // A grammar's Match is typed by the grammar itself, so a grammar
         // declared under `X::` (`Crane` has one inside
@@ -1391,12 +1404,12 @@ impl Interpreter {
             && let ValueView::Package(bound) = bound_val.view()
             && bound != *constraint
         {
-            return self.type_matches_value(&bound.resolve(), value);
+            return self.type_matches_value_why(&bound.resolve(), value, why);
         }
         // Handle type smileys (:U, :D, :_)
         let (base_constraint, smiley) = strip_type_smiley(constraint);
         if let Some(smiley) = smiley {
-            let type_ok = self.type_matches_value(base_constraint, value);
+            let type_ok = self.type_matches_value_why(base_constraint, value, why);
             if !type_ok {
                 return false;
             }
@@ -1415,13 +1428,13 @@ impl Interpreter {
         // predicate (user code re-entry), which would deadlock under a held read lock.
         let subset = self.registry().subsets.get(constraint).cloned();
         if let Some(subset) = subset {
-            if !self.type_matches_value(&subset.base, value) {
+            if !self.type_matches_value_why(&subset.base, value, why) {
                 return false;
             }
             let predicate_value = self.coerce_value_for_constraint(&subset.base, value.clone());
-            // Clear any stale `where`-`fail` message; captured below if this
-            // subset's predicate fails by throwing (see `subset_where_fail`).
-            self.subset_where_fail = None;
+            // A rejection reported by an earlier check (the base's own subset)
+            // is superseded by this predicate's verdict.
+            *why = None;
             // NOTE: the predicate's env effects must SURVIVE this check —
             // roast S12-subset/subtypes.t counts `$*call1++` side effects in
             // `where` blocks across `~~` checks. Do NOT snapshot/restore the
@@ -1440,7 +1453,7 @@ impl Interpreter {
             let _package_guard = self.enter_package_guarded_sym(subset.decl_package_sym);
             let ok = if let Some(closure) = &subset.predicate_closure {
                 // Built at the declaration site over its lexicals (#10868).
-                self.call_subset_predicate(closure.clone(), predicate_value)
+                self.call_subset_predicate(closure.clone(), predicate_value, why)
             } else if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
@@ -1478,7 +1491,7 @@ impl Interpreter {
                     let result = match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                         Ok(v) => v.truthy(),
                         Err(e) => {
-                            self.record_subset_where_fail(e);
+                            record_subset_where_fail(why, e);
                             false
                         }
                     };
@@ -1514,11 +1527,11 @@ impl Interpreter {
                         // Evaluate to get a callable, then call with the value
                         match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                             Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
-                                self.call_subset_predicate(callable, predicate_value)
+                                self.call_subset_predicate(callable, predicate_value, why)
                             }
                             Ok(v) => v.truthy(),
                             Err(e) => {
-                                self.record_subset_where_fail(e);
+                                record_subset_where_fail(why, e);
                                 false
                             }
                         }
@@ -1530,7 +1543,7 @@ impl Interpreter {
                             match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
                                 Ok(v) => self.smart_match(value, &v),
                                 Err(e) => {
-                                    self.record_subset_where_fail(e);
+                                    record_subset_where_fail(why, e);
                                     false
                                 }
                             };
@@ -2180,5 +2193,17 @@ impl Interpreter {
         }
         args.push(inner[start..].trim());
         args
+    }
+}
+
+/// Record in `why` the exception raised by a subset `where` predicate that
+/// failed by throwing (a `fail "msg"` inside the `where`). Only genuine
+/// failures / user exceptions are kept — a control-flow signal
+/// (`return`/`last`/…) is not a type-check message. See
+/// [`Interpreter::type_matches_value_why`].
+// Cost: O(1).
+pub(super) fn record_subset_where_fail(why: &mut Option<Box<RuntimeError>>, e: RuntimeError) {
+    if e.is_fail() || e.exception.is_some() {
+        *why = Some(Box::new(e));
     }
 }

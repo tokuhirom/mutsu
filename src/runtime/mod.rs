@@ -2640,15 +2640,6 @@ pub struct Interpreter {
     /// container subclass's NATIVE `AT-KEY` when a user override asks for it
     /// with `nextcallee`. Built on first use; see `container_element_proxy`.
     container_element_proxy: Option<Value>,
-    /// Side-channel: the exception raised by the most recent subset `where`
-    /// predicate that failed by *throwing* (a `fail "msg"` inside the `where`,
-    /// e.g. `subset Even of Int where { $_ %% 2 or fail "..." }`). `type_matches_value`
-    /// records it here (returning `false` as usual), so the ASSIGNMENT/binding
-    /// type-check can surface the custom message instead of the generic
-    /// "expected X, got Y". Smartmatch / dispatch callers ignore it (a `where`
-    /// that fails is just "no match" there). Set to `None` before each subset
-    /// predicate runs; consumed (and cleared) by the type-check op.
-    pub(crate) subset_where_fail: Option<Box<RuntimeError>>,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a bare block is evaluating the tail of an `is rw` routine

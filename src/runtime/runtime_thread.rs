@@ -596,7 +596,6 @@ impl Interpreter {
             pending_runtime_name_writes: Vec::new(),
             threads: self.threads.fork_for_thread(captured_scalars),
             container_element_proxy: None,
-            subset_where_fail: None,
             lexicals: self.lexicals.fork_for_thread(),
             in_lvalue_assignment: false,
             rw_return_context: false,

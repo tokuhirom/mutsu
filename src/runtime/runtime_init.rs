@@ -3181,7 +3181,6 @@ impl Interpreter {
             pending_runtime_name_writes: Vec::new(),
             threads: thread_sharing::ThreadSharing::root(),
             container_element_proxy: None,
-            subset_where_fail: None,
             lexicals: lexical_state::LexicalState::new(),
             in_lvalue_assignment: false,
             rw_return_context: false,
