@@ -3,8 +3,8 @@
 //!
 //! `token` and `rule` declarators are ratcheted by definition, so a caller
 //! written with either cannot backtrack into the subrule it calls: only the
-//! subrule's highest-priority end can ever be used. The eager producer computed
-//! every end anyway and then threw all but that one away — which, because an
+//! subrule's highest-priority end can ever be used. Computing every end anyway
+//! and then throwing all but that one away — which, because an
 //! embedded `{ ... }` block runs inline for real (ADR-0009), fired the block
 //! once per end *computed* instead of once per end *entered*:
 //!
@@ -14,35 +14,31 @@
 //! G.parse("abc");   # raku: $n == 1     mutsu (before): $n == 5
 //! ```
 //!
-//! Walking the subrule's body with `first_only` fixes that outright, and cuts
+//! Matching the subrule's body with `first_only` fixes that outright, and cuts
 //! the wasted enumeration on every grammar path where the callee is a leaf.
 //!
 //! # Why the guard below exists
 //!
-//! The `Named` arm carries the left-recursion growing-seed loop
-//! (`LR_ACTIVE` / `LR_MEMO` / `LR_SEED_READ`, `regex_match_atom.rs`), which
+//! An eager call carries the left-recursion growing-seed loop
+//! (`LR_ACTIVE` / `LR_MEMO` / `LR_SEED_READ`, `regex_lr_seed`), which
 //! discovers that a rule is left-recursive at this position by *evaluating* its
 //! candidates and then checking whether the seed was consulted. A `first_only`
-//! walk stops at the first complete match, so it can return before ever
+//! match stops at the first complete match, so it can return before ever
 //! entering the branch that re-enters the rule — and the loop would then
 //! conclude "not left-recursive" and keep an unGrown seed. That is not
 //! hypothetical: `token expr { <term> | <expr> '+' <term> }` ranks `<term>`
-//! ahead of the recursive branch, so an unguarded `first_only` walk stops on
+//! ahead of the recursive branch, so an unguarded `first_only` match stops on
 //! `<term>` and `.parse('1+2+3')` fails.
 //!
 //! [`pattern_is_rule_call_free`] is the sound, cheap precondition that rules
 //! that hazard out: a body that cannot invoke a named rule at all cannot
 //! re-enter *itself*, so its seed can never be consulted and the growing loop
-//! is guaranteed to stop after one iteration whether or not the walk was cut
-//! short. It is an over-approximation — it admits leaf rules only.
-//!
-//! The rule-call-graph analysis that answers the real question lives in
-//! [`super::regex_call_graph`] and gates the *streamed* subrule path
-//! (`regex_match_lazy::drive_named_subrule_candidates`), which handles a
-//! single-candidate, argument-less call under either kind of caller. This
-//! predicate is what the eager arm still falls back on for everything that path
-//! declines — a proto, several candidates, a call with arguments — where the
-//! ratchet is the only thing making truncation legal.
+//! is guaranteed to stop after one iteration whether or not the match was cut
+//! short. It is an over-approximation — it admits leaf rules only. (A plain
+//! rule call runs as a resumable frame of the compiled engine instead; this
+//! predicate is what an eager call — a proto, several candidates, a call with
+//! arguments — falls back on, where the ratchet is the only thing making
+//! truncation legal.)
 //!
 //! The predicate lists the safe atom kinds explicitly and answers `false` for
 //! anything else, so a newly added `RegexAtom` variant is excluded until
@@ -77,7 +73,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         // what this slice exists to stop over-firing. Code that re-entered the
         // *same* rule at the *same* position from inside such a block would
         // defeat the guard, so the growing-seed loop keeps a runtime fallback
-        // for it (see `regex_match_atom.rs`).
+        // for it (see `regex_lr_seed`).
         | RegexAtom::CodeAssertion { .. }
         | RegexAtom::UnicodeProp { .. }
         | RegexAtom::UnicodePropAssert { .. }

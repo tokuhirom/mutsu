@@ -1,12 +1,6 @@
-//! The backtracking regex engine: a depth-first walk over pattern tokens with
-//! a single mutable capture store + undo trail (ADR-0007).
-//!
-//! Atom candidate producers (`regex_match_atom_all_with_capture_in_pkg`,
-//! `regex_match_atom_with_capture_in_pkg`, `match_separated_quantifier`)
-//! return `(end, delta)` pairs where the delta is a `RegexCaptures` relative
-//! to an EMPTY baseline. The walk applies a candidate with
-//! `CapStore::merge_delta`, descends to the next token, and rewinds the trail
-//! on backtrack — per-step capture cost is O(delta), never O(accumulated).
+//! The match entry points every caller of the regex engine goes through (each
+//! runs the compiled backtracking program, ADR-0135), and the static capture
+//! analyses a pattern's quantified names come from.
 
 use super::super::*;
 use super::regex_trail::CapStore;
@@ -19,8 +13,7 @@ impl Interpreter {
             RegexAtom::Named(name) => {
                 let spec = name.spec();
                 if !spec.silent {
-                    // A non-suppressing alias captures under BOTH names (see
-                    // `also_under_original` in `regex_match_atom.rs`), so both are
+                    // A non-suppressing alias captures under BOTH names, so both are
                     // quantified here — `[ <tags=tag-directive> ]+` must leave
                     // `$/<tag-directive>` a LIST, not a bare Match (YAMLish reads
                     // it back as `@<tag-directive>».ast.list`).

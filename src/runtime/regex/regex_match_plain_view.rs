@@ -6,14 +6,13 @@
 //! quantifier's slots, with the iteration in progress folded into them as one
 //! more (`[ (\d) { say $/[0] } ]+` on "12" prints `[1]`, then `[1 2]`).
 //!
-//! The walk appends each iteration's captures to the level raw and folds them
-//! only when the quantifier ends (`fold_quantified_captures`). So while an
-//! iteration matches an atom whose code reads the level, the walk hands the atom
-//! a view with the earlier iterations folded and arms the `InlineCaptureScope`
-//! the atom's seed carries as `merge_positional`, exactly as a separated
-//! quantifier does for its iterations (`regex_match_sep_view`). The compiled
-//! engine gives such an iteration an inline level of its own (`OpenPlainIter`,
-//! `rx_levels::Levels::open_plain_iter`) that reads the same view.
+//! Each iteration's captures are appended to the level raw and folded only when
+//! the quantifier ends (`fold_quantified_captures`). So while an iteration
+//! matches an atom whose code reads the level, the compiled engine gives the
+//! iteration an inline level of its own (`OpenPlainIter`,
+//! `rx_levels::Levels::open_plain_iter`) that reads a view with the earlier
+//! iterations folded, as a separated quantifier does for its iterations
+//! (`OpenSepIter`).
 
 use super::super::*;
 use super::regex_helpers::{atom_contains_code, fold_quantified_captures};

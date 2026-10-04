@@ -284,10 +284,10 @@ impl Compiler {
     /// `atom ** min..max % sep` (and `%%`, which may end on a separator), as
     /// the walk's separated quantifier matches it. The first atom is not
     /// required to advance; every later separator-and-atom step is. Without
-    /// ratchet (`for_each_separated_candidate`) every longer chain is tried
+    /// ratchet every longer chain is tried
     /// before a shorter one unless frugal, a chain's `%%` trailing separator
     /// before its plain end, and zero iterations first when frugal. Under ratchet
-    /// (`match_separated_quantifier_ratchet`) each atom and separator takes
+    /// each atom and separator takes
     /// its first match, the chain grows while it can, and nothing is given
     /// back. Captures fold side by side (`SepEmit`).
     pub(super) fn separated(
@@ -318,11 +318,11 @@ impl Compiler {
         let collect = captures && !direct;
         // Code in an atom or separator reads the captures too: `$/[*-1][*-1]`
         // addresses the iterations folded so far with this one's folded in
-        // place (Net::Whois's octet check; `InlineCaptureScope` in the walk).
+        // place (Net::Whois's octet check).
         // Without captures to collect there is no level, and the code reads
         // the enclosing one.
-        // A backreference reads the iterations folded so far too (the walk's
-        // `InlineCaptureScope`): a level of its own must not hide them.
+        // A backreference reads the iterations folded so far too: a level of
+        // its own must not hide them.
         let atom_view =
             collect && (atom_contains_code(&token.atom) || atom_contains_backref(&token.atom));
         let sep_view = collect && (pattern_contains_code(sep) || pattern_contains_backref(sep));

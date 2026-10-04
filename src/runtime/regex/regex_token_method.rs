@@ -600,7 +600,7 @@ impl Interpreter {
             return None;
         }
         // User `find_method` / wrapper code runs in the grammar's package over
-        // an isolated copy of the env (mirrors `try_regex_subrule_as_method`).
+        // an isolated copy of the env (as `grammar_method_call` runs a grammar method).
         // Shared-cell values (module `our` vars) keep mutations visible.
         let typeobj = Value::package(pkg);
         let found = self.run_regex_sub_call_here(Some(pkg), |interp| {

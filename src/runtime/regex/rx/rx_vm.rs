@@ -445,9 +445,9 @@ impl Interpreter {
                         enter_cands!(cands)
                     }
                     // Cost: O(1) expected to resolve the callee, then O(1) to enter
-                    // its frame; a bridged call is the walk's producer, which
-                    // computes the callee's ends (`regex_match_atom_all_with_capture_opts`)
-                    // and costs O(c) per candidate entered, c = the captures it adds;
+                    // its frame; an eager call computes the callee's ends up front
+                    // (`regex_lr_seed`) and costs O(c) per candidate entered, c = the
+                    // captures it adds;
                     // the first call in a frame that runs a grammar method also creates
                     // the frame's cursor, O(a), a = the grammar's attributes.
                     // The callee's own ops state their costs.
@@ -732,7 +732,7 @@ impl Interpreter {
                         }
                         true
                     }
-                    // Cost: one run of the count code (`regex_repeat_count`), then
+                    // Cost: one run of the count code (`eval_regex_repeat_code`), then
                     // O(1) amortized.
                     RxOp::RepeatCount { tok, min, max } => {
                         let RegexQuant::RepeatCode(code) = &program.toks[tok as usize].quant else {

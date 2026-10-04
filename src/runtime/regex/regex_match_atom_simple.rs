@@ -46,9 +46,10 @@ impl Interpreter {
         out
     }
 
-    /// See the twin wrapper in `regex_match_atom.rs`: a subrule's
-    /// dynamically-scoped (`$*`) parameters are established for the duration of
-    /// this call and torn down here.
+    /// The end of one atom at `pos`, without captures: the position-only
+    /// matcher the compiled engine's `Assert` op and the LTM NFA's probe leaves
+    /// use. A subrule's dynamically-scoped (`$*`) parameters are established
+    /// for the duration of this call and torn down here.
     pub(super) fn regex_match_atom_in_pkg(
         &mut self,
         atom: &RegexAtom,
@@ -94,10 +95,8 @@ impl Interpreter {
         ignore_case: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Option<usize> {
-        // ADR-0022 §4.2: see the identical guard in
-        // `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`) —
-        // this no-capture prober must stay in sync with the two
-        // capture-bearing matchers via the shared `ltm_atom_mode` classifier.
+        // ADR-0022 §4.2: under declarative-prefix measurement this no-capture
+        // prober follows the shared `ltm_atom_mode` classifier, as the NFA does.
         // `SequentialAlternation` is handled specially below (its own arm);
         // `CodeAssertion` already returns `Some(pos)` unconditionally here
         // (zero-width, never executed — this function never runs code), which
@@ -160,9 +159,7 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::Alternation(alternatives) => {
-                // ADR-0022 §4.4(c): same ranking rule as the singular
-                // capture-bearing matcher (`regex_match_capture.rs`) — keep
-                // the alternative ranked best by (prefix_len desc, litlen
+                // ADR-0022 §4.4(c): keep the alternative ranked best by (prefix_len desc, litlen
                 // desc), ties broken by declaration order (iterating in
                 // written order, replacing only on a strict improvement).
                 let mut best: Option<((usize, usize), usize)> = None;

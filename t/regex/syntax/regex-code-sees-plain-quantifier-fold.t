@@ -1,9 +1,8 @@
 # Code inside an iteration of an unseparated quantifier (`*`, `+`, `** n..m`)
 # sees the quantifier's capture slots folded, as rakudo's one cursor does: a
 # capture group under the quantifier is one slot from the first iteration on,
-# holding every iteration so far (#10597). Each case runs on the compiled
-# engine and on the tree walk (`MUTSU_RX_VM=off`); both must print rakudo's
-# values (`MUTSU_RX_DIFF=1` compares the two engines' views as well).
+# holding every iteration so far (#10597). Each case must print rakudo's
+# values.
 use Test;
 
 my $prelude = q:to/END/;
@@ -59,13 +58,9 @@ my @cases =
 
 for @cases -> $name, $match, $expected {
     my $code = $prelude ~ $match ~ '; say @log.join(" ; ")';
-    for <on off> -> $engine {
-        my %env = %*ENV;
-        %env<MUTSU_RX_VM> = $engine;
-        my $proc = run($*EXECUTABLE, '-e', $code, :out, :err, :%env);
-        is $proc.out.slurp(:close).trim, $expected, "$name (compiled engine $engine)";
-        $proc.err.slurp(:close);
-    }
+    my $proc = run($*EXECUTABLE, '-e', $code, :out, :err);
+    is $proc.out.slurp(:close).trim, $expected, $name;
+    $proc.err.slurp(:close);
 }
 
 is ("x1xx" ~~ /[ (\d)? x ]+/)[0].map(~*).join(','), '1',

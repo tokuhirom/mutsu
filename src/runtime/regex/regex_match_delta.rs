@@ -1,9 +1,6 @@
 //! How an atom candidate's inner captures become the enclosing level's capture
-//! delta (ADR-0073).
-//!
-//! Split out of `regex_match_lazy.rs`: the demand-driven drivers live there,
-//! and these are the pure per-shape capture transforms they and the eager
-//! producer share.
+//! delta (ADR-0073): the pure per-shape capture transforms the compiled
+//! engine's capture ops share.
 
 use super::super::*;
 use super::regex_helpers::AlternationListFlags;

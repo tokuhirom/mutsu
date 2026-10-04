@@ -389,10 +389,9 @@ impl Compiler {
     }
 
     /// One match of `token`'s atom. Under ratchet the atom commits to its
-    /// first candidate, as the walk's `for_each_atom_candidate(.., ratchet)`
-    /// does — which for a non-capturing `[ … ]` is no commitment at all
-    /// (the walk's ratchet only stops a capture group from trying another
-    /// inner end; see `regex_match_lazy.rs`).
+    /// first candidate — which for a non-capturing `[ … ]` is no commitment at
+    /// all (ratchet only stops a capture group from trying another inner
+    /// end).
     pub(super) fn atom(&mut self, token: &RegexToken) -> Result<(), Decline> {
         // Consumed here, so the atoms of a group nested under this one do not
         // inherit it.
@@ -700,10 +699,8 @@ impl Compiler {
     /// does. A body that can match empty ends each iteration with a
     /// `ZeroIter` guard: an iteration that consumed nothing is accepted only
     /// while `zero_width_iter_counts` says it counts. Rejecting it retries
-    /// the body's other candidates, which is the walk's group DFS
-    /// (`walk_quant_group_candidates`); for the walk's chain, whose iterations
-    /// take the first candidate only, the body is either ratcheted or has a
-    /// single candidate, so the rejection stops the loop there instead.
+    /// the body's other candidates; a ratcheted body, or one with a single
+    /// candidate, stops the loop there instead.
     fn repeat(
         &mut self,
         token: &RegexToken,
@@ -787,9 +784,8 @@ impl Compiler {
         }
         // A body that captures folds its per-iteration slots into lists at
         // the loop's exit, after the names under it (and the token's own
-        // alias) were marked quantified up front — `walk_quant_chain` /
-        // `descend_folded`'s order. The alias itself is applied per
-        // iteration, over that iteration's span, as `grow_one_iter` does.
+        // alias) were marked quantified up front. The alias itself is applied
+        // per iteration, over that iteration's span.
         let fold = if named || hashed || atom_captures(&token.atom) {
             let pos_base = self.reg();
             self.ops.push(RxOp::PosBase(pos_base));

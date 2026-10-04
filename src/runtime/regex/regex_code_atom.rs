@@ -4,11 +4,7 @@
 //! ADR-0133).
 //!
 //! This is the one implementation of what those atoms do (ADR-0135 D4): the
-//! tree walk's single-candidate matcher and the compiled engine's `Code` /
-//! `VarDecl` ops both call it, so the two engines cannot drift on when the code
-//! runs, what it sees or what it leaves behind. Under `MUTSU_RX_DIFF=1` every
-//! call goes through `rx_code_call` (ADR-0135 D6), which records the
-//! invocation for the compiled run and replays it for the walk.
+//! compiled engine's `Code` / `VarDecl` ops call it.
 
 use super::super::*;
 

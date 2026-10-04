@@ -209,8 +209,7 @@ impl Interpreter {
 
     /// The pattern a [`RegexAtom::CodeInterp`] atom matches at `pos`: its code
     /// run once, where the cursor reaches it ([`Self::regex_code_interp_pattern`]),
-    /// and the result parsed. Under `MUTSU_RX_DIFF` the run is recorded and
-    /// replayed like every other call-out (ADR-0135 D6). `None` when the code
+    /// and the result parsed. `None` when the code
     /// throws (the error is parked for the match entry point) or the result
     /// does not parse.
     ///

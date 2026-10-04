@@ -97,9 +97,8 @@ pub(super) enum RxOp {
         exit: u32,
         greedy: bool,
     },
-    /// Evaluate the count code of the `** { … }` quantifier `toks[tok]` where the
-    /// walk does, when the quantifier is reached (`regex_repeat_count`, the
-    /// walk's own), and store its bounds in `regs[min]` and `regs[max]`
+    /// Evaluate the count code of the `** { … }` quantifier `toks[tok]` when the
+    /// quantifier is reached (`eval_regex_repeat_code`), and store its bounds in `regs[min]` and `regs[max]`
     /// (`usize::MAX`: no bound). Fails when the code does.
     RepeatCount {
         tok: u32,
@@ -169,14 +168,13 @@ pub(super) enum RxOp {
         pos_base: u16,
     },
     /// Close an `OpenPlainIter` level, merging its captures into the enclosing
-    /// level as the walk merges a `[ … ]`'s (`group_merge_delta`).
+    /// level as a `[ … ]`'s are merged (`group_merge_delta`).
     ClosePlainIter,
     /// Open the level of one iteration of the separated quantifier `toks[tok]`
     /// whose earlier iterations were collected since `regs[base]` — an atom's,
     /// or a separator's when `sep`: an inline level whose code sees the
-    /// iterations folded so far, with this one's own captures folded in place
-    /// (the walk's `InlineCaptureScope`). `name_sets[names]` are the names under
-    /// the token.
+    /// iterations folded so far, with this one's own captures folded in place.
+    /// `name_sets[names]` are the names under the token.
     OpenSepIter {
         tok: u32,
         base: u16,
@@ -298,7 +296,7 @@ pub(super) enum RxOp {
     },
     /// A call-out: run the `{ … }` block, `<?{ … }>` or `<!{ … }>` assertion
     /// `atoms[i]` on the caller's interpreter and merge the capture delta it
-    /// returns (`regex_code_atom`, the walk's own). Fails when an assertion
+    /// returns (`regex_code_atom`). Fails when an assertion
     /// fails or the block dies.
     Code(u32),
     /// A call-out: run the `:my` / `:our` / `:temp` / `:let` declaration
@@ -306,8 +304,8 @@ pub(super) enum RxOp {
     VarDecl(u32),
     /// A call-out: run the `$( … )` / `@( … )` atom `atoms[i]`, whose code
     /// yields a pattern (or a list of them), and enter the ends it matches at
-    /// `pos` highest priority first, each with its capture delta
-    /// (`regex_code_interp_ends`, the walk's own). The lower-priority ends wait
+    /// `pos` highest priority first, each with its capture delta (as a frame
+    /// of its own when it runs in a frame-running loop). The lower-priority ends wait
     /// on the backtrack stack as one choice point.
     InterpEnds(u32),
     /// Install the closure scope of the spliced Regex value `atoms[atom]` (a
@@ -330,9 +328,9 @@ pub(super) enum RxOp {
     /// when the call is reached: a plain rule whose program exists runs as an
     /// [`rx_frame::Frame`] in this same loop, and its ends are entered one at a
     /// time as it returns; any other callee (a proto, one with arguments, a
-    /// left-recursive one, a rule of the walk) is asked for its ends by the
-    /// walk's own producer (`regex_match_atom_all_with_capture_opts`) and they
-    /// are entered highest priority first. `commit` (the call's token is
+    /// left-recursive one) is asked for its ends up front by the growing-seed
+    /// loop (`regex_lr_seed`, an eager call) and they are entered highest
+    /// priority first. `commit` (the call's token is
     /// ratcheted) drops every other end the moment the first one is entered.
     Call {
         atom: u32,

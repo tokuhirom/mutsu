@@ -1090,7 +1090,7 @@ impl Interpreter {
             // expanded, which renumbers a capturing atom's group into one
             // spurious positional slot per repetition (`(\d)**4 % '.'` yielded
             // `0,1,2,3` instead of folding all four into group `0`). The native
-            // `match_separated_quantifier` path now folds separated captures
+            // separated-quantifier path now folds separated captures
             // correctly, so when the atom or the separator carries a capture
             // (and sigspace is off — the spaced expansion still inserts `<ws>`
             // the native path lacks), defer to it. Mirrors the bare-`%` path.
@@ -1183,8 +1183,8 @@ impl Interpreter {
             // native path when sigspace is NOT active.
             //
             // The native separator-quantifier path now backtracks the separator
-            // and an optional trailing separator against an outer anchor (see
-            // `match_separated_quantifier`), so it correctly handles sequential
+            // and an optional trailing separator against an outer anchor, so it
+            // correctly handles sequential
             // alternation (`||`) atoms and frugal separators (`(.+?)`) too — and
             // unlike the string expansion it preserves the per-iteration capture
             // structure. So whenever a capture is present (and sigspace is off),

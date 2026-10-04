@@ -5,8 +5,6 @@
 //! The call answers at most one end and never resumes, so the compiled engine
 //! calls [`Interpreter::regex_grammar_method_end`] directly, as a leaf, with the
 //! cursor of the frame making the call (ADR-0135 §8, Slice E, eighteenth part).
-//! The walk reaches the same routine through
-//! [`Interpreter::try_regex_subrule_as_method`].
 
 use super::super::*;
 
@@ -20,12 +18,6 @@ impl Interpreter {
     /// `PENDING_REGEX_ERROR`, which the parse driver rethrows, and once one is
     /// pending no later call runs its method (a `||` branch the engine still
     /// tries, see `eval_regex_inline_code`).
-    ///
-    /// The method is user code, so under `MUTSU_RX_DIFF` it is recorded and
-    /// replayed like a code atom (`rx_code_call`, ADR-0135 D6): the walk's run
-    /// of the same match must not call it a second time. The method sees no
-    /// captures (its arguments were evaluated before the call), so the record
-    /// is keyed by its name and position alone.
     // Cost: the method's own run, plus O(1) to read its answer.
     pub(super) fn regex_grammar_method_end(
         &mut self,
@@ -45,18 +37,10 @@ impl Interpreter {
         if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
             return None;
         }
-        // The pending-exception test is part of the recorded invocation: the
-        // walk's replay runs after the compiled run raised it.
-        let end: Option<(usize, RegexCaptures)> = 'run: {
-            let interp = &mut *self;
-            if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                break 'run None;
-            }
-            interp
-                .grammar_method_call(name, chars, pos, pkg, args, invocant)
-                .map(|end| (end, RegexCaptures::default()))
-        };
-        end.map(|(end, _)| end)
+        if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+            return None;
+        }
+        self.grammar_method_call(name, chars, pos, pkg, args, invocant)
     }
 
     /// [`Self::regex_grammar_method_end`]'s run of the method.
