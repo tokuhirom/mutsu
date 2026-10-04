@@ -234,10 +234,14 @@ pub(in crate::parser) fn handles_clause_term(
 // Cost: O(n), n = size of the term.
 pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<HandleSpec>> {
     use crate::ast::Expr;
+    // Parentheses are transparent: `handles ('a', 'b')` names the same list.
+    let mut term = term;
+    while let Expr::Grouped(inner) = term {
+        term = inner;
+    }
     match term {
         Expr::Whatever => Some(vec![HandleSpec::Wildcard]),
         Expr::Literal(value) => Some(vec![HandleSpec::Name(value.as_str()?.to_string())]),
-        Expr::Grouped(inner) => handle_specs_from_term(inner),
         Expr::ArrayLiteral(items) => {
             let mut specs = Vec::with_capacity(items.len());
             for item in items {
