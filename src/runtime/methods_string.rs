@@ -705,11 +705,19 @@ impl Interpreter {
             _ => {
                 let pat_str = pattern.to_string_value();
                 let repl = transforms.apply(&replacement_str, &pat_str);
-                if global {
-                    Ok(Value::str(text.replace(&pat_str, &repl)))
-                } else {
-                    Ok(Value::str(text.replacen(&pat_str, &repl, 1)))
+                let limit = if global { None } else { Some(1) };
+                if pat_str.is_empty() {
+                    return Ok(Value::str(if global {
+                        text.replace(&pat_str, &repl)
+                    } else {
+                        text.replacen(&pat_str, &repl, 1)
+                    }));
                 }
+                Ok(Value::str(
+                    crate::builtins::grapheme_index::replace_graphemes(
+                        &text, &pat_str, &repl, limit,
+                    ),
+                ))
             }
         }
     }

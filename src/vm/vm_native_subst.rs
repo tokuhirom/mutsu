@@ -88,7 +88,7 @@ impl Interpreter {
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
             // Cost: O(n + r*m'), n = bytes of the invocant, r = replacements, m' =
-            // bytes of the replacement (one `str::replace` pass).
+            // bytes of the replacement (one grapheme-boundary-checked scan).
             ValueView::Str(pat) => {
                 let pat = pat.as_str();
                 if pat.is_empty() {
@@ -96,11 +96,13 @@ impl Interpreter {
                     // from `str::replace`; let the interpreter handle it.
                     return None;
                 }
-                let result = if global {
-                    text.replace(pat, &replacement_str)
-                } else {
-                    text.replacen(pat, &replacement_str, 1)
-                };
+                let limit = if global { None } else { Some(1) };
+                let result = crate::builtins::grapheme_index::replace_graphemes(
+                    &text,
+                    pat,
+                    &replacement_str,
+                    limit,
+                );
                 Some(Ok(Value::str(result)))
             }
             _ => None,
