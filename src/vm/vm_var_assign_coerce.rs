@@ -333,6 +333,13 @@ impl Interpreter {
         // `.tail` hands back the Array element's cell) assigns the value the
         // cell holds; coercing the cell itself made it one bogus key.
         let value = value.into_deref();
+        // An itemized Hash (`$x` holding `{...}`, a `.tail` of an Array of
+        // hashes) assigned to a `%` variable stores its entries, not the item:
+        // keeping the flag made `(%h, %o)` see one opaque element afterwards.
+        let value = match value.view() {
+            ValueView::Hash(_) if value.hash_is_itemized() => value.with_hash_itemized(false),
+            _ => value,
+        };
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.
         // Through the capture cell: a `%h is BagHash` an escaping closure
