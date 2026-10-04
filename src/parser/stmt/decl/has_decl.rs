@@ -82,6 +82,7 @@ fn has_decl_list(
             is_public,
             default,
             handles: Vec::new(),
+            handles_terms: Vec::new(),
             is_rw: false,
             is_readonly: false,
             type_constraint: type_constraint.clone(),
@@ -518,6 +519,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_built: Option<bool> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
     let mut handles = Vec::new();
+    // The written term of each `handles` clause; `None` once a clause's
+    // spelling is not one the term rebuilds the specs from.
+    let mut handles_terms: Option<Vec<Expr>> = Some(Vec::new());
     // Attribute traits (`is`, `will`, `does`, `handles`, `of`) may appear in any order
     // and any number, e.g. `has $.x handles <a b> is required` (TAP). Loop over
     // all the trait kinds until a full pass consumes nothing more.
@@ -877,7 +881,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         // word boundary, so `handlesfoo` never matches here).
         while let Some(r) = keyword("handles", rest) {
             let (r, _) = ws(r)?;
+            let before = handles.len();
             parse_handle_specs(r, &mut handles, &mut rest)?;
+            handles_terms = handles_terms.and_then(|mut terms| {
+                let term = super::handles::handles_clause_term(r, rest, &handles[before..])?;
+                terms.push(term);
+                Some(terms)
+            });
             let (r, _) = ws(rest)?;
             rest = r;
         }
@@ -1264,11 +1274,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     };
 
     let (rest, _) = opt_char(rest, ';');
+    let handles_terms = handles_terms.unwrap_or_default();
     let decl = Stmt::HasDecl {
         name: Symbol::intern(&name),
         is_public,
         default,
         handles,
+        handles_terms,
         is_rw,
         is_readonly,
         type_constraint,

@@ -15,7 +15,11 @@
 //!
 //! The parser records these traits as fields on `Stmt::HasDecl`, not in
 //! source order, so an attribute with more than one of them is refused rather
-//! than rendered in an invented order. The parser keeps `is built`'s argument
+//! than rendered in an invented order. A `handles TERM` clause is a
+//! `Trait::Handles(TERM)`; the parser keeps each clause's written term beside
+//! the delegation specs it reads from it (a name, a word list, `*`), and a
+//! clause spelled any other way (a rename pair, a regex, a variable) stays
+//! refused. The parser keeps `is built`'s argument
 //! as a `Bool`, so `is built(True)` comes back as the bare `is built` it means.
 
 use super::convert::{
@@ -36,6 +40,10 @@ pub(super) struct AttributeTraits {
     pub(super) is_default: Option<Expr>,
     /// `is built` (`true`) or `is built(False)`.
     pub(super) is_built: Option<bool>,
+    /// The written term of each `handles` clause.
+    pub(super) handles_terms: Vec<Expr>,
+    /// The specs those terms name (`parser::handle_specs_from_term`).
+    pub(super) handles: Vec<crate::ast::HandleSpec>,
 }
 
 impl AttributeTraits {
@@ -106,12 +114,18 @@ pub(super) fn add_traits(
     traits: AttributeTraits,
 ) -> Result<(), RuntimeError> {
     let written = traits.written();
-    if written.len() > 1 {
+    if written.len() + traits.handles_terms.len() > 1 {
         return Err(unsupported(
             "attribute with several traits (their source order is not kept)",
         ));
     }
-    let mut items = Vec::with_capacity(written.len());
+    let mut items = Vec::with_capacity(written.len() + traits.handles_terms.len());
+    for term in &traits.handles_terms {
+        items.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitHandles,
+            fields: vec![node_field(None, convert_expr(term)?)],
+        })));
+    }
     for (name, argument) in written {
         let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
         if let Some(argument) = argument {
@@ -168,6 +182,14 @@ pub(super) fn lower_traits(node: &RakuAstNode) -> Result<AttributeTraits, Runtim
         };
         match t.class {
             RakuAstClass::TraitWillBuild if has_initializer => {}
+            // `handles TERM`: the specs come from the term, as the parser
+            // builds them.
+            RakuAstClass::TraitHandles => {
+                let term = lower_expr(named_child_or_positional(t)?)?;
+                let specs = crate::parser::handle_specs_from_term(&term).ok_or_else(refuse)?;
+                traits.handles.extend(specs);
+                traits.handles_terms.push(term);
+            }
             RakuAstClass::TraitIs => {
                 let name = positional_leaf(named_child(t, "name")?)?;
                 let ValueView::Str(name) = name.view() else {

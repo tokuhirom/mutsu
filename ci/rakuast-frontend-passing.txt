@@ -77,6 +77,7 @@ t/collections/given-element-topic-readonly-writeback.t
 t/collections/group-of.t
 t/collections/hash/hash-any-list-methods.t
 t/collections/hash/hash-array-container-name.t
+t/collections/hash/hash-assign-itemized-hash.t
 t/collections/hash/hash-assign-lazy-seq.t
 t/collections/hash/hash-attr-from-itemized-hash.t
 t/collections/hash/hash-attr-map-default-element-assign.t
@@ -118,6 +119,7 @@ t/collections/hash/hash-literal-mixed-items.t
 t/collections/hash/hash-literal-postfix-stmt.t
 t/collections/hash/hash-literal-whatever-value.t
 t/collections/hash/hash-mutation-visible-after-sub-argument.t
+t/collections/hash/hash-new-associative.t
 t/collections/hash/hash-numeric-key-str.t
 t/collections/hash/hash-odd-number-message-element-container.t
 t/collections/hash/hash-odd-number.t
@@ -306,6 +308,7 @@ t/collections/nil-element-store-decay.t
 t/collections/nqp-uni-element-access-is-linear.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
+t/collections/positional-read-of-a-non-positional.t
 t/collections/range-pair/pair-hash-coercion.t
 t/collections/range-pair/pair-improvements.t
 t/collections/range-pair/pair-new-container-alias.t
@@ -454,10 +457,12 @@ t/collections/subscript/nested-angle-subscript-key.t
 t/collections/subscript/nested-index-range-slice-assign.t
 t/collections/subscript/nested-junction-slice-assign.t
 t/collections/subscript/nested-whatever-index-assign.t
+t/collections/subscript/object-subscript-attr-assign-keeps-var.t
 t/collections/subscript/object-subscript-protocol.t
 t/collections/subscript/out-of-range-scalar-index.t
 t/collections/subscript/positional-index-custom-bind-pos.t
 t/collections/subscript/positional-index-on-any.t
+t/collections/subscript/positional-instance-range-slice.t
 t/collections/subscript/postcircumfix-subscript-call-adverbs.t
 t/collections/subscript/rw-slice-arg-is-not-a-container.t
 t/collections/subscript/scalar-subscript-protocol.t
@@ -526,6 +531,7 @@ t/collections/transform/grep-proxy-element.t
 t/collections/transform/grep-proxy-matcher.t
 t/collections/transform/grep-rw-view.t
 t/collections/transform/grep-sub-returns-seq.t
+t/collections/transform/grep-without-matcher.t
 t/collections/transform/head-whatevercode.t
 t/collections/transform/invert-scalar-held-list.t
 t/collections/transform/invert.t
@@ -667,6 +673,7 @@ t/concurrency/supply/react-whenever-promise-threads.t
 t/concurrency/supply/react-whenever-shared-lexical.t
 t/concurrency/supply/react-whenever.t
 t/concurrency/supply/signal-supply-tap-lifetime.t
+t/concurrency/supply/supplier-emit-named-arg.t
 t/concurrency/supply/supplier-emit-tap-error-propagates.t
 t/concurrency/supply/supplier-id-socket-collision.t
 t/concurrency/supply/supplier-preserving-backlog.t
@@ -700,6 +707,7 @@ t/concurrency/supply/supply-elems.t
 t/concurrency/supply/supply-emit-then-die-tap-writeback.t
 t/concurrency/supply/supply-encode.t
 t/concurrency/supply/supply-error.t
+t/concurrency/supply/supply-first-live.t
 t/concurrency/supply/supply-grep.t
 t/concurrency/supply/supply-head-channel-backed.t
 t/concurrency/supply/supply-infinite-range.t
@@ -773,6 +781,7 @@ t/concurrency/thread-lock/array-alias-after-thread.t
 t/concurrency/thread-lock/atomic-cell-shape-refusal-symmetry.t
 t/concurrency/thread-lock/atomic-container-lane-read-gate.t
 t/concurrency/thread-lock/atomic-elem-cells.t
+t/concurrency/thread-lock/atomic-element-targets.t
 t/concurrency/thread-lock/atomic-fetch-sub.t
 t/concurrency/thread-lock/atomic-functions.t
 t/concurrency/thread-lock/atomic-lane-retirement.t
@@ -797,7 +806,9 @@ t/concurrency/thread-lock/loop-scoped-lock-condition.t
 t/concurrency/thread-lock/merge-live-cold-and-current-thread-interval.t
 t/concurrency/thread-lock/module-scope-atomicint-from-imported-routine.t
 t/concurrency/thread-lock/new-bless-junction-no-autothread.t
+t/concurrency/thread-lock/nqp-atomic-ops.t
 t/concurrency/thread-lock/nqp-istrue-hllize-lock-ops.t
+t/concurrency/thread-lock/nqp-thread-ops.t
 t/concurrency/thread-lock/proc-async-ready-cross-thread-kill.t
 t/concurrency/thread-lock/scheduler-cancellation-state.t
 t/concurrency/thread-lock/scheduler-cue-dispatch-oracle.t
@@ -944,10 +955,12 @@ t/exceptions/exception-die-method.t
 t/exceptions/exception-fail-method.t
 t/exceptions/exception-failure-method.t
 t/exceptions/exception-message-fidelity.t
+t/exceptions/exception-message-materialize.t
 t/exceptions/exception-messages.t
 t/exceptions/exception-methods.t
 t/exceptions/exception-role-membership.t
 t/exceptions/exception-str-gist-message.t
+t/exceptions/exception-str-via-user-message.t
 t/exceptions/fail.t
 t/exceptions/failure-definite.t
 t/exceptions/failure-fatal-mode-call-argument.t
@@ -974,6 +987,7 @@ t/exceptions/parse-error-multibyte-column.t
 t/exceptions/parse-error-position-is-innermost.t
 t/exceptions/parse-failure-syntax-exception-class.t
 t/exceptions/perl5var-special.t
+t/exceptions/phaser-begin-nested-eval-error.t
 t/exceptions/private-method-binding-error.t
 t/exceptions/resume.t
 t/exceptions/return-target-dead-reaches-nearest-catch.t
@@ -1037,6 +1051,7 @@ t/grammar/grammar-sibling-implicit-core-parent.t
 t/grammar/grammar-sigilless-alias-silent-action.t
 t/grammar/grammar-silent-subrule-action-gate.t
 t/grammar/grammar-token-instance-method.t
+t/grammar/grammar-user-highwater.t
 t/grammar/regex-crosspkg-charclass-token.t
 t/grammar/regex-grammar-method-leaf.t
 t/grammar/regex-negated-token-class-multichar.t
@@ -1173,6 +1188,7 @@ t/lang/angle-bracket-hyphen.t
 t/lang/angle-word-leading-zero-no-warn.t
 t/lang/code-var-free-read-ignores-caller-shadow.t
 t/lang/code-variable.t
+t/lang/constant-sigiled-term.t
 t/lang/deref-bind-value-alias.t
 t/lang/digit-var-from-bound-slash.t
 t/lang/double-array-sigil-context.t
@@ -1432,6 +1448,7 @@ t/modules/import-export/export-sub-term-symbol.t
 t/modules/import-export/exported-code-value-module-stash.t
 t/modules/import-export/exported-main-dispatch.t
 t/modules/import-export/exported-multi-code-value-inside-module.t
+t/modules/import-export/exported-multi-family-candidates.t
 t/modules/import-export/exported-multi-lexical-role-param.t
 t/modules/import-export/exported-proto-multi-family.t
 t/modules/import-export/exported-term-sub.t
@@ -1695,6 +1712,7 @@ t/nativecall/native-type-class-perf.t
 t/nativecall/native-typed-attr-ctor.t
 t/nativecall/nativecall-constant-type-alias.t
 t/nativecall/nativecall-cpointer-class-in-module.t
+t/nativecall/nativecallcast-uninstantiable-target.t
 t/nativecall/nested-module-native-prelude-not-visible-to-user.t
 t/nativecall/new-callsame-native-mu-fallback.t
 t/nativecall/nqp-native-num-arith.t
@@ -1828,6 +1846,7 @@ t/oo/class/class-bounded-env-sync.t
 t/oo/class/class-build-invocant-required.t
 t/oo/class/class-constant-shadows-nested-type-call-arg.t
 t/oo/class/class-decl-tail-value.t
+t/oo/class/class-in-routine-lexical-capture.t
 t/oo/class/class-is-rw.t
 t/oo/class/class-pseudo-type-param.t
 t/oo/class/class-redeclaration.t
@@ -1924,6 +1943,7 @@ t/oo/method/classhow-lookup-method-is-dispatcher-multi.t
 t/oo/method/classhow-method-names.t
 t/oo/method/closure-capture-class-in-block-method.t
 t/oo/method/closure-named-arg-method-escape.t
+t/oo/method/code-unknown-method-not-found.t
 t/oo/method/coercion-method-captured-writeback.t
 t/oo/method/coercion-str-method-dispatch.t
 t/oo/method/colon-method-arg-loose-ops.t
@@ -2128,6 +2148,7 @@ t/oo/role/classhow-methods-mixin-role.t
 t/oo/role/classhow-parents-exclude-roles.t
 t/oo/role/coerce-into-role-inheriting-builtin.t
 t/oo/role/concrete-role-how-compose.t
+t/oo/role/curried-role-name-is-argument-types.t
 t/oo/role/custom-how-explicit-self-and-role-default.t
 t/oo/role/dateish-role-composition.t
 t/oo/role/default-role-pun-curry.t
@@ -2146,8 +2167,10 @@ t/oo/role/issue-7775-container-role.t
 t/oo/role/issue-7780-builtin-type-hierarchy-roles.t
 t/oo/role/iterable-role-without-iterator-method.t
 t/oo/role/iterator-role-default-methods.t
+t/oo/role/lexical-role-two-modules.t
 t/oo/role/map-rejects-role-mixed-sub-as-callable.t
 t/oo/role/mixin-but-role-angle-value.t
+t/oo/role/mixin-method-reaches-enclosing-role-multi-sub.t
 t/oo/role/mixin-role-application-order.t
 t/oo/role/mixin-role-attribute-cell.t
 t/oo/role/mixin-role-group-candidate.t
@@ -2160,14 +2183,18 @@ t/oo/role/my-role-in-role.t
 t/oo/role/nested-class-runs-role-body-at-compile-time.t
 t/oo/role/nextsame-role-mixin.t
 t/oo/role/parameterized-role-composes-base-candidate.t
+t/oo/role/parameterized-role-static-scope.t
 t/oo/role/parametric-container-role-of.t
 t/oo/role/parametric-role-default-params-pun.t
 t/oo/role/parametric-role-definedness.t
+t/oo/role/parametric-role-enum-arg.t
 t/oo/role/parametric-role-how-built-role.t
+t/oo/role/parametric-role-of-type.t
 t/oo/role/parametric-role-pun-composes.t
 t/oo/role/parametric-role-type-invocant.t
 t/oo/role/parametric-role-typed-var.t
 t/oo/role/parent-role-multi-invocant-candidate-survives-override.t
+t/oo/role/positional-role-attr-writeback-coherence.t
 t/oo/role/prefix-plus-role-mixin.t
 t/oo/role/proto-multi-method-role-composition.t
 t/oo/role/pun-composes-role-body-declarations.t
@@ -2182,6 +2209,7 @@ t/oo/role/qualified-parameterized-role.t
 t/oo/role/qualified-role-new-keeps-invocant.t
 t/oo/role/qualified-runtime-role-default.t
 t/oo/role/raku-container-mixin-role-raku.t
+t/oo/role/rational-role.t
 t/oo/role/role-attr-shadows-builtin-method.t
 t/oo/role/role-bless-pun.t
 t/oo/role/role-body-class-is-composing-class.t
@@ -2191,6 +2219,7 @@ t/oo/role/role-body-use-flat-role-name.t
 t/oo/role/role-body-use-survives-block-scope-rollback.t
 t/oo/role/role-bounded-env-sync.t
 t/oo/role/role-builtin-parent.t
+t/oo/role/role-callable-param-and-custom-container.t
 t/oo/role/role-class-prioritization.t
 t/oo/role/role-closure-private-attribute-foreign-arg.t
 t/oo/role/role-composed-method-param-typo.t
@@ -2198,6 +2227,7 @@ t/oo/role/role-conflict.t
 t/oo/role/role-default-param-pun-name.t
 t/oo/role/role-default-type-capture-with-named-param.t
 t/oo/role/role-diamond-stub-concrete.t
+t/oo/role/role-does-parametric-role-attr-default.t
 t/oo/role/role-dotted-name-sibling-not-real-nesting.t
 t/oo/role/role-double-parametric-multi-dispatch.t
 t/oo/role/role-enum-coercion-param-type.t
@@ -2212,10 +2242,12 @@ t/oo/role/role-mixin-hash-attr-default-coerce.t
 t/oo/role/role-mixin-init-value-is-not-a-type-parameter.t
 t/oo/role/role-mixin-marker-keys.t
 t/oo/role/role-multi-invocant-smiley-across-composition.t
+t/oo/role/role-multi-named-compose.t
 t/oo/role/role-multi-qclass.t
 t/oo/role/role-named-param-type-object-class-check.t
 t/oo/role/role-nonmulti-class-multi-override.t
 t/oo/role/role-param-binding-does-not-shadow-caller.t
+t/oo/role/role-param-binding-leaves-outer-lexical-writable.t
 t/oo/role/role-param-composition-no-leak.t
 t/oo/role/role-param-qualified-type-cross-file-import-no-smiley.t
 t/oo/role/role-param-qualified-type-cross-file-import.t
@@ -2250,6 +2282,7 @@ t/oo/role/role-type-arg-reparse-no-sink-warning.t
 t/oo/role/role-type-object-repr.t
 t/oo/role/role-type-param-smiley.t
 t/oo/role/roles-non-transitive-adverb.t
+t/oo/role/roles-stubs-regression.t
 t/oo/role/routine-does-role-attribute-state.t
 t/oo/role/run-nested-role-body.t
 t/oo/role/runtime-parametric-role-value-args.t
@@ -2278,6 +2311,8 @@ t/oo/trait/anon-param-trait.t
 t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/default-trait-before-initializer.t
 t/oo/trait/eval-load-cached-trait.t
+t/oo/trait/handles-container-attr-writeback.t
+t/oo/trait/handles-proto-dispatch-mut-invocant.t
 t/oo/trait/inline-container-trait-expression.t
 t/oo/trait/list-trait-initializer-elements.t
 t/oo/trait/list-trait-readonly.t
@@ -2295,6 +2330,7 @@ t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-attribute-default.t
+t/rakuast/rakuast-attribute-handles.t
 t/rakuast/rakuast-attribute-smiley-default-built.t
 t/rakuast/rakuast-attribute-traits.t
 t/rakuast/rakuast-attribute.t
@@ -2405,6 +2441,7 @@ t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-named-parameters.t
+t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
@@ -2440,6 +2477,7 @@ t/rakuast/rakuast-subsig.t
 t/rakuast/rakuast-supply-block.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
+t/rakuast/rakuast-trait-does-new-name-parts.t
 t/rakuast/rakuast-type-attributes.t
 t/rakuast/rakuast-type-can.t
 t/rakuast/rakuast-type-capture.t
@@ -2990,6 +3028,7 @@ t/routines/signature/is-rw-traits.t
 t/routines/signature/lazy-array-param-pull.t
 t/routines/signature/map-array-optional-trailing-param.t
 t/routines/signature/meta-parameterize-type-constraint.t
+t/routines/signature/meta-parameterize-typed-declaration.t
 t/routines/signature/multi-aliased-named-param.t
 t/routines/signature/multi-amp-param-otf-dispatch.t
 t/routines/signature/multi-dispatch-empty-signature-beats-variadic-is-raw.t
@@ -3331,6 +3370,7 @@ t/types/numeric/float-num.t
 t/types/numeric/geometric-sequence-bigint-overflow.t
 t/types/numeric/int-bigint-div-subnormal-num.t
 t/types/numeric/int-bit-methods.t
+t/types/numeric/int-bitop-object-numeric.t
 t/types/numeric/int-num-coerce-bad-string.t
 t/types/numeric/int-subclass-arithmetic.t
 t/types/numeric/int-subclass-int-methods.t
@@ -3553,6 +3593,7 @@ t/vm/codegen/adr0112-trir-forward-link.t
 t/vm/codegen/adr0112-trir-short-circuit.t
 t/vm/codegen/compile-time-vars.t
 t/vm/codegen/compiler-id.t
+t/vm/codegen/compiler-vm-new-defaults.t
 t/vm/codegen/create-slots-resources-buf-strict-escape.t
 t/vm/codegen/jit-hot-loop.t
 t/vm/codegen/jit-tier-b-arith.t

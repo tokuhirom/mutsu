@@ -320,6 +320,8 @@ pub enum RakuAstClass {
     StatementLoopRepeatUntil,
     // Class/role declaration traits (`is Parent`, `does Role`, `is rw`).
     TraitIs,
+    /// `handles TERM` on an attribute.
+    TraitHandles,
     TraitDoes,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
@@ -558,6 +560,7 @@ impl RakuAstClass {
             StatementLoopUntil => "RakuAST::Statement::Loop::Until",
             StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
             TraitIs => "RakuAST::Trait::Is",
+            TraitHandles => "RakuAST::Trait::Handles",
             TraitDoes => "RakuAST::Trait::Does",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
@@ -1239,6 +1242,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLoopUntil,
     RakuAstClass::StatementLoopRepeatUntil,
     RakuAstClass::TraitIs,
+    RakuAstClass::TraitHandles,
     RakuAstClass::TraitDoes,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,

@@ -1945,7 +1945,8 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 .as_deref()
                 .map(crate::parser::auto_default_expr_for_type)
         }),
-        handles: Vec::new(),
+        handles: traits.handles.clone(),
+        handles_terms: traits.handles_terms.clone(),
         is_rw: traits.is_rw,
         is_readonly: traits.is_readonly,
         type_constraint,
