@@ -32,3 +32,11 @@ routine boundary let a `fail` escape as an exception instead of returning a
 Failure. `run_trir_routine` now does what the untyped entries do. This is
 part of #11728; the missing-`$*x` case it reports is a separate TRIR gap and
 stays open.
+
+CI found a consequence of the `!!!` fix in roast's `S06-advanced/stub.t`:
+`BEGIN throws-like 'wind()', X::StubCode` now saw `X::Comp::BeginTime`. Every
+run of the VM loop wrapped any error escaping while a BEGIN/CHECK region was
+open. That included the nested run of an `EVAL` the phaser body itself
+calls, so the body's own `try` saw a wrapped error, and
+`BEGIN { EVAL q[die "y"] }` was wrapped twice. Only the run that entered
+the region wraps now.
