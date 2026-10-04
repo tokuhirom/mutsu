@@ -208,6 +208,13 @@ impl Interpreter {
         };
         let chain = chain.clone();
         let fatal = *fatal;
+        if needed == usize::MAX && self.can_batch_pure_int_chain(&chain, func.as_ref(), mode) {
+            while chain.extend(|source| self.pull_map_grep_prefix(source, usize::MAX))? > 0 {}
+            let (out, _) =
+                self.run_map_grep_chunk(func, fatal, mode, plan, items, *pos, items.len(), None)?;
+            *pos = items.len();
+            return Ok((out, true));
+        }
         if !plan.prefix_pullable(|| map_grep_pullable_by_prefix(func.as_ref(), mode)) {
             while chain.extend(|source| self.pull_map_grep_prefix(source, usize::MAX))? > 0 {}
             let (out, _) =

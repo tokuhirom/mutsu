@@ -70,6 +70,23 @@ impl MapGrepChain {
         !matches!(self.lock().source, crate::value::SeqSource::MapGrep { .. })
     }
 
+    /// A fresh upstream source for a full, side-effect-free chain pull. A
+    /// prefix that has already run must resume through the ordinary stream.
+    // Cost: O(1), excluding reference-count updates in the cloned source.
+    pub(crate) fn unstarted_source(&self) -> Option<crate::value::SeqSource> {
+        let state = self.lock();
+        if state.produced.is_empty()
+            && matches!(
+                state.source,
+                crate::value::SeqSource::MapGrep { pos: 0, .. }
+            )
+        {
+            Some(state.source.clone())
+        } else {
+            None
+        }
+    }
+
     /// Pull more upstream elements through `pull` (which advances the
     /// upstream source and reports whether it ran dry) and append them.
     /// Returns how many arrived. The source is out of the lock while `pull`
