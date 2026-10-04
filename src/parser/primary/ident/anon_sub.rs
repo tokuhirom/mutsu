@@ -38,10 +38,42 @@ pub(crate) fn make_anon_method(
     body: Vec<crate::ast::Stmt>,
     declarator: crate::ast::RoutineDeclarator,
 ) -> Expr {
+    anon_method_expr(Vec::new(), None, body, declarator)
+}
+
+/// Whether `pd` is the synthetic receiver [`invocant_param_def`] builds, with
+/// no type, constraint or name of the source's own.
+// Cost: O(t), t = traits of `pd`.
+pub(crate) fn is_synthetic_invocant(pd: &crate::ast::ParamDef) -> bool {
+    pd.is_invocant
+        && pd.name == "self"
+        && pd.traits.len() == 1
+        && pd.traits[0] == crate::ast::IMPLICIT_INVOCANT_TRAIT
+        && pd.type_constraint.is_none()
+        && pd.where_constraint.is_none()
+        && pd.default.is_none()
+        && pd.type_capture.is_none()
+        && pd.sub_signature.is_none()
+        && pd.code_signature.is_none()
+}
+
+/// A method literal (`method ($a) { … }`) over its written parameters `rest`:
+/// the synthetic receiver comes first, because the invocant reaches the
+/// closure binder as the first positional argument.
+pub(crate) fn anon_method_expr(
+    rest: Vec<crate::ast::ParamDef>,
+    return_type: Option<String>,
+    body: Vec<crate::ast::Stmt>,
+    declarator: crate::ast::RoutineDeclarator,
+) -> Expr {
+    let mut params = vec!["self".to_string()];
+    params.extend(rest.iter().map(|p| p.name.clone()));
+    let mut param_defs = vec![invocant_param_def()];
+    param_defs.extend(rest);
     Expr::AnonSubParams {
-        params: vec!["self".to_string()],
-        param_defs: vec![invocant_param_def()],
-        return_type: None,
+        params,
+        param_defs,
+        return_type,
         body,
         is_rw: false,
         is_raw: false,

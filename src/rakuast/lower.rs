@@ -1511,6 +1511,33 @@ pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError
     lower_stmts(named_child_or_positional(blockoid)?)
 }
 
+/// A nameless `Method` / `Submethod` -> `parser::anon_method_expr` over its
+/// written parameters. A declared invocant is folded into the receiver by the
+/// parser, so a signature naming one stays the boundary.
+// Cost: O(n), n = size of the node.
+fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let (_, param_defs) = signature_positional_params(node)?;
+    if param_defs.iter().any(|p| p.is_invocant) {
+        return Err(unsupported(node));
+    }
+    let (return_type, custom_traits) = routine_return_type(node, None)?;
+    if !custom_traits.is_empty() {
+        return Err(unsupported(node));
+    }
+    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let declarator = if node.class == RakuAstClass::Submethod {
+        crate::ast::RoutineDeclarator::Submethod
+    } else {
+        crate::ast::RoutineDeclarator::Method
+    };
+    Ok(crate::parser::anon_method_expr(
+        param_defs,
+        return_type,
+        body,
+        declarator,
+    ))
+}
+
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
 fn infix_is_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
@@ -2940,6 +2967,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it
         // keeps its `sub` spelling on the way back, so a re-read of the lowered
         // tree renders the same node.
+        // A nameless `Method` / `Submethod` is a method literal; the parser's
+        // own builder puts the synthetic receiver back in front.
+        RakuAstClass::Method | RakuAstClass::Submethod
+            if !node.fields.iter().any(|f| f.name == Some("name")) =>
+        {
+            lower_method_literal(node)
+        }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
             let (return_type, custom_traits) = routine_return_type(node, None)?;
