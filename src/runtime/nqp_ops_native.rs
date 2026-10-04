@@ -88,6 +88,9 @@ impl Interpreter {
                 let target = operand(args, 0);
                 let idx = args.get(1).map(crate::runtime::to_int).unwrap_or(0);
                 let val = uint64_value(&operand(args, 2));
+                if self.carray_bind_before_start(&target, idx) {
+                    return Some(Ok(val));
+                }
                 crate::runtime::nqp_backing::bind_elem(op, &target, idx, val, Value::int(0))
             }
             // nqp::atposref_i / _n / _u($list, $i): an lvalue for element `$i`

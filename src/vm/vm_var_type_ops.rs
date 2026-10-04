@@ -353,6 +353,13 @@ impl Interpreter {
                 .then(|| loan_env!(self, type_arg_value_from_name(constraint)));
             match parametric {
                 Some(v) if matches!(v.view(), ValueView::ParametricRole { .. }) => v,
+                // A class with its own `^parameterize` (upstream NativeCall's
+                // `Pointer[uint16]`): the type object that meta-method built.
+                _ if constraint.contains('[')
+                    && let Some(v) = loan_env!(self, meta_parameterized_type(constraint)) =>
+                {
+                    v
+                }
                 _ => {
                     // The seeded package must carry the NOMINAL type name —
                     // smileys stripped (`my Int:_ $a` seeds `Int`, not

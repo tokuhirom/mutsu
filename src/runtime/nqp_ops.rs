@@ -662,6 +662,9 @@ impl Interpreter {
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(2).cloned().unwrap_or(Value::int(0));
+                if self.carray_bind_before_start(&target, iarg(args, 1)) {
+                    return Some(Ok(val));
+                }
                 // A native list holds natives: the value is converted, and a
                 // gap reads back as that type's zero.
                 let (val, fill) = if op == "bindpos_n" {

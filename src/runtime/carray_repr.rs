@@ -88,6 +88,28 @@ impl Interpreter {
         self.registry().carray_classes.contains(class)
     }
 
+    /// Whether `nqp::bindpos*` of index `idx` into `target` is a store before
+    /// the start of an `is repr('CArray')` array. MoarVM's CArray REPR does
+    /// not apply VMArray's index rule, and upstream's `allocate(0)` binds
+    /// index `-1` of an empty array expecting it to stay empty (MoarVM writes
+    /// before its buffer there). Here the store is dropped instead: nothing is
+    /// written, no memory is touched.
+    // Cost: O(n), n = chars of the class name.
+    pub(crate) fn carray_bind_before_start(&self, target: &Value, idx: i64) -> bool {
+        if idx >= 0 {
+            return false;
+        }
+        let class = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { class_name, .. } => class_name,
+                _ => return false,
+            },
+            _ => return false,
+        };
+        self.is_carray_repr_class(class.as_str())
+    }
+
     /// How a native element of type `elem` is stored: bytes per element and
     /// how it reads back. `None` for anything that is not a native numeric
     /// type -- a reference element (`Pointer`, `Str`, a CStruct class).
