@@ -2323,10 +2323,16 @@ fn pointy_block_source(
             })
         };
         if param.named {
-            if param.type_constraint.is_none() && param.default.is_none() && !param.required {
-                format!(":${}", param.name)
-            } else {
+            if param.type_constraint.is_some() || param.required {
                 return None;
+            }
+            match param.default.as_ref() {
+                Some(default) => format!(
+                    ":${} = {}",
+                    param.name,
+                    crate::regex_tree::expression_source(default)?
+                ),
+                None => format!(":${}", param.name),
             }
         } else {
             match (
