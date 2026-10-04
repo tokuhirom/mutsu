@@ -34,6 +34,16 @@ pub(crate) fn with_quanthash_render_guard<R>(ptr: usize, f: impl FnOnce() -> R) 
 }
 
 fn anon_type_display_name(name: &str) -> Option<String> {
+    // An anonymous type declared inside a package is registered under the
+    // package-qualified marker (`Mx::__ANON_CLASS_2__`), but it has no name of
+    // its own, so the enclosing package is not part of its display.
+    let bare;
+    let name = if crate::qualified::is_qualified_str(name) {
+        bare = crate::qualified::unqualified_part(crate::qualified::known_symbol(name));
+        bare.as_str()
+    } else {
+        name
+    };
     let inner = name.strip_suffix("__")?;
     let n = ["__ANON_CLASS_", "__ANON_GRAMMAR_", "__ANON_ROLE_"]
         .iter()
@@ -90,7 +100,16 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         }
         return std::borrow::Cow::Borrowed(name);
     }
-    let demangled = crate::qualified::segments(crate::symbol::Symbol::intern(name))
+    let segments = crate::qualified::segments(crate::symbol::Symbol::intern(name));
+    // An anonymous type has no name of its own, so a trailing anonymous
+    // segment drops the enclosing package (`Mx::__ANON_ROLE_0__\0<id>`).
+    if let Some(display) = segments
+        .last()
+        .and_then(|last| anon_type_display_name(&strip_site_keys(last.as_str())))
+    {
+        return std::borrow::Cow::Owned(display);
+    }
+    let demangled = segments
         .iter()
         .map(|segment| segment.as_str())
         .map(|segment| {
