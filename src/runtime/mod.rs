@@ -1069,6 +1069,7 @@ pub(crate) mod type_state;
 pub(crate) use crate::value::str_numeric;
 mod supply_callback_args;
 mod supply_classify;
+mod supply_done_drive;
 mod supply_emit_drive;
 mod supply_emit_frame;
 mod supply_preserving_derive;
