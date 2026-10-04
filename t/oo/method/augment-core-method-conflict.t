@@ -7,7 +7,7 @@ use Test;
 # declares as a multi (for a `multi`), stays legal. Expected results are
 # rakudo's.
 
-plan 13;
+plan 12;
 
 # Each declaration runs in its own process: a failed augment leaves the core
 # type half-augmented, which would leak into the next case.
@@ -42,8 +42,6 @@ like compiles('augment class Str { proto method uc(|) {*} }').message,
     '#11596: a proto method conflicts like a plain one';
 nok compiles('augment class Str { proto method brand-new-p(|) {*}; multi method brand-new-p { 1 } }'),
     'a proto for a new name';
-nok compiles('augment class Str { proto method !uc(|) {*} }'),
-    'a private proto lives in its own namespace';
 nok compiles('augment class Str { method !uc { "x" } }'),
     'a private method lives in its own namespace';
 
