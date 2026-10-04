@@ -281,9 +281,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("separator", Absent::TypeObject("RakuAST::Regex::Term")),
             ("trailing-separator", Absent::False),
         ],
-        RegexDeclaration | TokenDeclaration | RuleDeclaration => {
-            &[("name", Absent::Required), ("body", Absent::Required)]
-        }
+        RegexDeclaration | TokenDeclaration | RuleDeclaration => &[
+            ("scope", Absent::Str("has")),
+            ("name", Absent::Required),
+            ("signature", Absent::EmptyNode(Signature)),
+            ("body", Absent::Required),
+        ],
         Grammar => &[("name", Absent::Required), ("body", Absent::Required)],
         Pragma => &[
             ("name", Absent::Required),

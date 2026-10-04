@@ -113,18 +113,20 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             ..
         } => {
-            if *multi
-                || *is_my
-                || *is_our
-                || *is_export
-                || !export_tags.is_empty()
-                || !params.is_empty()
-                || !param_defs.is_empty()
-            {
+            if *multi || *is_export || !export_tags.is_empty() {
+                return Err(unsupported("multi / exported regex declaration"));
+            }
+            if params.len() != param_defs.len() {
                 return Err(unsupported(
-                    "regex declaration with scope / params / traits",
+                    "regex declaration with an unnamed parameter list",
                 ));
             }
+            let scope = match (*is_my, *is_our) {
+                (false, false) => None,
+                (true, false) => Some("my"),
+                (false, true) => Some("our"),
+                (true, true) => return Err(unsupported("regex declaration both `my` and `our`")),
+            };
             let Some(tree) = source_regex else {
                 return Err(unsupported("regex declaration without a source tree"));
             };
@@ -139,6 +141,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 class,
                 &name.resolve(),
                 tree,
+                scope,
+                param_defs,
             )?)))
         }
         Stmt::RuleDecl {
@@ -151,13 +155,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             ..
         } => {
-            if *multi
-                || *is_export
-                || !export_tags.is_empty()
-                || !params.is_empty()
-                || !param_defs.is_empty()
-            {
-                return Err(unsupported("rule declaration with params / traits"));
+            if *multi || *is_export || !export_tags.is_empty() {
+                return Err(unsupported("multi / exported rule declaration"));
+            }
+            if params.len() != param_defs.len() {
+                return Err(unsupported(
+                    "rule declaration with an unnamed parameter list",
+                ));
             }
             let Some(tree) = source_regex else {
                 return Err(unsupported("rule declaration without a source tree"));
@@ -166,6 +170,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 RakuAstClass::RuleDeclaration,
                 &name.resolve(),
                 tree,
+                None,
+                param_defs,
             )?)))
         }
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
@@ -3095,18 +3101,30 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode { class, fields })
 }
 
+/// `[my|our] token NAME(SIG) { … }`: rakudo's `scope` leads the node (the
+/// default `has` renders none), and a parameter list is the method-style
+/// `signature` between `name` and `body` (measured on rakudo 2026.09).
+// Cost: O(r + p), r = size of the regex, p = size of the parameters.
 fn regex_declaration(
     class: RakuAstClass,
     name: &str,
     tree: &RegexTree,
+    scope: Option<&str>,
+    param_defs: &[ParamDef],
 ) -> Result<RakuAstNode, RuntimeError> {
-    Ok(RakuAstNode {
-        class,
-        fields: vec![
-            node_field(Some("name"), name_from_identifier(name)),
-            node_field(Some("body"), regex_node(&tree.body)?),
-        ],
-    })
+    let mut fields = Vec::with_capacity(4);
+    if let Some(scope) = scope {
+        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
+    }
+    fields.push(node_field(Some("name"), name_from_identifier(name)));
+    if !param_defs.is_empty() {
+        fields.push(node_field(
+            Some("signature"),
+            signature(param_defs, true, None)?,
+        ));
+    }
+    fields.push(node_field(Some("body"), regex_node(&tree.body)?));
+    Ok(RakuAstNode { class, fields })
 }
 
 fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {

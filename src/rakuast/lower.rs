@@ -845,11 +845,25 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let value = Value::regex(execution_pattern).with_regex_source_tree(tree.clone());
     let body = vec![Stmt::Expr(Expr::Literal(value))];
     let source_regex = Some(tree);
+    let (params, param_defs) = signature_positional_params(node)?;
+    let (is_my, is_our) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => (true, false),
+            "our" => (false, true),
+            "has" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
+    };
+    if (is_my || is_our) && node.class == RakuAstClass::RuleDeclaration {
+        // `Stmt::RuleDecl` has no scope; the converter never renders one.
+        return Err(unsupported(node));
+    }
     match node.class {
         RakuAstClass::RegexDeclaration | RakuAstClass::TokenDeclaration => Ok(Stmt::TokenDecl {
             name: crate::symbol::Symbol::intern(&name),
-            params: Vec::new(),
-            param_defs: Vec::new(),
+            params,
+            param_defs,
             body,
             source_regex,
             regex_kind: if node.class == RakuAstClass::RegexDeclaration {
@@ -858,15 +872,15 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 crate::regex_tree::RegexDeclKind::Token
             },
             multi: false,
-            is_my: false,
-            is_our: false,
+            is_my,
+            is_our,
             is_export: false,
             export_tags: Vec::new(),
         }),
         RakuAstClass::RuleDeclaration => Ok(Stmt::RuleDecl {
             name: crate::symbol::Symbol::intern(&name),
-            params: Vec::new(),
-            param_defs: Vec::new(),
+            params,
+            param_defs,
             body,
             source_regex,
             multi: false,
