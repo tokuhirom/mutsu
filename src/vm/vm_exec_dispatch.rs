@@ -3895,9 +3895,25 @@ impl Interpreter {
                 self.exec_does_var_op(code, *name_idx, *slot, *is_bareword)?;
                 *ip += 1;
             }
+            // Cost: O(p*|n|), p = packages on the bare-name search path, n = the name.
+            OpCode::JumpIfNotRole(name_idx, target) => {
+                match self.mixin_role_sym(code.const_sym(*name_idx)) {
+                    Some(role) => {
+                        self.stack.push(Value::package(role));
+                        *ip += 1;
+                    }
+                    None => *ip = *target as usize,
+                }
+            }
             // Cost: O(1).
-            OpCode::SetDoesContext(flag) => {
-                self.in_does_rhs = *flag;
+            OpCode::MakeRoleInit => {
+                let value = self.stack.pop().unwrap_or(Value::NIL);
+                let role = self.stack.pop().unwrap_or(Value::NIL);
+                let name = match role.view() {
+                    ValueView::Package(sym) => sym.resolve().to_string(),
+                    _ => role.to_string_value(),
+                };
+                self.stack.push(Value::pair(name, Value::array(vec![value])));
                 *ip += 1;
             }
 

@@ -2169,9 +2169,22 @@ pub(crate) enum OpCode {
     /// the plain (sigil-less, hence `$`-scalar-owned) env key — see
     /// `runtime::enum_bare_names` and #7914.
     DoesVar(u32, Option<u32>, bool),
-    /// Set/clear the in_does_rhs flag so role calls return Pairs instead of
-    /// throwing X::Coerce::Impossible during `does` RHS evaluation.
-    SetDoesContext(bool),
+    /// The role-initializer test of a `does`/`but` right-hand side `R(v)`:
+    /// when the constant at `.0` names a role (a lexical `my role R` through
+    /// its binding), push that role's type object; otherwise jump to `.1` (an
+    /// absolute op index, as for [`Self::Jump`]). Stack: `[] → [R]` or `[]`.
+    ///
+    /// Rakudo rewrites a top-level single-argument call on the right of
+    /// `does`/`but` to `infix:<does>($obj, R, :value(v))` when `R` names a
+    /// type, whatever the role defines (`CALL-ME` included). Whether `R` is a
+    /// role is only known at run time here, so the compiler emits both arms:
+    /// the fall-through one builds the initializer with
+    /// [`Self::MakeRoleInit`], the jump target is the ordinary call.
+    JumpIfNotRole(u32, i32),
+    /// Build the role application `R => [v]` that `does`/`but` consume from
+    /// the role and its initializer value. Stack: `[R, v] → [R => [v]]`. See
+    /// [`Self::JumpIfNotRole`].
+    MakeRoleInit,
 
     // -- Pair --
     /// Build a data-minted Pair (ADR-0021 I2): always the positional
@@ -11455,7 +11468,8 @@ impl CompiledCode {
             OpCode::Jump(offset)
             | OpCode::JumpIfFalse(offset)
             | OpCode::JumpIfTrue(offset)
-            | OpCode::JumpIfNotNil(offset) => {
+            | OpCode::JumpIfNotNil(offset)
+            | OpCode::JumpIfNotRole(_, offset) => {
                 *offset = target;
             }
             _ => panic!("patch_jump on non-jump opcode"),

@@ -2647,10 +2647,6 @@ pub struct Interpreter {
     /// around the indirect block call; ordinary block calls still
     /// decontainerize as usual.
     pub(crate) rw_return_context: bool,
-    /// When true, a role call with non-matching args returns a Pair instead of
-    /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
-    /// so that `$x does Role("arg")` works as a role application.
-    pub(crate) in_does_rhs: bool,
     /// When set, `does` on a routine parameter inside `trait_mod:<is>` will
     /// store the resulting Mixin value for writeback to the outer scope.
     pub(crate) trait_mod_writeback_key: Option<String>,

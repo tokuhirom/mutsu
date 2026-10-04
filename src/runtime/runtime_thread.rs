@@ -599,7 +599,6 @@ impl Interpreter {
             lexicals: self.lexicals.fork_for_thread(),
             in_lvalue_assignment: false,
             rw_return_context: false,
-            in_does_rhs: false,
             trait_mod_writeback_key: None,
             trait_mod_writeback_value: None,
             trait_mod_attr_writeback_value: None,
