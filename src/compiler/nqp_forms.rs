@@ -171,6 +171,21 @@ impl Compiler {
                 });
                 true
             }
+            // nqp::bind($var, value) — bind the variable to the value,
+            // exactly `$var := value` (#11499). Yields the value.
+            // Cost: O(1) (compiles to the binding).
+            "nqp::bind" if args.len() == 2 => {
+                let name = match &args[0] {
+                    Expr::Var(name) | Expr::BareWord(name) => name.clone(),
+                    _ => return false,
+                };
+                self.compile_expr(&Expr::AssignExpr {
+                    name,
+                    expr: Box::new(args[1].clone()),
+                    is_bind: true,
+                });
+                true
+            }
             // The Rakudo `p6*` forms (#11505): each needs its operand's
             // container or the enclosing routine, which a value op never sees.
             "nqp::p6store" | "nqp::p6sink" | "nqp::p6return" | "nqp::p6invokeflat" => {

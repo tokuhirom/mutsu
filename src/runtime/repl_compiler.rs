@@ -86,6 +86,9 @@ pub(crate) struct ReplCompilerState {
     /// and the `caller_env_stack` depth the call was made from.
     ctxsave_unit: Option<(usize, usize)>,
     compiler: Option<Value>,
+    /// Compiler objects registered by `nqp::bindcomp` under a language other
+    /// than `Raku` (whose compiler is `compiler`), for `nqp::getcomp`.
+    bound_compilers: HashMap<String, Value>,
 }
 
 impl Interpreter {
@@ -124,8 +127,30 @@ impl Interpreter {
         result.map(|_| ())
     }
 
-    /// `nqp::getcomp($name)`: the compiler object for `Raku`, or null (as
-    /// `nqp::null` answers it) for any other language.
+    /// `nqp::bindcomp($name, $compiler)`: register `$compiler` as the
+    /// compiler object of language `$name`, which `nqp::getcomp($name)` then
+    /// answers. Binding `Raku` replaces the built-in compiler object. Answers
+    /// `$compiler`.
+    // Cost: O(n), n = chars of the name (hashed).
+    pub(crate) fn nqp_bindcomp(&mut self, args: &[Value]) -> Value {
+        let name = args
+            .first()
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let compiler = args.get(1).cloned().unwrap_or(Value::NIL);
+        if name == "Raku" {
+            self.repl_compiler.compiler = Some(compiler.clone());
+        } else {
+            self.repl_compiler
+                .bound_compilers
+                .insert(name, compiler.clone());
+        }
+        compiler
+    }
+
+    /// `nqp::getcomp($name)`: the compiler object for `Raku`, one registered
+    /// by `nqp::bindcomp`, or null (as `nqp::null` answers it) for any other
+    /// language.
     // Cost: O(1) after the first call, which parses and registers the prelude once.
     pub(crate) fn nqp_getcomp(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let name = args
@@ -135,7 +160,12 @@ impl Interpreter {
         // rakudo registers its compiler under `Raku` alone; the old `perl6`
         // name that sandboxes still try as a fallback answers null there too.
         if name != "Raku" {
-            return Ok(Value::NIL);
+            return Ok(self
+                .repl_compiler
+                .bound_compilers
+                .get(&name)
+                .cloned()
+                .unwrap_or(Value::NIL));
         }
         if let Some(compiler) = &self.repl_compiler.compiler {
             return Ok(compiler.clone());
