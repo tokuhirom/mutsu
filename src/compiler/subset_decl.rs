@@ -2,6 +2,20 @@
 //! a `my $x where PRED` declaration desugars to).
 
 use super::*;
+use crate::ast_visit::{Visit, walk_expr};
+
+/// Whether an expression names a type (a bare `Foo`), which resolves through
+/// the declaring scope's lexical imports and aliases.
+struct TypeNameScan(bool);
+
+impl<'ast> Visit<'ast> for TypeNameScan {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if matches!(expr, Expr::BareWord(_)) {
+            self.0 = true;
+        }
+        walk_expr(self, expr);
+    }
+}
 
 impl Compiler {
     /// Emit the registration of `stmt` (a `Stmt::SubsetDecl`).
@@ -21,8 +35,14 @@ impl Compiler {
                 ..
             } => {
                 let is_closure = Self::is_closure_predicate(pred);
-                let with_closure =
-                    is_closure && !self.decl_time_expr_free_var_syms(pred).is_empty();
+                // A bare type name in the predicate (`where $_ ~~ Resolution`)
+                // may be an import of the declaring scope, which the checker
+                // -- running in the caller's scope -- cannot see; close over
+                // the declaration scope for it as well.
+                let mut names = TypeNameScan(false);
+                names.visit_expr(pred);
+                let with_closure = is_closure
+                    && (names.0 || !self.decl_time_expr_free_var_syms(pred).is_empty());
                 // `.^refinement` needs the predicate as a callable. A code
                 // literal is that already; anything else (`where /a/`) is
                 // wrapped as a block that smartmatches the value, as rakudo

@@ -166,7 +166,7 @@ impl Interpreter {
         let role_id = mixins
             .get(MetaNs::RoleId.str_key_for_str(role_name))
             .and_then(|value| match value.view() {
-                ValueView::Int(id) if id > 0 => Some(id as u64),
+                ValueView::Int(id) if id != 0 => Some(id as u64),
                 _ => None,
             });
         if let Some(role_id) = role_id
@@ -199,7 +199,7 @@ impl Interpreter {
         let role_id = mixins
             .get(MetaNs::RoleId.str_key_for_str(role_name))
             .and_then(|value| match value.view() {
-                ValueView::Int(id) if id > 0 => Some(id as u64),
+                ValueView::Int(id) if id != 0 => Some(id as u64),
                 _ => None,
             });
         let registry = self.registry();

@@ -199,7 +199,7 @@ impl MixinOverrides {
     fn role_identity(&self, owner: &str) -> String {
         self.get(MetaNs::RoleId.str_key_for_str(owner))
             .and_then(|value| match value.view() {
-                ValueView::Int(id) if id > 0 => Some(id.to_string()),
+                ValueView::Int(id) if id != 0 => Some((id as u64).to_string()),
                 _ => None,
             })
             .unwrap_or_else(|| owner.to_string())
