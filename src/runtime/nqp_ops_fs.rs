@@ -29,6 +29,39 @@ fn operand(args: &[Value], i: usize) -> Value {
     args.get(i).cloned().unwrap_or(Value::NIL)
 }
 
+/// How many operands each op of this table and of `nqp_ops_sys` takes.
+/// MoarVM's ops have a fixed operand count, and Rakudo rejects a call with
+/// another count at compile time; a missing operand must never be read as a
+/// default, since an empty path resolves to the cwd (`nqp::chmod()` would
+/// chmod it to 0).
+// Cost: O(1).
+pub(super) fn operand_count(op: &str) -> Option<usize> {
+    Some(match op {
+        "getpid" | "getppid" | "execname" | "cpucores" | "freemem" | "totalmem" | "uname"
+        | "getsignals" | "getenvhash" | "backendconfig" | "cwd" => 0,
+        "exit" | "sleep" | "decodelocaltime" | "print" | "say" | "flushfh" | "tellfh" | "eoffh"
+        | "filenofh" | "getport" | "chdir" | "rmdir" | "unlink" | "fileexecutable"
+        | "filewritable" => 1,
+        "writefh" | "mkdir" | "rename" | "copy" | "link" | "symlink" | "chmod" | "stat_time"
+        | "lstat_time" => 2,
+        "seekfh" | "chown" => 3,
+        _ => return None,
+    })
+}
+
+/// Rakudo's compile-time error for an op called with the wrong operand
+/// count; `None` when the count is right (or `op` is not one of these).
+// Cost: O(1).
+pub(super) fn operand_count_error(op: &str, args: &[Value]) -> Option<RuntimeError> {
+    let want = operand_count(op)?;
+    (args.len() != want).then(|| {
+        RuntimeError::new(format!(
+            "Arg count {} doesn't equal required operand count {want} for op '{op}'",
+            args.len()
+        ))
+    })
+}
+
 /// A path op's result: its path operand on success, else MoarVM's error.
 fn path_result(args: &[Value], r: Result<(), String>) -> Result<Value, RuntimeError> {
     r.map(|()| operand(args, 0)).map_err(RuntimeError::new)
@@ -42,6 +75,9 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if let Some(err) = operand_count_error(op, args) {
+            return Some(Err(err));
+        }
         Some(match op {
             // -- standard output --
             // nqp::print($s) / nqp::say($s): write to the PROCESS stdout

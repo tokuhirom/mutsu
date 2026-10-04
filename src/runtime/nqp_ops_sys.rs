@@ -27,6 +27,9 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if let Some(err) = super::nqp_ops_fs::operand_count_error(op, args) {
+            return Some(Err(err));
+        }
         Some(match op {
             // -- processes --
             // Cost: O(1).

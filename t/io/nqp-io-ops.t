@@ -4,7 +4,7 @@ use nqp;
 # The file-handle and filesystem nqp:: ops (#11501). Expected values and
 # error messages were checked against rakudo.
 
-plan 42;
+plan 44;
 
 my $dir = $*TMPDIR.add("mutsu-nqp-io-ops-{$*PID}");
 $dir.mkdir;
@@ -106,3 +106,10 @@ sub dies-with(&code, $message, $desc) {
     is nqp::fileexecutable($missing), 0, 'fileexecutable of a missing path';
     isa-ok nqp::stat_time($file, nqp::const::STAT_MODIFYTIME), Num, 'stat_time answers a Num';
 }
+
+# A path op called without its operands is an error, never a default: an
+# empty path would resolve to the cwd (`nqp::chmod()` used to chmod it to 0).
+try EVAL 'use nqp; nqp::chmod()';
+ok $!.message.contains('required operand count 2'), 'nqp::chmod() with no operands is rejected';
+try EVAL 'use nqp; nqp::mkdir("x")';
+ok $!.message.contains('required operand count 2'), 'nqp::mkdir with one operand is rejected';
