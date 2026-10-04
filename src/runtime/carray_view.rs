@@ -18,7 +18,9 @@
 //! back to C) and the element encoding of the type's `.^array_type` under
 //! [`VIEW_ATTR`]. The `nqp::` element ops reach it through [`CArrayView`].
 //! It has no length: like MoarVM's, `nqp::elems` on it dies, and a negative
-//! index has no end to count from.
+//! index has no end to count from. A reference-element CArray (`CArray[Str]`,
+//! `CArray[Pointer]`) views an array of addresses instead, through
+//! `carray_ref`'s slot logic (`install_ref_view`).
 
 use super::*;
 use crate::value::ElemKind;
@@ -128,13 +130,21 @@ impl Interpreter {
                     Ok(elem) => elem,
                     Err(e) => return Some(Err(e)),
                 };
-                let Some((width, kind)) = elem.and_then(|e| self.native_elem_encoding(&e)) else {
-                    // TODO: a reference-element CArray (`CArray[Str]`,
-                    // `CArray[Pointer]`) needs `carray_ref`'s child table over
-                    // C-owned addresses; only native numbers view C memory yet.
+                let Some(elem) = elem else {
                     return Some(Err(RuntimeError::new(
-                        "nativecast: only a CArray of native numbers can view C memory",
+                        "nativecast: a CArray type without an element type cannot view C memory",
                     )));
+                };
+                let Some((width, kind)) = self.native_elem_encoding(&elem) else {
+                    // A reference element (`CArray[Str]`, `CArray[Pointer]`,
+                    // a CStruct class): the C memory is an array of
+                    // addresses, read and written through `carray_ref`'s
+                    // slot logic.
+                    crate::runtime::carray_ref::install_ref_view(&attributes, elem, addr);
+                    return Some(match mixins {
+                        Some(mixins) => self.compose_mixin_type_roles_unbuilt(instance, mixins),
+                        None => Ok(instance),
+                    });
                 };
                 attributes.insert(
                     VIEW_ATTR.to_string(),

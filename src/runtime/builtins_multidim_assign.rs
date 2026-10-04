@@ -195,6 +195,22 @@ impl Interpreter {
         } else {
             current
         };
+        // An object that implements the subscript protocol itself (a class
+        // with its own ASSIGN-POS, a `CArray[T]` mixin) takes the store through
+        // it, as rakudo does; the accessor's container paths below would
+        // replace it with a fresh aggregate. The bracket form is not passed
+        // down, so an Int index is the positional one.
+        if !is_bind
+            && let Some(result) = self.assign_through_subscript_protocol(
+                &current,
+                &index,
+                &value,
+                matches!(index.view(), ValueView::Int(_)),
+            )
+        {
+            result?;
+            return Ok(value);
+        }
         // A hash-entry location (vivified when empty) is stored into in place
         // (#11355); see `rw_location_container`.
         let (current, in_place) =

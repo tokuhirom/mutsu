@@ -1302,6 +1302,13 @@ fn marshal_carray_arg(
     if let Some(node) = buf_storage_node(&resolve_arg(raw)) {
         return Ok((Type::pointer(), storage_arg(node)));
     }
+    // Anything else that is defined is not an array C can be handed: refuse it
+    // (#11529). Building an empty per-call buffer for it instead passed C a
+    // dangling non-NULL pointer, and a callee that read through it crashed.
+    // Checked before the element type, which such an argument cannot supply.
+    let Some(arr) = resolve_array_value(raw) else {
+        return Err(not_representable("CArray", raw));
+    };
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags
     // the array with its element type).
@@ -1309,12 +1316,6 @@ fn marshal_carray_arg(
         .elem
         .or_else(|| carray_value_elem_type(raw))
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
-    // Anything else that is defined is not an array C can be handed: refuse it
-    // (#11529). Building an empty per-call buffer for it instead passed C a
-    // dangling non-NULL pointer, and a callee that read through it crashed.
-    let Some(arr) = resolve_array_value(raw) else {
-        return Err(not_representable("CArray", raw));
-    };
     let list = arr
         .with_array_inplace(|data, _| data.items().to_vec())
         .unwrap_or_default();

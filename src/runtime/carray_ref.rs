@@ -63,6 +63,51 @@ pub(crate) fn install_ref_storage(attrs: &InstanceAttrs, elem: Value) {
     attrs.insert(of_key(), elem);
 }
 
+/// The attribute marking reference-element storage as a **view** of C memory:
+/// an unmanaged CArray `nativecast` made over an address (see
+/// `carray_view`). Its slots are the pointer-width words at the object's
+/// `address`, not an owned address table.
+// Cost: O(1).
+fn view_key() -> Symbol {
+    static KEY: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("carray-view"));
+    *KEY
+}
+
+/// Make `attrs` a reference-element view of element type `elem` over the C
+/// array at `addr` (the instance's `address`).
+// Cost: O(1).
+pub(crate) fn install_ref_view(attrs: &InstanceAttrs, elem: Value, addr: usize) {
+    attrs.insert(Symbol::intern("address"), Value::int(addr as i64));
+    attrs.insert(view_key(), Value::TRUE);
+    attrs.insert(children_key(), Value::array(Vec::new()));
+    attrs.insert(keep_key(), Value::array(Vec::new()));
+    attrs.insert(of_key(), elem);
+}
+
+/// The base address of a reference-element view, `None` for owned storage.
+// Cost: O(1).
+fn view_base(attrs: &InstanceAttrs) -> Option<usize> {
+    let map = attrs.as_map();
+    map.get(view_key())?;
+    usize::try_from(map.get("address")?.as_int()?).ok()
+}
+
+/// The address slot `idx` of a view holds, read from the C memory.
+// Cost: O(1).
+fn view_slot(base: usize, idx: usize) -> usize {
+    // SAFETY: `nativecast` vouched that an array of pointers lives at `base`;
+    // an index past its end is undefined behaviour in Rakudo too, which is
+    // the trust every NativeCall cast gets (`carray_view` module docs).
+    unsafe { std::ptr::read_unaligned((base as *const usize).wrapping_add(idx)) }
+}
+
+/// Store `addr` in slot `idx` of a view, in the C memory.
+// Cost: O(1).
+fn set_view_slot(base: usize, idx: usize, addr: usize) {
+    // SAFETY: as in `view_slot`; the memory is the C array the cast named.
+    unsafe { std::ptr::write_unaligned((base as *mut usize).wrapping_add(idx), addr) }
+}
+
 /// The attributes of `target` when it is a reference-element CArray.
 // Cost: O(1).
 pub(crate) fn ref_attrs(target: &Value) -> Option<crate::gc::Gc<InstanceAttrs>> {
@@ -147,9 +192,12 @@ impl Interpreter {
                 "Cannot access negative index {idx} of a CArray"
             )));
         };
-        let addr = match value_buf::buf_elem_at(attrs, idx) {
-            Some(slot) => crate::runtime::to_int(&slot) as usize,
-            None => return Ok(elem),
+        let addr = match view_base(attrs) {
+            Some(base) => view_slot(base, idx),
+            None => match value_buf::buf_elem_at(attrs, idx) {
+                Some(slot) => crate::runtime::to_int(&slot) as usize,
+                None => return Ok(elem),
+            },
         };
         let child = table_at(attrs, children_key(), idx);
         if !child.is_nil() && keep_address(&table_at(attrs, keep_key(), idx)) == Some(addr) {
@@ -209,7 +257,12 @@ impl Interpreter {
             let addr = self.carray_element_address(&val);
             (addr, Value::int(addr as i64), val.clone())
         };
-        value_buf::set_buf_elem(attrs, idx, &Value::int(addr as i64));
+        match view_base(attrs) {
+            Some(base) => set_view_slot(base, idx, addr),
+            None => {
+                value_buf::set_buf_elem(attrs, idx, &Value::int(addr as i64));
+            }
+        }
         table_set(attrs, keep_key(), idx, keep);
         table_set(attrs, children_key(), idx, child);
         Ok(val)

@@ -74,6 +74,15 @@ fn elems_key() -> Symbol {
     *KEY
 }
 
+/// Drop the element storage from a snapshot of an instance's attributes. A
+/// method frame's attribute snapshot must not hold the storage node: an extra
+/// holder makes the next in-place element write fork the node, which moves a
+/// CArray's C storage under a pointer taken earlier (ADR-0015 contract 3).
+// Cost: O(1).
+pub(crate) fn remove_storage(map: &mut AttrMap) {
+    map.remove(elems_key());
+}
+
 // ---------------------------------------------------------------------------
 // User classes that are buffers.
 // ---------------------------------------------------------------------------

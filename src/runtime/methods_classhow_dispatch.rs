@@ -299,6 +299,23 @@ impl Interpreter {
                             "__mutsu_type_name__".to_string(),
                             Value::str(new_name.clone()),
                         );
+                        // A type object (`p.^mixin(TypedPointer[t])` renamed
+                        // in upstream NativeCall's `^parameterize`) also
+                        // carries the name itself, so the interpreter-free
+                        // `.raku` / `.gist` render it (the name is not part
+                        // of the composition key, so identity is unchanged).
+                        if matches!(inner.view(), ValueView::Package(_))
+                            && !crate::gc::Gc::ptr_eq(&overrides, mixins)
+                        {
+                            // SAFETY: as above -- an aliased in-place insert
+                            // into the type object's own overrides node; no
+                            // borrow into it is live and nothing re-enters.
+                            let own = unsafe { crate::gc::gc_contents_mut(mixins) };
+                            own.insert(
+                                "__mutsu_type_name__".to_string(),
+                                Value::str(new_name.clone()),
+                            );
+                        }
                     }
                     ValueView::Package(name) => {
                         let resolved = name.resolve();

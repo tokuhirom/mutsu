@@ -5582,6 +5582,21 @@ impl Interpreter {
             return Ok(());
         }
 
+        // An object that implements the subscript protocol itself, reached
+        // through an expression (`get()[2] = 7`, `$box.c[1] = 5`): rakudo
+        // calls its ASSIGN-POS / ASSIGN-KEY, as the named-variable op does,
+        // instead of the generic path replacing the object with a fresh
+        // aggregate that nothing holds (#11203: upstream NativeCall's
+        // `CArray[T]` is such an object).
+        if !was_bind
+            && let Some(result) =
+                self.assign_through_subscript_protocol(&target, &idx, &val, is_positional)
+        {
+            result?;
+            self.stack.push(val);
+            return Ok(());
+        }
+
         // A `CArray[T]` *native handle* produced by an expression -- a sub
         // call, a method call, an attribute accessor -- rather than bound to
         // a variable (`get()[2] = 7`, `$b.c[1] = 5`). `target` here is
