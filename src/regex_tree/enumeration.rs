@@ -193,7 +193,18 @@ impl Parser {
                 self.pos += 1;
                 return Some(elements);
             }
-            let element = if ch == '\\' {
+            let element = if ch == '\\'
+                && let Some(space) = self
+                    .chars
+                    .get(self.pos + 1)
+                    .copied()
+                    .filter(|c| c.is_whitespace())
+            {
+                // `[\ ]`: an escaped whitespace character is that character
+                // here, though outside a class it is an "unspace" error.
+                self.pos += 2;
+                EnumerationElement::Character(space)
+            } else if ch == '\\' {
                 self.parse_enumeration_escape()?
             } else {
                 // `-` is literal only at an edge: `a-z` is rakudo's

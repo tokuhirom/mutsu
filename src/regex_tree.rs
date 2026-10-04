@@ -216,6 +216,10 @@ pub(crate) enum RegexNode {
     AnchorRightWordBoundary,
     /// `<(`: the match starts here.
     MatchFrom,
+    /// `<?>`: an assertion that always succeeds, matching nothing.
+    AssertionPass,
+    /// `<!>`: an assertion that always fails.
+    AssertionFail,
     /// `)>`: the match ends here.
     MatchTo,
     CharClass(CharClassAtom),
@@ -525,7 +529,9 @@ impl RegexTree {
                 RegexNode::AnchorLeftWordBoundary
                 | RegexNode::AnchorRightWordBoundary
                 | RegexNode::MatchFrom
-                | RegexNode::MatchTo => None,
+                | RegexNode::MatchTo
+                | RegexNode::AssertionPass
+                | RegexNode::AssertionFail => None,
                 RegexNode::AnchorEndOfLine => Some(vec![token(
                     crate::runtime::RegexAtom::EndOfLine,
                     crate::runtime::RegexQuant::One,
@@ -951,6 +957,8 @@ impl RegexNode {
             | Self::AnchorRightWordBoundary
             | Self::MatchFrom
             | Self::MatchTo
+            | Self::AssertionPass
+            | Self::AssertionFail
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => {}
@@ -997,6 +1005,8 @@ impl RegexNode {
             | Self::AnchorRightWordBoundary
             | Self::MatchFrom
             | Self::MatchTo
+            | Self::AssertionPass
+            | Self::AssertionFail
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
@@ -1043,6 +1053,8 @@ impl RegexNode {
             | Self::AnchorRightWordBoundary
             | Self::MatchFrom
             | Self::MatchTo
+            | Self::AssertionPass
+            | Self::AssertionFail
             | Self::CharClass(_)
             | Self::CharClassAssertion(_)
             | Self::InternalModifier { .. } => false,
@@ -1075,6 +1087,8 @@ impl RegexNode {
             Self::NamedLookaround { assertion, .. } => assertion.contains_anchor(),
             Self::MatchFrom
             | Self::MatchTo
+            | Self::AssertionPass
+            | Self::AssertionFail
             | Self::Literal(_)
             | Self::Quote(_)
             | Self::Subrule { .. }
@@ -1251,6 +1265,8 @@ impl RegexNode {
             Self::AnchorLeftWordBoundary => "<<".to_string(),
             Self::AnchorRightWordBoundary => ">>".to_string(),
             Self::MatchFrom => "<(".to_string(),
+            Self::AssertionPass => "<?>".to_string(),
+            Self::AssertionFail => "<!>".to_string(),
             Self::MatchTo => ")>".to_string(),
             Self::CharClass(atom) => atom.to_source(),
             Self::CharClassAssertion(elements) => enumeration::assertion_source(elements),
@@ -1576,7 +1592,17 @@ struct Parser {
 
 impl Parser {
     fn parse_alternation(&mut self, stops: &[char], top_level: bool) -> Option<RegexNode> {
-        let mut branches = vec![self.parse_sequence(stops, false)?];
+        // A leading `|` / `||` (`[ | a | b ]`, a grammar's one-alternative-
+        // per-line layout) opens no empty branch; rakudo drops it.
+        let before_leading = self.pos;
+        self.skip_whitespace();
+        let leading_sequential = if self.consume_if('|') {
+            Some(self.consume_if('|'))
+        } else {
+            self.pos = before_leading;
+            None
+        };
+        let mut branches = vec![self.parse_sequence(stops, leading_sequential == Some(true))?];
         let mut sequential_operators = Vec::new();
         while self.consume_if('|') {
             let sequential = self.consume_if('|');
@@ -1654,18 +1680,18 @@ impl Parser {
             // groups and later atoms retain their ordinary non-sequential
             // interpolation shape.
             sequential_interpolation = false;
-            // `a ** 2` may put whitespace before the `**`; rakudo then wraps the
-            // atom in `WithWhitespace`.
+            // `a ** 2` / `<w> +` may put whitespace before the quantifier;
+            // rakudo then wraps the atom in `WithWhitespace`. A bare `*`, `+`
+            // or `?` can only be a quantifier there, never an atom.
             let before_quantifier = self.pos;
             self.skip_whitespace();
-            let spaced_range = self.pos != before_quantifier
-                && self.chars.get(self.pos) == Some(&'*')
-                && self.chars.get(self.pos + 1) == Some(&'*');
-            if !spaced_range {
+            let spaced_quantifier = self.pos != before_quantifier
+                && matches!(self.chars.get(self.pos), Some('*' | '+' | '?'));
+            if !spaced_quantifier {
                 self.pos = before_quantifier;
             }
             let quantifier = self.parse_quantifier();
-            if spaced_range && quantifier.is_none() {
+            if spaced_quantifier && quantifier.is_none() {
                 return None;
             }
             if let Some(mut quantifier) = quantifier {
@@ -1687,13 +1713,16 @@ impl Parser {
                     let quantified = quantified(
                         RegexNode::Literal(last.to_string()),
                         quantifier,
-                        spaced_range,
+                        spaced_quantifier,
                     );
                     // The prefix took the whitespace written before it.
                     nodes.push(spaced(quantified, spaced_separator));
                     continue;
                 }
-                atom = spaced(quantified(atom, quantifier, spaced_range), spaced_separator);
+                atom = spaced(
+                    quantified(atom, quantifier, spaced_quantifier),
+                    spaced_separator,
+                );
             }
             self.push_term(&mut nodes, atom, saw_whitespace);
         }
@@ -1913,6 +1942,16 @@ impl Parser {
             }
             _ => (false, false, true),
         };
+
+        // `<?>` / `<!>`: the bare assertions that always pass / fail.
+        if explicit && self.chars.get(self.pos) == Some(&'>') {
+            self.pos += 1;
+            return Some(if negated {
+                RegexNode::AssertionFail
+            } else {
+                RegexNode::AssertionPass
+            });
+        }
 
         // Predicate blocks are source-representable in RakuAST and the
         // existing matcher already evaluates them inline. Interpolated blocks
@@ -3138,6 +3177,8 @@ fn contains_subrule(node: &RegexNode) -> bool {
         | RegexNode::AnchorRightWordBoundary
         | RegexNode::MatchFrom
         | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => false,
@@ -3183,6 +3224,8 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::AnchorRightWordBoundary
         | RegexNode::MatchFrom
         | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail
         | RegexNode::InternalModifier { .. } => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
             is_supported_lookaround_body(assertion)

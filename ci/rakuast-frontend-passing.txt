@@ -1042,10 +1042,12 @@ t/exceptions/where-clause-exception-and-defaulted-param-dispatch.t
 t/exceptions/x-io-link-message.t
 t/exceptions/x-io-resolve-notachild.t
 t/exceptions/x-wrapper-role.t
+t/grammar/actions-backtracked-reduce-order.t
 t/grammar/append-one-arg-rule.t
 t/grammar/class-with-rule-is-not-a-grammar-mro.t
 t/grammar/dispatch-token-cross-stack-nesting.t
 t/grammar/grammar-actions-fallback.t
+t/grammar/grammar-actions-positional-group.t
 t/grammar/grammar-alias-action-fires-once.t
 t/grammar/grammar-alias-capture-identity.t
 t/grammar/grammar-backtracked-action-replay.t
@@ -1055,9 +1057,13 @@ t/grammar/grammar-capture-alias-across-backtracking.t
 t/grammar/grammar-composite-class-overridden-builtin.t
 t/grammar/grammar-frugal-ratchet-sigspace.t
 t/grammar/grammar-inline-adverb-bracket-scope.t
+t/grammar/grammar-instance-parse.t
 t/grammar/grammar-make-named-argument.t
 t/grammar/grammar-meta-mro.t
+t/grammar/grammar-method-subrule-dynvar-write.t
+t/grammar/grammar-named-capture.t
 t/grammar/grammar-named-cursor.t
+t/grammar/grammar-nested-action-dispatch.t
 t/grammar/grammar-optional-ordered-alternative.t
 t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
@@ -1065,6 +1071,7 @@ t/grammar/grammar-rule-args.t
 t/grammar/grammar-rule-separated-quantifier-whitespace.t
 t/grammar/grammar-sibling-implicit-core-parent.t
 t/grammar/grammar-sigilless-alias-silent-action.t
+t/grammar/grammar-silent-action-order.t
 t/grammar/grammar-silent-subrule-action-gate.t
 t/grammar/grammar-token-instance-method.t
 t/grammar/grammar-user-highwater.t
@@ -1072,6 +1079,7 @@ t/grammar/my-token-visible-from-methods.t
 t/grammar/regex-crosspkg-charclass-token.t
 t/grammar/regex-grammar-method-leaf.t
 t/grammar/regex-negated-token-class-multichar.t
+t/grammar/regex-rule-separated-quantifier-backtrack.t
 t/grammar/rule-sigspace-charclass-brace.t
 t/grammar/rule-sigspace-escaped-brace.t
 t/grammar/slurpy-single-argument-rule.t
@@ -1992,6 +2000,7 @@ t/oo/method/compiled-method-attr-incdec.t
 t/oo/method/container-store-method.t
 t/oo/method/definite-type-method-assign-v6d.t
 t/oo/method/destroy-plain-method.t
+t/oo/method/dot-method-subrule-with-args.t
 t/oo/method/dynamic-method.t
 t/oo/method/emit-method.t
 t/oo/method/empty-body-method-compiled.t
@@ -2137,6 +2146,7 @@ t/oo/method/self-term-in-method-closure.t
 t/oo/method/set-op-after-method.t
 t/oo/method/sprintf-method-form-arg-count.t
 t/oo/method/sprintf-method-form-flatten.t
+t/oo/method/str-iteration-method-rows.t
 t/oo/method/str-search-method-rows.t
 t/oo/method/str-sprintf-method.t
 t/oo/method/submethod-and-our-sub-same-name.t
@@ -2522,6 +2532,7 @@ t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-stored-interpolation.t
+t/rakuast/rakuast-regex-tree-gaps.t
 t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-parameterization-traits.t
@@ -2611,6 +2622,7 @@ t/regex/match/pair-smartmatch.t
 t/regex/match/positional-match-index-coercion.t
 t/regex/match/quanthash-mutability-smartmatch.t
 t/regex/match/regex-alternation-untaken-branch-list-capture.t
+t/regex/match/regex-block-stale-captures.t
 t/regex/match/regex-capture-marker-in-alternation.t
 t/regex/match/regex-capture-marker-scoped-to-group.t
 t/regex/match/regex-capture-markers-before-alternation.t
@@ -2628,6 +2640,8 @@ t/regex/match/regex-optional-subrule-zero-capture.t
 t/regex/match/regex-quantified-capture-single-iteration.t
 t/regex/match/regex-range-quant-no-capture.t
 t/regex/match/regex-scoped-ignoremark-match-from.t
+t/regex/match/regex-sep-quantified-capture.t
+t/regex/match/regex-sep-quantifier-captures.t
 t/regex/match/regex-separator-quant-capture.t
 t/regex/match/regex-tree-array-captures.t
 t/regex/match/regex-tree-captures.t
@@ -2651,6 +2665,7 @@ t/regex/monkey-see-no-eval-regex-code.t
 t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
 t/regex/regex-adverb-error.t
+t/regex/regex-alias-quantified-positional.t
 t/regex/regex-alias-subrule-quantified.t
 t/regex/regex-aliased-group-subcap.t
 t/regex/regex-backslash-negated-classes.t
@@ -2687,7 +2702,9 @@ t/regex/regex-quantified-scalar-interpolation.t
 t/regex/regex-repeat-zero.t
 t/regex/regex-repeated-optional-name-list.t
 t/regex/regex-scan-prefilter-chain.t
+t/regex/regex-separator-after-prefix.t
 t/regex/regex-separator-leading-empty.t
+t/regex/regex-separator-zero-iterations-slots.t
 t/regex/regex-spaces-in-bare-range.t
 t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
@@ -2754,6 +2771,7 @@ t/regex/syntax/regex-frugal-quantifier-nocap-matcher.t
 t/regex/syntax/regex-frugal-ratchet.t
 t/regex/syntax/regex-frugal-separated-quantifiers.t
 t/regex/syntax/regex-ignorecase-charclass-folds.t
+t/regex/syntax/regex-lookahead-literal-seqalt.t
 t/regex/syntax/regex-octal-charclass-range.t
 t/regex/syntax/regex-quantifier-range-atom-boundary.t
 t/regex/syntax/regex-sep-quantifier-prefixed.t

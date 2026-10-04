@@ -241,6 +241,8 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
         | RegexNode::AnchorRightWordBoundary
         | RegexNode::MatchFrom
         | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => {}

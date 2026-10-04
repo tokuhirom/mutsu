@@ -381,6 +381,8 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
         | RegexNode::AnchorRightWordBoundary
         | RegexNode::MatchFrom
         | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => {}
