@@ -1,4 +1,4 @@
-# The HLL-specific `nqp::` ops and `nqp::force_gc`
+# The HLL-specific `nqp::` ops, `force_gc`, `freshcoderef` and `markcodestatic`
 
 The ten HLL-specific `nqp::` ops are implemented (#11504):
 
@@ -22,5 +22,13 @@ calls that collection makes due. It is the same routine as
 `$*VM.request-garbage-collection`, which was moved out of the method body so
 both callers share it.
 
-The `nqp::` coverage table now counts 493 of 577 ops; the HLL-specific family
+Two code-object ops from the serialization-context family came along:
+
+- `freshcoderef` returns a new code object with the same body, captures and
+  name. It is a different object from the original (not `eqaddr`), as in
+  Rakudo.
+- `markcodestatic` answers null. Its only job is to tell precompilation that
+  a code object is not a closure, and mutsu does not serialize compiled code.
+
+The `nqp::` coverage table now counts 495 of 577 ops; the HLL-specific family
 is complete at 13 of 13.

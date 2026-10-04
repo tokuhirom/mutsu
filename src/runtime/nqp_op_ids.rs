@@ -98,7 +98,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 457] = [
+static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -286,6 +286,7 @@ static NQP_OPS: [(&str, NqpOpTable); 457] = [
     ("flushfh", NqpOpTable::Fs),
     ("force_gc", NqpOpTable::Builtin),
     ("freemem", NqpOpTable::Sys),
+    ("freshcoderef", NqpOpTable::Native),
     ("fromI_I", NqpOpTable::Native),
     ("fromnum_I", NqpOpTable::Native),
     ("fromstr_I", NqpOpTable::Native),
@@ -397,6 +398,7 @@ static NQP_OPS: [(&str, NqpOpTable); 457] = [
     ("log_n", NqpOpTable::Value),
     ("lstat", NqpOpTable::Value),
     ("lstat_time", NqpOpTable::Fs),
+    ("markcodestatic", NqpOpTable::Native),
     ("matchuniprop", NqpOpTable::Text),
     ("mkdir", NqpOpTable::Fs),
     ("mod_I", NqpOpTable::Value),

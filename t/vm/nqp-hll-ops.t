@@ -1,12 +1,13 @@
 use Test;
 use nqp;
 
-# The HLL-Specific nqp:: ops and nqp::force_gc (#11504). Expected answers are Rakudo 2026.09's
+# The HLL-Specific nqp:: ops, nqp::force_gc and the code-object
+# serialization-context ops freshcoderef / markcodestatic (#11504). Expected answers are Rakudo 2026.09's
 # except `hlllist` / `hllhash`: Rakudo answers its BOOTArray / BOOTHash VM
 # types, mutsu the type of what its own `nqp::list` / `nqp::hash` build (see
 # #11553 for the representation decision).
 
-plan 14;
+plan 17;
 
 is nqp::hllboxtype_i().^name, 'Int', 'hllboxtype_i';
 is nqp::hllboxtype_n().^name, 'Num', 'hllboxtype_n';
@@ -28,6 +29,14 @@ is nqp::hllhash().^name, nqp::hash().^name, 'hllhash is the type nqp::hash build
     D.new for ^20;
     ok nqp::isnull(nqp::force_gc()), 'force_gc answers null';
     ok $destroyed > 0, 'force_gc collects, and DESTROY runs';
+}
+
+{
+    my $d := nqp::getattr(-> { 42 }, Code, '$!do');
+    my $f := nqp::freshcoderef($d);
+    nok nqp::eqaddr($f, $d), 'freshcoderef makes a distinct code object';
+    is $f(), 42, '... with the same body';
+    ok nqp::isnull(nqp::markcodestatic($d)), 'markcodestatic answers null';
 }
 
 ok nqp::isnull(nqp::sethllconfig('Raku', nqp::hash())), 'sethllconfig answers null';
