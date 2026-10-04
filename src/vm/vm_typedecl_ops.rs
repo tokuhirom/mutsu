@@ -382,7 +382,11 @@ impl Interpreter {
                     // not resolve back to the class; a name with no core type
                     // (`class Foo is Foo`) stays a self-inheritance error.
                     let written = crate::qualified::type_capture_name(&p).unwrap_or(&p);
-                    if written == qualified_name
+                    // A `my class DateTime is DateTime` already resolves its
+                    // parent to the outer type through its mangled storage
+                    // name (`lexical_class_shadows_package_type`).
+                    if !*is_lexical
+                        && written == qualified_name
                         && !does_parents.contains(&p)
                         && crate::builtin_types::catalog::builtin_type_info(written).is_some()
                     {
