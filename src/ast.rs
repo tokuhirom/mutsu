@@ -455,6 +455,21 @@ impl ParamDef {
                 && !self.named
                 && !self.is_invocant
                 && self.sub_signature.is_none())
+            || self.is_plain_capture()
+    }
+
+    /// A bare `|c` capture parameter. It stores the caller's scalar containers
+    /// (#11295), so like an `is rw` parameter it needs the call's exit-time
+    /// writeback: a method that only forwards `|c` to an `is rw` parameter
+    /// (`method new(|c) { self.bless!add: |c }`) must not skip it.
+    pub(crate) fn is_plain_capture(&self) -> bool {
+        self.slurpy
+            && self.sigilless
+            && !self.onearg
+            && !self.double_slurpy
+            && !self.named
+            && !self.is_invocant
+            && self.sub_signature.is_none()
     }
 
     pub(crate) fn is_capture_subsignature(&self) -> bool {

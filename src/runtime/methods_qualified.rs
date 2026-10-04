@@ -736,6 +736,15 @@ impl Interpreter {
             }
         }
 
+        // `self.Hash::BIND-KEY(...)` / `$o.Map::AT-KEY(...)` on a Hash/Map
+        // subclass: the Associative state lives in `__mutsu_hash_storage`, so
+        // run the base method on it rather than on a storage-less `Hash`.
+        if Self::is_associative_base(qualifier)
+            && let Some(res) = self.try_hash_storage_delegate_qualified(target, actual_method, &args)
+        {
+            return Some(res);
+        }
+
         // Last resort: the qualifier is a NATIVE builtin ancestor (verified in the
         // MRO above) whose method is Rust-implemented rather than a user method —
         // e.g. `self.IO::Path::slurp` from a class that `is IO::Path`. Dispatch it
