@@ -1,7 +1,7 @@
 use Test;
 
 # Intl::CLDR: a method taking `|c` and forwarding it to an `is rw` sub.
-plan 3;
+plan 2;
 
 sub bump($x is rw) { $x++ }
 class K {
