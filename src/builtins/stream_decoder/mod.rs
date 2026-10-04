@@ -287,4 +287,5 @@ fn ends_on_unit_boundary(s: &str, at: usize, len: usize) -> bool {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;
