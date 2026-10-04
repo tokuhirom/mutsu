@@ -39,7 +39,7 @@ fn no_row_is_registered_twice() {
     let mut seen = std::collections::HashSet::new();
     for row in rows() {
         assert!(
-            seen.insert((row.owner, row.name)),
+            seen.insert((row.owner, row.name, row.arity)),
             "{}.{} has two rows",
             row.owner,
             row.name
@@ -55,7 +55,7 @@ fn every_row_is_reached_and_answers() {
     for row in rows() {
         let mut reached = false;
         for shape in SHAPES {
-            let Some(found) = lookup(shape, Symbol::intern(row.name)) else {
+            let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
                 continue;
             };
             if !std::ptr::eq(found, row) {
@@ -81,17 +81,20 @@ fn every_row_is_reached_and_answers() {
 #[test]
 fn lookup_walks_the_mro() {
     let elems = Symbol::intern("elems");
-    assert_eq!(lookup(DispatchShape::Array, elems).unwrap().owner, "List");
-    assert_eq!(lookup(DispatchShape::List, elems).unwrap().owner, "List");
-    assert_eq!(lookup(DispatchShape::Hash, elems).unwrap().owner, "Map");
-    assert!(lookup(DispatchShape::Str, elems).is_none());
-    let numerator = Symbol::intern("numerator");
-    assert!(lookup(DispatchShape::Rat, numerator).is_some());
-    assert!(lookup(DispatchShape::Num, numerator).is_none());
-    // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
-    assert!(lookup(DispatchShape::Int, numerator).is_none());
     assert_eq!(
-        lookup(DispatchShape::FatRat, numerator).unwrap().owner,
+        lookup(DispatchShape::Array, elems, 0).unwrap().owner,
+        "List"
+    );
+    assert_eq!(lookup(DispatchShape::List, elems, 0).unwrap().owner, "List");
+    assert_eq!(lookup(DispatchShape::Hash, elems, 0).unwrap().owner, "Map");
+    assert!(lookup(DispatchShape::Str, elems, 0).is_none());
+    let numerator = Symbol::intern("numerator");
+    assert!(lookup(DispatchShape::Rat, numerator, 0).is_some());
+    assert!(lookup(DispatchShape::Num, numerator, 0).is_none());
+    // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
+    assert!(lookup(DispatchShape::Int, numerator, 0).is_none());
+    assert_eq!(
+        lookup(DispatchShape::FatRat, numerator, 0).unwrap().owner,
         "FatRat"
     );
 }
