@@ -316,36 +316,16 @@ impl Interpreter {
             // `.created`/`.modified`/`.accessed`/`.changed` return an `Instant` in
             // Raku, and fail with `X::IO::DoesNotExist` (a Failure) on a missing
             // path — not a plain Int / generic error (roast S32-io/file-tests.t).
-            "created" => match fs::metadata(path_buf).and_then(|meta| meta.created()) {
-                Ok(t) => Ok(Value::make_instant_from_posix(Self::system_time_to_secs(t))),
-                Err(_) => Ok(io_path_missing_failure(p, "created")),
-            },
-            "modified" => match fs::metadata(path_buf).and_then(|meta| meta.modified()) {
-                Ok(t) => Ok(Value::make_instant_from_posix(Self::system_time_to_secs(t))),
-                Err(_) => Ok(io_path_missing_failure(p, "modified")),
-            },
-            "accessed" => match fs::metadata(path_buf).and_then(|meta| meta.accessed()) {
-                Ok(t) => Ok(Value::make_instant_from_posix(Self::system_time_to_secs(t))),
-                Err(_) => Ok(io_path_missing_failure(p, "accessed")),
-            },
-            "changed" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::MetadataExt;
-                    match fs::metadata(path_buf) {
-                        Ok(meta) => Ok(Value::make_instant_from_posix(
-                            meta.ctime() as f64 + meta.ctime_nsec() as f64 / 1e9,
-                        )),
-                        Err(_) => Ok(io_path_missing_failure(p, "changed")),
-                    }
-                }
-                #[cfg(not(unix))]
-                {
-                    // On non-Unix platforms, fall back to modified time.
-                    match fs::metadata(path_buf).and_then(|meta| meta.modified()) {
-                        Ok(t) => Ok(Value::make_instant_from_posix(Self::system_time_to_secs(t))),
-                        Err(_) => Ok(io_path_missing_failure(p, "changed")),
-                    }
+            "created" | "accessed" | "modified" | "changed" => {
+                let code = match method {
+                    "created" => 5,
+                    "accessed" => 6,
+                    "modified" => 7,
+                    _ => 8,
+                };
+                match crate::runtime::nqp_stat::stat_time(path_buf, code, false) {
+                    Ok(t) => Ok(Value::make_instant_from_posix(t)),
+                    Err(_) => Ok(io_path_missing_failure(p, method)),
                 }
             }
             _ => unreachable!("io_path_stat_result called with non-stat method"),

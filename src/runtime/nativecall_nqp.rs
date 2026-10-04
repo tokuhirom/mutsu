@@ -95,7 +95,7 @@ impl Interpreter {
             // there is nothing to drop. Returns its argument, as MoarVM does.
             // Cost: O(1).
             "nativecallrefresh" => Ok(operand(args, 0)),
-            _ => return None,
+            _ => return self.call_nqp_op_sys(op, args),
         })
     }
 

@@ -54,20 +54,10 @@ impl Interpreter {
         // Version from release string
         let version = Self::parse_version_string(&release);
 
-        // Build signals list (first 32 standard POSIX signals)
-        let signal_names = [
-            "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV",
-            "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN",
-            "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS",
-        ];
-        let signals: Vec<Value> = (0..32)
-            .map(|i| {
-                if i < signal_names.len() && !signal_names[i].is_empty() {
-                    Value::str(format!("SIG{}", signal_names[i]))
-                } else {
-                    Value::NIL
-                }
-            })
+        // Signal names indexed by number, from the one signal table.
+        let signals: Vec<Value> = crate::runtime::signal_table::names_by_number()
+            .into_iter()
+            .map(|name| name.map_or(Value::NIL, Value::str_from))
             .collect();
 
         let mut attrs = HashMap::new();

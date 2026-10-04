@@ -394,7 +394,7 @@ impl Interpreter {
     /// `IO::Path` `Value` itself is still built fresh per call
     /// (`make_io_path_instance` embeds the CURRENT `$*SPEC`/`$*CWD`), only the
     /// expensive path string is cached.
-    fn cached_executable_path_string() -> &'static str {
+    pub(super) fn cached_executable_path_string() -> &'static str {
         static CACHE: OnceLock<String> = OnceLock::new();
         CACHE.get_or_init(|| {
             #[cfg(not(target_arch = "wasm32"))]

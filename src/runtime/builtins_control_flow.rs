@@ -369,6 +369,14 @@ impl Interpreter {
         {
             return self.call_sub_value(hook, vec![Value::int(code)], true);
         }
+        self.request_process_exit(code);
+        Ok(Value::NIL)
+    }
+
+    /// End the program with status `code`: the shared tail of `exit` and
+    /// `nqp::exit` (which skips the `&*EXIT` hook and, via
+    /// `ControlState::skip_end_phasers`, the END phasers).
+    pub(super) fn request_process_exit(&mut self, code: i64) {
         // An `exit` raised while the process is already exiting (an END phaser's
         // own `exit`) still unwinds, but the status was decided by the first
         // one — rakudo's `the-end-is-nigh` latch. See `finish`.
@@ -418,7 +426,6 @@ impl Interpreter {
                 std::process::exit(code as i32);
             }
         }
-        Ok(Value::NIL)
     }
 
     pub(super) fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
