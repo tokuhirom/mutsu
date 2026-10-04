@@ -796,3 +796,13 @@ pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
     }
     Err(PError::expected("unicode numeric literal"))
 }
+
+/// The Rat value of a plain decimal literal spelling (`3.5`), or `None` for any
+/// other text. RakuAST renders an imaginary literal's part through it.
+// Cost: O(n), n = length of `text`.
+pub(crate) fn decimal_literal_value(text: &str) -> Option<Value> {
+    match decimal(text) {
+        Ok(("", Expr::Literal(value))) => Some(value),
+        _ => None,
+    }
+}
