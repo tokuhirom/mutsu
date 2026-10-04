@@ -1,6 +1,6 @@
 # ADR-0135 Slice E: a left-recursive `<subrule>` call is evaluated by the
 # growing-seed loop (`subrule_seed_ends`) directly from the compiled regex
-# engine, not through the tree walk's eager producer. Rakudo has no answer to
+# engine (the tree walk it once went through is deleted). Rakudo has no answer to
 # compare with (it loops forever on left recursion), so these pin the values
 # mutsu's growing-seed evaluation has always produced, now from the compiled
 # engine.
@@ -43,6 +43,6 @@ is ~Args.parse('abb'), 'abb', 'a left-recursive call with arguments';
         say ~G.parse("1+2")
         CODE
     $proc.out.slurp(:close);
-    my $line = $proc.err.slurp(:close).lines.first(*.contains('regex-walk:')) // '';
-    like $line, /'walked=0 () bridged=0 ()'/, 'left recursion no longer bridges to the walk';
+    my $line = $proc.err.slurp(:close).lines.first(*.contains('regex-eager:')) // '';
+    like $line, /'lr-seed=' \d+/, 'left recursion is an eager call of the compiled engine';
 }

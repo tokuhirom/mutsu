@@ -112,38 +112,6 @@ impl Interpreter {
         (decls, remaining)
     }
 
-    /// Try to resolve a Named regex atom to a pre-parsed pattern for fast-path
-    /// matching. Returns Some((parsed_pattern, package)) if the Named atom
-    /// resolves to exactly one token candidate with no arguments.
-    pub(super) fn try_resolve_named_to_pattern(
-        &mut self,
-        atom: &RegexAtom,
-        pkg: Symbol,
-    ) -> Option<(std::sync::Arc<RegexPattern>, Symbol, Option<Symbol>)> {
-        let RegexAtom::Named(name) = atom else {
-            return None;
-        };
-        let spec = name.spec();
-        if !spec.arg_exprs.is_empty() {
-            return None;
-        }
-        // Memoized resolution+parse (PARSED_TOKEN_CANDIDATES); this fast path
-        // runs per quantifier iteration, so the per-call registry walk it used
-        // to do was pure overhead. None (non-static pattern) → no fast path.
-        let (candidates, _raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
-        if candidates.len() != 1 {
-            return None;
-        }
-        // A proto with one candidate: its `:sym<…>` goes on the Match, as the
-        // proto dispatch files it.
-        let (parsed, sub_pkg, sym_key) = &candidates[0];
-        Some((
-            std::sync::Arc::clone(parsed),
-            *sub_pkg,
-            sym_key.as_deref().map(Symbol::intern),
-        ))
-    }
-
     /// A regex `:my $var = EXPR;` — wherever it appears in the pattern, not
     /// only as a leading declarative-prefix modifier — is documented
     /// (raku-doc/doc/Language/regexes.rakudoc) to scope its variable "within

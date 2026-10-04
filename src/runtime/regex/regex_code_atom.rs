@@ -4,11 +4,7 @@
 //! ADR-0133).
 //!
 //! This is the one implementation of what those atoms do (ADR-0135 D4): the
-//! tree walk's single-candidate matcher and the compiled engine's `Code` /
-//! `VarDecl` ops both call it, so the two engines cannot drift on when the code
-//! runs, what it sees or what it leaves behind. Under `MUTSU_RX_DIFF=1` every
-//! call goes through `rx_code_call` (ADR-0135 D6), which records the
-//! invocation for the compiled run and replays it for the walk.
+//! compiled engine's `Code` / `VarDecl` ops call it.
 
 use super::super::*;
 
@@ -77,7 +73,8 @@ impl Interpreter {
         let saved_self = self_cursor
             .as_ref()
             .map(|cursor| self.env.insert("self".to_string(), cursor.clone()));
-        let result = self.rx_code_call(code, pos, current_caps, |interp| {
+        let result = 'run: {
+            let interp = &mut *self;
             // The text matched up to this atom — becomes `$/.Str` inside the
             // code, so `$/.lc` / `~$/` see the matched-so-far text (e.g. the
             // card grammar's `%*PLAYED{$/.lc}++` dup check).
@@ -100,7 +97,7 @@ impl Interpreter {
                 );
                 let result = outcome.value.map(|v| v.truthy()).unwrap_or(false);
                 let pass = if *negated { !result } else { result };
-                return if pass {
+                break 'run if pass {
                     let mut new_caps = RegexCaptures::default();
                     new_caps.extend_regex_vars(outcome.writes);
                     new_caps.ast = outcome.made;
@@ -135,7 +132,7 @@ impl Interpreter {
             // The block `die`d: fail the match so the engine unwinds; the
             // parked pending error is re-raised at the match entry point.
             if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                return None;
+                break 'run None;
             }
             let mut new_caps = RegexCaptures::default();
             new_caps.extend_regex_vars(outcome.writes);
@@ -145,7 +142,7 @@ impl Interpreter {
             // to the subrule's own node rather than the parent's.
             new_caps.ast = outcome.made;
             Some((pos, new_caps))
-        });
+        };
         if let Some(prev) = saved_self {
             match prev {
                 Some(prev) => self.env.insert("self".to_string(), prev),
@@ -168,9 +165,7 @@ impl Interpreter {
         pos: usize,
         current_caps: &RegexCaptures,
     ) -> Option<(usize, RegexCaptures)> {
-        self.rx_code_call(code, pos, current_caps, |interp| {
-            interp.regex_var_decl_run(code, chars, pos, current_caps)
-        })
+        self.regex_var_decl_run(code, chars, pos, current_caps)
     }
 
     fn regex_var_decl_run(
@@ -363,7 +358,8 @@ impl Interpreter {
         pos: usize,
         current_caps: &RegexCaptures,
     ) -> Option<(usize, RegexCaptures)> {
-        self.rx_code_call(code, pos, current_caps, |interp| {
+        'run: {
+            let interp = &mut *self;
             let target: String = chars.iter().collect();
             let matched_so_far: String = chars
                 [current_caps.inline_match_from().min(chars.len())..pos]
@@ -383,7 +379,7 @@ impl Interpreter {
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
                     *e.borrow_mut() = Some(Interpreter::make_security_policy_error());
                 });
-                return None;
+                break 'run None;
             }
             if let Some(pat_str) = pattern_str
                 && let Some(parsed) = interp.parse_regex(&pat_str)
@@ -394,11 +390,11 @@ impl Interpreter {
                 if let Some((end, _inner_caps)) =
                     interp.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, pkg)
                 {
-                    return Some((end, RegexCaptures::default()));
+                    break 'run Some((end, RegexCaptures::default()));
                 }
             }
             None
-        })
+        }
     }
 }
 

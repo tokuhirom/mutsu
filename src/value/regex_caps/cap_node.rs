@@ -151,11 +151,6 @@ pub(crate) struct OuterBackrefCaps {
     /// folds into its `parent`'s view, since those are the enclosing level's
     /// own captures (`ViewFold`).
     pub(crate) merge_positional: Option<(usize, usize)>,
-    /// Where the enclosing level's match began. A same-scope sub-pattern (a
-    /// `[ … ]` group, an alternative) is part of the same regex, so `$/` in a
-    /// code block inside it spans from the *enclosing* start, not from the
-    /// sub-pattern's own.
-    pub(crate) match_from: usize,
 }
 
 impl OuterBackrefCaps {

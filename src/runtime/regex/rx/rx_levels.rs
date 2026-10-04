@@ -306,7 +306,6 @@ pub(super) fn inline_level_caps(
         positional: view.positional,
         parent: None,
         merge_positional,
-        match_from: enclosing.match_from,
     };
     let mut caps = RegexCaptures {
         match_from: enclosing.match_from,

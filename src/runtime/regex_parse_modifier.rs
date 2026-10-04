@@ -227,7 +227,7 @@ impl Interpreter {
                     // way `:temp`/`:constant` do, but it does not: its assigned
                     // value lives only in the match's `regex_vars` (written by the
                     // `VarDecl` atom at match time — see
-                    // `regex_match_atom_with_capture_in_pkg`), never in `env`.
+                    // `regex_var_decl_atom`), never in `env`.
                     // Before ADR-0022 Slice 5 this went unnoticed because the
                     // LTM-measurement pass ran `:our`'s initializer for real (an
                     // ADR-0009 violation Slice 5 fixed), which happened to leave a

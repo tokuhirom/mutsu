@@ -30,7 +30,6 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
 use crate::symbol::Symbol;
 use crate::value::Value;
-use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk as walk_use};
 
 /// The program the loop is executing: the one the run started with, or the
 /// callee of the current frame.
@@ -356,9 +355,9 @@ impl Interpreter {
                     // Cost: O(n + r) plus the code's run (`regex_code_interp_parsed`),
                     // n = the subject's length, r = the result's rendered length;
                     // then O(w) to enter the yielded pattern as a frame, w = its
-                    // registers. A pattern that declines is matched up front
-                    // instead: its all-ends match, then O(c) per candidate entered,
-                    // c = the captures it adds.
+                    // registers. Outside a frame-running loop the pattern is
+                    // matched up front instead: its all-ends match, then O(c) per
+                    // candidate entered, c = the captures it adds.
                     RxOp::InterpEnds(i) => {
                         let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize]
                         else {
@@ -369,7 +368,6 @@ impl Interpreter {
                             code,
                             *list,
                             chars,
-                            pos,
                             levels.top().caps(),
                             program.atom_ic[i as usize],
                         );
@@ -399,7 +397,6 @@ impl Interpreter {
                                     continue 'run;
                                 }
                                 _ => {
-                                    walk_use(WalkUse::Leaf, "code-interp-declined");
                                     let cands = self
                                         .regex_code_interp_pattern_ends(&parsed, chars, pos, pkg);
                                     enter_cands!(cands)
@@ -448,9 +445,9 @@ impl Interpreter {
                         enter_cands!(cands)
                     }
                     // Cost: O(1) expected to resolve the callee, then O(1) to enter
-                    // its frame; a bridged call is the walk's producer, which
-                    // computes the callee's ends (`regex_match_atom_all_with_capture_opts`)
-                    // and costs O(c) per candidate entered, c = the captures it adds;
+                    // its frame; an eager call computes the callee's ends up front
+                    // (`regex_lr_seed`) and costs O(c) per candidate entered, c = the
+                    // captures it adds;
                     // the first call in a frame that runs a grammar method also creates
                     // the frame's cursor, O(a), a = the grammar's attributes.
                     // The callee's own ops state their costs.
@@ -477,9 +474,9 @@ impl Interpreter {
                                 // evaluation installs its own around itself.
                                 let (window, lr_window) = if matches!(
                                     verdict,
-                                    Ok(CallTarget::Eager(..)
+                                    CallTarget::Eager(..)
                                         | CallTarget::Wrapped
-                                        | CallTarget::CustomHow(_))
+                                        | CallTarget::CustomHow(_)
                                 ) {
                                     (None, window)
                                 } else {
@@ -491,11 +488,9 @@ impl Interpreter {
                                     (window, None)
                                 };
                                 match verdict {
-                                    Ok(
-                                        target @ (CallTarget::Eager(..)
-                                        | CallTarget::Wrapped
-                                        | CallTarget::CustomHow(_)),
-                                    ) => {
+                                    target @ (CallTarget::Eager(..)
+                                    | CallTarget::Wrapped
+                                    | CallTarget::CustomHow(_)) => {
                                         let mut ends = self.rx_eager_call_ends(
                                             &program.atoms[atom as usize],
                                             &target,
@@ -514,7 +509,7 @@ impl Interpreter {
                                         pc += 1;
                                         enter_cands!(ends)
                                     }
-                                    Ok(CallTarget::Plain(callee, callee_pkg)) => {
+                                    CallTarget::Plain(callee, callee_pkg) => {
                                         if frame.is_some_and(|f| {
                                             frames[f as usize].depth >= MAX_FRAME_DEPTH
                                         }) {
@@ -536,7 +531,7 @@ impl Interpreter {
                                             continue 'run;
                                         }
                                     }
-                                    Ok(CallTarget::Proto(cands)) => {
+                                    CallTarget::Proto(cands) => {
                                         self.ltm_rank_proto(
                                             &cands, chars, pos, ltm_order, proto_rank,
                                         );
@@ -599,7 +594,28 @@ impl Interpreter {
                                             }
                                         }
                                     }
-                                    Ok(CallTarget::Single) => {
+                                    CallTarget::Symbolic => {
+                                        crate::vm::vm_stats_regex_vm::record_regex_eager(
+                                            "symbolic-name",
+                                        );
+                                        let slot = frame
+                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
+                                        let mut ends = self.rx_symbolic_call_ends(
+                                            name,
+                                            chars,
+                                            pos,
+                                            levels.top().caps(),
+                                            pkg,
+                                            |interp| interp.rx_cursor_of(slot, chars, pos, pkg),
+                                            (commit, ic),
+                                        );
+                                        if commit && ends.len() > 1 {
+                                            ends.drain(..ends.len() - 1);
+                                        }
+                                        pc += 1;
+                                        enter_cands!(ends)
+                                    }
+                                    CallTarget::Single => {
                                         pc += 1;
                                         match self.regex_builtin_named(name.spec(), chars, pos, pkg)
                                         {
@@ -614,7 +630,7 @@ impl Interpreter {
                                     // A grammar method gets this invocation's own
                                     // cursor, not a throwaway one: what it writes to
                                     // its attributes is the Match's (#9803).
-                                    Ok(CallTarget::Method) => {
+                                    CallTarget::Method => {
                                         pc += 1;
                                         let slot = frame
                                             .map_or(&root_cursor, |f| &frames[f as usize].cursor);
@@ -633,38 +649,6 @@ impl Interpreter {
                                             }
                                             None => false,
                                         }
-                                    }
-                                    Err(why) => {
-                                        walk_use(WalkUse::Bridged, why);
-                                        // A grammar method the call runs gets this
-                                        // invocation's own cursor, not a throwaway one:
-                                        // what it writes to its attributes is the Match's
-                                        // (#9803).
-                                        if self.subrule_names_user_method(name.spec(), pkg) {
-                                            let slot = frame.map_or(&root_cursor, |f| {
-                                                &frames[f as usize].cursor
-                                            });
-                                            let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
-                                            self.regex_state.rx_cursor = Some(cursor);
-                                        }
-                                        let mut cands = self.regex_match_atom_all_with_arg_values(
-                                            &program.atoms[atom as usize],
-                                            chars,
-                                            pos,
-                                            levels.top().caps(),
-                                            pkg,
-                                            ic,
-                                            commit,
-                                            call_args,
-                                        );
-                                        self.regex_state.rx_cursor = None;
-                                        // Ratchet commits to the highest-priority end, the
-                                        // last (the producer's order is lowest first).
-                                        if commit && cands.len() > 1 {
-                                            cands.drain(..cands.len() - 1);
-                                        }
-                                        pc += 1;
-                                        enter_cands!(cands)
                                     }
                                 }
                             }
@@ -748,7 +732,7 @@ impl Interpreter {
                         }
                         true
                     }
-                    // Cost: one run of the count code (`regex_repeat_count`), then
+                    // Cost: one run of the count code (`eval_regex_repeat_code`), then
                     // O(1) amortized.
                     RxOp::RepeatCount { tok, min, max } => {
                         let RegexQuant::RepeatCode(code) = &program.toks[tok as usize].quant else {
@@ -756,7 +740,7 @@ impl Interpreter {
                             break 'run None;
                         };
                         pc += 1;
-                        match self.regex_repeat_count(code, pos, levels.top().caps()) {
+                        match self.eval_regex_repeat_code(code, levels.top().caps()) {
                             Some((lo, hi)) => {
                                 set_reg!(min, lo);
                                 set_reg!(max, hi.unwrap_or(usize::MAX));
@@ -865,6 +849,7 @@ impl Interpreter {
                     | RxOp::Code(_)
                     | RxOp::VarDecl(_)
                     | RxOp::Named { .. }
+                    | RxOp::HashCap { .. }
                     | RxOp::ZeroArm { .. }
                     | RxOp::QuantNames { .. }
                     | RxOp::Fold { .. }
@@ -876,6 +861,7 @@ impl Interpreter {
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
                     | RxOp::EmptyRange
+                    | RxOp::BareTilde
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
                         if let RxOp::Code(_) = op {

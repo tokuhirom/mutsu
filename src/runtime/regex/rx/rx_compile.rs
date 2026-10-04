@@ -292,8 +292,15 @@ impl Compiler {
     }
 
     pub(super) fn pattern(&mut self, pattern: &RegexPattern) -> Result<(), Decline> {
+        // A nested `:m` pattern (a `||` branch, a lookaround body, a
+        // conjunction branch) matches over the mark-stripped subject, as a
+        // `[:m …]` group does (`GroupEnds`). A whole `:m` pattern never gets
+        // here: its entry strips it first (`rx_try_ignoremark`).
         if pattern.ignore_mark {
-            return Err("ignoremark");
+            self.has_code |= pattern_contains_code(pattern);
+            let i = self.push_atom(&RegexAtom::Group(pattern.clone()));
+            self.ops.push(RxOp::GroupEnds(i));
+            return Ok(());
         }
         // The walk tests a level's atoms under that level's own `:i`
         // (`ctx.pattern.ignore_case`), so a scoped `[:i …]` covers its body only.
@@ -327,9 +334,6 @@ impl Compiler {
     }
 
     fn token(&mut self, token: &RegexToken) -> Result<(), Decline> {
-        if token.hash_capture.is_some() {
-            return Err("hash-capture");
-        }
         if let Some(sep) = &token.separator {
             return self.separated(token, &sep.pattern, sep.allow_trailing);
         }
@@ -338,7 +342,9 @@ impl Compiler {
             return self.zero_or_one(token);
         }
         // A quantified token applies its alias once per iteration; see `repeat`.
-        let alias = if token.named_capture.is_some() && matches!(token.quant, RegexQuant::One) {
+        let alias = if (token.named_capture.is_some() || token.hash_capture.is_some())
+            && matches!(token.quant, RegexQuant::One)
+        {
             let (pos_base, start) = (self.reg(), self.reg());
             self.ops.push(RxOp::PosBase(pos_base));
             self.ops.push(RxOp::Mark(start));
@@ -364,20 +370,28 @@ impl Compiler {
         if let Some((pos_base, start)) = alias {
             let tok = self.toks.len() as u32;
             self.toks.push(token.clone());
-            self.ops.push(RxOp::Named {
-                tok,
-                start,
-                pos_base,
-            });
+            if token.named_capture.is_some() {
+                self.ops.push(RxOp::Named {
+                    tok,
+                    start,
+                    pos_base,
+                });
+            }
+            if token.hash_capture.is_some() {
+                self.ops.push(RxOp::HashCap {
+                    tok,
+                    start,
+                    pos_base,
+                });
+            }
         }
         Ok(())
     }
 
     /// One match of `token`'s atom. Under ratchet the atom commits to its
-    /// first candidate, as the walk's `for_each_atom_candidate(.., ratchet)`
-    /// does — which for a non-capturing `[ … ]` is no commitment at all
-    /// (the walk's ratchet only stops a capture group from trying another
-    /// inner end; see `regex_match_lazy.rs`).
+    /// first candidate — which for a non-capturing `[ … ]` is no commitment at
+    /// all (ratchet only stops a capture group from trying another inner
+    /// end).
     pub(super) fn atom(&mut self, token: &RegexToken) -> Result<(), Decline> {
         // Consumed here, so the atoms of a group nested under this one do not
         // inherit it.
@@ -394,13 +408,11 @@ impl Compiler {
             // subject and maps its ends back (`ignoremark_on_target`), every
             // end up front, so the op asks the same entry for them and enters
             // them highest priority first; under ratchet it commits to the
-            // first. Code or a backreference in the body would read the
-            // enclosing level through the walk's inline seeds, which the
-            // nested run does not arm.
+            // first. The body is a nested run over the stripped subject: code
+            // in it runs at every end it reaches, and a backreference reads
+            // the body's own captures.
             RegexAtom::Group(p) if p.ignore_mark => {
-                if pattern_contains_code(p) || pattern_contains_backref(p) {
-                    return Err("ignoremark-code");
-                }
+                self.has_code |= pattern_contains_code(p);
                 let height = token.ratchet.then(|| self.reg());
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
@@ -439,9 +451,7 @@ impl Compiler {
                     // `(:m …)`: the body's ends come from the mark-stripped
                     // subject, as for `[:m …]` (`GroupEnds`), into the
                     // capture's own level.
-                    if pattern_contains_code(p) || pattern_contains_backref(p) {
-                        return Err("ignoremark-code");
-                    }
+                    self.has_code |= pattern_contains_code(p);
                     let i = self.push_atom(&RegexAtom::Group(p.clone()));
                     self.ops.push(RxOp::GroupEnds(i));
                 } else {
@@ -480,13 +490,7 @@ impl Compiler {
                 // The body runs code of its own in a nested run.
                 self.has_code |= body.has_code;
                 let i = self.push_atom(&token.atom);
-                // A `:m` body matches over the mark-stripped subject, which
-                // the walk's entry maps (`rx_try_ignoremark`).
-                self.ops.push(if pattern.ignore_mark {
-                    RxOp::CapAtom(i)
-                } else {
-                    RxOp::Look(i)
-                });
+                self.ops.push(RxOp::Look(i));
             }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
@@ -591,7 +595,8 @@ impl Compiler {
                 self.ops.push(RxOp::CapAtom(i));
             }
             RegexAtom::GoalMatch { goal, inner, .. } => self.goal_match(token, goal, inner)?,
-            RegexAtom::TildeMarker => return Err("goal-match"),
+            // A `~` the parser could not pair with a goal and an inner atom.
+            RegexAtom::TildeMarker => self.ops.push(RxOp::BareTilde),
             RegexAtom::RecurseSelf(_) => {
                 // `<~~>`: the enclosing regex's first end at the cursor, its
                 // captures discarded, guarded against re-entry at the same
@@ -635,6 +640,13 @@ impl Compiler {
         self.toks.push(token.clone());
         if token.named_capture.is_some() {
             self.ops.push(RxOp::Named {
+                tok,
+                start,
+                pos_base,
+            });
+        }
+        if token.hash_capture.is_some() {
+            self.ops.push(RxOp::HashCap {
                 tok,
                 start,
                 pos_base,
@@ -687,21 +699,40 @@ impl Compiler {
     /// does. A body that can match empty ends each iteration with a
     /// `ZeroIter` guard: an iteration that consumed nothing is accepted only
     /// while `zero_width_iter_counts` says it counts. Rejecting it retries
-    /// the body's other candidates, which is the walk's group DFS
-    /// (`walk_quant_group_candidates`); for the walk's chain, whose iterations
-    /// take the first candidate only, the body is either ratcheted or has a
-    /// single candidate, so the rejection stops the loop there instead.
+    /// the body's other candidates; a ratcheted body, or one with a single
+    /// candidate, stops the loop there instead.
     fn repeat(
         &mut self,
         token: &RegexToken,
         min: usize,
         max: Option<usize>,
     ) -> Result<(), Decline> {
-        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
-        else {
-            return Err("too-large");
+        let Some((min, max)) = self.counted_bounds(min, max) else {
+            return Ok(());
         };
         self.repeat_bounded(token, Bounds::Fixed(min, max))
+    }
+
+    /// `min`/`max` of a counted quantifier as the loop's `u32` bounds, where
+    /// `u32::MAX` is "no bound". A maximum past it is no bound at all (no
+    /// subject is that long), and a minimum past it can never be met: the
+    /// quantifier then compiles to a failure and the bounds are `None`.
+    pub(super) fn counted_bounds(&mut self, min: usize, max: Option<usize>) -> Option<(u32, u32)> {
+        let max = max.map_or(u32::MAX, |max| u32::try_from(max).unwrap_or(u32::MAX));
+        match u32::try_from(min) {
+            Ok(min) => Some((min, max)),
+            Err(_) => {
+                self.never();
+                None
+            }
+        }
+    }
+
+    /// Ops that never match: a zero counter checked against a minimum of one.
+    pub(super) fn never(&mut self) {
+        let ctr = self.reg();
+        self.ops.push(RxOp::CtrZero(ctr));
+        self.ops.push(RxOp::AtLeast { ctr, min: 1 });
     }
 
     /// `x ** { code }`: the walk evaluates the count where the quantifier is
@@ -731,9 +762,14 @@ impl Compiler {
             && !is_assertion(&token.atom)
             && !matches!(token.atom, RegexAtom::Named(_));
         let named = token.named_capture.is_some();
+        // `%<h>=` files one entry per iteration, over its span; its positional
+        // base is the iteration's for `*` / `+` and the token's for `**`, as
+        // `grow_one_iter` has it.
+        let hashed = token.hash_capture.is_some();
+        let hash_per_iter = matches!(token.quant, RegexQuant::ZeroOrMore | RegexQuant::OneOrMore);
         if let (Bounds::Fixed(min, max), true) = (
             bounds,
-            !nullable && is_consuming(&token.atom) && !token.frugal && !named,
+            !nullable && is_consuming(&token.atom) && !token.frugal && !named && !hashed,
         ) {
             // A single one-grapheme atom needs no loop: the iterations are
             // scanned up front and given back from a position list.
@@ -748,10 +784,9 @@ impl Compiler {
         }
         // A body that captures folds its per-iteration slots into lists at
         // the loop's exit, after the names under it (and the token's own
-        // alias) were marked quantified up front — `walk_quant_chain` /
-        // `descend_folded`'s order. The alias itself is applied per
-        // iteration, over that iteration's span, as `grow_one_iter` does.
-        let fold = if named || atom_captures(&token.atom) {
+        // alias) were marked quantified up front. The alias itself is applied
+        // per iteration, over that iteration's span.
+        let fold = if named || hashed || atom_captures(&token.atom) {
             let pos_base = self.reg();
             self.ops.push(RxOp::PosBase(pos_base));
             let tok = self.toks.len() as u32;
@@ -774,9 +809,13 @@ impl Compiler {
         let head = self.pc();
         self.ops.push(RxOp::Jmp(0)); // patched below
         let body = self.pc();
-        let iter_start = (nullable || named).then(|| self.reg());
+        let iter_start = (nullable || named || hashed).then(|| self.reg());
         if let Some(r) = iter_start {
             self.ops.push(RxOp::Mark(r));
+        }
+        let iter_pos_base = (hashed && hash_per_iter).then(|| self.reg());
+        if let Some(r) = iter_pos_base {
+            self.ops.push(RxOp::PosBase(r));
         }
         // Ratchet commits each iteration to the body's first candidate. So
         // does the walk's chain (`grow_one_iter` takes the single-candidate
@@ -811,6 +850,13 @@ impl Compiler {
                 tok,
                 start,
                 pos_base,
+            });
+        }
+        if let (true, Some((pos_base, tok)), Some(start)) = (hashed, fold, iter_start) {
+            self.ops.push(RxOp::HashCap {
+                tok,
+                start,
+                pos_base: iter_pos_base.unwrap_or(pos_base),
             });
         }
         if let Some(start) = iter_start.filter(|_| nullable) {

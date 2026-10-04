@@ -2,8 +2,7 @@
 # iteration into slot N, which the quantifier folds into a list holding every
 # iteration (#10792). The compiled engine used to number the inlined body
 # against the whole level, so each iteration overwrote the previous one's slot
-# and only the last iteration survived. Each case runs on the compiled engine
-# and on the tree walk (`MUTSU_RX_VM=off`); both must print rakudo's values.
+# and only the last iteration survived. Each case must print rakudo's values.
 use Test;
 
 my @cases =
@@ -23,14 +22,10 @@ my @cases =
         'my $m = "1234" ~~ / [ $0=(\d) ] ** 3 /; say $m[0].map(~*).join(",")',
         '1,2,3';
 
-plan @cases / 3 * 2;
+plan @cases / 3;
 
 for @cases -> $name, $code, $expected {
-    for <on off> -> $engine {
-        my %env = %*ENV;
-        %env<MUTSU_RX_VM> = $engine;
-        my $proc = run($*EXECUTABLE, '-e', $code, :out, :err, :%env);
-        is $proc.out.slurp(:close).trim, $expected, "$name (compiled engine $engine)";
-        $proc.err.slurp(:close);
-    }
+    my $proc = run($*EXECUTABLE, '-e', $code, :out, :err);
+    is $proc.out.slurp(:close).trim, $expected, $name;
+    $proc.err.slurp(:close);
 }

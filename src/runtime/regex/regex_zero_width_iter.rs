@@ -22,17 +22,6 @@ pub(super) fn zero_width_iter_counts(count: usize, min: usize, max: Option<usize
     }
 }
 
-/// The count a position-only scan reaches once an atom has matched zero-width
-/// after `count` accepted iterations: every further iteration would match the
-/// same empty string at the same position, so the scan jumps straight to the
-/// last count [`zero_width_iter_counts`] admits.
-pub(super) fn zero_width_saturated_count(count: usize, min: usize, max: Option<usize>) -> usize {
-    match max {
-        Some(max) => count.max(max),
-        None => count.max(min),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,7 +31,6 @@ mod tests {
         assert!(zero_width_iter_counts(0, 2, Some(2)));
         assert!(zero_width_iter_counts(1, 2, Some(2)));
         assert!(!zero_width_iter_counts(2, 2, Some(2)));
-        assert_eq!(zero_width_saturated_count(0, 3, Some(5)), 5);
     }
 
     #[test]
@@ -50,7 +38,5 @@ mod tests {
         assert!(zero_width_iter_counts(0, 1, None));
         assert!(!zero_width_iter_counts(1, 1, None));
         assert!(!zero_width_iter_counts(0, 0, None));
-        assert_eq!(zero_width_saturated_count(0, 1, None), 1);
-        assert_eq!(zero_width_saturated_count(3, 1, None), 3);
     }
 }

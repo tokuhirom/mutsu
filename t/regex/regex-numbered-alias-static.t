@@ -2,10 +2,9 @@ use Test;
 
 # Numbered capture aliases (`$N=`) are numbered statically over the whole
 # capture level, as rakudo does (#10895): `$N=` sets the counter, a slot filled
-# twice or under a quantifier is a list, and slots below N stay unset. Every
-# case runs on both regex engines (the compiled program and the tree walk).
+# twice or under a quantifier is a list, and slots below N stay unset.
 
-plan 2;
+plan 1;
 
 sub check-engine($label) {
     subtest $label => {
@@ -82,14 +81,3 @@ sub check-engine($label) {
 }
 
 check-engine 'compiled engine';
-{
-    temp %*ENV<MUTSU_RX_VM> = 'off';
-    is run($*EXECUTABLE, '-e', q:to/END/, :out).out.slurp(:close).trim, 'a,b|1,2|-,1,a',
-        my $m = "ab" ~~ / (a) [ $0=(b) ] /;
-        my $o = "x12" ~~ / (x) [ $3=(\d) ]+ /;
-        my $g = "1a" ~~ / $1=(\d) (\w) /;
-        say ($m[0].map(~*).join(','), $o[3].map(~*).join(','),
-             $g.list.map({ .defined ?? ~$_ !! '-' }).join(',')).join('|');
-        END
-        'the tree walk numbers the same way';
-}

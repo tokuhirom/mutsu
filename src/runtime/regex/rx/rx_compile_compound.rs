@@ -284,10 +284,10 @@ impl Compiler {
     /// `atom ** min..max % sep` (and `%%`, which may end on a separator), as
     /// the walk's separated quantifier matches it. The first atom is not
     /// required to advance; every later separator-and-atom step is. Without
-    /// ratchet (`for_each_separated_candidate`) every longer chain is tried
+    /// ratchet every longer chain is tried
     /// before a shorter one unless frugal, a chain's `%%` trailing separator
     /// before its plain end, and zero iterations first when frugal. Under ratchet
-    /// (`match_separated_quantifier_ratchet`) each atom and separator takes
+    /// each atom and separator takes
     /// its first match, the chain grows while it can, and nothing is given
     /// back. Captures fold side by side (`SepEmit`).
     pub(super) fn separated(
@@ -296,11 +296,6 @@ impl Compiler {
         sep: &RegexPattern,
         trailing: bool,
     ) -> Result<(), Decline> {
-        if atom_contains_backref(&token.atom) || pattern_contains_backref(sep) {
-            // The walk matches each iteration against the captures folded so
-            // far (`InlineCaptureScope`); a level of its own would hide them.
-            return Err("separator-backref");
-        }
         // Each atom and separator then matches in a capture level of its own,
         // collected for `SepEmit` to fold side by side. When the only captures
         // are names (`<pair>+ % ','`, the grammar case, including a `rule`'s
@@ -323,11 +318,14 @@ impl Compiler {
         let collect = captures && !direct;
         // Code in an atom or separator reads the captures too: `$/[*-1][*-1]`
         // addresses the iterations folded so far with this one's folded in
-        // place (Net::Whois's octet check; `InlineCaptureScope` in the walk).
+        // place (Net::Whois's octet check).
         // Without captures to collect there is no level, and the code reads
         // the enclosing one.
-        let atom_view = collect && atom_contains_code(&token.atom);
-        let sep_view = collect && pattern_contains_code(sep);
+        // A backreference reads the iterations folded so far too: a level of
+        // its own must not hide them.
+        let atom_view =
+            collect && (atom_contains_code(&token.atom) || atom_contains_backref(&token.atom));
+        let sep_view = collect && (pattern_contains_code(sep) || pattern_contains_backref(sep));
         let (min, max) = match token.quant {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
@@ -344,9 +342,8 @@ impl Compiler {
         // `** 0 % sep`: only the zero-iteration arm, whose captures (empty
         // lists, an alias over the empty span) the loop's exit files.
         let no_iteration = max == Some(0);
-        let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
-        else {
-            return Err("too-large");
+        let Some((min, max)) = self.counted_bounds(min, max) else {
+            return Ok(());
         };
         // `atom ** { code } % sep`: the count is evaluated where the
         // quantifier is reached, as `x ** { code }` does (`repeat_code`), and
@@ -367,16 +364,9 @@ impl Compiler {
             (lo, hi, zero)
         });
         let ratchet = token.ratchet;
-        // Under ratchet a frugal chain still grows on demand; the walk's
-        // ratcheted scan grows it eagerly and offers each length, so code in
-        // an atom or separator would run a different number of times there.
-        // TODO: compile to bytecode once the walk is gone (ADR-0135 Slice E).
-        if ratchet
-            && token.frugal
-            && (atom_contains_code(&token.atom) || pattern_contains_code(sep))
-        {
-            return Err("separator-frugal-ratchet-code");
-        }
+        // Under ratchet a frugal chain still grows on demand, as raku's does;
+        // the walk's ratcheted scan grew it eagerly and offered each length,
+        // running code in an atom or separator once per length scanned.
         let base = collect.then(|| self.reg());
         if let Some(b) = base {
             self.ops.push(RxOp::SepBase(b));

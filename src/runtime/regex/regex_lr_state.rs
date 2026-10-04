@@ -190,24 +190,6 @@ pub(super) fn lr_name_active(name: Symbol) -> bool {
     })
 }
 
-/// `true` when this key is already being evaluated further up the stack, i.e.
-/// entering it again would be a left-recursive re-entry.
-pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
-    LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()))
-}
-
-/// Mark `key` as under evaluation with an empty seed, returning the enclosing
-/// activation's "seed was consulted" flag for [`lr_end_activation`] to restore.
-pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
-    LR_STATE.with(|s| {
-        let mut s = s.borrow_mut();
-        s.bump(key.name);
-        let entry = s.keys.entry(key.clone()).or_default();
-        entry.seed = Some(Vec::new());
-        std::mem::take(&mut entry.seed_read)
-    })
-}
-
 /// The gate [`super::regex_call_graph`] decides and this module caches: may a
 /// `<name>` call in `pkg` skip its activation entirely?
 ///
@@ -258,15 +240,13 @@ pub(super) enum LrBegin {
     Began(bool),
 }
 
-/// [`lr_key_is_active`] + the seed read / [`lr_begin_activation`] as ONE map
-/// operation.
+/// Re-enter `key` if it is already active (reading its seed), else begin its
+/// activation with an empty seed, as ONE map operation.
 ///
 /// Every `<subrule>` call asks both questions back to back and acts on exactly
 /// one of them, so asking them separately hashed and probed the same key twice
 /// per call — 87k redundant probes on a 60-row YAMLish parse, none of whose
-/// rules are left-recursive at all. The two spellings are otherwise identical:
-/// the separate `lr_key_is_active` declined to create a vacant entry, but the
-/// `lr_begin_activation` that always followed it created one anyway.
+/// rules are left-recursive at all.
 pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
     LR_STATE.with(|s| {
         let mut s = s.borrow_mut();
@@ -282,7 +262,7 @@ pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
     })
 }
 
-/// Undo [`lr_begin_activation`], reporting whether anything re-entered `key`
+/// Undo an activation [`lr_begin_or_reenter`] began, reporting whether anything re-entered `key`
 /// and read its seed while it was active.
 pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
     LR_STATE.with(|s| {
@@ -331,6 +311,24 @@ mod tests {
 
     fn key(name: &str, remaining: usize) -> LrKey {
         LrKey::new(Symbol::intern(name), None, remaining)
+    }
+
+    /// Is `key` being evaluated further up the stack?
+    fn lr_key_is_active(key: &LrKey) -> bool {
+        LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()))
+    }
+
+    /// Begin an activation of `key` unconditionally (a nested one when it is
+    /// already active), returning the enclosing activation's "seed was
+    /// consulted" flag for `lr_end_activation`.
+    fn lr_begin_activation(key: &LrKey) -> bool {
+        LR_STATE.with(|s| {
+            let mut s = s.borrow_mut();
+            s.bump(key.name);
+            let entry = s.keys.entry(key.clone()).or_default();
+            entry.seed = Some(Vec::new());
+            std::mem::take(&mut entry.seed_read)
+        })
     }
 
     #[test]

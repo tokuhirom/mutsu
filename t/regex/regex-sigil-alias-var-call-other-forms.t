@@ -2,8 +2,7 @@
 # Match, nested captures included, as the scalar `$<a>=<$re>` already did
 # (#10673): an array alias `@<a>=<$re>`, a numbered alias `$0=<$re>`, and a
 # Str-valued variable `$<a>=<$s>` / `<a=$s>`. Rakudo's `subrule_alias` renames
-# the call under any sigil alias. Each case runs on the compiled engine and on
-# the tree walk (`MUTSU_RX_VM=off`); both must print rakudo 2026.07's values.
+# the call under any sigil alias. Each case must print rakudo 2026.07's values.
 use Test;
 
 my $prelude = q:to/END/;
@@ -35,15 +34,11 @@ my @cases =
         'my $m = "12" ~~ /$<rx>=<$r>/; say ($m<rx><digit>.elems, $m<digit>.defined).join("|")',
         '2|False';
 
-plan @cases / 3 * 2;
+plan @cases / 3;
 
 for @cases -> $name, $match, $expected {
     my $code = $prelude ~ $match;
-    for <on off> -> $engine {
-        my %env = %*ENV;
-        %env<MUTSU_RX_VM> = $engine;
-        my $proc = run($*EXECUTABLE, '-e', $code, :out, :err, :%env);
-        is $proc.out.slurp(:close).trim, $expected, "$name (compiled engine $engine)";
-        $proc.err.slurp(:close);
-    }
+    my $proc = run($*EXECUTABLE, '-e', $code, :out, :err);
+    is $proc.out.slurp(:close).trim, $expected, $name;
+    $proc.err.slurp(:close);
 }

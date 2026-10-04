@@ -209,8 +209,7 @@ impl Interpreter {
 
     /// The pattern a [`RegexAtom::CodeInterp`] atom matches at `pos`: its code
     /// run once, where the cursor reaches it ([`Self::regex_code_interp_pattern`]),
-    /// and the result parsed. Under `MUTSU_RX_DIFF` the run is recorded and
-    /// replayed like every other call-out (ADR-0135 D6). `None` when the code
+    /// and the result parsed. `None` when the code
     /// throws (the error is parked for the match entry point) or the result
     /// does not parse.
     ///
@@ -221,14 +220,12 @@ impl Interpreter {
         code: &str,
         list: bool,
         chars: &[char],
-        pos: usize,
         current_caps: &RegexCaptures,
         ignore_case: bool,
     ) -> Option<std::sync::Arc<RegexPattern>> {
-        let source: Option<String> = self.rx_code_call(code, pos, current_caps, |interp| {
-            interp.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)
-        });
-        self.parse_regex(&source?)
+        let source =
+            self.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)?;
+        self.parse_regex(&source)
     }
 
     /// Every end of an interpolated pattern `parsed` at `pos`, lowest priority
@@ -255,32 +252,11 @@ impl Interpreter {
         out
     }
 
-    /// Every end at which the [`RegexAtom::CodeInterp`] atom matches at
-    /// `pos` (the walk's arm): [`Self::regex_code_interp_parsed`], then
-    /// [`Self::regex_code_interp_pattern_ends`].
+    /// Every end of the pattern a `<{ ... }>` / `<@(...)>` atom interpolates at
+    /// `pos`, for the position-only matcher.
     ///
-    /// Cost: as those two.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn regex_code_interp_ends(
-        &mut self,
-        code: &str,
-        list: bool,
-        chars: &[char],
-        pos: usize,
-        current_caps: &RegexCaptures,
-        pkg: Symbol,
-        ignore_case: bool,
-    ) -> Vec<(usize, RegexCaptures)> {
-        match self.regex_code_interp_parsed(code, list, chars, pos, current_caps, ignore_case) {
-            Some(parsed) => self.regex_code_interp_pattern_ends(&parsed, chars, pos, pkg),
-            None => Vec::new(),
-        }
-    }
-
-    /// [`Self::regex_code_interp_ends`] without the D6 record, for the
-    /// position-only matcher, which the compiled engine never stands in for.
-    ///
-    /// Cost: as [`Self::regex_code_interp_ends`].
+    /// Cost: one run of the code, plus the interpolated pattern's all-ends
+    /// match at `pos`.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn regex_code_interp_ends_unrecorded(
         &mut self,

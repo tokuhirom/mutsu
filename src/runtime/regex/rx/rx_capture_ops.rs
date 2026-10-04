@@ -17,8 +17,8 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Run one capture op at `pos`: the new position, or `None` on failure.
-    /// Only `CapAtom` can move the cursor; it, `Look`, `GoalFail` and
-    /// `EmptyRange` can fail.
+    /// Only `CapAtom` can move the cursor; it, `Look`, `GoalFail`,
+    /// `EmptyRange` and `BareTilde` can fail.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_capture_op(
         &mut self,
@@ -100,25 +100,12 @@ impl Interpreter {
                 }
             }
             // Cost: `regex_leaf_atom`'s (O(n) for a backreference, n = the
-            // characters it compares; O(1) for a marker); for a lookaround, one
-            // run of the body for a lookahead, and one per candidate start (at
-            // most the body's longest match back) for a lookbehind.
+            // characters it compares; O(1) for a marker).
             RxOp::CapAtom(i) => {
                 let atom = &program.atoms[i as usize];
                 let caps = levels.top().caps();
                 let ic = program.atom_ic[i as usize];
-                let (next, delta) = if let RegexAtom::Lookaround { .. } = atom {
-                    // TODO: compile to bytecode — a lookaround whose body is
-                    // `:m` takes the walk's test, which maps the mark-stripped
-                    // subject (ADR-0135 §8, Slice E).
-                    crate::vm::vm_stats_regex_vm::record_regex_walk(
-                        crate::vm::vm_stats_regex_vm::WalkUse::Leaf,
-                        "lookaround-ignoremark",
-                    );
-                    self.regex_match_atom_with_capture_in_pkg(atom, chars, pos, caps, pkg, ic)?
-                } else {
-                    self.regex_leaf_atom(atom, chars, pos, caps, pkg, ic)?
-                };
+                let (next, delta) = self.regex_leaf_atom(atom, chars, pos, caps, pkg, ic)?;
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }
@@ -332,6 +319,30 @@ impl Interpreter {
                 levels.edit(|s| s.merge_delta(merged));
             }
             // Cost: O(1).
+            // Cost: O(k), k = the characters of the key and value it files.
+            RxOp::HashCap {
+                tok,
+                start,
+                pos_base,
+            } => {
+                let token = &program.toks[tok as usize];
+                let (from, base) = (regs[start as usize], regs[pos_base as usize]);
+                levels.edit(|s| {
+                    super::super::regex_match_delta::apply_hash_capture(
+                        s, chars, token, from, pos, base,
+                    )
+                });
+            }
+            // Cost: O(1).
+            RxOp::BareTilde => {
+                let err = crate::value::RuntimeError::new(
+                    "Unrecognized regex metacharacter ~ (must be quoted to match literally)",
+                );
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+                    e.borrow_mut().get_or_insert(err);
+                });
+                return None;
+            }
             // Cost: O(1).
             RxOp::EmptyRange => {
                 Self::set_quantifier_value_error("empty-range", "Quantifier range is empty");

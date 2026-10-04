@@ -1,6 +1,6 @@
 # ADR-0135: A regex compiles to a flat backtracking program; the tree walk is retired
 
-- **Status**: Accepted (2026-09-30; proposed and accepted the same day); Slices A and B landed, Slices C and D in part, Slice E begun (§8). Slices tracked as
+- **Status**: Accepted (2026-09-30; proposed and accepted the same day); implemented (2026-10-04): Slices A and B landed, C and D in part, and Slice E deleted the tree walk (D7, §8). Slices tracked as
   [#10251](https://github.com/tokuhirom/mutsu/issues/10251) (A),
   [#10252](https://github.com/tokuhirom/mutsu/issues/10252) (B),
   [#10253](https://github.com/tokuhirom/mutsu/issues/10253) (C),
@@ -198,6 +198,10 @@ position, every capture span, and the sequence of code-block invocations. Each s
 runs that subset in differential mode for as long as the walk exists. The mode is deleted with the
 walk.
 
+*Done 2026-10-04 (#10255).* `MUTSU_RX_DIFF`, `rx_diff.rs` and the code atoms' record/replay
+(`rx_code_call`) are deleted with the walk; `tests/regex_vm_differential.rs` became
+`tests/regex_engine_corpus.rs`, which pins each corpus program to the output the engines agreed on.
+
 ### D7. The end state is one engine
 
 The walk is deleted when the D5 counter reads zero walked patterns over the roast whitelist and
@@ -212,6 +216,8 @@ LTM lookahead fates and cursor token methods). The criterion is therefore read o
 counter line, `regex-walk:` (§8, "Every use of the walk, counted"): the walk is deleted when its
 `walked=` and `bridged=` totals read zero over the roast whitelist and `t/`, and every remaining
 `leaf=` reason names a primitive that has moved out of the walk's modules.
+
+*Done 2026-10-04 (#10255).* The walk is deleted; see §8, "Completion".
 
 ### D8. JIT is later, and separate
 
@@ -1406,6 +1412,82 @@ go with the walk. So D7's criterion is met: `walked=` and `bridged=` read zero a
 switch itself, and no `leaf=` reason is left. The next step is the deletion: the walk, the
 `MUTSU_RX_VM` switch and D6's differential mode. `t/regex/regex-walk-residue-compiled.t` pins
 rakudo's values for this part.
+
+### Slice E, twenty-second part: the last declines
+
+The counter read zero over the suites, but the compiler still had reasons to decline shapes the
+suites do not exercise, and each such pattern would have run on the walk. Before deleting the walk,
+every one of them compiles:
+
+- **`<::(EXPR)>`** is a `CallTarget::Symbolic`: the name is evaluated where the call is reached,
+  then the call is made eagerly (`rx_call_symbolic::rx_symbolic_call_ends`): a rule's candidates
+  through the growing-seed loop, a grammar method, or a builtin. It is counted as the eager reason
+  `symbolic-name`.
+- **Multi rules** (several candidates without a proto) and **a proto whose candidates inherit the
+  caller's `:i`** are eager calls (`multi-candidate`, `proto-inherited-i`), the shape the walk's
+  producer gave them.
+- **`%<name>=` hash aliases** compile to `HashCap`, applied where the walk applied them
+  (`apply_hash_capture`, which moved out of the walk).
+- **A count past `u32`** is no bound as a maximum, and a failure as a minimum (`counted_bounds`,
+  `never`), instead of a decline.
+- **A backreference in a separated quantifier** reads the iterations folded so far through the
+  iteration's level, as code there already did.
+- **A frugal separated quantifier under ratchet with code** grows on demand, as rakudo's does; the
+  walk ran the code once per length it tried.
+- **`[:m …]` / `(:m …)` with code or a backreference, and any nested `:m` pattern** (a `||` branch,
+  a lookaround body) run as `GroupEnds` over the mark-stripped subject.
+- **A stray `~`** compiles to `BareTilde`, which raises "Unrecognized regex metacharacter ~ (must be
+  quoted to match literally)" where the cursor reaches it. The walk panicked there. Rakudo rejects
+  it at compile time.
+- **The position-only matcher** runs a program that has code, with the code atoms inert
+  (`CODE_ATOMS_INERT`), as the walk's no-capture matcher did.
+- **A match made while an LTM prefix is measured** is measured by the pattern's own NFA
+  (`rx_ltm_measured_ends`).
+
+`t/regex/regex-last-declines-compiled.t` pins rakudo's values for these shapes.
+
+### Completion: the walk is deleted (D7)
+
+Every entry point answers from the compiled engine alone. `regex_match_end_from_caps_in_pkg`,
+`regex_match_ends_from_caps_in_pkg`, `regex_match_ends_stop_at_full` and the position-only
+`regex_match_end_from_in_pkg` call `rx_match_first`, `rx_match_ends` and
+`rx_match_first_no_code`. A pattern the compiler declines (no pattern of the suites does) raises
+"This regex construct is not implemented by the regex engine (<reason>)" for the match, instead
+of taking another engine. A callee whose program declines is an eager call (`declined-callee`),
+whose run raises the same way.
+
+Deleted with the walk, about 5,000 lines:
+
+- the token walk (`walk_tokens`, `WalkCtx`, `MatchSink`, the quantifier chains and the ratchet fast
+  paths) and its entry `regex_walk_ends_in_pkg`;
+- the atom candidate producers, eager and demand-driven: `regex_match_atom.rs`,
+  `regex_match_capture.rs`, `regex_match_lazy*.rs`, `regex_match_sep_lazy.rs`,
+  `regex_match_sep_ratchet.rs`, `regex_match_sep_view.rs` and `regex_named_run.rs`. The two
+  helpers the compiled engine still uses moved next to their callers
+  (`attach_grammar_dynvars_to_named_caps` to `regex_dynparams.rs`, `atom_shares_backref_scope` to
+  `regex_match_plain_view.rs`);
+- the inline capture and `:my` seeds the walk handed to nested code (`OuterCapsSeed`,
+  `InlineCaptureScope`, `InlineVarsSeed`), and the rule-cursor stack it filed grammar instances
+  on;
+- the D5 call bridge (`CallVerdict`, the `Err(why)` arm of `Call`) and the NFA's plural walk
+  producer: a plural leaf of the LTM NFA asks `regex_builtin_named`;
+- D6 (above) and the `MUTSU_RX_VM` switch;
+- the `regex-walk:` line of `MUTSU_VM_STATS` (`WalkUse`), the streamed-call verdicts
+  (`subrule-stream`, `scripts/subrule-stream-survey.sh`) and the decline reasons
+  `regex_call_graph` no longer produces (it keeps the left-recursion gate's: `ConeDecline`);
+- `Interpreter::regex_quant_scratch`, the walk's quantifier scratch pool.
+
+What is left of the old modules is shared by the engine: the position-only single-atom matcher
+(`regex_match_atom_simple.rs`, behind `Assert` and the NFA's probe leaves), the capture transforms
+(`regex_match_delta.rs`, `regex_match_sep.rs`) and the entry points (`regex_match_core.rs`).
+`scripts/rx-decline-survey.sh` sums the `regex-vm:` and `regex-eager:` lines. The eager calls
+(`regex_lr_seed`) remain the one place a call's ends are computed up front. They run compiled
+programs.
+
+Survey after the deletion (all of `t/` and the roast whitelist, 7,910 files, debug build): no
+`regex-walk:` line exists; `compiled=11242 declined=0 runs=211586`; 505 eager calls (`lr-seed`
+457, `ignoremark-callee` 25, `custom-how` 16, `wrapped-candidate` 3, `symbolic-name` 2,
+`proto-inherited-i` 2). `t/regex/regex-engine-only-compiled.t` replaces the counter's tests.
 
 ### Reproducing §2
 

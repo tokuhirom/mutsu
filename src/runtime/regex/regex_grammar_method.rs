@@ -5,11 +5,8 @@
 //! The call answers at most one end and never resumes, so the compiled engine
 //! calls [`Interpreter::regex_grammar_method_end`] directly, as a leaf, with the
 //! cursor of the frame making the call (ADR-0135 §8, Slice E, eighteenth part).
-//! The walk reaches the same routine through
-//! [`Interpreter::try_regex_subrule_as_method`].
 
 use super::super::*;
-use super::regex_helpers::NamedRegexLookupSpec;
 
 impl Interpreter {
     /// Call the grammar method `name` of `pkg` on `invocant` (the cursor of the
@@ -21,12 +18,6 @@ impl Interpreter {
     /// `PENDING_REGEX_ERROR`, which the parse driver rethrows, and once one is
     /// pending no later call runs its method (a `||` branch the engine still
     /// tries, see `eval_regex_inline_code`).
-    ///
-    /// The method is user code, so under `MUTSU_RX_DIFF` it is recorded and
-    /// replayed like a code atom (`rx_code_call`, ADR-0135 D6): the walk's run
-    /// of the same match must not call it a second time. The method sees no
-    /// captures (its arguments were evaluated before the call), so the record
-    /// is keyed by its name and position alone.
     // Cost: the method's own run, plus O(1) to read its answer.
     pub(super) fn regex_grammar_method_end(
         &mut self,
@@ -46,18 +37,10 @@ impl Interpreter {
         if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
             return None;
         }
-        // The pending-exception test is part of the recorded invocation: the
-        // walk's replay runs after the compiled run raised it.
-        let end: Option<(usize, RegexCaptures)> =
-            self.rx_code_call(name, pos, &RegexCaptures::default(), |interp| {
-                if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
-                    return None;
-                }
-                interp
-                    .grammar_method_call(name, chars, pos, pkg, args, invocant)
-                    .map(|end| (end, RegexCaptures::default()))
-            });
-        end.map(|(end, _)| end)
+        if crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+            return None;
+        }
+        self.grammar_method_call(name, chars, pos, pkg, args, invocant)
     }
 
     /// [`Self::regex_grammar_method_end`]'s run of the method.
@@ -147,39 +130,5 @@ impl Interpreter {
             .filter(|&t| t >= 0)?;
         let end = pos + to as usize;
         (end <= chars.len()).then_some(end)
-    }
-
-    /// The walk's method-call subrule: `None` when `<spec>` called from `pkg`
-    /// does not name a plain grammar method (the caller falls through to its
-    /// other paths), else the call's ends, [`Self::regex_grammar_method_end`]'s
-    /// at most one. The invocant is the cursor the compiled engine published
-    /// for this one call (a call it bridged) or the walked rule invocation's.
-    // Cost: O(1) expected to decide, plus `regex_grammar_method_end`'s.
-    // TODO: compile to bytecode — this is the walk's entry; it goes with the
-    // walk (ADR-0135 D7).
-    pub(super) fn try_regex_subrule_as_method(
-        &mut self,
-        spec: &NamedRegexLookupSpec,
-        chars: &[char],
-        pos: usize,
-        pkg: Symbol,
-        args: &[Value],
-    ) -> Option<Vec<(usize, RegexCaptures)>> {
-        // The cursor the engine published for this one call, if any: taken at
-        // once so a call nested inside the method never sees it.
-        let published = self.regex_state.rx_cursor.take();
-        if !self.subrule_names_user_method(spec, pkg) {
-            return None;
-        }
-        let invocant = match published.or_else(|| self.walk_rule_cursor(chars, pos, pkg)) {
-            Some(cursor) => cursor,
-            None => self.new_grammar_cursor(chars, pos, pkg),
-        };
-        Some(
-            self.regex_grammar_method_end(&spec.lookup_name, chars, pos, pkg, args, invocant)
-                .map(|end| (end, RegexCaptures::default()))
-                .into_iter()
-                .collect(),
-        )
     }
 }

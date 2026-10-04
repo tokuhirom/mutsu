@@ -29,21 +29,6 @@ pub(crate) struct RegexGrammarState {
     /// *match* of a declaring rule its own binding on top of that, so a
     /// per-match `:my $*FINAL` is not read as the last match's value.
     pub(crate) grammar_rule_dynvar_decls: HashMap<String, Vec<String>>,
-    /// The grammar instance (Rakudo's cursor) the compiled regex engine hands to
-    /// the grammar METHOD a `<.name>` subrule is about to call: the one the
-    /// rule invocation that makes the call owns, so what the method writes to
-    /// its attributes survives onto that rule's Match (#9803). Published by
-    /// the engine for the duration of that one call and taken by
-    /// `try_regex_subrule_as_method`; `None` everywhere else, where the method
-    /// gets a throwaway instance.
-    pub(crate) rx_cursor: Option<Value>,
-    /// The same for rule invocations the WALK evaluates (the eager and streamed
-    /// subrule arms, the ratcheted `<x>*` scan, the single-candidate arm): one
-    /// entry per invocation in flight, innermost last, created lazily by the
-    /// first grammar method the invocation calls. The walk pops its entry when
-    /// the invocation's ends are produced and files the instance on each of them
-    /// (#9803). Empty outside a walked rule body.
-    pub(crate) walk_cursors: Vec<Option<Value>>,
     /// The built invocant `.parse` hands its start rule (#10848).
     pub(crate) start_invocant: regex::regex_grammar_cursor::StartRuleInvocant,
     /// Value set by `make()` inside grammar action methods.

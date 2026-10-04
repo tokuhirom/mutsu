@@ -3,8 +3,7 @@
 # cursor minted without BUILD (#10848). So `self` in a code block of the start
 # rule's own body reads the grammar's defaults, a subrule's code block reads
 # uninitialised attributes, and a method start rule's `self` is built too.
-# Each case runs on the compiled engine and on the tree walk
-# (`MUTSU_RX_VM=off`); both must print rakudo's values.
+# Each case must print rakudo's values.
 use Test;
 
 my @cases =
@@ -27,14 +26,10 @@ my @cases =
         'grammar I { has $.k = "inner"; token TOP { b { print self.k, ";" } } }; grammar O { has $.k = "outer"; token TOP { <t> { print self.k, ";" } }; token t { a { I.parse("b"); print self.k // "Any", ";" } } }; O.parse("a"); say ""',
         'inner;Any;outer;';
 
-plan @cases / 3 * 2;
+plan @cases / 3;
 
 for @cases -> $name, $code, $expected {
-    for <on off> -> $engine {
-        my %env = %*ENV;
-        %env<MUTSU_RX_VM> = $engine;
-        my $proc = run($*EXECUTABLE, '-e', $code, :out, :err, :%env);
-        is $proc.out.slurp(:close).trim, $expected, "$name (compiled engine $engine)";
-        $proc.err.slurp(:close);
-    }
+    my $proc = run($*EXECUTABLE, '-e', $code, :out, :err);
+    is $proc.out.slurp(:close).trim, $expected, $name;
+    $proc.err.slurp(:close);
 }

@@ -1,49 +1,31 @@
 //! ADR-0073 Slice 2: "can this rule reach itself?", answered over the rule
 //! call graph.
 //!
-//! The `<subrule>` arm of the atom producer (`regex_match_atom.rs`) carries the
-//! left-recursion growing-seed loop, which discovers that a rule is
-//! left-recursive at a position by *evaluating* its candidates and then
-//! checking whether the seed was consulted. That is what forces the arm to
-//! collect a subrule's whole end set before the caller descends into any of
-//! them — and, because an embedded `{ ... }` block runs inline for real
-//! (ADR-0009), makes the block fire once per end *computed* rather than once
-//! per end *entered*.
+//! An eager `<subrule>` call (`regex_lr_seed`) carries the left-recursion
+//! growing-seed loop, which discovers that a rule is left-recursive at a
+//! position by *evaluating* its candidates and then checking whether the seed
+//! was consulted. Every call pays for the key's activation unless it is proven
+//! dead weight, which this module decides.
 //!
-//! Slice 2's first half sidestepped the loop with a purely syntactic
-//! precondition ([`super::regex_subrule_lazy::pattern_is_rule_call_free`]): a
-//! body that cannot invoke a named rule at all cannot re-enter its own key.
-//! That admits leaf rules only, so a grammar's interior rules kept paying for
-//! the full end set.
+//! A rule's key is re-entered only by a *call* to a rule of the same name, so
+//! walking the call graph from `(pkg, name)` and asking whether `name` appears
+//! again in the reachable set decides it exactly. Anything the walk cannot
+//! resolve — a rule call with arguments, `<::(EXPR)>` indirection, `<{ ... }>`,
+//! `<~~>`, a name that resolves to a grammar *method* rather than to a rule, a
+//! body whose pattern is not static enough to resolve at all — is answered
+//! "may re-enter", so the verdict is a sound under-approximation of safety:
+//! `true` means proven safe, `false` means only "not proven".
 //!
-//! This module answers the real question instead. A rule's key is re-entered
-//! only by a *call* to a rule of the same name, so walking the call graph from
-//! `(pkg, name)` and asking whether `name` appears again in the reachable set
-//! decides it exactly. Anything the walk cannot resolve — a rule call with
-//! arguments, `<::(EXPR)>` indirection, `<{ ... }>`, `<~~>`, a name that
-//! resolves to a grammar *method* rather than to a rule, a body whose pattern
-//! is not static enough to resolve at all — is answered "may re-enter", so the
-//! verdict is a sound under-approximation of safety: `true` means proven safe,
-//! `false` means only "not proven".
-//!
-//! The one construct deliberately treated as harmless is an embedded
-//! `{ ... }` / `<?{ ... }>` block. It is arbitrary user code and could in
-//! principle re-enter the same rule at the same position by hand; the callers
-//! keep a runtime escape for that (`regex_match_atom.rs`'s `first_only`
-//! retry, and the streamed subrule's seed-consulted fallback in
-//! `regex_match_lazy_subrule.rs`), exactly as the first half of Slice 2 does.
-//!
-//! The walk therefore also reports whether the cone runs user code *at all*
-//! ([`DirectCalls::runs_user_code`]). That second bit is what the
-//! left-recursion gate needs and the streamed path does not: a cone with no
-//! reachable call to its own name AND no user code in it cannot re-enter its
-//! key by any route, so the activation the key exists for can be skipped
-//! outright rather than merely escaped from afterwards
+//! An embedded `{ ... }` / `<?{ ... }>` block is arbitrary user code and could
+//! re-enter the same rule at the same position by hand, so the walk also
+//! reports whether the cone runs user code *at all*
+//! ([`DirectCalls::runs_user_code`]): a cone with no reachable call to its own
+//! name AND no user code in it cannot re-enter its key by any route, so the
+//! activation the key exists for can be skipped outright
 //! ([`Interpreter::subrule_needs_no_lr_bookkeeping`]).
 
 use std::cell::RefCell;
-// `STREAMABLE` is probed before every `<subrule>` call is even resolved, so
-// these memo tables are Fx-hashed rather than SipHash-hashed — a grammar rule
+// These memo tables are Fx-hashed rather than SipHash-hashed — a grammar rule
 // name is not adversarial input (<https://github.com/tokuhirom/mutsu/issues/7576>).
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::collections::VecDeque;
@@ -69,50 +51,24 @@ pub(super) struct DirectCalls {
     /// Some atom in one of the candidates runs user code — a `{ ... }` /
     /// `<?{ ... }>` block, a `:my $x = ...` declaration, a `** { ... }`
     /// quantifier bound, a `<:prop(...)>` property predicate. That code can
-    /// call any rule by hand, so it is an edge the walk cannot name. The
-    /// streamed path tolerates it (it has a runtime escape); the
-    /// left-recursion gate does not.
+    /// call any rule by hand, so it is an edge the walk cannot name, and the
+    /// left-recursion gate refuses a cone that has it.
     runs_user_code: bool,
 }
 
-/// Why a `<subrule>` call could not take the streamed path.
-///
-/// Each variant is one of the declined shapes #7548 enumerates, kept separate
-/// because they cost very different amounts to clear: widening the *analysis*
-/// (`NotKnowable`, `Arguments`, `Symbolic`) is cheap, while streaming through
-/// the growing-seed loop (`ReentersOwnName`), a proto's rank-then-match
-/// dispatch (`Proto`) or several candidates' interleaved walks
-/// (`SeveralCandidates`) is the expensive machinery. `Str` names are what the
-/// `MUTSU_VM_STATS` histogram reports.
+/// Why the walk could not prove a rule's call cone free of re-entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StreamDecline {
-    /// `<expr($p-1)>` — the arguments are part of the left-recursion key and
-    /// are evaluated per call, so the memoized verdict cannot apply.
-    Arguments,
-    /// `<::(EXPR)>` symbolic indirection: the target resolves per call.
-    Symbolic,
-    /// The name answers to no token/regex/rule here — a builtin assertion or
-    /// character class, or a plain grammar method (arbitrary user code).
-    NotARule,
-    /// Several resolved candidates without a proto: the eager arm deduplicates
-    /// ends *across* them, which a stream would have to interleave to preserve.
-    SeveralCandidates,
-    /// A proto/`multi` subrule: ADR-0046 dispatch wants the winning
-    /// candidate's whole end set.
-    Proto,
-    /// `:m` remaps positions across the whole result set.
-    IgnoreMark,
+pub(super) enum ConeDecline {
     /// The rule really is part of a call cycle. Left recursion is why the
-    /// growing-seed loop exists; this is the genuinely hard residue.
+    /// growing-seed loop exists.
     ReentersOwnName,
     /// Some rule in the call cone is a plain grammar METHOD — arbitrary user
     /// code, whose dispatch targets are not a property of the token
-    /// generation. Nothing short of running it can widen this.
+    /// generation.
     CalleeIsMethod,
     /// Some rule in the call cone splices a value into its own pattern text
     /// outside a `{ ... }` code block, so its call edges are not stable across
-    /// attempts. Widening this means tracking *which* interpolations can
-    /// introduce a rule call, rather than refusing on any of them.
+    /// attempts.
     CalleeInterpolates,
     /// Some rule in the call cone contains a construct
     /// (`<{ ... }>` closure interpolation, `<~~>`, ...) whose dispatch target
@@ -120,57 +76,6 @@ pub(super) enum StreamDecline {
     CalleeEdgeUnresolvable,
     /// The reachable set hit [`MAX_REACHABLE_RULES`].
     ReachableSetTooLarge,
-    /// A `$*`-twigil rule parameter is declared somewhere in the program, so
-    /// the call has to install and tear down a dynamic scope around itself.
-    DynamicRuleParam,
-    /// The rule's body carries a `"..."` qq thunk, whose result has to be
-    /// installed around the call and torn down after it
-    /// (`regex_qq_token_scope`), like a `$*` parameter.
-    QqThunk,
-    /// The rule declares a match-scoped grammar dynamic variable. The eager
-    /// path owns the frame boundary; streaming would otherwise expose one
-    /// frame across the caller continuation.
-    GrammarDynvar,
-    /// The grammar has a custom HOW, so dispatch is not static.
-    CustomHow,
-    /// Some method carries a `.wrap` chain. A wrapped token is dispatched by
-    /// the eager arm (`try_wrapped_token_subrule_dispatch`), and a wrapper
-    /// reads its caller's rule name from the routine frame the eager arm
-    /// pushes around each subrule call, which a stream cannot keep scoped
-    /// to the call (#9151).
-    MethodWrapInstalled,
-    /// This `(name, position)` key is already left-recursion-active.
-    LrKeyActive,
-    /// An embedded `{ ... }` block re-entered the key mid-stream, so the single
-    /// pass was not the growing-seed loop's answer and the call was handed back
-    /// to the eager arm.
-    SeedConsulted,
-}
-
-impl StreamDecline {
-    /// Short stable name for the `MUTSU_VM_STATS` histogram.
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Arguments => "call-arguments",
-            Self::Symbolic => "symbolic-indirection",
-            Self::NotARule => "not-a-rule",
-            Self::SeveralCandidates => "several-candidates",
-            Self::Proto => "proto-candidate",
-            Self::IgnoreMark => "ignore-mark",
-            Self::ReentersOwnName => "reenters-own-name",
-            Self::CalleeIsMethod => "callee-is-grammar-method",
-            Self::CalleeInterpolates => "callee-interpolates",
-            Self::CalleeEdgeUnresolvable => "callee-edge-unresolvable",
-            Self::ReachableSetTooLarge => "reachable-set-too-large",
-            Self::DynamicRuleParam => "dynamic-rule-param",
-            Self::QqThunk => "qq-thunk",
-            Self::GrammarDynvar => "grammar-dynvar",
-            Self::CustomHow => "custom-how-grammar",
-            Self::MethodWrapInstalled => "method-wrap-installed",
-            Self::LrKeyActive => "lr-key-active",
-            Self::SeedConsulted => "seed-consulted",
-        }
-    }
 }
 
 thread_local! {
@@ -179,22 +84,9 @@ thread_local! {
     #[allow(clippy::type_complexity)]
     static DIRECT_CALLS: RefCell<(
         u64,
-        HashMap<RuleNode, Result<std::sync::Arc<DirectCalls>, StreamDecline>>,
+        HashMap<RuleNode, Result<std::sync::Arc<DirectCalls>, ConeDecline>>,
     )> = RefCell::new((0, HashMap::default()));
 
-    /// `pkg -> subrule atom text -> may this call be streamed?`. This is the
-    /// hot lookup: it is consulted before the call is resolved (and before its
-    /// name is even parsed), so a rule that is not streamable costs two
-    /// borrowed hash lookups rather than a resolution plus a graph walk. The
-    /// two-level shape is what keeps it allocation-free — a `(String, String)`
-    /// key would have to be built to probe it. Same generation key.
-    ///
-    /// `None` is "streamable"; `Some(reason)` names the shape that declined it,
-    /// so the memoized answer still feeds the per-call histogram
-    /// ([`crate::vm::vm_stats::record_subrule_stream`]) without recomputing.
-    #[allow(clippy::type_complexity)]
-    static STREAMABLE: RefCell<(u64, HashMap<Symbol, HashMap<String, Option<StreamDecline>>>)> =
-        RefCell::new((0, HashMap::default()));
 }
 
 fn token_defs_gen() -> u64 {
@@ -202,46 +94,13 @@ fn token_defs_gen() -> u64 {
 }
 
 impl Interpreter {
-    /// May a `<name>` call in `pkg` be streamed as far as its call cone is
-    /// concerned? `None` when it may; otherwise the reason it may not.
-    ///
-    /// A rule whose cone never calls `name` again trivially qualifies. So does
-    /// a recursive one whose calls to `name` all sit after something that
-    /// consumes input (`regex A { '{' [ <A> | . ]*? '}' }`,
-    /// `regex_left_call_graph`): each nested call runs under a different
-    /// left-recursion key (the key carries the position), so the growing-seed
-    /// loop is as much of a formality for it as for a non-recursive rule, and
-    /// the streamed path's own runtime escapes (`LrKeyActive`,
-    /// `SeedConsulted`) still cover user code re-entering the key by hand.
-    /// Declining it instead made every nested call enumerate its whole end set
-    /// before the caller could try the first, which is exponential in the
-    /// nesting depth (#9596).
-    fn reenter_decline(&mut self, name: &str, pkg: Symbol) -> Option<StreamDecline> {
-        let mut reaches_own_name = false;
-        let (decline, _) = self.cone_walk(name, pkg, Some(&mut reaches_own_name));
-        if decline.is_some() {
-            return decline;
-        }
-        (reaches_own_name && !self.subrule_cannot_left_reenter(Symbol::intern(name), pkg))
-            .then_some(StreamDecline::ReentersOwnName)
-    }
-
     /// The walk itself, reporting both facts it can establish about the cone:
     /// why the key may be re-entered (`None` = proven unreachable), and whether
     /// no rule in the cone runs user code. The second is only meaningful
     /// alongside a `None` first — an aborted walk answers `false` rather than
-    /// guessing at the part it never reached.
-    ///
-    /// With `own_name` unset, reaching a rule named `name` again ends the walk
-    /// with `ReentersOwnName`. With it set, that is recorded there instead and
-    /// the walk goes on checking the rest of the cone, for a caller that can
-    /// clear the cycle with a sharper question.
-    fn cone_walk(
-        &mut self,
-        name: &str,
-        pkg: Symbol,
-        mut own_name: Option<&mut bool>,
-    ) -> (Option<StreamDecline>, bool) {
+    /// guessing at the part it never reached. Reaching a rule named `name`
+    /// again ends the walk with `ReentersOwnName`.
+    fn cone_walk(&mut self, name: &str, pkg: Symbol) -> (Option<ConeDecline>, bool) {
         let name_sym = Symbol::intern(name);
         let start: RuleNode = (pkg, name_sym);
         let mut seen: HashSet<RuleNode> = HashSet::from_iter([start]);
@@ -257,13 +116,10 @@ impl Interpreter {
                 // Reaching the starting NAME again closes the loop the
                 // growing-seed algorithm exists for.
                 if callee.1 == name_sym {
-                    match own_name.as_deref_mut() {
-                        Some(reached) => *reached = true,
-                        None => return (Some(StreamDecline::ReentersOwnName), false),
-                    }
+                    return (Some(ConeDecline::ReentersOwnName), false);
                 }
                 if seen.len() >= MAX_REACHABLE_RULES {
-                    return (Some(StreamDecline::ReachableSetTooLarge), false);
+                    return (Some(ConeDecline::ReachableSetTooLarge), false);
                 }
                 if seen.insert(*callee) {
                     queue.push_back(*callee);
@@ -284,7 +140,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         pkg: Symbol,
-    ) -> Result<std::sync::Arc<DirectCalls>, StreamDecline> {
+    ) -> Result<std::sync::Arc<DirectCalls>, ConeDecline> {
         let generation = token_defs_gen();
         let key: RuleNode = (pkg, Symbol::intern(name));
         if let Some(hit) = DIRECT_CALLS.with(|c| {
@@ -313,7 +169,7 @@ impl Interpreter {
                     let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
                     self.rule_calls_of(name, pkg, &candidates, raw_empty)
                 }
-                None => Err(StreamDecline::CalleeInterpolates),
+                None => Err(ConeDecline::CalleeInterpolates),
             };
         DIRECT_CALLS.with(|c| {
             let mut c = c.borrow_mut();
@@ -333,14 +189,14 @@ impl Interpreter {
         pkg: Symbol,
         candidates: &[super::regex_token_resolve::ParsedTokenCandidate],
         raw_empty: bool,
-    ) -> Result<std::sync::Arc<DirectCalls>, StreamDecline> {
+    ) -> Result<std::sync::Arc<DirectCalls>, ConeDecline> {
         if raw_empty || candidates.is_empty() {
             // No token/regex/rule answers to this name here. It is either a
             // builtin assertion or character class (`<alpha>`, `<ws>` with no
             // grammar override, `<sym>`), which cannot dispatch to a user rule,
             // or a plain grammar METHOD — arbitrary user code, so unknowable.
             return if self.grammar_has_user_method(pkg.as_str(), name) {
-                Err(StreamDecline::CalleeIsMethod)
+                Err(ConeDecline::CalleeIsMethod)
             } else {
                 Ok(std::sync::Arc::new(DirectCalls {
                     callees: Vec::new(),
@@ -357,7 +213,7 @@ impl Interpreter {
             // references against the package that DEFINED it, not against the
             // caller's — the same rule `subrule_candidate_ends` matches under.
             if !collect_pattern_calls(parsed, *sub_pkg, &mut out) {
-                return Err(StreamDecline::CalleeEdgeUnresolvable);
+                return Err(ConeDecline::CalleeEdgeUnresolvable);
             }
         }
         // Sorted by interned id, not lexicographically: the order is only a
@@ -370,41 +226,6 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    /// Whether the streamed `<subrule>` path in `regex_match_lazy_subrule.rs`
-    /// may take this call at all: the memoized front door, consulted BEFORE the
-    /// call is resolved so an ineligible one costs a hash lookup instead of a
-    /// resolution plus a call-graph walk.
-    ///
-    /// `atom_text` is the subrule atom exactly as written,
-    /// so `<foo>` and `<&foo>` get their own entries rather than sharing one.
-    pub(super) fn subrule_call_stream_decline(
-        &mut self,
-        atom_text: &str,
-        pkg: Symbol,
-    ) -> Option<StreamDecline> {
-        let generation = token_defs_gen();
-        if let Some(hit) = STREAMABLE.with(|c| {
-            let c = c.borrow();
-            (c.0 == generation)
-                .then(|| c.1.get(&pkg).and_then(|m| m.get(atom_text)).copied())
-                .flatten()
-        }) {
-            return hit;
-        }
-        let verdict = self.compute_stream_decline(atom_text, pkg);
-        STREAMABLE.with(|c| {
-            let mut c = c.borrow_mut();
-            if c.0 != generation {
-                c.0 = generation;
-                c.1.clear();
-            }
-            c.1.entry(pkg)
-                .or_default()
-                .insert(atom_text.to_string(), verdict);
-        });
-        verdict
-    }
-
     /// May a `<name>` call in `pkg` skip its left-recursion activation
     /// entirely?
     ///
@@ -427,10 +248,9 @@ impl Interpreter {
     /// it, and removed it again.
     ///
     /// CALLERS MUST HAVE RULED OUT A CUSTOM-HOW GRAMMAR — one routes dispatch
-    /// through a user `find_method`, so the call graph is not what runs. Both
-    /// call sites already know the answer (the streamed path declines on it
-    /// outright, the eager arm binds it for its own dispatch attempt), and
-    /// asking again here would take a registry read lock per `<subrule>` call
+    /// through a user `find_method`, so the call graph is not what runs. The
+    /// call site already knows the answer (the eager call binds it for its own
+    /// dispatch attempt), and asking again here would take a registry read lock per `<subrule>` call
     /// for a fact that is not even memoizable: a custom-HOW grammar can be
     /// declared after a verdict is cached, and `TOKEN_DEFS_GEN` is not what
     /// tracks it.
@@ -453,42 +273,10 @@ impl Interpreter {
         pkg: Symbol,
         generation: u64,
     ) -> bool {
-        let (decline, code_free) = self.cone_walk(name.as_str(), pkg, None);
+        let (decline, code_free) = self.cone_walk(name.as_str(), pkg);
         let verdict = decline.is_none() && code_free;
         super::regex_lr_state::lr_record_skip_verdict(name, pkg, generation, verdict);
         verdict
-    }
-
-    fn compute_stream_decline(&mut self, atom_text: &str, pkg: Symbol) -> Option<StreamDecline> {
-        let spec = Self::parse_named_regex_lookup_spec(atom_text);
-        // A rule call with arguments, and `<::(EXPR)>` symbolic indirection,
-        // both resolve per call; neither is a shape this path handles.
-        if !spec.arg_exprs.is_empty() {
-            return Some(StreamDecline::Arguments);
-        }
-        if spec.lookup_name == "::" {
-            return Some(StreamDecline::Symbolic);
-        }
-        let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
-        // Exactly one plain candidate. A proto keeps its rank-then-match
-        // dispatch (ADR-0046), several candidates need the cross-candidate dedup
-        // the eager arm performs, and `:m` remaps positions across the whole
-        // result set. All three are properties of the rule's DEFINITIONS, so the
-        // verdict holds for the whole token generation even when the body's
-        // parse does not.
-        if raw_empty || candidates.is_empty() {
-            return Some(StreamDecline::NotARule);
-        }
-        let [(parsed, _, sym)] = &candidates[..] else {
-            return Some(StreamDecline::SeveralCandidates);
-        };
-        if sym.is_some() {
-            return Some(StreamDecline::Proto);
-        }
-        if parsed.ignore_mark {
-            return Some(StreamDecline::IgnoreMark);
-        }
-        self.reenter_decline(&spec.lookup_name, pkg)
     }
 
     /// `true` when every definition answering to `<name>` in `pkg` compiles to
@@ -608,9 +396,8 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
         | RegexAtom::AtPosition(_)
         | RegexAtom::TildeMarker => true,
         // User code. See the module header: it names no edge the walk can
-        // record, so it stays "harmless" for the streamed path's purposes
-        // (which has a runtime escape) — but it is recorded, because the
-        // left-recursion gate skips the very escape that covers it.
+        // record, but it is recorded, because the left-recursion gate refuses
+        // a cone that runs it.
         RegexAtom::CodeAssertion { .. } | RegexAtom::VarDecl { .. } => {
             out.runs_user_code = true;
             true

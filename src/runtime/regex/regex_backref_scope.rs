@@ -275,31 +275,3 @@ impl RegexCaptures {
         }
     }
 }
-
-/// The outer-captures seed published right now (see `INLINE_OUTER_CAPS_SEED`).
-pub(crate) fn current_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
-    super::regex_helpers::INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
-}
-
-/// Arm the seed a later branch of a `&` conjunction reads through: `outer`, the
-/// one the conjunction atom published, then `merged`, the earlier branches'
-/// captures. Rakudo matches every branch on one cursor, so code in `b` of
-/// `/ (a) [ (\w) & b { … } ] /` sees `$0` and the first branch's capture, and
-/// `$/` spans from the enclosing match's start. A conjunction that published
-/// nothing (no code or backreference in it) leaves the seed alone.
-// Cost: O(c), c = `merged`'s captures (one copy), when `outer` is published.
-pub(crate) fn arm_conjunction_branch_seed(
-    outer: Option<&std::sync::Arc<OuterBackrefCaps>>,
-    merged: &RegexCaptures,
-) -> super::regex_helpers::OuterCapsSeed {
-    let Some(outer) = outer else {
-        return super::regex_helpers::OuterCapsSeed::inert();
-    };
-    super::regex_helpers::OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
-        named: merged.named.clone(),
-        positional: merged.positional.clone(),
-        parent: Some(outer.clone()),
-        merge_positional: None,
-        match_from: outer.match_from,
-    })))
-}

@@ -26,11 +26,7 @@ use crate::value::Value;
 use crate::vm::vm_stats_regex_vm::record_regex_eager;
 
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
-type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallVerdict)>;
-
-/// A call's frame, or why it takes the bridge (`MUTSU_VM_STATS`'s
-/// `regex-walk:` line, `bridged=`).
-pub(super) type CallVerdict = Result<CallTarget, &'static str>;
+type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallTarget)>;
 
 thread_local! {
     /// The verdict for a call, per (rule, caller package, caller `:i`),
@@ -45,7 +41,7 @@ thread_local! {
 /// A `<subrule>` call, resolved ([`Interpreter::rx_call_resolve`]).
 pub(super) struct ResolvedCall {
     /// The frame it runs as, or why it bridges.
-    pub(super) verdict: CallVerdict,
+    pub(super) verdict: CallTarget,
     /// The evaluated arguments of a call with arguments.
     pub(super) args: Option<Vec<Value>>,
     /// The binding window installed for a frame's callee. The caller owns its
@@ -87,6 +83,9 @@ pub(super) enum CallTarget {
     /// does not, the candidates are evaluated eagerly as for
     /// [`CallTarget::Eager`], with left-recursion bookkeeping forced.
     CustomHow(Arc<TokenCandidates>),
+    /// `<::(EXPR)>`: the rule's name is computed where the call is reached,
+    /// then the call is evaluated eagerly (`rx_symbolic_call_ends`).
+    Symbolic,
 }
 
 impl Interpreter {
@@ -117,10 +116,10 @@ impl Interpreter {
         caps: &crate::runtime::regex_types::RegexCaptures,
     ) -> Option<ResolvedCall> {
         let spec = name.spec();
-        if let Err(why) = self.rx_call_blockers(name, pkg) {
-            // Bridged without evaluating: the producer evaluates them itself.
+        // `<::(EXPR)>`: its single argument is the name, evaluated by the call.
+        if spec.lookup_name == "::" {
             return Some(ResolvedCall {
-                verdict: Err(why),
+                verdict: CallTarget::Symbolic,
                 args: None,
                 window: None,
             });
@@ -141,9 +140,9 @@ impl Interpreter {
                 // — is matched as a call of no rule.
                 if raw_empty {
                     if self.subrule_names_user_method(spec, pkg) {
-                        Ok(CallTarget::Method)
+                        CallTarget::Method
                     } else {
-                        Ok(CallTarget::Single)
+                        CallTarget::Single
                     }
                 } else {
                     self.call_target_from_candidates(name, pkg, ic, candidates)
@@ -153,10 +152,10 @@ impl Interpreter {
         // An evaluation of this name is live (a growing-seed loop further up):
         // this call may be its re-entry, which the loop's bookkeeping answers.
         let verdict = match verdict {
-            Ok(CallTarget::Plain(..) | CallTarget::Proto(_)) if lr_name_active(spec.lookup_sym) => {
+            CallTarget::Plain(..) | CallTarget::Proto(_) if lr_name_active(spec.lookup_sym) => {
                 let (candidates, _) =
                     self.parsed_subrule_candidates(spec, pkg, args.as_deref().unwrap_or(&[]));
-                Ok(CallTarget::Eager(candidates, "lr-seed"))
+                CallTarget::Eager(candidates, "lr-seed")
             }
             verdict => verdict,
         };
@@ -164,34 +163,32 @@ impl Interpreter {
         // producer tries before anything else: a wrapped token, then a custom
         // HOW's `find_method` for a call that names rules.
         let verdict = if self.token_method_has_wrap_chain(pkg.as_str(), &spec.lookup_name) {
-            Ok(CallTarget::Wrapped)
+            CallTarget::Wrapped
         } else if !self.registry().grammar_custom_how.is_empty()
             && matches!(
                 verdict,
-                Ok(CallTarget::Plain(..) | CallTarget::Proto(_) | CallTarget::Eager(..))
+                CallTarget::Plain(..) | CallTarget::Proto(_) | CallTarget::Eager(..)
             )
         {
             let (candidates, _) =
                 self.parsed_subrule_candidates(spec, pkg, args.as_deref().unwrap_or(&[]));
-            Ok(CallTarget::CustomHow(candidates))
+            CallTarget::CustomHow(candidates)
         } else {
             verdict
         };
         // Only a call the engine evaluates keeps the window: the producer
         // installs its own.
         let window = match (&verdict, window) {
-            (Ok(CallTarget::Plain(..) | CallTarget::Proto(_)), window) => {
+            (CallTarget::Plain(..) | CallTarget::Proto(_), window) => {
                 self.rx_call_rule_frame(name, pkg, window)
             }
             // An eager call holds the window around its evaluation only; the
             // seed loop pushes the routine frame itself, around each
             // candidate's evaluation (`subrule_candidate_ends_with_frame`).
-            (
-                Ok(CallTarget::Eager(..) | CallTarget::Wrapped | CallTarget::CustomHow(_)),
-                window,
-            ) => self
-                .rx_call_rule_frame(name, pkg, window)
-                .map(|w| CallWindow { routine: None, ..w }),
+            (CallTarget::Eager(..) | CallTarget::Wrapped | CallTarget::CustomHow(_), window) => {
+                self.rx_call_rule_frame(name, pkg, window)
+                    .map(|w| CallWindow { routine: None, ..w })
+            }
             (_, Some(saved)) => {
                 self.restore_subrule_dynamic_params(saved);
                 None
@@ -280,13 +277,12 @@ impl Interpreter {
         })
     }
 
-    /// The frame `<name>` called from `pkg` runs as, or `Err(why)` when the
-    /// call must take the bridge. `ic` is the caller's `:i`, which the walk scopes
-    /// over the callee's body.
+    /// The shape `<name>` called from `pkg` runs as. `ic` is the caller's
+    /// `:i`, which is scoped over a proto candidate's body.
     // Cost: O(1) expected: one memoized candidate probe, plus the memoized
     // call-graph verdicts for the rule, per call; O(c) more for a proto of c
     // candidates (a program probe each).
-    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
+    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
         let spec = name.spec();
         // `<&r>` may name a lexical Regex, a value of this call's scope: never
         // cached.
@@ -313,38 +309,26 @@ impl Interpreter {
         target
     }
 
-    /// What keeps any call of `<name>` off the compiled engine, whatever its
-    /// arguments: a name resolved per call.
-    // Cost: O(1).
-    fn rx_call_blockers(&self, name: &NamedAtom, _pkg: Symbol) -> Result<(), &'static str> {
-        let spec = name.spec();
-        // `<::(EXPR)>`: the rule's name is computed per call.
-        if spec.lookup_name == "::" {
-            return Err("symbolic-name");
-        }
-        Ok(())
-    }
-
     /// [`Self::rx_call_target`] with the one verdict a method definition can
     /// change, and so is never cached: a call with no rule of its name that
     /// names a plain grammar METHOD calls the method.
     // Cost: O(1) expected.
-    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
-        let target = self.rx_call_target(name, pkg, ic)?;
+    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
+        let target = self.rx_call_target(name, pkg, ic);
         if matches!(target, CallTarget::Single) && self.subrule_names_user_method(name.spec(), pkg)
         {
-            return Ok(CallTarget::Method);
+            return CallTarget::Method;
         }
-        Ok(target)
+        target
     }
 
     /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
     /// decide the shape of the call.
-    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallVerdict {
+    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
         let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
         if raw_empty {
-            return Ok(CallTarget::Single);
+            return CallTarget::Single;
         }
         self.call_target_from_candidates(name, pkg, ic, candidates)
     }
@@ -357,22 +341,23 @@ impl Interpreter {
         pkg: Symbol,
         ic: bool,
         candidates: Arc<TokenCandidates>,
-    ) -> CallVerdict {
+    ) -> CallTarget {
         let spec = name.spec();
         // Candidates none of which parses: a call of no rule, as in the walk.
         if candidates.is_empty() {
-            return Ok(CallTarget::Single);
+            return CallTarget::Single;
         }
         // `:m` remaps positions across the whole result set, which the all-ends
         // entry does over the mark-stripped subject.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
-            return Ok(CallTarget::Eager(candidates, "ignoremark-callee"));
+            return CallTarget::Eager(candidates, "ignoremark-callee");
         }
-        // Several candidates without a proto dedup their ends across each
-        // other; a mix of both is not a shape the walk's proto dispatch names.
+        // Several candidates without a proto (multi rules) dedup their ends
+        // across each other, which the growing-seed loop does; so does a mix
+        // of both.
         let proto = candidates.iter().all(|(_, _, sym)| sym.is_some());
         if !proto && (candidates.len() != 1 || candidates[0].2.is_some()) {
-            return Err("multi-candidate");
+            return CallTarget::Eager(candidates, "multi-candidate");
         }
         // A wrapped proto candidate (`^find_method('p:sym<a>').wrap(..)`) is
         // user code around that candidate's invocation, like a wrapped rule.
@@ -382,32 +367,32 @@ impl Interpreter {
                 .filter_map(|(_, _, sym)| sym.as_deref())
                 .any(|k| self.proto_candidate_has_wrap_chain(pkg, &spec.lookup_name, k))
         {
-            return Ok(CallTarget::Eager(candidates, "wrapped-candidate"));
+            return CallTarget::Eager(candidates, "wrapped-candidate");
         }
-        // The walk's eager arm scopes the caller's `:i` over a proto candidate's
-        // body (`subrule_candidate_ends`), which needs the body compiled under it:
-        // that call bridges. A plain call is the walk's streamed shape, which
-        // does not inherit `:i` — and neither does rakudo.
+        // The caller's `:i` is scoped over a proto candidate's body
+        // (`subrule_candidate_ends`), which needs the body compiled under it:
+        // the growing-seed loop evaluates such a call. A plain call does not
+        // inherit `:i` — and neither does rakudo.
         if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
-            return Err("proto-inherited-i");
+            return CallTarget::Eager(candidates, "proto-inherited-i");
         }
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
-            return Ok(CallTarget::Eager(candidates, "lr-seed"));
+            return CallTarget::Eager(candidates, "lr-seed");
         }
         if candidates
             .iter()
             .any(|(parsed, _, _)| program_for(parsed).is_none())
         {
-            return Ok(CallTarget::Eager(candidates, "declined-callee"));
+            return CallTarget::Eager(candidates, "declined-callee");
         }
         if proto {
-            return Ok(CallTarget::Proto(candidates));
+            return CallTarget::Proto(candidates);
         }
         let (parsed, sub_pkg, _) = &candidates[0];
-        Ok(CallTarget::Plain(
-            Arc::clone(program_for(parsed).ok_or("callee-declined")?),
-            *sub_pkg,
-        ))
+        match program_for(parsed) {
+            Some(program) => CallTarget::Plain(Arc::clone(program), *sub_pkg),
+            None => CallTarget::Eager(candidates, "declined-callee"),
+        }
     }
 
     /// Evaluate a call the engine does not enter as a frame — a
