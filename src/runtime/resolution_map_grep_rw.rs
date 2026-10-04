@@ -256,6 +256,18 @@ impl Interpreter {
                             let item = list_items[i].clone();
                             if let Some(&p) = plan.param_syms.get(assumed_count) {
                                 if rw_param.is_some() {
+                                    // The param is a plain scalar of its own: an
+                                    // enclosing `\x`'s readonly marker (same bare
+                                    // name) does not apply to it (#11700).
+                                    if crate::env::sigilless_readonly_keys_possible() {
+                                        vm.env_mut().remove_sym(
+                                            crate::runtime::sigilless_readonly_key(
+                                                &rw_param
+                                                    .map(|pd| pd.name.clone())
+                                                    .unwrap_or_default(),
+                                            ),
+                                        );
+                                    }
                                     let cell = crate::gc::Gc::new(
                                         crate::value::ContainerCell::new(item.clone()),
                                     );

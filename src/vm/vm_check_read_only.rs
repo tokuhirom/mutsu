@@ -168,6 +168,37 @@ impl Interpreter {
         }
     }
 
+    /// Refuse an in-place `OP=` on the named variable when its binding is
+    /// readonly. Same decision as [`Self::check_named_incdec_readonly`], but
+    /// a compound assignment is an assignment, so it raises what plain
+    /// assignment raises, not the `postfix:<++>` dispatch failure.
+    // Cost: as `check_named_incdec_readonly`.
+    pub(super) fn check_named_compound_readonly(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> Result<(), RuntimeError> {
+        if self
+            .check_named_incdec_readonly(code, name, name_sym, "postfix:<++>")
+            .is_ok()
+        {
+            return Ok(());
+        }
+        let sigilless = crate::env::sigilless_readonly_keys_possible()
+            && matches!(
+                self.env()
+                    .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
+            );
+        Err(if sigilless {
+            self.immutable_value_error(name)
+        } else {
+            RuntimeError::readonly_variable()
+        })
+    }
+
     /// The error an assignment through a binding readonly for the reason
     /// `kind` raises, worded from the value `bound` the binding holds (not
     /// from a by-name lookup, which may see another frame's same-named

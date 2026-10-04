@@ -227,6 +227,18 @@ impl Interpreter {
                 );
             }
         }
+        // An `is rw`/`is raw` scalar param shares its bare name with a live
+        // enclosing sigilless `\x`; the loop drops that marker for the param's
+        // own scope (`eval_map_over_items_rw`), so it is restored on exit
+        // (#11700).
+        for pd in data.param_defs.iter() {
+            if pd.traits.iter().any(|t| t == "rw" || t == "raw") {
+                push(
+                    &mut temporaries,
+                    crate::runtime::sigilless_readonly_key(&pd.name),
+                );
+            }
+        }
         push(&mut temporaries, crate::symbol::wk::topic());
         push(&mut temporaries, crate::symbol::wk::topic_sigiled());
         if kind == InlineLoopKind::Grep {
