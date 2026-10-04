@@ -111,6 +111,37 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        self.hash_storage_delegate_mut_inner(target_name, target, method, args, true)
+    }
+
+    /// A qualified call naming the Associative base (`self.Hash::BIND-KEY(...)`,
+    /// `$o.Hash::AT-KEY(...)`) from a `Hash`/`Map` subclass: runs the base
+    /// implementation on the backing storage even when the subclass overrides
+    /// the method, since the qualifier names the parent's version on purpose.
+    // Cost: O(1) dispatch plus the delegated method's own cost.
+    pub(crate) fn try_hash_storage_delegate_qualified(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.hash_storage_delegate_mut_inner(
+            "__mutsu_hash_qualified_tmp",
+            target,
+            method,
+            args,
+            false,
+        )
+    }
+
+    fn hash_storage_delegate_mut_inner(
+        &mut self,
+        target_name: &str,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+        honor_user_override: bool,
+    ) -> Option<Result<Value, RuntimeError>> {
         let ValueView::Instance {
             class_name: inst_class,
             attributes,
@@ -123,7 +154,7 @@ impl Interpreter {
             return None;
         }
         let cn = inst_class.resolve();
-        if self.has_user_method(&cn, method) {
+        if honor_user_override && self.has_user_method(&cn, method) {
             return None;
         }
         if !attributes.contains_key("__mutsu_hash_storage") {

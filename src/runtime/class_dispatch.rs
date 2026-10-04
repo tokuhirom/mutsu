@@ -249,6 +249,28 @@ impl Interpreter {
                 )?;
                 return Ok((v, None));
             }
+            // A user `multi method` on an `is Array`/`is Hash` subclass only adds
+            // candidates: a call none of them accepts still reaches the
+            // inherited Positional/Associative implementation on the backing
+            // storage (`multi method AT-POS($, :$leap!)` leaves a plain
+            // `$o[0]` to `Array.AT-POS`). An explicit proto owns dispatch.
+            if let ValueView::Instance { attributes, .. } = inv_value.view()
+                && self
+                    .lookup_proto_method(receiver_class_name, method_name)
+                    .is_none()
+            {
+                if matches!(method_name, "AT-POS" | "EXISTS-POS")
+                    && let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned()
+                {
+                    let v = self.call_method_with_values(storage, method_name, args)?;
+                    return Ok((v, None));
+                }
+                if let Some(res) =
+                    self.try_hash_storage_delegate_qualified(&inv_value, method_name, &args)
+                {
+                    return res.map(|v| (v, None));
+                }
+            }
             let sigs = self.format_method_candidate_signatures(
                 receiver_class_name,
                 method_name,
