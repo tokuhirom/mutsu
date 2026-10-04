@@ -199,7 +199,9 @@ impl Interpreter {
     /// container slot names and `::`-qualified names are excluded for the same
     /// reason `collect_unit_lexical_names` excludes them.
     pub(crate) fn transient_lane_candidate(key: &str) -> bool {
-        Self::is_plain_lexical_name(key) && !key.contains("__ANON") && !key.contains("::")
+        Self::is_plain_lexical_name(key)
+            && !key.contains("__ANON")
+            && !crate::qualified::is_qualified_str(key)
     }
 
     /// Union a frame's `type_body_written_lexicals` into the interpreter-wide

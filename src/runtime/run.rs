@@ -1182,7 +1182,7 @@ impl Interpreter {
         // the same way.
         let pkg_prefix = {
             let pkg = self.current_package();
-            if pkg == "GLOBAL" {
+            if crate::qualified::is_global_name(&pkg) {
                 String::new()
             } else {
                 format!("{pkg}::")

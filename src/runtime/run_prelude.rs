@@ -466,7 +466,8 @@ impl Interpreter {
                     Stmt::ClassDecl { name, .. } | Stmt::RoleDecl { name, .. } => name.resolve(),
                     _ => continue,
                 };
-                if let Some((directive, _)) = member_name.split_once("::")
+                if let Some((directive, _)) =
+                    crate::qualified::split_first(crate::qualified::known_symbol(&member_name))
                     && !VALID.contains(&directive)
                 {
                     let mut attrs = ValueMap::default();
