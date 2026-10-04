@@ -92,6 +92,21 @@ impl Interpreter {
                         args,
                     );
                 }
+                // A callable role type object follows its own CALL-ME/coercion
+                // path; registering a pun here changes later role composition.
+                if !matches!(method, "new" | "CALL-ME")
+                    && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
+                {
+                    self.ensure_role_punned_to_class(pkg)?;
+                    let result = self.try_compiled_method_mut_or_interpret_sym(
+                        target_name,
+                        target,
+                        method_sym,
+                        args,
+                    );
+                    self.withdraw_role_pun(pkg);
+                    return result;
+                }
                 self.run_pun_role_bodies(pkg)?;
             }
         }
