@@ -124,15 +124,12 @@ impl Interpreter {
             // A method that delegates (`method TOP { self.rule }`) returns
             // the delegate rule's own Match, so that rule's action -- not a
             // `TOP` one -- is what fires on it.
-            let delegate = value
-                .match_from()
-                .zip(value.match_to())
-                .and_then(|(f, t)| {
-                    super::regex::regex_token_method::last_token_delegate_for(
-                        usize::try_from(f).ok()?,
-                        usize::try_from(t).ok()?,
-                    )
-                });
+            let delegate = value.match_from().zip(value.match_to()).and_then(|(f, t)| {
+                super::regex::regex_token_method::last_token_delegate_for(
+                    usize::try_from(f).ok()?,
+                    usize::try_from(t).ok()?,
+                )
+            });
             self.invoke_grammar_actions(value, actions, delegate.as_deref().unwrap_or(start_rule))?
         } else {
             value
