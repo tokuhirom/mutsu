@@ -223,6 +223,12 @@ pub(crate) fn ternary(input: &str) -> PResult<'_, Expr> {
 /// Also handles item assignment (`=`, `~=`, `+=`, etc.) within a single
 /// argument so that `f $a ~= $b, $c` parses as `f(($a ~= $b), $c)`.
 pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
+    // A loose prefix starts an item-level argument, even in a no-paren
+    // listop. `grep so *, @items` must leave the comma for `grep` rather
+    // than reading `so` as a term followed by infix `*`.
+    if is_loose_not_or_so_prefix(input) {
+        return item_expr(input, ExprMode::NoSequenceNoFeed);
+    }
     let (rest, expr) = call_arg_ternary_expr(input)?;
     let (r, _) = ws(rest)?;
 
