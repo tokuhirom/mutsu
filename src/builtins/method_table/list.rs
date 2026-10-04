@@ -56,15 +56,21 @@ fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// `List.join($sep = "")` on a plain list or array, or `None` when an element
-/// needs more than the pure stringification (see [`join_items`]) or is
-/// undefined: Rakudo warns for each undefined element, which only the
-/// interpreter path can do (#11838).
-// Cost: O(e + t), e = elements, t = total chars of the result.
+/// needs more than the pure stringification (see [`join_items`]), is a
+/// `Proxy`, or is undefined: Rakudo warns for each undefined element, which
+/// only the interpreter path can do (#11838).
+// Cost: O(e + t), e = elements (walked once more for a Proxy, one container
+// level per step), t = total chars of the result.
 fn join(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // `.join` stringifies every element, so a zero-denominator Rational among
     // them dies like its own `.Str` (GH #9621).
     if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {
         return Some(Err(err));
+    }
+    // A `Proxy` element renders as its FETCHed value, which only the
+    // interpreter can run (ADR-0040 §9.2); the full path resolves it first.
+    if crate::runtime::Interpreter::value_has_proxy(target) {
+        return None;
     }
     let sep = args.first().map(Value::to_string_value).unwrap_or_default();
     let items = join_source_items(target)?;
