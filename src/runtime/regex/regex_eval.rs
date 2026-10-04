@@ -54,7 +54,11 @@ impl Interpreter {
             return Some(hit);
         }
         crate::vm::vm_stats::record_regex_code_parse(false);
-        let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
+        // The body is lexically inside the program, so the routines it has
+        // declared are known to its parse (#11616); a miss is cached per
+        // registry generation, so the name scan is paid once per code string.
+        let user_subs = self.collect_eval_user_sub_names();
+        let (stmts, _) = crate::parser::parse_regex_code_with_user_subs(code, &user_subs).ok()?;
         let stmts = Arc::new(stmts);
         let id = crate::value::next_instance_id();
         REGEX_CODE_PARSE_CACHE.with(|c| {
