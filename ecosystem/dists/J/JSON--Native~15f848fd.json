@@ -18,29 +18,30 @@
         "nok": 0,
         "ok": 38,
         "plan": 39,
-        "secs": 5.34,
+        "secs": 6.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Too deep recursion (out of stack space)",
         "nok": 0,
-        "ok": 133,
-        "plan": 133,
-        "secs": 3.97,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/02-write.t",
       "raku": {
         "nok": 0,
         "ok": 133,
         "plan": 133,
-        "secs": 2.21,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,10 +53,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -66,13 +67,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_NATIVE/677562281d4117a343489fcac83bb6d01271fca5.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 133,
     "baseline_files": 1,
-    "mutsu_assertions": 133,
-    "parity_files": 1,
-    "regressed_files": 0
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.0.2"
 }

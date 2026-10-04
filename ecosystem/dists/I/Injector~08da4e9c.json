@@ -22,7 +22,7 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'injected' in an attribute declaration.",
+        "first_failure": "Method 'package' must be implemented by Any because it is required by roles: Injector::Injected::Attribute.",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 11.01,
+        "secs": 11.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,10 +57,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

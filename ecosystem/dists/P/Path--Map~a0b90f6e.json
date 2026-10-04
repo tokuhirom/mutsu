@@ -9,46 +9,44 @@
   "dist": "Path::Map",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "lookup('date/2012/12/25')",
-        "nok": 23,
-        "ok": 6,
+        "nok": 0,
+        "ok": 29,
         "plan": 29,
-        "secs": 0.39,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/path_map.rakutest",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 3.08,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "deterministic resolution order",
-        "nok": 2,
-        "ok": 0,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/threading.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.23,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,11 +55,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'handler' for invocant of type 'Any'",
+        "first_failure": "Parameter '$var' expects a writable container (variable) as an argument,",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.19,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,30 +69,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "lookup('foo/42') mapped to Constrained.",
-        "nok": 7,
-        "ok": 1,
-        "plan": 9,
-        "secs": 0.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/validation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 1.06,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,21 +78,43 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'handler' for invocant of type 'Any'",
+        "first_failure": "Parameter '$breed' expects a writable container (variable) as an argument,",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
+        "plan": 9,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/validation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
         "plan": 12,
         "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/wildcard.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.01,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,10 +126,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -143,13 +140,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/AT/PATH_MAP/012eb81a6b2efe8289717240d7570fb7667ddbf4.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 5,
-    "mutsu_assertions": 7,
-    "parity_files": 0,
-    "regressed_files": 5
+    "mutsu_assertions": 51,
+    "parity_files": 3,
+    "regressed_files": 2
   },
   "version": "0.4"
 }

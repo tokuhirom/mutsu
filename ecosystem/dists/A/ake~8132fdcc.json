@@ -12,23 +12,22 @@
   "dist": "ake",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Task “fred” does not exist",
         "nok": 0,
-        "ok": 1,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.2,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-original-task.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.96,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,11 +37,11 @@
       "cmp": "no_baseline",
       "path": "t/01-original-file.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ake-93817' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ake-338468' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.24,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -54,7 +53,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.31,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +63,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 5.83,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +77,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.62,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,7 +91,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.5,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,7 +105,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.47,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +119,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.49,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +133,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.42,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -148,7 +147,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.39,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +161,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.44,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -176,7 +175,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.41,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -190,7 +189,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.47,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -204,7 +203,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.45,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -218,7 +217,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.5,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -232,7 +231,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.38,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -248,10 +247,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -262,13 +261,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/KE/AKE/de380cb52a4d60dcb7ec7b9369308ff153d04626.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 23,
     "baseline_files": 2,
-    "mutsu_assertions": 19,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 23,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.1.3"
 }

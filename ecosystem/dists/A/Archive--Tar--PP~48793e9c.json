@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.23,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.71,
+        "secs": 3.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-pax.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/nvaejuptwkiybxdcohsm: Read-only file system",
+        "first_failure": "Failed to open file /tmp/ylaehcrbxtigksfzwpnm: Read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 5,
-        "secs": 1.08,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "t/02-gittar.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/dwbkgvflponxzihtseym: Read-only file system",
+        "first_failure": "Failed to open file /tmp/shawovnxcgplmydzqkue: Read-only file system",
         "nok": 0,
         "ok": 16,
         "plan": 33,
-        "secs": 1.68,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 0.26,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.89,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,11 +85,11 @@
       "cmp": "no_baseline",
       "path": "t/04-peek.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/gmzjrsyhenxicvpbwtqa: Read-only file system",
+        "first_failure": "Failed to open file /tmp/hzvweobmdrikstpfyugn: Read-only file system",
         "nok": 0,
         "ok": 9,
         "plan": 18,
-        "secs": 1.61,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,11 +99,11 @@
       "cmp": "no_baseline",
       "path": "t/05-write-peek.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/ovwiguayetskjfbnrmpd: Read-only file system",
+        "first_failure": "Failed to open file /tmp/kuctabxrmjfodielwhzn: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.58,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,10 +117,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

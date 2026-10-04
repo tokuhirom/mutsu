@@ -20,16 +20,39 @@
     "unresolved": []
   },
   "dist": "Graph::RandomMaze",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 9.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic-usage.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 7.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Graph::RandomMaze": "expected statement: expected expression after comparison operator or '.' or digits or generic radix literal or unicode numeric literal or ... [at lib/Math/Nearest.rakumod:19]"
+    "Graph::RandomMaze": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -40,12 +63,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/RA/GRAPH_RANDOMMAZE/c61aa671801605e4e09406d95d14715ffe370c0b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 1,
+    "mutsu_assertions": 3,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.1"

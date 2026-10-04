@@ -22,10 +22,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "code sample",
-        "nok": 4,
-        "ok": 8,
+        "nok": 3,
+        "ok": 9,
         "plan": 12,
-        "secs": 7.99,
+        "secs": 8.13,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -35,76 +35,76 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 29.31,
+        "secs": 21.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Enum 'CSS::Grammar::Defs::CSSValue' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.87,
+        "first_failure": "declared property",
+        "nok": 5,
+        "ok": 13,
+        "plan": 18,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-property-basic.t",
       "raku": {
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 6.78,
+        "secs": 6.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "not ok 4 -",
+        "nok": 10,
+        "ok": 5,
         "plan": 15,
-        "secs": 2.14,
+        "secs": 3.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/02-style-basic.t",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.85,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "ast",
+        "nok": 2,
+        "ok": 2,
         "plan": 4,
-        "secs": 2.24,
+        "secs": 2.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/ast.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.69,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 2.18,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,11 +136,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Enum 'CSS::Grammar::Defs::CSSValue' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
+        "first_failure": "No such method 'property-number' for invocant of type 'CSS::Properties'",
         "nok": 0,
         "ok": 0,
-        "plan": null,
-        "secs": 1.87,
+        "plan": 5,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -150,7 +150,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.3,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -159,11 +159,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'padding' for invocant of type 'CSS::Properties'",
+        "first_failure": "Could not instantiate role 'CSS::Units' because it died with X::Redeclaration; exception details:",
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 2.05,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -173,7 +173,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 5.69,
+        "secs": 5.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -182,11 +182,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'padding' for invocant of type 'CSS::Properties'",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013330214560477478914, got Any",
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 2.46,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,7 +196,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 20,
-        "secs": 2.7,
+        "secs": 2.15,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -209,7 +209,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 2.01,
+        "secs": 1.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -219,7 +219,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.47,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,9 +230,9 @@
       "mutsu": {
         "first_failure": "serialization",
         "nok": 6,
-        "ok": 23,
+        "ok": 27,
         "plan": 33,
-        "secs": 3.81,
+        "secs": 3.35,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -242,7 +242,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 2.5,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -255,7 +255,7 @@
         "nok": 2,
         "ok": 2,
         "plan": 4,
-        "secs": 15.46,
+        "secs": 12.26,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -265,53 +265,52 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.32,
+        "secs": 3.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'azimuth' for invocant of type 'CSS::Properties'",
-        "nok": 0,
-        "ok": 6,
+        "first_failure": "basic css rewritten",
+        "nok": 12,
+        "ok": 19,
         "plan": 47,
-        "secs": 2.36,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/declarations.t",
       "raku": {
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 2.46,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'width' for invocant of type 'CSS::Properties'",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 1.87,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/errors.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.58,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -324,7 +323,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 22,
-        "secs": 1.88,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -334,30 +333,29 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.12,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
         "nok": 0,
-        "ok": 11,
+        "ok": 14,
         "plan": 14,
-        "secs": 2.35,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/important.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.47,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -366,11 +364,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
+        "first_failure": "unknown property: sienna",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 23,
-        "secs": 2.28,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -380,7 +378,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 2.69,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -393,7 +391,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 32,
-        "secs": 2.01,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -403,7 +401,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 2.26,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -415,7 +413,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.56,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -425,7 +423,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.66,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -438,7 +436,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 2.76,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -448,7 +446,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.47,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -457,11 +455,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u0000217, got Any",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013330214560477478914, got Any",
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 2.13,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -471,7 +469,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 5.18,
+        "secs": 4.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -484,7 +482,7 @@
         "nok": 2,
         "ok": 56,
         "plan": 58,
-        "secs": 9.5,
+        "secs": 7.72,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -494,30 +492,31 @@
         "nok": 0,
         "ok": 58,
         "plan": 58,
-        "secs": 2.83,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
-        "first_failure": "basic",
-        "nok": 1,
-        "ok": 0,
+        "first_failure": "unable to parse CSS property 'margin: 5;'",
+        "nok": 0,
+        "ok": 3,
         "plan": 4,
-        "secs": 5.0,
+        "secs": 197.75,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/threads.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 18.84,
+        "secs": 16.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -530,7 +529,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -540,7 +539,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.59,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -549,11 +548,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
+        "first_failure": "Cannot modify an immutable Str (baz)",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 6,
-        "secs": 2.18,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -563,30 +562,30 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.89,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Array'",
-        "nok": 0,
+        "first_failure": "unoptimized edge property",
+        "nok": 1,
         "ok": 0,
         "plan": 25,
-        "secs": 1.95,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/write.t",
       "raku": {
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 2.8,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -609,10 +608,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -625,11 +624,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 462,
-    "baseline_files": 25,
-    "mutsu_assertions": 112,
-    "parity_files": 1,
-    "regressed_files": 24
+    "baseline_assertions": 458,
+    "baseline_files": 24,
+    "mutsu_assertions": 164,
+    "parity_files": 3,
+    "regressed_files": 21
   },
   "version": "0.10.9"
 }

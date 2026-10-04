@@ -71,7 +71,30 @@
     "unresolved": []
   },
   "dist": "MUGS::Games",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 108.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "MUGS::Client::Game::Adventure": "ok",
     "MUGS::Client::Game::NumberGuess": "ok",
@@ -85,14 +108,14 @@
     "MUGS::Client::Genre::MNKGame": "ok",
     "MUGS::Client::Genre::TurnBased": "ok",
     "MUGS::Games": "ok",
-    "MUGS::Server::Game::Adventure": "Cannot unbox a type object to str.",
+    "MUGS::Server::Game::Adventure": "ok",
     "MUGS::Server::Game::Adventure::CommandParser": "ok",
     "MUGS::Server::Game::Adventure::Loader": "ok",
     "MUGS::Server::Game::Adventure::Locations": "ok",
-    "MUGS::Server::Game::NumberGuess": "Cannot unbox a type object to str.",
-    "MUGS::Server::Game::PFX": "Cannot unbox a type object to str.",
-    "MUGS::Server::Game::Snowman": "Cannot unbox a type object to str.",
-    "MUGS::Server::Game::TicTacToe": "Cannot unbox a type object to str.",
+    "MUGS::Server::Game::NumberGuess": "ok",
+    "MUGS::Server::Game::PFX": "ok",
+    "MUGS::Server::Game::Snowman": "ok",
+    "MUGS::Server::Game::TicTacToe": "ok",
     "MUGS::Server::Genre::BoardGame": "ok",
     "MUGS::Server::Genre::CardGame": "ok",
     "MUGS::Server::Genre::Guessing": "ok",
@@ -103,10 +126,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -117,12 +140,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/UG/MUGS_GAMES/3649946c5fd8d39e2f6b0bea007965833202a40a.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.1.4"

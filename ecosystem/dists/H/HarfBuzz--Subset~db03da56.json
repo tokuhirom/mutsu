@@ -20,7 +20,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 12,
-        "secs": 22.99,
+        "secs": 12.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.06,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.1,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -78,10 +78,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

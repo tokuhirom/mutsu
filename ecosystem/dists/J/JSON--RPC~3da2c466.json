@@ -30,7 +30,7 @@
         "nok": 3,
         "ok": 36,
         "plan": 39,
-        "secs": 1.71,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -40,29 +40,30 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 44.24,
+        "secs": 51.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 29,
+        "first_failure": "notification was processed",
+        "nok": 1,
+        "ok": 28,
         "plan": 29,
-        "secs": 0.87,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-server.rakutest",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 7.95,
+        "secs": 10.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,10 +77,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -90,13 +91,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/SO/JSON_RPC/25441c161ca5392e1e807d814518a5baeb5c6384.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 68,
     "baseline_files": 2,
-    "mutsu_assertions": 65,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 64,
+    "parity_files": 0,
+    "regressed_files": 2
   },
   "version": "1.0.6"
 }

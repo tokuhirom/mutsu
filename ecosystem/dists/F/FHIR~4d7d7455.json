@@ -51,16 +51,16 @@
     "FHIR::Base": "ok",
     "FHIR::Client": "raku_also_fails",
     "FHIR::DomainModel": "ok",
-    "FHIR::JsonSerdes": "Failed to parse module 'FHIR::JsonSerdes': X::Comp::Group: Function 'Base64Binary' needs parens to avoid gobbling block (or perhaps it's a class that's not declared or available in this scope?)",
+    "FHIR::JsonSerdes": "ok",
     "FHIR::Server": "raku_also_fails",
-    "FHIR::Store": "initialising FHIR model base"
+    "FHIR::Store": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-03",
+    "date": "2026-10-04",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "abb202cd",
+    "mutsu_commit": "b3478db4",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -71,7 +71,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/HI/FHIR/06a71e525f12307952a98a88498e4f2a5a71f77b.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
