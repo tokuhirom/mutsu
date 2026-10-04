@@ -35,7 +35,8 @@ pub(crate) struct CompileContext {
     /// `Nil`, with one an instance (which the codec refuses).
     pub(crate) has_distribution: bool,
     pub(crate) unit_file: Option<String>,
-    pub(crate) guards_fingerprint: u64,
+    /// [`crate::ast::stable_hash`] of the statements compiled.
+    pub(crate) ast_fingerprint: u64,
 }
 
 /// The process-wide latches the compile left set, replayed on a hit.

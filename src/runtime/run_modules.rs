@@ -955,9 +955,7 @@ impl Interpreter {
         // `use` and `require` of an installed/on-path module name. A verdict
         // that depends on a conditional `use` runs right after the prologue.
         let guards = self.check_undeclared_routines_with_guards(&stmts)?;
-        // The guards depend on interpreter state, so a cached compile of this
-        // module's mainline is keyed on them too (ADR-11756).
-        let code_slot = super::module_bytecode::ModuleCodeSlot::new(module_unit, &guards);
+        let code_slot = super::module_bytecode::ModuleCodeSlot::new(module_unit);
         stmts.splice(prologue_len..prologue_len, guards);
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();

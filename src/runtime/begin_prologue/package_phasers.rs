@@ -39,16 +39,16 @@ use super::nested::slot_read;
 use crate::ast::{AssignOp, Expr, PackageRuntimeDecl, PhaserKind, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicU64;
 
-static SLOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static SLOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// The name of a fresh unit-level slot for a value-form phaser.
+/// The name of a fresh unit-level slot for a value-form phaser. Numbered from
+/// the module load's content-addressed session when there is one, like the
+/// prologue's other slots (`nested::next_slot`).
 fn next_value_slot() -> String {
-    format!(
-        "__init_value_{}",
-        SLOT_COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
+    let n = crate::anon_names::next_id(crate::anon_names::AnonKind::BeginSlot, &SLOT_COUNTER);
+    format!("__init_value_{n}")
 }
 
 /// What moving the phasers out of one top-level statement produced.

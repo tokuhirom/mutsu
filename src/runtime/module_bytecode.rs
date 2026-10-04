@@ -95,23 +95,14 @@ const REWRITE_SALT: u64 = 0x7265_7772_6974_6521;
 /// The module whose mainline the next [`Interpreter::run_module_block`] runs.
 pub(crate) struct ModuleCodeSlot {
     unit: ModuleUnit,
-    guards_fingerprint: u64,
 }
 
 impl ModuleCodeSlot {
-    /// A slot for `unit`, or `None` when the bytecode cache is off. `guards`
-    /// are the statements `load_module_inner` spliced into the AST.
-    // Cost: O(g), g = size of the guards.
-    pub(crate) fn new(unit: Option<ModuleUnit>, guards: &[Stmt]) -> Option<Self> {
+    /// A slot for `unit`, or `None` when the bytecode cache is off.
+    // Cost: O(1).
+    pub(crate) fn new(unit: Option<ModuleUnit>) -> Option<Self> {
         let unit = unit?;
-        if !enabled() {
-            return None;
-        }
-        let guards_fingerprint = crate::ast::function_body_fingerprint(&[], &[], guards);
-        Some(ModuleCodeSlot {
-            unit,
-            guards_fingerprint,
-        })
+        enabled().then_some(ModuleCodeSlot { unit })
     }
 }
 
@@ -161,7 +152,12 @@ impl Interpreter {
             enclosing_package: compiler.enclosing_package.clone(),
             has_distribution: compiler.current_distribution.is_some(),
             unit_file: compile_unit.map(|s| s.as_str().to_string()),
-            guards_fingerprint: slot.guards_fingerprint,
+            // Everything the compile is handed: the AST as parsed or read
+            // back, the prologue's rewrites, and the undeclared-routine guards
+            // (which depend on interpreter state). Gensyms the parser mints
+            // from process counters live in the AST, so an entry compiled from
+            // a different parse of the same source is told apart here.
+            ast_fingerprint: crate::ast::stable_hash::stable_hash(stmts),
         };
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let unit = &slot.unit;
