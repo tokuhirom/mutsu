@@ -78,6 +78,14 @@ fn parse_quote_word_list<'a>(
             crate::parser::primary::string::make_word_result_expr(exprs),
         ));
     }
+    Ok((rest, angle_words_expr(content)))
+}
+
+/// The term a plain `<…>` quote-word list with bracket content `content`
+/// evaluates to: one allomorph (or a numeric literal term) for a single word,
+/// a list for several.
+// Cost: O(n), n = length of `content`.
+pub(crate) fn angle_words_expr(content: &str) -> Expr {
     let words = split_angle_words(content);
     if words.len() == 1 {
         // `<...>` is quote-words, and quote-words always yield the *allomorph*
@@ -91,7 +99,7 @@ fn parse_quote_word_list<'a>(
         if angle_word_is_numeric_literal(content) {
             value = strip_allomorph(value);
         }
-        Ok((rest, Expr::Literal(value)))
+        Expr::Literal(value)
     } else {
         // Multi-element lists are always plain quote-words, so every
         // number-shaped word stays allomorphic.
@@ -99,7 +107,7 @@ fn parse_quote_word_list<'a>(
             .iter()
             .map(|w| Expr::Literal(angle_word_value(w)))
             .collect();
-        Ok((rest, Expr::ArrayLiteral(exprs)))
+        Expr::ArrayLiteral(exprs)
     }
 }
 

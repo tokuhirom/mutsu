@@ -880,6 +880,38 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
+/// The text of a `<…>` word quote (`processors => <words val>` over one
+/// literal segment), lowered through the parser's own `angle_words_expr`;
+/// `None` for a string without processors. Any other processor list stays
+/// the boundary.
+// Cost: O(p), p = processors of the node.
+fn word_quote_content(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    if !node.fields.iter().any(|f| f.name == Some("processors")) {
+        return Ok(None);
+    }
+    let processors = list_field(node, "processors")?;
+    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    if processors.is_empty() {
+        return Ok(None);
+    }
+    if names.len() != processors.len() || names.as_slice() != ["words", "val"] {
+        return Err(unsupported(node));
+    }
+    let [segment] = list_field(node, "segments")? else {
+        return Err(unsupported(node));
+    };
+    let ValueView::RakuAst(segment) = segment.view() else {
+        return Err(unsupported(node));
+    };
+    if segment.class != RakuAstClass::StrLiteral {
+        return Err(unsupported(node));
+    }
+    match positional_leaf(segment)?.view() {
+        ValueView::Str(text) => Ok(Some(text.to_string())),
+        _ => Err(unsupported(node)),
+    }
+}
+
 fn lower_enum_word_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, RuntimeError> {
     let processors = list_field(term, "processors")?;
     let processor_names = processors
@@ -2807,6 +2839,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // plain segment lowers to its string literal.
         RakuAstClass::QuotedString => {
             let segments = list_field(node, "segments")?;
+            if let Some(content) = word_quote_content(node)? {
+                return Ok(crate::parser::angle_words_expr(&content));
+            }
             if segments.len() == 1
                 && let ValueView::RakuAst(seg) = segments[0].view()
                 && seg.class == RakuAstClass::StrLiteral

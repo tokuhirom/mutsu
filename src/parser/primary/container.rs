@@ -24,7 +24,7 @@ pub(crate) use angle_words::angle_words_subscript_index_expr;
 // `angle_list` is `pub(crate)` (not `pub(super)`) because declarator
 // trait-argument sugar (`is TraitName<a b>`, in `parser::stmt::decl`) reuses
 // it to parse the `<...>` word-list argument.
-pub(crate) use angle_words::angle_list;
+pub(crate) use angle_words::{angle_list, angle_words_expr};
 pub(super) use angle_words::{double_angle_list, find_nested_angle_close_pub, french_quote_list};
 pub(crate) use array::fail_goal_error_at;
 pub(super) use array::percent_hash_literal;
@@ -43,7 +43,7 @@ pub(super) use sigil_context::{
 };
 
 // pub(crate) re-exports — visible throughout the crate
-pub(crate) use allomorph::angle_word_value;
+pub(crate) use allomorph::{angle_word_is_numeric_literal, angle_word_value};
 pub(crate) use meta_ops::{lift_list_infix_in_arg_list, try_parse_sequence_arg_list};
 // A colonpair's parenthesized value takes a statement modifier just as a plain
 // parenthesized group does (`:t( $x.uc given $x )`), so the colonpair parser in
