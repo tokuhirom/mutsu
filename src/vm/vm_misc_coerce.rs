@@ -183,6 +183,20 @@ impl Interpreter {
             self.stack.push(r);
             return Ok(());
         }
+        // Junction auto-threading for prefix:<~> (not a `Mu`-typed operator).
+        // Tag-probed so a lazy Match is not materialized.
+        if val.is_junction_value()
+            && let ValueView::Junction { kind, values } = val.view()
+        {
+            let mut results = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                self.stack.push(v.clone());
+                self.exec_str_coerce_op()?;
+                results.push(self.stack.pop().unwrap_or(Value::NIL));
+            }
+            self.stack.push(Value::junction(kind, results));
+            return Ok(());
+        }
         self.reify_nested_map_grep_for_read(&val)?;
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
