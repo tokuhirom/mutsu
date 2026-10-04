@@ -1,0 +1,27 @@
+pub(crate) mod native_increment_dispatch;
+pub(crate) mod native_infix_dispatch;
+mod native_io;
+pub(crate) mod raw_invocant;
+pub(crate) mod rw_arg_container;
+pub(crate) mod scope_stack;
+mod uncaught_render;
+mod user_accepts;
+mod why_docee;
+pub(crate) use native_io::{io_file_test, path_is_readable};
+pub(crate) mod attach_target;
+pub(crate) mod begin_prologue;
+mod dispatcher_wrap;
+mod enum_type_key;
+mod export_hook_routines;
+pub(crate) mod map_grep_plan;
+mod method_type_decls;
+mod native_io_special;
+pub(crate) mod native_methods;
+mod native_proc_async;
+mod native_proc_async_refusal;
+mod native_supplier_methods;
+mod native_supply_dispatch;
+mod native_supply_methods;
+mod native_supply_mut_methods;
+// Native type-name predicates live below the parser (issue #10779).
+pub(crate) use crate::native_types;
