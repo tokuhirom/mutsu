@@ -5,7 +5,7 @@ use Test;
 # unwrapped, so it can still be caught there (roast S06-advanced/stub.t's
 # `BEGIN throws-like 'wind()', X::StubCode`). Measured on rakudo 2026.09.
 
-plan 4;
+BEGIN plan 4;
 
 BEGIN {
     try { EVAL q[die "inner"] };
