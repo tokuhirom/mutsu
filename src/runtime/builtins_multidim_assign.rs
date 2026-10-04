@@ -655,7 +655,9 @@ impl Interpreter {
         // immutable Str (ab)" / "Type Int does not support associative
         // indexing." -- instead of the copy-and-write-back below silently
         // doing nothing (#9256).
-        if plain_receiver
+        // An instance's accessor (an rw attribute, or an rw method's location)
+        // holding such a value is refused the same way (#11653).
+        if (plain_receiver || matches!(target.view(), ValueView::Instance { .. }))
             && let Some(err) = self.scalar_subscript_protocol_error(&current, index_is_positional)
         {
             return Err(err);
@@ -738,6 +740,22 @@ impl Interpreter {
                     }
                     new_items[idx] = effective_value.clone();
                     Value::array_with_kind(crate::gc::Gc::new(new_items), kind)
+                }
+                // The accessor's location holds `Any` (`has $.x is rw` never
+                // assigned): the element store autovivifies an Array or a
+                // Hash into it, as rakudo does, and the setter below installs
+                // it (#11653). A non-rw accessor refuses that write-back.
+                _ if current.is_nil() || current.is_any_type_object() => {
+                    if index_is_positional {
+                        let idx = crate::runtime::to_int(&index).max(0) as usize;
+                        let mut items = vec![Value::package(crate::symbol::wk::any()); idx];
+                        items.push(effective_value.clone());
+                        Value::real_array(items)
+                    } else {
+                        let mut map = ValueMap::default();
+                        Value::hash_insert_through(&mut map, key, effective_value.clone());
+                        Value::hash(map)
+                    }
                 }
                 _ => return Ok(effective_value),
             }
