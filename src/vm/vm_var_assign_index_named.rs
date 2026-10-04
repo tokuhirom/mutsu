@@ -2218,7 +2218,7 @@ impl Interpreter {
                                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
-                                    crate::gc::Gc::new(crate::value::ContainerCell::new(v)),
+                                    self.promote_bind_source_cell(source_name, v),
                                 )),
                             }
                         } else {
@@ -2578,7 +2578,7 @@ impl Interpreter {
                             Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
-                                crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                                self.promote_bind_source_cell(source_name, val.clone()),
                             )),
                         }
                     } else if matches!(
@@ -5075,7 +5075,7 @@ impl Interpreter {
         let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
             .as_ref()
-            .map(|_| crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())));
+            .map(|name| self.promote_bind_source_cell(name, val.clone()));
         // ADR-0040 slice 4: the leaf of a 3+-level chain is an element store
         // like any other (see the two-level op's hook above). A `:=` bind keeps
         // its bare source value, and a slice/junction innermost subscript is
@@ -5650,7 +5650,7 @@ impl Interpreter {
                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
-                    crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                    self.promote_bind_source_cell(source_name, val.clone()),
                 )),
             }
         } else {

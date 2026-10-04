@@ -46,6 +46,27 @@ impl Interpreter {
         crate::gc::Gc::new(crate::value::ContainerCell::new_readonly(value.clone()))
     }
 
+    /// The fresh cell a `:=` element bind (`%h<k> := $y`, `@a[0] := $y`)
+    /// promotes the not-yet-boxed source variable `source_name` into, holding
+    /// its current `value`. The cell becomes the variable's container, so it
+    /// carries the variable's declared `of` constraint and `is default`: a
+    /// `Nil` stored through any alias of it then resets to that default or
+    /// type object rather than `Any` (#11618).
+    ///
+    // Cost: O(1) (two name-keyed metadata probes).
+    pub(crate) fn promote_bind_source_cell(
+        &mut self,
+        source_name: &str,
+        value: Value,
+    ) -> crate::gc::Gc<crate::value::ContainerCell> {
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
+        self.register_container_cell_constraint_for_name(
+            &Value::container_ref(cell.clone()),
+            source_name,
+        );
+        cell
+    }
+
     /// Refuse `ASSIGN-KEY` on a key whose entry was bound to a bare value.
     ///
     // Cost: O(1) (one hash probe).
