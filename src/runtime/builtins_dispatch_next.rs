@@ -1032,7 +1032,14 @@ impl Interpreter {
                     // method now always has a frame, so "frame exists, remaining
                     // empty" is the single exhaustion signal (the #6349
                     // `wrap_chain_exhausted` bool is retired).
-                    let result = if let Some(res) =
+                    // A role-qualified call's frame (`self.R::new(|%a)`) names a
+                    // method outside every class's chain: there is no native
+                    // base candidate behind it either (#11592).
+                    let role_qualified =
+                        self.dispatch.method_dispatch_stack[frame_idx].role_qualified;
+                    let result = if role_qualified {
+                        Value::NIL
+                    } else if let Some(res) =
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
                     {
                         res?

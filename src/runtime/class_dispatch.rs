@@ -458,6 +458,7 @@ impl Interpreter {
                     dispatch_token,
                     arg_sources: None,
                     in_wrapper: false,
+                    role_qualified: false,
                 });
         }
         // Check for `is DEPRECATED` trait on the method
