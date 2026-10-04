@@ -73,6 +73,12 @@ impl Interpreter {
         } else {
             GrepAdverb::V
         };
+        // Every `grep` candidate takes a matcher (`($: Bool:D $t, *%_)` and
+        // `($: Mu $t, *%_)`), so a call without one resolves none of them
+        // (#11630) -- adverbs or not.
+        if positional_args.is_empty() {
+            return Err(Self::grep_no_matcher_error(&target, args));
+        }
         let args = &positional_args;
 
         // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the

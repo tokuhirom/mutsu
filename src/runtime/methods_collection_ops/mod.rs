@@ -3,6 +3,7 @@ mod encoding_rotor_toggle;
 mod first_chunked;
 mod first_polymod_tree;
 mod grep;
+mod grep_no_matcher;
 mod minmax_extrema;
 mod socket_inet_proc;
 mod socket_thread;
