@@ -50,6 +50,7 @@ pub(crate) mod str;
 pub(crate) mod str_iter;
 pub(crate) mod str_search;
 mod stringify;
+pub(crate) mod succ_pred;
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -115,6 +116,12 @@ static FAMILIES: &[&[MethodRow]] = &[
     coerce::RAT_ROWS,
     coerce::FAT_RAT_ROWS,
     coerce::COMPLEX_ROWS,
+    succ_pred::STR_ROWS,
+    succ_pred::INT_ROWS,
+    succ_pred::NUM_ROWS,
+    succ_pred::RAT_ROWS,
+    succ_pred::FAT_RAT_ROWS,
+    succ_pred::COMPLEX_ROWS,
 ];
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.

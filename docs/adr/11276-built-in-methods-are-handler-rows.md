@@ -418,3 +418,17 @@ second run on each binary: `$z.re` went from 632,196,562 to 270,594,032
 instructions (-57.2%), and `$z.reals` from 733,841,605 to 341,787,961
 (-53.4%). The benchmarks have no module load and use the same loop and receiver
 on both sides. The `Complex` roast file and the focused method-row test pass.
+
+### 9.2 Successor and predecessor family (2026-10-05)
+
+`Str`, `Int`, `Num`, `Rat`, `FatRat` and `Complex` now declare `succ` and
+`pred` rows in `method_table/succ_pred.rs`. Each row calls the shared
+`value_succ` / `value_pred` implementation (ADR-0118), and the cascade uses
+those same handlers for receiver shapes that have no row. This keeps Bool's
+step and values requiring user dispatch on the existing path.
+
+Callgrind on profiling builds from the same `main`, with a 50,000-iteration
+loop alternating `Int.succ`, `Int.pred` and `Str.succ`, fell from 1,035,535,695
+to 331,319,634 instructions (-68.0%). The input has no module load; each side
+was run twice and the second run recorded. The focused method-row test, the
+increment/decrement roast files and the numeric operator parity tests pass.
