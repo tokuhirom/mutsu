@@ -5,7 +5,18 @@
 //! Rakudo's wording through [`super::fs_errors`].
 
 use super::fs_errors::{failure_of, libuv_text, path_exception, two_path_exception};
+use super::fs_syscalls;
 use super::*;
+
+/// The permission bits a `mkdir` call asks for: its `$mode` argument
+/// (`Int()`-coerced, as Rakudo's signatures do), else `0o777`.
+// Cost: O(1).
+pub(crate) fn mkdir_mode(arg: Option<&Value>) -> u32 {
+    match arg {
+        Some(v) if !matches!(v.view(), ValueView::Pair(..)) => crate::runtime::to_int(v) as u32,
+        _ => 0o777,
+    }
+}
 
 impl Interpreter {
     /// Write `content` (a `Str`, or a `Blob` written as-is) to the file at
@@ -98,7 +109,7 @@ impl Interpreter {
     /// paths, since copying a file onto itself through another spelling would
     /// truncate it.
     // Cost: O(b), b = the source file's size in bytes.
-    fn copy_file_reason(from: &Path, to: &Path, createonly: bool) -> Result<(), String> {
+    pub(crate) fn copy_file_reason(from: &Path, to: &Path, createonly: bool) -> Result<(), String> {
         if createonly && to.exists() {
             return Err(":createonly specified and destination exists".to_string());
         }
@@ -147,11 +158,9 @@ impl Interpreter {
         if verb == "move" && from == to {
             return fail("source and target are the same");
         }
-        match fs::rename(from, to) {
+        match fs_syscalls::rename_path(from, to) {
             Ok(()) => Value::TRUE,
-            Err(err) if verb != "move" => {
-                fail(&format!("Failed to rename file: {}", libuv_text(&err)))
-            }
+            Err(reason) if verb != "move" => fail(&reason),
             Err(_) => match Self::copy_file_reason(from, to, createonly) {
                 Ok(()) => match fs::remove_file(from) {
                     Ok(()) => Value::TRUE,
@@ -167,10 +176,9 @@ impl Interpreter {
     /// `X::IO::Rmdir`.
     // Cost: O(1) plus one `rmdir(2)`.
     pub(crate) fn rmdir_op(&self, path: &Path) -> Value {
-        match fs::remove_dir(path) {
+        match fs_syscalls::remove_dir(path) {
             Ok(()) => Value::TRUE,
-            Err(err) => {
-                let os_error = format!("Failed to rmdir: {}", libuv_text(&err));
+            Err(os_error) => {
                 let message = format!(
                     "Failed to remove the directory '{}': {}",
                     path.to_string_lossy(),
@@ -188,15 +196,16 @@ impl Interpreter {
     }
 
     /// `mkdir` / `IO::Path.mkdir`: create the directory at `path` (already
-    /// resolved against the cwd) and any missing parents. On failure, the
-    /// `X::IO::Mkdir` exception, for the caller to throw or wrap.
+    /// resolved against the cwd) and any missing parents, with permission
+    /// bits `mode`. On failure, the `X::IO::Mkdir` exception, for the caller
+    /// to throw or wrap.
     // Cost: O(d), d = the number of missing path components.
-    pub(crate) fn mkdir_op(&self, path: &Path) -> Result<(), Value> {
-        fs::create_dir_all(path).map_err(|err| {
-            let os_error = format!("Failed to mkdir: {}", libuv_text(&err));
+    pub(crate) fn mkdir_op(&self, path: &Path, mode: u32) -> Result<(), Value> {
+        fs_syscalls::make_dir_all(path, mode).map_err(|os_error| {
             let message = format!(
-                "Failed to create directory '{}' with mode '0o777': {}",
+                "Failed to create directory '{}' with mode '0o{:o}': {}",
                 path.to_string_lossy(),
+                mode,
                 os_error
             );
             path_exception(
@@ -204,7 +213,7 @@ impl Interpreter {
                 message,
                 path,
                 &os_error,
-                &[("mode", Value::int(0o777))],
+                &[("mode", Value::int(i64::from(mode)))],
             )
         })
     }
@@ -215,10 +224,9 @@ impl Interpreter {
     // Cost: O(1) plus one `chmod(2)`.
     #[cfg(unix)]
     pub(crate) fn chmod_op(&self, path: &Path, mode: u32) -> Value {
-        match fs::set_permissions(path, PermissionsExt::from_mode(mode)) {
+        match fs_syscalls::set_mode(path, mode) {
             Ok(()) => Value::TRUE,
-            Err(err) => {
-                let os_error = format!("Failed to set permissions on path: {}", libuv_text(&err));
+            Err(os_error) => {
                 let message = format!(
                     "Failed to set the mode of '{}' to '0o{:o}': {}",
                     path.to_string_lossy(),

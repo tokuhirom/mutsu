@@ -94,47 +94,23 @@ impl Interpreter {
             | "version" | "signature" | "signals" | "endian" => {
                 Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
             }
-            "cpu-cores" => {
-                let n = std::thread::available_parallelism()
-                    .map(|n| n.get() as i64)
-                    .unwrap_or(1);
-                Ok(Value::int(n))
-            }
+            // Cost: O(1) plus one syscall.
+            "cpu-cores" => Ok(Value::int(crate::runtime::sys_resources::cpu_core_count())),
+            // Cost: O(f), f = size of /proc/meminfo.
+            "free-memory" => Ok(Value::int(crate::runtime::sys_resources::free_memory())),
+            // Cost: O(f), f = size of /proc/meminfo.
+            "total-memory" => Ok(Value::int(crate::runtime::sys_resources::total_memory())),
             "signal" => {
                 // .signal(SIGHUP), .signal("SIGHUP"), .signal("HUP"), .signal(Int)
                 let arg = args.first().cloned().unwrap_or(Value::NIL);
-                let signal_names = [
-                    "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1",
-                    "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP",
-                    "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO",
-                    "PWR", "SYS",
-                ];
-                match arg.view() {
-                    ValueView::Int(n) => Ok(Value::int(n)),
-                    ValueView::Str(s) => {
-                        let name = s
-                            .strip_prefix("SIG")
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| s.to_string());
-                        for (i, sn) in signal_names.iter().enumerate() {
-                            if *sn == name {
-                                return Ok(Value::int(i as i64));
-                            }
-                        }
-                        Ok(Value::int(0))
-                    }
+                Ok(Value::int(match arg.view() {
+                    ValueView::Int(n) => n,
+                    ValueView::Str(s) => crate::runtime::signal_table::signal_number(&s),
                     ValueView::Enum { key, .. } => {
-                        let key_str = key.resolve();
-                        let name = key_str.strip_prefix("SIG").unwrap_or(&key_str);
-                        for (i, sn) in signal_names.iter().enumerate() {
-                            if *sn == name {
-                                return Ok(Value::int(i as i64));
-                            }
-                        }
-                        Ok(Value::int(0))
+                        crate::runtime::signal_table::signal_number(&key.resolve())
                     }
-                    _ => Ok(Value::int(0)),
-                }
+                    _ => 0,
+                }))
             }
             "gist" | "Str" => {
                 let n = attributes

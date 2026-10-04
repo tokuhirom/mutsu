@@ -336,7 +336,7 @@ impl Interpreter {
     /// registered by `init_io_environment`, found by target rather than by the
     /// `$*OUT`/`$*ERR`/`$*IN` dynamic variables (which a caller may have
     /// rebound). Lowest id wins, so it is the one created at startup.
-    fn std_handle(&mut self, target: IoHandleTarget) -> Value {
+    pub(super) fn std_handle(&mut self, target: IoHandleTarget) -> Value {
         let existing = {
             let table = self.io_handles();
             table

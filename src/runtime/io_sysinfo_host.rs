@@ -15,8 +15,13 @@
 
 use std::sync::OnceLock;
 
-/// The three host-identity strings, as `uname(2)` reports them.
+/// The host-identity strings, as `uname(2)` reports them. `sysname` and
+/// `version` are `nqp::uname`'s other two fields.
 pub(crate) struct HostInfo {
+    /// `uname -s` — e.g. `Linux`.
+    pub(crate) sysname: String,
+    /// `uname -v` — e.g. `#1 SMP PREEMPT_DYNAMIC ...`.
+    pub(crate) version: String,
     /// `uname -r` — e.g. `6.18.7-76061807-generic`.
     pub(crate) release: String,
     /// `uname -m` — e.g. `x86_64`.
@@ -74,6 +79,8 @@ fn uname_probe() -> Option<HostInfo> {
             return None;
         }
         Some(HostInfo {
+            sysname: c_field(&uts.sysname),
+            version: c_field(&uts.version),
             release: c_field(&uts.release),
             machine: c_field(&uts.machine),
             hostname: c_field(&uts.nodename),
@@ -104,6 +111,8 @@ fn file_probe() -> HostInfo {
             .filter(|s| !s.is_empty())
     }
     HostInfo {
+        sysname: read_trimmed("/proc/sys/kernel/ostype").unwrap_or_default(),
+        version: read_trimmed("/proc/sys/kernel/version").unwrap_or_default(),
         release: read_trimmed("/proc/sys/kernel/osrelease").unwrap_or_default(),
         machine: std::env::consts::ARCH.to_string(),
         hostname: read_trimmed("/proc/sys/kernel/hostname")
@@ -121,6 +130,8 @@ fn file_probe() -> HostInfo {
 ))]
 fn empty_probe() -> HostInfo {
     HostInfo {
+        sysname: String::new(),
+        version: String::new(),
         release: String::new(),
         machine: std::env::consts::ARCH.to_string(),
         hostname: String::new(),

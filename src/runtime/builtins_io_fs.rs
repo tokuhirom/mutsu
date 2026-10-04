@@ -262,7 +262,7 @@ impl Interpreter {
                     .unwrap_or_else(|| ".".to_string())
             });
         let path_buf = self.resolve_path(&path);
-        self.mkdir_op(&path_buf)
+        self.mkdir_op(&path_buf, native_io::fs_ops::mkdir_mode(args.get(1)))
             .map_err(native_io::fs_errors::error_of)?;
         Ok(Value::TRUE)
     }

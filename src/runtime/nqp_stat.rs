@@ -55,6 +55,47 @@ pub(crate) fn nqp_stat_field(
     })
 }
 
+/// The time `STAT_*` field `code` (5 created, 6 accessed, 7 modified,
+/// 8 changed) of `path`, in fractional POSIX seconds: `nqp::stat_time` /
+/// `nqp::lstat_time`, and the `IO::Path.created`/`.accessed`/`.modified`/
+/// `.changed` readers Rakudo builds on them. A field the platform cannot
+/// answer (and any other code) is -1.
+// Cost: O(p) + one syscall, p = length of `path`.
+pub(crate) fn stat_time(path: &Path, code: i64, lstat: bool) -> std::io::Result<f64> {
+    let meta = if lstat {
+        fs::symlink_metadata(path)?
+    } else {
+        fs::metadata(path)?
+    };
+    let secs = |t: std::io::Result<std::time::SystemTime>| {
+        t.ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(-1.0, |d| d.as_secs_f64())
+    };
+    Ok(match code {
+        5 => secs(meta.created()),
+        6 => secs(meta.accessed()),
+        7 => secs(meta.modified()),
+        8 => change_time(&meta),
+        _ => -1.0,
+    })
+}
+
+#[cfg(unix)]
+fn change_time(meta: &fs::Metadata) -> f64 {
+    use std::os::unix::fs::MetadataExt;
+    meta.ctime() as f64 + meta.ctime_nsec() as f64 / 1e9
+}
+
+/// No inode change time off Unix: the modification time stands in for it.
+#[cfg(not(unix))]
+fn change_time(meta: &fs::Metadata) -> f64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(-1.0, |d| d.as_secs_f64())
+}
+
 #[cfg(unix)]
 fn is_device(meta: &fs::Metadata) -> bool {
     use std::os::unix::fs::FileTypeExt;

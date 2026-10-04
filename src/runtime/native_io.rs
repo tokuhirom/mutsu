@@ -2,7 +2,8 @@ use super::*;
 
 mod canonpath;
 pub(crate) mod fs_errors;
-mod fs_ops;
+pub(crate) mod fs_ops;
+pub(crate) mod fs_syscalls;
 mod helpers;
 mod io_cathandle;
 mod io_handle;
@@ -18,5 +19,5 @@ mod resolve;
 
 pub(crate) use helpers::{
     IoPathExtensionPartsSpec, io_exception_failure, io_file_test, io_path_missing_failure,
-    numeric_limit_arg, path_is_readable, path_is_writable,
+    numeric_limit_arg, path_is_executable, path_is_readable, path_is_writable,
 };
