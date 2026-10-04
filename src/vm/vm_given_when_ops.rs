@@ -268,8 +268,10 @@ impl Interpreter {
         };
 
         let mut inner_ip = body_start;
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
         while inner_ip < end {
-            if let Err(e) = self.exec_one_backedge_polled(code, &mut inner_ip, compiled_fns) {
+            if let Err(e) = self.exec_one_backedge_polled(code, &mut inner_ip, compiled_fns, polls)
+            {
                 if e.is_succeed() {
                     self.stack.truncate(stack_base);
                     // A statement `given` always yields exactly one stack value

@@ -1134,6 +1134,7 @@ impl Interpreter {
 
         let mut collected_errors: Vec<RuntimeError> = Vec::new();
         let mut ip = start;
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
         while ip < end {
             match &code.ops[ip] {
                 OpCode::LeaveGuard { next } => {
@@ -1152,7 +1153,7 @@ impl Interpreter {
                 }
                 _ => {
                     // Non-guarded code before the first guard; run normally
-                    self.exec_one_backedge_polled(code, &mut ip, compiled_fns)?;
+                    self.exec_one_backedge_polled(code, &mut ip, compiled_fns, polls)?;
                 }
             }
         }

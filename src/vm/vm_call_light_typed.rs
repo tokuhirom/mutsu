@@ -660,6 +660,7 @@ impl Interpreter {
             let mut result = Ok(());
             let mut explicit_return: Option<Value> = None;
             let mut fail_bypass = false;
+            let polls = crate::vm::vm_poll::DispatchPolls::current();
             while ip < cf.code.ops.len() {
                 // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
                 // start, run the whole body natively when the chunk is hot and
@@ -671,7 +672,7 @@ impl Interpreter {
                     ip = cf.code.ops.len();
                     r
                 } else {
-                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns)
+                    self.exec_one_backedge_polled(&cf.code, &mut ip, compiled_fns, polls)
                 };
                 match step {
                     Ok(()) => {}

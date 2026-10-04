@@ -237,23 +237,38 @@ pub(crate) fn polls_so_far() -> u64 {
 
 impl Interpreter {
     /// `exec_one` for a dispatch loop with no poll of its own — the call fast
-    /// paths' body loops, the lazy-pull and `given` inner loops: polls after a
-    /// backward transfer, so those loops keep the same stop-the-world bound
-    /// as the polled ones ([`DispatchPolls`]). Before #8821 they did not poll
+    /// paths' body loops, the lazy-pull and `given` inner loops — placing its
+    /// polls the way [`DispatchPolls`] places the main loops' (#8821, #11660).
+    /// The caller reads `polls` once, before its loop, so a disarmed run pays
+    /// no per-op load here.
+    ///
+    /// It polls after a backward transfer, so those loops keep the same
+    /// stop-the-world bound as the polled ones; before #8821 they did not poll
     /// at all, and a sunk `nqp::while` in a fast-called sub ran its whole loop
-    /// without a safepoint.
-    // Cost: O(1) on top of `exec_one` (an `ip` compare; a load and a poll only
-    // on a backward transfer).
+    /// without a safepoint. With the profiler armed it also polls before every
+    /// op, so `record_line` sees each line a fast-called body runs (#11660):
+    /// without it those bodies were missing from the line table with the JIT
+    /// off while native code's `profile_line` hooks counted them, breaking
+    /// ADR-0106 §8 gate 4.
+    // Cost: O(1) on top of `exec_one` (an `ip` compare; a poll only on a
+    // backward transfer, or per op while the profiler is armed).
     #[inline(always)]
     pub(crate) fn exec_one_backedge_polled(
         &mut self,
         code: &CompiledCode,
         ip: &mut usize,
         compiled_fns: &crate::opcode::CompiledFns,
+        polls: DispatchPolls,
     ) -> Result<(), crate::value::RuntimeError> {
         let op_ip = *ip;
+        if polls.due(false) {
+            // Only reached with the profiler armed (`every_op`). A loop
+            // arrival was already polled as one, after the backward transfer
+            // below; this poll on the same line is not a transition.
+            poll_code(SafepointKind::Backedge, op_ip as u32, code, self, false);
+        }
         let r = self.exec_one(code, ip, compiled_fns);
-        if *ip <= op_ip && r.is_ok() && armed() {
+        if *ip <= op_ip && r.is_ok() && polls.due(true) {
             poll_code(SafepointKind::Backedge, *ip as u32, code, self, true);
         }
         r

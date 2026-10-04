@@ -252,8 +252,9 @@ impl Interpreter {
         let mut run_result = Ok(());
         let mut body_finished = false;
 
+        let polls = crate::vm::vm_poll::DispatchPolls::current();
         while ip < cc.ops.len() {
-            match self.exec_one_backedge_polled(&cc, &mut ip, run_fns) {
+            match self.exec_one_backedge_polled(&cc, &mut ip, run_fns, polls) {
                 Ok(()) => {}
                 Err(e) if e.is_warn() => {
                     if !self.warning_suppressed() {
