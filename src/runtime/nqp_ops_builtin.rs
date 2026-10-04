@@ -607,7 +607,10 @@ impl Interpreter {
             // A List-kind alias of the same node: the VMArray the high-level
             // Array wraps, which the positional ops accept (and the Array
             // itself they reject).
-            return Some(Value::array_with_kind(items.clone(), crate::value::ArrayKind::List));
+            return Some(Value::array_with_kind(
+                items.clone(),
+                crate::value::ArrayKind::List,
+            ));
         }
         match obj.view() {
             ValueView::Pair(key, value) => {
