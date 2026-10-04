@@ -148,7 +148,8 @@ impl Interpreter {
     /// even after `unsuppress_name` clears the suppression (see
     /// `class_scoped_short_names`).
     pub(crate) fn register_class_scoped_short_name(&mut self, name: &str) {
-        crate::runtime::cow_table_mut(&mut self.types.class_scoped_short_names).insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.types.class_scoped_short_names)
+            .insert(name.to_string());
     }
 
     /// Push a new lexical class scope frame.
@@ -242,7 +243,8 @@ impl Interpreter {
     /// open lexical scope, so a later same-scope statement can find it via
     /// `lexical_class_pending_stub` if it is still a stub when that happens.
     pub(crate) fn record_lexical_class_pending(&mut self, qualified: String, storage: String) {
-        self.types.lexical_class_pending
+        self.types
+            .lexical_class_pending
             .insert(qualified.clone(), storage.clone());
         if let Some(frame) = self.types.lexical_class_pending_scopes.last_mut() {
             frame.push((qualified, storage));
@@ -253,7 +255,8 @@ impl Interpreter {
     /// consults this to keep a `my class` binding from propagating out with the
     /// general "a Package declared in a block stays visible" rule.
     pub(crate) fn lexical_class_scope_names(&self) -> &[String] {
-        self.types.lexical_class_scopes
+        self.types
+            .lexical_class_scopes
             .last()
             .map(Vec::as_slice)
             .unwrap_or(&[])
@@ -640,7 +643,10 @@ impl Interpreter {
 
     /// Check if a bare enum variant name is poisoned (declared by multiple enums).
     pub(crate) fn is_poisoned_enum_alias(&self, name: &str) -> Option<&str> {
-        self.types.poisoned_enum_aliases.get(name).map(|s| s.as_str())
+        self.types
+            .poisoned_enum_aliases
+            .get(name)
+            .map(|s| s.as_str())
     }
 
     /// Record a bare enum name in the current scope for poisoning detection.
@@ -703,7 +709,9 @@ impl Interpreter {
     /// `Cro::HTTP::Header` dispatch to the foreign type instead of the class's own
     /// `my grammar Header`.
     pub(crate) fn resolve_suppressed_type(&self, name: &str) -> Option<String> {
-        if !self.types.suppressed_names.contains(name) && !self.types.class_scoped_short_names.contains(name) {
+        if !self.types.suppressed_names.contains(name)
+            && !self.types.class_scoped_short_names.contains(name)
+        {
             return None;
         }
         // Check current package

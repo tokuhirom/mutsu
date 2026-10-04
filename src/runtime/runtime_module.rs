@@ -661,7 +661,8 @@ impl Interpreter {
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
                 };
                 if is_contributor {
-                    crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden).remove(module);
+                    crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
+                        .remove(module);
                 }
             }
             // A re-`use` of an already-loaded module skips `load_module_inner`
