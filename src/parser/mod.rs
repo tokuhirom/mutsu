@@ -132,6 +132,9 @@ pub(crate) fn restore_slang_state(
     stmt::simple::set_slang_modes(modes);
     stmt::simple::set_l10n_vocabulary(vocabulary);
 }
+/// Re-exported crate-wide for the same twin: an imported `constant` may be a
+/// type alias, which only the runtime can tell (#11706).
+pub(crate) use stmt::simple::is_imported_value_term;
 /// Re-exported crate-wide (not just within `parser`) so the compiler's
 /// `is_definite_return_spec` twin can consult the same parse-time enum-value
 /// registry (#8022) without interpreter access.

@@ -5269,7 +5269,11 @@ pub(crate) struct CompiledRoutineMetadata {
     /// order rather than declaration order — a hoisted sub's signature is
     /// validated before an earlier-or-later `subset` statement has actually
     /// run (#8657).
-    pub(crate) is_definite_return_value: bool,
+    ///
+    /// `None` when the parser cannot classify the spec (a lowercase name that
+    /// may be an imported type alias, #11706): registration then asks the
+    /// runtime twin, which can see `is_type_alias_constant`.
+    pub(crate) is_definite_return_value: Option<bool>,
     /// The OTF-gate body predicates, computed once at plan lowering (ADR-0019
     /// C6e): registration seeds `FunctionDef::body_facts_cache` from this, so
     /// a plan-derived def never has to re-walk its body on a lazy cache miss —
@@ -5334,8 +5338,10 @@ pub(crate) fn compiled_routine_metadata(
                     .as_ref()
                     .is_some_and(|(_, ret)| ret.is_some())
         }),
-        is_definite_return_value: return_type
-            .is_some_and(|s| crate::compiler::Compiler::is_definite_return_spec(s)),
+        is_definite_return_value: match return_type {
+            Some(s) => crate::compiler::Compiler::is_definite_return_spec(s),
+            None => Some(false),
+        },
         body_facts: crate::ast::RoutineBodyFacts {
             needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(body),
             declares_state: crate::runtime::Interpreter::function_body_declares_state(body),

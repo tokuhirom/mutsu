@@ -1105,7 +1105,11 @@ impl Interpreter {
             // is only a fallback for the theoretical metadata-less path.
             && metadata.map_or_else(
                 || self.is_definite_return_spec(spec),
-                |metadata| metadata.is_definite_return_value,
+                |metadata| {
+                    metadata
+                        .is_definite_return_value
+                        .unwrap_or_else(|| self.is_definite_return_spec(spec))
+                },
             )
             && metadata.map_or_else(
                 || Self::body_contains_non_nil_return(body),

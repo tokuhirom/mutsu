@@ -86,13 +86,15 @@ pub(in crate::parser) use module_exports::{
     register_module_exports, register_module_exports_with_tags, register_module_type_names,
     source_declares_export_hook, type_index_is_complete,
 };
+/// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
+/// `constant` may be a type alias the parser cannot see through (#11706).
+pub(crate) use pragma_preseed::is_imported_value_term;
 pub(in crate::parser) use pragma_preseed::{
     cached_type_names, current_attributes_pragma, imported_value_term_names,
-    is_imported_value_term, is_user_declared_enum_type, is_user_declared_sub,
-    note_import_export_hook, push_package_path, register_imported_enum_type,
-    register_imported_enum_value, register_imported_type, register_imported_value_term,
-    register_user_enum_type, register_user_enum_value, register_user_type,
-    register_user_type_verbatim, reset_package_path, set_attributes_pragma,
+    is_user_declared_enum_type, is_user_declared_sub, note_import_export_hook, push_package_path,
+    register_imported_enum_type, register_imported_enum_value, register_imported_type,
+    register_imported_value_term, register_user_enum_type, register_user_enum_value,
+    register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
     set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
     set_eval_user_type_preseed, set_eval_user_value_term_preseed, term_keywords_shadowable,
 };

@@ -26,6 +26,8 @@ pub(crate) enum InputKey {
     UserDeclaredType(String),
     /// `parser::is_user_declared_enum_value(name)`.
     UserDeclaredEnumValue(String),
+    /// `parser::is_imported_value_term(name)`.
+    ImportedValueTerm(String),
     /// `parser::current_language_version_starts_with(prefix)`.
     LanguageVersionStartsWith(String),
     /// `nqp_ops_sys::uname_const_value(name)`, folded into a constant.
@@ -152,6 +154,9 @@ fn ask(key: &InputKey) -> InputValue {
         InputKey::UserDeclaredEnumValue(name) => {
             InputValue::Bool(crate::parser::is_user_declared_enum_value(name))
         }
+        InputKey::ImportedValueTerm(name) => {
+            InputValue::Bool(crate::parser::is_imported_value_term(name))
+        }
         InputKey::LanguageVersionStartsWith(prefix) => {
             InputValue::Bool(crate::parser::current_language_version_starts_with(prefix))
         }
@@ -188,6 +193,14 @@ pub(crate) fn is_user_declared_type(name: &str) -> bool {
 pub(crate) fn is_user_declared_enum_value(name: &str) -> bool {
     matches!(
         ask_and_record(InputKey::UserDeclaredEnumValue(name.to_string())),
+        InputValue::Bool(true)
+    )
+}
+
+/// Recorded `parser::is_imported_value_term`.
+pub(crate) fn is_imported_value_term(name: &str) -> bool {
+    matches!(
+        ask_and_record(InputKey::ImportedValueTerm(name.to_string())),
         InputValue::Bool(true)
     )
 }
