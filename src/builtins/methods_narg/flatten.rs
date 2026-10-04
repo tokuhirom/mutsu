@@ -23,6 +23,14 @@ fn flatten_with_depth(
                 flatten_with_depth(item, next_depth, out, flatten_arrays);
             }
         }
+        // A `Seq` element is a list value like a `List` one:
+        // `(1..2).map(...)` results inside a list flatten one level per depth.
+        ValueView::Seq(items) => {
+            let next_depth = depth.map(|d| d.saturating_sub(1));
+            for item in items.iter() {
+                flatten_with_depth(item, next_depth, out, flatten_arrays);
+            }
+        }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)
