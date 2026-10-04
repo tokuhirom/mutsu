@@ -108,7 +108,7 @@ slowdown. So validity is not inferred from the source hash alone.
   every recorded question against the current state, and any different answer
   rejects the compiled section (the AST part is still used). This is
   dependency tracking, not a hand-maintained key. A newly added compiler input
-  that bypasses the recorder is the one way to break it, which is what §2.4
+  that bypasses the recorder is the one way to break it, which is what §2.5
   catches.
 - **The exact compiler input is hashed.** The key includes a structural hash of
   the `stmts` actually handed to `Compiler::compile`, after prologue
@@ -164,7 +164,34 @@ anything is cached:
   skipped by the serializer and start empty, as they do after a fresh compile.
   `CompiledFns` gets a fresh `next_id` on load.
 
-### 2.4 A verify mode proves the cache transparent
+### 2.4 The serialized form: derived encoding, hand-written boundaries
+
+The format is private to one build: the existing binary-mtime stamp already
+discards every entry when mutsu is rebuilt. So it needs no schema evolution, and
+the choice of encoder is about speed and maintenance only.
+
+- **Plain data is encoded by derive.** That covers most `OpCode` variants, the
+  decl plans and the small spec structs. `OpCode` has hundreds of variants, and
+  a hand-written encoder per type would drift every time one is added. A
+  derive follows automatically. The encoder does not have to be serde:
+  bincode 2's own `Encode`/`Decode` derive is preferred, because its `Decode`
+  takes a context argument. The context carries the entry's symbol table
+  without a thread-local.
+- **The boundaries are hand-written**, because they are where the policy lives:
+  - `Symbol`: an index into a per-entry string table, so each distinct name is
+    interned once per load, not once per occurrence;
+  - `Value` constants: identity-free variants only, per §2.3;
+  - runtime caches: skipped, and rebuilt empty;
+  - `Arc`-shared nested code: encoded once, shared again on decode.
+- **Decision criterion, measured in slice 2.** Today's AST cache decodes
+  `Test.rakumod` in ~3M instructions against a 209M parse (serde + bincode). So
+  the derived approach is expected to decode the compiled form in a few million
+  instructions against the ~34M compile it replaces. If the measurement
+  contradicts that, the types that dominate the decode profile get
+  hand-written codecs. A wholesale hand-written format is adopted only if
+  per-type replacement cannot close the gap.
+
+### 2.5 A verify mode proves the cache transparent
 
 `MUTSU_PRECOMP_VERIFY=1` makes a hit compile anyway and compare the fresh
 result with the cached one, serialized to bytes, failing loudly on any
@@ -175,7 +202,7 @@ workflow keeps running it afterwards. A recorder bypass, a missed effect or a
 leaked process-local id all show up here as a byte difference, not as a
 user-visible wrong answer.
 
-### 2.5 Out of scope here (later decisions)
+### 2.6 Out of scope here (later decisions)
 
 - **Registration.** Phase 1 still runs the registration ops: about 23M of the
   82.5M. Reaching #11756's goal needs a second phase that stores the
@@ -228,14 +255,15 @@ user-visible wrong answer.
 
 1. **Compile sessions for counter-minted names and site ids** (§2.3). No
    caching yet, and no behaviour change. Checked by the existing suites.
-2. **Serde for the compiled shape.** `OpCode`, `CompiledCode`, `CompiledFns`
-   and the plan types, with runtime caches skipped, plus a round-trip test
+2. **Encoding for the compiled shape** (§2.4). `OpCode`, `CompiledCode`,
+   `CompiledFns` and the plan types, with runtime caches skipped. Measure
+   decode cost against the compile it replaces, plus a round-trip test
    (`compile → serialize → deserialize → serialize` is byte-identical) over
    every `t/` and roast module.
 3. **`CompileInputs` recorder and effect replay** (§2.2), still writing nothing
    to disk.
 4. **Compiled section in the precomp entry**, behind `MUTSU_PRECOMP_BYTECODE=1`,
-   with `MUTSU_PRECOMP_VERIFY=1` (§2.4). Run the whole `t/` + roast with verify
+   with `MUTSU_PRECOMP_VERIFY=1` (§2.5). Run the whole `t/` + roast with verify
    on. Measure `use Test` and the TAP suite.
 5. **Default on**, once 4 is clean. Verify mode moves into the nightly stress
    workflow.
