@@ -179,17 +179,13 @@ pub(super) fn dispatch(
         // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            _ => Some(Ok(
-                crate::builtins::value_succ(target).unwrap_or_else(|| target.clone())
-            )),
+            _ => Some(crate::builtins::method_table::succ_pred::succ(target, &[])),
         }),
         // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
         // is rebuilt around the decremented segment).
         "pred" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            _ => Some(Ok(
-                crate::builtins::value_pred(target).unwrap_or_else(|| target.clone())
-            )),
+            _ => Some(crate::builtins::method_table::succ_pred::pred(target, &[])),
         }),
         "log" => Some(match target.view() {
             ValueView::Int(i) => Some(Ok(Value::num((i as f64).ln()))),
