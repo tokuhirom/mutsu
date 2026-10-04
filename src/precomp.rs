@@ -538,7 +538,8 @@ pub(crate) fn prune_cache_once(dir: &Path, once: &std::sync::OnceLock<()>) {
             // An AST entry (`.bin`) and its compiled section (`.code`,
             // `precomp::bytecode`) are pruned alike; each is validated on its
             // own, so evicting one of a pair leaves the other usable.
-            path.extension().is_some_and(|ext| ext == "bin" || ext == "code")
+            path.extension()
+                .is_some_and(|ext| ext == "bin" || ext == "code")
         })
         .filter_map(|e| {
             let modified = e.metadata().ok()?.modified().ok()?;
