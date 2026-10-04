@@ -98,7 +98,9 @@ impl Interpreter {
             // Cost: O(1) for an element in range (promoted to a shared cell once).
             "atposref_i" | "atposref_n" | "atposref_u" | "atposref_s" => {
                 let target = operand(args, 0);
-                if crate::value::value_buf::buf_target(&target).is_some() {
+                if crate::value::value_buf::buf_target(&target).is_some()
+                    || crate::runtime::CArrayView::of(&target).is_some()
+                {
                     // A Buf holds numbers; it has no str element to refer to.
                     if op == "atposref_s" {
                         return Some(Err(RuntimeError::new(

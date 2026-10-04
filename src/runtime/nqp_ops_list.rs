@@ -184,7 +184,7 @@ impl Interpreter {
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_len(&attributes);
         }
-        None
+        crate::runtime::CArrayView::of(target).map(|view| view.elems())
     }
 
     /// `nqp::elems` as a native int, for TRIR's typed `ElemsO`: the in-place
@@ -217,7 +217,7 @@ impl Interpreter {
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_elem_at(&attributes, idx);
         }
-        None
+        crate::runtime::CArrayView::of(target).and_then(|view| view.elem_at(idx))
     }
 
     /// The elements of a list-ish nqp value, read-only.

@@ -252,12 +252,16 @@ impl Interpreter {
         {
             return self.native_callable_from_signature(id, source);
         }
+        let addr = self.carray_element_address(source);
+        // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects.
+        if let Some(result) = self.nativecast_mixin(target, addr) {
+            return result;
+        }
         let Some(target) = type_operand_name(target) else {
             return Err(RuntimeError::new(
                 "nativecast() expects a type object as its first argument",
             ));
         };
-        let addr = self.carray_element_address(source);
         // The address-to-value half is shared with `Pointer[T].deref`, which
         // Rakudo defines as `nativecast(self.of, self)` — see
         // `runtime::nativecall_cast`.

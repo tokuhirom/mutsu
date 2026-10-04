@@ -191,6 +191,11 @@ pub(crate) fn bind_elem(
     {
         return Ok(val);
     }
+    if let Some(view) = crate::runtime::CArrayView::of(target)
+        && view.bind(i, &val).is_some()
+    {
+        return Ok(val);
+    }
     let fill = typed_list_fill(nqp_elem_kind(target)).unwrap_or(fill);
     let stored = val.clone();
     Interpreter::nqp_with_elems_mut(op, target, |elems| {
