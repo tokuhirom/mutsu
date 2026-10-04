@@ -368,28 +368,11 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             }
         }
         Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
-        Expr::CallOn { target, args } => {
-            if args.is_empty() {
-                if let Expr::ArrayLiteral(items) = *target.clone() {
-                    if let Some(expr) = list_lvalue_assign_expr(items, rhs.clone()) {
-                        expr
-                    } else {
-                        callable_lvalue_assign_expr(*target, args, rhs)
-                    }
-                } else {
-                    callable_lvalue_assign_expr(*target, args, rhs)
-                }
-            } else {
-                callable_lvalue_assign_expr(*target, args, rhs)
-            }
-        }
-        Expr::ArrayLiteral(items) => {
-            if let Some(expr) = list_lvalue_assign_expr(items.clone(), rhs.clone()) {
-                expr
-            } else {
-                callable_lvalue_assign_expr(Expr::ArrayLiteral(items), Vec::new(), rhs)
-            }
-        }
+        Expr::CallOn { target, args } => match *target {
+            Expr::ArrayLiteral(items) if args.is_empty() => paren_list_assign_expr(items, rhs),
+            target => callable_lvalue_assign_expr(target, args, rhs),
+        },
+        Expr::ArrayLiteral(items) => paren_list_assign_expr(items, rhs),
         Expr::BareWord(name) => Expr::AssignExpr {
             name,
             expr: Box::new(rhs),
@@ -463,4 +446,16 @@ pub(crate) fn looks_like_parenthesized_assignment(input: &str) -> bool {
         }
     }
     false
+}
+
+/// `(LVALUES) = rhs`: a single target among `*` placeholders takes one item
+/// (`list_lvalue_assign_expr`); any other list assigns through the list
+/// container as a callable lvalue. RakuAST's lowering builds the same record
+/// for an assignment to a parenthesised list.
+// Cost: O(n), n = number of list items.
+pub(crate) fn paren_list_assign_expr(items: Vec<Expr>, rhs: Expr) -> Expr {
+    if let Some(expr) = list_lvalue_assign_expr(items.clone(), rhs.clone()) {
+        return expr;
+    }
+    callable_lvalue_assign_expr(Expr::ArrayLiteral(items), Vec::new(), rhs)
 }

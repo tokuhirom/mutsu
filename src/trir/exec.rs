@@ -416,7 +416,24 @@ impl Interpreter {
 
                 TrOp::LoadDynamic(i) => {
                     let name = chunk.constants[*i as usize].to_string_value();
-                    let v = self.env().get(&name).cloned().unwrap_or(Value::NIL);
+                    let found = self
+                        .env()
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| self.get_process_dynamic(&name));
+                    // Declared nowhere in the dynamic scope: the same lazy
+                    // X::Dynamic::NotFound Failure the VM's `GetGlobal` read
+                    // yields, not Nil.
+                    let v = match found {
+                        Some(v) => v,
+                        None if !crate::runtime::utils::is_builtin_dynamic_var(&name) => self
+                            .fail_error_to_failure_value(
+                                &crate::runtime::utils::dynamic_not_found_error(&format!(
+                                    "${name}"
+                                )),
+                            ),
+                        None => Value::NIL,
+                    };
                     self.trir.os.push(v);
                 }
                 TrOp::ElemsO

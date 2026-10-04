@@ -190,6 +190,17 @@ impl Interpreter {
         if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
             return self.push_bare_word_value(Symbol::intern(&real), compiled_fns);
         }
+        // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
+        // one whose block has exited), which is stored under its term key rather
+        // than under the qualified spelling the lookups below ask for (#11518).
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::package_parent(name_sym) == Some(crate::symbol::wk::global_package())
+            && let Some(v) =
+                self.term_binding(crate::qualified::unqualified_part(name_sym).as_str())
+        {
+            self.stack.push(v);
+            return Ok(());
+        }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
         // routine before the type-object paths below, so the bare term is

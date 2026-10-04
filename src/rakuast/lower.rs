@@ -304,9 +304,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
-            match subscript_assign(node)?
-                .map_or_else(|| method_call_assign(node), |a| Ok(Some(a)))?
-            {
+            let assign = match subscript_assign(node)? {
+                Some(assign) => Some(assign),
+                None => match method_call_assign(node)? {
+                    Some(assign) => Some(assign),
+                    None => call_assign(node)?,
+                },
+            };
+            match assign {
                 Some(assign) => Ok(Stmt::Expr(assign)),
                 None => lower_assign(node),
             }
@@ -654,7 +659,25 @@ fn class_traits(
 /// lexical one. Only the sigilless form round-trips, matching what the
 /// converter renders.
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = leaf_str(node, "name")?;
+    let written = leaf_str(node, "name")?;
+    // The parser strips a `$` sigil into `__constant_sigil` and keeps the
+    // others in the name.
+    let (name, sigil) = match written.chars().next() {
+        _ if written.starts_with("term:<") && written.ends_with('>') => {
+            let term = &written["term:<".len()..written.len() - 1];
+            if !term.starts_with(['$', '@', '%', '&']) {
+                // A sigilless term is the plain constant name the parser
+                // records; the converter never renders `term:<foo>`.
+                return Err(unsupported(node));
+            }
+            (term.to_string(), "")
+        }
+        Some('$') => (written[1..].to_string(), "$"),
+        Some('@') => (written.clone(), "@"),
+        Some('%') => (written.clone(), "%"),
+        Some('&') => (written.clone(), "&"),
+        _ => (written, ""),
+    };
     let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => true,
         Some(_) => match leaf_str(node, "scope")?.as_str() {
@@ -681,7 +704,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             ("__has_initializer".to_string(), None),
             (
                 "__constant_sigil".to_string(),
-                Some(Expr::Literal(Value::str_from(""))),
+                Some(Expr::Literal(Value::str_from(sigil))),
             ),
         ],
         where_constraint: None,
@@ -1293,7 +1316,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         match target.class {
             RakuAstClass::ParameterTargetVar => {
                 let raw = leaf_str(target, "name")?;
-                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
+                match raw.as_str() {
+                    "$" => super::convert::ANONYMOUS_SCALAR_PARAM.to_string(),
+                    "@" => super::convert::ANONYMOUS_ARRAY_PARAM.to_string(),
+                    "%" => super::convert::ANONYMOUS_HASH_PARAM.to_string(),
+                    _ => raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
+                }
             }
             // `\x`: the term's name is the parameter's, with no sigil to strip.
             RakuAstClass::ParameterTargetTerm => {
@@ -1746,6 +1774,38 @@ fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> 
     }
     let target = lower_expr(left)?;
     if !matches!(target, Expr::MethodCall { .. }) {
+        return Ok(None);
+    }
+    let value = lower_expr(named_child(node, "right")?)?;
+    Ok(Some(crate::parser::assign_to_target_expr(target, value)))
+}
+
+/// `ApplyInfix(left => <call>, Assignment, right)` -- an rw routine or
+/// callable lvalue (`f(1) = v`, `$c(2) = v`) -- through the parser's own
+/// `assign_to_target_expr`, and an assignment to a parenthesised list
+/// (`($a, $b) = …`) through `paren_list_assign_expr`; `None` for any other
+/// left side.
+// Cost: O(n), n = size of the node.
+fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let left = named_child(node, "left")?;
+    // `(LVALUES) = rhs`: an assignment to a parenthesised list.
+    if left.class == RakuAstClass::CircumfixParentheses
+        && let Expr::ArrayLiteral(items) = match lower_expr(left)? {
+            Expr::Grouped(inner) => *inner,
+            other => other,
+        }
+    {
+        let value = lower_expr(named_child(node, "right")?)?;
+        return Ok(Some(crate::parser::paren_list_assign_expr(items, value)));
+    }
+    let is_call = left.class == RakuAstClass::CallName
+        || (left.class == RakuAstClass::ApplyPostfix
+            && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
+    if !is_call {
+        return Ok(None);
+    }
+    let target = lower_expr(left)?;
+    if !matches!(target, Expr::Call { .. } | Expr::CallOn { .. }) {
         return Ok(None);
     }
     let value = lower_expr(named_child(node, "right")?)?;
@@ -3391,6 +3451,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(assign);
             }
             if let Some(assign) = method_call_assign(node)? {
+                return Ok(assign);
+            }
+            if let Some(assign) = call_assign(node)? {
                 return Ok(assign);
             }
             let (name, expr) = lower_assign_parts(node)?;

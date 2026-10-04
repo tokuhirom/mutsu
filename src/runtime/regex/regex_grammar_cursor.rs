@@ -36,9 +36,8 @@ impl Interpreter {
     /// user method of this grammar's MRO or a composed role (not an
     /// inherited Cursor/Grammar builtin, which the normal subrule/builtin paths already
     /// cover).
-    // Cost: O(1) expected: one method-table probe, which rejects every subrule that
-    // is not a method before the name is looked at; O(len) more for a method,
-    // len = the subrule name.
+    // Cost: O(1) expected on a memo hit; a miss costs O(d), d = grammar MRO
+    // depth, plus O(len) for a method, len = the subrule name.
     pub(super) fn subrule_names_user_method(
         &mut self,
         spec: &NamedRegexLookupSpec,
@@ -46,7 +45,7 @@ impl Interpreter {
     ) -> bool {
         !spec.token_lookup
             && !pkg.is_empty()
-            && self.grammar_has_user_method_sym(pkg.as_str(), spec.lookup_sym)
+            && self.grammar_has_user_method_memo(pkg, spec.lookup_sym)
             && !spec.lookup_name.is_empty()
             && !crate::qualified::is_qualified(spec.lookup_sym)
             && spec
