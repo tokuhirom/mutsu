@@ -1,4 +1,4 @@
-# The object-model `nqp::` ops
+# The object-model and miscellaneous `nqp::` ops
 
 Ten of the object-model `nqp::` ops are implemented (#11499): `how`,
 `how_nd`, `who`, `what_nd`, `reprname`, `objectid`, `findmethod`,
@@ -19,5 +19,15 @@ same answer, as `nqp::where` already compiled to `.WHERE`:
 `.^find_method`, so the two cannot disagree. On a miss, `findmethod` dies and
 `tryfindmethod` answers null.
 
-The `nqp::` coverage table now stands at 477 of 577 ops. `rebless`, `setwho`,
-`bind` and `bindcomp` remain.
+Three miscellaneous ops landed alongside them:
+
+- `getcodename` reads the same name holder as `Code.name`, so a
+  `setcodename` on a routine's `$!do` reads back through both;
+- `takeclosure` answers the block itself, because a mutsu block value already
+  closes over its creation-time environment (Rakudo also reports
+  `nqp::eqaddr($b, nqp::takeclosure($b))`);
+- `setdebugtypename` answers the type unchanged, because mutsu keeps no
+  separate debug name.
+
+The `nqp::` coverage table now counts 480 of 577 ops. `rebless`, `setwho`,
+`bind` and `bindcomp` are still missing.

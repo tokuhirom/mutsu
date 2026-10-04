@@ -66,9 +66,9 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Trigonometric | 10 / 10 | 0 | #11490 |
 | Type / Conversion | 36 / 53 | 17 | #11553 |
 | Unicode Properties | 8 / 8 | 0 | #11495 |
-| Miscellaneous | 1 / 4 | 3 | #11499 |
+| Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **477 / 577** | **100** | |
+| **Total** | **480 / 577** | **97** | |
 
 ## Missing ops by category
 
@@ -81,7 +81,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
-- **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6invokehandler`

@@ -150,6 +150,30 @@ impl Interpreter {
                     ))
                 }
             }
+            // nqp::getcodename($code): the code object's name, which
+            // `Code.name` also answers (one name holder, #11462) -- so a
+            // `setcodename` on a routine's `$!do` reads back here.
+            // Cost: as `Interpreter::code_name`.
+            "getcodename" => {
+                let code = operand(args, 0);
+                match Interpreter::unwrap_callable_mixin(code).view() {
+                    ValueView::Sub(data) => Ok(Value::str(self.code_name(&data).resolve())),
+                    _ => Err(RuntimeError::new(
+                        "getcodename requires a concrete code object".to_string(),
+                    )),
+                }
+            }
+            // nqp::takeclosure($block): capture the block's outer lexicals as
+            // they are now. A mutsu block value already is a closure over its
+            // creation-time environment, so the block itself is the answer --
+            // as Rakudo's `nqp::eqaddr($b, nqp::takeclosure($b))` also says.
+            // Cost: O(1).
+            "takeclosure" => Ok(operand(args, 0)),
+            // nqp::setdebugtypename($type, $name): name a type for the VM's
+            // debugging output only (`.^name` is unchanged). mutsu has no
+            // separate debug name, so the type comes back untouched.
+            // Cost: O(1).
+            "setdebugtypename" => Ok(operand(args, 0)),
             // nqp::neverrepossess($obj): exempt an object from repossession by
             // a later serialization context. mutsu does not serialize compiled
             // modules, so there is nothing to exempt it from.
