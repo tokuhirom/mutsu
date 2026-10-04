@@ -130,6 +130,21 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A routine receiver answers with the roles composed into the routine
+        // so far, whichever alias of it this is (ADR-11827).
+        let target = Self::routine_current_view(&target).unwrap_or(target);
+        self.call_method_with_values_unviewed(target, method, args)
+    }
+
+    /// [`Self::call_method_with_values`] on `target` as given: what a
+    /// Mixin's dispatch uses to reach its own inner value, which must not be
+    /// re-wrapped in the routine's composition (ADR-11827).
+    pub(crate) fn call_method_with_values_unviewed(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         // Tagging the whole call, body included, is deliberate and costs
         // nothing in accuracy: a tick that fires while the method's *bytecode*
         // runs is consumed by that bytecode's own poll long before this guard
@@ -158,7 +173,7 @@ impl Interpreter {
                 return Ok(Value::str(name.resolve().to_string()));
             }
             let inner = value.clone();
-            return self.call_method_with_values(inner, method, args);
+            return self.call_method_with_values_unviewed(inner, method, args);
         }
         // `Any` is not a `Cool`, so it does not answer `Cool`'s methods. Gated
         // here, ahead of every native/instance handler, because the by-name
@@ -828,7 +843,7 @@ impl Interpreter {
             } else {
                 inner.clone()
             };
-            return self.call_method_with_values(inner, method, args);
+            return self.call_method_with_values_unviewed(inner, method, args);
         }
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
@@ -4790,7 +4805,7 @@ impl Interpreter {
                 let cls = class_name.resolve();
                 if !self.class_has_user_method(&cls, method) && self.is_native_method(&cls, method)
                 {
-                    return self.call_method_with_values(inner_owned, method, args);
+                    return self.call_method_with_values_unviewed(inner_owned, method, args);
                 }
             }
         }
@@ -5035,7 +5050,7 @@ impl Interpreter {
             // exactly as it rendered).
             if matches!(method, "gist" | "raku" | "perl") && args.is_empty() {
                 let rendered =
-                    self.call_method_with_values(inner.as_ref().clone(), method, args)?;
+                    self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());
                 let composed = crate::value::types::what_type_name(&target);
                 if composed != base
@@ -5047,7 +5062,7 @@ impl Interpreter {
                 }
                 return Ok(rendered);
             }
-            return self.call_method_with_values(inner.as_ref().clone(), method, args);
+            return self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args);
         }
 
         // Instance dispatch, package dispatch, and fallback paths

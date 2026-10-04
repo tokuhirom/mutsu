@@ -340,6 +340,9 @@ pub(super) fn dispatch(
                     // Clone the sub with a new id so state variables are independent
                     let mut new_data = (**data).clone();
                     new_data.id = crate::value::next_instance_id();
+                    // A clone is a new routine object: its own composition
+                    // cell, starting from the original's (ADR-11827 §2.3).
+                    new_data.routine_cell = new_data.routine_cell.forked();
                     Some(Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data)))))
                 }
                 ValueView::Pair(key, value) => {

@@ -133,6 +133,7 @@ impl Interpreter {
                         false,
                         l.env.flattened(),
                     );
+                    let sub_val = self.with_def_routine_cell(sub_val, l);
                     self.materialize_routine_mixins_shared(
                         sub_val,
                         l.package.as_str(),
@@ -141,5 +142,30 @@ impl Interpreter {
                 })
                 .clone(),
         }
+    }
+
+    /// `sub_val` sharing the composition cell of the registered routine
+    /// `l` runs (ADR-11827): the frame's code object is that routine, so a
+    /// `does` on it is seen here. The call path may run a copy of the def's
+    /// compiled body, so the match is by body fingerprint. A frame whose
+    /// routine has no such registry entry (a multi candidate, an EVAL'd def)
+    /// keeps its own cell.
+    // Cost: O(1): one registry probe, plus a `SubData` copy when it matches.
+    fn with_def_routine_cell(&self, sub_val: Value, l: &LazyRoutineCode) -> Value {
+        let key = crate::qualified::qualified(l.package, l.name);
+        let cell = self.registry().functions.get(&key).and_then(|def| {
+            def.compiled
+                .as_ref()
+                .is_some_and(|cf| {
+                    std::sync::Arc::ptr_eq(cf, &l.cf) || cf.fingerprint == l.cf.fingerprint
+                })
+                .then(|| def.routine_cell.clone())
+        });
+        let (Some(cell), ValueView::Sub(data)) = (cell, sub_val.view()) else {
+            return sub_val;
+        };
+        let mut new_data = (**data).clone();
+        new_data.routine_cell = cell;
+        Value::sub_value(crate::gc::Gc::new(new_data))
     }
 }

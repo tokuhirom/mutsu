@@ -462,6 +462,7 @@ impl Interpreter {
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
+                routine_cell: Default::default(),
             };
             self.registry_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
@@ -504,6 +505,7 @@ impl Interpreter {
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,
                 body_facts_cache: std::sync::OnceLock::new(),
+                routine_cell: Default::default(),
             };
             // Register under the short name (lexical scope)
             self.registry_mut().functions_mut().insert(

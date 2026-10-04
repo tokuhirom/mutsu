@@ -186,6 +186,7 @@ impl Interpreter {
                 source_file_sym_cache: std::sync::OnceLock::new(),
                 state_scope_guard: None,
                 captured_readonly: None,
+                routine_cell: Default::default(),
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

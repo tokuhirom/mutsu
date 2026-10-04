@@ -638,6 +638,10 @@ pub(crate) struct FunctionDef {
     /// `None` (synthetic defs, a deserialized def) records nothing.
     #[serde(skip)]
     pub(crate) captured_readonly: Option<crate::value::CapturedReadonly>,
+    /// The routine's composition cell (ADR-11827): every code object rebuilt
+    /// from this def shares it, so a `does` on one is seen by all.
+    #[serde(skip)]
+    pub(crate) routine_cell: crate::value::RoutineCell,
 }
 
 /// Properties of a routine body that the on-the-fly compilation gates ask about.

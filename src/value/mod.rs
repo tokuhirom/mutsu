@@ -153,6 +153,22 @@ impl MixinOverrides {
         &self.attributes
     }
 
+    /// This composition, keeping `earlier`'s live role cell: what a later
+    /// `does` on the same routine composes to (ADR-11827). The object is the
+    /// same, so the attribute values an earlier composition's methods wrote
+    /// stay visible through it; attributes only this composition declares are
+    /// seeded from its own cell.
+    // Cost: O(m + a), m = marker entries, a = role attributes.
+    pub(crate) fn rebased_on(&self, earlier: &MixinOverrides) -> Self {
+        for (key, value) in self.attributes.to_map().iter() {
+            earlier.attributes.insert_if_absent(*key, value.clone());
+        }
+        Self {
+            overrides: self.overrides.clone(),
+            attributes: earlier.attributes.clone(),
+        }
+    }
+
     /// Seed newly composed role attributes into the live role cell without
     /// overwriting a value that an earlier method call already established.
     pub(crate) fn seed_missing_attributes(&self) {
@@ -605,6 +621,8 @@ pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
 mod param_copy;
+pub(crate) mod routine_cell;
+pub(crate) use routine_cell::RoutineCell;
 mod quanthash_store;
 pub(crate) mod raku_repr;
 pub(crate) mod shaped_array;
@@ -1647,6 +1665,9 @@ pub struct SubData {
     /// object reconciles the registry against this record instead
     /// (`Interpreter::reconcile_captured_readonly`).
     pub(crate) captured_readonly: Option<CapturedReadonly>,
+    /// The routine's identity for `does` (ADR-11827): the roles composed into
+    /// it, shared by every value of the same routine.
+    pub(crate) routine_cell: RoutineCell,
 }
 
 /// See [`SubData::captured_readonly`].

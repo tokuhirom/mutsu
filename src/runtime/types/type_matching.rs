@@ -563,6 +563,31 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // A routine does the roles composed into it, through every alias
+        // (ADR-11827).
+        match Self::routine_current_view(value) {
+            Some(current) => self.type_matches_value_unviewed_why(constraint, &current, why),
+            None => self.type_matches_value_unviewed_why(constraint, value, why),
+        }
+    }
+
+    /// [`Self::type_matches_value`] on `value` as given: what a Mixin's own
+    /// check uses on its inner value, which must not be re-wrapped in the
+    /// routine's composition (ADR-11827).
+    // Cost: as `type_matches_value`.
+    pub(crate) fn type_matches_value_unviewed(&mut self, constraint: &str, value: &Value) -> bool {
+        self.type_matches_value_unviewed_why(constraint, value, &mut None)
+    }
+
+    /// [`Self::type_matches_value_unviewed`], reporting why as
+    /// [`Self::type_matches_value_why`] does.
+    // Cost: as `type_matches_value`.
+    fn type_matches_value_unviewed_why(
+        &mut self,
+        constraint: &str,
+        value: &Value,
+        why: &mut Option<Box<RuntimeError>>,
+    ) -> bool {
         // `Cursor` is an alias of `Match` (a grammar instance IS a `Match`),
         // so `has Cursor $.cursor` accepts the grammar `self`.
         let constraint = if constraint == "Cursor" {
@@ -2060,7 +2085,7 @@ impl Interpreter {
             if value.isa_check(constraint) {
                 return true;
             }
-            if self.type_matches_value(constraint, inner) {
+            if self.type_matches_value_unviewed(constraint, inner) {
                 return true;
             }
             // A value mixin's override key is the *value's* type name, but

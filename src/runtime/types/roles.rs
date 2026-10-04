@@ -185,6 +185,35 @@ impl Interpreter {
         self.registry().roles.get(role_name).cloned()
     }
 
+    /// Whether the role `role_name` composed into `mixins` declares the
+    /// attribute `attr` (bare name, no twigil), looked up as
+    /// [`Self::role_def_for_mixin_role`] does but without cloning the def.
+    // Cost: O(c + a), c = candidates of the role name, a = its attributes.
+    pub(crate) fn mixin_role_declares_attr(
+        &self,
+        mixins: &crate::value::MixinOverrides,
+        role_name: &str,
+        attr: &str,
+    ) -> bool {
+        let declares = |role: &RoleDef| role.attributes.iter().any(|a| a.name == attr);
+        let role_id = mixins
+            .get(MetaNs::RoleId.str_key_for_str(role_name))
+            .and_then(|value| match value.view() {
+                ValueView::Int(id) if id > 0 => Some(id as u64),
+                _ => None,
+            });
+        let registry = self.registry();
+        if let Some(role_id) = role_id
+            && let Some(candidate) = registry.role_candidates.get(role_name).and_then(|cs| {
+                cs.iter()
+                    .find(|candidate| candidate.role_def.role_id == role_id)
+            })
+        {
+            return declares(&candidate.role_def);
+        }
+        registry.roles.get(role_name).is_some_and(declares)
+    }
+
     pub(crate) fn resolve_parametric_role_runtime(
         &mut self,
         base_name: &str,
@@ -371,7 +400,12 @@ impl Interpreter {
         {
             return Ok(reblessed);
         }
-        self.eval_does_values(left, right)
+        // A routine composes in place (ADR-11827): onto its current
+        // composition, which the result then becomes.
+        let earlier = Self::routine_cell_of(&left).and_then(|cell| cell.get());
+        let left = Self::routine_current_view(&left).unwrap_or(left);
+        let composed = self.eval_does_values(left, right)?;
+        Ok(Self::note_routine_composition(composed, earlier.as_ref()))
     }
 
     /// The mutating form of `$obj does (RoleA, RoleB)`.
@@ -390,7 +424,10 @@ impl Interpreter {
         {
             return Ok(reblessed);
         }
-        self.eval_does_values_list(left, roles)
+        let earlier = Self::routine_cell_of(&left).and_then(|cell| cell.get());
+        let left = Self::routine_current_view(&left).unwrap_or(left);
+        let composed = self.eval_does_values_list(left, roles)?;
+        Ok(Self::note_routine_composition(composed, earlier.as_ref()))
     }
 
     pub(crate) fn eval_does_values(
@@ -1138,7 +1175,17 @@ impl Interpreter {
         // so composing a role onto *this* instance does not by itself make a
         // later rebuild of the same routine carry it. Record the composition
         // so those rebuild sites can re-apply it.
-        if let ValueView::Sub(sub_data) = inner.view() {
+        //
+        // Only for a Method object now: a sub's rebuilds share the def's
+        // composition cell (ADR-11827), which `does` writes, while this
+        // name-keyed record also caught a `but` copy and a `.clone`. Method
+        // traits move to the cell in ADR-11827 phase 2.
+        if let ValueView::Sub(sub_data) = inner.view()
+            && matches!(
+                sub_data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(t)) if t.as_str() == "Method"
+            )
+        {
             crate::runtime::registration_sub::note_routine_mixin_role(
                 crate::qualified::qualified(sub_data.package, sub_data.name).as_str(),
                 role_name,

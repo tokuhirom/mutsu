@@ -86,6 +86,8 @@ impl Interpreter {
             // clones into Sub values. MoarVM: O(1) avg (method cache) -- see #9134.
             "can" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
+                // A routine answers with the roles composed into it (ADR-11827).
+                let target = Self::routine_current_view(&target).unwrap_or(target);
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                 let found = !self.collect_can_methods(&target, &name).is_empty();
                 Ok(Value::int(i64::from(found)))

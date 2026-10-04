@@ -602,6 +602,7 @@ impl Interpreter {
             body_fp_cache: std::sync::OnceLock::new(),
             captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
         };
         let proto_params = fdef.params.clone();
         let proto_param_defs = fdef.param_defs.clone();

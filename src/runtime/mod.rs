@@ -677,6 +677,7 @@ mod nqp_ops_coerce;
 mod nqp_ops_compare;
 mod nqp_ops_decoder;
 mod nqp_ops_exception;
+mod routine_identity;
 pub(crate) use nqp_ops_exception::control_const_value as nqp_control_const_value;
 mod nqp_ops_fs;
 pub(crate) mod nqp_ops_list;
@@ -3620,6 +3621,7 @@ mod tests {
             source_file_sym_cache: std::sync::OnceLock::new(),
             state_scope_guard: None,
             captured_readonly: None,
+            routine_cell: Default::default(),
         });
 
         let mut interp = Interpreter::new();

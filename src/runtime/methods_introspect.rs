@@ -220,7 +220,7 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern(&name)));
             }
             ValueView::Scalar(inner) => {
-                return self.call_method_with_values(inner.clone(), "WHAT", args.clone());
+                return self.call_method_with_values_unviewed(inner.clone(), "WHAT", args.clone());
             }
             ValueView::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();

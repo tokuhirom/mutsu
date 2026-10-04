@@ -1024,7 +1024,7 @@ impl Interpreter {
                 Some(Ok(Value::seq(keys)))
             }
             ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)) => {
-                Some(self.call_method_with_values(inner.as_ref().clone(), "keys", vec![]))
+                Some(self.call_method_with_values_unviewed(inner.as_ref().clone(), "keys", vec![]))
             }
             _ => None,
         }

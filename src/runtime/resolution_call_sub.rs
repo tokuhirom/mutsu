@@ -976,6 +976,7 @@ impl Interpreter {
                 source_file_sym_cache: std::sync::OnceLock::new(),
                 state_scope_guard: data.state_scope_guard.clone(),
                 captured_readonly: data.captured_readonly.clone(),
+                routine_cell: Default::default(),
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

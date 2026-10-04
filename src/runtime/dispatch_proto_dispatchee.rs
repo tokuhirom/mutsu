@@ -111,6 +111,7 @@ impl Interpreter {
             body_fp_cache,
             captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
         };
         let key = Self::dispatchee_row_key(proto_key, &def);
         self.insert_multi_overload(&key, def);
