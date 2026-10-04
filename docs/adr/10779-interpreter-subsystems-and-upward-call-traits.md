@@ -271,3 +271,15 @@ these preconditions:
     `ResolutionCaches`.
   - Not every pair has a call path: `sigilless_bind_source` crosses a statement boundary
     between its two opcodes, so it needs the compiler to fuse them first.
+- D3, `pending_dispatch_error` (2026-10-04): 94 → 93 fields. One field carried two
+  unrelated channels, and both now return their error:
+  - Routine resolution returns `Resolved` (`Result<Option<Arc<FunctionDef>>, RuntimeError>`)
+    from `settle_ranked_matches` up through `resolve_function_with_types`,
+    `resolve_proto_candidate_with_types`, `resolve_function_with_alias` and the
+    multi-resolution cache. A caller that dispatches the call it resolved propagates the
+    error; a probe drops it. Before, every caller had to know whether to take, clear, or
+    save and restore the field around its own resolve.
+  - Smartmatch threads an error sink (`smart_match_into` / `vm_smart_match_into`) through
+    its recursion, and `try_smart_match` returns it to `~~`, `when`, `grep` and `first`.
+    As a field, only `~~` took it: a `grep` whose `ACCEPTS` died swallowed the exception, and
+    the next unrelated `~~` raised it.
