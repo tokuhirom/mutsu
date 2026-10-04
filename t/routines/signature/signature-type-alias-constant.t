@@ -5,7 +5,7 @@ use SigTypeAlias;
 # A parameter type or `--> T` spelled as a constant alias of a type denotes
 # the aliased type, resolved where the routine is declared (#11555).
 
-plan 9;
+plan 11;
 
 sub f(size_t $w, Thing $t --> size_t) { $w }
 
@@ -27,3 +27,12 @@ is &g.returns.^name, 'Local::Kls', 'a same-file --> alias resolves';
 isa-ok g(Local::Kls.new), Local::Kls, 'the aliased type binds its instances';
 my $bad = 42;
 throws-like { g($bad) }, X::TypeCheck::Binding, 'and rejects other values';
+
+# A method signature resolves its aliases at declaration as a sub's does.
+class Holder {
+    method take(size_t $w --> size_t) { $w }
+}
+my $take = Holder.^find_method('take');
+is $take.signature.params[1].type.^name, 'SigTypeAlias::Types::size_t',
+    'an alias in a method parameter names the aliased type';
+ok $take.returns === SigTypeAlias::Types::size_t, 'and in a method --> type';
