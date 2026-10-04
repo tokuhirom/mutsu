@@ -14,6 +14,23 @@ pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
     }
 }
 
+/// `@arr[i]` / `%h{k}` as the target of an atomic update (`@a[0]⚛++`,
+/// `++⚛@a[0]`): such an update parses to the atomic routine call
+/// (`atomic-fetch-inc(@a[0])`), which the compiler lowers onto the element's
+/// atomic cell (#11812).
+pub(crate) fn is_atomic_elem_target(expr: &Expr) -> bool {
+    matches!(expr, Expr::Index { target, .. }
+        if target.container_var_key().is_some_and(|k| k.starts_with(['@', '%'])))
+}
+
+/// The atomic update `routine(expr)` for an element target, else `None`.
+pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
+    is_atomic_elem_target(expr).then(|| Expr::Call {
+        name: Symbol::intern(routine),
+        args: vec![expr.clone()],
+    })
+}
+
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
 /// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
 /// route an outer `.=` through a `do { … }`-block target back to its lvalue.

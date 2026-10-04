@@ -11,7 +11,7 @@ use super::call_method::{
     parse_custom_postfix_operator, parse_prefix_as_postfix, parse_private_method_name,
     parse_quoted_method_name,
 };
-use super::dot_assign::{atomic_var_name, parse_dot_assign};
+use super::dot_assign::{atomic_elem_update, atomic_var_name, parse_dot_assign};
 use super::helpers::{
     colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
     extract_range_negative_end, is_angle_subscript_key_char, make_negative_subscript_error,
@@ -192,6 +192,9 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+        if let Some(call) = atomic_elem_update("atomic-inc-fetch", &expr) {
+            return Ok((rest, call));
+        }
         return Ok((
             rest,
             Expr::Unary {
@@ -211,6 +214,9 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
+        if let Some(call) = atomic_elem_update("atomic-dec-fetch", &expr) {
+            return Ok((rest, call));
+        }
         return Ok((
             rest,
             Expr::Unary {
@@ -229,6 +235,9 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                     args: vec![Expr::Literal(Value::str(name))],
                 },
             ));
+        }
+        if let Some(call) = atomic_elem_update("atomic-fetch", &expr) {
+            return Ok((rest, call));
         }
         return Ok((rest, expr));
     }
@@ -3364,6 +3373,8 @@ fn postfix_expr_loop_from(
                     name: Symbol::intern("__mutsu_atomic_post_inc_var"),
                     args: vec![Expr::Literal(Value::str(name))],
                 };
+            } else if let Some(call) = atomic_elem_update("atomic-fetch-inc", &expr) {
+                expr = call;
             } else {
                 expr = Expr::PostfixOp {
                     op: TokenKind::PlusPlus,
@@ -3379,6 +3390,8 @@ fn postfix_expr_loop_from(
                     name: Symbol::intern("__mutsu_atomic_post_dec_var"),
                     args: vec![Expr::Literal(Value::str(name))],
                 };
+            } else if let Some(call) = atomic_elem_update("atomic-fetch-dec", &expr) {
+                expr = call;
             } else {
                 expr = Expr::PostfixOp {
                     op: TokenKind::MinusMinus,

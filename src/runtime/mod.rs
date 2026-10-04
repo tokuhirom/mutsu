@@ -580,6 +580,7 @@ mod builtins_accessor_elem_in_place;
 mod builtins_atomic;
 mod builtins_atomic_cas;
 mod builtins_atomic_cas_code;
+mod builtins_atomic_elem;
 mod builtins_atomic_lexical_cells;
 mod builtins_atomic_shared;
 mod builtins_coerce;

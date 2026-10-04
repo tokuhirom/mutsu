@@ -3,7 +3,7 @@
 //! their `_i` variants, plus `atomicbindattr`.
 //!
 //! Each of them names a CONTAINER (a scalar variable, an attribute, an `is rw`
-//! parameter, or for `cas` an array/hash element), which a value op never
+//! parameter, or an array/hash element), which a value op never
 //! sees: the `nqp::` value layer receives decontainerized operands. Raku's own
 //! atomic operators (`⚛`, `⚛=`, `⚛++`, `atomic-fetch-add`, `cas`) need the
 //! same thing and already compile their target to the one atomic primitive
