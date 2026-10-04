@@ -1,74 +1,46 @@
-use v6;
+# ADR-0135 §8, Slice E, twenty-second part: the pattern shapes the regex
+# compiler still declined, and so handed to the tree walk, compile. Each is
+# checked against rakudo 2026.07, except the counts past `u32`, where rakudo
+# does not finish (it builds the count) and mutsu's answer is the bound's
+# meaning: no maximum, and a minimum no subject reaches.
 use Test;
 
-# The shapes the compiled regex engine used to decline to the tree walk
-# (ADR-0135 Slice E): a name on a separated quantifier's own token, a
-# `** { … }` count with a separator or over a nullable body, and a
-# backreference inside a `&` conjunction or a `~` goal. Every expected value is
-# rakudo 2026.09's.
+plan 14;
 
-plan 30;
-
-# A name on the separated token itself is applied per atom.
 {
-    my $m = "a,b,c" ~~ /<alpha>+ % ","/;
-    is $m<alpha>».Str.join("|"), 'a|b|c', '<alpha>+ % "," names each atom';
-    is $m<alpha>.^name, 'Array', '... as a list';
-    is ("a,b" ~~ /<x=alpha>+ % ","/)<x>».Str.join("|"), 'a|b', 'an angle alias';
-    is ("a" ~~ /<alpha>+ % ","/)<alpha>.elems, 1, 'one atom is still a list of one';
-    my $t = "a,b,c," ~~ /<alpha>+ %% ","/;
-    is ~$t, 'a,b,c,', '%% takes the trailing separator';
-    is $t<alpha>.elems, 3, '... and names the three atoms';
-    is ("" ~~ /<digit>* % ","/)<digit>.raku, '[]', 'zero atoms: an empty list';
-    is ("abc" ~~ / <alpha>+ % <alpha> /)<alpha>».Str.join("|"), 'a|b|c',
-        'the separator files under the same name, in match order';
-    my $d = "a1b2c" ~~ / <alpha>+ % <digit> /;
-    is $d<alpha>».Str.join("|") ~ ' ' ~ $d<digit>».Str.join("|"), 'a|b|c 1|2',
-        'atom and separator names side by side';
-    my $p = "a1b2" ~~ / <alpha>+ %% (\d) /;
-    is $p<alpha>».Str.join("|") ~ ' ' ~ $p[0]».Str.join("|"), 'a|b 1|2',
-        'a positional separator capture next to the named atoms';
+    my $n = "alpha";
+    is ("a" ~~ / <::($n)> /).Str, 'a', 'a symbolic call to a builtin rule';
+    grammar Sym { token x { b+ }; token TOP { a <::("x")> } }
+    is Sym.parse("abb")<x>.Str, 'bb', 'a symbolic call to a grammar token';
 }
 
-# `** { … } % sep`.
 {
-    is ~("a,a,a,a" ~~ / a ** {2} % "," /), 'a,a', 'a fixed count';
-    is ~("a,a,a,a" ~~ / a ** {2..3} % "," /), 'a,a,a', 'a range takes its maximum';
-    is ("a,a,a,a" ~~ / a ** {0} % "," /).raku,
-        'Match.new(:orig("a,a,a,a"), :from(0), :pos(0))', 'zero: an empty match';
-    nok "b" ~~ / a ** {1} % "," /, 'below the minimum fails';
-    is ~("a,a,a,a" ~~ / a ** {^3} % "," /), 'a,a', 'an exclusive range';
-    is ~("a,a,a,b" ~~ / a ** {1..*} % "," ',b' /), 'a,a,a,b', 'an open range gives back for what follows';
-    is ~("a,a,a," ~~ / a ** {2} %% "," /), 'a,a,', '%% with a count';
-    my $n = 3;
-    is ~("x1x2x3x4" ~~ / [x \d] ** {$n} % "" /), 'x1x2x3', 'the count reads a lexical';
-    grammar G { token TOP { <h> ** { 3 } % ':' }; token h { \d+ } }
-    is G.parse("1:22:333")<h>».Str.join("|"), '1|22|333', 'in a token';
-    grammar G2 { token TOP { <h> ** { 2 } % ':' }; token h { \d+ } }
-    nok G2.parse("1:22:333"), 'a token commits to its count';
-    is ~("a,a,a" ~~ / :r a ** {1..2} % "," /), 'a,a', 'ratcheted';
+    grammar ProtoI { proto token t {*}; token t:sym<a> { a }; token TOP { :i <t> } }
+    nok ProtoI.parse("A"), 'a proto called under :i does not lend :i to its candidates';
 }
 
-# A nullable body under `** { … }`.
+is ("a" ~~ / a ** 1..99999999999 /).Str, 'a', 'a maximum past u32 is no bound';
+nok "aa" ~~ / a ** 99999999999 /, 'a minimum past u32 is not reached';
+
+is ("aXa,bXb" ~~ / [ (\w) X $0 ]+ % ',' /).Str, 'aXa,bXb',
+    'a backreference in a separated quantifier reads its own iteration';
+
 {
-    grammar N { token TOP { <h> ** {4} }; token h { \d? } }
-    is ~N.parse("12"), '12', 'a count over a callee that can match empty';
+    my @l;
+    is ("a,a,a" ~~ / :r [ a { @l.push: 1 } ]+? % ',' $ /).Str, 'a,a,a',
+        'a frugal separated quantifier under ratchet grows to the anchor';
+    is @l.elems, 3, 'its code runs once per iteration entered';
 }
 
-# A backreference in a conjunction branch sees the enclosing captures.
-{
-    ok 'aa' ~~ / $<x>=(\w) [ $<x> && \w ] /, 'in the first branch';
-    nok 'ab' ~~ / $<x>=(\w) [ $<x> && \w ] /, '... and fails when it differs';
-    ok 'aa' ~~ / $<x>=(\w) [ \w && $<x> ] /, 'in a later branch';
-    nok 'ab' ~~ / $<x>=(\w) [ \w && $<x> ] /, '... and fails when it differs';
-    ok 'abab' ~~ / (\w)(\w) [ $0 $1 && .. ] /, 'positional backreferences';
-}
+is ("äb" ~~ / [:m a { } ] b /).Str, 'äb', 'a [:m …] group with code';
+is ("xäy" ~~ / x (:m a) y /)[0].Str, 'ä', 'a (:m …) capture';
+is ("xäy" ~~ / x [ c || :m a ] y /).Str, 'xäy', 'an :m branch of a ||';
 
-# Both sides of a `~` goal see the enclosing captures.
-{
-    ok 'a(a)' ~~ / $<x>=(\w) '(' ~ ')' $<x> /, 'a backreference inside the goal';
-    nok 'a(b)' ~~ / $<x>=(\w) '(' ~ ')' $<x> /, '... and fails when it differs';
-    my $seen;
-    'a(b)' ~~ / (\w) '(' ~ ')' [ \w { $seen = ~$0 } ] /;
-    is $seen, 'a', 'code inside the goal sees the enclosing $0';
-}
+throws-like ｢"a~b" ~~ / a ~ b /｣, Exception,
+    message => /'Unrecognized regex metacharacter ~'/,
+    'a stray ~ raises';
+
+# Rakudo reserves `%<name>=` (roast S05-capture/hash.t is not run there);
+# mutsu files the spec's hash alias: one key per match, no value.
+ok "  a b\tc" ~~ m/%<chars>=( \s+ \S+ )+/, 'a %<name>= hash alias matches';
+is $/<chars>.keys.elems, 3, 'it files one key per iteration';

@@ -71,16 +71,6 @@ and its deletion criterion.
             legacy path and `convert.rs`. **This deletion is the completion criterion.**
       - [ ] Stage 4 — slangs by execution (a follow-up ADR superseding ADR-0026 §4), RakuDoc v2,
             total `.DEPARSE`.
-- [ ] **The regex tree walk is retired** —
-      [ADR-0135](docs/adr/0135-regex-compiles-to-a-backtracking-program.md): every regex compiles
-      to a flat backtracking program run by `RxVm`, and the recursive walk over `RegexPattern` is
-      deleted. Slices A and B have landed, C and D in part, E is under way; slice issues
-      [#10251](https://github.com/tokuhirom/mutsu/issues/10251)–[#10255](https://github.com/tokuhirom/mutsu/issues/10255).
-      The completion criterion is ADR-0135 D7: the `regex-walk:` counter
-      (`MUTSU_VM_STATS`, summed by `scripts/rx-decline-survey.sh`) reads `walked=0` and
-      `bridged=0` over the roast whitelist and `t/`, every `leaf=` primitive has moved out of the
-      walk's modules, and then the walk, its eager `Named` arm and the `MUTSU_RX_DIFF` mode are
-      deleted. Progress is recorded in ADR-0135 §8, not here.
 - [ ] **Built-in methods are handler rows in the one method table** —
       [ADR-11276](docs/adr/11276-built-in-methods-are-handler-rows.md),
       [#11276](https://github.com/tokuhirom/mutsu/issues/11276): a built-in method is one
