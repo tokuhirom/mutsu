@@ -1,5 +1,5 @@
 //! The compile-time registry of `nqp::` VALUE ops: one dense `u16` id per op
-//! name, plus which of the twelve chained dispatch tables owns it.
+//! name, plus which of the thirteen chained dispatch tables owns it.
 //!
 //! In NQP/Rakudo an `nqp::` value op is a `QAST::Op` node the QAST compiler
 //! turns into a single MoarVM instruction; it is not a call and has no name at
@@ -91,6 +91,8 @@ pub(crate) enum NqpOpTable {
     Decoder,
     /// `call_nqp_op_capture` (runtime/call_capture.rs)
     Capture,
+    /// `call_nqp_op_sc` (runtime/nqp_ops_sc.rs)
+    Sc,
 }
 
 /// Every registered op, as `(name without the `nqp::` prefix, owning table)`.
@@ -98,7 +100,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 459] = [
+static NQP_OPS: [(&str, NqpOpTable); 471] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -224,6 +226,7 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("cosh_n", NqpOpTable::Value),
     ("cpucores", NqpOpTable::Sys),
     ("create", NqpOpTable::Builtin),
+    ("createsc", NqpOpTable::Sc),
     ("ctx", NqpOpTable::Builtin),
     ("ctxcaller", NqpOpTable::Builtin),
     ("ctxlexpad", NqpOpTable::Builtin),
@@ -305,6 +308,7 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("gethostname", NqpOpTable::Builtin),
     ("getlexdyn", NqpOpTable::Builtin),
     ("getmessage", NqpOpTable::Builtin),
+    ("getobjsc", NqpOpTable::Sc),
     ("getpayload", NqpOpTable::Builtin),
     ("getpid", NqpOpTable::Sys),
     ("getport", NqpOpTable::Fs),
@@ -454,6 +458,7 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("pop_i", NqpOpTable::List),
     ("pop_n", NqpOpTable::List),
     ("pop_s", NqpOpTable::List),
+    ("popcompsc", NqpOpTable::Sc),
     ("pow_I", NqpOpTable::Value),
     ("pow_i", NqpOpTable::Value),
     ("pow_n", NqpOpTable::Value),
@@ -462,6 +467,7 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("push_i", NqpOpTable::Text),
     ("push_n", NqpOpTable::Text),
     ("push_s", NqpOpTable::Text),
+    ("pushcompsc", NqpOpTable::Sc),
     ("radix", NqpOpTable::Value),
     ("radix_I", NqpOpTable::Str),
     ("rand_I", NqpOpTable::Value),
@@ -481,6 +487,13 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("rmdir", NqpOpTable::Fs),
     ("savecapture", NqpOpTable::Capture),
     ("say", NqpOpTable::Fs),
+    ("scgetdesc", NqpOpTable::Sc),
+    ("scgethandle", NqpOpTable::Sc),
+    ("scgetobjidx", NqpOpTable::Sc),
+    ("scobjcount", NqpOpTable::Sc),
+    ("scsetcode", NqpOpTable::Sc),
+    ("scsetdesc", NqpOpTable::Sc),
+    ("scsetobj", NqpOpTable::Sc),
     ("seekfh", NqpOpTable::Fs),
     ("setbuffersizefh", NqpOpTable::Process),
     ("setcodename", NqpOpTable::Native),
@@ -489,6 +502,7 @@ static NQP_OPS: [(&str, NqpOpTable); 459] = [
     ("setextype", NqpOpTable::Builtin),
     ("sethllconfig", NqpOpTable::Builtin),
     ("setmessage", NqpOpTable::Builtin),
+    ("setobjsc", NqpOpTable::Sc),
     ("setpayload", NqpOpTable::Builtin),
     ("sha1", NqpOpTable::Builtin),
     ("shift", NqpOpTable::List),

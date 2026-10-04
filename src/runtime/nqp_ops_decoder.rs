@@ -42,14 +42,16 @@ fn str_or_null(s: Option<String>) -> Value {
 }
 
 impl Interpreter {
-    /// Try a stream-decoding `nqp::` op. `None` means "not an op this table
-    /// knows" -- the end of the dispatch chain.
+    /// Try a stream-decoding `nqp::` op, then the serialization-context ops
+    /// (`nqp_ops_sc.rs`, the end of the dispatch chain).
     pub(crate) fn call_nqp_op_decoder(
         &mut self,
         op: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let want = operand_count(op)?;
+        let Some(want) = operand_count(op) else {
+            return self.call_nqp_op_sc(op, args);
+        };
         if args.len() != want {
             return Some(Err(RuntimeError::new(format!(
                 "Arg count {} doesn't equal required operand count {want} for op '{op}'",
