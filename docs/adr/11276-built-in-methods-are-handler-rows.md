@@ -393,3 +393,13 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     same `main`: `@a.Int` 1,969M to 396M (-79.9%), `%h.Numeric` -79.3%, `$i.chars` -64.9%,
     `@a.keys` -62.1%, `%h.keys` -60.0%. `@a.sum` (no row) -0.2%; the empty loop is
     unchanged.
+- 2026-10-04, slice 3, Str's iteration family: `comb`, `words`, `lines` and `ords` with no
+  arguments are rows owned by `Str` and `Cool` (`method_table/str_iter.rs`).
+  - `comb`, `words` and `lines` answer the same lazy `Seq` over the receiver's string form
+    as before (`value::str_iter_seq`); `ords` answers a `Seq` of the NFC codepoints.
+  - The cascade arms call the same handlers. `lines` keeps its guard for `Supply` and
+    `IO` instances, which have no shape.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `$s.comb` 1,971M to 931M (-52.8%), `$s.words` -52.8%, `$s.lines` -52.2%,
+    `$s.ords` -48.1%, `$i.comb` (an `Int`, through `Cool`) -42.7%. `$s.flip` (an existing
+    row, as a control) and the empty loop are unchanged.
