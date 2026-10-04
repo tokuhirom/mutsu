@@ -56,7 +56,7 @@ impl Interpreter {
                     // yields Nil and the stash entry would exist with no value
                     // behind it -- `::("Test::EXPORT::DEFAULT::&ok")` resolved
                     // the path and then answered Nil.
-                    let mut code = self.resolve_code_var(&fq);
+                    let mut code = self.resolve_code_var(fq);
                     if code.is_nil() {
                         code = self.export_alias_code_value(module, name);
                     }

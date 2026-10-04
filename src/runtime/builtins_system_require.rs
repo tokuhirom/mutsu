@@ -259,7 +259,7 @@ impl Interpreter {
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
         {
-            let pkg_sym = Symbol::intern(&pkg);
+            let pkg_sym = Symbol::intern(pkg);
             let mut fn_aliases: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
             for (name, def) in self.registry().functions.iter() {
                 if before_function_keys.contains(name) {
