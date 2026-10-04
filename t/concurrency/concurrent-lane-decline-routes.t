@@ -57,6 +57,15 @@ plan 4;
 # writer only as a parameter, and no thread body ever names it, so the escape
 # analysis has nothing to see.
 {
+    # This route has occasionally exited before its assertion under full
+    # parallel TAP load (#9666). Keep the exception visible in that job's
+    # merged TAP log while preserving the failing exit and test count.
+    CATCH {
+        default {
+            diag "parameter-only container route threw: {.gist}";
+            .rethrow;
+        }
+    }
     my @a;
     sub worker(@dst, $i) { @dst[$i] = 1 }
     sub drive($i) { worker(@a, $i) }
