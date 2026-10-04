@@ -520,18 +520,12 @@ pub(crate) fn native_method_1arg(
             if let ValueView::Regex(..) = arg.view() {
                 return None;
             }
-            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+            // The `Str`/`Cool` row's handler (ADR-11276); it also covers a
+            // Junction needle, which the table itself never hands it.
+            Some(crate::builtins::method_table::str_search::contains(
                 target,
-                |text, idx| {
-                    crate::builtins::str_prim::contains(
-                        text,
-                        idx,
-                        0,
-                        arg,
-                        crate::builtins::str_prim::Fold::Exact,
-                    )
-                },
-            )))
+                std::slice::from_ref(arg),
+            ))
         }
         // starts-with / ends-with: the plain `.starts-with($needle)` form (a
         // single positional argument) is a pure prefix/suffix check on a Str
@@ -547,15 +541,13 @@ pub(crate) fn native_method_1arg(
                     method, type_name
                 ))));
             }
-            let is_prefix = method == "starts-with";
-            let needle = arg.to_string_value();
-            let ok = crate::builtins::str_prim::affix_matches(
-                target,
-                &needle,
-                is_prefix,
-                crate::builtins::str_prim::Fold::Exact,
-            );
-            Some(Ok(Value::truth(ok)))
+            // The `Str` row's handlers (ADR-11276).
+            let args = std::slice::from_ref(arg);
+            Some(if method == "starts-with" {
+                crate::builtins::method_table::str_search::starts_with(target, args)
+            } else {
+                crate::builtins::method_table::str_search::ends_with(target, args)
+            })
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
         "samemark" => {
@@ -641,14 +633,11 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let needle = arg.to_string_value();
-            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+            // The `Str`/`Cool` row's handler (ADR-11276).
+            Some(crate::builtins::method_table::str_search::index(
                 target,
-                |s, idx| match crate::builtins::grapheme_index::find_graphemes(s, idx, 0, &needle) {
-                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
-                    None => Value::NIL,
-                },
-            )))
+                std::slice::from_ref(arg),
+            ))
         }
         // Cost: O(k), k = chars returned, once the invocant's grapheme index is
         // cached (see `native_substr_slice`).
@@ -1209,14 +1198,11 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let needle = arg.to_string_value();
-            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+            // The `Str`/`Cool` row's handler (ADR-11276).
+            Some(crate::builtins::method_table::str_search::rindex(
                 target,
-                |s, idx| match crate::builtins::str_prim::rindex(s, idx, idx.len(), &needle) {
-                    Some(g) => Value::int(g as i64),
-                    None => Value::NIL,
-                },
-            )))
+                std::slice::from_ref(arg),
+            ))
         }
         "fmt" => {
             // A Format object argument is handled by the slow-path Format dispatch

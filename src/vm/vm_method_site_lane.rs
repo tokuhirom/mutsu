@@ -15,16 +15,21 @@
 //! The lane answers only when all of these hold, and otherwise leaves the call
 //! to the full path untouched:
 //!
-//! - the site is static-eligible: no arguments (every row so far takes none),
-//!   no `.^`/`.!` modifier, not a quoted name, no argument sources, and the
-//!   receiver is not an `@!`/`%!` attribute (whose writeback runs around the
-//!   call);
+//! - the site is static-eligible: at most two arguments, all positional (its
+//!   argument-source descriptor names no named argument and no `|` spread),
+//!   no `.^`/`.!` modifier, not a quoted name, and the receiver is not an
+//!   `@!`/`%!` attribute (whose writeback runs around the call);
+//! - every argument is a plain scalar (`method_table::plain_args`): a
+//!   `Junction` must autothread, a `Failure` may have to explode under
+//!   `use fatal`, a lazy `Seq` must be reified, and the full path does each
+//!   of those before its native probe;
 //! - the method name is none the full path inspects by name before its native
 //!   probe (`scalar_early_lane_skips`, `dispatch_branches_before_native_probe`);
 //! - no accessor-ref marker is pending, no user `find_method` exists anywhere,
 //!   and no writeback is pending (the full path would drain it at this call);
 //! - the receiver has a `DispatchShape` and the table has a row for
-//!   `(shape, method)` at arity 0;
+//!   `(shape, method, arity)`, whose handler binds these arguments (a
+//!   `Handler::Narrow` row may decline them);
 //! - user code has not `augment`ed the receiver's type with the method
 //!   (`native_lever_a_user_override_sym`, the same gate the full path applies).
 //!
@@ -48,10 +53,12 @@
 use super::*;
 use crate::builtins::method_table::{self, RowId};
 
-/// A lane answer: the row's result, and the row it came from.
+/// A lane answer: the row's result, the row it came from, and the number of
+/// arguments above the receiver on the stack.
 pub(super) struct SiteLaneAnswer {
     result: Result<Value, RuntimeError>,
     row: RowId,
+    arity: usize,
 }
 
 impl Interpreter {
@@ -66,15 +73,19 @@ impl Interpreter {
     ) -> Option<SiteLaneAnswer> {
         let OpCode::CallMethodMut {
             name_idx,
-            arity: 0,
+            arity,
             target_name_idx,
             modifier_idx: None,
             quoted: false,
-            arg_sources_idx: None,
+            arg_sources_idx,
         } = code.ops[ip]
         else {
             return None;
         };
+        let arity = arity as usize;
+        if arity > MAX_LANE_ARITY {
+            return None;
+        }
         if self.accessor_ref_pending
             || !self.pending_rw_writeback_sources.is_empty()
             || !self.pending_caller_var_writeback.is_empty()
@@ -89,19 +100,33 @@ impl Interpreter {
         if !method_table::names_a_row(code.const_sym(name_idx)) {
             return None;
         }
-        let shape = self.stack.last()?.dispatch_shape()?;
+        let base = self.stack.len().checked_sub(arity + 1)?;
+        let shape = self.stack[base].dispatch_shape()?;
+        if arity > 0
+            && (!method_table::plain_args(&self.stack[base + 1..])
+                || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
+        {
+            return None;
+        }
         let sites = code.constants.len();
         let idx = name_idx as usize;
         let generation = self.registry_write_generation();
         let row = match code.method_sites.cached(sites, idx, generation) {
-            Some(payload) if payload_shape(payload) == shape as u8 => {
+            // The memo is keyed by the method name, which sites calling it
+            // with another arity share, so the row's arity is checked too.
+            Some(payload)
+                if payload_shape(payload) == shape as u8
+                    && usize::from(method_table::row(RowId::from_bits(payload as u16)).arity)
+                        == arity =>
+            {
                 if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
                     return None;
                 }
                 RowId::from_bits(payload as u16)
             }
             _ => {
-                let row = self.resolve_method_site_lane(code, name_idx, target_name_idx, shape)?;
+                let row =
+                    self.resolve_method_site_lane(code, name_idx, target_name_idx, shape, arity)?;
                 if self.dispatch.native_base_bypass.is_none() {
                     code.method_sites
                         .remember(sites, idx, generation, pack(shape, row));
@@ -109,10 +134,11 @@ impl Interpreter {
                 row
             }
         };
-        let target = self.stack.last()?;
+        let (target, args) = self.stack[base..].split_first()?;
         Some(SiteLaneAnswer {
-            result: method_table::invoke(row, target, &[]),
+            result: method_table::invoke(row, target, args)?,
             row,
+            arity,
         })
     }
 
@@ -126,6 +152,7 @@ impl Interpreter {
         name_idx: u32,
         target_name_idx: u32,
         shape: crate::value::DispatchShape,
+        arity: usize,
     ) -> Option<RowId> {
         let method = Self::const_str(code, name_idx);
         if Self::scalar_early_lane_skips(method)
@@ -135,8 +162,8 @@ impl Interpreter {
             return None;
         }
         let method_sym = code.const_sym(name_idx);
-        let row = method_table::resolve(shape, method_sym, 0)?;
-        let target = self.stack.last()?.clone();
+        let row = method_table::resolve(shape, method_sym, arity)?;
+        let target = self.stack[self.stack.len().checked_sub(arity + 1)?].clone();
         if self.native_lever_a_user_override_sym(&target, method_sym) {
             return None;
         }
@@ -145,7 +172,8 @@ impl Interpreter {
 
     /// Complete the `CallMethodMut` at `code.ops[ip]` with the lane's answer:
     /// the bookkeeping the full path performs for a native answer to a call
-    /// with no arguments, then the result in place of the receiver.
+    /// with no argument sources left pending, then the result in place of the
+    /// receiver and its arguments.
     // Cost: O(1).
     // Debug builds keep the full path's answer instead (see the module docs).
     #[cfg_attr(debug_assertions, allow(dead_code))]
@@ -165,7 +193,8 @@ impl Interpreter {
         }
         match self.settle_native_warning(answer.result) {
             Ok(value) => {
-                self.stack.pop();
+                let base = self.stack.len() - answer.arity - 1;
+                self.stack.truncate(base);
                 self.stack.push(value);
                 Ok(())
             }
@@ -182,11 +211,17 @@ impl Interpreter {
     #[cfg_attr(debug_assertions, allow(dead_code))]
     fn record_method_site_lane_stats(&mut self, row: RowId) {
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-        let Some(target) = self.stack.last().cloned() else {
+        let arity = usize::from(method_table::row(row).arity);
+        let Some(target) = self
+            .stack
+            .len()
+            .checked_sub(arity + 1)
+            .map(|base| self.stack[base].clone())
+        else {
             return;
         };
         let name = method_table::row(row).name;
-        self.record_native_row_coverage("vm_method_site_lane", &target, name, 0);
+        self.record_native_row_coverage("vm_method_site_lane", &target, name, arity);
     }
 
     /// Debug builds: run the full path for the `CallMethodMut` at
@@ -223,6 +258,28 @@ impl Interpreter {
         let _ = code;
         full
     }
+}
+
+/// The most arguments a row takes, and so a lane call carries.
+const MAX_LANE_ARITY: usize = 2;
+
+/// Whether a call site's argument-source descriptor (see
+/// `Compiler::add_arg_sources_constant`) names only positional arguments: no
+/// named argument (`FALSE`, or an array led by it) and no `|` spread
+/// (`TRUE`). A named argument reaches the stack as a `Pair`, which
+/// `plain_args` refuses anyway; the spread is refused because it changes the
+/// argument count at run time.
+// Cost: O(a), a = arguments of the site.
+fn site_args_are_positional(code: &CompiledCode, idx: u32) -> bool {
+    let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+        return false;
+    };
+    items.iter().all(|item| {
+        matches!(
+            item.view(),
+            ValueView::Nil | ValueView::Str(_) | ValueView::Pair(..)
+        )
+    })
 }
 
 /// The memo payload for `row` on a receiver of `shape`.
