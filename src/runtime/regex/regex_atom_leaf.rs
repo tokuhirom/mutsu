@@ -9,7 +9,7 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, is_word_char, matches_named_builtin,
+    LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, is_word_char,
 };
 
 impl Interpreter {
@@ -170,7 +170,7 @@ impl Interpreter {
             }
             return Some((end, new_caps));
         }
-        // A builtin character class (`alpha`, `digit`, …), also under an alias
+        // A builtin character class or `ident` (`alpha`, `digit`, …), also under an alias
         // (`<foo=alpha>`).
         let is_builtin_class = matches!(
             spec.lookup_name.as_str(),
@@ -186,12 +186,12 @@ impl Interpreter {
                 | "punct"
                 | "graph"
                 | "print"
+                | "ident"
         );
         if is_builtin_class {
-            if pos >= chars.len() || !matches_named_builtin(&spec.lookup_name, chars[pos]) {
-                return None;
-            }
-            let end = pos + 1;
+            // `ident` spans `<alpha> <alnum>*`; the rest are one char.
+            let end = super::regex_builtin_rule::builtin_rule_end(&spec.lookup_name, chars, pos)
+                .flatten()?;
             let mut new_caps = RegexCaptures::default();
             let capture_name = spec
                 .capture_name
