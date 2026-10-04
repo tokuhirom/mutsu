@@ -72,17 +72,9 @@ pub(super) fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
         .as_ref()
 }
 
-/// `pattern`'s program, unless it runs code and the caller cannot allow that.
-/// `Err` names why the match takes the walk.
-fn rx_program_for_run(
-    pattern: &RegexPattern,
-    allow_code: bool,
-) -> Result<Arc<RxProgram>, &'static str> {
-    let program = program_for(pattern).ok_or("declined")?;
-    if !allow_code && program.has_code {
-        return Err("position-only-code");
-    }
-    Ok(Arc::clone(program))
+/// `pattern`'s program. `Err` names why the match takes the walk.
+fn rx_program_for_run(pattern: &RegexPattern) -> Result<Arc<RxProgram>, &'static str> {
+    program_for(pattern).cloned().ok_or("declined")
 }
 
 /// The subject a `:m` match maps its stripped positions over: the published
@@ -147,9 +139,6 @@ impl Interpreter {
         if !rx_vm_enabled() {
             return Err("context:vm-off");
         }
-        if h::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-            return Err("context:ltm-declarative");
-        }
         if h::inline_regex_vars_active() {
             return Err("context:inline-regex-vars");
         }
@@ -188,13 +177,20 @@ impl Interpreter {
         pkg: Symbol,
         allow_code: bool,
     ) -> Option<Option<(usize, RegexCaptures)>> {
+        if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            return Some(
+                self.rx_ltm_measured_ends(pattern, chars, start, pkg)
+                    .into_iter()
+                    .next(),
+            );
+        }
         if let Err(why) = self.rx_context_allows() {
             return walked(why);
         }
         if pattern.ignore_mark {
             return self.rx_try_ignoremark(pattern, chars, start, pkg, allow_code);
         }
-        let program = match rx_program_for_run(pattern, allow_code) {
+        let program = match rx_program_for_run(pattern) {
             Ok(program) => program,
             Err(why) => return walked(why),
         };
@@ -203,7 +199,15 @@ impl Interpreter {
         // replays them (`rx_diff`).
         let diffing = rx_diff_enabled();
         let mark = diffing.then(super::rx_diff::begin_record);
+        // The position-only matcher treats a code atom as an inert zero-width
+        // pass: it probes a pattern without running the user's code.
+        let inert = !allow_code && program.has_code;
+        let saved =
+            inert.then(|| super::super::regex_helpers::CODE_ATOMS_INERT.with(|f| f.replace(true)));
         let result = self.rx_run(&program, chars, start, pkg, None);
+        if let Some(saved) = saved {
+            super::super::regex_helpers::CODE_ATOMS_INERT.with(|f| f.set(saved));
+        }
         if let Some(mark) = mark {
             super::rx_diff::begin_replay(mark);
             let walked = super::super::regex_helpers::isolate_reduced_log(|| {
@@ -220,6 +224,30 @@ impl Interpreter {
             }
         }
         Some(result)
+    }
+
+    /// A match made while an LTM prefix is measured (ADR-0125): no code runs
+    /// and nothing is captured, so the pattern is measured by its own NFA,
+    /// whose fate is the enclosing measurement's. Its ends, longest first.
+    // Cost: the NFA run, O(n * t), n = positions reached, t = threads.
+    fn rx_ltm_measured_ends(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: Symbol,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let nfa = self.ltm_nfa_for(pattern, pkg, false);
+        let run = nfa.run(self, chars, start, &[]);
+        if let Some(fate) = run.fate {
+            super::super::regex_ltm_fate::ltm_record_fate(fate);
+        }
+        let mut ends = run.ends;
+        ends.sort_unstable_by(|a, b| b.cmp(a));
+        ends.dedup();
+        ends.into_iter()
+            .map(|end| (end, RegexCaptures::default()))
+            .collect()
     }
 
     /// A whole-pattern `:m`: the mark-stripped pattern's compiled program
@@ -239,7 +267,7 @@ impl Interpreter {
     ) -> Option<Option<(usize, RegexCaptures)>> {
         let target = ignoremark_target(chars);
         let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
-        if let Err(why) = rx_program_for_run(&stripped, allow_code) {
+        if let Err(why) = rx_program_for_run(&stripped) {
             return walked(why);
         }
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
@@ -269,7 +297,7 @@ impl Interpreter {
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         let target = ignoremark_target(chars);
         let stripped = super::super::regex_helpers::strip_marks_pattern(pattern);
-        if let Err(why) = rx_program_for_run(&stripped, true) {
+        if let Err(why) = rx_program_for_run(&stripped) {
             return walked(why);
         }
         let mut run = |interp: &mut Interpreter, stripped: &RegexPattern, chars: &[char]| {
@@ -388,13 +416,16 @@ impl Interpreter {
         pkg: Symbol,
         stop_at_full: bool,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
+        if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            return Some(self.rx_ltm_measured_ends(pattern, chars, start, pkg));
+        }
         if let Err(why) = self.rx_context_allows() {
             return walked(why);
         }
         if pattern.ignore_mark {
             return self.rx_try_ignoremark_ends(pattern, chars, start, pkg, stop_at_full);
         }
-        let program = match rx_program_for_run(pattern, true) {
+        let program = match rx_program_for_run(pattern) {
             Ok(program) => program,
             Err(why) => return walked(why),
         };

@@ -292,8 +292,15 @@ impl Compiler {
     }
 
     pub(super) fn pattern(&mut self, pattern: &RegexPattern) -> Result<(), Decline> {
+        // A nested `:m` pattern (a `||` branch, a lookaround body, a
+        // conjunction branch) matches over the mark-stripped subject, as a
+        // `[:m …]` group does (`GroupEnds`). A whole `:m` pattern never gets
+        // here: its entry strips it first (`rx_try_ignoremark`).
         if pattern.ignore_mark {
-            return Err("ignoremark");
+            self.has_code |= pattern_contains_code(pattern);
+            let i = self.push_atom(&RegexAtom::Group(pattern.clone()));
+            self.ops.push(RxOp::GroupEnds(i));
+            return Ok(());
         }
         // The walk tests a level's atoms under that level's own `:i`
         // (`ctx.pattern.ignore_case`), so a scoped `[:i …]` covers its body only.
@@ -402,13 +409,11 @@ impl Compiler {
             // subject and maps its ends back (`ignoremark_on_target`), every
             // end up front, so the op asks the same entry for them and enters
             // them highest priority first; under ratchet it commits to the
-            // first. Code or a backreference in the body would read the
-            // enclosing level through the walk's inline seeds, which the
-            // nested run does not arm.
+            // first. The body is a nested run over the stripped subject: code
+            // in it runs at every end it reaches, and a backreference reads
+            // the body's own captures.
             RegexAtom::Group(p) if p.ignore_mark => {
-                if pattern_contains_code(p) || pattern_contains_backref(p) {
-                    return Err("ignoremark-code");
-                }
+                self.has_code |= pattern_contains_code(p);
                 let height = token.ratchet.then(|| self.reg());
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));
@@ -447,9 +452,7 @@ impl Compiler {
                     // `(:m …)`: the body's ends come from the mark-stripped
                     // subject, as for `[:m …]` (`GroupEnds`), into the
                     // capture's own level.
-                    if pattern_contains_code(p) || pattern_contains_backref(p) {
-                        return Err("ignoremark-code");
-                    }
+                    self.has_code |= pattern_contains_code(p);
                     let i = self.push_atom(&RegexAtom::Group(p.clone()));
                     self.ops.push(RxOp::GroupEnds(i));
                 } else {
@@ -488,13 +491,7 @@ impl Compiler {
                 // The body runs code of its own in a nested run.
                 self.has_code |= body.has_code;
                 let i = self.push_atom(&token.atom);
-                // A `:m` body matches over the mark-stripped subject, which
-                // the walk's entry maps (`rx_try_ignoremark`).
-                self.ops.push(if pattern.ignore_mark {
-                    RxOp::CapAtom(i)
-                } else {
-                    RxOp::Look(i)
-                });
+                self.ops.push(RxOp::Look(i));
             }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
@@ -599,7 +596,8 @@ impl Compiler {
                 self.ops.push(RxOp::CapAtom(i));
             }
             RegexAtom::GoalMatch { goal, inner, .. } => self.goal_match(token, goal, inner)?,
-            RegexAtom::TildeMarker => return Err("goal-match"),
+            // A `~` the parser could not pair with a goal and an inner atom.
+            RegexAtom::TildeMarker => self.ops.push(RxOp::BareTilde),
             RegexAtom::RecurseSelf(_) => {
                 // `<~~>`: the enclosing regex's first end at the cursor, its
                 // captures discarded, guarded against re-entry at the same

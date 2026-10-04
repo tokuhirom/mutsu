@@ -197,9 +197,8 @@ pub(super) enum RxOp {
     /// group (`<$rx>`) and drop its captures.
     DropCapture,
     /// Match `atoms[i]`, whose match reads or writes captures (a
-    /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
-    /// lookaround with a `:m` body), through the walk's own single-candidate
-    /// matcher, and
+    /// backreference, a `<(` / `)>` marker) or runs a nested pattern (`<{ … }>`,
+    /// `<~~>`), through its shared definition (`regex_leaf_atom`), and
     /// merge the capture delta it returns.
     CapAtom(u32),
     /// The lookaround `atoms[i]` (`<?before …>`, `<!after …>`): its body runs
@@ -362,6 +361,10 @@ pub(super) enum RxOp {
     /// "Quantifier range is empty" (`X::Syntax::Regex::QuantifierValue`), as
     /// the walk does where it reaches the atom, and fail.
     EmptyRange,
+    /// A `~` that is not between two atoms (`/ a ~ /`), reached: raise
+    /// "Unrecognized regex metacharacter ~", as rakudo does at compile time,
+    /// and fail.
+    BareTilde,
     /// A complete match ending at `pos`; in a callee frame, the return.
     Match,
 }

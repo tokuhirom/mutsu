@@ -296,11 +296,6 @@ impl Compiler {
         sep: &RegexPattern,
         trailing: bool,
     ) -> Result<(), Decline> {
-        if atom_contains_backref(&token.atom) || pattern_contains_backref(sep) {
-            // The walk matches each iteration against the captures folded so
-            // far (`InlineCaptureScope`); a level of its own would hide them.
-            return Err("separator-backref");
-        }
         // Each atom and separator then matches in a capture level of its own,
         // collected for `SepEmit` to fold side by side. When the only captures
         // are names (`<pair>+ % ','`, the grammar case, including a `rule`'s
@@ -326,8 +321,11 @@ impl Compiler {
         // place (Net::Whois's octet check; `InlineCaptureScope` in the walk).
         // Without captures to collect there is no level, and the code reads
         // the enclosing one.
-        let atom_view = collect && atom_contains_code(&token.atom);
-        let sep_view = collect && pattern_contains_code(sep);
+        // A backreference reads the iterations folded so far too (the walk's
+        // `InlineCaptureScope`): a level of its own must not hide them.
+        let atom_view =
+            collect && (atom_contains_code(&token.atom) || atom_contains_backref(&token.atom));
+        let sep_view = collect && (pattern_contains_code(sep) || pattern_contains_backref(sep));
         let (min, max) = match token.quant {
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
@@ -366,16 +364,9 @@ impl Compiler {
             (lo, hi, zero)
         });
         let ratchet = token.ratchet;
-        // Under ratchet a frugal chain still grows on demand; the walk's
-        // ratcheted scan grows it eagerly and offers each length, so code in
-        // an atom or separator would run a different number of times there.
-        // TODO: compile to bytecode once the walk is gone (ADR-0135 Slice E).
-        if ratchet
-            && token.frugal
-            && (atom_contains_code(&token.atom) || pattern_contains_code(sep))
-        {
-            return Err("separator-frugal-ratchet-code");
-        }
+        // Under ratchet a frugal chain still grows on demand, as raku's does;
+        // the walk's ratcheted scan grew it eagerly and offered each length,
+        // running code in an atom or separator once per length scanned.
         let base = collect.then(|| self.reg());
         if let Some(b) = base {
             self.ops.push(RxOp::SepBase(b));

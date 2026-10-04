@@ -898,6 +898,7 @@ impl Interpreter {
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
                     | RxOp::EmptyRange
+                    | RxOp::BareTilde
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
                         if let RxOp::Code(_) = op {
