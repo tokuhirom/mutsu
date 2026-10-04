@@ -133,23 +133,29 @@ const SHAPES: [DispatchShape; 9] = [
     DispatchShape::Complex,
 ];
 
-/// `(shape, method) -> row`, resolved along each shape's MRO, plus the set of
-/// method names any row has.
+/// `(shape, method, arity) -> row`, resolved along each shape's MRO, plus the
+/// arities each method name has rows for.
 struct Table {
     rows: FxHashMap<(DispatchShape, Symbol, u8), RowId>,
     /// Every row once, indexed by [`RowId`].
     all: Vec<&'static MethodRow>,
-    /// One bit per `Symbol` id that names some row. Most calls are to methods
-    /// with no row yet; testing a bit answers those without hashing.
-    names: Vec<u64>,
+    /// Per `Symbol` id, one bit per arity some row with that name takes (bit
+    /// `a` for `a` arguments). Most calls are to methods with no row, or with
+    /// a row for another arity (`$s.index($n, $from)` beside the one-needle
+    /// row); testing a bit answers those without hashing.
+    arities: Vec<u8>,
 }
 
 impl Table {
-    fn has_name(&self, method: Symbol) -> bool {
-        let id = method.id() as usize;
-        self.names
-            .get(id / 64)
-            .is_some_and(|word| word & (1 << (id % 64)) != 0)
+    /// Whether some row is named `method` and takes `arity` arguments.
+    // Cost: O(1), a bit test.
+    #[inline]
+    fn has_name(&self, method: Symbol, arity: usize) -> bool {
+        arity < 8
+            && self
+                .arities
+                .get(method.id() as usize)
+                .is_some_and(|bits| bits & (1 << arity) != 0)
     }
 }
 
@@ -178,7 +184,7 @@ fn table() -> &'static Table {
     TABLE.get_or_init(|| {
         let all: Vec<&'static MethodRow> = FAMILIES.iter().flat_map(|rows| rows.iter()).collect();
         let mut rows = FxHashMap::default();
-        let mut names = Vec::new();
+        let mut arities = Vec::new();
         for shape in SHAPES {
             let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape_type(shape))
             else {
@@ -195,23 +201,26 @@ fn table() -> &'static Table {
                         let id = RowId(id);
                         rows.entry((shape, name, row.arity)).or_insert(id);
                         let id = name.id() as usize;
-                        if names.len() <= id / 64 {
-                            names.resize(id / 64 + 1, 0u64);
+                        if arities.len() <= id {
+                            arities.resize(id + 1, 0u8);
                         }
-                        names[id / 64] |= 1 << (id % 64);
+                        if row.arity < 8 {
+                            arities[id] |= 1 << row.arity;
+                        }
                     }
                 }
             }
         }
-        Table { rows, all, names }
+        Table { rows, all, arities }
     })
 }
 
-/// Whether any row is named `method`: the test every lookup makes first.
+/// Whether any row is named `method` and takes `arity` arguments: the test
+/// every lookup makes first.
 // Cost: O(1), a bit test.
 #[inline]
-pub(crate) fn names_a_row(method: Symbol) -> bool {
-    table().has_name(method)
+pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
+    table().has_name(method, arity)
 }
 
 /// The row a plain receiver of `shape` dispatches `method` to when called
@@ -220,7 +229,7 @@ pub(crate) fn names_a_row(method: Symbol) -> bool {
 #[inline]
 pub(crate) fn resolve(shape: DispatchShape, method: Symbol, arity: usize) -> Option<RowId> {
     let table = table();
-    if !table.has_name(method) {
+    if !table.has_name(method, arity) {
         return None;
     }
     let arity = u8::try_from(arity).ok()?;
@@ -278,7 +287,7 @@ pub(crate) fn plain_args(args: &[Value]) -> bool {
 #[cfg(test)]
 fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
     let table = table();
-    if !table.has_name(method) {
+    if !table.has_name(method, usize::from(arity)) {
         return None;
     }
     table.rows.get(&(shape, method, arity)).map(|id| row(*id))
@@ -311,7 +320,7 @@ pub(crate) fn answer(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !table().has_name(method) {
+    if !table().has_name(method, args.len()) {
         return None;
     }
     let shape = target.dispatch_shape()?;

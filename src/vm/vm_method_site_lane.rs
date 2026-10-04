@@ -101,7 +101,7 @@ impl Interpreter {
         // Most calls name a method no row has. A bit test answers those
         // without taking the memo's lock, which an `Int` receiver (it has a
         // shape) would otherwise pay on every such call.
-        if !method_table::names_a_row(code.const_sym(name_idx)) {
+        if !method_table::names_a_row(code.const_sym(name_idx), arity) {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;

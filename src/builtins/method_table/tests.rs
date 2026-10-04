@@ -161,3 +161,16 @@ fn rows_are_declared_by_rakudo() {
         );
     }
 }
+
+/// The name test carries the arity: a call with an argument count no row of
+/// that name takes is refused before any lookup.
+#[test]
+fn the_name_test_knows_the_arity() {
+    let index = Symbol::intern("index");
+    assert!(names_a_row(index, 1));
+    assert!(!names_a_row(index, 2));
+    let substr = Symbol::intern("substr");
+    assert!(names_a_row(substr, 1) && names_a_row(substr, 2));
+    assert!(!names_a_row(Symbol::intern("elems"), 1));
+    assert!(!names_a_row(substr, 200));
+}
