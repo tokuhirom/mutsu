@@ -3533,7 +3533,7 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::MarkShapedDeclContext => {
-                self.shaped_decl_context = true;
+                self.shaped_decl_context().set(true);
                 *ip += 1;
             }
             // Cost: O(1).

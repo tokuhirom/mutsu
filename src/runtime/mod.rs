@@ -2830,10 +2830,6 @@ pub struct Interpreter {
     /// (vs a true `:=` bind). Consumed by `exec_index_assign_expr_named_op`,
     /// which marks the written element `__mutsu_elem_share::` after the store.
     pub(crate) element_share_pending: bool,
-    /// Set by `MarkShapedDeclContext` before a `SetLocal` whose `my @a[N]` /
-    /// `my @a[N;M] = ...` declaration is itself shaped — so the assignment KEEPS
-    /// the shape instead of dropping it as a value copy (`my @u = @shaped` does).
-    pub(crate) shaped_decl_context: bool,
     /// Set by `StashVarDeclInit`: the raw, uncoerced initializer of the `@`/`%`
     /// declaration currently being processed, so `ApplyVarTrait`'s
     /// custom-container branches can hand the class's `STORE` the RHS with its

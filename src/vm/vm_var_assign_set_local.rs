@@ -520,7 +520,7 @@ impl Interpreter {
         // and, since nothing is set, nothing needs consuming either. The
         // declaration flag also being clear is what makes the wrapper's
         // `box_decl` / `stamp_decl_name` / `our`-sync steps inert.
-        if !self.mark_ctx.store_flags_clear() || self.shaped_decl_context {
+        if !self.mark_ctx.store_flags_clear() {
             return false;
         }
         // Every metadata lane the store would otherwise consult, in the order
@@ -1184,11 +1184,10 @@ impl Interpreter {
         let is_vardecl = marks.vardecl();
         // The declaration's `TypeCheck` already matched this value.
         let decl_typechecked = is_vardecl && marks.decl_typechecked();
-        let is_shaped_decl = self.shaped_decl_context;
+        let is_shaped_decl = marks.shaped_decl();
         let scalar_bind = marks.scalar_bind();
         let param_raw_bind = marks.param_raw_bind();
         let array_share = marks.array_share();
-        self.shaped_decl_context = false;
         // ADR-0040's store boundary, Proxy half: `=` reads its RHS in value
         // context, so a `Proxy` assigned INTO a container is FETCHed and the
         // plain value is what lands. Every bind flavour is exempt — `:=`
