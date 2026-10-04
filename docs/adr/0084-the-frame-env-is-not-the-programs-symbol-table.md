@@ -295,3 +295,50 @@ What remains of the env's non-lexical content after this slice: the
 `__mutsu_constant_var::` / `__mutsu_type::` markers (45), the qualified names
 of packages a `unit module` declares and of types declared below a module's top
 level (46), and group 1 for the main program's own top-level routines.
+
+### 7.4 Slice 3 — group 3, the `constant` and type markers
+
+Re-measured before the slice (2026-10-03) on a `Promise(supply { whenever
+Supply.from-list(1, 2, 3) { emit $_ } })` loop under
+`use Cro::HTTP2::RequestParser`, debug build, entries per loop iteration taken
+as the difference between a 20-iteration and a 0-iteration run: **6,405**
+entries in 30 deep copies. Of those, 1,050 were `__mutsu_constant_var::`
+markers (35 per copied env) and 300 `__mutsu_type::` markers (10 per env).
+(The loop body differs from §7.3's, so its totals are not comparable with
+§7.3's figures; the per-env composition is.)
+
+The two kinds are handled differently (`runtime/toplevel_markers.rs`):
+
+- A **`constant` marker** a module's mainline writes directly (the depth rule
+  of §7.2) goes to a per-interpreter table keyed by the declaring package,
+  `Interpreter::module_toplevel.constant_markers`. Its two readers — regex
+  `$name` interpolation and the EVAL parser's declared-term set — consult the
+  env first and then the running package's chain, the same lookup a
+  package's own `constant` values already use. So a `unit module`'s markers
+  are visible to its own routines and not to the importer (whose view of the
+  values #7787 had already cut), and a package-less module file's land under
+  GLOBAL, where its classes' methods and the importer still see them, as they
+  still see its leaked values. A later `my $name` that must hide a table
+  marker for its own scope writes `False` in the env instead of removing the
+  key.
+- A **type marker** belongs with its binding. A `unit module`'s file-scope
+  constants, `our` variables and `my` variables lose their env binding once
+  the body has run, but their type markers stayed behind, orphaned
+  (`our int32 constant VERSION` in `OpenSSL::Version`, `my int $be16` in
+  `CBOR::Simple`). The load now snapshots the importer's markers under those
+  names before the body and restores them afterwards, exactly as it restores
+  the bindings.
+
+Result: no `__mutsu_constant_var::` marker and one `__mutsu_type::` marker
+(`current-id`, declared inside a class body) remain in a copied frame env, and
+the per-iteration deep-copy volume falls from **6,405** to **5,085** entries
+(−21%). `t/modules/module-toplevel-markers-off-frame-env.t` pins that every
+reader still answers as rakudo does.
+
+What remains of the env's non-lexical content: the `__mutsu_enum_bare_*` keys
+of imported enum values (44 per env, now the largest group), the qualified
+names of packages a `unit module` declares and of types declared below a
+module's top level, the companion markers of a block-form `module X { my $a
+:= … }` body's own bindings (`__mutsu_scalar_bind_no_container::` /
+`__mutsu_bound_decont::`, 20 per env, from `JSON::Fast`), and group 1 for the
+main program's own top-level routines.

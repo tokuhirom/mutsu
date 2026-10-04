@@ -1029,6 +1029,15 @@ impl Interpreter {
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
                 .collect();
+            // The bindings a unit drops below take their type markers with them.
+            let saved_type_markers = if unit_name.is_some() {
+                let dropped = Self::collect_unit_package_scope_names(&stmts)
+                    .into_iter()
+                    .chain(Self::collect_unit_our_var_names(&stmts));
+                self.snapshot_type_markers(unit_lex_names.iter().cloned().chain(dropped))
+            } else {
+                Vec::new()
+            };
             // The module's own `my $*x` file-scope declarations (#8241) --
             // collected regardless of `unit_name`, since a bare-file module
             // leaks these the same way. See `collect_module_own_dynamic_names`.
@@ -1390,6 +1399,7 @@ impl Interpreter {
                 }
                 self.env.insert_sym(*key, value.clone());
             }
+            self.restore_type_markers(saved_type_markers);
             // A dynamic the module declared for itself (`my $*x = ...`) that
             // the importer never had is not restored by the loop above (it
             // only walks `saved_plain_env`, which never held that key) --

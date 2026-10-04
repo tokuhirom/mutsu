@@ -238,25 +238,41 @@ impl Interpreter {
     /// declared terms. The type-name twin above reads the class/role/enum
     /// registry; constants have no such registry, but every one of them leaves a
     /// `__mutsu_constant_var::<name>` marker in the environment when it is
-    /// declared, which is exactly the set the parser wants back.
+    /// declared, which is exactly the set the parser wants back. A module's
+    /// top-level constants keep that marker in a package-keyed table instead
+    /// (`runtime::toplevel_markers`); those visible from the running
+    /// code count too, unless an env marker hides one for this scope.
     ///
     /// Sigiled constants (`constant $x = 1`) are skipped: they are read through
     /// their sigil, never as a bareword term, so they are not term symbols.
     pub(crate) fn collect_eval_user_value_term_names(&self) -> Vec<String> {
         const MARKER: &str = "__mutsu_constant_var::";
+        fn term_name(stored: &str) -> Option<String> {
+            // A sigil-less constant's marker names its term key (#9962).
+            let bare = crate::runtime::term_names::term_spelling(stored).unwrap_or(stored);
+            let first = bare.chars().next()?;
+            (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
+                .then(|| bare.to_string())
+        }
         let mut names: Vec<String> = self
             .env
             .keys()
             .filter_map(|key| {
                 let name = key.resolve();
-                let bare = name.strip_prefix(MARKER)?;
-                // A sigil-less constant's marker names its term key (#9962).
-                let bare = crate::runtime::term_names::term_spelling(bare).unwrap_or(bare);
-                let first = bare.chars().next()?;
-                (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
-                    .then(|| bare.to_string())
+                let stored = name.strip_prefix(MARKER)?;
+                // A `False` marker hides a table marker for this scope.
+                if !self.env.get_sym(*key).is_some_and(Value::truthy) {
+                    return None;
+                }
+                term_name(stored)
             })
             .collect();
+        names.extend(
+            self.visible_toplevel_constant_marker_names()
+                .into_iter()
+                .filter(|stored| self.constant_marker_visible(stored))
+                .filter_map(term_name),
+        );
         // The sigilless `_` term is stored under a private key because `_` is
         // also the environment spelling of the topical `$_`. Re-seed its
         // source spelling so the EVAL parser canonicalizes `_` to that key.

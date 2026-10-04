@@ -1,6 +1,5 @@
 use super::regex_parse::*;
 use super::*;
-use crate::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Try to parse an inline scope modifier from the remaining source after ':'.
@@ -152,9 +151,7 @@ impl Interpreter {
     /// answers `false` here even if it happens to never be reassigned:
     /// only a genuine `constant` is a Rakudo compile-time value.
     pub(in crate::runtime) fn is_compile_time_constant_scalar(&self, name: &str) -> bool {
-        self.env
-            .get_sym(MetaNs::ConstantVar.key_for_str(name))
-            .is_some()
+        self.constant_marker_visible(name)
     }
 
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
