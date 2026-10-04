@@ -511,7 +511,7 @@ impl Interpreter {
         );
         let fq_name = fq_name.as_str();
         self.registry().proto_subs_contains(fq_name)
-            && self.our_scoped_package_items.contains(fq_name)
+            && self.types.our_scoped_package_items.contains(fq_name)
     }
 
     /// Hide the candidate family already visible at target_single before an
@@ -1724,7 +1724,7 @@ impl Interpreter {
                         .clone()
                         .or_else(|| self.module.unit_module_loading_stack.last().cloned())
                         .unwrap_or_else(|| self.current_package());
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(importer_package)
                         .or_default()
                         .entry(short.clone())

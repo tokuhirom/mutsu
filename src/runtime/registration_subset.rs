@@ -57,7 +57,7 @@ impl Interpreter {
         });
         // Drop any cached compiled predicate for this name so a redeclaration
         // recompiles against the new predicate (see `subset_predicate_cache`).
-        self.subset_predicate_cache.remove(name);
+        self.types.subset_predicate_cache.remove(name);
         // A subset defaults to `our` scope: declared inside a package/class/
         // module it is also reachable by its qualified name (`URI::Scheme`),
         // so register that alias too — smartmatch resolves the constraint by
@@ -105,7 +105,7 @@ impl Interpreter {
             let qualified = crate::qualified::qualified_text(&pkg, name)
                 .as_str()
                 .to_string();
-            self.subset_predicate_cache.remove(&qualified);
+            self.types.subset_predicate_cache.remove(&qualified);
             self.registry_mut()
                 .subsets
                 .insert(qualified.clone(), def.clone());
@@ -141,7 +141,7 @@ impl Interpreter {
                     .to_string()
             };
             let storage = format!("{qualified}\u{0}{decl_id}");
-            self.subset_predicate_cache.remove(&storage);
+            self.types.subset_predicate_cache.remove(&storage);
             self.registry_mut()
                 .subsets
                 .insert(storage.clone(), def.clone());
@@ -163,7 +163,7 @@ impl Interpreter {
             && !short.is_empty()
             && !Self::is_builtin_type(short)
         {
-            crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+            crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                 .entry(pkg.clone())
                 .or_default()
                 .entry(short.to_string())

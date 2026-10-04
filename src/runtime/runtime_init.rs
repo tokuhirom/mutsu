@@ -46,7 +46,7 @@ impl Interpreter {
     /// the same share, one level up.
     ///
     /// [`RegistryWriteGuard`]: crate::runtime::registry::RegistryWriteGuard
-    fn shared_builtin_registry() -> Arc<Registry> {
+    pub(super) fn shared_builtin_registry() -> Arc<Registry> {
         static TEMPLATE: std::sync::OnceLock<Arc<Registry>> = std::sync::OnceLock::new();
         Arc::clone(TEMPLATE.get_or_init(|| Arc::new(Self::build_builtin_registry())))
     }
@@ -3124,10 +3124,9 @@ impl Interpreter {
         };
 
         let mut interpreter = Self {
-            open_role_group: None,
+            types: type_state::TypeState::new(),
             literal_native_args: 0,
             static_call_args: false,
-            user_declared_classes: Default::default(),
             env: Env::from(env),
             io: io_state::IoState::new(),
             control: control_state::ControlState::new(),
@@ -3143,13 +3142,6 @@ impl Interpreter {
             )),
             routine_stack: crate::runtime::routine_stack::RoutineStack::default(),
             callframe_stack: Vec::new(),
-            method_class_stack: Vec::new(),
-            constructing_class: None,
-            last_registered_class_key: None,
-            deferred_trait_class_rollback: None,
-            last_registered_role_key: None,
-            build_attr_writes: std::cell::RefCell::new(Vec::new()),
-            defining_class: None,
             pending_call_arg_sources: None,
             pending_where_exception: None,
             pending_skip_constraint_recheck: false,
@@ -3167,19 +3159,12 @@ impl Interpreter {
             regex_quant_scratch: Vec::new(),
             block_stack: Vec::new(),
             declarator_docs: declarator_docs::DeclaratorDocs::default(),
-            type_metadata: Default::default(),
             topic_state: Default::default(),
             async_state: Default::default(),
             block_scope_depth: 0,
-            registry: Arc::new(RwLock::new(Self::shared_builtin_registry())),
-            registry_write_gen: Self::fresh_registry_write_gen(),
-            numeric_bridge_probe: Default::default(),
-            attr_type_constraint_cache: Default::default(),
             pending_dispatch_error: None,
             pending_sigilless_store: None,
             regex_state: Default::default(),
-            persistent_classes: Default::default(),
-            package_stash_hidden: Default::default(),
             closure_env_overrides: HashMap::new(),
             caches: Default::default(),
             pending_eval_sigilless: Vec::new(),
@@ -3194,13 +3179,9 @@ impl Interpreter {
             last_block_my_declared: Vec::new(),
             recorded_free_var_writes: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
-            predictive_seq_iters: HashMap::new(),
             threads: thread_sharing::ThreadSharing::root(),
-            subset_predicate_cache: HashMap::new(),
-            inline_subset_constraints: HashMap::new(),
             container_element_proxy: None,
             subset_where_fail: None,
-            package_type_aliases: std::sync::Arc::new(PackageKeyed::default()),
             lexicals: lexical_state::LexicalState::new(),
             in_lvalue_assignment: false,
             rw_return_context: false,
@@ -3211,30 +3192,9 @@ impl Interpreter {
             trait_mod_default_writeback: None,
             hash_autovivify: false,
             caller_env_stack: Vec::new(),
-            attr_var_defaults: ValueMap::default(),
-            attr_var_defaults_epoch: 0,
-            attr_var_defaults_current: Default::default(),
-            instance_type_metadata: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
-            role_pun_construction: Vec::new(),
             raku_cycle_guards: Default::default(),
-            pending_proxy_subclass_attr: None,
-            pending_declare_new_type: None,
-            classes_composing_accessors: std::collections::HashSet::new(),
-            method_fallbacks: Default::default(),
-            suppressed_names: Default::default(),
-            class_scoped_short_names: Default::default(),
-            poisoned_enum_aliases: Default::default(),
-            enum_scope_names: vec![Vec::new()],
-            my_scoped_package_items: Default::default(),
-            our_scoped_package_items: Default::default(),
-            lexical_class_scopes: Vec::new(),
-            lexical_class_pending: HashMap::new(),
-            lexical_class_pending_scopes: Vec::new(),
             last_value: None,
             pending_local_updates: Vec::new(),
-            squish_iterator_meta: HashMap::new(),
-            custom_type_data: HashMap::new(),
-            rebless_map: HashMap::new(),
 
             // Merged VM execution registers (CP-3 collapse) — same defaults the
             // former `VM::new` installed.

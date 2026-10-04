@@ -458,11 +458,11 @@ impl Interpreter {
             };
             let type_obj = Value::package(Symbol::intern(&owner));
             if gate_accessors {
-                self.classes_composing_accessors.insert(owner.clone());
+                self.types.classes_composing_accessors.insert(owner.clone());
             }
             let result = self.call_method_with_values(receiver, "compose", vec![type_obj]);
             if gate_accessors {
-                self.classes_composing_accessors.remove(&owner);
+                self.types.classes_composing_accessors.remove(&owner);
             }
             result?;
         }
@@ -653,7 +653,7 @@ impl Interpreter {
         // `is_compile_time_phaser` is precomputed the same way
         // (`crate::opcode::is_compile_time_phaser_stmt`).
         let saved_defining = if is_compile_time_phaser {
-            Some(self.defining_class.replace(cx.name.to_string()))
+            Some(self.types.defining_class.replace(cx.name.to_string()))
         } else {
             None
         };
@@ -682,7 +682,7 @@ impl Interpreter {
             };
         }
         if let Some(saved) = saved_defining {
-            self.defining_class = saved;
+            self.types.defining_class = saved;
         }
         if let Err(e) = result {
             if !is_swallowable {

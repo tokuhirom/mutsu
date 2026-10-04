@@ -316,8 +316,8 @@ impl Interpreter {
                     let frame = self.routine_stack[routine_depth - 1];
                     self.routine_stack.push(frame);
                 }
-                (self.method_class_stack.len() > method_depth)
-                    .then(|| self.method_class_stack.split_off(method_depth))
+                (self.types.method_class_stack.len() > method_depth)
+                    .then(|| self.types.method_class_stack.split_off(method_depth))
             };
             if installing_package != throw_package {
                 self.set_current_package_with_sym(
@@ -335,8 +335,8 @@ impl Interpreter {
             self.control.catch_handlers.extend(inner);
             self.routine_stack.truncate(routine_len);
             if let Some(tail) = method_tail {
-                self.method_class_stack.truncate(method_depth);
-                self.method_class_stack.extend(tail);
+                self.types.method_class_stack.truncate(method_depth);
+                self.types.method_class_stack.extend(tail);
             }
             if installing_package != throw_package {
                 self.set_current_package_with_sym(

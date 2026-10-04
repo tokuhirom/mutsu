@@ -537,7 +537,7 @@ impl Interpreter {
                     || self.threads.thread_param_shadow_vars.borrow().contains(n)
             });
         let mut cloned = Self {
-            open_role_group: None,
+            types: self.types.fork_for_thread(),
             literal_native_args: 0,
             static_call_args: false,
             env: self.env.clone(),
@@ -557,13 +557,6 @@ impl Interpreter {
             )),
             routine_stack: crate::runtime::routine_stack::RoutineStack::default(),
             callframe_stack: Vec::new(),
-            method_class_stack: Vec::new(),
-            constructing_class: None,
-            last_registered_class_key: None,
-            deferred_trait_class_rollback: None,
-            last_registered_role_key: None,
-            build_attr_writes: std::cell::RefCell::new(Vec::new()),
-            defining_class: None,
             pending_call_arg_sources: None,
             pending_where_exception: None,
             pending_skip_constraint_recheck: false,
@@ -581,26 +574,12 @@ impl Interpreter {
             regex_quant_scratch: Vec::new(),
             block_stack: Vec::new(),
             declarator_docs: declarator_docs::DeclaratorDocs::default(),
-            type_metadata: self.type_metadata.clone(),
             topic_state: self.topic_state.fork_for_thread(),
             async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
-            // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
-            // child thread gets an independent snapshot (matches prior per-field
-            // clone semantics: the child sees parent declarations but its own new
-            // ones don't leak back), while the deep clone itself is deferred until
-            // either side's first registry write (`Arc::make_mut` in
-            // `RegistryWriteGuard::deref_mut`). In spawn-heavy loops where neither
-            // side writes the registry, the deep clone (and its drop) never happens.
-            registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
-            registry_write_gen: Self::fresh_registry_write_gen(),
-            numeric_bridge_probe: Default::default(),
-            attr_type_constraint_cache: Default::default(),
             pending_dispatch_error: None,
             pending_sigilless_store: None,
             regex_state: self.regex_state.fork_for_thread(),
-            persistent_classes: self.persistent_classes.clone(),
-            package_stash_hidden: self.package_stash_hidden.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
             caches: self.caches.fork_for_thread(),
             pending_eval_sigilless: Vec::new(),
@@ -615,13 +594,9 @@ impl Interpreter {
             last_block_my_declared: Vec::new(),
             recorded_free_var_writes: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
-            predictive_seq_iters: self.predictive_seq_iters.clone(),
             threads: self.threads.fork_for_thread(captured_scalars),
-            subset_predicate_cache: HashMap::new(),
-            inline_subset_constraints: HashMap::new(),
             container_element_proxy: None,
             subset_where_fail: None,
-            package_type_aliases: self.package_type_aliases.clone(),
             lexicals: self.lexicals.fork_for_thread(),
             in_lvalue_assignment: false,
             rw_return_context: false,
@@ -632,39 +607,9 @@ impl Interpreter {
             trait_mod_default_writeback: None,
             hash_autovivify: false,
             caller_env_stack: Vec::new(),
-            attr_var_defaults: self.attr_var_defaults.clone(),
-            attr_var_defaults_epoch: self.attr_var_defaults_epoch,
-            attr_var_defaults_current: Default::default(),
-            // Per-thread snapshot (not a shared-handle clone), but an O(1) share
-            // of the inner `Arc` (docs/per-task-clone-slimming.md slice 4): a
-            // fresh outer `Arc<RwLock<...>>` keeps the child thread's instance
-            // type metadata independent of the parent's (mirroring
-            // `io_handles`/`current_package`), while the deep clone itself is
-            // deferred until either side's first write (`Arc::make_mut` in
-            // `register_container_type_metadata`).
-            instance_type_metadata: Arc::new(RwLock::new(Arc::clone(
-                &self.instance_type_metadata.read().unwrap(),
-            ))),
-            role_pun_construction: Vec::new(),
             raku_cycle_guards: self.raku_cycle_guards.fork_for_thread(),
-            pending_proxy_subclass_attr: None,
-            pending_declare_new_type: None,
-            classes_composing_accessors: std::collections::HashSet::new(),
-            method_fallbacks: self.method_fallbacks.clone(),
-            suppressed_names: self.suppressed_names.clone(),
-            class_scoped_short_names: self.class_scoped_short_names.clone(),
-            poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
-            enum_scope_names: self.enum_scope_names.clone(),
-            my_scoped_package_items: self.my_scoped_package_items.clone(),
-            our_scoped_package_items: self.our_scoped_package_items.clone(),
-            lexical_class_scopes: self.lexical_class_scopes.clone(),
-            lexical_class_pending: self.lexical_class_pending.clone(),
-            lexical_class_pending_scopes: self.lexical_class_pending_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
-            squish_iterator_meta: HashMap::new(),
-            custom_type_data: self.custom_type_data.clone(),
-            rebless_map: self.rebless_map.clone(),
 
             // Merged VM execution registers (CP-3 collapse): a thread clone starts
             // with fresh per-execution registers, exactly as the former
@@ -699,7 +644,6 @@ impl Interpreter {
             rw_param_rebinds: Vec::new(),
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
             pos_light_ic_epoch: 1,
-            user_declared_classes: self.user_declared_classes.clone(),
             outer_scope_locals: Vec::new(),
             enter_result_stack: Vec::new(),
             pending_alias_bind_names: Vec::new(),

@@ -7,7 +7,6 @@ build_attr_writes
 class_scoped_short_names
 classes_composing_accessors
 constructing_class
-current_package_sym
 custom_type_data
 deferred_trait_class_rollback
 defining_class
@@ -39,5 +38,6 @@ role_pun_construction
 squish_iterator_meta
 subset_predicate_cache
 suppressed_names
+types
 type_metadata
 user_declared_classes

@@ -5871,7 +5871,7 @@ impl Interpreter {
                 //    reaching this statement a second (or first) time at
                 //    runtime is a no-op, never a re-declaration.
                 // 3. Neither: throw the pre-built X::Attribute error.
-                if let Some(class_name) = self.defining_class.clone() {
+                if let Some(class_name) = self.types.defining_class.clone() {
                     self.register_runtime_attribute(&class_name, spec)?;
                     *ip += 1;
                 } else if self

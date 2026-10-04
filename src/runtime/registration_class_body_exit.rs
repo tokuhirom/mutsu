@@ -278,7 +278,7 @@ impl Interpreter {
                 // in Cro::HTTP::RequestParser's `transformer`) is that
                 // routine's lexical; its keys are read where the routine runs,
                 // which this body exit does not scope.
-                (!self.my_scoped_package_items.contains(short)).then(|| key.to_string())
+                (!self.types.my_scoped_package_items.contains(short)).then(|| key.to_string())
             })
             .collect();
         for bare in nested_short_names.into_iter().chain(nested_enum_keys) {

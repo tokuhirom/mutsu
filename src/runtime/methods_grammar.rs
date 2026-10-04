@@ -1152,6 +1152,7 @@ impl Interpreter {
         // that gets reset to the default whenever the parser re-enters (e.g. while
         // compiling a regex during the parse), so reading it here is unreliable.
         let grammar_is_6e = match self
+            .types
             .type_metadata
             .get(package_name)
             .and_then(|meta| meta.get("language-revision"))

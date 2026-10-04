@@ -135,7 +135,10 @@ impl Interpreter {
         // Built directly via the single `try_native_quanthash_construct` impl the
         // interpreter's `dispatch_new` also delegates to.
         if let Some(class_name) = new_on_package
-            && !self.user_declared_classes.contains(&class_name.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
             self.dispatch.method_dispatch_pure = true;
@@ -147,7 +150,10 @@ impl Interpreter {
         // the single `try_native_array_construct` / `try_native_hash_construct`
         // impls the interpreter's `dispatch_new` also delegates to.
         if let Some(class_name) = new_on_package
-            && !self.user_declared_classes.contains(&class_name.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
             self.dispatch.method_dispatch_pure = true;

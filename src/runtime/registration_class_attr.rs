@@ -54,7 +54,7 @@ impl Interpreter {
     /// Store a specific language version as type metadata for ^language-revision.
     pub(crate) fn store_language_revision_from_version(&mut self, name: &str, version: &str) {
         let revision = language_revision_letter(version);
-        let meta = crate::runtime::cow_table_mut(&mut self.type_metadata)
+        let meta = crate::runtime::cow_table_mut(&mut self.types.type_metadata)
             .entry(name.to_string())
             .or_default();
         meta.insert("language-revision".to_string(), Value::str(revision));

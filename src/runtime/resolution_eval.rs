@@ -668,6 +668,7 @@ impl Interpreter {
         // regardless of what the block does: only an actual registry write can
         // change the generation.
         let registry_gen_before = self
+            .types
             .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed);
         // `&`-code vars and their `__mutsu_callable_id::` markers are lexical to
@@ -827,6 +828,7 @@ impl Interpreter {
         // all three maps (one lock acquisition instead of three) — the moves
         // cannot re-enter user code, so holding the guard across them is safe.
         if self
+            .types
             .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed)
             != registry_gen_before

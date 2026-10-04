@@ -2062,7 +2062,7 @@ impl Interpreter {
                 // *built-in* class (exception types, ...) keeps its attributes only
                 // in the stored map (not collected), so still read them.
                 if class_attrs.is_empty() {
-                    if !self.user_declared_classes.contains(&cn)
+                    if !self.types.user_declared_classes.contains(&cn)
                         && let Some(val) = attributes.as_map().get(method)
                     {
                         // Check for deprecated attribute accessor
@@ -2130,7 +2130,7 @@ impl Interpreter {
                     // list holds only the roles' attributes, while the base's
                     // own attributes (`.name`, `.rw`, `.package`, ...) still
                     // live in the stored map, exactly as for the bare base.
-                    if !self.user_declared_classes.contains(&cn)
+                    if !self.types.user_declared_classes.contains(&cn)
                         && !class_attrs.iter().any(|attr| attr.name == method)
                         && let Some(val) = attributes.as_map().get(method)
                     {
@@ -3227,7 +3227,8 @@ impl Interpreter {
                     method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
                 ) && matches!(target.view(), ValueView::Array(..))
-                    && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
+                    && let Some((attrs_ref, attr_name)) =
+                        self.types.pending_proxy_subclass_attr.take()
                 {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
@@ -3608,7 +3609,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.method_fallbacks.is_empty() {
+        if self.types.method_fallbacks.is_empty() {
             return None;
         }
         // ADR-0019 E1b: authoritative TypeId classifier owner (was
@@ -3629,7 +3630,7 @@ impl Interpreter {
         );
         let name_val = Value::str(method.to_string());
         for cn in classes {
-            let Some(fallbacks) = self.method_fallbacks.get(&cn).cloned() else {
+            let Some(fallbacks) = self.types.method_fallbacks.get(&cn).cloned() else {
                 continue;
             };
             for (condition, calculator) in fallbacks {

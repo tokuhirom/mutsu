@@ -795,7 +795,7 @@ impl Interpreter {
             return Err(RuntimeError::new("require expects a module name"));
         }
 
-        let in_method_context = !self.method_class_stack.is_empty();
+        let in_method_context = !self.types.method_class_stack.is_empty();
         let should_install_stub = !return_is_str || !in_method_context;
         if let Some(module) = module_name.as_ref()
             && should_install_stub

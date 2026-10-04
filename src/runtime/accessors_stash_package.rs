@@ -364,7 +364,7 @@ impl Interpreter {
             // Skip classes hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && !pkg_is_global
-                && self.package_stash_hidden.contains(class_name)
+                && self.types.package_stash_hidden.contains(class_name)
             {
                 continue;
             }
@@ -375,7 +375,7 @@ impl Interpreter {
             // Raku keeps core types in the setting, not the user's GLOBAL --
             // only a class the user actually declared (`class`/`package`/
             // `module`/`grammar`) is a genuine GLOBAL member.
-            if pkg_is_global && !self.user_declared_classes.contains(class_name) {
+            if pkg_is_global && !self.types.user_declared_classes.contains(class_name) {
                 continue;
             }
             // Skip my-scoped classes (they should not appear in the package stash)
@@ -408,7 +408,7 @@ impl Interpreter {
             // Skip roles hidden from package stash lookups (transitive deps)
             if package_name != "MY"
                 && !pkg_is_global
-                && self.package_stash_hidden.contains(role_name)
+                && self.types.package_stash_hidden.contains(role_name)
             {
                 continue;
             }

@@ -40,7 +40,7 @@ impl Interpreter {
         }
 
         let id = next_instance_id();
-        self.custom_type_data.insert(
+        self.types.custom_type_data.insert(
             id,
             CustomTypeData {
                 type_check_cache: None,
@@ -97,7 +97,7 @@ impl Interpreter {
             }
         }
 
-        if let Some(data) = self.custom_type_data.get_mut(&id) {
+        if let Some(data) = self.types.custom_type_data.get_mut(&id) {
             data.type_check_cache = cache;
             data.authoritative = authoritative;
             data.call_accepts = call_accepts;
@@ -122,7 +122,7 @@ impl Interpreter {
             }
         };
 
-        if let Some(data) = self.custom_type_data.get_mut(&id) {
+        if let Some(data) = self.types.custom_type_data.get_mut(&id) {
             data.composed = true;
         }
 
@@ -141,7 +141,7 @@ impl Interpreter {
         match (obj.view(), target_type.view()) {
             (ValueView::CustomTypeInstance(d), ValueView::CustomType(c)) => {
                 // Store the new HOW in the rebless map so .HOW returns the new type
-                self.rebless_map.insert(d.id, (*c.how).clone());
+                self.types.rebless_map.insert(d.id, (*c.how).clone());
                 Ok(obj.clone())
             }
             _ => Ok(args[0].clone()),
@@ -219,7 +219,7 @@ impl Interpreter {
     /// - With cache: check cache directly, then call_accepts if set
     /// - Without cache (before compose): return false (default ACCEPTS behavior)
     pub(super) fn custom_type_check(&mut self, lhs: &Value, rhs_id: u64, rhs_how: &Value) -> bool {
-        let data = self.custom_type_data.get(&rhs_id).cloned();
+        let data = self.types.custom_type_data.get(&rhs_id).cloned();
         if let Some(ref data) = data
             && let Some(ref cache) = data.type_check_cache
         {
@@ -404,7 +404,7 @@ impl Interpreter {
         };
         let type_obj = Value::package(Symbol::intern(class_name));
         if self.declare_how_has_user_method(&how_val, "new_type") {
-            self.pending_declare_new_type = Some(type_obj.clone());
+            self.types.pending_declare_new_type = Some(type_obj.clone());
             let result = self.call_method_with_values(
                 how_val.clone(),
                 "new_type",
@@ -413,7 +413,7 @@ impl Interpreter {
                     Value::str(class_name.to_string()),
                 )],
             );
-            self.pending_declare_new_type = None;
+            self.types.pending_declare_new_type = None;
             result?;
         }
         if self.declare_how_has_user_method(&how_val, "add_method") {

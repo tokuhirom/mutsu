@@ -1659,7 +1659,7 @@ impl Interpreter {
                 let id = &c.id;
                 if let ValueView::Package(_) = right.view() {
                     // After compose: check the type check cache
-                    let data = self.custom_type_data.get(id).cloned();
+                    let data = self.types.custom_type_data.get(id).cloned();
                     if let Some(ref data) = data
                         && let Some(ref cache) = data.type_check_cache
                     {

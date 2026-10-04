@@ -783,7 +783,7 @@ impl Interpreter {
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         key: crate::symbol::Symbol,
     ) {
-        let mut frames = self.build_attr_writes.borrow_mut();
+        let mut frames = self.types.build_attr_writes.borrow_mut();
         if frames.is_empty() {
             return;
         }

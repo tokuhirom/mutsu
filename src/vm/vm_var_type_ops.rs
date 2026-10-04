@@ -237,7 +237,7 @@ impl Interpreter {
         tc_idx: u32,
         constraint: &str,
     ) -> bool {
-        if Self::any_type_capture_seen() || !self.package_type_aliases.is_empty() {
+        if Self::any_type_capture_seen() || !self.types.package_type_aliases.is_empty() {
             return false;
         }
         let generation = self.registry_write_generation();
