@@ -133,10 +133,9 @@ impl Interpreter {
         if let Ok(msg) = self.call_method_with_values(instance.clone(), "message", vec![]) {
             let msg_str = msg.to_string_value();
             if !msg_str.is_empty() {
-                return Ok(Value::make_instance(
-                    class_name,
-                    attributes.as_map().clone(),
-                ));
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("message".to_string(), Value::str(msg_str));
+                return Ok(Value::make_instance(class_name, attrs));
             }
         }
         Ok(instance)
