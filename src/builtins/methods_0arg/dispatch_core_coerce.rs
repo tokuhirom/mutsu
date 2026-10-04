@@ -834,8 +834,15 @@ pub(super) fn dispatch(
             }
             // A real number: the numeric types' `Int` rows' implementation
             // (ADR-11276, `method_table::coerce`).
-            if !matches!(target.view(), ValueView::Complex(..))
-                && let Some(result) = crate::builtins::method_table::coerce::int_of(target)
+            if matches!(
+                target.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::BigRat(..)
+            ) && let Some(result) = crate::builtins::method_table::coerce::int_of(target)
             {
                 return Some(Some(Ok(result)));
             }

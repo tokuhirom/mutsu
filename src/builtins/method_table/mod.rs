@@ -150,9 +150,23 @@ struct Table {
     /// a row for another arity (`$s.index($n, $from)` beside the one-needle
     /// row); testing a bit answers those without hashing.
     arities: Vec<u8>,
+    /// Per `Symbol` id, one bit per [`DispatchShape`] some row with that name
+    /// is resolved for. A name with rows for other receivers (`Int` has rows
+    /// on the numeric types, none on `Str`) is refused for this one by a bit
+    /// test too, without the hash lookup or a call site's memo.
+    shapes: Vec<u16>,
 }
 
 impl Table {
+    /// Whether some row with `method`'s name is resolved for `shape`.
+    // Cost: O(1), a bit test.
+    #[inline]
+    fn has_shape(&self, method: Symbol, shape: DispatchShape) -> bool {
+        self.shapes
+            .get(method.id() as usize)
+            .is_some_and(|bits| bits & (1 << (shape as u16)) != 0)
+    }
+
     /// Whether some row is named `method` and takes `arity` arguments.
     // Cost: O(1), a bit test.
     #[inline]
@@ -191,6 +205,7 @@ fn table() -> &'static Table {
         let all: Vec<&'static MethodRow> = FAMILIES.iter().flat_map(|rows| rows.iter()).collect();
         let mut rows = FxHashMap::default();
         let mut arities = Vec::new();
+        let mut shapes = Vec::new();
         for shape in SHAPES {
             let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape_type(shape))
             else {
@@ -213,11 +228,20 @@ fn table() -> &'static Table {
                         if row.arity < 8 {
                             arities[id] |= 1 << row.arity;
                         }
+                        if shapes.len() <= id {
+                            shapes.resize(id + 1, 0u16);
+                        }
+                        shapes[id] |= 1 << (shape as u16);
                     }
                 }
             }
         }
-        Table { rows, all, arities }
+        Table {
+            rows,
+            all,
+            arities,
+            shapes,
+        }
     })
 }
 
@@ -229,13 +253,21 @@ pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
     table().has_name(method, arity)
 }
 
+/// Whether a receiver of `shape` may have a row for `method`: the second bit
+/// test, once the receiver's shape is known. `false` is definite.
+// Cost: O(1), a bit test.
+#[inline]
+pub(crate) fn shape_has_row(shape: DispatchShape, method: Symbol) -> bool {
+    table().has_shape(method, shape)
+}
+
 /// The row a plain receiver of `shape` dispatches `method` to when called
 /// with `arity` positional arguments, if the table has one.
 // Cost: O(1), a bit test and one hash lookup.
 #[inline]
 pub(crate) fn resolve(shape: DispatchShape, method: Symbol, arity: usize) -> Option<RowId> {
     let table = table();
-    if !table.has_name(method, arity) {
+    if !table.has_name(method, arity) || !table.has_shape(method, shape) {
         return None;
     }
     let arity = u8::try_from(arity).ok()?;
