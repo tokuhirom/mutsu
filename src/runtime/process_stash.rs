@@ -158,26 +158,29 @@ impl ProcessStash {
 }
 
 /// The stash key of a dynamic-variable env name: `*OUT` and `$*OUT` → `*OUT`,
-/// `@*ARGS` / `%*ENV` as is. `None` for a name that is not a dynamic.
+/// `@*ARGS` / `%*ENV` / `&*chdir` as is. `None` for a name that is not a
+/// dynamic.
 // Cost: O(1).
 fn stash_key(name: &str) -> Option<&str> {
     let b = name.as_bytes();
     match b.first() {
         Some(b'*') => Some(name),
         Some(b'$') if b.get(1) == Some(&b'*') => Some(&name[1..]),
-        Some(b'@' | b'%') if b.get(1) == Some(&b'*') => Some(name),
+        Some(b'@' | b'%' | b'&') if b.get(1) == Some(&b'*') => Some(name),
         _ => None,
     }
 }
 
 /// The stash key of a `PROCESS::`-qualified name: `$PROCESS::OUT` → `*OUT`,
-/// `@PROCESS::x` → `@*x`, `%PROCESS::x` → `%*x`, `PROCESS::x` → `*x`.
+/// `@PROCESS::x` → `@*x`, `%PROCESS::x` → `%*x`, `&PROCESS::x` → `&*x`,
+/// `PROCESS::x` → `*x`.
 // Cost: O(|name|).
 fn process_qualified_key(name: &str) -> Option<String> {
     let (sigil, rest) = match name.as_bytes().first() {
         Some(b'$') => ("", &name[1..]),
         Some(b'@') => ("@", &name[1..]),
         Some(b'%') => ("%", &name[1..]),
+        Some(b'&') => ("&", &name[1..]),
         _ => ("", name),
     };
     let bare = rest.strip_prefix("PROCESS::")?;

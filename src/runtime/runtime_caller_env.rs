@@ -362,6 +362,8 @@ impl Interpreter {
                 Some(format!("@{n}"))
             } else if let Some(n) = env_key.strip_prefix("%*") {
                 Some(format!("%{n}"))
+            } else if let Some(n) = env_key.strip_prefix("&*") {
+                Some(format!("&{n}"))
             } else {
                 env_key.strip_prefix('*').map(|n| format!("${n}"))
             }
@@ -392,6 +394,12 @@ impl Interpreter {
                 }
                 entries.insert(key, v.clone().into_deref());
             }
+        }
+        // The process-level routines rakudo installs (`&*chdir`).
+        for name in crate::runtime::process_routines::PROCESS_ROUTINES {
+            entries
+                .entry(format!("&{name}"))
+                .or_insert_with(|| self.resolve_code_var(&format!("*{name}")));
         }
         for (env_key, v) in self.lexicals.process_dynamics.entries() {
             if let Some(key) = stash_key(&env_key) {
