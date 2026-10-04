@@ -37,7 +37,13 @@ fn anon_type_display_name(name: &str) -> Option<String> {
     // An anonymous type declared inside a package is registered under the
     // package-qualified marker (`Mx::__ANON_CLASS_2__`), but it has no name of
     // its own, so the enclosing package is not part of its display.
-    let name = name.rsplit_once("::").map_or(name, |(_, last)| last);
+    let bare;
+    let name = if crate::qualified::is_qualified_str(name) {
+        bare = crate::qualified::unqualified_part(crate::qualified::known_symbol(name));
+        bare.as_str()
+    } else {
+        name
+    };
     let inner = name.strip_suffix("__")?;
     let n = ["__ANON_CLASS_", "__ANON_GRAMMAR_", "__ANON_ROLE_"]
         .iter()
