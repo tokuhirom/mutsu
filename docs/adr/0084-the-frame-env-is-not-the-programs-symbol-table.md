@@ -342,3 +342,44 @@ module's top level, the companion markers of a block-form `module X { my $a
 := … }` body's own bindings (`__mutsu_scalar_bind_no_container::` /
 `__mutsu_bound_decont::`, 20 per env, from `JSON::Fast`), and group 1 for the
 main program's own top-level routines.
+
+### 7.5 Slice 4 — a module's top-level enum keys
+
+Re-measured before the slice (2026-10-04) on §7.4's program and method: **5,085**
+entries per loop iteration in 30 deep copies, each copied frame env carrying
+44 `__mutsu_enum_bare_*` keys — the largest remaining group. They are the bare
+keys of enums the loaded modules' mainlines declare directly: package-less
+files' `enum Settings <…>` (`Cro::HTTP2::Frame`), `enum Pkg::E <…>`
+declarations, and a class body's `my enum State <…>`
+(`Cro::HTTP::RawBodyParser::Chunked`).
+
+Such a key (the depth rule of §7.2) now goes to a per-interpreter table keyed
+by the declaring package, `Interpreter::module_toplevel.enum_keys`
+(`runtime/enum_bare_names.rs`), with `GLOBAL` as the owner of a package-less
+file's keys. `enum_bare_value` — the one reader every bareword route already
+goes through — asks the env first, then the running package's chain, then
+`GLOBAL`. So:
+
+- a package-less module's keys stay visible everywhere, the importer
+  included, as in rakudo;
+- a package's keys (a `unit module`, a `module M { … }` block, a class body)
+  are visible to that package's code, including closures it creates, which
+  run with it as their lexical package, and not to the importer. This fixes
+  a divergence: a class body's `my enum` keys used to leak into the loading
+  scope (`::('AwaitingLength')` answered from the importer), because the
+  class-body exit leaves `my enum` keys alone for the sake of one declared
+  inside a method;
+- an import, or the program's own enum, is an env key and shadows a table
+  entry.
+
+Result: no `__mutsu_enum_bare_*` key remains in a copied frame env, and the
+per-iteration deep-copy volume falls from **5,085** to **3,765** entries
+(−26%). `t/modules/module-toplevel-enum-keys-off-frame-env.t` pins each
+key's visibility against rakudo's.
+
+What remains of the env's non-lexical content: the qualified names of
+packages a `unit module` declares and of types declared below a module's top
+level (40 per env), the companion markers of a block-form `module X { my $a
+:= … }` body's own bindings (`__mutsu_scalar_bind_no_container::` /
+`__mutsu_bound_decont::`, 20 per env, from `JSON::Fast`), and group 1 for the
+main program's own top-level routines.

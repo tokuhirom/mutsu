@@ -179,7 +179,29 @@ impl Interpreter {
             .package_symbols
             .iter()
             .filter(|(key, _)| !self.env.contains_key_sym(**key));
-        for (key, val) in self.env.iter().chain(package_symbols) {
+        // So do a package-less module's top-level enum keys, which are
+        // `GLOBAL` symbols; an env key of the same name shadows one.
+        let global_enum_keys: Vec<(Symbol, Value)> = self
+            .module
+            .module_toplevel
+            .enum_keys
+            .get("GLOBAL")
+            .into_iter()
+            .flat_map(|keys| keys.iter())
+            .map(|(name, val)| {
+                (
+                    Symbol::intern(&crate::runtime::enum_bare_names::enum_bare_key(name)),
+                    val.clone(),
+                )
+            })
+            .filter(|(key, _)| !self.env.contains_key_sym(*key))
+            .collect();
+        for (key, val) in self
+            .env
+            .iter()
+            .chain(package_symbols)
+            .chain(global_enum_keys.iter().map(|(k, v)| (k, v)))
+        {
             let key_s = key.resolve();
             // An enum key is a genuine package symbol, so it belongs in the stash
             // under its BARE name -- but it is stored in the enum-key namespace
