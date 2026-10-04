@@ -56,6 +56,22 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
             )*
         };
     }
+    // Nested chunks are compared field by field too, so the report names the
+    // field that differs rather than the first `Debug` divergence (a hash set
+    // renders in iteration order).
+    if a.closure_compiled_codes.len() != b.closure_compiled_codes.len() {
+        return Some("closure_compiled_codes differ in length".to_string());
+    }
+    for (i, (ca, cb)) in a
+        .closure_compiled_codes
+        .iter()
+        .zip(&b.closure_compiled_codes)
+        .enumerate()
+    {
+        if let Some(diff) = first_code_difference(ca, cb) {
+            return Some(format!("closure_compiled_codes[{i}] {diff}"));
+        }
+    }
     cmp!(
         ops,
         op_lines,
@@ -79,7 +95,6 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         scalar_bind_locals,
         param_local_slots,
         lex_scopes,
-        closure_compiled_codes,
         compiled_fns,
         atomic_env_sync_locals,
         named_arg_specs,

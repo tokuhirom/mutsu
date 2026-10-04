@@ -75,12 +75,16 @@ use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, static_s
 use decls::TypeDecl;
 use routines::{Access, Dependencies, FrameBlock, Routine, Scan};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicU64;
 
-static SLOT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static SLOT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// A fresh slot name. Inside a module load that may be precompiled the number
+/// comes from the load's content-addressed session, so the name is the same
+/// in every process and the cached bytecode that refers to it stays valid.
 fn next_slot(prefix: &str) -> String {
-    format!("{prefix}{}", SLOT_COUNTER.fetch_add(1, Ordering::Relaxed))
+    let n = crate::anon_names::next_id(crate::anon_names::AnonKind::BeginSlot, &SLOT_COUNTER);
+    format!("{prefix}{n}")
 }
 
 /// The prologue contributions of the BEGINs nested in one top-level statement.

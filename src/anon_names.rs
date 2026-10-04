@@ -49,6 +49,7 @@ struct UnitLocalCounters {
     role: u64,
     subset: u64,
     decl_id: u64,
+    begin_slot: u64,
 }
 
 impl UnitLocalCounters {
@@ -60,6 +61,7 @@ impl UnitLocalCounters {
             role: 0,
             subset: 0,
             decl_id: 1,
+            begin_slot: 0,
         }
     }
 }
@@ -71,6 +73,8 @@ pub(crate) enum AnonKind {
     Role,
     Subset,
     DeclId,
+    /// The value slots the BEGIN prologue declares (`__begin_value_N`).
+    BeginSlot,
 }
 
 /// The content-addressed counters of the module parse in progress.
@@ -165,6 +169,7 @@ pub(crate) fn next_id(kind: AnonKind, global: &AtomicU64) -> u64 {
                 AnonKind::Role => &mut u.role,
                 AnonKind::Subset => &mut u.subset,
                 AnonKind::DeclId => &mut u.decl_id,
+                AnonKind::BeginSlot => &mut u.begin_slot,
             };
             let id = *slot;
             *slot += 1;

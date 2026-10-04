@@ -80,7 +80,17 @@ impl ModuleUnit {
     pub(crate) fn parse_session(&self) -> u64 {
         compile_session::content_parse_session_id(self.unit_key, self.occurrence)
     }
+
+    /// The session the post-parse rewrites of the module's AST (the BEGIN
+    /// prologue's slot names) mint from: apart from the parse's, because a
+    /// cached AST skips the parse but not these rewrites.
+    pub(crate) fn rewrite_session(&self) -> u64 {
+        compile_session::content_parse_session_id(self.unit_key ^ REWRITE_SALT, self.occurrence)
+    }
 }
+
+/// Keeps [`ModuleUnit::rewrite_session`] apart from the parse session.
+const REWRITE_SALT: u64 = 0x7265_7772_6974_6521;
 
 /// The module whose mainline the next [`Interpreter::run_module_block`] runs.
 pub(crate) struct ModuleCodeSlot {

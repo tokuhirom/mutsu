@@ -919,7 +919,14 @@ impl Interpreter {
         let (mut stmts, precompiled) =
             self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
         // The module's BEGIN-time effects run first, in source order (ADR-0134).
-        let prologue_len = crate::runtime::begin_prologue::order_unit(&mut stmts);
+        let order =
+            |stmts: &mut Vec<crate::ast::Stmt>| crate::runtime::begin_prologue::order_unit(stmts);
+        let prologue_len = match &module_unit {
+            Some(unit) => {
+                crate::anon_names::with_content_unit(unit.rewrite_session(), || order(&mut stmts))
+            }
+            None => order(&mut stmts),
+        };
         // `$=pod` belongs to the compilation unit that declares it. The main
         // program establishes its Pod variables before execution, but a module
         // used to skip that step and therefore saw the importer's (or no)
