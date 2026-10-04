@@ -98,20 +98,25 @@ impl Interpreter {
                     });
                 }
             }
-            // Cost: O(n), n = the characters a backreference compares; O(1)
-            // for a marker; one run of the body for a lookahead, and one per
-            // candidate start (at most the body's longest match back) for a
-            // lookbehind.
+            // Cost: `regex_leaf_atom`'s (O(n) for a backreference, n = the
+            // characters it compares; O(1) for a marker); for a lookaround, one
+            // run of the body for a lookahead, and one per candidate start (at
+            // most the body's longest match back) for a lookbehind.
             RxOp::CapAtom(i) => {
-                walk_leaf_use(&program.atoms[i as usize]);
-                let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
-                    &program.atoms[i as usize],
-                    chars,
-                    pos,
-                    levels.top().caps(),
-                    pkg,
-                    program.atom_ic[i as usize],
-                )?;
+                let atom = &program.atoms[i as usize];
+                let caps = levels.top().caps();
+                let ic = program.atom_ic[i as usize];
+                let (next, delta) = if let RegexAtom::Lookaround { .. } = atom {
+                    // TODO: compile to bytecode — the walk's lookaround test
+                    // (ADR-0135 §8, Slice E).
+                    crate::vm::vm_stats_regex_vm::record_regex_walk(
+                        crate::vm::vm_stats_regex_vm::WalkUse::Leaf,
+                        "lookaround",
+                    );
+                    self.regex_match_atom_with_capture_in_pkg(atom, chars, pos, caps, pkg, ic)?
+                } else {
+                    self.regex_leaf_atom(atom, chars, pos, caps, pkg, ic)?
+                };
                 levels.edit(|s| s.merge_delta(delta));
                 return Some(next);
             }
@@ -326,23 +331,4 @@ impl Interpreter {
             separator_stride(sep),
         )
     }
-}
-
-/// Count a `CapAtom` on `MUTSU_VM_STATS`'s `regex-walk:` line: the walk's
-/// single-atom arm matches it, a leaf.
-// Cost: O(1).
-#[inline]
-fn walk_leaf_use(atom: &RegexAtom) {
-    use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk};
-    let (kind, reason) = match atom {
-        RegexAtom::Lookaround { .. } => (WalkUse::Leaf, "lookaround"),
-        RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => (WalkUse::Leaf, "backref"),
-        RegexAtom::CaptureStartMarker | RegexAtom::CaptureEndMarker => (WalkUse::Leaf, "marker"),
-        RegexAtom::ClosureInterpolation { .. } => (WalkUse::Leaf, "closure-interp"),
-        RegexAtom::VarInterp(_) => (WalkUse::Leaf, "var-interp"),
-        RegexAtom::QqInterp { .. } => (WalkUse::Leaf, "qq-interp"),
-        RegexAtom::RecurseSelf(_) => (WalkUse::Leaf, "recurse-self"),
-        _ => (WalkUse::Leaf, "other"),
-    };
-    record_regex_walk(kind, reason);
 }
