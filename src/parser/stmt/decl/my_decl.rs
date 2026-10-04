@@ -775,8 +775,16 @@ fn parse_variable_traits<'a>(
     }
     if is_hash {
         *type_constraint = match (type_constraint.take(), hash_key_constraint.take()) {
-            (Some(value_tc), Some(key_tc)) => Some(format!("{}{{{}}}", value_tc, key_tc)),
-            (None, Some(key_tc)) => Some(format!("Any{{{}}}", key_tc)),
+            (Some(value_tc), Some(key_tc)) => {
+                Some(crate::ast::keyed_hash::join(Some(&value_tc), &key_tc))
+            }
+            (None, Some(key_tc)) => {
+                custom_traits.push((
+                    crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE.to_string(),
+                    None,
+                ));
+                Some(crate::ast::keyed_hash::join(None, &key_tc))
+            }
             (value_tc, None) => value_tc,
         };
     }

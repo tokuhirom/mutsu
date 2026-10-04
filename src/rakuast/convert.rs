@@ -1336,7 +1336,9 @@ fn var_decl_statement(
         return constant_declaration(name, expr, custom_traits, type_constraint, is_our);
     }
     let is_internal = |n: &str| {
-        n == "__has_initializer" || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
+        n == "__has_initializer"
+            || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
+            || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
     };
     if custom_traits
         .iter()
@@ -1344,8 +1346,14 @@ fn var_decl_statement(
     {
         return Err(unsupported("declaration with traits"));
     }
-    // build_type_node validates simple/definite and defers the rest.
-    let type_name = type_constraint.as_deref();
+    // build_type_node validates simple/definite and defers the rest. A
+    // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a
+    // `shape`.
+    let keyed = super::keyed_hash::split(name, type_constraint.as_deref(), custom_traits);
+    let type_name = match keyed {
+        Some((value, _)) => value,
+        None => type_constraint.as_deref(),
+    };
     let scope = if is_our {
         Some("our")
     } else if is_state {
@@ -1373,6 +1381,9 @@ fn var_decl_statement(
         (name, None)
     };
     let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
+    if let Some((_, key)) = keyed {
+        super::keyed_hash::insert_shape(&mut decl, key)?;
+    }
     let mut traits = decl_traits::convert(custom_traits)?;
     if is_dynamic && !twigil_dynamic {
         // The parser keeps `is dynamic` as a flag, not in source order among
@@ -1600,7 +1611,7 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     if is_simple_type(t) {
         return Ok(simple_type_node(t));
     }
-    Err(unsupported("coercion type"))
+    Err(unsupported(&format!("type `{t}`")))
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil

@@ -71,6 +71,7 @@ t/collections/for-topic-element-writeback.t
 t/collections/gist-element-cap.t
 t/collections/given-element-topic-readonly-writeback.t
 t/collections/group-of.t
+t/collections/hash/hash-any-list-methods.t
 t/collections/hash/hash-array-container-name.t
 t/collections/hash/hash-assign-lazy-seq.t
 t/collections/hash/hash-attr-from-itemized-hash.t
@@ -91,6 +92,7 @@ t/collections/hash/hash-composer-term-end.t
 t/collections/hash/hash-container-exists-key.t
 t/collections/hash/hash-default-nil-list-init.t
 t/collections/hash/hash-delete-adverb.t
+t/collections/hash/hash-element-incdec-plain-lane.t
 t/collections/hash/hash-element-store-symbol-keyed.t
 t/collections/hash/hash-entry-ref-deep-bind.t
 t/collections/hash/hash-exists-adverb.t
@@ -99,14 +101,19 @@ t/collections/hash/hash-gist-nested-comma.t
 t/collections/hash/hash-interp-key.t
 t/collections/hash/hash-itemization-flag.t
 t/collections/hash/hash-itemized-receiver-methods.t
+t/collections/hash/hash-iteration-live-pair.t
+t/collections/hash/hash-junction-exists.t
 t/collections/hash/hash-junction-key.t
 t/collections/hash/hash-key-single-itemize.t
 t/collections/hash/hash-key-type-object-list.t
+t/collections/hash/hash-key-type-object.t
 t/collections/hash/hash-list-coercion.t
 t/collections/hash/hash-literal-colonpair-arglist-edges.t
 t/collections/hash/hash-literal-mixed-items.t
 t/collections/hash/hash-literal-postfix-stmt.t
 t/collections/hash/hash-literal-whatever-value.t
+t/collections/hash/hash-mutation-visible-after-sub-argument.t
+t/collections/hash/hash-numeric-key-str.t
 t/collections/hash/hash-odd-number-message-element-container.t
 t/collections/hash/hash-odd-number.t
 t/collections/hash/hash-on-undefined.t
@@ -129,6 +136,12 @@ t/collections/hash/keys-values-pair-any.t
 t/collections/hash/kv-general.t
 t/collections/hash/nested-assoc-user-assign-key.t
 t/collections/hash/nested-autoviv-any-fill.t
+t/collections/hash/object-hash-composite-key-increment.t
+t/collections/hash/object-hash-incdec-celled-key-type.t
+t/collections/hash/object-hash-instance-key-raku.t
+t/collections/hash/object-hash-key-display.t
+t/collections/hash/object-hash-key-is-deitemized.t
+t/collections/hash/object-hash-raku-key-parens.t
 t/collections/hash/reduce-x-xx-left-associative.t
 t/collections/hash/slip-of-associative-slips-pairs.t
 t/collections/hash/tied-hash-associative.t
@@ -240,6 +253,7 @@ t/collections/lazy-seq/seq-slip-clone-and-flatten.t
 t/collections/lazy-seq/seq-string-context-forces-deferred.t
 t/collections/lazy-seq/slip-a-buf.t
 t/collections/lazy-seq/slip-array-of-pairs-is-positional.t
+t/collections/lazy-seq/slip-hash-named-args.t
 t/collections/lazy-seq/slip-listop-args.t
 t/collections/lazy-seq/slip-raku-repr.t
 t/collections/lazy-seq/slip-satisfies-list-return.t
@@ -277,6 +291,7 @@ t/collections/listop-unicode-numeric-arg.t
 t/collections/listop-word-logical.t
 t/collections/listquote-regressions.t
 t/collections/nested-with-loop-element-writeback.t
+t/collections/nil-element-store-decay.t
 t/collections/nqp-uni-element-access-is-linear.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
@@ -293,6 +308,7 @@ t/collections/range-pair/pair-value-container.t
 t/collections/range-pair/pair-value-element-writethrough.t
 t/collections/range-pair/pair-value-incdec-in-loop.t
 t/collections/range-pair/pair-value-writethrough-coherence.t
+t/collections/range-pair/pair-which-is-value-identity.t
 t/collections/range-pair/pairup-pair-aware.t
 t/collections/range-pair/pairup.t
 t/collections/range-pair/range-add-sub-real.t
@@ -411,10 +427,12 @@ t/collections/subscript/index-bind-fat-arrow-rhs.t
 t/collections/subscript/index-incdec-shadowed-lexical.t
 t/collections/subscript/index-instance-int-coercion.t
 t/collections/subscript/index-needle-list.t
+t/collections/subscript/index-read-fast-path.t
 t/collections/subscript/index-rw-arg-temp-reuse.t
 t/collections/subscript/int-typed-array-range-slice-assign.t
 t/collections/subscript/interp-dotted-postcircumfix-subscript.t
 t/collections/subscript/interp-dynamic-twigil-subscript.t
+t/collections/subscript/itemized-hash-subscript.t
 t/collections/subscript/itemized-list-subscript.t
 t/collections/subscript/lazy-array-nested-index-slice.t
 t/collections/subscript/list-slice-returns-list.t
@@ -1169,6 +1187,7 @@ t/lang/operators/hyper-array-mutators.t
 t/lang/operators/hyper-assign.t
 t/lang/operators/hyper-func-op.t
 t/lang/operators/hyper-hash-ops.t
+t/lang/operators/hyper-hash-scalar-object-hash-type.t
 t/lang/operators/hyper-infix-autogen-list.t
 t/lang/operators/hyper-itemized-list.t
 t/lang/operators/hyper-meta-assign-list.t
@@ -1702,6 +1721,7 @@ t/oo/attribute/attributive-build-param-sigil-collision.t
 t/oo/attribute/attributive-code-param-writable.t
 t/oo/attribute/attributive-param-nested-sub.t
 t/oo/attribute/attrinited-introspection-vivify.t
+t/oo/attribute/bless-typed-hash-attributes.t
 t/oo/attribute/bytes-attribute-accessor-not-shadowed.t
 t/oo/attribute/callwith-reaches-ancestor-accessor.t
 t/oo/attribute/can-ok-sees-attribute-accessors.t
@@ -1770,6 +1790,7 @@ t/oo/class/class-type-object-coercion-call.t
 t/oo/class/class.t
 t/oo/class/classhow-lookup-mro.t
 t/oo/class/classify-bucket-itemized.t
+t/oo/class/classify-hash-any-mu-raku.t
 t/oo/class/classify-object-hash.t
 t/oo/class/classify-pair-iteration.t
 t/oo/class/classify-whatever-identity.t
@@ -1822,6 +1843,7 @@ t/oo/construct/new-build-parent-required-attr.t
 t/oo/construct/new-ignores-undeclared-named-args.t
 t/oo/construct/new-on-builtin-instance.t
 t/oo/construct/parameter-signature-new-construction.t
+t/oo/construct/pun-before-construction.t
 t/oo/construct/set-quant-family-and-constructors.t
 t/oo/construct/tweak-fail-returns-failure.t
 t/oo/construct/version-subclass-constructor.t
@@ -2024,6 +2046,7 @@ t/oo/mop/can-ok-cool-bridging-methods.t
 t/oo/mop/can-ok-type-object.t
 t/oo/mop/core-class-own-constructor-introspection.t
 t/oo/mop/how-mutation-persists.t
+t/oo/mop/isa-parameterized-container-type.t
 t/oo/mop/metamodel-add-fallback.t
 t/oo/mop/metamodel-and-coercion-gaps.t
 t/oo/mop/metamodel-classhow.t
@@ -2047,6 +2070,7 @@ t/oo/role/coerce-into-role-inheriting-builtin.t
 t/oo/role/concrete-role-how-compose.t
 t/oo/role/custom-how-explicit-self-and-role-default.t
 t/oo/role/dateish-role-composition.t
+t/oo/role/default-role-pun-curry.t
 t/oo/role/dependent-role-attribute-default.t
 t/oo/role/dist-in-role-method.t
 t/oo/role/does-compound-role-name-dynamic-mixin.t
@@ -2289,6 +2313,7 @@ t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
 t/rakuast/rakuast-invocant-parameters.t
+t/rakuast/rakuast-keyed-hash-declaration.t
 t/rakuast/rakuast-l10n-constructs.t
 t/rakuast/rakuast-labelled-repeat.t
 t/rakuast/rakuast-leaf-accessors.t
@@ -2651,6 +2676,7 @@ t/routines/closure/proxy-fetch-closure-scope.t
 t/routines/closure/qqx-closure-interpolation.t
 t/routines/closure/reentrant-closure-array-capture.t
 t/routines/closure/shadow-slot-closure-capture.t
+t/routines/closure/typed-hash-assign-in-closure-keeps-type.t
 t/routines/closure/user-class-instance-element-write-through-closure.t
 t/routines/closure/whatevercode-call-arg-value.t
 t/routines/closure/whatevercode-gist-raku.t
@@ -2806,6 +2832,7 @@ t/routines/placeholder-in-nested-whatevercode.t
 t/routines/placeholder-in-parens.t
 t/routines/placeholder-index-assign-target.t
 t/routines/placeholder-outer-alias-writeback.t
+t/routines/rebind-in-routine-decides-writability.t
 t/routines/reduce-bracketed-callable-op.t
 t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-topic-is-fresh-any-not-caller.t
@@ -2840,6 +2867,7 @@ t/routines/signature/fast-cache-sigilless-param-alias.t
 t/routines/signature/flattening-param-lazy-sources.t
 t/routines/signature/for-container-param-recursion.t
 t/routines/signature/for-loop-param-getupvalue-hijack.t
+t/routines/signature/for-multi-param-writethrough-metadata.t
 t/routines/signature/for-topic-shadows-topic-param.t
 t/routines/signature/hash-composer-nested-signature-topic.t
 t/routines/signature/hash-parametric-keyof.t
@@ -2887,6 +2915,7 @@ t/routines/signature/nested-any-type-constraint.t
 t/routines/signature/nested-named-alias-param.t
 t/routines/signature/nested-sub-by-name-ignores-callers-readonly-param.t
 t/routines/signature/nonconst-param-default-full-arity-light.t
+t/routines/signature/object-hash-param-binding.t
 t/routines/signature/optional-named-empty-list-comparison.t
 t/routines/signature/optional-param-where-runs-when-omitted.t
 t/routines/signature/param-default-before-return-arrow.t
@@ -3097,9 +3126,13 @@ t/types/coercion/typed-array-push-typecheck.t
 t/types/coercion/typed-attr-array-append-flattens.t
 t/types/coercion/typed-begin-decl-preserves-value.t
 t/types/coercion/typed-bind-recursion.t
+t/types/coercion/typed-constraint-scope-matrix.t
+t/types/coercion/typed-constraint-shadow-scope.t
+t/types/coercion/typed-container-what.t
 t/types/coercion/typed-decl-hoist-block-forms.t
 t/types/coercion/typed-defined-container-attr-default.t
 t/types/coercion/typed-hash-bind-typecheck.t
+t/types/coercion/typed-hash-keyconstraint-cow.t
 t/types/coercion/typed-lexical-constraint-block-scoped.t
 t/types/coercion/typed-lexical-constraint-frame-scoped.t
 t/types/coercion/typed-lexical-gate-is-per-name.t
@@ -3337,6 +3370,7 @@ t/types/whatever-compound-assign.t
 t/types/whatever-index-bound.t
 t/vm/aliased-container-mutation.t
 t/vm/binding/assign-expr-container-copy.t
+t/vm/binding/assign-key-through-bound-alias.t
 t/vm/binding/bind-alias-chain.t
 t/vm/binding/bind-alias-recursive-frame-index.t
 t/vm/binding/bind-array-elem-in-loop.t
@@ -3380,6 +3414,7 @@ t/vm/binding/phantom-entry-bind.t
 t/vm/binding/rw-arg-residue.t
 t/vm/binding/rw-shared-cell.t
 t/vm/binding/rw-sub-proxy-fetch-otf.t
+t/vm/binding/var-decl-constraint-clear.t
 t/vm/binding/var-name-bind.t
 t/vm/binding/var-name-container-descriptor.t
 t/vm/binding/var-name-of-bound-itemized-aggregate.t
@@ -3478,7 +3513,9 @@ t/vm/nqp-relational-ops.t
 t/vm/nqp-repeat-loops.t
 t/vm/nqp-sha1.t
 t/vm/nqp-type-conversion-ops.t
+t/vm/nqp-unicode-prop-ops.t
 t/vm/nqp-unimplemented-op-errors.t
+t/vm/object-hash-key-survives-container-value.t
 t/vm/per-class-same-name-attr.t
 t/vm/protect-block-redeclared-aggregate.t
 t/vm/say-env-roundtrip.t
@@ -3614,5 +3651,6 @@ t/vm/writeback/scalar-store-array-share-mark.t
 t/vm/writeback/shared-array-mutate-keeps-container-cell.t
 t/vm/writeback/shared-array-push.t
 t/vm/writeback/shared-elem-assign.t
+t/vm/writeback/shared-type-constraint-metadata.t
 t/vm/writeback/shared-var-nil-redeclared-mask.t
 t/vm/zeroarg-env-dirty.t
