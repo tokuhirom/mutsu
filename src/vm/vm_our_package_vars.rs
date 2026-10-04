@@ -82,7 +82,7 @@ impl Interpreter {
         // only has the name's text.
         // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
         // (#11507).
-        if crate::runtime::utils::has_double_colon(name)
+        if crate::qualified::is_qualified_str(name)
             || crate::runtime::utils::has_anon_marker(name)
         {
             return None;

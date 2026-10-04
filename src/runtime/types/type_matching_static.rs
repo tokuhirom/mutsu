@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::runtime::utils::{has_bracket, has_double_colon, split_once_bracket};
+use crate::runtime::utils::{has_bracket, split_once_bracket};
 
 impl Interpreter {
     /// Whether `qualified`'s trailing component may stand in for the bare name
@@ -64,8 +64,8 @@ impl Interpreter {
         // scan each was 9% of a `Buf.push` loop (#7696).
         // TODO: take both names as `Symbol`s and ask `qualified::is_qualified`
         // (#11507); an intern per call here would cost more than the scan.
-        let constraint_qualified = has_double_colon(constraint);
-        let value_type_qualified = has_double_colon(value_type);
+        let constraint_qualified = crate::qualified::is_qualified_str(constraint);
+        let value_type_qualified = crate::qualified::is_qualified_str(value_type);
         if constraint_qualified
             && !value_type_qualified
             && Self::short_name_bridges(constraint, value_type)

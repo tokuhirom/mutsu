@@ -540,7 +540,7 @@ impl Interpreter {
         // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
         // (#11507); an intern per type check would cost more than the scan.
         if self.types.package_type_aliases.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+            || crate::qualified::is_qualified_str(name)
             || name.is_empty()
         {
             return None;
@@ -575,7 +575,7 @@ impl Interpreter {
         // A byte scan: this runs on free-variable reads and only has the
         // name's text. TODO: take the caller's `Symbol` (#11507).
         if self.module.module_scope_lexicals.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+            || crate::qualified::is_qualified_str(name)
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
         {
@@ -594,7 +594,7 @@ impl Interpreter {
         // `Symbol` (#11507).
         if self.module.module_imported_lexical_names.is_empty()
             || name.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }

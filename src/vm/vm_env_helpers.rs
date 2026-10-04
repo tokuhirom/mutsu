@@ -836,11 +836,7 @@ impl Interpreter {
         // interned and split (memoized per symbol).
         // TODO: take the caller's `Symbol` (most read paths hold one) so the
         // scan goes too (#11507).
-        let split = if crate::runtime::utils::has_double_colon(name) {
-            crate::qualified::split_qualified_var(Symbol::intern(name))
-        } else {
-            None
-        };
+        let split = crate::qualified::split_qualified_var(crate::qualified::known_symbol(name));
         let qualified = split.is_some();
         // ADR-0024: a mainline named sub's free-variable read consults its own
         // captured cells first. Tried before the package-chain candidates
@@ -951,11 +947,7 @@ impl Interpreter {
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
         // Same rejection as `unit_lexical_slot`.
-        let split = if crate::runtime::utils::has_double_colon(name) {
-            crate::qualified::split_qualified_var(Symbol::intern(name))
-        } else {
-            None
-        };
+        let split = crate::qualified::split_qualified_var(crate::qualified::known_symbol(name));
         let own_bucket: Option<String> = if split.is_some() {
             None
         } else {
