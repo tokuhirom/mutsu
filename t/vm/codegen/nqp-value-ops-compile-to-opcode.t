@@ -44,7 +44,7 @@ is nqp::elems(nqp::list(1, 2, 3)), 3, 'the list table (list) and elems';
 # -- ops that mutate through an operand --------------------------------------
 # These reach their storage through the shared container behind the value, not
 # through any call-path argument wrapper, so they must still be visible after.
-my @m = 1, 2, 3;
+my int @m = 1, 2, 3;
 nqp::bindpos_i(@m, 1, 99);
 is @m[1], 99, "nqp::bindpos_i writes through to the caller's array";
 nqp::push(@m, 4);

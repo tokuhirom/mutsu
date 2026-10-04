@@ -142,7 +142,13 @@ pub(crate) fn resolve_index(idx: i64, len: usize) -> Result<usize, RuntimeError>
 /// indistinguishable from a VMArray here and is accepted.
 // Cost: O(1).
 fn reject_high_level_array(target: &Value) -> Result<(), RuntimeError> {
-    if let ValueView::Array(_, ArrayKind::Array | ArrayKind::ItemArray) = target.view() {
+    // A native array (`my int @a`, `array[num]`) IS a VMArray in rakudo.
+    if let ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) = target.view()
+        && !items
+            .declared_type
+            .as_deref()
+            .is_some_and(|t| t.starts_with("array"))
+    {
         return Err(RuntimeError::new(
             "This type (Array) does not support positional operations",
         ));

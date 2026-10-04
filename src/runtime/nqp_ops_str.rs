@@ -161,8 +161,13 @@ impl Interpreter {
                 {
                     return Some(r);
                 }
-                if let Some(copy) = v.array_shallow_clone() {
-                    return Some(Ok(copy));
+                // A VMArray (native `array[int]` included) stays one: the copy
+                // keeps the container metadata the positional ops look at.
+                if let ValueView::Array(items, kind) = v.view() {
+                    return Some(Ok(Value::array_with_kind(
+                        crate::gc::Gc::new((**items).clone()),
+                        kind,
+                    )));
                 }
                 Ok(match v.view() {
                     ValueView::Hash(map) => {
