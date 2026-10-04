@@ -100,11 +100,12 @@ where
     Ok(set)
 }
 
-type ProtectedSlots = rustc_hash::FxHashMap<u32, Box<[(Symbol, u32)]>>;
+type ProtectedSlotList = Box<[(Symbol, u32)]>;
+type ProtectedSlots = rustc_hash::FxHashMap<u32, ProtectedSlotList>;
 
 // Cost: O(k log k), k = entries.
 fn encode_map<E: Encoder>(map: &ProtectedSlots, encoder: &mut E) -> Result<(), EncodeError> {
-    let mut entries: Vec<(&u32, &Box<[(Symbol, u32)]>)> = map.iter().collect();
+    let mut entries: Vec<(&u32, &ProtectedSlotList)> = map.iter().collect();
     entries.sort_by_key(|(k, _)| **k);
     (entries.len() as u64).encode(encoder)?;
     for (k, v) in entries {
