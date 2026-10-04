@@ -3913,7 +3913,8 @@ impl Interpreter {
                     ValueView::Package(sym) => sym.resolve().to_string(),
                     _ => role.to_string_value(),
                 };
-                self.stack.push(Value::pair(name, Value::array(vec![value])));
+                self.stack
+                    .push(Value::pair(name, Value::array(vec![value])));
                 *ip += 1;
             }
 

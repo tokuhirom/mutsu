@@ -45,7 +45,9 @@ impl Compiler {
             }
             _ => arg,
         };
-        let name_idx = self.code.add_constant(Value::str(name.resolve().to_string()));
+        let name_idx = self
+            .code
+            .add_constant(Value::str(name.resolve().to_string()));
         let not_role = self.code.emit(OpCode::JumpIfNotRole(name_idx, 0));
         self.compile_expr(value);
         self.code.emit(OpCode::MakeRoleInit);

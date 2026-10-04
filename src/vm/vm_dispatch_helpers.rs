@@ -1,5 +1,5 @@
-use super::*;
 use super::vm_closure_dispatch::TopicArgSite;
+use super::*;
 
 impl Interpreter {
     /// A plain, eager, list-like target — `Array`/`List`, `Seq`, `Slip`, or any
