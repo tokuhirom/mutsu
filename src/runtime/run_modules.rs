@@ -484,10 +484,33 @@ impl Interpreter {
 
     /// Parse a module source file, using the precompilation cache when available.
     /// Returns (stmts, was_precompiled).
+    /// Whether a module with this source may be served from (and written to)
+    /// the precompilation cache: precompilation is on, the module did not opt
+    /// out with `no precompilation`, and no dependency forces it off.
+    // Cost: O(n), n = source bytes (the two directive scans).
+    pub(super) fn module_precomp_eligible(&self, code: &str) -> bool {
+        self.precomp_enabled
+            && !Self::source_has_no_precompilation(code)
+            && !self.dependency_disables_precomp(code)
+    }
+
     pub(super) fn parse_module_source(
         &mut self,
         module: &str,
         source_path: &Path,
+    ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
+        self.parse_module_source_in(module, source_path, None)
+    }
+
+    /// [`Self::parse_module_source`] for a module load that claimed `unit`
+    /// (ADR-11756 §2.3): the parse mints its declaration ids and anonymous
+    /// type names from the load's content-addressed session, and only the
+    /// first load of the file in the process reads or writes the cache.
+    pub(super) fn parse_module_source_in(
+        &mut self,
+        module: &str,
+        source_path: &Path,
+        unit: Option<&super::module_bytecode::ModuleUnit>,
     ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
         // Read source first so we can honor precompilation directives before cache lookup.
         let code = fs::read_to_string(source_path).map_err(|err| {
@@ -497,10 +520,8 @@ impl Interpreter {
         // A cache hit skips the parse, which is where a unit's mention of a
         // deferral builtin is noted (`parser::parse_program`); note it here.
         crate::opcode::note_dispatcher_mention(&code);
-        let has_no_precompilation = Self::source_has_no_precompilation(&code);
-        let dependency_disables_precomp = self.dependency_disables_precomp(&code);
-        let precomp_eligible =
-            self.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
+        let precomp_eligible = self.module_precomp_eligible(&code)
+            && unit.is_none_or(super::module_bytecode::ModuleUnit::may_use_cache);
 
         // Try loading from precompilation cache when eligible. A hit skips the
         // parse, so the parser state the parse would have left behind must be
@@ -536,10 +557,16 @@ impl Interpreter {
         // the previous value is restored rather than cleared.
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
-        let result = parse_dispatch::parse_compilation_unit_of(
-            &preprocessed,
-            crate::rakuast::frontend::Unit::Module,
-        );
+        let parse = || {
+            parse_dispatch::parse_compilation_unit_of(
+                &preprocessed,
+                crate::rakuast::frontend::Unit::Module,
+            )
+        };
+        let result = match unit {
+            Some(unit) => crate::anon_names::with_content_unit(unit.parse_session(), parse),
+            None => parse(),
+        };
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Capture exactly what a later cache hit will have to replay, before
@@ -881,7 +908,9 @@ impl Interpreter {
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
         ));
-        let (mut stmts, precompiled) = self.parse_module_source(module, &source_path)?;
+        let module_unit = super::module_bytecode::ModuleUnit::claim(self, &source_path);
+        let (mut stmts, precompiled) =
+            self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
         // The module's BEGIN-time effects run first, in source order (ADR-0134).
         let prologue_len = crate::runtime::begin_prologue::order_unit(&mut stmts);
         // `$=pod` belongs to the compilation unit that declares it. The main
@@ -912,6 +941,9 @@ impl Interpreter {
         // `use` and `require` of an installed/on-path module name. A verdict
         // that depends on a conditional `use` runs right after the prologue.
         let guards = self.check_undeclared_routines_with_guards(&stmts)?;
+        // The guards depend on interpreter state, so a cached compile of this
+        // module's mainline is keyed on them too (ADR-11756).
+        let code_slot = super::module_bytecode::ModuleCodeSlot::new(module_unit, &guards);
         stmts.splice(prologue_len..prologue_len, guards);
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
@@ -1139,7 +1171,7 @@ impl Interpreter {
                 module_docs,
             ) {
                 Ok(()) => self.run_compunit(|interp| {
-                    interp.run_module_mainline(|interp| interp.run_block(&stmts))
+                    interp.run_module_mainline(|interp| interp.run_module_block(&stmts, code_slot))
                 }),
                 Err(err) => Err(err),
             };

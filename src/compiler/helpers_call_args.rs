@@ -227,7 +227,7 @@ impl Compiler {
                 | "undefine"
                 | "VAR"
                 | "indir"
-        ) || crate::parser::is_imported_function(name)
+        ) || super::compile_inputs::is_imported_function(name)
     }
 
     pub(super) fn rewrite_stmt_call_args(name: &str, args: &[CallArg]) -> Vec<CallArg> {

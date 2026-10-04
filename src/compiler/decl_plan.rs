@@ -251,11 +251,7 @@ impl Compiler {
         } else {
             None
         };
-        let method_outer_lexical_slots = self
-            .local_map
-            .iter()
-            .map(|(name, slot)| (crate::symbol::Symbol::intern(name), *slot))
-            .collect();
+        let method_outer_lexical_slots = self.local_slots_by_name();
         // Class-body methods auto-detect a bare `@_` read the way
         // `class_body_method_decl` does (`apply_auto_positional_slurpy:
         // true`); `is_hidden` gates the implicit `*%_` the same way too.
@@ -793,11 +789,7 @@ impl Compiler {
             body,
             &package_name.unwrap_or_else(|| self.qualified_role_decl_name(&name.resolve())),
         );
-        let method_outer_lexical_slots = self
-            .local_map
-            .iter()
-            .map(|(name, slot)| (crate::symbol::Symbol::intern(name), *slot))
-            .collect();
+        let method_outer_lexical_slots = self.local_slots_by_name();
         self.code.add_role_decl_plan(
             stmt,
             trait_args,

@@ -17,6 +17,7 @@
 //!   their serde implementations.
 
 mod code;
+pub(crate) mod diff;
 mod function;
 mod trir;
 

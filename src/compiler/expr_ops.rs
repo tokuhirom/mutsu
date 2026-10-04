@@ -809,15 +809,13 @@ impl Compiler {
             && right.len() == 1
             && modifier.is_none()
         {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            name.hash(&mut hasher);
-            format!("{:?}", left).hash(&mut hasher);
-            format!("{:?}", right[0]).hash(&mut hasher);
+            // Stable across processes, so a cached compile names the same
+            // flip-flop state cell a fresh one does (ADR-11756 §2.3).
+            let site_id = crate::ast::stable_hash::stable_hash(&(name, left, &right[0]));
             let ff_idx = self.code.emit(OpCode::FlipFlopExpr {
                 lhs_end: 0,
                 rhs_end: 0,
-                site_id: hasher.finish(),
+                site_id,
                 exclude_start,
                 exclude_end,
                 is_fff,

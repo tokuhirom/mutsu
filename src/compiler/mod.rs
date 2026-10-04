@@ -1076,7 +1076,8 @@ mod amp_scope;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
-mod compile_session;
+pub(crate) mod compile_inputs;
+pub(crate) mod compile_session;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_placeholder;
@@ -2372,6 +2373,19 @@ impl Compiler {
     /// Both the read set (`free_var_syms`) and the write-only set
     /// (`free_var_writes`) are covered — a setter's target never appears in the
     /// former, exactly as ADR-0024's capture loop already unions them.
+    /// Every local in scope with its slot, in name order: `local_map` is a
+    /// hash map, and this list is stored in compiled declaration plans, so it
+    /// must not inherit the map's per-process iteration order (ADR-11756
+    /// §2.5).
+    // Cost: O(n log n), n = locals in scope.
+    pub(super) fn local_slots_by_name(&self) -> Vec<(crate::symbol::Symbol, u32)> {
+        let mut out: Vec<(&String, u32)> = self.local_map.iter().map(|(n, s)| (n, *s)).collect();
+        out.sort();
+        out.into_iter()
+            .map(|(name, slot)| (crate::symbol::Symbol::intern(name), slot))
+            .collect()
+    }
+
     pub(super) fn bake_sub_decl_free_var_slots(
         &self,
         keys: &[crate::symbol::Symbol],

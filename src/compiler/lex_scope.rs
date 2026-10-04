@@ -270,9 +270,14 @@ impl LexScopeChain {
     /// over-claim is cheap — a symbolic deref forces a whole-env capture anyway —
     /// while an under-claim silently falls back to the dynamic scope stack.
     pub(crate) fn declared_names(&self) -> impl Iterator<Item = &str> {
-        self.scopes
-            .iter()
-            .flat_map(|f| f.keys().map(String::as_str))
+        // Name order within each frame, not the frame map's hash order: the
+        // result is recorded in compiled code (`outer_ref_names`), which must
+        // come out the same in every process (ADR-11756 §2.5).
+        self.scopes.iter().flat_map(|f| {
+            let mut names: Vec<&str> = f.keys().map(String::as_str).collect();
+            names.sort_unstable();
+            names
+        })
     }
 }
 

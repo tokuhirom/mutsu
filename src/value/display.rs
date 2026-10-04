@@ -39,6 +39,13 @@ fn anon_type_display_name(name: &str) -> Option<String> {
         .iter()
         .find_map(|prefix| inner.strip_prefix(prefix))?;
     let n: u64 = n.parse().ok()?;
+    // A name minted by a content-addressed module parse packs its session into
+    // the high bits (ADR-11756 §2.3); only the ordinal is meant for display.
+    let n = if crate::anon_names::is_content_id(n) {
+        n & 0xff_ffff
+    } else {
+        n
+    };
     Some(format!("<anon|{}>", n + 1))
 }
 

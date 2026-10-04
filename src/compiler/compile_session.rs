@@ -92,6 +92,73 @@ pub(crate) fn enter() -> SessionGuard {
     SessionGuard { opened }
 }
 
+/// The occurrences of content-addressed sessions already used in this process,
+/// per unit key. Process-wide, because the values a session mints must be
+/// unique across threads too.
+fn claimed_occurrences() -> &'static std::sync::Mutex<rustc_hash::FxHashMap<u64, Vec<u32>>> {
+    static CLAIMED: std::sync::OnceLock<std::sync::Mutex<rustc_hash::FxHashMap<u64, Vec<u32>>>> =
+        std::sync::OnceLock::new();
+    CLAIMED.get_or_init(Default::default)
+}
+
+/// The content-addressed session for the `occurrence`-th compile of the unit
+/// identified by `unit_key` (a hash of its source identity). The same in every
+/// process, and in the half of the session space counter sessions never reach.
+// Cost: O(1).
+pub(crate) fn content_session_id(unit_key: u64, occurrence: u32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    unit_key.hash(&mut hasher);
+    occurrence.hash(&mut hasher);
+    (hasher.finish() & (CONTENT_SESSION_BIT - 1)) | CONTENT_SESSION_BIT
+}
+
+/// The content-addressed session a module's *parse* mints its declaration
+/// names and ids from (`anon_names::with_content_unit`): derived like
+/// [`content_session_id`] but salted, so parse-time and compile-time values of
+/// one module never share a session.
+// Cost: O(1).
+pub(crate) fn content_parse_session_id(unit_key: u64, occurrence: u32) -> u64 {
+    content_session_id(unit_key ^ 0x7061_7273_655f_6964, occurrence)
+}
+
+/// Whether the innermost open session is content-addressed: a value minted
+/// now ends up in a cacheable compile.
+// Cost: O(1).
+pub(crate) fn in_content_session() -> bool {
+    SESSIONS.with(|s| {
+        s.borrow()
+            .last()
+            .is_some_and(|session| session.id & CONTENT_SESSION_BIT != 0)
+    })
+}
+
+/// Claim the lowest unused occurrence of `unit_key`, for a fresh compile.
+// Cost: O(c), c = occurrences of this unit claimed so far.
+pub(crate) fn claim_next_occurrence(unit_key: u64) -> u32 {
+    let Ok(mut claimed) = claimed_occurrences().lock() else {
+        // A poisoned table: an occurrence no other compile can share.
+        return u32::MAX;
+    };
+    let taken = claimed.entry(unit_key).or_default();
+    let next = (0..).find(|n| !taken.contains(n)).unwrap_or(u32::MAX);
+    taken.push(next);
+    next
+}
+
+/// Open the session `id` for the compile about to run, whatever is already
+/// open: a cacheable compile mints from its content-addressed session.
+// Cost: O(1).
+pub(crate) fn enter_session(id: u64) -> SessionGuard {
+    SESSIONS.with(|s| {
+        s.borrow_mut().push(Session {
+            id,
+            next_ordinal: 0,
+        })
+    });
+    SessionGuard { opened: true }
+}
+
 /// Mint a value no other mint in this process returns.
 ///
 /// Outside any session (a compiler built and used without going through
@@ -133,6 +200,19 @@ mod tests {
         for _ in 0..10 {
             assert!(seen.insert(mint()));
         }
+    }
+
+    #[test]
+    fn content_sessions_are_stable_and_claimed_once() {
+        let a = content_session_id(42, 0);
+        assert_eq!(a, content_session_id(42, 0));
+        assert_ne!(a, content_session_id(42, 1));
+        assert!(a & CONTENT_SESSION_BIT != 0);
+        let key = 0xdead_beef_u64;
+        assert_eq!(claim_next_occurrence(key), 0);
+        assert_eq!(claim_next_occurrence(key), 1);
+        let _guard = enter_session(a);
+        assert_eq!(mint() >> ORDINAL_BITS, a);
     }
 
     #[test]

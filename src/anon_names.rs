@@ -27,6 +27,16 @@
 //! let two declaration sites in two different units collide in the shared
 //! registry — the failure the counters exist to prevent. The unit-local mode is
 //! safe precisely because nothing it names is ever registered.
+//!
+//! A module parse whose result can be cached uses a third mode,
+//! [`with_content_unit`] (ADR-11756 §2.3). A cached AST, and the bytecode
+//! compiled from it, carry these names into a later process, where a
+//! process-global counter value would mean something else. In that mode every
+//! name and id is minted as `(content session << 24) | ordinal`. The session is
+//! a hash of the module's source identity and of how many times this process
+//! has loaded it, so the values are the same in every process. Its high bit
+//! keeps them above every value the global counters reach, so the two spaces
+//! cannot collide.
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -61,6 +71,46 @@ pub(crate) enum AnonKind {
     Role,
     Subset,
     DeclId,
+}
+
+/// The content-addressed counters of the module parse in progress.
+struct ContentUnit {
+    session: u64,
+    next: u64,
+}
+
+thread_local! {
+    /// `Some` while a cacheable module parse runs on this thread.
+    static CONTENT_UNIT: RefCell<Option<ContentUnit>> = const { RefCell::new(None) };
+}
+
+/// Run `f` (a module parse) minting from the content-addressed session
+/// `session` (see the module docs). A nested call replaces the outer unit for
+/// its duration, so a module parse is never numbered by an enclosing one.
+pub(crate) fn with_content_unit<R>(session: u64, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<ContentUnit>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let outer = self.0.take();
+            CONTENT_UNIT.with(|c| *c.borrow_mut() = outer);
+        }
+    }
+    let outer = CONTENT_UNIT.with(|c| c.borrow_mut().replace(ContentUnit { session, next: 0 }));
+    let _restore = Restore(outer);
+    f()
+}
+
+/// Whether a cacheable module parse is running on this thread.
+// Cost: O(1).
+pub(crate) fn in_content_unit() -> bool {
+    CONTENT_UNIT.with(|c| c.borrow().is_some())
+}
+
+/// Whether `id` was minted by a content-addressed unit (and so means the same
+/// thing in every process).
+// Cost: O(1).
+pub(crate) fn is_content_id(id: u64) -> bool {
+    id & (1 << 63) != 0
 }
 
 thread_local! {
@@ -121,5 +171,15 @@ pub(crate) fn next_id(kind: AnonKind, global: &AtomicU64) -> u64 {
             id
         })
     });
-    unit_local.unwrap_or_else(|| global.fetch_add(1, Ordering::Relaxed))
+    if let Some(id) = unit_local {
+        return id;
+    }
+    let content = CONTENT_UNIT.with(|c| {
+        c.borrow_mut().as_mut().map(|u| {
+            let id = (u.session << 24) | (u.next & 0xff_ffff);
+            u.next += 1;
+            id
+        })
+    });
+    content.unwrap_or_else(|| global.fetch_add(1, Ordering::Relaxed))
 }

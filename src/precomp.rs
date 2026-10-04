@@ -64,6 +64,8 @@
 //! `serde::Deserialize`. The `Value` enum uses custom serde that supports
 //! only the subset of variants that can appear in AST literals.
 
+pub(crate) mod bytecode;
+
 use crate::ast::Stmt;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
@@ -118,7 +120,7 @@ pub(crate) fn interpreter_version() -> String {
     // lost `perl5` (the `:P5` regex adverb is gone, ADR-0138).
     // 16: `SerValue` gained `RegexDeclared` (a grammar token's verbatim
     // declaration text), shifting the discriminants after `Regex`.
-    const CACHE_FORMAT_VERSION: u32 = 16;
+    const CACHE_FORMAT_VERSION: u32 = 17;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -170,7 +172,7 @@ pub(crate) fn enabled_by_default() -> bool {
 }
 
 /// Compute a deterministic hash of a canonical file path for use as cache filename.
-fn path_hash(path: &Path) -> String {
+pub(super) fn path_hash(path: &Path) -> String {
     path_hash_hex(&path.to_string_lossy())
 }
 
@@ -184,7 +186,7 @@ pub(crate) fn path_hash_hex(path: &str) -> String {
 
 /// Get the cache directory, creating it if needed.
 /// Returns an error if the cache directory cannot be determined or created.
-fn cache_dir() -> io::Result<PathBuf> {
+pub(super) fn cache_dir() -> io::Result<PathBuf> {
     #[cfg(test)]
     if let Some(dir) = TEST_CACHE_DIR.with(|cell| cell.borrow().clone()) {
         fs::create_dir_all(&dir)?;
@@ -245,7 +247,7 @@ pub(crate) fn enabled_for_process() -> bool {
     PROCESS_ENABLED.load(std::sync::atomic::Ordering::Relaxed) && enabled_by_default()
 }
 
-fn warn_cache_unavailable(err: &dyn std::fmt::Display) {
+pub(super) fn warn_cache_unavailable(err: &dyn std::fmt::Display) {
     static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     if WARNED.set(()).is_ok() {
         eprintln!("Warning: precompilation cache is unavailable: {err}");
@@ -311,7 +313,7 @@ struct CacheMetadata {
 /// `fs::write`s into one shared `<hash>.tmp` and rename the mixture into place.
 /// The rename is atomic; the write into the shared buffer is not, so sharing the
 /// buffer defeats the point of renaming.
-fn temp_cache_path(cache_file: &Path) -> PathBuf {
+pub(super) fn temp_cache_path(cache_file: &Path) -> PathBuf {
     cache_file.with_extension(format!("{}.tmp", std::process::id()))
 }
 
@@ -937,3 +939,7 @@ mod tests {
         path
     }
 }
+
+#[cfg(test)]
+#[path = "precomp/ast_roundtrip_tests.rs"]
+mod ast_roundtrip_tests;

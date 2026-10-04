@@ -30,6 +30,7 @@ use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
 use std::cell::RefCell;
 
+pub(crate) use compiled::diff::first_difference;
 pub(crate) use compiled::{decode_compiled, encode_compiled};
 
 /// What the decoder carries: the entry's symbol table, already interned.
@@ -46,6 +47,37 @@ struct EncodeTable {
 
 thread_local! {
     static ENCODE_TABLE: RefCell<Option<EncodeTable>> = const { RefCell::new(None) };
+    /// The symbols of the entry being decoded, for a value that reaches the
+    /// codec through a serde impl and so cannot see the decoder's context
+    /// (see [`decode_nested`]).
+    static DECODE_SYMBOLS: RefCell<Option<std::rc::Rc<Vec<Symbol>>>> = const { RefCell::new(None) };
+}
+
+/// Whether an [`encode`] call is running on this thread.
+// Cost: O(1).
+pub(crate) fn encoding_active() -> bool {
+    ENCODE_TABLE.with(|t| t.borrow().is_some())
+}
+
+/// Encode `value` inside a running [`encode`] call, sharing its symbol table:
+/// for compiled data that sits inside a serde-encoded AST node (a parameter's
+/// precompiled chunks).
+// Cost: O(n), n = size of the value.
+pub(crate) fn encode_nested<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError> {
+    bincode::encode_to_vec(value, config())
+}
+
+/// Decode what [`encode_nested`] wrote, inside a running [`decode`] call.
+/// `None` outside one, or if the bytes do not decode.
+// Cost: O(n), n = size of the value.
+pub(crate) fn decode_nested<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Option<T> {
+    let symbols = DECODE_SYMBOLS.with(|s| s.borrow().clone())?;
+    let ctx = DecodeCtx {
+        symbols: symbols.as_ref().clone(),
+    };
+    bincode::decode_from_slice_with_context(bytes, config(), ctx)
+        .ok()
+        .map(|(value, _)| value)
 }
 
 /// bincode configuration shared by both directions.
@@ -88,9 +120,17 @@ pub(crate) fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError> {
 // interned once).
 pub(crate) fn decode<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Result<T, DecodeError> {
     let (strings, used): (Vec<String>, usize) = bincode::decode_from_slice(bytes, config())?;
-    let ctx = DecodeCtx {
-        symbols: strings.iter().map(|s| Symbol::intern(s)).collect(),
-    };
+    let symbols: Vec<Symbol> = strings.iter().map(|s| Symbol::intern(s)).collect();
+    struct Restore(Option<std::rc::Rc<Vec<Symbol>>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let outer = self.0.take();
+            DECODE_SYMBOLS.with(|s| *s.borrow_mut() = outer);
+        }
+    }
+    let outer = DECODE_SYMBOLS.with(|s| s.borrow_mut().replace(std::rc::Rc::new(symbols.clone())));
+    let _restore = Restore(outer);
+    let ctx = DecodeCtx { symbols };
     let (value, _) = bincode::decode_from_slice_with_context(&bytes[used..], config(), ctx)?;
     Ok(value)
 }
@@ -180,21 +220,31 @@ pub(crate) fn roundtrip(
     let second = encode_compiled(&decoded.0, &decoded.1)
         .map_err(|e| format!("precomp codec: cannot re-encode a decoded chunk: {e}"))?;
     if first != second {
-        let at = first
-            .iter()
-            .zip(&second)
-            .position(|(a, b)| a != b)
-            .unwrap_or(0);
-        let lo = at.saturating_sub(48);
         return Err(format!(
-            "precomp codec: a round trip changed the encoding ({} vs {} bytes), first difference at {at}:\n{:?}\n{:?}",
-            first.len(),
-            second.len(),
-            String::from_utf8_lossy(&first[lo..(at + 48).min(first.len())]),
-            String::from_utf8_lossy(&second[lo..(at + 48).min(second.len())]),
+            "precomp codec: a round trip changed the encoding: {}",
+            describe_difference(&first, &second)
         ));
     }
     Ok(decoded)
+}
+
+/// Where two encodings first differ, with the bytes around it, for a
+/// diagnostic.
+// Cost: O(n), n = encoding length.
+pub(crate) fn describe_difference(a: &[u8], b: &[u8]) -> String {
+    let at = a
+        .iter()
+        .zip(b)
+        .position(|(x, y)| x != y)
+        .unwrap_or(a.len().min(b.len()));
+    let lo = at.saturating_sub(64);
+    format!(
+        "{} vs {} bytes, first difference at {at}:\n{:?}\n{:?}",
+        a.len(),
+        b.len(),
+        String::from_utf8_lossy(&a[lo..(at + 64).min(a.len())]),
+        String::from_utf8_lossy(&b[lo..(at + 64).min(b.len())]),
+    )
 }
 
 #[cfg(test)]
