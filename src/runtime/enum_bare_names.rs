@@ -22,12 +22,41 @@
 //! which reaches `env` under the sigil-less name — can no longer see it, and an
 //! assignment to `$s` can no longer overwrite it.
 //!
-//! The storage is still `env` on purpose. Enum-key visibility is *lexical*, and
-//! `env` is what implements that: block scopes, package-block rollback (a bare key
-//! introduced inside `package Foo { … }` is dropped on exit, only `::`-qualified
-//! keys survive — the prefix deliberately contains no `::` so an enum key keeps
-//! exactly that behaviour), thread clones and the `our` store all key off it. Moving
-//! the values to a side table would have had to reimplement every one of those.
+//! The storage is `env` for every enum the running program declares itself.
+//! Enum-key visibility is *lexical*, and `env` is what implements that: block
+//! scopes, package-block rollback (a bare key introduced inside `package Foo { … }`
+//! is dropped on exit, only `::`-qualified keys survive — the prefix deliberately
+//! contains no `::` so an enum key keeps exactly that behaviour), thread clones and
+//! the `our` store all key off it.
+//!
+//! ## A module's top-level enums (ADR-0084, #7817)
+//!
+//! The exception is an enum a loaded module's mainline declares directly (the
+//! depth rule of ADR-0084 §7.2, [`Interpreter::at_module_toplevel`]). A module
+//! body runs in the IMPORTER's env, so its keys stayed behind in every frame env
+//! of the program that loaded it — 44 of them after
+//! `use Cro::HTTP2::RequestParser`, the largest group of non-lexical entries each
+//! copy-on-write deep copy of a frame env still had to copy. They go to
+//! [`ModuleToplevel::enum_keys`](super::toplevel_callable_ids::ModuleToplevel::enum_keys)
+//! instead, keyed by the declaring package, which frames neither clone nor
+//! capture. That also gives them rakudo's visibility, which the env could not:
+//!
+//! - a **package-less** module file declares its enum in `GLOBAL`, so its keys
+//!   are visible everywhere, the importer included (`enum Settings <…>` in
+//!   `Cro::HTTP2::Frame`);
+//! - an enum declared inside a **package** — a `unit module`, a `module M { … }`
+//!   block or a class body, including a `my enum` there — is visible to that
+//!   package's own code (found through the running package's chain,
+//!   [`Interpreter::lookup_in_running_package`]) and not to the importer. In the
+//!   env, a class body's `my enum` keys used to leak into the loading scope
+//!   (the class-body exit leaves them, for the sake of a `my enum` inside a
+//!   method).
+//!
+//! [`Interpreter::enum_bare_value`] consults the env first, so a lexical key —
+//! an import, the program's own enum — shadows a table entry. A closure created
+//! in a package's code needs nothing captured: it runs with its declaring
+//! package as its lexical package, so the running package's chain still finds
+//! the key when the closure is called (or a `supply` block tapped) from outside.
 
 use crate::runtime::Interpreter;
 use crate::value::Value;
@@ -39,6 +68,9 @@ use crate::value::Value;
 /// "plain user variable" predicates), so an enum key parked here cannot be reached
 /// by any spelling of a user variable.
 pub(crate) const ENUM_BARE_PREFIX: &str = crate::meta_ns::ENUM_BARE_PREFIX;
+
+/// The owner key of a package-less module's top-level enum keys.
+const GLOBAL_OWNER: &str = "GLOBAL";
 
 /// The `env` key an enum key `name` is stored under.
 pub(crate) fn enum_bare_key(name: &str) -> String {
@@ -69,9 +101,27 @@ pub(crate) fn enum_bare_keys_in_use() -> bool {
 
 impl Interpreter {
     /// Install an enum key's value in the bare-name namespace.
+    // Cost: O(|name|) to build the key, plus one amortized O(1) insert (a
+    // copy-on-write table clone, O(t), only while a spawned thread still
+    // shares the table, t = recorded keys).
     pub(crate) fn insert_enum_bare_value(&mut self, name: &str, value: Value) {
         ENUM_BARE_KEY_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
-        self.env.insert(enum_bare_key(name), value);
+        let key = enum_bare_key(name);
+        // An env binding of the same key (an earlier lexical declaration still
+        // in scope) would shadow the table; overwrite it in place instead.
+        if self.at_module_toplevel() && !self.env.contains_key(&key) {
+            let owner = if self.current_package_is_global() {
+                GLOBAL_OWNER
+            } else {
+                self.current_package_str()
+            };
+            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.enum_keys)
+                .entry(owner.to_string())
+                .or_default()
+                .insert(name.to_string(), value);
+            return;
+        }
+        self.env.insert(key, value);
     }
 
     /// Look an enum key up in the bare-name namespace.
@@ -90,7 +140,23 @@ impl Interpreter {
         {
             return None;
         }
-        self.env.get(&enum_bare_key(name))
+        self.env
+            .get(&enum_bare_key(name))
+            .or_else(|| self.toplevel_enum_key(name))
+    }
+
+    /// An enum key a loaded module's mainline declared at its top level and
+    /// that the running code can see: one of the running package's chain, else
+    /// a package-less module's (`GLOBAL`) key.
+    // Cost: O(1) when no package holds `name`; else O(c * d), c = running
+    // package candidates (at most 4), d = package nesting depth.
+    fn toplevel_enum_key(&self, name: &str) -> Option<&Value> {
+        let table = &self.module.module_toplevel.enum_keys;
+        if table.is_empty() || !table.contains_name(name) {
+            return None;
+        }
+        self.lookup_in_running_package(table, name)
+            .or_else(|| table.get(GLOBAL_OWNER).and_then(|keys| keys.get(name)))
     }
 
     /// Reject a bare enum-key read whose name was declared by more than one enum.
