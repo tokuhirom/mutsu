@@ -383,3 +383,45 @@ level (40 per env), the companion markers of a block-form `module X { my $a
 := … }` body's own bindings (`__mutsu_scalar_bind_no_container::` /
 `__mutsu_bound_decont::`, 20 per env, from `JSON::Fast`), and group 1 for the
 main program's own top-level routines.
+
+### 7.6 Slice 5 — a module's qualified package declarations
+
+Re-measured before the slice (2026-10-04, §7.5's program and method): **3,765**
+entries per iteration. Of the ~40 qualified names a copied frame env still
+carried, 17 were the self-bindings of qualified packages the loaded modules
+declare: `unit module JSON::Fast`, `OpenSSL::Ctx` and its siblings,
+`package Example::A { }` blocks, and the `EXPORT::<name>` packages a module's
+`sub EXPORT` machinery declares.
+
+`OpCode::RegisterPackage` now skips that binding under the same rule §7.3 applies
+to a class: the name is qualified, a module's mainline is declaring it directly,
+and the env holds no binding the new one would replace
+(`qualified_identity_binding_is_redundant`). A bare `unit module Foo` keeps its
+binding, as does every package the main program or a nested block declares.
+
+What the binding answered is now answered by the package's kind record,
+`Registry::package_kinds`, which (unlike `chain_declared_packages`) outlives the
+`use` that declared it:
+
+- indirect lookup (`::('Example::C')`) accepts a qualified name that has a kind
+  record, next to the class/role/enum registry check it already made;
+- `is_declared_package` and the export-value lookup (`module Inner is export`,
+  `unit module P::Q::Fac is export`) ask the same record
+  (`is_qualified_package_decl`, which excludes a `my package`);
+- a package stash (`Example::.keys`) lists those packages as members, under the
+  same `need`/transitive-hiding and `my`-scope filters as its class loop. This
+  also fixes a divergence: without precompilation, `Example::.keys` after
+  `use Example::A; use Example::B` used to be empty (rakudo: `A B C`).
+
+Result: the per-iteration deep-copy volume falls from **3,765** to **3,195**
+entries (−15%). `t/modules/module-toplevel-package-names-off-frame-env.t` pins
+the readers.
+
+What remains of the env's non-lexical content: qualified enum and type names
+bound below a module's top level or under a name that differs from their storage
+name (`my` types with mangled storage names, `X::Malformed` aliasing
+`CBOR::Simple::X::Malformed`), qualified `our constant`s
+(`OpenSSL::Version::VERSION`), qualified `&` code bindings, the
+`__mutsu_scalar_bind_no_container::` / `__mutsu_bound_decont::` companion markers
+of a block-form `module X { my $a := … }` body (20 per env, from `JSON::Fast`),
+and group 1 for the main program's own top-level routines.

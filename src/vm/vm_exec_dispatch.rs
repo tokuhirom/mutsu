@@ -6195,7 +6195,9 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
-                self.env_mut().insert(name.clone(), pkg_val.clone());
+                if !self.qualified_identity_binding_is_redundant(&name, &name) {
+                    self.env_mut().insert(name.clone(), pkg_val.clone());
+                }
                 crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
@@ -6225,7 +6227,9 @@ impl Interpreter {
                 self.save_lexical_type_binding_for_scope_exit(&name);
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
-                self.env_mut().insert(name.clone(), pkg_val.clone());
+                if !self.qualified_identity_binding_is_redundant(&name, &name) {
+                    self.env_mut().insert(name.clone(), pkg_val.clone());
+                }
                 crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
                     .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
