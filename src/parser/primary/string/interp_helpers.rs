@@ -113,11 +113,12 @@ pub(crate) fn try_parse_interp_self_accessor_call<'a>(
 /// Also supports methods with arguments: "$var.substr(0,1)".
 /// Also supports indirect (quoted) method names: "$var.'method'()" or "$var."method"()".
 pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, &str) {
-    // A hyper postfix that ends in a bracket (`>>.[0]`, `».{$k}`, `>>.<k>`)
-    // continues the interpolation, as any bracket-ending postfix does:
+    // Hyper postfixes that end in a bracket (`>>.[0]`, `».{$k}`, `>>.<k>`)
+    // continue the interpolation, as any bracket-ending postfix does:
     // `"%format{@columns}>>.[HEADER].join(' ')"` (Telemetry's report header).
-    if let Some((expr, after)) = try_parse_interp_hyper_subscript(input, &target) {
-        return try_parse_interp_method_call(after, expr);
+    let (mut target, mut input) = (target, input);
+    while let Some((expr, after)) = try_parse_interp_hyper_subscript(input, &target) {
+        (target, input) = (expr, after);
     }
     let mut expr = target;
     let mut rest = input;
