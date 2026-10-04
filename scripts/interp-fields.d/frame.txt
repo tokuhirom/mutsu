@@ -34,3 +34,5 @@ thread_spawn_origin
 trir
 trir_outer_cache
 upvalues
+# Per-call-frame rebind tracking (saved/restored with the VM call frame).
+rw_param_rebinds
