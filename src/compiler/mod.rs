@@ -1073,6 +1073,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod amp_scope;
+mod atomic_elem_forms;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
