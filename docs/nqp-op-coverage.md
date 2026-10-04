@@ -54,7 +54,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Relational / Logic | 40 / 40 | 0 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
-| Objects | 17 / 31 | 14 | #11499 |
+| Objects | 27 / 31 | 4 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
 | Profiling | 0 / 3 | 3 | #11504 |
 | Serialization context | 1 / 18 | 17 | #11504 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **467 / 577** | **110** | |
+| **Total** | **477 / 577** | **100** | |
 
 ## Missing ops by category
 
@@ -76,7 +76,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **NativeCall** (#11504): `nativecallinvoke`
-- **Objects** (#11499): `bind`, `bindcomp`, `call`, `callmethod`, `findmethod`, `how`, `how_nd`, `objectid`, `rebless`, `reprname`, `setwho`, `tryfindmethod`, `what_nd`, `who`
+- **Objects** (#11499): `bind`, `bindcomp`, `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`

@@ -176,6 +176,11 @@ impl Compiler {
             "nqp::p6store" | "nqp::p6sink" | "nqp::p6return" | "nqp::p6invokeflat" => {
                 self.try_compile_nqp_p6_form(name, args)
             }
+            // The object-model forms (#11499): see nqp_object_forms.rs.
+            "nqp::how" | "nqp::how_nd" | "nqp::what_nd" | "nqp::who" | "nqp::reprname"
+            | "nqp::objectid" | "nqp::callmethod" | "nqp::call" => {
+                self.try_compile_nqp_object_form(name, args)
+            }
             "nqp::with" | "nqp::without" | "nqp::defor" => {
                 self.try_compile_nqp_cond_form(name, args, sunk)
             }
