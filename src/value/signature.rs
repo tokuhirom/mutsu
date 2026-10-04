@@ -10,7 +10,8 @@ use std::sync::Mutex;
 pub(crate) use super::signature_smartmatch::{signature_smartmatch, signature_smartmatch_with};
 
 /// What building a `Parameter`/`Signature` value needs from the running
-/// program: the declared base type of a `subset`. The interpreter implements
+/// program: the declared base type of a `subset`, and the type object a
+/// `C[T]` spelling evaluated to. The interpreter implements
 /// it (`runtime::decl_types`); a parse-time signature literal passes `None`.
 /// A trait rather than `&Interpreter` so `value` does not name the runtime
 /// (#10779).
@@ -18,6 +19,20 @@ pub(crate) trait SubsetBases {
     /// The base type `name` was declared `of`, or `None` when `name` is not a
     /// registered subset.
     fn subset_base(&self, name: &str) -> Option<String>;
+
+    /// The type object `constraint` (`C[T]` for a `C` with its own
+    /// `^parameterize`) already evaluated to, or `None` when it has not been
+    /// evaluated or is not such a spelling.
+    fn parameterized_type(&self, constraint: &str) -> Option<Value>;
+}
+
+/// The type object a type spelling in a signature denotes: an evaluated
+/// `C[T]` (see [`SubsetBases::parameterized_type`]), else the name itself.
+// Cost: O(1) expected.
+fn signature_type_value(name: &str, interp: Option<&dyn SubsetBases>) -> Value {
+    interp
+        .and_then(|i| i.parameterized_type(name))
+        .unwrap_or_else(|| Value::Package(Symbol::intern(name)))
 }
 
 /// Lightweight representation of a signature parameter for runtime use.
@@ -758,7 +773,7 @@ pub(crate) fn make_signature_value_with_owner(
     let return_type = info.return_type.clone().unwrap_or_else(|| "Mu".to_string());
     attrs.insert(
         "returns".to_string(),
-        Value::Package(Symbol::intern(&return_type)),
+        signature_type_value(&return_type, interp),
     );
     let val = Value::make_instance(Symbol::intern("Signature"), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
@@ -914,7 +929,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
             let base = builtin_subset_base(t)
                 .map(str::to_string)
                 .or_else(|| resolve_subset_base(t, interp));
-            Value::Package(Symbol::intern(base.as_deref().unwrap_or(t)))
+            signature_type_value(base.as_deref().unwrap_or(t), interp)
         }
         // Untyped params: the sigil implies the container role.
         None => Value::Package(Symbol::intern(match sigil {
