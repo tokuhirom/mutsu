@@ -311,11 +311,15 @@ pub(crate) fn answer(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !table().has_name(method) || !plain_args(args) {
+    if !table().has_name(method) {
         return None;
     }
     let shape = target.dispatch_shape()?;
     let id = resolve(shape, method, args.len())?;
+    // After the lookup: a call that misses never pays for the argument scan.
+    if !plain_args(args) {
+        return None;
+    }
     invoke(id, target, args)
 }
 

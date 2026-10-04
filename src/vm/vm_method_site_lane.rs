@@ -106,12 +106,6 @@ impl Interpreter {
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
         let shape = self.stack[base].dispatch_shape()?;
-        if arity > 0
-            && (!method_table::plain_args(&self.stack[base + 1..])
-                || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
-        {
-            return None;
-        }
         let sites = code.constants.len();
         let idx = name_idx as usize;
         let generation = self.registry_write_generation();
@@ -140,6 +134,14 @@ impl Interpreter {
                 row?
             }
         };
+        // After the row is known: a call that misses (a remembered miss
+        // above) never pays for the argument checks.
+        if arity > 0
+            && (!method_table::plain_args(&self.stack[base + 1..])
+                || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
+        {
+            return None;
+        }
         let (target, args) = self.stack[base..].split_first()?;
         Some(SiteLaneAnswer {
             result: method_table::invoke(row, target, args)?,
