@@ -15,6 +15,33 @@ fn insert_export_alias(
     touched.push(key);
 }
 
+/// Record `tags` as exports of `name` in `table[key]`. A family's later
+/// candidates re-record tags that are already there, so check before taking
+/// the copy-on-write table: `cow_table_mut` copies a shared table whole.
+// Cost: O(t), t = tags, when every tag is recorded already; otherwise O(t)
+// plus a copy of `table` when it is shared.
+fn record_export_tags(
+    table: &mut std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    key: &str,
+    name: &str,
+    tags: &[String],
+) {
+    let recorded = table.get(key).and_then(|exports| exports.get(name));
+    if recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag))) {
+        return;
+    }
+    let entry = crate::runtime::cow_table_mut(table)
+        .entry(key.to_string())
+        .or_default()
+        .entry(name.to_string())
+        .or_default();
+    for tag in tags {
+        if !entry.contains(tag) {
+            entry.insert(tag.clone());
+        }
+    }
+}
+
 impl Interpreter {
     /// Record a trait-modified routine value for an exported sub, so that
     /// `import_module` can restore the `&name` env binding with the role mixed in.
@@ -626,14 +653,19 @@ impl Interpreter {
         let covers = |recorded: Option<&HashSet<String>>| {
             recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag)))
         };
-        covers(self.exported_subs.get(package).and_then(|e| e.get(name)))
-            && self.module_load_stack.last().is_none_or(|module| {
-                covers(
-                    self.module_owned_exports
-                        .get(module)
-                        .and_then(|e| e.get(name)),
-                )
-            })
+        covers(
+            self.module
+                .exported_subs
+                .get(package)
+                .and_then(|e| e.get(name)),
+        ) && self.module.module_load_stack.last().is_none_or(|module| {
+            covers(
+                self.module
+                    .module_owned_exports
+                    .get(module)
+                    .and_then(|e| e.get(name)),
+            )
+        })
     }
 
     fn register_exported_sub_inner(
@@ -752,54 +784,31 @@ impl Interpreter {
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.unit_module_exported_subs)
-                .entry(unit_mod)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+        if let Some(unit_mod) = self.module.unit_module_loading_stack.last() {
+            record_export_tags(
+                &mut self.module.unit_module_exported_subs,
+                unit_mod,
+                &name,
+                &tags,
+            );
         }
         // Attribute this export to the module currently being loaded (any kind:
         // unit, package-block, or bare-file). The `use MOD` tag-filter uses this
         // to hide only MOD's own exports, never a symbol MOD imported from a
         // transitively-`use`d module.
-        if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let owned = crate::runtime::cow_table_mut(&mut self.module.module_owned_exports)
-                .entry(owner)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                owned.insert(tag.clone());
-            }
+        if let Some(owner) = self.module.module_load_stack.last() {
+            record_export_tags(&mut self.module.module_owned_exports, owner, &name, &tags);
         }
         // The module load stack names the requested compunit path. Keep a
         // second metadata entry under that path when the declared unit package
         // is different, so `use Lingua::EN::Numbers :short` can validate the
         // export even though the file says `unit module Numbers`.
         if self.module.unit_module_loading_stack.last().is_some()
-            && let Some(module) = self.module.module_load_stack.last().cloned()
+            && let Some(module) = self.module.module_load_stack.last()
         {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-                .entry(module)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+            record_export_tags(&mut self.module.exported_subs, module, &name, &tags);
         }
-        let entry = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-            .entry(package)
-            .or_default()
-            .entry(name)
-            .or_default();
-        for tag in tags {
-            entry.insert(tag);
-        }
+        record_export_tags(&mut self.module.exported_subs, &package, &name, &tags);
     }
 
     /// Refresh the export aliases for a multi family after a later candidate
