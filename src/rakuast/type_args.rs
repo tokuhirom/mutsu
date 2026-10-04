@@ -55,6 +55,17 @@ impl<'a> Iterator for ArgSources<'a> {
     }
 }
 
+/// Whether a bareword argument's source spells a type: a simple one (`Int`)
+/// or one with a definedness smiley (`Map:D`), which rakudo renders as a
+/// `Type::Definedness`.
+fn is_type_spelling(source: &str) -> bool {
+    let base = source
+        .strip_suffix(":D")
+        .or_else(|| source.strip_suffix(":U"))
+        .unwrap_or(source);
+    is_simple_type(base)
+}
+
 /// Convert a type application, using parser expressions for argument values
 /// and its retained spelling for the colonpair form of a named argument.
 pub(super) fn parameterized_type_node(
@@ -89,7 +100,7 @@ pub(super) fn parameterized_type_node(
                 } else {
                     return Err(unsupported("parameterised type colonpair form"));
                 }
-            } else if matches!(expr, Expr::BareWord(_)) && is_simple_type(source) {
+            } else if matches!(expr, Expr::BareWord(_)) && is_type_spelling(source) {
                 build_type_node(source)?
             } else {
                 convert_expr(expr)?

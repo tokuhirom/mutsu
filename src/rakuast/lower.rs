@@ -3222,6 +3222,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             "Nil" => Ok(Expr::Literal(Value::NIL)),
             name => Ok(Expr::BareWord(name.to_string())),
         },
+        // `Map:D` (a `Type::Definedness`) in expression position, such as a
+        // role argument `does R[Map:D]`: the bareword the parser keeps for the
+        // smiley spelling.
+        RakuAstClass::TypeDefinedness => Ok(Expr::BareWord(simple_type_name(node, node)?)),
         // `Term::Named.new("now")` -> the argument-less `now` call the parser
         // produces for the term.
         RakuAstClass::TermNamed => match positional_leaf(node)?.view() {
