@@ -383,10 +383,7 @@ impl Compiler {
                     // current lexical value instead of resetting it.
                     let has_initializer =
                         custom_traits.iter().any(|(t, _)| t == "__has_initializer");
-                    let marker_name = format!(
-                        "__do_decl_init_{}",
-                        STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
-                    );
+                    let marker_name = format!("__do_decl_init_{}", super::compile_session::mint());
                     let marker_slot = self.alloc_local(&marker_name);
                     let jump_have_value = if has_initializer {
                         None

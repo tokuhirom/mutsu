@@ -481,13 +481,13 @@ impl Compiler {
 /// registered `MethodDef` at runtime.
 #[cfg(test)]
 mod d3_8a_byte_parity_tests {
-    /// A nested closure/named-sub package is suffixed with a process-global
-    /// `STATE_COUNTER` ordinal (`Pkg::&<closure>/N`, `compiler/mod.rs`) so
-    /// sibling closures never collide. The two compiles this test pair
+    /// A nested closure/named-sub package is suffixed with a value minted from
+    /// the compile session (`Pkg::&<closure>/N`, `compiler/compile_session.rs`)
+    /// so sibling closures never collide. The two compiles this test pair
     /// performs (a standalone `Compiler::compile` and a full `Interpreter::run`,
     /// which itself compiles far more code — prelude/setting included —
-    /// before it reaches the fixture) draw from the SAME global counter at
-    /// different starting points, so the ordinal legitimately differs
+    /// before it reaches the fixture) run in different sessions, so the
+    /// value legitimately differs
     /// between the two even when the compiled bytecode is otherwise
     /// identical. Normalize it away before comparing, the same way the
     /// fixtures below only exercise ONE nested-sub case rather than trying

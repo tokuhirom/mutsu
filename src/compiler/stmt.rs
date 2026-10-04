@@ -3933,8 +3933,7 @@ impl Compiler {
                     end_index: *end_index,
                 };
                 let idx = self.code.add_stmt(end_stmt);
-                let site_id =
-                    super::STATE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as u64;
+                let site_id = super::compile_session::mint();
                 self.code.emit(OpCode::PhaserEnd { idx, site_id });
             }
             Stmt::Phaser {
