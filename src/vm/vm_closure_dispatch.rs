@@ -1901,9 +1901,14 @@ impl Interpreter {
                         continue;
                     }
                     // A genuine caller lexical whose value changed across the call:
-                    // queue its slot for a precise refresh.
+                    // queue its slot for a precise refresh. Compared by identity,
+                    // not structurally: a deep `==` over an object graph with
+                    // back references (an XML tree's parent links) never ends,
+                    // and a refresh of an equal-but-distinct value is harmless.
                     if restored_env.contains_key_sym(*k)
-                        && restored_env.get_sym(*k) != Some(v)
+                        && !restored_env.get_sym(*k).is_some_and(|before| {
+                            crate::runtime::utils::container_identity_identical(before, v)
+                        })
                         && !k.starts_with("__mutsu")
                     {
                         caller_writeback.push(*k);

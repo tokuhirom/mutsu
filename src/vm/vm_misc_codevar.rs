@@ -135,6 +135,20 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
+        // A `my sub name` declared in this very chunk is what its own `&name`
+        // reads, whatever an enclosing caller bound under that name in env: a
+        // method that declares `my sub process` and passes `&process` to a
+        // callback `-> &process {...}`, re-entered from inside such a callback
+        // (another invocant), saw the outer invocation's `&process` instead of
+        // its own.
+        if !name_is_qualified
+            && code.sub_decl_plans.iter().any(|p| p.name.as_str() == name)
+            && let own = self.resolve_code_var_unshadowed(name)
+            && !own.is_nil()
+        {
+            self.stack.push(own);
+            return Ok(());
+        }
         // A routine's free `&name` is the binding visible at its declaration,
         // not a same-named `my &name` in the CALLER's env -- the value-read
         // twin of `CallOnCodeVar`'s lookup.
