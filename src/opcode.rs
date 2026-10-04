@@ -2930,7 +2930,7 @@ pub(crate) enum OpCode {
         /// A bare block invoked this way binds its implicit `$_` to a value
         /// with no container, so `{ $_ = 5 }(7)` is `X::AdHoc` "Cannot assign
         /// to an immutable value" in raku while `{ $_ = 5 }($v)` writes
-        /// through. Consumed via `Interpreter::pending_call_topic_bare`.
+        /// through. Carried to the block as `TopicArgSite::bare`.
         bare_args: bool,
     },
     /// Call a code variable by name, `&name(args)`. Stack: `[a1, …, an] →

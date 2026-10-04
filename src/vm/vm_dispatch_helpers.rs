@@ -1,4 +1,5 @@
 use super::*;
+use super::vm_closure_dispatch::TopicArgSite;
 
 impl Interpreter {
     /// A plain, eager, list-like target — `Array`/`List`, `Seq`, `Slip`, or any
@@ -670,6 +671,7 @@ impl Interpreter {
                 explicit_topic,
                 capture_rw_topic,
                 fns,
+                TopicArgSite::default(),
             );
         }
         // A code object built from a registry routine carries that routine's own
@@ -686,6 +688,7 @@ impl Interpreter {
                 explicit_topic,
                 capture_rw_topic,
                 fns,
+                TopicArgSite::default(),
             );
         }
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
@@ -712,6 +715,7 @@ impl Interpreter {
             explicit_topic,
             capture_rw_topic,
             fns,
+            TopicArgSite::default(),
         )
     }
 
@@ -730,6 +734,18 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
         compiled_fns: Option<&CompiledFns>,
+    ) -> Result<Value, RuntimeError> {
+        self.vm_call_on_value_at(target, args, compiled_fns, TopicArgSite::default())
+    }
+
+    /// [`Self::vm_call_on_value`] from a value-call site that knows what its
+    /// arguments are; a block it reaches gets that [`TopicArgSite`].
+    pub(crate) fn vm_call_on_value_at(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+        compiled_fns: Option<&CompiledFns>,
+        site: TopicArgSite,
     ) -> Result<Value, RuntimeError> {
         // Upgrade WeakSub to Sub transparently
         let target = if let ValueView::WeakSub(weak) = target.view() {
@@ -855,7 +871,7 @@ impl Interpreter {
                 .or(compiled_fns)
                 .unwrap_or(&empty_fns);
             let data = data.clone();
-            return self.call_compiled_closure(&data, &cc, args, fns);
+            return self.call_compiled_closure_at(&data, &cc, args, fns, site);
         }
 
         // A code object built from a registry routine (`&foo`, a `.candidates`
@@ -880,7 +896,7 @@ impl Interpreter {
             // reclassifying it as X::TypeCheck::Argument (raku throws Binding
             // for `my &t = &typed; t("nope")`). One-shot; consumed at entry.
             self.dispatch.suppress_binding_error_enhance = true;
-            return self.call_compiled_closure(&data, &cf.code, args, fns);
+            return self.call_compiled_closure_at(&data, &cf.code, args, fns, site);
         }
 
         // Sub without compiled_code: compile on-the-fly then dispatch via Interpreter
@@ -911,7 +927,7 @@ impl Interpreter {
             // identity instead of the "will never work with declared signature"
             // wrap, which is meant for statically-resolved bare calls.
             self.dispatch.suppress_binding_error_enhance = true;
-            return self.call_compiled_closure(&data, &cc, args, fns);
+            return self.call_compiled_closure_at(&data, &cc, args, fns, site);
         }
 
         // Routine value dispatch (ledger §2, ③ PR-1). Resolve to a function name

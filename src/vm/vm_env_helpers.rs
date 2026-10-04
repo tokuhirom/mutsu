@@ -85,12 +85,6 @@ impl Interpreter {
             ),
             saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
         };
-        // A call-site "the topic argument is a bare literal" flag
-        // (`OpCode::CallOnValue`'s `bare_args`) belongs to exactly one call.
-        // `call_compiled_closure_with_topic` reads it before pushing its frame;
-        // clearing it here stops it reaching any deeper block call.
-        self.pending_call_topic_bare = false;
-        self.pending_call_topic_source = None;
         self.call_frames.push(frame);
     }
 

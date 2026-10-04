@@ -1,5 +1,19 @@
 use super::*;
 
+/// What a value-call site (`$b(...)`, `&b(...)`) knows about its arguments,
+/// for a bare block's implicit `$_`. Every other caller passes the default.
+#[derive(Default)]
+pub(crate) struct TopicArgSite {
+    /// Every positional argument is a container-less expression, so the
+    /// implicit `$_` has nothing behind it to assign to: raku's `{ $_ = 5 }(7)`
+    /// is "Cannot assign to an immutable value".
+    pub(crate) bare: bool,
+    /// The caller's variable name behind the sole positional argument, when it
+    /// is a plain scalar lexical: raku binds the implicit `$_` raw, so `my $b =
+    /// { $_ = 9 }; $b($v)` leaves `$v` at 9.
+    pub(crate) source: Option<String>,
+}
+
 impl Interpreter {
     fn is_forced_outer_scalar_param(cc: &CompiledCode, sym: crate::symbol::Symbol) -> bool {
         cc.forced_free_var_syms.contains(&sym) && cc.param_locals.contains(&sym)
@@ -140,6 +154,19 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        self.call_compiled_closure_at(data, cc, args, compiled_fns, TopicArgSite::default())
+    }
+
+    /// [`Self::call_compiled_closure`] from a value-call site that knows what
+    /// its sole argument is ([`TopicArgSite`]).
+    pub(crate) fn call_compiled_closure_at(
+        &mut self,
+        data: &crate::gc::Gc<crate::value::SubData>,
+        cc: &CompiledCode,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        site: TopicArgSite,
+    ) -> Result<Value, RuntimeError> {
         // ADR-0058: a slurpy/`@_` parameter FLATTENS a `Seq` argument
         // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements), and the
         // binder reads them through pure code -- so pull a still-deferred
@@ -167,7 +194,7 @@ impl Interpreter {
         // not the caller's.
         guard.module.lexical_fatal_mode = data.captured_fatal_mode;
         let result =
-            guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
+            guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns, site);
         // Under `use fatal` (active at this point, before the guard drops
         // below), a returned Failure must throw rather than propagate
         // silently. This makes a WhateverCode like `*.Int` throw when it
@@ -218,6 +245,7 @@ impl Interpreter {
         explicit_topic: Option<Value>,
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
+        site: TopicArgSite,
     ) -> Result<Value, RuntimeError> {
         let unit = self.unit_of_source_sym(data.source_file_sym());
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
@@ -228,6 +256,7 @@ impl Interpreter {
             explicit_topic,
             capture_rw_topic,
             compiled_fns,
+            site,
         );
         self.current_unit = saved_unit;
         result
@@ -241,6 +270,7 @@ impl Interpreter {
         explicit_topic: Option<Value>,
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
+        site: TopicArgSite,
     ) -> Result<Value, RuntimeError> {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
@@ -259,17 +289,10 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
-        // One-shot, and read BEFORE `push_call_frame` (which clears it): the
-        // call site said every positional argument is a container-less
-        // expression, so this block's implicit `$_` has nothing behind it to
-        // assign to. See `Interpreter::pending_call_topic_bare`.
-        let topic_arg_is_bare = std::mem::take(&mut self.pending_call_topic_bare);
-        // The other half of the same question, read at the same instant and for
-        // the same reason: when the sole argument DOES name a caller container,
-        // a bare block's implicit `$_` aliases it rather than copying its value
-        // (`my $b = { $_ = 9 }; $b($v)` leaves `$v` at 9). See
-        // `Interpreter::pending_call_topic_source`.
-        let topic_alias_source = std::mem::take(&mut self.pending_call_topic_source)
+        // What the call site knew about the argument (see [`TopicArgSite`]).
+        let topic_arg_is_bare = site.bare;
+        let topic_alias_source = site
+            .source
             .filter(|_| !cc.is_routine && explicit_topic.is_none() && !capture_rw_topic);
         // Resolve an existing source cell while the caller's env is still
         // current. The closure may later install its captured `$_` over that
@@ -343,6 +366,7 @@ impl Interpreter {
                     explicit_topic.clone(),
                     capture_rw_topic,
                     compiled_fns,
+                    TopicArgSite::default(),
                 )?);
             }
             return Ok(Value::junction(kind, results));

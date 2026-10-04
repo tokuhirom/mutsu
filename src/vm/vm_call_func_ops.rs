@@ -1728,9 +1728,11 @@ impl Interpreter {
         } else {
             false
         };
-        self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
+        let site = super::vm_closure_dispatch::TopicArgSite {
+            bare: bare_args,
+            source: Self::topic_alias_source(&args, arg_sources.as_ref()),
+        };
         self.set_pending_call_arg_sources(arg_sources);
-        self.pending_call_topic_bare = bare_args;
         let rw_callable = self.in_lvalue_assignment
             && matches!(
                 target.view(),
@@ -1738,10 +1740,8 @@ impl Interpreter {
             );
         let saved_rw_context = self.rw_return_context;
         self.rw_return_context |= rw_callable;
-        let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+        let result = self.vm_call_on_value_at(target, args, Some(compiled_fns), site);
         self.rw_return_context = saved_rw_context;
-        self.pending_call_topic_bare = false;
-        self.pending_call_topic_source = None;
         self.set_pending_call_arg_sources(None);
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
@@ -1835,9 +1835,11 @@ impl Interpreter {
             } else {
                 false
             };
-            self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
+            let site = super::vm_closure_dispatch::TopicArgSite {
+                bare: bare_args,
+                source: Self::topic_alias_source(&args, arg_sources.as_ref()),
+            };
             self.set_pending_call_arg_sources(arg_sources);
-            self.pending_call_topic_bare = bare_args;
             let rw_callable = self.in_lvalue_assignment
                 && matches!(
                     target.view(),
@@ -1845,10 +1847,8 @@ impl Interpreter {
                 );
             let saved_rw_context = self.rw_return_context;
             self.rw_return_context |= rw_callable;
-            let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+            let result = self.vm_call_on_value_at(target, args, Some(compiled_fns), site);
             self.rw_return_context = saved_rw_context;
-            self.pending_call_topic_bare = false;
-            self.pending_call_topic_source = None;
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
