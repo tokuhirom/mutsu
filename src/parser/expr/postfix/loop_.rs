@@ -482,6 +482,27 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, Expr::DoStmt(Box::new(stmt))));
         }
         let (r, expr) = parse_prefix_listop_operand(r)?;
+        // `lazy BLOCK` RUNS the block (raku: `lazy { say "run"; 1,2,3 }` prints
+        // `run` at once) and marks its *result* lazy, so the block is re-hosted
+        // as `do BLOCK` here. Leaving it a closure value would give the prefix
+        // the same AST as the method call `{ ... }.lazy`, which must instead
+        // die "No such method 'lazy' for invocant of type 'Block'" (#11629).
+        let expr = match expr {
+            Expr::AnonSub {
+                body,
+                is_block: true,
+                ..
+            }
+            | Expr::AnonSubParams { body, .. } => Expr::DoBlock {
+                body,
+                // The braces are the user's own block, merely run inline, so it
+                // keeps that block's identity: `lazy { let $x = 2; Nil }`
+                // resolves the save here (GH-7635).
+                label: None,
+                origin: crate::ast::DoBlockOrigin::SourceBlock,
+            },
+            other => other,
+        };
         return Ok((
             r,
             Expr::MethodCall {
