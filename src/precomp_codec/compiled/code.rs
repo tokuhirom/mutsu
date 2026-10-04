@@ -152,7 +152,8 @@ impl Encode for CompiledCode {
             op_scan_index: _,
             stmt_pool_bodies: _,
             stmt_pool_signatures: _,
-            jit: _,
+            #[cfg(feature = "jit")]
+                jit: _,
         } = self;
         ops.encode(encoder)?;
         op_lines.encode(encoder)?;
@@ -422,6 +423,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             op_scan_index: Default::default(),
             stmt_pool_bodies: Default::default(),
             stmt_pool_signatures: Default::default(),
+            #[cfg(feature = "jit")]
             jit: Default::default(),
         })
     }
