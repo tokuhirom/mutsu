@@ -2477,12 +2477,6 @@ pub struct Interpreter {
     /// letting a JIT-compiled nqp op leave a stale line behind. Everything else
     /// still goes through `set_pending_callsite_line`.
     pub(crate) test_pending_callsite_line: Option<i64>,
-    /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
-    /// probe every typed store makes (`var_type_constraint_value_sym`). The
-    /// mapping is a pure function of the name, so caching it is sound
-    /// unconditionally; one entry suffices because a hot loop stores to the
-    /// same variable every iteration.
-    type_meta_key_cache: std::cell::Cell<Option<(Symbol, Symbol)>>,
     /// Operand buffer reused by every `OpCode::NqpOp` execution.
     ///
     /// An nqp op's operand list is statically shaped and dies with the op, so
@@ -2625,10 +2619,6 @@ pub struct Interpreter {
     /// moment the main list drops them: when a frame that actually owns the slot
     /// has absorbed the value.
     pub(crate) pending_runtime_name_writes: Vec<String>,
-    /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
-    /// container subclass's NATIVE `AT-KEY` when a user override asks for it
-    /// with `nextcallee`. Built on first use; see `container_element_proxy`.
-    container_element_proxy: Option<Value>,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a bare block is evaluating the tail of an `is rw` routine

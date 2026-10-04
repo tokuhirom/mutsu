@@ -411,6 +411,16 @@ pub(crate) struct ResolutionCaches {
     /// is one refcount bump and leaves the table untouched.
     /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
     pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
+    /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
+    /// probe every typed store makes (`var_type_constraint_value_sym`). The
+    /// mapping is a pure function of the name, so caching it is sound
+    /// unconditionally; one entry suffices because a hot loop stores to the
+    /// same variable every iteration.
+    pub(crate) type_meta_key_cache: std::cell::Cell<Option<(Symbol, Symbol)>>,
+    /// The `-> \obj, \key { Proxy.new(...) }` closure that stands in for a
+    /// container subclass's NATIVE `AT-KEY` when a user override asks for it
+    /// with `nextcallee`. Built on first use; see `container_element_proxy`.
+    pub(crate) container_element_proxy: Option<Value>,
 }
 
 impl ResolutionCaches {
