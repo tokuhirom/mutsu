@@ -2892,9 +2892,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if (method == "statements"
         && matches!(
             node.class,
-            RakuAstClass::StatementList
-                | RakuAstClass::StatementSequence
-                | RakuAstClass::SemiList
+            RakuAstClass::StatementList | RakuAstClass::StatementSequence | RakuAstClass::SemiList
         ))
         || (method == "args" && node.class == RakuAstClass::ArgList)
     {
