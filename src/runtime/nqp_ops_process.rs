@@ -336,6 +336,8 @@ impl Interpreter {
             // The Threads family (#11502): runtime/nqp_ops_thread.rs.
             "currentthread" | "newthread" | "threadrun" | "threadjoin" | "threadid"
             | "threadyield" | "threadlockcount" => return self.call_nqp_op_thread(op, args),
+            // Method lookup by name (#11499): runtime/nqp_ops_object.rs.
+            "findmethod" | "tryfindmethod" => return self.call_nqp_op_object(op, args),
             _ => return self.call_nqp_op_text(op, args),
         })
     }
