@@ -258,8 +258,10 @@ impl Compiler {
             self.code.emit(OpCode::Die { user_throw: false });
             return None;
         }
+        // Only a spec the parser can classify sinks the body here; an
+        // undecidable one keeps the value for the runtime to decide (#11706).
         let sink_last_expr = return_type
-            .map(|s| Self::is_definite_return_spec(s))
+            .and_then(|s| Self::is_definite_return_spec(s))
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
         self.inherit_fold_ctx(&mut sub_compiler);

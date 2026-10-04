@@ -81,10 +81,20 @@ impl Compiler {
     /// later `subset` statement has actually *executed* (#8657); parsing,
     /// unlike execution, always completes for the whole file before this
     /// runs, so the registry is already complete regardless of textual order.
-    pub(crate) fn is_definite_return_spec(spec: &str) -> bool {
+    ///
+    /// `None` means the parser cannot tell: an imported `constant` may be a
+    /// type alias (`my constant word is export = M::T::word`), which only the
+    /// runtime twin can see through `is_type_alias_constant` (#11706). Such a
+    /// body is compiled to keep its value, and the call's
+    /// `finalize_return_with_spec` sinks it when the runtime decides the spec
+    /// is a definite return after all. Imports are bound before the module's
+    /// subs register, so the runtime answer is reliable there; a LOCAL
+    /// constant is not yet initialized when a hoisted sub registers, so it
+    /// keeps the parser's answer.
+    pub(crate) fn is_definite_return_spec(spec: &str) -> Option<bool> {
         let s = spec.trim();
         if s.is_empty() {
-            return false;
+            return Some(false);
         }
         if s.starts_with('$')
             || s.starts_with('\"')
@@ -92,7 +102,7 @@ impl Compiler {
             || s.chars().next().is_some_and(|c| c.is_ascii_digit())
             || (s.starts_with('-') && s[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
         {
-            return true;
+            return Some(true);
         }
         // An uppercase spec naming a known enum VALUE (`--> B` where `enum E
         // <A B C>`) is a definite return of that value, not a type constraint
@@ -106,21 +116,30 @@ impl Compiler {
         if crate::runtime::utils::is_builtin_enum_value(s)
             || super::compile_inputs::is_user_declared_enum_value(s)
         {
-            return true;
+            return Some(true);
         }
         // The CORE terms are definite returns whatever types are loaded: a
         // user class `Red::AST::Empty` registers the short name `Empty` too,
         // but `--> Empty` still means the Empty value (#9530). Same order as
         // the runtime twin `Interpreter::is_definite_return_spec`.
         if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi") {
-            return true;
+            return Some(true);
         }
         if super::compile_inputs::is_user_declared_type(s) {
-            return false;
+            return Some(false);
         }
-        matches!(s, "e" | "tau")
-            || (s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-                && !crate::runtime::utils::is_known_type_constraint(s))
+        if matches!(s, "e" | "tau") {
+            return Some(true);
+        }
+        if s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+            && !crate::runtime::utils::is_known_type_constraint(s)
+        {
+            if super::compile_inputs::is_imported_value_term(s) {
+                return None;
+            }
+            return Some(true);
+        }
+        Some(false)
     }
 
     pub(super) fn emit_nil_value(&mut self) {
