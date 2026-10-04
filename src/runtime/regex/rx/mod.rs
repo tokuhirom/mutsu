@@ -197,9 +197,15 @@ pub(super) enum RxOp {
     DropCapture,
     /// Match `atoms[i]`, whose match reads or writes captures (a
     /// backreference, a `<(` / `)>` marker) or runs a nested pattern (a
-    /// lookaround), through the walk's own single-candidate matcher, and
+    /// lookaround with a `:m` body), through the walk's own single-candidate
+    /// matcher, and
     /// merge the capture delta it returns.
     CapAtom(u32),
+    /// The lookaround `atoms[i]` (`<?before …>`, `<!after …>`): its body runs
+    /// as a nested run of its own program, which sees none of the enclosing
+    /// captures but shares its `:my` lexicals. Zero-width: it passes or fails,
+    /// and files the lexicals the body's code wrote.
+    Look(u32),
     /// Apply `toks[tok]`'s `$<name>=` / `$N=` alias over `regs[start]..pos`,
     /// with the positional count at token start in `regs[pos_base]`.
     Named {

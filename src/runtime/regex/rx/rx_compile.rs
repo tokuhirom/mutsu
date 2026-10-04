@@ -466,18 +466,22 @@ impl Compiler {
             RegexAtom::Alternation(alts) => self.ltm_alternation(token, alts)?,
             RegexAtom::SequentialAlternation(alts) => self.seq_alternation(token, alts)?,
             RegexAtom::Lookaround { pattern, .. } => {
-                // The walk's own lookaround test (`<?before …>`, `<!after …>`)
-                // runs the body through `regex_match_end_from_caps_in_pkg`,
-                // which answers from the body's own compiled program. Compile
-                // the lookaround only when that program exists, so the body
-                // never drops back to the walk in mid-program (D5).
+                // The body runs as a nested run of its own program (`Look`).
+                // Compile the lookaround only when that program exists, so the
+                // body never drops back to the walk in mid-program (D5).
                 let Some(body) = super::rx_entry::program_for(pattern) else {
                     return Err("lookaround-body");
                 };
                 // The body runs code of its own in a nested run.
                 self.has_code |= body.has_code;
                 let i = self.push_atom(&token.atom);
-                self.ops.push(RxOp::CapAtom(i));
+                // A `:m` body matches over the mark-stripped subject, which
+                // the walk's entry maps (`rx_try_ignoremark`).
+                self.ops.push(if pattern.ignore_mark {
+                    RxOp::CapAtom(i)
+                } else {
+                    RxOp::Look(i)
+                });
             }
             RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
