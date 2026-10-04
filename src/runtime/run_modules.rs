@@ -1078,7 +1078,7 @@ impl Interpreter {
             let saved_plain_env: HashMap<crate::symbol::Symbol, Value> = self
                 .env
                 .keys()
-                .filter(|key| !key.as_str().contains("::"))
+                .filter(|key| !crate::qualified::is_qualified_str(key.as_str()))
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
@@ -1564,7 +1564,10 @@ impl Interpreter {
         if let Some(owned_types) = self.module.module_owned_types.get(module).cloned() {
             let own_prefix = format!("{module}::");
             for qualified in owned_types.declared {
-                if let Some((package, _)) = qualified.rsplit_once("::") {
+                if let Some((package, _)) =
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(&qualified))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
                     let package = package.to_string();
                     owned_granted_packages.insert(package.clone());
                     if package == module || package.starts_with(&own_prefix) {
@@ -1683,16 +1686,17 @@ impl Interpreter {
                 qualified
                     .strip_prefix(prefix)
                     .map(|rest| rest.split('\u{0}').next().unwrap_or(rest))
-                    .is_some_and(|rest| !rest.contains("::") && exported_here.contains(rest))
+                    .is_some_and(|rest| {
+                        !crate::qualified::is_qualified_str(rest) && exported_here.contains(rest)
+                    })
             });
             let aliases: Vec<(String, String)> = owned_types
                 .filter_map(|qualified| {
                     // A lexical (`my`) type is filed under a NUL-suffixed key;
                     // its source-facing short name stops at the NUL.
                     let source_name = qualified.split('\u{0}').next().unwrap_or(qualified);
-                    source_name
-                        .rsplit_once("::")
-                        .map(|(_, short)| (short.to_string(), qualified.clone()))
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(source_name))
+                        .map(|(_, short)| (short.as_str().to_string(), qualified.clone()))
                 })
                 .filter(|(short, qualified)| {
                     short != qualified
@@ -1710,7 +1714,7 @@ impl Interpreter {
                 // Also keep them against the module's own name: a later `use` of
                 // this already-loaded module copies from there into ITS importer
                 // (`use_module_with_tags_inner`'s already-loaded branch).
-                let table = crate::runtime::cow_table_mut(&mut self.package_type_aliases);
+                let table = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases);
                 let own = table.entry(module.to_string()).or_default();
                 for (short, qualified) in &aliases {
                     own.entry(short.clone()).or_insert(qualified.clone());
@@ -1740,7 +1744,7 @@ impl Interpreter {
             for owner in owners {
                 let class_static_names = self.lexicals.class_body_static_names.get(&owner);
                 if !module_type_aliases.is_empty() {
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(owner.clone())
                         .or_default()
                         .extend(
@@ -1819,7 +1823,7 @@ impl Interpreter {
             else {
                 continue;
             };
-            if *is_our || *is_dynamic || *is_export || name.contains("::") {
+            if *is_our || *is_dynamic || *is_export || crate::qualified::is_qualified_str(name) {
                 continue;
             }
             // A `constant` is NOT a compunit lexical, whichever way it is
@@ -1903,7 +1907,7 @@ impl Interpreter {
             else {
                 continue;
             };
-            if !*is_dynamic || *is_our || *is_export || name.contains("::") {
+            if !*is_dynamic || *is_our || *is_export || crate::qualified::is_qualified_str(name) {
                 continue;
             }
             if !names.iter().any(|n| n == name) {
@@ -1944,7 +1948,7 @@ impl Interpreter {
     fn collect_unit_package_scope_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         let mut push = |name: &str| {
-            if name.contains("::") || name.contains("__ANON") {
+            if crate::qualified::is_qualified_str(name) || name.contains("__ANON") {
                 return;
             }
             let bare = name
@@ -2105,7 +2109,7 @@ impl Interpreter {
             let bare = name
                 .strip_prefix(['@', '%', '&', crate::runtime::term_names::TERM_PREFIX])
                 .unwrap_or(name.as_str());
-            if name.contains("::")
+            if crate::qualified::is_qualified_str(&name)
                 || !bare
                     .chars()
                     .next()
@@ -2127,7 +2131,7 @@ impl Interpreter {
         target == module
             || target
                 .strip_prefix(module)
-                .is_some_and(|rest| rest.starts_with("::"))
+                .is_some_and(crate::qualified::is_type_capture)
     }
 
     /// The subset of [`Self::collect_module_scope_names`] that are short-name type

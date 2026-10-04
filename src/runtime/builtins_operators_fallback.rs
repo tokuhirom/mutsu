@@ -1376,8 +1376,8 @@ impl Interpreter {
             // that compound name, which the bareword resolver's own package
             // rules decide instead.
             None => {
-                let target =
-                    self.lookup_in_running_package(&self.package_type_aliases, head.as_str())?;
+                let target = self
+                    .lookup_in_running_package(&self.types.package_type_aliases, head.as_str())?;
                 let is_enum = self.registry().enum_types.contains_key(target.as_str());
                 if !is_enum && (constants_only || !self.is_declared_package(target)) {
                     return None;

@@ -169,7 +169,8 @@ impl Interpreter {
                 return Some(frame.package.resolve());
             }
         }
-        self.method_class_stack
+        self.types
+            .method_class_stack
             .last()
             .map(|f| f.name.resolve())
             .or_else(|| Some(self.current_package().to_string()))

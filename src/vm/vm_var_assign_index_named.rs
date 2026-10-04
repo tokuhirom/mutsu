@@ -295,7 +295,7 @@ impl Interpreter {
     /// enumerating built-in names, which is what a first attempt got wrong:
     /// `"hi".encode` is a `utf8`, a name no container list mentions.
     fn instance_is_plain_user_object(&mut self, class_name: &str) -> bool {
-        if !self.user_declared_classes.contains(class_name) {
+        if !self.types.user_declared_classes.contains(class_name) {
             return false;
         }
         const CONTAINER_BASES: &[&str] = &[
@@ -2218,7 +2218,7 @@ impl Interpreter {
                                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
-                                    crate::gc::Gc::new(crate::value::ContainerCell::new(v)),
+                                    self.promote_bind_source_cell(source_name, v),
                                 )),
                             }
                         } else {
@@ -2578,7 +2578,7 @@ impl Interpreter {
                             Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
-                                crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                                self.promote_bind_source_cell(source_name, val.clone()),
                             )),
                         }
                     } else if matches!(
@@ -4683,7 +4683,7 @@ impl Interpreter {
         var_name: &str,
         cell_addr: &mut Option<usize>,
     ) -> Option<&mut Value> {
-        if let Some(root) = self.unit_lexical_slot_mut(var_name) {
+        if let Some(root) = self.unit_lexical_slot_mut(var_name, None) {
             let root = root as *mut Value;
             let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
@@ -5075,7 +5075,7 @@ impl Interpreter {
         let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
             .as_ref()
-            .map(|_| crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())));
+            .map(|name| self.promote_bind_source_cell(name, val.clone()));
         // ADR-0040 slice 4: the leaf of a 3+-level chain is an element store
         // like any other (see the two-level op's hook above). A `:=` bind keeps
         // its bare source value, and a slice/junction innermost subscript is
@@ -5650,7 +5650,7 @@ impl Interpreter {
                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
-                    crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                    self.promote_bind_source_cell(source_name, val.clone()),
                 )),
             }
         } else {

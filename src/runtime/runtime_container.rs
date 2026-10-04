@@ -268,7 +268,7 @@ impl Interpreter {
                 );
             }
             ValueView::Instance { id, .. } => {
-                let mut guard = self.instance_type_metadata.write().unwrap();
+                let mut guard = self.types.instance_type_metadata.write().unwrap();
                 Arc::make_mut(&mut guard).insert(id, info);
             }
             ValueView::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
@@ -329,7 +329,7 @@ impl Interpreter {
     }
 
     pub(crate) fn container_type_metadata(&self, value: &Value) -> Option<ContainerTypeInfo> {
-        container_type_metadata_with(value, &self.instance_type_metadata)
+        container_type_metadata_with(value, &self.types.instance_type_metadata)
     }
 
     // Object-hash original keys are embedded in `HashData.original_keys`

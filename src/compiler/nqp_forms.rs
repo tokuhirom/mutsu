@@ -179,6 +179,18 @@ impl Compiler {
             "nqp::with" | "nqp::without" | "nqp::defor" => {
                 self.try_compile_nqp_cond_form(name, args, sunk)
             }
+            // The atomic ops that name a container (#11502): see
+            // nqp_atomic_forms.rs.
+            "nqp::atomicload"
+            | "nqp::atomicload_i"
+            | "nqp::atomicstore"
+            | "nqp::atomicstore_i"
+            | "nqp::atomicinc_i"
+            | "nqp::atomicdec_i"
+            | "nqp::atomicadd_i"
+            | "nqp::cas"
+            | "nqp::cas_i"
+            | "nqp::atomicbindattr" => self.try_compile_nqp_atomic_form(name, args),
             // nqp::where(obj) — the object's identity integer. It is `.WHERE`
             // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
             // that method rather than keeping a second identity scheme (#9346).

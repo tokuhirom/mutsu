@@ -840,7 +840,7 @@ impl Interpreter {
                 let type_name = args[0].to_string_value();
                 let key = args[1].to_string_value();
                 let value = args[2].clone();
-                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                     .entry(type_name)
                     .or_default()
                     .insert(key, value);
@@ -1372,6 +1372,7 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
             "__mutsu_cas_var" => self.builtin_cas_var(args),
+            "__mutsu_atomic_elem" => self.builtin_atomic_elem(&args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args),
             "__mutsu_cas_array_elem_code" => self.builtin_cas_array_elem_code(args),
             "__mutsu_cas_array_multidim_code" => self.builtin_cas_array_multidim_code(args),

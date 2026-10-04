@@ -183,7 +183,10 @@ impl Interpreter {
             return SeqGeneratorShape::RoutineFixed(2);
         }
 
-        let local_prefix = format!("{package}::{name}/");
+        let local_prefix = format!(
+            "{}/",
+            crate::qualified::qualified_text(package, name).as_str()
+        );
         let global_prefix = format!("GLOBAL::{name}/");
         let mut fixed_arity = 0usize;
         let mut slurpy_min: Option<usize> = None;
@@ -236,7 +239,10 @@ impl Interpreter {
 
     fn sequence_has_registered_routine(&self, package: &str, name: &str) -> bool {
         let name = name.strip_prefix('&').unwrap_or(name);
-        let local_prefix = format!("{package}::{name}/");
+        let local_prefix = format!(
+            "{}/",
+            crate::qualified::qualified_text(package, name).as_str()
+        );
         let global_prefix = format!("GLOBAL::{name}/");
         self.registry().functions.keys().any(|key| {
             let ks = key.resolve();

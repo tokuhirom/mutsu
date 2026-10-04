@@ -353,8 +353,9 @@ impl Compiler {
             RegexQuant::OneOrMore => self.repeat(token, 1, None)?,
             RegexQuant::Repeat(min, max) => {
                 if max.is_some_and(|max| min > max) {
-                    // The walk raises "Quantifier range is empty".
-                    return Err("empty-range");
+                    // Raised where the cursor reaches it, as in the walk.
+                    self.ops.push(RxOp::EmptyRange);
+                    return Ok(());
                 }
                 self.repeat(token, min, max)?
             }

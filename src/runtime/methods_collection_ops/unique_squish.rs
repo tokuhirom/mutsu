@@ -355,7 +355,7 @@ impl Interpreter {
                 self.squish_env_diff(before, &mut revert_values, &mut revert_remove);
             }
             let seq_id = items.identity();
-            self.squish_iterator_meta.insert(
+            self.types.squish_iterator_meta.insert(
                 seq_id,
                 super::super::SquishIteratorMeta {
                     source_items,

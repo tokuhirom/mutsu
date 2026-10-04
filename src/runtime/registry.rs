@@ -1551,7 +1551,7 @@ impl Registry {
     /// the single implementation shared by `Interpreter::has_proto` and the VM's
     /// native dispatch path.
     pub(crate) fn has_proto(&self, current_package: &str, name: &str) -> bool {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             return self.proto_subs.contains(name);
         }
         if dispatch_key::with_qualified(current_package, name, |k| self.proto_subs.contains(k)) {

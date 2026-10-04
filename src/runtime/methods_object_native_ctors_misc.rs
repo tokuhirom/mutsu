@@ -194,7 +194,9 @@ impl Interpreter {
                     let seq_id = items.identity();
                     // Store off the scoped env so the association
                     // survives sub/block returns (see field docs).
-                    self.predictive_seq_iters.insert(seq_id, iterator.clone());
+                    self.types
+                        .predictive_seq_iters
+                        .insert(seq_id, iterator.clone());
                     self.env.insert(
                         MetaNs::PredictiveSeqIter.key_for_id(seq_id as u64),
                         iterator.clone(),

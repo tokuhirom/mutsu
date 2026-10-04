@@ -22,7 +22,8 @@ impl Interpreter {
         let (exact_local, prefix_local) = if crate::qualified::is_qualified(Symbol::intern(name)) {
             (name.to_string(), format!("{name}/"))
         } else {
-            (format!("{package}::{name}"), format!("{package}::{name}/"))
+            let exact = crate::qualified::qualified_text(package, name).as_str();
+            (exact.to_string(), format!("{exact}/"))
         };
         let exact_global = format!("GLOBAL::{name}");
         let prefix_global = format!("GLOBAL::{name}/");

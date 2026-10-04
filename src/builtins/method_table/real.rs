@@ -80,7 +80,7 @@ fn truncate(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 
 /// An integral `f64` as an `Int`, big when it does not fit a word.
 // Cost: O(1) in range; O(b) otherwise, b = the result's size in bits.
-fn integral_num_to_int(f: f64) -> Value {
+pub(super) fn integral_num_to_int(f: f64) -> Value {
     if f >= -(2f64.powi(63)) && f < 2f64.powi(63) {
         return Value::int(f as i64);
     }

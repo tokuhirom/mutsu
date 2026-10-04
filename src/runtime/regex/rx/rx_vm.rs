@@ -98,7 +98,6 @@ impl Interpreter {
         let mut pkg = root_pkg;
         let mut pc = 0u32;
         let mut pos = start;
-        let mut farthest = start;
         macro_rules! reg {
             ($r:expr) => {
                 regs[base + $r as usize]
@@ -180,7 +179,6 @@ impl Interpreter {
                     }
                     levels.edit(|s| s.merge_delta(delta));
                     pos = end;
-                    farthest = farthest.max(pos);
                     true
                 } else {
                     false
@@ -245,7 +243,6 @@ impl Interpreter {
                     RxOp::Atom(i) => match self.rx_atom_at(program, i as usize, chars, pos, pkg) {
                         Some(next) => {
                             pos = next;
-                            farthest = farthest.max(pos);
                             pc += 1;
                             true
                         }
@@ -280,7 +277,6 @@ impl Interpreter {
                             false
                         } else {
                             pos = ends[run + n as usize];
-                            farthest = farthest.max(pos);
                             if possessive || n == min {
                                 ends.truncate(run);
                             } else {
@@ -301,7 +297,6 @@ impl Interpreter {
                     RxOp::Ws => match self.rx_ws_at(chars, pos, pkg) {
                         Some(next) => {
                             pos = next;
-                            farthest = farthest.max(pos);
                             pc += 1;
                             true
                         }
@@ -611,7 +606,6 @@ impl Interpreter {
                                             Some((end, delta)) => {
                                                 levels.edit(|s| s.merge_delta(delta));
                                                 pos = end;
-                                                farthest = farthest.max(pos);
                                                 true
                                             }
                                             None => false,
@@ -635,7 +629,6 @@ impl Interpreter {
                                         ) {
                                             Some(end) => {
                                                 pos = end;
-                                                farthest = farthest.max(pos);
                                                 true
                                             }
                                             None => false,
@@ -882,6 +875,7 @@ impl Interpreter {
                     | RxOp::ReduceAction { .. }
                     | RxOp::GoalEnd { .. }
                     | RxOp::GoalFail { .. }
+                    | RxOp::EmptyRange
                     | RxOp::ConjTail { .. }) => {
                         pc += 1;
                         if let RxOp::Code(_) = op {
@@ -904,7 +898,6 @@ impl Interpreter {
                         ) {
                             Some(next) => {
                                 pos = next;
-                                farthest = farthest.max(pos);
                                 true
                             }
                             None => false,
@@ -1270,7 +1263,6 @@ impl Interpreter {
         }
         self.rx_scopes_unwind(&mut scopes);
         self.restore_rx_start_invocant(root_invocant);
-        super::super::regex_helpers::record_regex_farthest_position(farthest);
         result
     }
 }

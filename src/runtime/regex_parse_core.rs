@@ -3880,7 +3880,7 @@ impl Interpreter {
                                                 RegexAtom::Named(name.into())
                                             }
                                         } // close else (non-empty negated_name)
-                                    } else if trimmed.starts_with("::") {
+                                    } else if crate::qualified::is_type_capture(trimmed) {
                                         // <::($expr)> — symbolic indirect subrule. The
                                         // double colon distinguishes it from a `<:PropName>`
                                         // Unicode-property assertion; keep it as a Named atom

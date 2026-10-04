@@ -349,6 +349,10 @@ pub(super) enum RxOp {
     GoalFail {
         tok: u32,
     },
+    /// A quantifier whose range is empty (`a ** 3..1`), reached: raise
+    /// "Quantifier range is empty" (`X::Syntax::Regex::QuantifierValue`), as
+    /// the walk does where it reaches the atom, and fail.
+    EmptyRange,
     /// A complete match ending at `pos`; in a callee frame, the return.
     Match,
 }

@@ -127,7 +127,8 @@ impl SubscriptKind {
 /// (`$x OP= rhs`). Each variant maps to the same `exec_*_op` the plain
 /// `Binary` path uses, so the fused op shares exact operator semantics.
 /// See `OpCode::AtomicCompoundVar`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum CompoundBaseOp {
     Add,
     Sub,
@@ -211,7 +212,8 @@ impl CompoundBaseOp {
 /// LHS writeback target of `OpCode::SmartMatchExpr`, boxed to keep the opcode
 /// at 48 bytes. A destructive RHS (`s///` / `tr///`) mutates the topic alias,
 /// and the modified topic must flow back into the LHS lvalue.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum SmartMatchLhs {
     /// `$x ~~ s///` — write the modified topic back into the named variable.
     /// `slot` is the compile-time-resolved local slot when the name is a
@@ -246,7 +248,8 @@ pub(crate) enum SmartMatchLhs {
 /// `Vec<OpCode>` to 192 bytes — see docs/opcode-design-review.md). The VM
 /// borrows the boxed spec directly, so executing a `for` loop no longer clones
 /// any of these fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct ForLoopSpec {
     pub(crate) param_idx: Option<u32>,
     pub(crate) param_local: Option<u32>,
@@ -451,11 +454,13 @@ pub(crate) struct AttrDeclChunks {
 /// (ADR-0019 D2c-4, matching `ClassAttributeDef`'s own D2c-2 field type) —
 /// every reader runs them through `Interpreter::eval_decl_trait_arg`/
 /// `.literal()` instead of matching `Expr::Literal` directly.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledAttrDecl {
     pub(crate) name: String,
     pub(crate) is_public: bool,
     pub(crate) default: Option<DeclTraitArg>,
+    #[bincode(with_serde)]
     pub(crate) handles: Vec<crate::ast::HandleSpec>,
     pub(crate) is_rw: bool,
     pub(crate) is_readonly: bool,
@@ -477,6 +482,7 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) is_type: Option<String>,
     pub(crate) deprecated_message: Option<String>,
     pub(crate) is_built: Option<bool>,
+    #[bincode(with_serde)]
     pub(crate) unknown_traits: Vec<(String, String, Option<crate::ast::Expr>)>,
     /// Declared shape dimensions for an `@`-sigil attribute (`has @.a[2]`),
     /// extracted once from the raw `default` expression's compiler-generated
@@ -604,11 +610,15 @@ impl CompiledAttrDecl {
 /// consumer reads. `name_expr` is kept only for its `is_some()` check — the
 /// resolved runtime name itself comes from the D3-1 `method_name_chunks`
 /// cursor, not from re-evaluating this field.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledMethodDecl {
     pub(crate) name: Symbol,
+    #[bincode(with_serde)]
     pub(crate) name_expr: Option<Expr>,
+    #[bincode(with_serde)]
     pub(crate) param_defs: Vec<ParamDef>,
+    #[bincode(with_serde)]
     pub(crate) body: Vec<Stmt>,
     pub(crate) multi: bool,
     pub(crate) is_rw: bool,
@@ -621,7 +631,9 @@ pub(crate) struct CompiledMethodDecl {
     pub(crate) return_type: Option<String>,
     pub(crate) is_default_candidate: bool,
     pub(crate) deprecated_message: Option<String>,
+    #[bincode(with_serde)]
     pub(crate) handles: Vec<crate::ast::HandleSpec>,
+    #[bincode(with_serde)]
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
@@ -728,7 +740,8 @@ impl CompiledMethodDecl {
 
 /// Payload of `OpCode::CaptureNestedMethodEnv`. Boxed to keep
 /// `size_of::<OpCode>()` small.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NestedMethodCaptureSpec {
     /// The per-package-body index shared with the hoisted method's
     /// `CompiledMethodDecl::nested_capture_index`.
@@ -750,7 +763,8 @@ pub(crate) struct NestedMethodCaptureSpec {
 /// this exact attribute (the nested-declaration case above), it is a no-op;
 /// otherwise it throws the pre-built `error` (`X::Attribute::NoPackage` or
 /// `X::Attribute::Package`). Boxed to keep `size_of::<OpCode>()` small.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct RuntimeHasDeclSpec {
     pub(crate) decl: CompiledAttrDecl,
     /// The `X::Attribute::*` error to throw when this `has` runs outside a
@@ -797,7 +811,8 @@ pub(crate) const OUTER_STORE_ONLY: u32 = u32::MAX - 1;
 /// So the clause needs to know how its matcher was spelled; the runtime value
 /// alone cannot tell `when Str` from `when $mt` (both are the `Str` type
 /// object) nor `when 2` from `when C2` (both are `Int 2`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum WhenMatcherKind {
     /// A literal token (`when 2`, `when "y"`, `when Nil`): `Int 0` when either
     /// the matcher or the topic is a type object, `Bool::False` otherwise.
@@ -813,7 +828,8 @@ pub(crate) enum WhenMatcherKind {
 
 /// How [`OpCode::SetVarDynamic`] prepares a declaration's binding before its
 /// initializer runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum DeclReset {
     /// Leave the binding alone: `state`, `our`, constants, and `@`/`%`
     /// declarations preserve their existing binding when an initializer fails.
@@ -838,7 +854,8 @@ pub(crate) enum DeclReset {
 }
 
 /// How `OpCode::DoBlockExpr` treats the bindings its body made, on exit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum DoBlockIsolation {
     /// Nothing is reverted: a desugar's statements declare straight into the
     /// enclosing scope.
@@ -859,7 +876,8 @@ pub(crate) enum DoBlockIsolation {
 /// lexicals. Routines and imports are not compiler scope-frame entries (a
 /// `use` installs them at run time), so the compiler records instead which
 /// kind of pad the stash names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum LexicalStashRoutines {
     /// A compunit's own root, a frame of an enclosing compilation, or a
     /// `LEXICAL::` view: every routine visible here by name.
@@ -892,7 +910,8 @@ pub(crate) enum LoopExitGuardField {
 /// re-bind.
 pub(crate) const NO_PACKAGE_LEXICALS: u32 = u32::MAX;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum OpCode {
     // -- Typed IR (TRIR) calls --
     /// ADR-0110 §3.3: call a statically resolved TRIR routine whose arguments
@@ -4882,7 +4901,8 @@ mod const_pool_dedup {
 }
 
 /// A compiled chunk of bytecode.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct EnvConsumerSlots {
     pub(crate) for_loop: Vec<bool>,
     pub(crate) block_scope: Vec<bool>,
@@ -4914,7 +4934,8 @@ pub(crate) struct EnvConsumerSlots {
 /// handed to the runtime as an `Expr` and compiled on demand at every
 /// registration; the compiler now lowers them once, and registration runs the
 /// chunk through the VM's normal re-entrant bytecode entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledDeclExpr {
     pub(crate) code: Arc<CompiledCode>,
     pub(crate) fns: Arc<CompiledFns>,
@@ -5002,11 +5023,12 @@ fn attr_shape_dims_from_expr(expr: &Expr) -> Option<Vec<usize>> {
 /// registration still walks a source declaration (the prelude's
 /// forward-declaration pass and the class/role method walkers, migrated in
 /// phase D); it is the existing fallback narrowed to those callers, not a new one.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum DeclTraitArg {
     Literal(Value),
     Compiled(CompiledDeclExpr),
-    Ast(Box<Expr>),
+    Ast(#[bincode(with_serde)] Box<Expr>),
 }
 
 impl DeclTraitArg {
@@ -5076,16 +5098,19 @@ fn zip_decl_trait_args(
         .collect()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledSubDeclPlan {
     pub(crate) name: Symbol,
     /// The compiled chunk producing a runtime-resolved routine name, for
     /// `sub ::($name) {...}`. `None` for the ordinary literal-name declaration.
     pub(crate) name_chunk: Option<CompiledDeclExpr>,
     pub(crate) params: Vec<String>,
+    #[bincode(with_serde)]
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,
     pub(crate) associativity: Option<String>,
+    #[bincode(with_serde)]
     pub(crate) signature_alternates: Vec<(Vec<String>, Vec<ParamDef>)>,
     /// Registration metadata for each `signature_alternates` slot (index-
     /// aligned), computed at plan lowering like `routine_metadata` is for the
@@ -5160,7 +5185,8 @@ pub(crate) struct CompiledSubDeclPlan {
 /// captured binding; `alias` / `alias_slot` name the hidden local.
 /// `env_param` marks a slotless variable the declaring frame itself binds by
 /// name in its env: a single `for ... -> $i` loop parameter (mutsu#10512).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct LexSubFreeAlias {
     pub(crate) var: Symbol,
     pub(crate) var_slot: Option<u32>,
@@ -5173,15 +5199,18 @@ pub(crate) struct LexSubFreeAlias {
 /// the package its compiled body was keyed under, and that body's
 /// fingerprint. All three are compile-time facts, so a call site and the
 /// declaration agree on the key without consulting the registry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct FrameLexicalRef {
     pub(crate) name: Symbol,
     pub(crate) package: Symbol,
     pub(crate) fingerprint: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledRoutineMetadata {
+    #[bincode(with_serde)]
     pub(crate) effective_param_defs: Vec<ParamDef>,
     pub(crate) empty_sig: bool,
     pub(crate) has_non_nil_return: bool,
@@ -5565,7 +5594,8 @@ pub(crate) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
     crate::compiler::routine_scans::has_non_nil_return(stmts)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledClassDeclPlan {
     pub(crate) name: Symbol,
     /// The compiled chunk producing a runtime-resolved type name
@@ -5661,7 +5691,8 @@ pub(crate) struct CompiledClassDeclPlan {
 
 /// One class-body statement, typed (ADR-0019 D6-3a). See
 /// [`CompiledClassDeclPlan::body_plan`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum ClassBodyOp {
     /// A top-level (or nested-sub) `has` declaration. Its typed descriptor
     /// lives in `attr_decls`, keyed by this same name (ADR-0019 D10:
@@ -5694,6 +5725,7 @@ pub(crate) enum ClassBodyOp {
         /// performs the real (non-hoisted) registration that later BEGIN-time
         /// code sees as "reached" (`Interpreter::mark_hoisted_decl_reached`).
         hoist_chunk: Option<CompiledDeclExpr>,
+        #[bincode(with_serde)]
         raw: Stmt,
         /// See [`ClassBodyOp::Other::is_swallowable`]. Always `false` for a
         /// `sub` declaration (a `Stmt::SubDecl` never matches the
@@ -5708,16 +5740,19 @@ pub(crate) enum ClassBodyOp {
     /// `our &baz ::= &bar` — alias a method under a new name.
     CodeAlias {
         chunk: Option<CompiledDeclExpr>,
+        #[bincode(with_serde)]
         raw: Stmt,
     },
     /// A `proto method`/`proto submethod` declaration.
     ProtoMethod {
         chunk: Option<CompiledDeclExpr>,
+        #[bincode(with_serde)]
         raw: Stmt,
     },
     /// A `will leave { ... }`-style class-body-scoped LEAVE phaser.
     LeavePhaser {
         chunk: Option<CompiledDeclExpr>,
+        #[bincode(with_serde)]
         raw: Stmt,
     },
     /// A `token`/`rule` declaration inside a class body (ADR-0019 F7 slice
@@ -5737,6 +5772,7 @@ pub(crate) enum ClassBodyOp {
     /// EVAL, `my`/`our` lexicals, ...).
     Other {
         chunk: Option<CompiledDeclExpr>,
+        #[bincode(with_serde)]
         raw: Stmt,
         /// Whether `raw` is a `BEGIN` phaser or an `EVAL` call (ADR-0019
         /// D10 follow-up), precomputed here so `class_body_other_stmt`
@@ -6010,7 +6046,8 @@ fn is_compile_time_phaser_stmt(stmt: &Stmt) -> bool {
 /// `Stmt::DoesDecl` statements. One op per `DoesDecl` statement the
 /// (`SyntheticBlock`-flattened) body contains, in source order — mirroring
 /// `walk_role_body`'s own flatten exactly so the two sides' cursors agree.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct RoleParentOp {
     /// The parent/hidden-class name (unused when `hidden` is set — the
     /// `is hidden` marker names nothing).
@@ -6044,7 +6081,8 @@ pub(crate) struct RoleParentOp {
 /// carries no compiled chunk itself — deferred-statement chunk compilation
 /// is `RoleDef::deferred_body`'s own `DeferredBodyOp` (ADR-0019 D8), a
 /// separate type built from this one's `Deferred` ops.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum RoleBodyOp {
     /// A top-level `has` declaration. Its typed descriptor lives in
     /// `attr_decls`, keyed by this same name — `compile_role_attr_decls` has
@@ -6068,6 +6106,7 @@ pub(crate) enum RoleBodyOp {
     /// marker-sized, so an unboxed `Stmt` would trip
     /// `clippy::large_enum_variant`.
     Deferred {
+        #[bincode(with_serde)]
         raw: Box<Stmt>,
         /// Whether `raw` is itself the `__mutsu_stub_die`/`__mutsu_stub_warn`
         /// stub-marker call (ADR-0019 D10 follow-up), precomputed here so
@@ -6120,7 +6159,8 @@ fn is_stub_marker_stmt(stmt: &Stmt) -> bool {
 /// How a deferred role-body statement's package resolves at composition
 /// time (ADR-0019 D8-1), mirroring `run_composed_role_deferred_body`'s
 /// `is_type_decl`/`is_regex_decl` classification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum DeferredBodyOpKind {
     /// A nested `class`/`role`/`enum` declaration — registers under the
     /// role's OWN package at composition time.
@@ -6140,7 +6180,8 @@ pub(crate) enum DeferredBodyOpKind {
 /// re-parsing/re-lowering the raw statement per statement on every
 /// composition. Reuses [`RoleBodyOp::Deferred`]'s raw statements as input —
 /// see [`deferred_body_ops`](CompiledRoleDeclPlan::deferred_body_ops).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct DeferredBodyOp {
     pub(crate) kind: DeferredBodyOpKind,
     /// `Some` only for `TypeDecl`: a nested `class`/`role` in a role body
@@ -6162,6 +6203,7 @@ pub(crate) struct DeferredBodyOp {
     /// `run_composed_role_deferred_body`'s own re-scan of every deferred
     /// statement for this same fact. Empty for every other statement kind.
     pub(crate) declared_vars: Vec<Symbol>,
+    #[bincode(with_serde)]
     pub(crate) raw: Stmt,
     /// `Some` only for `TokenRule`: the `SetLine` marker immediately
     /// preceding this declaration in the role body, for `Code.line`/
@@ -6206,10 +6248,12 @@ pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
         .collect()
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
     pub(crate) type_params: Vec<String>,
+    #[bincode(with_serde)]
     pub(crate) type_param_defs: Vec<ParamDef>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
@@ -6258,7 +6302,7 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// `check_role_body_our_scoped_decls` re-walking the body every
     /// registration; `register_role_decl` raises
     /// `X::Declaration::OurScopeInRole` from this fact.
-    pub(crate) our_scope_violation: Option<&'static str>,
+    pub(crate) our_scope_violation: Option<crate::static_str::StaticStr>,
     /// Typed `does`/`hides`/`is hidden` ops for this role's own body
     /// (ADR-0019 D7-3), one per `DoesDecl` statement in source order; see
     /// [`RoleParentOp`].
@@ -6303,10 +6347,12 @@ pub(crate) struct CompiledRoleDeclPlan {
 /// at compile time (ADR-0019 C8). The `{*}` placeholder in a non-trivial body
 /// is rewritten to a `__PROTO_DISPATCH__()` call and compiled once, here,
 /// instead of being rewritten and OTF-compiled on every call.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledProtoDeclPlan {
     pub(crate) name: Symbol,
     pub(crate) params: Vec<String>,
+    #[bincode(with_serde)]
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,
     pub(crate) is_export: bool,
@@ -6325,6 +6371,7 @@ pub(crate) struct CompiledProtoDeclPlan {
     /// user-operator dispatch fallback) and for judging triviality
     /// (`vm_resolve_trivial_proto_candidate`). Dropping it is a later box,
     /// not this one.
+    #[bincode(with_serde)]
     pub(crate) legacy_body: Vec<Stmt>,
     /// Stable key of the bytecode compiled for the `{*}`-rewritten body.
     /// `None` for a trivial proto (an empty body, or a body that is just a
@@ -6346,12 +6393,15 @@ pub(crate) struct CompiledProtoDeclPlan {
 /// fields. See `todo/deep/adr0019-f7-token-rule-declaration-typed-plan.md`
 /// ("Found while scoping") for why that drop was verified benign, not a live
 /// bug this box should fix.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct CompiledTokenDeclPlan {
     pub(crate) name: Symbol,
     pub(crate) params: Vec<String>,
+    #[bincode(with_serde)]
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) multi: bool,
+    #[bincode(with_serde)]
     pub(crate) raw_body: Vec<Stmt>,
     /// The declarator keyword's source line (`Code.line`/`Code.file`), fed
     /// into the registered `FunctionDef`. Unlike `Sub`/`Method` (whose line
@@ -6449,7 +6499,8 @@ fn build_token_decl_plan(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum CompiledDeclPlanRef {
     Sub(u32),
     Class(u32),
@@ -6464,7 +6515,8 @@ pub(crate) enum CompiledDeclPlanRef {
 /// One binding of an enclosing compilation frame that a nested body reaches
 /// through `OUTER::` past a shadowing declaration (see
 /// [`CompiledCode::outer_captures`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct OuterCapture {
     /// The env key the binding's shared cell travels under
     /// (`__mutsu_outer::<scope>:<name>`), unique per binding.
@@ -6507,13 +6559,13 @@ pub(crate) struct CompiledCode {
     pub(crate) source_file: Option<Symbol>,
     /// Compile-time cursor: the source line attached to every op emitted from
     /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
-    emit_line: u32,
+    pub(crate) emit_line: u32,
     pub(crate) constants: Vec<Value>,
     /// Reverse index over `constants` for pool dedup (ADR-0006 §2.4): the same
     /// literal or name string emitted at N sites shares one slot instead of
     /// pushing N copies. Compile-time only — `finalize()` drops it once the
     /// chunk stops growing, so it costs no memory in the executed code.
-    const_index: rustc_hash::FxHashMap<ConstKey, u32>,
+    pub(crate) const_index: rustc_hash::FxHashMap<ConstKey, u32>,
     /// The shared copy an inline CATCH/CONTROL handler entry runs from; see
     /// [`CompiledCode::shared_snapshot`]. Empty until a region needs it.
     pub(crate) handler_snapshot: crate::vm::vm_handler_snapshot::CodeSnapshot,
@@ -6572,7 +6624,7 @@ pub(crate) struct CompiledCode {
     /// in the default build — a nested `my $x` reuses the outer slot
     /// (`Compiler::declare_local`) — which is also why a name that collects two
     /// *different* constraints must poison rather than overwrite.
-    pending_declared_constraints:
+    pub(crate) pending_declared_constraints:
         rustc_hash::FxHashMap<String, crate::binding_desc::DeclaredConstraint>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, Symbol)>,
@@ -7777,7 +7829,7 @@ impl Clone for JitCodeState {
 /// and NaN never dedups against anything (`to_bits` of two NaNs may differ,
 /// and a NaN key would never be looked up by an equal key anyway).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum ConstKey {
+pub(crate) enum ConstKey {
     Int(i64),
     Num(u64),
     Str(Arc<crate::value::StrBody>),
@@ -12146,7 +12198,8 @@ impl CompiledCode {
             decl.compiled_routine_key = key;
         }
         let is_stub = role_body_is_stub(body);
-        let our_scope_violation = role_body_our_scope_violation(body);
+        let our_scope_violation =
+            role_body_our_scope_violation(body).map(crate::static_str::StaticStr);
         let body_plan = role_body_plan(body);
         let body_bind_source_slots = body_bind_source_slots(
             body_plan.iter().filter_map(|op| match op {
@@ -12400,7 +12453,8 @@ impl<'a> IntoIterator for &'a CompiledFns {
 /// Payload of [`OpCode::MarkRwArgRefContextCallee`] — ADR-0067's argument
 /// producer for a nameless callee. Boxed so the variant costs one pointer and
 /// the `opcode_size_guard` budget is untouched.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct RwArgCalleeMark {
     /// Which positional parameter of the callee's *signature* this argument
     /// binds to — named arguments earlier in the list do not consume one.
@@ -12418,7 +12472,8 @@ pub(crate) struct RwArgCalleeMark {
 
 /// Payload of [`OpCode::IndexArgRef`]. Boxed so the variant costs one pointer
 /// and the `opcode_size_guard` budget is untouched.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct IndexArgRefMark {
     /// Which callee, and which of its positional parameters this argument binds
     /// to.
@@ -12428,7 +12483,8 @@ pub(crate) struct IndexArgRefMark {
 }
 
 /// Where [`RwArgCalleeMark`]'s callee comes from.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum RwArgCallee {
     /// `<invocant>.NAME(...)` — the invocant is the stack value, `NAME` is a
     /// compile-time constant (this covers the quoted spelling `$s."take"()`
@@ -12454,14 +12510,16 @@ pub(crate) const RWARG_POSITIONAL_UNKNOWN: u32 = u32::MAX;
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
 /// call's stack values are named-arg values, and under which keys.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NamedArgsSpec {
     /// In argument (stack) order.
     pub(crate) entries: Vec<NamedArgEntry>,
 }
 
 /// One named argument of a [`NamedArgsSpec`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NamedArgEntry {
     /// Position among the call's `arity` stack values.
     pub(crate) pos: u32,
@@ -12476,7 +12534,8 @@ pub(crate) struct NamedArgEntry {
 /// per `CompiledFunction` instead of re-deriving match keys / locals slots /
 /// env-mirror gates from strings on every call. Built whenever the signature
 /// has at least one named parameter (all-named or mixed positional+named).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NamedCallPlan {
     /// One entry per parameter, in `param_defs` order.
     pub(crate) params: Vec<LightParamBind>,
@@ -12488,14 +12547,16 @@ pub(crate) struct NamedCallPlan {
 }
 
 /// One parameter's bind entry in a [`NamedCallPlan`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum LightParamBind {
     Positional(PositionalParamBind),
     Named(NamedParamBind),
 }
 
 /// Per-positional-parameter entry of a [`NamedCallPlan`] (mixed signatures).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct PositionalParamBind {
     /// The parameter's locals slot (by `pd.name`), when it has one.
     pub(crate) slot: Option<usize>,
@@ -12506,7 +12567,8 @@ pub(crate) struct PositionalParamBind {
 }
 
 /// Per-parameter entry of a [`NamedCallPlan`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NamedParamBind {
     /// The key a caller's `:key(value)` pair must carry (sigil/twigil stripped).
     pub(crate) match_key: String,
@@ -12542,7 +12604,8 @@ pub(crate) type MemoCache = std::sync::Arc<std::sync::Mutex<Vec<(Vec<Value>, Val
 /// (length dispatch plus a byte compare against five three-letter candidates)
 /// into a jump table over a `u8`. `Wild` covers `Any`/`Mu`/`Cool`, which accept
 /// every value including a bare type object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum FastParamType {
     Int,
     Str,
@@ -12607,7 +12670,8 @@ impl FastParamType {
 
 /// A parameter's precomputed type-check plan (see [`FastParamType`]), parallel
 /// to `CompiledFunction::param_defs`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum FastParamCheck {
     /// The parameter has no type constraint: nothing to check.
     Unconstrained,

@@ -756,6 +756,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             implicit_grammar_parent,
             is_grammar,
+            parent_args,
             ..
         } => {
             if *is_grammar {
@@ -810,7 +811,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
-            let traits = class_traits(parents, does_parents, *class_is_rw)?;
+            let traits = class_traits(parents, does_parents, parent_args, *class_is_rw)?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -1562,7 +1563,7 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
 /// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`)
 /// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
 /// `::`-separated segment must be a bare identifier.
-fn is_simple_type(t: &str) -> bool {
+pub(super) fn is_simple_type(t: &str) -> bool {
     is_pseudo_type(t)
         || !t.is_empty()
             && name_parts::identifier_segments(t).all(|seg| {
@@ -1591,6 +1592,11 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
             ],
         });
     }
+    if t.find('[')
+        .is_some_and(|bracket| t.find('(').is_none_or(|paren| bracket < paren))
+    {
+        return super::type_args::parameterized_type_node(t, None);
+    }
     // `Int()` coercion -> Type::Coercion(base-type); `Int(Cool)` adds the
     // `constraint` the value is coerced from.
     if let Some(open) = t.find('(')
@@ -1607,32 +1613,6 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
         return Ok(RakuAstNode {
             class: RakuAstClass::TypeCoercion,
             fields,
-        });
-    }
-    // `Array[Int]` / `Hash[Str, Int]` -> Type::Parameterized(base-type, args).
-    if let Some(open) = t.find('[') {
-        let inner = t
-            .strip_suffix(']')
-            .ok_or_else(|| unsupported("malformed parameterised type"))?;
-        let base = &t[..open];
-        let args_str = &inner[open + 1..];
-        if !is_simple_type(base) {
-            return Err(unsupported("parameterised type over a non-simple base"));
-        }
-        let mut args = Vec::new();
-        for a in args_str.split(',') {
-            args.push(node_field(None, build_type_node(a.trim())?));
-        }
-        let arglist = RakuAstNode {
-            class: RakuAstClass::ArgList,
-            fields: args,
-        };
-        return Ok(RakuAstNode {
-            class: RakuAstClass::TypeParameterized,
-            fields: vec![
-                node_field(Some("base-type"), simple_type_node(base)),
-                node_field(Some("args"), arglist),
-            ],
         });
     }
     if is_simple_type(t) {
@@ -3444,6 +3424,7 @@ fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
 fn class_traits(
     parents: &[String],
     does_parents: &[String],
+    parent_args: &[(String, Vec<Expr>)],
     is_rw: bool,
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut traits = Vec::new();
@@ -3456,13 +3437,16 @@ fn class_traits(
         }
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("type"), build_type_node(parent)?)],
+            fields: vec![node_field(
+                Some("type"),
+                parent_type_node(parent, parent_args)?,
+            )],
         })));
     }
     for role in does_parents {
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitDoes,
-            fields: vec![node_field(None, build_type_node(role)?)],
+            fields: vec![node_field(None, parent_type_node(role, parent_args)?)],
         })));
     }
     if is_rw {
@@ -3472,6 +3456,16 @@ fn class_traits(
         })));
     }
     Ok(traits)
+}
+
+fn parent_type_node(
+    name: &str,
+    parent_args: &[(String, Vec<Expr>)],
+) -> Result<RakuAstNode, RuntimeError> {
+    if let Some((_, args)) = parent_args.iter().find(|(parent, _)| parent == name) {
+        return super::type_args::parameterized_type_node(name, Some(args));
+    }
+    build_type_node(name)
 }
 
 /// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.

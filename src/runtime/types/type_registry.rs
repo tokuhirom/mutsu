@@ -534,14 +534,14 @@ impl Interpreter {
     /// imports. Keyed by the package currently executing (a method's class, or the
     /// module itself), walking up the `::` chain like `resolve_type_name_for_owner`.
     pub(crate) fn package_type_alias(&self, name: &str) -> Option<String> {
-        // `contains("::")` builds a `StrSearcher`; `has_double_colon` is the
-        // byte scan #7554 introduced for exactly this test, and this guard runs
-        // on every type check in the program (`try_resolved_type_capture_name`).
-        // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
-        // (#11507); an intern per type check would cost more than the scan.
-        if self.package_type_aliases.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+        // This guard runs on every type check in the program
+        // (`try_resolved_type_capture_name`). The alias-key union probe goes
+        // first: it already answers "no" for nearly every name, so the
+        // qualification test (a symbol lookup) is paid only on a hit.
+        if self.types.package_type_aliases.is_empty()
             || name.is_empty()
+            || !self.types.package_type_aliases.contains_name(name)
+            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }
@@ -555,7 +555,7 @@ impl Interpreter {
         // unconditionally first paid its four-table `contains_key` (a `Str`
         // constraint checked on every typed binding) even though the lookup
         // below was going to answer `None` anyway (#8899).
-        let target = self.lookup_in_running_package(&self.package_type_aliases, name)?;
+        let target = self.lookup_in_running_package(&self.types.package_type_aliases, name)?;
         // A directly registered name is its own resolution; the module alias is
         // only ever the fallback for a short name nothing else accounts for.
         if self.has_type_direct(name) {
@@ -572,12 +572,13 @@ impl Interpreter {
         // transiently put the topic's backing hash under the plain `_` key
         // while its declarations run, but consulting that entry here would
         // make every imported routine's topic read see the stale module value.
-        // A byte scan: this runs on free-variable reads and only has the
-        // name's text. TODO: take the caller's `Symbol` (#11507).
+        // This runs on free-variable reads, so the key-union probe goes first
+        // and the qualification test (a symbol lookup) is paid only on a hit.
         if self.module.module_scope_lexicals.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
+            || !self.module.module_scope_lexicals.contains_name(name)
+            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }
@@ -590,11 +591,14 @@ impl Interpreter {
     /// the module's own `our $name`, while an imported alias must beat the
     /// caller's same-named env entry.
     pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
-        // A byte scan, as in `module_scope_lexical`. TODO: take the caller's
-        // `Symbol` (#11507).
+        // The key-union probe first, as in `module_scope_lexical`.
         if self.module.module_imported_lexical_names.is_empty()
             || name.is_empty()
-            || crate::runtime::utils::has_double_colon(name)
+            || !self
+                .module
+                .module_imported_lexical_names
+                .contains_name(name)
+            || crate::qualified::is_qualified_str(name)
         {
             return None;
         }

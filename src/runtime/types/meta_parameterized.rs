@@ -146,7 +146,7 @@ impl Interpreter {
     /// `my constant CArray = NativeCall::Types::CArray`), then a registered
     /// class or role.
     // Cost: O(1).
-    fn constraint_type_value(&self, name: &str) -> Option<Value> {
+    pub(crate) fn constraint_type_value(&self, name: &str) -> Option<Value> {
         if let Some(v) = self.type_name_binding(name)
             && matches!(v.view(), ValueView::Package(_))
         {

@@ -653,6 +653,92 @@ fn ser_to_value(sv: SerValue) -> Value {
     }
 }
 
+/// A value carrying no process-local identity, in its serializable form: what
+/// the compiled-bytecode cache may store in a constant pool (ADR-11756 §2.3).
+///
+/// A restored [`SerValue::Instance`] keeps its recorded id, which in another
+/// process can name an unrelated live object, so a value holding an instance
+/// (directly, or through a mixin) is refused rather than stored. Containers and
+/// buffers are rebuilt fresh on decode, which is what a fresh compile does too.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct PortableValue(SerValue);
+
+impl PortableValue {
+    // Cost: O(n), n = size of the value.
+    pub(crate) fn from_value(v: &Value) -> Result<Self, String> {
+        let sv = value_to_ser(v)?;
+        if sv.has_identity() {
+            return Err(format!(
+                "value carries an object identity: {}",
+                super::what_type_name(v)
+            ));
+        }
+        Ok(PortableValue(sv))
+    }
+
+    // Cost: O(n), n = size of the value.
+    pub(crate) fn into_value(self) -> Value {
+        ser_to_value(self.0)
+    }
+}
+
+impl SerValue {
+    /// Whether this value, or anything inside it, records an object id.
+    // Cost: O(n), n = size of the value.
+    fn has_identity(&self) -> bool {
+        let any = |vs: &[SerValue]| vs.iter().any(SerValue::has_identity);
+        match self {
+            SerValue::Instance { .. }
+            | SerValue::Mixin(..)
+            | SerValue::MixinWithAttributes { .. } => true,
+            SerValue::GenericRange { start, end, .. } => start.has_identity() || end.has_identity(),
+            SerValue::Array(vs, _)
+            | SerValue::Seq(vs)
+            | SerValue::Slip(vs)
+            | SerValue::Junction { values: vs, .. }
+            | SerValue::ParametricRole { type_args: vs, .. } => any(vs),
+            SerValue::Hash(map) => map.values().any(SerValue::has_identity),
+            SerValue::Set(_, objs) => objs.values().any(|v| v.has_identity()),
+            SerValue::Bag(_, objs) => objs.values().any(|v| v.has_identity()),
+            SerValue::Mix(_, objs) => objs.values().any(|v| v.has_identity()),
+            SerValue::Pair(_, v)
+            | SerValue::Scalar(v)
+            | SerValue::ContainerRef(v)
+            | SerValue::ContainerView(v) => v.has_identity(),
+            SerValue::ValuePair(k, v) => k.has_identity() || v.has_identity(),
+            SerValue::Capture { positional, named } => {
+                any(positional) || named.values().any(SerValue::has_identity)
+            }
+            SerValue::Int(_)
+            | SerValue::BigInt(_)
+            | SerValue::Num(_)
+            | SerValue::Str(_)
+            | SerValue::Bool(_)
+            | SerValue::Range(..)
+            | SerValue::RangeExcl(..)
+            | SerValue::RangeExclStart(..)
+            | SerValue::RangeExclBoth(..)
+            | SerValue::BufStorage(..)
+            | SerValue::Rat(..)
+            | SerValue::FatRat(..)
+            | SerValue::BigRat(..)
+            | SerValue::Complex(..)
+            | SerValue::CompUnitDepSpec { .. }
+            | SerValue::Package(_)
+            | SerValue::Routine { .. }
+            | SerValue::Enum { .. }
+            | SerValue::Regex(_)
+            | SerValue::RegexDeclared { .. }
+            | SerValue::RegexWithAdverbs { .. }
+            | SerValue::Version { .. }
+            | SerValue::Uni { .. }
+            | SerValue::Nil
+            | SerValue::Whatever
+            | SerValue::HyperWhatever => false,
+        }
+    }
+}
+
 impl Serialize for Value {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let sv = value_to_ser(self).map_err(serde::ser::Error::custom)?;

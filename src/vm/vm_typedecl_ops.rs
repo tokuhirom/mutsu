@@ -525,7 +525,7 @@ impl Interpreter {
             // `RegisterClass` op before the dispatch below and would otherwise
             // overwrite the field with its own snapshot. See
             // `Interpreter::deferred_trait_class_rollback`.
-            let deferred_trait_rollback = self.deferred_trait_class_rollback.take();
+            let deferred_trait_rollback = self.types.deferred_trait_class_rollback.take();
             // ADR-0019 Phase F box F5 shadow check: confirm this successful
             // registration bumped `Registry::method_generation` (see
             // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
@@ -700,7 +700,7 @@ impl Interpreter {
                             Value::package(Symbol::intern(&storage_name))
                         });
                     } else {
-                        crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                        crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                             .entry(parent)
                             .or_default()
                             .entry(short)
@@ -848,9 +848,9 @@ impl Interpreter {
                     // While this hook runs, `cname`'s own auto-generated
                     // accessors are not yet in `.^method_table` — see
                     // `classes_composing_accessors`'s doc comment (#8836).
-                    self.classes_composing_accessors.insert(cname.clone());
+                    self.types.classes_composing_accessors.insert(cname.clone());
                     let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
-                    self.classes_composing_accessors.remove(&cname);
+                    self.types.classes_composing_accessors.remove(&cname);
                     result?;
                 }
             }
@@ -899,7 +899,7 @@ impl Interpreter {
             // NOT the source-level bare `name`) for `PushLastRegisteredClass`
             // to consume — see `Interpreter::last_registered_class_key`.
             self.record_module_owned_type(&storage_name);
-            self.last_registered_class_key = Some(storage_name.clone());
+            self.types.last_registered_class_key = Some(storage_name.clone());
 
             Ok(())
         } else {
@@ -915,7 +915,7 @@ impl Interpreter {
     /// somehow nothing was registered (defensive; should not happen given
     /// the emission discipline above).
     pub(super) fn exec_push_last_registered_class_op(&mut self) {
-        let val = match self.last_registered_class_key.take() {
+        let val = match self.types.last_registered_class_key.take() {
             Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
             None => Value::NIL,
         };
@@ -926,7 +926,7 @@ impl Interpreter {
     /// `RoleGroupToCandidate` immediately converts it to the individual role
     /// declaration that expression position must yield.
     pub(super) fn exec_push_last_registered_role_op(&mut self) {
-        let val = match self.last_registered_role_key.take() {
+        let val = match self.types.last_registered_role_key.take() {
             Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
             None => Value::NIL,
         };
@@ -961,7 +961,7 @@ impl Interpreter {
         // made `B.^name` answer `B` instead of falling through to the bareword
         // path after the failed declaration.
         if !snapshot.had_previous_class() {
-            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
+            crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(&name);
             self.registry_mut().compound_declared_types.remove(&name);
         }
     }
@@ -1198,7 +1198,7 @@ impl Interpreter {
                     method_name_chunks,
                     method_decls,
                     *is_stub,
-                    *our_scope_violation,
+                    our_scope_violation.as_deref(),
                     parent_ops,
                     deferred_body_ops,
                     compiled_fns,
@@ -1317,7 +1317,7 @@ impl Interpreter {
                 // would break every `when Pair` in the process). Mirrors the same
                 // guard on the class path above.
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(parent)
                         .or_default()
                         .entry(short)
@@ -1400,7 +1400,7 @@ impl Interpreter {
             self.record_role_body_bind_cells(code, &qualified_name, body_bind_source_slots);
 
             self.record_module_owned_type(&qualified_name);
-            self.last_registered_role_key = Some(qualified_name.clone());
+            self.types.last_registered_role_key = Some(qualified_name.clone());
 
             Ok(())
         } else {

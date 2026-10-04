@@ -338,9 +338,7 @@ impl Interpreter {
                 }
                 // $*THREAD: the current thread's own Thread object.
                 if name == "*THREAD" || name == "$*THREAD" {
-                    self.stack.push(crate::runtime::current_thread_object(
-                        Self::make_thread_instance,
-                    ));
+                    self.stack.push(crate::runtime::current_thread_value());
                     *ip += 1;
                     return Ok(());
                 }
@@ -1554,7 +1552,7 @@ impl Interpreter {
                     && !is_internal_temp
                     && !crate::qualified::is_qualified(name_sym)
                     && !self.env().contains_key(&name)
-                    && !self.has_unit_scope_lexical(&name)
+                    && !self.has_unit_scope_lexical(&name, Some(name_sym))
                     && !code.param_bind_names.iter().any(|n| n == &name)
                 {
                     return Err(self.strict_undeclared_error(&name));
@@ -2541,22 +2539,23 @@ impl Interpreter {
                 // an ordinary store pays no clone and cannot materialize a lazy
                 // `Match` merely to learn it is not a `Proxy`.
                 if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
-                    let proxy_val = match self.unit_lexical_slot(&name).cloned().or_else(|| {
-                        // A `PROCESS::<$name> := Proxy.new(...)` install lives
-                        // only in the process stash, never in a frame's env
-                        // (#8682, ADR-11318) — without the redirect, a
-                        // `$*name = value` reaching this opcode would fall
-                        // through to a plain rebind below instead of firing
-                        // the Proxy's `STORE`.
-                        self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
-                    }) {
-                        Some(v) if v.is_proxy_value() => Some(v.clone()),
-                        Some(v) if v.is_container_ref() => {
-                            let inner = v.deref_container();
-                            inner.is_proxy_value().then_some(inner)
-                        }
-                        _ => None,
-                    };
+                    let proxy_val =
+                        match self.unit_lexical_slot(&name, None).cloned().or_else(|| {
+                            // A `PROCESS::<$name> := Proxy.new(...)` install lives
+                            // only in the process stash, never in a frame's env
+                            // (#8682, ADR-11318) — without the redirect, a
+                            // `$*name = value` reaching this opcode would fall
+                            // through to a plain rebind below instead of firing
+                            // the Proxy's `STORE`.
+                            self.resolve_process_dynamic(&name, self.env().get(&name).cloned())
+                        }) {
+                            Some(v) if v.is_proxy_value() => Some(v.clone()),
+                            Some(v) if v.is_container_ref() => {
+                                let inner = v.deref_container();
+                                inner.is_proxy_value().then_some(inner)
+                            }
+                            _ => None,
+                        };
                     if let Some(proxy_val) = proxy_val
                         && let ValueView::Proxy { storer, .. } = proxy_val.view()
                         && !storer.is_nil()
@@ -2607,7 +2606,7 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                if self.unit_scope_lexical_write(&name, &val) {
+                if self.unit_scope_lexical_write(&name, Some(name_sym), &val) {
                     *ip += 1;
                     return Ok(());
                 }
@@ -2805,7 +2804,7 @@ impl Interpreter {
                 // env as well would re-create the collision the store removes, so
                 // this write is exclusive — the env/`our`/shared-var stores below
                 // are skipped for it.
-                let unit_lexical_write = self.unit_scope_lexical_write(&name, &val);
+                let unit_lexical_write = self.unit_scope_lexical_write(&name, Some(name_sym), &val);
                 // An `our $x` of the package the running routine belongs to is
                 // reached by its BARE name from inside that package's own
                 // routines (the sub-body state-scope package disables
@@ -5871,7 +5870,7 @@ impl Interpreter {
                 //    reaching this statement a second (or first) time at
                 //    runtime is a no-op, never a re-declaration.
                 // 3. Neither: throw the pre-built X::Attribute error.
-                if let Some(class_name) = self.defining_class.clone() {
+                if let Some(class_name) = self.types.defining_class.clone() {
                     self.register_runtime_attribute(&class_name, spec)?;
                     *ip += 1;
                 } else if self

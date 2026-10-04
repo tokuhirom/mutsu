@@ -66,6 +66,19 @@ impl Interpreter {
             "nativecallcast" => {
                 let target = operand(args, 0);
                 let source = operand(args, 2);
+                // An `is repr('Uninstantiable')` target (upstream's `void`, what
+                // `Pointer.deref` casts an untyped pointer to) has nothing to
+                // box into; MoarVM's cast rejects it.
+                if let ValueView::Package(name) = target.view()
+                    && self
+                        .registry()
+                        .uninstantiable_classes
+                        .contains(name.as_str())
+                {
+                    return Some(Err(RuntimeError::new(
+                        "Internal error: unhandled target type",
+                    )));
+                }
                 self.nativecast_value(&target, &source)
             }
             // nqp::nativecallsizeof($type): the C size in bytes of a native,

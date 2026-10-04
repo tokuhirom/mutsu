@@ -200,10 +200,9 @@ impl Interpreter {
         if let Some(dist) = self.module.package_distributions.get(pkg) {
             return Some(dist.clone());
         }
-        let mut rest = pkg;
-        while let Some(idx) = rest.rfind("::") {
-            rest = &rest[..idx];
-            if let Some(dist) = self.module.package_distributions.get(rest) {
+        for rest in crate::qualified::package_ancestors(crate::qualified::known_symbol(pkg)).skip(1)
+        {
+            if let Some(dist) = self.module.package_distributions.get(rest.as_str()) {
                 return Some(dist.clone());
             }
         }

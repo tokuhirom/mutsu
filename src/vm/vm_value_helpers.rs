@@ -1,20 +1,8 @@
 use super::*;
 use crate::binding_desc::DeclaredConstraint;
-use crate::runtime::{current_mutsu_thread_id, is_initial_thread};
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Create a Thread instance with the current thread's mutsu ID.
-    pub(super) fn make_thread_instance() -> Value {
-        let numeric_id = current_mutsu_thread_id();
-        let is_initial = is_initial_thread();
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("id".to_string(), Value::int(numeric_id));
-        attrs.insert("name".to_string(), Value::str_from("<anon>"));
-        attrs.insert("is_initial".to_string(), Value::truth(is_initial));
-        Value::make_instance(Symbol::intern("Thread"), attrs)
-    }
-
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
         match code.constants[idx as usize].as_str() {
             Some(s) => s,

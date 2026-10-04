@@ -75,7 +75,7 @@ impl Interpreter {
         name: &str,
         source_path: Option<&str>,
     ) {
-        let key = Symbol::intern(&format!("{package}::{name}"));
+        let key = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
             return;
         };
@@ -351,8 +351,9 @@ impl Interpreter {
     /// `None` when `key` is not one. See
     /// [`Self::is_toplevel_global_routine_key`], whose predicate this is.
     pub(crate) fn toplevel_global_routine_name(key: &str) -> Option<&str> {
-        key.strip_prefix("GLOBAL::")
-            .filter(|tail| !tail.contains("::") && !tail.contains('/') && *tail != "EXPORT")
+        key.strip_prefix("GLOBAL::").filter(|tail| {
+            !crate::qualified::is_qualified_str(tail) && !tail.contains('/') && *tail != "EXPORT"
+        })
     }
 
     /// A compunit-private routine named `name` visible to the code running

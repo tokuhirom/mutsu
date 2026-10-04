@@ -336,9 +336,14 @@ impl Compiler {
             RegexQuant::RepeatCode(_) => (0, None),
             RegexQuant::One | RegexQuant::ZeroOrOne => return Err("separator-quant"),
         };
-        if max.is_some_and(|max| max == 0 || min > max) {
-            return Err("empty-range");
+        if max.is_some_and(|max| min > max) {
+            // Raised where the cursor reaches it, as for an unseparated one.
+            self.ops.push(RxOp::EmptyRange);
+            return Ok(());
         }
+        // `** 0 % sep`: only the zero-iteration arm, whose captures (empty
+        // lists, an alias over the empty span) the loop's exit files.
+        let no_iteration = max == Some(0);
         let (Ok(min), Ok(max)) = (u32::try_from(min), max.map_or(Ok(u32::MAX), u32::try_from))
         else {
             return Err("too-large");
@@ -411,6 +416,10 @@ impl Compiler {
             _ => None,
         };
         let (atom_open, sep_open) = (open(atom_view, false), open(sep_view, true));
+        if no_iteration {
+            // The counter is 0 here: the first iteration is never entered.
+            self.ops.push(RxOp::AtLeast { ctr, min: 1 });
+        }
         self.collected(collect, atom_open, false, |c| {
             c.committed(ratchet, |c| c.separated_item(token, tok, alias))
         })?;

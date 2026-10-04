@@ -106,6 +106,9 @@ impl Interpreter {
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
         let shape = self.stack[base].dispatch_shape()?;
+        if !method_table::shape_has_row(shape, code.const_sym(name_idx)) {
+            return None;
+        }
         let sites = code.constants.len();
         let idx = name_idx as usize;
         let generation = self.registry_write_generation();

@@ -519,7 +519,7 @@ impl Interpreter {
         let body = Arc::clone(&body);
         // `Seq.new($predictiveIterator)` (`try_native_seq_construct`) builds
         // an EMPTY already-`Reified` body and tracks its iterator out of
-        // band, in `self.predictive_seq_iters` keyed by this sequence's
+        // band, in `self.types.predictive_seq_iters` keyed by this sequence's
         // identity (`SeqBody::identity`, the shared reification core's
         // address) — so `.tail`/`.Numeric` can use the count-only path
         // instead of eagerly draining. A `seq_method_consumes` touch (e.g.
@@ -642,7 +642,10 @@ impl Interpreter {
             // source, running the callback once per element it hands out
             // (#10186). A `.squish(:as, :with)` replay is keyed by this
             // body's identity, so leave that one to the path below.
-            if !self.squish_iterator_meta.contains_key(&body.identity())
+            if !self
+                .types
+                .squish_iterator_meta
+                .contains_key(&body.identity())
                 && let Some((prefix, source)) = body.take_map_grep_stream_source()
             {
                 return Ok(

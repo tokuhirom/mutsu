@@ -49,7 +49,7 @@ run_one() {
     esac
     MUTSU_VM_STATS=1 MUTSU_FUDGE="$fudge" timeout "$TIMEOUT" "$BIN" "$file" \
         2>&1 >/dev/null </dev/null |
-        grep -oE 'regex-vm: compiled=[0-9]+ declined=[0-9]+ runs=[0-9]+ reasons=\([^)]*\)|regex-walk: .*'
+        grep -oE 'regex-vm: compiled=[0-9]+ declined=[0-9]+ runs=[0-9]+ reasons=\([^)]*\)|regex-walk: .*|regex-eager: .*'
 }
 export -f run_one
 export BIN TIMEOUT
@@ -101,3 +101,16 @@ walk_fields | awk '$1 == "total" { t[$2] += $3 }
 walk_fields | awk '$1 != "total" { n[$1 " " $2] += $3 }
                    END { for (k in n) { split(k, g, " "); printf "%-8s %-30s %10d\n", g[1], g[2], n[k] } }' |
     sort -k1,1 -k3nr
+
+# The compiled engine's eager calls (`regex-eager: calls=N (reason=n …)`):
+# not uses of the walk, but calls whose ends are computed up front.
+echo
+grep '^regex-eager:' "$work/lines" |
+    sed -n 's/^regex-eager: calls=[0-9]* (\([^)]*\))$/\1/p' |
+    tr ' ' '\n' |
+    grep -E '^[A-Za-z0-9_:-]+=[0-9]+$' |
+    awk -F= '{ n[$1] += $2; total += $2 }
+             END {
+                 printf "eager calls: %d\n", total
+                 for (r in n) printf "eager    %-30s %10d\n", r, n[r]
+             }'

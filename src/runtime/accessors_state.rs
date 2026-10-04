@@ -845,18 +845,19 @@ impl Interpreter {
         class_name: crate::symbol::Symbol,
         is_role: Option<bool>,
     ) {
-        self.method_class_stack
+        self.types
+            .method_class_stack
             .push(super::MethodClassFrame::new(class_name, is_role));
     }
 
     pub(crate) fn pop_method_class(&mut self) {
-        self.method_class_stack.pop();
+        self.types.method_class_stack.pop();
     }
 
     /// Current `method_class_stack` depth (ADR-0072: recorded when a `CATCH`
     /// region is entered).
     pub(crate) fn method_class_depth(&self) -> usize {
-        self.method_class_stack.len()
+        self.types.method_class_stack.len()
     }
 
     /// The package a closure created right now is lexically inside. A closure
@@ -882,7 +883,7 @@ impl Interpreter {
         // `eval_attr_default_expr`, and means precisely "we are evaluating an
         // attribute default of this class", so it is the authoritative answer
         // here.
-        if let Some(class) = &self.constructing_class {
+        if let Some(class) = &self.types.constructing_class {
             return crate::symbol::Symbol::intern(class);
         }
         // A closure created inside a METHOD body lexically belongs to that
@@ -912,7 +913,7 @@ impl Interpreter {
                 return role;
             }
             if f.is_method
-                && let Some(class) = self.method_class_stack.last()
+                && let Some(class) = self.types.method_class_stack.last()
             {
                 return class.name;
             }
@@ -920,7 +921,7 @@ impl Interpreter {
         }
         let pkg = self.current_package_sym();
         if (pkg == crate::symbol::wk::empty_package() || pkg == crate::symbol::wk::global_package())
-            && let Some(class) = self.method_class_stack.last()
+            && let Some(class) = self.types.method_class_stack.last()
         {
             return class.name;
         }
@@ -928,26 +929,32 @@ impl Interpreter {
     }
 
     pub(crate) fn method_class_stack_top(&self) -> Option<String> {
-        self.method_class_stack.last().map(|f| f.name.resolve())
+        self.types
+            .method_class_stack
+            .last()
+            .map(|f| f.name.resolve())
     }
 
     /// Borrowing form of [`Self::method_class_stack_top`]. The attribute cell-key
     /// resolution consults this on every `$!x` read, where the owned clone was a
     /// per-access heap allocation.
     pub(crate) fn method_class_stack_top_str(&self) -> Option<&'static str> {
-        self.method_class_stack.last().map(|f| f.name.as_str())
+        self.types
+            .method_class_stack
+            .last()
+            .map(|f| f.name.as_str())
     }
 
     /// The running method's owner as an interned symbol.
     pub(crate) fn method_class_stack_top_sym(&self) -> Option<crate::symbol::Symbol> {
-        self.method_class_stack.last().map(|f| f.name)
+        self.types.method_class_stack.last().map(|f| f.name)
     }
 
     /// Whether the running method's owner is a role, memoized on the frame so
     /// the per-access attribute paths do not take the registry lock per read.
     // Cost: O(1) after the frame's first ask; the first ask is one registry probe.
     pub(crate) fn method_class_top_is_role(&self) -> bool {
-        let Some(frame) = self.method_class_stack.last() else {
+        let Some(frame) = self.types.method_class_stack.last() else {
             return false;
         };
         match frame.is_role.get() {
@@ -965,7 +972,7 @@ impl Interpreter {
     pub(crate) fn method_class_stack_syms_rev(
         &self,
     ) -> impl Iterator<Item = crate::symbol::Symbol> + '_ {
-        self.method_class_stack.iter().rev().map(|f| f.name)
+        self.types.method_class_stack.iter().rev().map(|f| f.name)
     }
 
     /// Set up a method dispatch frame for nextsame/callsame support.

@@ -2,7 +2,8 @@
 
 /// The integer comparison of a fused compare-and-branch op: the same test
 /// as the stand-alone `EqI` .. `GeI`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum TrCmp {
     Eq,
     Ne,
@@ -45,7 +46,8 @@ impl TrCmp {
 /// Operand order is the order the compiler pushed them, per bank: an op
 /// reading one operand from each bank pops each bank's top independently, so
 /// the two are not interleaved.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum TrOp {
     // ---- int bank: literals, slots ----
     /// Push a compile-time integer.

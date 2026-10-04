@@ -15,6 +15,33 @@ fn insert_export_alias(
     touched.push(key);
 }
 
+/// Record `tags` as exports of `name` in `table[key]`. A family's later
+/// candidates re-record tags that are already there, so check before taking
+/// the copy-on-write table: `cow_table_mut` copies a shared table whole.
+// Cost: O(t), t = tags, when every tag is recorded already; otherwise O(t)
+// plus a copy of `table` when it is shared.
+fn record_export_tags(
+    table: &mut std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    key: &str,
+    name: &str,
+    tags: &[String],
+) {
+    let recorded = table.get(key).and_then(|exports| exports.get(name));
+    if recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag))) {
+        return;
+    }
+    let entry = crate::runtime::cow_table_mut(table)
+        .entry(key.to_string())
+        .or_default()
+        .entry(name.to_string())
+        .or_default();
+    for tag in tags {
+        if !entry.contains(tag) {
+            entry.insert(tag.clone());
+        }
+    }
+}
+
 impl Interpreter {
     /// Record a trait-modified routine value for an exported sub, so that
     /// `import_module` can restore the `&name` env binding with the role mixed in.
@@ -106,7 +133,7 @@ impl Interpreter {
             Some(tag) => tag,
             None => package.split_once("::EXPORT::")?.1,
         };
-        (!tag.is_empty() && !tag.contains("::")).then_some(tag)
+        (!tag.is_empty() && !crate::qualified::is_qualified_str(tag)).then_some(tag)
     }
 
     /// Publish a routine bound through an `OUR::` code stash entry.
@@ -193,9 +220,16 @@ impl Interpreter {
                     let def = self
                         .registry()
                         .functions
-                        .get(&Symbol::intern(&format!("{pkg}::{name}")))?
+                        .get(&Symbol::intern(
+                            crate::qualified::qualified_text(pkg, name).as_str(),
+                        ))?
                         .clone();
-                    Some(vec![(format!("{target_pkg}::{name}"), def)])
+                    Some(vec![(
+                        crate::qualified::qualified_text(&target_pkg, name)
+                            .as_str()
+                            .to_string(),
+                        def,
+                    )])
                 })
                 .unwrap_or_default()
         };
@@ -283,14 +317,15 @@ impl Interpreter {
         value: &Value,
     ) {
         // A nested name is a package path, not a symbol of THIS package.
-        if bare.is_empty() || bare.contains("::") {
+        if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
             return;
         }
-        let qualified = if package.is_empty() || package == "GLOBAL" {
-            format!("{sigil}{bare}")
-        } else {
-            format!("{sigil}{package}::{bare}")
-        };
+        let qualified =
+            if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
+                format!("{sigil}{bare}")
+            } else {
+                format!("{sigil}{package}::{bare}")
+            };
         // `our_vars` is the durable package store a qualified read consults
         // after the declaring block's env entry is gone; `env` serves the
         // reads that happen while it is still live.
@@ -323,22 +358,30 @@ impl Interpreter {
     /// exported-variable metadata and a durable module-qualified value.
     pub(crate) fn register_manual_export_var(&mut self, target: &str, value: &Value) {
         let Some((tag, name)) = (if let Some(rest) = target.strip_prefix("EXPORT::") {
-            rest.split_once("::")
+            crate::qualified::split_first(crate::qualified::known_symbol(rest))
         } else if let Some((_, rest)) = target.split_once("::EXPORT::") {
-            rest.split_once("::")
+            crate::qualified::split_first(crate::qualified::known_symbol(rest))
         } else {
             None
         }) else {
             return;
         };
-        if tag.is_empty() || name.is_empty() || tag.contains("::") || name.contains("::") {
+        if tag.is_empty()
+            || name.is_empty()
+            || crate::qualified::is_qualified_str(tag)
+            || crate::qualified::is_qualified_str(name)
+        {
             return;
         }
         let Some(module) = self.module.module_load_stack.last().cloned() else {
             return;
         };
-        self.env_mut()
-            .insert(format!("{module}::{name}"), value.clone());
+        self.env_mut().insert(
+            crate::qualified::qualified_text(&module, name)
+                .as_str()
+                .to_string(),
+            value.clone(),
+        );
         self.register_exported_var(module, name.to_string(), vec![tag.to_string()]);
     }
 
@@ -373,12 +416,21 @@ impl Interpreter {
         let entries: Vec<(String, Arc<FunctionDef>)> = if multi {
             self.multi_family_aliases(std::slice::from_ref(&current_pkg), resolved_name, &module)
         } else {
-            let source_single = format!("{current_pkg}::{resolved_name}");
+            let source_single = crate::qualified::qualified_text(&current_pkg, resolved_name)
+                .as_str()
+                .to_string();
             self.registry()
                 .functions
                 .get(&Symbol::intern(&source_single))
                 .cloned()
-                .map(|def| vec![(format!("{module}::{resolved_name}"), def)])
+                .map(|def| {
+                    vec![(
+                        crate::qualified::qualified_text(&module, resolved_name)
+                            .as_str()
+                            .to_string(),
+                        def,
+                    )]
+                })
                 .unwrap_or_default()
         };
         if entries.is_empty() {
@@ -459,7 +511,7 @@ impl Interpreter {
         );
         let fq_name = fq_name.as_str();
         self.registry().proto_subs_contains(fq_name)
-            && self.our_scoped_package_items.contains(fq_name)
+            && self.types.our_scoped_package_items.contains(fq_name)
     }
 
     /// Hide the candidate family already visible at target_single before an
@@ -595,14 +647,67 @@ impl Interpreter {
         &mut self,
         package: String,
         name: String,
+        tags: Vec<String>,
+    ) {
+        self.register_exported_sub_inner(package, name, tags, None);
+    }
+
+    /// [`Self::register_exported_sub`] for a `multi` candidate that was just
+    /// installed under `new_keys`. When every tag is already recorded for the
+    /// family, every earlier candidate was aliased when it arrived, so only
+    /// `new_keys` need aliases: O(k) instead of a registry scan that re-aliases
+    /// the whole family (#11761). Otherwise (first export of the family, a new
+    /// tag) it falls back to the full scan.
+    // Cost: O(t·k) once the family's tags are recorded, t = tags, k = new keys;
+    // otherwise O(r + t·c), r = registered functions, c = family candidates.
+    pub(crate) fn register_exported_multi_candidates(
+        &mut self,
+        package: String,
+        name: String,
+        tags: Vec<String>,
+        new_keys: &[Symbol],
+    ) {
+        self.register_exported_sub_inner(package, name, tags, Some(new_keys));
+    }
+
+    /// Whether `tags` are all recorded as exports of `package`'s `name` and,
+    /// during a module load, of the loading module too — i.e. whether an
+    /// earlier registration already aliased the family under every tag.
+    // Cost: O(t), t = tags.
+    fn exported_family_covers(&self, package: &str, name: &str, tags: &[String]) -> bool {
+        let covers = |recorded: Option<&HashSet<String>>| {
+            recorded.is_some_and(|recorded| tags.iter().all(|tag| recorded.contains(tag)))
+        };
+        covers(
+            self.module
+                .exported_subs
+                .get(package)
+                .and_then(|e| e.get(name)),
+        ) && self.module.module_load_stack.last().is_none_or(|module| {
+            covers(
+                self.module
+                    .module_owned_exports
+                    .get(module)
+                    .and_then(|e| e.get(name)),
+            )
+        })
+    }
+
+    fn register_exported_sub_inner(
+        &mut self,
+        package: String,
+        name: String,
         mut tags: Vec<String>,
+        new_keys: Option<&[Symbol]>,
     ) {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
         }
         // Register EXPORT namespace aliases so that EXPORT::TAG::name and
         // Package::EXPORT::TAG::name resolve via normal function lookup.
-        let fq_key = format!("{}::{}", package, name);
+        let fq_key = crate::qualified::qualified_text(&package, &name)
+            .as_str()
+            .to_string();
         let fq_sym = crate::symbol::Symbol::intern(&fq_key);
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut writes below (read->write on the same lock deadlocks).
@@ -613,13 +718,25 @@ impl Interpreter {
         // aliases also let imports recover a family when a distribution's
         // `unit module` name differs from its provided module path.
         let candidate_prefix = format!("{}::{}/", package, name);
-        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
-            // Compared in place on the interned key: a module exporting a multi
-            // family re-registers its exports once per candidate, so this scan
-            // runs O(candidates) times per load, and resolving every key to an
-            // owned `String` first made it the costliest part of `use Test`.
-            // (The base-name index cannot narrow it: each registration in
-            // between clears that index.)
+        let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_some() {
+            Vec::new()
+        } else if let Some(new_keys) = new_keys
+            && self.exported_family_covers(&package, &name, &tags)
+        {
+            let registry = self.registry();
+            new_keys
+                .iter()
+                .filter_map(|key| {
+                    let suffix = key.as_str().strip_prefix(&candidate_prefix)?;
+                    let candidate = registry.functions.get(key)?;
+                    Some((suffix.to_string(), candidate.clone()))
+                })
+                .collect()
+        } else {
+            // Compared in place on the interned key: resolving every key to
+            // an owned `String` first made this scan the costliest part of
+            // `use Test`. (The base-name index cannot narrow it: each
+            // registration in between clears that index.)
             self.registry()
                 .functions
                 .iter()
@@ -629,8 +746,6 @@ impl Interpreter {
                         .map(|suffix| (suffix.to_string(), candidate.clone()))
                 })
                 .collect()
-        } else {
-            Vec::new()
         };
         let owner = self
             .module
@@ -696,54 +811,31 @@ impl Interpreter {
         // Mirror this export into the unit-module export table so that
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
-        if let Some(unit_mod) = self.module.unit_module_loading_stack.last().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.unit_module_exported_subs)
-                .entry(unit_mod)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+        if let Some(unit_mod) = self.module.unit_module_loading_stack.last() {
+            record_export_tags(
+                &mut self.module.unit_module_exported_subs,
+                unit_mod,
+                &name,
+                &tags,
+            );
         }
         // Attribute this export to the module currently being loaded (any kind:
         // unit, package-block, or bare-file). The `use MOD` tag-filter uses this
         // to hide only MOD's own exports, never a symbol MOD imported from a
         // transitively-`use`d module.
-        if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let owned = crate::runtime::cow_table_mut(&mut self.module.module_owned_exports)
-                .entry(owner)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                owned.insert(tag.clone());
-            }
+        if let Some(owner) = self.module.module_load_stack.last() {
+            record_export_tags(&mut self.module.module_owned_exports, owner, &name, &tags);
         }
         // The module load stack names the requested compunit path. Keep a
         // second metadata entry under that path when the declared unit package
         // is different, so `use Lingua::EN::Numbers :short` can validate the
         // export even though the file says `unit module Numbers`.
         if self.module.unit_module_loading_stack.last().is_some()
-            && let Some(module) = self.module.module_load_stack.last().cloned()
+            && let Some(module) = self.module.module_load_stack.last()
         {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-                .entry(module)
-                .or_default()
-                .entry(name.clone())
-                .or_default();
-            for tag in &tags {
-                mirror.insert(tag.clone());
-            }
+            record_export_tags(&mut self.module.exported_subs, module, &name, &tags);
         }
-        let entry = crate::runtime::cow_table_mut(&mut self.module.exported_subs)
-            .entry(package)
-            .or_default()
-            .entry(name)
-            .or_default();
-        for tag in tags {
-            entry.insert(tag);
-        }
+        record_export_tags(&mut self.module.exported_subs, &package, &name, &tags);
     }
 
     /// Refresh the export aliases for a multi family after a later candidate
@@ -751,9 +843,13 @@ impl Interpreter {
     /// proto commonly appears before those candidates in a module body. The
     /// first export registration therefore cannot create the arity-qualified
     /// aliases until the candidates exist.
-    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
+    ///
+    /// `new_keys` are the registry keys the arriving candidate was installed
+    /// under (empty when nothing new was installed); see
+    /// [`Self::register_exported_multi_candidates`].
+    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str, new_keys: &[Symbol]) {
         let package = self.current_package();
-        let tags = if package == "GLOBAL" {
+        let tags = if crate::qualified::is_global_name(&package) {
             self.module
                 .module_load_stack
                 .last()
@@ -775,7 +871,12 @@ impl Interpreter {
             }
         });
         if let Some(tags) = tags {
-            self.register_exported_sub(package, name.to_string(), tags.into_iter().collect());
+            self.register_exported_multi_candidates(
+                package,
+                name.to_string(),
+                tags.into_iter().collect(),
+                new_keys,
+            );
         }
     }
 
@@ -891,7 +992,9 @@ impl Interpreter {
         };
         let qualified = match sigil {
             Some(sigil) => format!("{sigil}{module}::{bare}"),
-            None => format!("{module}::{name}"),
+            None => crate::qualified::qualified_text(module, name)
+                .as_str()
+                .to_string(),
         };
         self.env
             .get(&qualified)
@@ -954,7 +1057,11 @@ impl Interpreter {
             // but the qualified code value remains resolvable by name.
             .or_else(|| {
                 (sigil == Some('&'))
-                    .then(|| self.resolve_code_var(&format!("{module}::{bare}")))
+                    .then(|| {
+                        self.resolve_code_var(
+                            crate::qualified::qualified_text(module, bare).as_str(),
+                        )
+                    })
                     .filter(|value| !value.is_nil())
             })
             // A bare-file module's `my constant &name` lives in the
@@ -1270,10 +1377,20 @@ impl Interpreter {
             // An EXPORTED operator becomes lexically visible in the unit that
             // imported it -- and only there (#9944).
             self.record_infix_import_gate(&name);
-            let source_single = format!("{module}::{name}");
-            let source_prefix = format!("{module}::{name}/");
-            let target_single = format!("{target_pkg}::{name}");
-            let target_prefix = format!("{target_pkg}::{name}/");
+            let source_single = crate::qualified::qualified_text(module, &name)
+                .as_str()
+                .to_string();
+            let source_prefix = format!(
+                "{}/",
+                crate::qualified::qualified_text(module, &name).as_str()
+            );
+            let target_single = crate::qualified::qualified_text(target_pkg, &name)
+                .as_str()
+                .to_string();
+            let target_prefix = format!(
+                "{}/",
+                crate::qualified::qualified_text(target_pkg, &name).as_str()
+            );
             let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
             // An exported method is represented by synthetic arity-qualified
             // candidates.  A class may also contain a same-named plain sub;
@@ -1538,7 +1655,7 @@ impl Interpreter {
                 let term_spelling = crate::runtime::term_names::term_spelling(&target);
                 let is_term = term_spelling.is_some();
                 let is_enum_key = !is_term
-                    && !target.contains("::")
+                    && !crate::qualified::is_qualified_str(&target)
                     && !target.starts_with(['$', '@', '%', '&'])
                     && matches!(value.view(), ValueView::Enum { .. });
                 let env_target = if is_enum_key {
@@ -1546,7 +1663,7 @@ impl Interpreter {
                 } else {
                     target.clone()
                 };
-                if !target.contains("::") {
+                if !crate::qualified::is_qualified_str(&target) {
                     self.unsuppress_name(term_spelling.unwrap_or(&target));
                 }
                 // Slice F (env<->locals coherence): `import` writes the symbol
@@ -1560,7 +1677,7 @@ impl Interpreter {
                 // recording it made the importing frame pull `env[<key>]` over a
                 // same-named lexical's slot on the next frame reconcile — the
                 // half of #7914 that turned the caller's `my $s` into `Any`.
-                if !target.contains("::") && !is_enum_key && !is_term {
+                if !crate::qualified::is_qualified_str(&target) && !is_enum_key && !is_term {
                     let slot_name = match target.chars().next() {
                         Some('$' | '@' | '%') => target[1..].to_string(),
                         _ => target.clone(),
@@ -1569,7 +1686,9 @@ impl Interpreter {
                 }
                 // Part of the LOADING module's own lexical scope, whether or not
                 // it is new to `env` (see `module_imported_names`).
-                if !self.module.module_load_stack.is_empty() && !target.contains("::") {
+                if !self.module.module_load_stack.is_empty()
+                    && !crate::qualified::is_qualified_str(&target)
+                {
                     let previous = self.env.get(&env_target).cloned();
                     self.module.module_imported_names.push((
                         env_target.clone(),
@@ -1605,7 +1724,7 @@ impl Interpreter {
                         .clone()
                         .or_else(|| self.module.unit_module_loading_stack.last().cloned())
                         .unwrap_or_else(|| self.current_package());
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(importer_package)
                         .or_default()
                         .entry(short.clone())
@@ -1664,7 +1783,10 @@ impl Interpreter {
         self.module.suppress_exports = saved;
         self.module.module_load_stack.pop();
         if result.is_ok() {
-            let short_name = if let Some((_, short)) = module.rsplit_once("::") {
+            let short_name = if let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 short.to_string()
             } else {
                 module.to_string()
@@ -1674,7 +1796,11 @@ impl Interpreter {
                 if !class_snapshot.contains(class_name) {
                     crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(class_name.clone());
-                    if let Some((_, short)) = class_name.rsplit_once("::") {
+                    if let Some((_, short)) = crate::qualified::split_qualified(
+                        crate::qualified::known_symbol(class_name),
+                    )
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                    {
                         crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                             .insert(short.to_string());
                     }
@@ -1700,10 +1826,7 @@ impl Interpreter {
                     continue;
                 }
                 let key_s = key.resolve();
-                let key_short = key_s
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(key_s.as_str());
+                let key_short = crate::qualified::last_segment(*key).as_str();
                 if !key_short
                     .chars()
                     .next()

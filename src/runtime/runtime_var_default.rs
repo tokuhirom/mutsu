@@ -42,8 +42,8 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
         if is_attr_twigil_name(name) {
-            self.attr_var_defaults.insert(name.to_string(), value);
-            self.attr_var_defaults_epoch += 1;
+            self.types.attr_var_defaults.insert(name.to_string(), value);
+            self.types.attr_var_defaults_epoch += 1;
             return;
         }
         VAR_DEFAULT_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -64,9 +64,9 @@ impl Interpreter {
         receiver_class: &str,
     ) -> bool {
         let key = (Symbol::intern(owner_class), Symbol::intern(receiver_class));
-        self.attr_var_defaults_current.get(&key)
+        self.types.attr_var_defaults_current.get(&key)
             == Some(&(
-                self.attr_var_defaults_epoch,
+                self.types.attr_var_defaults_epoch,
                 self.registry().method_generation,
             ))
     }
@@ -81,10 +81,10 @@ impl Interpreter {
     ) {
         let key = (Symbol::intern(owner_class), Symbol::intern(receiver_class));
         let stamp = (
-            self.attr_var_defaults_epoch,
+            self.types.attr_var_defaults_epoch,
             self.registry().method_generation,
         );
-        self.attr_var_defaults_current.insert(key, stamp);
+        self.types.attr_var_defaults_current.insert(key, stamp);
     }
 
     /// Register `value` as the `is default(...)` of attribute `attr_name` under
@@ -103,15 +103,17 @@ impl Interpreter {
         for name in names {
             let name = name.as_str();
             if self
+                .types
                 .attr_var_defaults
                 .get(name)
                 .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, &value))
             {
                 continue;
             }
-            self.attr_var_defaults
+            self.types
+                .attr_var_defaults
                 .insert(name.to_string(), value.clone());
-            self.attr_var_defaults_epoch += 1;
+            self.types.attr_var_defaults_epoch += 1;
         }
     }
 
@@ -123,7 +125,7 @@ impl Interpreter {
     #[inline(always)]
     pub(crate) fn has_var_defaults(&self) -> bool {
         VAR_DEFAULT_SEEN.load(std::sync::atomic::Ordering::Relaxed)
-            || !self.attr_var_defaults.is_empty()
+            || !self.types.attr_var_defaults.is_empty()
     }
 
     /// The `is default(...)` value of the variable `name` resolves to in the
@@ -131,10 +133,10 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
         if is_attr_twigil_name(name) {
-            if self.attr_var_defaults.is_empty() {
+            if self.types.attr_var_defaults.is_empty() {
                 return None;
             }
-            return self.attr_var_defaults.get(name);
+            return self.types.attr_var_defaults.get(name);
         }
         if !VAR_DEFAULT_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
             return None;
@@ -150,8 +152,8 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn clear_var_default(&mut self, name: &str) {
         if is_attr_twigil_name(name) {
-            if self.attr_var_defaults.remove(name).is_some() {
-                self.attr_var_defaults_epoch += 1;
+            if self.types.attr_var_defaults.remove(name).is_some() {
+                self.types.attr_var_defaults_epoch += 1;
             }
             return;
         }

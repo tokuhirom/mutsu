@@ -21,7 +21,8 @@
 use super::*;
 
 /// What binding a parameter does to the incoming value's itemization.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum ScalarParamBind {
     /// A plain `$` parameter: the value is put in a (read-only) Scalar, so an
     /// Array/List/Hash argument is ONE item in list context.

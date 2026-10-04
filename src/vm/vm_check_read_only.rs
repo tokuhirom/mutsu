@@ -230,7 +230,7 @@ impl Interpreter {
         // The order a by-name read resolves a scalar in (a unit lexical the
         // running routine captured, then the env chain), but on the raw
         // binding: the read itself derefs the unit lexical's cell.
-        let binding = match self.unit_lexical_slot(name) {
+        let binding = match self.unit_lexical_slot(name, Some(sym)) {
             Some(v) => v.clone(),
             None => self.env().get_sym(sym)?.clone(),
         };

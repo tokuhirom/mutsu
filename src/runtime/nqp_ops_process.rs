@@ -25,6 +25,15 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         Some(match op {
+            // nqp::barrierfull() — a full (sequentially consistent) memory
+            // barrier; answers VMNull, which mutsu spells Nil. mutsu's atomic
+            // ops already serialize through locks, so this only orders the
+            // plain accesses around it, as MoarVM's does.
+            // Cost: O(1).
+            "barrierfull" => {
+                std::sync::atomic::fence(std::sync::atomic::Ordering::SeqCst);
+                Ok(Value::NIL)
+            }
             // -- the process's standard handles --
             // These are the *process* streams, deliberately not the `$*OUT` /
             // `$*ERR` dynamic variables: a caller that swapped `$*OUT` for a
@@ -324,6 +333,9 @@ impl Interpreter {
                 }
             }
 
+            // The Threads family (#11502): runtime/nqp_ops_thread.rs.
+            "currentthread" | "newthread" | "threadrun" | "threadjoin" | "threadid"
+            | "threadyield" | "threadlockcount" => return self.call_nqp_op_thread(op, args),
             _ => return self.call_nqp_op_text(op, args),
         })
     }

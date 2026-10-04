@@ -156,6 +156,7 @@ impl Interpreter {
                 && name_str != "EXPORT"
                 && !self.module.prelude_sub_names.contains(name)
                 && !self
+                    .types
                     .our_scoped_package_items
                     .contains(crate::qualified::qualified(Symbol::intern("GLOBAL"), *name).as_str())
         });

@@ -94,10 +94,14 @@ impl Interpreter {
         if name.is_empty() {
             return None;
         }
-        if package.is_empty() || package == "GLOBAL" {
+        if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
             Some(name.to_string())
         } else {
-            Some(format!("{package}::{name}"))
+            Some(
+                crate::qualified::qualified_text(&package, &name)
+                    .as_str()
+                    .to_string(),
+            )
         }
     }
 
@@ -149,14 +153,15 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<crate::runtime::nativecall::NativeCallSpec> {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             return self
                 .module
                 .native_call_specs
                 .get(name)
                 .cloned()
                 .or_else(|| {
-                    name.rsplit_once("::")
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
                         .and_then(|(_, short)| self.module.native_call_specs.get(short).cloned())
                 });
         }
@@ -166,11 +171,17 @@ impl Interpreter {
             let owner = def.package.resolve();
             self.module
                 .native_call_specs
-                .get(&format!("{owner}::{name}"))
+                .get(
+                    &crate::qualified::qualified_text(&owner, name)
+                        .as_str()
+                        .to_string(),
+                )
                 .cloned()
         };
         for pkg in self.bare_name_packages() {
-            let qualified = format!("{pkg}::{name}");
+            let qualified = crate::qualified::qualified_text(&pkg, name)
+                .as_str()
+                .to_string();
             if let Some(spec) = self.module.native_call_specs.get(&qualified) {
                 return Some(spec.clone());
             }
@@ -371,8 +382,10 @@ impl Interpreter {
                 let invocant = args.remove(0);
                 return self.call_method_with_values(invocant, &name.resolve(), args);
             }
-            if !package.is_empty() && package != "GLOBAL" {
-                let fq = format!("{package}::{name}");
+            if !crate::qualified::is_global_package(package) {
+                let fq = crate::qualified::qualified_text(package, name)
+                    .as_str()
+                    .to_string();
                 if self.resolve_function(&fq).is_some() {
                     return self.call_function(&fq, args);
                 }
@@ -387,7 +400,10 @@ impl Interpreter {
             // Method dispatch fallback for &?ROUTINE.dispatcher()(self, ...)
             // Only use this when the package is a known class.
             let pkg = package.resolve();
-            if !args.is_empty() && !pkg.is_empty() && pkg != "GLOBAL" && self.has_class(&pkg) {
+            if !args.is_empty()
+                && !crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg))
+                && self.has_class(&pkg)
+            {
                 let invocant = args[0].clone();
                 let method_args = args[1..].to_vec();
                 return self.call_method_with_values(invocant, &name_str, method_args);
@@ -1099,7 +1115,9 @@ impl Interpreter {
             // suppressed nested name did not resolve.
             let saved_anon_pkg = {
                 let pkg = data.package.resolve();
-                if !pkg.is_empty() && pkg != "GLOBAL" && !pkg.contains("::&") {
+                if !crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg))
+                    && !pkg.contains("::&")
+                {
                     let saved = self.current_package().to_string();
                     self.set_current_package(pkg.to_string());
                     Some(saved)
@@ -1197,7 +1215,9 @@ impl Interpreter {
             self.frame_owned = saved_frame_owned;
             let result = match body_result {
                 Err(mut e) if e.is_leave => {
-                    let routine_key = format!("{}::{}", data.package, data.name);
+                    let routine_key = crate::qualified::qualified_text(data.package, data.name)
+                        .as_str()
+                        .to_string();
                     let matches_frame = if let Some(target_id) = e.leave_callable_id() {
                         target_id == data.id
                     } else if let Some(target_routine) = e.leave_routine() {

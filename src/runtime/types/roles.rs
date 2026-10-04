@@ -470,7 +470,7 @@ impl Interpreter {
         // A group left open by `open_role_application_group` (the compiler
         // split ONE `but (R1, R2)` into an op per element) is joined rather
         // than replaced, so every element of that tuple shares one id.
-        let group = match self.open_role_group {
+        let group = match self.types.open_role_group {
             Some(g) => g,
             None => crate::value::next_instance_id() as i64,
         };
@@ -492,13 +492,13 @@ impl Interpreter {
     /// ops are consecutive by construction, and a nested `but` inside an
     /// element expression would open (and close) its own.
     pub(crate) fn open_role_application_group(&mut self) {
-        self.open_role_group = Some(crate::value::next_instance_id() as i64);
+        self.types.open_role_group = Some(crate::value::next_instance_id() as i64);
     }
 
     /// Close any open application group, so the next composition mints a fresh
     /// one. Called by the ordinary single-role `but`/`does` op.
     pub(crate) fn close_role_application_group(&mut self) {
-        self.open_role_group = None;
+        self.types.open_role_group = None;
     }
 
     fn var_target_name_from_value(value: &Value) -> Option<String> {

@@ -27,9 +27,7 @@ mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
-pub(crate) use stmt::class::{
-    inject_implicit_rule_ws, inject_separator_ws, parse_bracket_arg_exprs, role_type_param_names,
-};
+pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::auto_default_expr_for_type;
@@ -228,6 +226,9 @@ thread_local! {
     /// not a compilation unit, so its statements are not in mainline sink
     /// context and must never raise a "Useless use of ..." warning.
     static SUPPRESS_SINK_WARNINGS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Armed by [`parse_nested_block_fragment`]: the scope state the next
+    /// `parse_program` starts from instead of a fresh unit's.
+    static INHERITED_SCOPES: RefCell<Option<InheritedScopes>> = const { RefCell::new(None) };
 }
 
 /// Arm the value-tail sink semantics for the next `parse_program` call (see
@@ -250,17 +251,56 @@ fn take_suppress_sink_warnings() -> bool {
     SUPPRESS_SINK_WARNINGS.with(|f| f.replace(false))
 }
 
-/// [`parse_fragment`] for a copy of the enclosing unit's text that starts at
-/// unit offset `unit_offset` (a regex code block's body): its statement
-/// attempts are recorded in the enclosing unit's numbering for `use trace`.
-pub(crate) fn parse_fragment_at(
+/// [`parse_fragment`] for a block nested in the unit being parsed — a regex
+/// code block's body (`{ ... }`, `<?{ ... }>`), which the regex parser hands
+/// over as a separate string. Unlike a run-time fragment, the block is lexically
+/// inside the enclosing unit, so its parse starts from the enclosing scope stack
+/// (declared subs, types, terms, the package path and language revision) rather
+/// than from a fresh unit's: `dec ~$/` must parse as the listop call
+/// `dec(~$/)` when `sub dec` is declared outside the regex (#11616).
+///
+/// With `unit_offset` (the body's offset in the enclosing unit's text), its
+/// statement attempts are recorded in that unit's numbering for `use trace`.
+pub(crate) fn parse_nested_block_fragment(
     input: &str,
-    unit_offset: usize,
+    unit_offset: Option<usize>,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    primary::fragment_attempts::lend_attempts(unit_offset);
+    if let Some(offset) = unit_offset {
+        primary::fragment_attempts::lend_attempts(offset);
+    }
+    INHERITED_SCOPES.with(|slot| {
+        *slot.borrow_mut() = Some(InheritedScopes {
+            scopes: stmt::simple::snapshot_scopes(),
+            package_path: stmt::simple::snapshot_package_path(),
+            language_version: stmt::simple::current_language_version(),
+        });
+    });
     let result = parse_fragment(input);
-    primary::fragment_attempts::clear_lent_attempts();
+    // `parse_program` consumes the slot; clear it in case it bailed out first.
+    INHERITED_SCOPES.with(|slot| slot.borrow_mut().take());
+    if unit_offset.is_some() {
+        primary::fragment_attempts::clear_lent_attempts();
+    }
     result
+}
+
+/// The enclosing unit's parser scope state a [`parse_nested_block_fragment`]
+/// starts from.
+struct InheritedScopes {
+    scopes: Vec<stmt::simple::LexicalScope>,
+    package_path: Vec<String>,
+    language_version: String,
+}
+
+/// Install the scope state [`parse_nested_block_fragment`] armed, if any
+/// (one-shot: a parse nested inside the fragment starts fresh).
+fn apply_inherited_scopes() {
+    let Some(inherited) = INHERITED_SCOPES.with(|slot| slot.borrow_mut().take()) else {
+        return;
+    };
+    stmt::simple::restore_scopes(inherited.scopes);
+    stmt::simple::restore_package_path(inherited.package_path);
+    stmt::simple::set_current_language_version(&inherited.language_version);
 }
 
 /// Parse an internal expression *fragment* (a role type argument re-parsed at
@@ -678,6 +718,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     let _memo_generation = memo::begin_parse_generation();
     stmt::reset_user_subs();
     stmt::simple::register_preload_module_exports();
+    apply_inherited_scopes();
     let _core_type_fold = core_type_fold::begin_unit();
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
@@ -821,6 +862,25 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_user_type_preseed(Vec::new());
     stmt::set_eval_user_value_term_preseed(Vec::new());
     stmt::set_eval_language_version_preseed(None);
+    stmt::simple::set_current_language_version(&saved_language_version);
+    result
+}
+
+/// Parse a regex code block's body (`{ ... }`, `<?{ ... }>`) at match time, when
+/// the regex was not lowered from its parse-time source tree and only the code
+/// string is left. `user_sub_names` are the routines the running program has
+/// declared, seeded like an EVAL's so a listop call with a glued prefix
+/// argument (`dec ~$/`) parses as `dec(~$/)` rather than `dec() ~ $/` (#11616).
+/// Unlike an EVAL the body keeps plain sink semantics and the enclosing
+/// unit's language revision.
+pub(crate) fn parse_regex_code_with_user_subs(
+    input: &str,
+    user_sub_names: &[String],
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
+    let saved_language_version = stmt::simple::current_language_version();
+    let result = parse_program(input);
+    stmt::set_eval_user_sub_preseed(Vec::new());
     stmt::simple::set_current_language_version(&saved_language_version);
     result
 }

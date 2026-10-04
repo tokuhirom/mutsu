@@ -597,7 +597,8 @@ pub(crate) struct FunctionDef {
 /// def ([`FunctionDef::body_facts_cache`]): one walk more on first touch is
 /// negligible next to the
 /// compile the gates decide whether to perform.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct RoutineBodyFacts {
     /// The body contains a construct whose semantics the standalone-compiled
     /// form would not preserve (a type declaration, a `start` block, ...).
@@ -1552,7 +1553,18 @@ pub(crate) enum PackageRuntimeDecl {
 
 /// The declarator keyword used for a `Stmt::Package`. Determines the
 /// `package-kind` reported by X::Attribute::Package.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub(crate) enum PackageKind {
     Module,
     Package,
@@ -1611,7 +1623,18 @@ impl PackageKind {
 /// [`ReadonlyKind::ImmutableDeep`] is a fourth, narrower kind layered on top
 /// of the `Immutable` case: not a fresh exception class, but an extra fact
 /// the same binding carries (see its own doc comment).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub(crate) enum ReadonlyKind {
     /// Readonly binding with a container behind it: parameters, `for` aliases.
     Alias,
@@ -1685,7 +1708,9 @@ pub(crate) enum WithBlockKind {
 }
 
 /// The payload of [`Stmt::UndeclaredRoutine`].
-#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Hash, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode,
+)]
 pub(crate) struct UndeclaredRoutineCall {
     /// The routine name the unit calls.
     pub(crate) name: String,

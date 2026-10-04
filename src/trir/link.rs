@@ -17,7 +17,8 @@ use crate::symbol::Symbol;
 /// Linking only ever points at a routine declared EARLIER in the same
 /// compile (a forward or self reference is a generic call), so these `Arc`s
 /// cannot form a cycle.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrLink {
     /// The callee's `CompiledFns` key, as its declaration produced it.
     pub(crate) key: Symbol,

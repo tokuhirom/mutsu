@@ -237,7 +237,7 @@ impl Interpreter {
         tc_idx: u32,
         constraint: &str,
     ) -> bool {
-        if Self::any_type_capture_seen() || !self.package_type_aliases.is_empty() {
+        if Self::any_type_capture_seen() || !self.types.package_type_aliases.is_empty() {
             return false;
         }
         let generation = self.registry_write_generation();
@@ -353,6 +353,13 @@ impl Interpreter {
                 .then(|| loan_env!(self, type_arg_value_from_name(constraint)));
             match parametric {
                 Some(v) if matches!(v.view(), ValueView::ParametricRole { .. }) => v,
+                // A class with its own `^parameterize` (upstream NativeCall's
+                // `Pointer[uint16]`): the type object that meta-method built.
+                _ if constraint.contains('[')
+                    && let Some(v) = loan_env!(self, meta_parameterized_type(constraint)) =>
+                {
+                    v
+                }
                 _ => {
                     // The seeded package must carry the NOMINAL type name —
                     // smileys stripped (`my Int:_ $a` seeds `Int`, not
@@ -387,7 +394,7 @@ impl Interpreter {
         free_var_store: bool,
     ) -> (Option<String>, bool) {
         if free_var_store
-            && let Some(slot) = self.unit_lexical_slot(name)
+            && let Some(slot) = self.unit_lexical_slot(name, None)
             && let ValueView::ContainerRef(cell) = slot.view()
         {
             let constraint = crate::value::lookup_cell_constraint(&cell)

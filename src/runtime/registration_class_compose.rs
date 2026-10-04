@@ -226,6 +226,7 @@ impl Interpreter {
             .push(resolved_parent_name.to_string());
         // Look up the role's language revision for submethod composition rules.
         let role_lang_rev = self
+            .types
             .type_metadata
             .get(base_role_name)
             .and_then(|m| m.get("language-revision"))

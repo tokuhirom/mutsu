@@ -174,3 +174,19 @@ fn the_name_test_knows_the_arity() {
     assert!(!names_a_row(Symbol::intern("elems"), 1));
     assert!(!names_a_row(substr, 200));
 }
+
+/// The shape test: a name with rows for other receivers is refused for this
+/// one before any lookup.
+#[test]
+fn the_shape_test_knows_the_receiver() {
+    assert!(
+        SHAPES.len() <= 16,
+        "a shape bit must fit Table::shapes' u16"
+    );
+    let int = Symbol::intern("Int");
+    assert!(shape_has_row(DispatchShape::Int, int));
+    assert!(shape_has_row(DispatchShape::Rat, int));
+    assert!(!shape_has_row(DispatchShape::Str, int));
+    // An inherited row sets the bit of the shape that reaches it.
+    assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
+}

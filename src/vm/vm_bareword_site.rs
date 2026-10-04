@@ -54,6 +54,15 @@ impl Interpreter {
             return Ok(());
         }
         let name = Self::const_str(code, name_idx);
+        // A `C[T]` spelling of a class with its own `^parameterize` (the
+        // desugared `my Pointer[uint16] $p .= new`) is the type object that
+        // meta-method builds, memoized per spelling.
+        if name.contains('[')
+            && let Some(ty) = self.meta_parameterized_type(name)
+        {
+            self.stack.push(ty);
+            return Ok(());
+        }
         self.push_bare_word_value(code.const_sym(name_idx), compiled_fns)?;
         if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
             && sym == name
