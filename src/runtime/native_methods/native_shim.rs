@@ -70,6 +70,7 @@ pub(in crate::runtime) fn native_method_shim(
         assumed_positional: Vec::new(),
         assumed_named: ValueMap::default(),
         id: crate::value::next_instance_id(),
+        is_direct_code: false,
         empty_sig: false,
         is_bare_block: true,
         compiled_code: None,

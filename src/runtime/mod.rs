@@ -3055,6 +3055,7 @@ mod tests {
             assumed_positional: vec![],
             assumed_named: ValueMap::default(),
             id: 1,
+            is_direct_code: false,
             empty_sig: false,
             is_bare_block: false,
             compiled_code: Some(Arc::new(compiled)),

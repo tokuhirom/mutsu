@@ -152,6 +152,7 @@ impl Interpreter {
             assumed_positional: Vec::new(),
             assumed_named: ValueMap::default(),
             id,
+            is_direct_code: false,
             is_bare_block: spec.is_bare_block,
             owned_captures,
             authoritative_captures,

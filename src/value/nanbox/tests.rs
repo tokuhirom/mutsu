@@ -251,6 +251,7 @@ fn sample_sub() -> Gc<SubData> {
         assumed_positional: vec![],
         assumed_named: ValueMap::default(),
         id: 12345,
+        is_direct_code: false,
         empty_sig: false,
         is_bare_block: false,
         compiled_code: None,

@@ -238,6 +238,7 @@ impl Interpreter {
                     assumed_positional: Vec::new(),
                     assumed_named: ValueMap::default(),
                     id: crate::value::next_instance_id(),
+                    is_direct_code: false,
                     empty_sig: false,
                     is_bare_block: false,
                     compiled_code,

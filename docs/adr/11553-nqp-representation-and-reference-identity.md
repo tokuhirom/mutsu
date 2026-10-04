@@ -1,6 +1,6 @@
 # ADR-11553: Keep NQP representation and reference identity across value operations
 
-- **Status**: Proposed (awaiting maintainer decision; no implementation has landed)
+- **Status**: Accepted (2026-10-04; maintainer merged the proposal and requested implementation)
 - **Date**: 2026-10-04
 - **Issue**: [#11553](https://github.com/tokuhirom/mutsu/issues/11553)
 - **Related**: [ADR-0005](0005-nanbox-representation-encoding.md) (value tags),
@@ -199,5 +199,14 @@ tree-walk or interpreter method-dispatch fallback is introduced.
    36/53 to 53/53 Type / Conversion ops. The tests must agree with Rakudo;
    mere absence of `Unsupported nqp:: op` does not satisfy acceptance.
 
-This ADR proposes one mechanism and its acceptance criteria. No op is marked
-implemented or "Not applicable" before the mechanism is delivered.
+This ADR defines the mechanism and its acceptance criteria. No op is marked
+implemented or "Not applicable" before its behavior is delivered.
+
+## 6. Implementation status
+
+- **Code-body identity (`iscoderef`)**: the first implementation slice uses
+  the direct executable body already produced by `Code.$!do`. Its direct-call
+  flag now lives on `SubData` and is shared by wrap-chain dispatch and the
+  NQP representation test, instead of a string-keyed environment marker.
+  `t/vm/nqp-iscoderef-code-body.t` pins both the high-level routine and its
+  direct body against Rakudo. The other 16 ops remain open under #11553.
