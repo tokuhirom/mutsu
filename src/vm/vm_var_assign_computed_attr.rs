@@ -472,7 +472,7 @@ impl Interpreter {
     /// role's key. So the key of the role that *declares* `bare` is the store
     /// of record; the other spellings are stale seeds, and picking one of them
     /// by hash order made the read nondeterministic.
-    // Cost: O(m * (r + a)), m = mixin layers (bounded by 8), r = roles
+    // Cost: O(m * (r log r + a)), m = mixin layers (bounded by 8), r = roles
     // composed in a layer, a = attributes stored in a layer's role cell.
     // Taken only when the dispatch stack names no owner that holds the
     // attribute.
@@ -485,17 +485,31 @@ impl Interpreter {
         crate::symbol::Symbol,
     )> {
         let suffix = format!("\0{}", bare.as_str());
+        let package = self.current_package();
         let mut current = val.clone();
         for _ in 0..8 {
             match current.view() {
                 ValueView::Mixin(inner_value, mixins) => {
                     let cell = mixins.attributes().clone();
-                    let declared = mixins
+                    let mut declaring: Vec<&str> = mixins
                         .keys()
                         .filter_map(|key| key.strip_prefix(MetaNs::Role.prefix()))
                         .filter(|role| self.mixin_role_declares_attr(mixins, role, bare.as_str()))
-                        .map(|role| mixins.role_attribute_key(role, bare.as_str()))
-                        .find(|key| cell.as_map().contains_key(*key));
+                        .filter(|role| {
+                            cell.as_map()
+                                .contains_key(mixins.role_attribute_key(role, bare.as_str()))
+                        })
+                        .collect();
+                    // Two roles may each declare an attribute of that name;
+                    // the code running is the closure's own role's, so its
+                    // package decides, then the name order (never hash
+                    // order).
+                    declaring.sort_unstable();
+                    let declared = declaring
+                        .iter()
+                        .find(|role| **role == package)
+                        .or(declaring.first())
+                        .map(|role| mixins.role_attribute_key(role, bare.as_str()));
                     let key = declared.or_else(|| {
                         let map = cell.as_map();
                         let mut found: Vec<_> = map

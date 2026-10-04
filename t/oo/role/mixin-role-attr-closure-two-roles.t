@@ -37,7 +37,11 @@ class C { }
 }
 
 {
-    role P { has $!a = 'p' }
-    my $o = (C.new but N) but P;
-    is $o.mk()(), 3, 'a same-named attribute of another role does not shadow it';
+    role P { has $!a = 'p'; method mkp { -> { $!a } } }
+    my @seen = (^10).map: {
+        my $o = (C.new but N) but P;
+        $o.mk()() ~ ' ' ~ $o.mkp()();
+    };
+    is-deeply @seen.unique.List, ('3 p',),
+        "two roles' same-named attributes stay apart, read from each role's closure";
 }
