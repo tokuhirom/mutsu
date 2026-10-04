@@ -1100,6 +1100,9 @@ impl Interpreter {
             return Some(Ok(Value::truth(is_impl_detail)));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {
+            if let Some(ty) = data.routine_cell.return_type() {
+                return Some(Ok(ty));
+            }
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());

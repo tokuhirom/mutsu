@@ -1103,7 +1103,13 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
         Some(sub) if !is_named_alias_sub_signature(p, sub) => make_signature_value(
             SigInfo {
                 params: sub.clone(),
-                return_type: None,
+                // A callable parameter's signature (`&cmp (Pointer, Pointer
+                // --> int32)`) keeps its return type: upstream NativeCall
+                // marshals a callback's result from it.
+                return_type: p
+                    .code_signature
+                    .as_ref()
+                    .and_then(|cs| cs.return_type.clone()),
                 param_defs: None,
             },
             interp,
