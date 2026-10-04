@@ -300,6 +300,7 @@ t/collections/listop-as-code-value.t
 t/collections/listop-bareword-fat-arrow-pair.t
 t/collections/listop-block-arg-trailing-comma.t
 t/collections/listop-classify-whatevercode-topic.t
+t/collections/listop-loose-bool-prefix-arg.t
 t/collections/listop-map-defers.t
 t/collections/listop-shadow-declared.t
 t/collections/listop-unicode-numeric-arg.t
@@ -439,6 +440,7 @@ t/collections/subscript/incdec-autoviv-undefined-base.t
 t/collections/subscript/incdec-nested-keeps-caller-stack.t
 t/collections/subscript/incdec-whatever-index.t
 t/collections/subscript/index-assign-expr.t
+t/collections/subscript/index-assign-expression-subscript-protocol.t
 t/collections/subscript/index-assign-shadow-slot.t
 t/collections/subscript/index-bind-fat-arrow-rhs.t
 t/collections/subscript/index-incdec-shadowed-lexical.t
@@ -1037,6 +1039,7 @@ t/exceptions/vcs-conflict-marker.t
 t/exceptions/warn-cross-frame-resume.t
 t/exceptions/warns-like.t
 t/exceptions/where-clause-exception-and-defaulted-param-dispatch.t
+t/exceptions/x-io-link-message.t
 t/exceptions/x-io-resolve-notachild.t
 t/exceptions/x-wrapper-role.t
 t/grammar/append-one-arg-rule.t
@@ -1058,12 +1061,14 @@ t/grammar/grammar-named-cursor.t
 t/grammar/grammar-optional-ordered-alternative.t
 t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
+t/grammar/grammar-rule-args.t
 t/grammar/grammar-rule-separated-quantifier-whitespace.t
 t/grammar/grammar-sibling-implicit-core-parent.t
 t/grammar/grammar-sigilless-alias-silent-action.t
 t/grammar/grammar-silent-subrule-action-gate.t
 t/grammar/grammar-token-instance-method.t
 t/grammar/grammar-user-highwater.t
+t/grammar/my-token-visible-from-methods.t
 t/grammar/regex-crosspkg-charclass-token.t
 t/grammar/regex-grammar-method-leaf.t
 t/grammar/regex-negated-token-class-multichar.t
@@ -1071,6 +1076,7 @@ t/grammar/rule-sigspace-charclass-brace.t
 t/grammar/rule-sigspace-escaped-brace.t
 t/grammar/slurpy-single-argument-rule.t
 t/grammar/subset-where-class-scoped-grammar.t
+t/grammar/token-redeclaration.t
 t/grammar/token-wrap-callsame-failed-cursor.t
 t/grammar/token-zero-width-quantified-subrule.t
 t/io/argfiles-eof-stdin.t
@@ -2041,6 +2047,7 @@ t/oo/method/method-lookup-signature-parameter-identity.t
 t/oo/method/method-lvalue-assign-slip.t
 t/oo/method/method-nested-sub-registry-scoped.t
 t/oo/method/method-new-dispatcher-under-outer-multi.t
+t/oo/method/method-object-arity-count.t
 t/oo/method/method-otf-dispatch.t
 t/oo/method/method-outer-code-var-cell.t
 t/oo/method/method-outer-var-ignores-callers-readonly-param.t
@@ -2149,6 +2156,7 @@ t/oo/mixin-itemization-raku.t
 t/oo/mixin-list-iteration.t
 t/oo/mixin-name-application-order.t
 t/oo/mixin-type-constant-constraint.t
+t/oo/mixin-type-set-name-raku.t
 t/oo/mixin-typed-int-attr-persists-across-calls.t
 t/oo/mixin-value-identity.t
 t/oo/mop/builtin-type-introspection.t
@@ -2502,8 +2510,11 @@ t/rakuast/rakuast-qualified-decl-name.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
+t/rakuast/rakuast-regex-argumented-aliases.t
+t/rakuast/rakuast-regex-argumented-subrules.t
 t/rakuast/rakuast-regex-char-class-assertions.t
 t/rakuast/rakuast-regex-char-classes.t
+t/rakuast/rakuast-regex-decl-scope-params.t
 t/rakuast/rakuast-regex-match-markers.t
 t/rakuast/rakuast-regex-modifiers-anchors.t
 t/rakuast/rakuast-regex-outer-adverbs.t
@@ -2631,10 +2642,12 @@ t/regex/match/split-regex-separator-captures.t
 t/regex/match/sprintf-match-numeric-coerce.t
 t/regex/match/str-coerce-match-fastpath.t
 t/regex/match/string-interpolation-match.t
+t/regex/match/sub-signature-destructure-match.t
 t/regex/match/temporal-smartmatch.t
 t/regex/match/whatever-smart-not-match.t
 t/regex/match/when-only-block-nonmatch-value.t
 t/regex/match/zen-slice-match-var.t
+t/regex/monkey-see-no-eval-regex-code.t
 t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
 t/regex/regex-adverb-error.t
@@ -2645,6 +2658,7 @@ t/regex/regex-basic.t
 t/regex/regex-code-block-process-magicals.t
 t/regex/regex-code-block-writeback.t
 t/regex/regex-compact-combined-property-class.t
+t/regex/regex-composite-class-scan.t
 t/regex/regex-composite-class-subtraction.t
 t/regex/regex-corner-bracket-literal-raw.t
 t/regex/regex-crlf-literal-escape-pair.t
@@ -2670,16 +2684,19 @@ t/regex/regex-nested-subcaps-sharing.t
 t/regex/regex-parse-cache.t
 t/regex/regex-perl5-adverb-not-allowed.t
 t/regex/regex-quantified-scalar-interpolation.t
+t/regex/regex-repeat-zero.t
 t/regex/regex-repeated-optional-name-list.t
 t/regex/regex-scan-prefilter-chain.t
 t/regex/regex-separator-leading-empty.t
 t/regex/regex-spaces-in-bare-range.t
+t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
 t/regex/regex-subrule-absolute-position.t
 t/regex/regex-subrule-parse-cache.t
 t/regex/regex-tree-angle-interpolation.t
 t/regex/regex-tree-array-interpolation.t
 t/regex/regex-tree-array-lookaround.t
+t/regex/regex-tree-callable.t
 t/regex/regex-tree-code-assertion.t
 t/regex/regex-tree-code-block.t
 t/regex/regex-tree-interpolated-block.t
@@ -2694,7 +2711,9 @@ t/regex/rx-literal-in-block-topic.t
 t/regex/rx-value-bool-defining-topic.t
 t/regex/rx-value-bool-map-topic.t
 t/regex/rx-value-interpolation-not-cached-across-calls.t
+t/regex/subrule-code-var-holding-named-regex.t
 t/regex/subset-regex-return-check.t
+t/regex/subst/match-subst-named-regex-arg.t
 t/regex/subst/match-var-param-subst-invocant.t
 t/regex/subst/str-trans-errors.t
 t/regex/subst/subst-closure-quantified-capture.t
@@ -2748,6 +2767,7 @@ t/regex/unterminated-regex.t
 t/routines/amp-var-callable-object-call.t
 t/routines/amp-what-callable.t
 t/routines/block-local-routine-scope.t
+t/routines/block-scope-routine-registry.t
 t/routines/builtin-routine-type-identity.t
 t/routines/call/assign-expr-captured-array.t
 t/routines/call/bind-rebound-capture-rmw-writes-through.t
@@ -3159,6 +3179,7 @@ t/routines/signature/pod-declarator-param-trailing-extent.t
 t/routines/signature/pointy-anon-destructure-later-param.t
 t/routines/signature/pointy-block-destructure-expr.t
 t/routines/signature/pointy-block-destructure.t
+t/routines/signature/pointy-hash-subsignature-hyper-unspace.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
 t/routines/signature/pointy-sigilless-param-traits.t
@@ -3725,6 +3746,7 @@ t/vm/nested-frame-container-mutation-reaches-owner.t
 t/vm/non-variable-dollar.t
 t/vm/nqp-array-sorted-ops.t
 t/vm/nqp-atkey-rebind-null.t
+t/vm/nqp-atpos-high-level-array.t
 t/vm/nqp-atpos-wide-buf.t
 t/vm/nqp-atposref-buf.t
 t/vm/nqp-attr-literal-name-parity.t
