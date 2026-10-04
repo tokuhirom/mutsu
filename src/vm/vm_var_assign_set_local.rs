@@ -1514,18 +1514,30 @@ impl Interpreter {
         // bare name. A `$` name bound straight to a literal has no container of
         // its own, so rakudo's assignment error is X::AdHoc "Cannot assign to
         // an immutable value".
+        //
+        // Only a DECLARATION re-decides the cell its slot holds: that cell is
+        // the variable's own. A rebind (`$z := 5`) replaces the binding, and
+        // the cell the slot still holds may be shared with another variable
+        // (`my $z := $y`, whose cell the bind decided writable, #11539) --
+        // re-deciding it would make `$y` readonly too. The rebind's new
+        // binding cell carries the kind itself (see `readonly_binding_kind`).
+        let record_on_own_binding = |this: &Self, bare: &str, kind| {
+            if is_vardecl {
+                this.record_readonly_on_own_binding(code, bare, kind);
+            }
+        };
         if bind_marks_immutable || bind_marks_non_scalar_container {
             let bare = code.locals[idx]
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
-            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Immutable);
+            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Immutable);
         } else if bind_marks_type_object {
             let bare = code.locals[idx]
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
-            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::TypeObject);
+            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::TypeObject);
         } else if bind_marks_itemized_scalar {
             // A readonly Scalar holds the itemized aggregate: the name owns a
             // container (so `.VAR` is `Scalar`), but cannot be assigned through.
@@ -1533,7 +1545,7 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
-            self.record_readonly_on_own_binding(code, &bare, crate::ast::ReadonlyKind::Alias);
+            record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Alias);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later
