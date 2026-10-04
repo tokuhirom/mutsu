@@ -94,6 +94,8 @@ impl Interpreter {
             // (ADR-0122, runtime::repl_compiler); each costs what its method says.
             // Cost: O(1) after the first call.
             "getcomp" => self.nqp_getcomp(args),
+            // Cost: O(n), n = chars of the language name.
+            "bindcomp" => Ok(self.nqp_bindcomp(args)),
             // Cost: O(v), v = variables visible in the current frame.
             "ctx" => Ok(self.nqp_ctx()),
             // Cost: O(1).
