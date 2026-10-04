@@ -132,6 +132,41 @@ impl Interpreter {
         true
     }
 
+    /// Push the deferral frame of a call qualified by a ROLE (`self.R::m()`,
+    /// `self.R::new(|%a)`): one with no next candidate. The role's method is
+    /// not part of any class's dispatch chain, so a `nextsame` / `callsame`
+    /// in it finds nothing to defer to and answers Nil, as in rakudo. Without
+    /// a frame of its own the callee's deferral read the CALLER's frame and
+    /// ran the receiver's next MRO candidate (#11592). Returns whether a frame
+    /// was pushed (pop it with [`Self::pop_method_dispatch`]).
+    // Cost: O(a), a = the call's argument count (copied into the frame); O(1)
+    // in a program that names no deferral builtin.
+    pub(crate) fn push_qualified_method_dispatch_frame(
+        &mut self,
+        receiver_class: &str,
+        args: &[Value],
+        invocant: Value,
+    ) -> bool {
+        if !crate::opcode::dispatcher_possible() {
+            return false;
+        }
+        let dispatch_token = self.next_dispatch_token();
+        self.dispatch
+            .method_dispatch_stack
+            .push(super::MethodDispatchFrame {
+                receiver_class: receiver_class.to_string(),
+                invocant,
+                args: args.to_vec(),
+                remaining: Vec::new(),
+                rw_params: Vec::new(),
+                dispatch_token,
+                arg_sources: None,
+                in_wrapper: false,
+                role_qualified: true,
+            });
+        true
+    }
+
     /// Whether building `(receiver_class, method_name)`'s frame reads nothing
     /// of the call site but the argument values, so it gives the same answer
     /// after the callee has started. Matching a candidate's parameter reads
@@ -413,6 +448,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
+                role_qualified: false,
             }
         }
     }
@@ -433,6 +469,7 @@ impl Interpreter {
             dispatch_token,
             arg_sources: None,
             in_wrapper: false,
+            role_qualified: false,
         }
     }
 }

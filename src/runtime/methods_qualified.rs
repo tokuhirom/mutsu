@@ -242,6 +242,20 @@ impl Interpreter {
         }
     }
 
+    /// A qualified method call (`Class::method`) on an instance, a value
+    /// with a role mixed in, or anything else, tried in that order. `None`
+    /// when none of them takes it.
+    pub(super) fn dispatch_qualified_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.dispatch_qualified_instance_method(target, method, args.to_vec())
+            .or_else(|| self.dispatch_qualified_mixin_method(target, method, args.to_vec()))
+            .or_else(|| self.dispatch_qualified_non_instance_method(target, method, args.to_vec()))
+    }
+
     /// Handle qualified method names: Class::method (e.g., $o.Parent::x).
     /// Returns Some(result) if handled, None to continue.
     pub(super) fn dispatch_qualified_instance_method(

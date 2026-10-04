@@ -1409,6 +1409,7 @@ impl Interpreter {
                 // code (even when `chain.len() == 1` and `remaining` holds no
                 // `Wrapper` entry at all).
                 in_wrapper: true,
+                role_qualified: false,
             });
     }
 
@@ -1445,6 +1446,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources,
                 in_wrapper: true,
+                role_qualified: false,
             });
     }
 
