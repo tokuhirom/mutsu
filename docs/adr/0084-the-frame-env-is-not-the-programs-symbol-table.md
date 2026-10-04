@@ -478,3 +478,28 @@ against Rakudo.
 The remaining qualified env entries are bindings below a module's top level
 or under an alias, and qualified `&` code bindings; group 1 for the main
 program's own top-level routines also remains.
+
+### 7.9 Slice 8 — qualified `our &` needs one mutable binding
+
+The qualified `&` remainder cannot be retired by moving only its top-level
+`SetGlobal` write to `ModuleToplevel::package_symbols`. A trial with
+`unit module M; our &answer = { 42 }` reached that table, but the final
+`set_shared_var` call also inserted `&M::answer` into the frame env. A paired
+20-iteration closure-call probe reported the same 26 deep-copied env entries
+before and after the trial. The existing shared-variable mirror would have
+kept the qualified key in every copied frame.
+
+There is a correctness prerequisite as well. After `use M`, assigning
+`&M::answer = { 43 }` makes the qualified call return 43 but a routine in M
+that calls its bare `&answer` still returns 42; Rakudo returns 43 through both
+names. When the assignment runs in `start`, Rakudo again returns 43 through
+both names, while mutsu returns 42 through both. [#11913](https://github.com/tokuhirom/mutsu/issues/11913)
+records both reductions. Moving the qualified value alone would preserve this
+split binding and could worsen it across thread clones.
+
+The next implementation must make the package-qualified name and the module's
+bare `our &` alias address one mutable binding, and route thread writes through
+the same binding. The shared-variable publication path must be able to update
+that binding without re-inserting the qualified key into `Env`. Pin direct,
+indirect, stash, module-owned and thread reads against Rakudo, then re-measure
+the frame-env copy count. No interpreter change from this trial was retained.
