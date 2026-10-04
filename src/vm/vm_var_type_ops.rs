@@ -394,7 +394,7 @@ impl Interpreter {
         free_var_store: bool,
     ) -> (Option<String>, bool) {
         if free_var_store
-            && let Some(slot) = self.unit_lexical_slot(name)
+            && let Some(slot) = self.unit_lexical_slot(name, None)
             && let ValueView::ContainerRef(cell) = slot.view()
         {
             let constraint = crate::value::lookup_cell_constraint(&cell)

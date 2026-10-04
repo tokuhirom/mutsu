@@ -130,7 +130,7 @@ impl Interpreter {
                         .filter(|v| !v.is_nil())
                 })
                 .or_else(|| self.package_scope_lexical(name.as_str()))
-                .or_else(|| self.unit_scope_lexical(name.as_str()))
+                .or_else(|| self.unit_scope_lexical(name.as_str(), None))
                 .or_else(|| (!store_only).then(|| self.env().get(name.as_str()).cloned())?)
             else {
                 continue;

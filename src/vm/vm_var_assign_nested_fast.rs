@@ -181,7 +181,7 @@ impl Interpreter {
         // (`t/modules/our-container-bare-name-resolution.t`). All three probes
         // open with their own emptiness gate.
         if self.unit_lexical_container_cell(var_name).is_some()
-            || self.unit_lexical_slot(var_name).is_some()
+            || self.unit_lexical_slot(var_name, None).is_some()
             || self.our_package_container_key(var_name).is_some()
         {
             return None;
