@@ -269,32 +269,12 @@ impl Interpreter {
                     let absolute = Self::named_value(args, "absolute")
                         .map(|v| v.truthy())
                         .unwrap_or(true);
-                    let link_buf = self.resolve_path(&link_name);
                     let target_for_symlink = if absolute {
                         path_buf.clone()
                     } else {
                         std::path::PathBuf::from(&p)
                     };
-                    #[cfg(unix)]
-                    {
-                        match unix_fs::symlink(&target_for_symlink, &link_buf) {
-                            Ok(()) => Ok(Value::TRUE),
-                            Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                        }
-                    }
-                    #[cfg(windows)]
-                    {
-                        let metadata = fs::metadata(&target_for_symlink);
-                        let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                            windows_fs::symlink_dir(&target_for_symlink, &link_buf)
-                        } else {
-                            windows_fs::symlink_file(&target_for_symlink, &link_buf)
-                        };
-                        match result {
-                            Ok(()) => Ok(Value::TRUE),
-                            Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                        }
-                    }
+                    Ok(self.symlink_op(&path_buf, &target_for_symlink, &link_name))
                 }
             }
             "link" => {
@@ -303,11 +283,7 @@ impl Interpreter {
                 let link_name = args.first().map(|v| v.to_string_value()).ok_or_else(|| {
                     RuntimeError::new("Too few positionals passed; expected 2 arguments but got 1")
                 })?;
-                let link_buf = self.resolve_path(&link_name);
-                match fs::hard_link(&path_buf, &link_buf) {
-                    Ok(()) => Ok(Value::TRUE),
-                    Err(err) => Ok(Self::make_link_failure(&p, &link_name, &err)),
-                }
+                Ok(self.hard_link_op(&path_buf, &link_name))
             }
             _ => unreachable!("io_path_two_path_op called with non-two-path method"),
         }
