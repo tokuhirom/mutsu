@@ -1215,6 +1215,7 @@ fn storage_arg(node: crate::gc::Gc<crate::value::BufData>) -> ArgOwner {
 
 /// Why an argument could not be marshalled.
 #[cfg(feature = "libffi")]
+#[derive(Debug)]
 enum MarshalError {
     /// A detail the caller prefixes with the argument position and routine.
     Detail(String),
