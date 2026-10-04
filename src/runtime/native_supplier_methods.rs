@@ -163,75 +163,7 @@ impl Interpreter {
                         supplier_mark_terminal_delivered(supplier_id);
                     }
                     supplier_done(supplier_id);
-                    close_supplier_channel_taps(supplier_id, None);
-                    // Flush batch buffers before done
-                    for (dsid, batch) in flush_supplier_batch_taps(supplier_id) {
-                        let _ = self.forward_and_finish_supply(dsid, Value::array(batch));
-                    }
-                    // `lines`/`words` own their derived supplier now (issue
-                    // #8474): the flushed trailing partial line/word forwards
-                    // into it exactly like any other emission, and the
-                    // transform-output propagation loop below then finishes
-                    // it (it is included in `get_transform_output_supplier_ids`).
-                    for (dsid, emitted) in flush_supplier_line_taps(supplier_id) {
-                        let _ = self.handle_supply_forward(dsid, emitted);
-                    }
-                    for (dsid, emitted) in flush_supplier_words_taps(supplier_id) {
-                        let _ = self.handle_supply_forward(dsid, emitted);
-                    }
-                    for done_cb in take_supplier_done_callbacks(supplier_id) {
-                        if self.invoke_done_callback_or_quit(done_cb, supplier_id)? {
-                            break;
-                        }
-                    }
-                    // Propagate done to start-transform output suppliers
-                    for out_sid in get_start_output_supplier_ids(supplier_id) {
-                        supplier_done(out_sid);
-                        for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                    }
-                    // Propagate done to grep/map transform output suppliers
-                    for out_sid in get_transform_output_supplier_ids(supplier_id) {
-                        supplier_done(out_sid);
-                        for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                    }
-                    // Propagate done to zip output suppliers
-                    for zid in get_supplier_zip_state_ids(supplier_id) {
-                        let (action, output_sid) = zip_source_done(zid);
-                        if matches!(action, ZipAction::AllDone) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
-                    // Propagate done to zip-latest output suppliers
-                    for zid in get_supplier_zip_latest_state_ids(supplier_id) {
-                        let (action, output_sid) = zip_latest_source_done(zid);
-                        if matches!(action, ZipAction::AllDone) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
-                    // `Supply.reduce` over a live source emits its single
-                    // folded value now, at done, then finishes downstream.
-                    for (dsid, acc) in take_supplier_reduce_results(supplier_id) {
-                        let _ = self.forward_and_finish_supply(dsid, acc);
-                    }
-                    // A merged Supply is done only once *every* source is.
-                    for mid in get_supplier_merge_state_ids(supplier_id) {
-                        if let Some(output_sid) = merge_source_done(mid) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
+                    self.propagate_supplier_done(supplier_id)?;
                     close_all_supplier_taps(supplier_id);
                     // A `Supplier::Preserving` keeps its whole terminal state
                     // (backlog + done flag) past `.done` so a tap registered
@@ -488,79 +420,7 @@ impl Interpreter {
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
                     let sid = supplier_id as u64;
-                    close_supplier_channel_taps(sid, None);
-                    // Flush batch buffers before done
-                    for (dsid, batch) in flush_supplier_batch_taps(sid) {
-                        // Propagates done to the downstream batch supplier too.
-                        self.forward_and_finish_supply(dsid, Value::array(batch))?;
-                    }
-                    // Propagate done to classify sub-suppliers
-                    let classify_subs = get_classify_sub_supplier_ids(sid);
-                    for sub_sid in classify_subs {
-                        supplier_done(sub_sid);
-                        for done_cb in take_supplier_done_callbacks(sub_sid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                    }
-                    for (dsid, emitted) in flush_supplier_line_taps(sid) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    for (dsid, emitted) in flush_supplier_words_taps(sid) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    for done_cb in take_supplier_done_callbacks(sid) {
-                        if self.invoke_done_callback_or_quit(done_cb, sid)? {
-                            break;
-                        }
-                    }
-                    // Propagate done to start-transform output suppliers
-                    for out_sid in get_start_output_supplier_ids(sid) {
-                        supplier_done(out_sid);
-                        for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                    }
-                    // Propagate done to grep/map transform output suppliers
-                    for out_sid in get_transform_output_supplier_ids(sid) {
-                        supplier_done(out_sid);
-                        for done_cb in take_supplier_done_callbacks(out_sid) {
-                            let _ = self.invoke_done_callback(done_cb);
-                        }
-                    }
-                    // Propagate done to zip output suppliers
-                    for zid in get_supplier_zip_state_ids(sid) {
-                        let (action, output_sid) = zip_source_done(zid);
-                        if matches!(action, ZipAction::AllDone) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
-                    // Propagate done to zip-latest output suppliers
-                    for zid in get_supplier_zip_latest_state_ids(sid) {
-                        let (action, output_sid) = zip_latest_source_done(zid);
-                        if matches!(action, ZipAction::AllDone) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
-                    // `Supply.reduce` over a live source emits its single
-                    // folded value now, at done, then finishes downstream.
-                    for (dsid, acc) in take_supplier_reduce_results(sid) {
-                        let _ = self.forward_and_finish_supply(dsid, acc);
-                    }
-                    // A merged Supply is done only once *every* source is.
-                    for mid in get_supplier_merge_state_ids(sid) {
-                        if let Some(output_sid) = merge_source_done(mid) {
-                            supplier_done(output_sid);
-                            for done_cb in take_supplier_done_callbacks(output_sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    }
+                    self.propagate_supplier_done(sid)?;
                     close_all_supplier_taps(sid);
                     // A `Supplier::Preserving` keeps its whole terminal state:
                     // the un-replayed backlog AND the done flag outlive `.done`,
