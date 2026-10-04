@@ -53,6 +53,9 @@ use crate::value::{DispatchShape, RuntimeError, Value};
 use rustc_hash::FxHashMap;
 use std::sync::OnceLock;
 
+/// A [`Handler::Narrow`] implementation.
+pub(crate) type NarrowFn = fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>;
+
 /// A built-in method's implementation.
 ///
 /// Only the kind the rows so far need exists yet. ADR-11276 §2 adds an
@@ -66,7 +69,7 @@ pub(crate) enum Handler {
     /// A [`Self::Pure`] handler whose row binds only some argument values:
     /// `None` means these arguments are outside the row's signature, and the
     /// call takes the cascades (the way a multi candidate fails to bind).
-    Narrow(fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>),
+    Narrow(NarrowFn),
 }
 
 /// One built-in method: see the module docs.
