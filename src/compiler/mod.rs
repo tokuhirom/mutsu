@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{ArgSupply, AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
 use crate::opcode::{
@@ -9,8 +8,6 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use crate::value::ValueMap;
-
-static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// §1.4 shadow-slot activation gate.
 ///
@@ -1079,6 +1076,7 @@ mod amp_scope;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
+mod compile_session;
 mod const_fold;
 pub(crate) mod control_block;
 mod control_block_placeholder;
@@ -4327,6 +4325,7 @@ impl Compiler {
     /// something had already been folded. Only files that declare operators pay
     /// the second pass.
     pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
+        let _session = compile_session::enter();
         // Subroutines are hoisted and compiled before the mainline executes
         // its declarations. Seed constant type aliases from the source AST so
         // native local storage decisions do not depend on runtime declaration

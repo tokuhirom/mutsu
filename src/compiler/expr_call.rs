@@ -1864,10 +1864,7 @@ impl Compiler {
                     _ => None,
                 };
                 if let Some(assign_stmt) = assign_stmt {
-                    let seen_name = format!(
-                        "__mutsu_cas_seen_{}",
-                        STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
-                    );
+                    let seen_name = format!("__mutsu_cas_seen_{}", super::compile_session::mint());
                     let cas_expr = Expr::desugar_block(vec![
                         Stmt::VarDecl {
                             name: seen_name.clone(),
