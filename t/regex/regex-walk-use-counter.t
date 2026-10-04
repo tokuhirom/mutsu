@@ -68,7 +68,8 @@ sub walk-line(Str $code, *%extra-env) {
 {
     my ($out, $line) = walk-line('say ~("aa" ~~ /(a)$0/)');
     is $out, "aa\n", 'a backreference still matches';
-    like $line, /'leaf=1 (backref=1)'/, 'a backreference is a leaf of the walk';
+    is $line, '[mutsu vm-stats] regex-walk: walked=0 () bridged=0 () leaf=0 ()',
+        'a backreference is matched by the compiled engine, not the walk';
 }
 
 {
