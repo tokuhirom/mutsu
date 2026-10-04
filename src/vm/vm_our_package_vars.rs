@@ -76,14 +76,8 @@ impl Interpreter {
     /// families reach this from different chokepoints with different
     /// pre-filters (see [`Self::our_package_scalar_cell`]).
     fn our_package_var_key(&self, name: &str) -> Option<String> {
-        // An explicitly-written `@Other::x` is already the package variable it
-        // names; anonymous containers are never package variables.
-        // A byte scan, not an intern: this runs on free-variable reads and
-        // only has the name's text.
-        // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
-        // (#11507).
-        if crate::qualified::is_qualified_str(name) || crate::runtime::utils::has_anon_marker(name)
-        {
+        // Anonymous containers are never package variables.
+        if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
         if self.running_frame_declares_local(name) {
@@ -102,6 +96,11 @@ impl Interpreter {
         // fixed once (#8899).
         let cur_sym = self.current_package_sym();
         let name_sym = Symbol::intern(name);
+        // An explicitly-written `@Other::x` is already the package variable it
+        // names. Asked of the symbol, only past the cheap index miss above.
+        if crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
         let frame = self.routine_stack().last();
         let candidates = [
             frame.and_then(|f| f.lexical_package),

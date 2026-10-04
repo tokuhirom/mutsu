@@ -58,12 +58,10 @@ impl Interpreter {
         // This bridges a registration gap: a type declared under a `unit module`
         // is registered qualified but referred to bare inside that module.
         //
-        // `str::contains("::")` builds a two-way searcher per call; on these
-        // short names that setup is the whole cost, and `type_matches` asked
-        // for it three times per call. Hoisting the two answers into one byte
-        // scan each was 9% of a `Buf.push` loop (#7696).
-        // TODO: take both names as `Symbol`s and ask `qualified::is_qualified`
-        // (#11507); an intern per call here would cost more than the scan.
+        // `str::contains("::")` built a two-way searcher per call, three times
+        // per call (#7696); each answer is now one memoized symbol flag. Only
+        // reached once the cheap equality and parameterization arms above have
+        // declined.
         let constraint_qualified = crate::qualified::is_qualified_str(constraint);
         let value_type_qualified = crate::qualified::is_qualified_str(value_type);
         if constraint_qualified
