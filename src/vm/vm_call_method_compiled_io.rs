@@ -93,7 +93,8 @@ impl Interpreter {
             return Ok(Self::extract_buf_bytes(&r));
         };
         while self
-            .io.user_io_read_buffers
+            .io
+            .user_io_read_buffers
             .get(&id)
             .is_none_or(|buf| buf.len() < n)
         {
@@ -108,7 +109,8 @@ impl Interpreter {
             if chunk.is_empty() {
                 break;
             }
-            self.io.user_io_read_buffers
+            self.io
+                .user_io_read_buffers
                 .entry(id)
                 .or_default()
                 .extend(chunk);

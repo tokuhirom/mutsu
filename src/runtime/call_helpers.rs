@@ -176,7 +176,8 @@ impl Interpreter {
             return false;
         }
         let line = self
-            .io.test_assertion_line_stack
+            .io
+            .test_assertion_line_stack
             .last()
             .copied()
             .or(self.test_pending_callsite_line)
@@ -204,7 +205,8 @@ impl Interpreter {
     /// Truncate `test_assertion_line_stack` back to `depth` (see
     /// [`Self::test_assertion_line_stack_depth`]).
     pub(crate) fn truncate_test_assertion_line_stack(&mut self, depth: usize) {
-        self.io.test_assertion_line_stack
+        self.io
+            .test_assertion_line_stack
             .truncate(depth.min(self.io.test_assertion_line_stack.len()));
     }
 

@@ -331,7 +331,8 @@ impl Interpreter {
 
     pub(crate) fn push_warn_suppression(&mut self) {
         self.io.warn_suppression_depth += 1;
-        self.io.warn_suppression_boundaries
+        self.io
+            .warn_suppression_boundaries
             .push(self.control.control_handlers.len());
     }
 
@@ -366,7 +367,8 @@ impl Interpreter {
     /// those registered since the innermost active suppression began.
     pub(crate) fn warn_control_handler_floor(&self) -> usize {
         if self.warning_suppressed() {
-            self.io.warn_suppression_boundaries
+            self.io
+                .warn_suppression_boundaries
                 .last()
                 .copied()
                 .unwrap_or(0)

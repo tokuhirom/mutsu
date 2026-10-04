@@ -661,7 +661,9 @@ impl Interpreter {
                 .and_then(|code| code.declarator_doc.clone())
         {
             let pod = Self::make_pod_declarator(&doc, target.clone());
-            self.declarator_docs.why_object_cache.insert(sub_data.id, pod.clone());
+            self.declarator_docs
+                .why_object_cache
+                .insert(sub_data.id, pod.clone());
             return Ok(pod);
         }
         if let ValueView::Instance {

@@ -87,7 +87,9 @@ impl Interpreter {
             };
             let pod_entry = Interpreter::make_pod_declarator(&dc.doc, wherefore);
             if let Some(object_id) = object_id {
-                self.declarator_docs.why_object_cache.insert(object_id, pod_entry.clone());
+                self.declarator_docs
+                    .why_object_cache
+                    .insert(object_id, pod_entry.clone());
             }
             pod_entries.push(pod_entry);
         }

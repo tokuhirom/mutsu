@@ -138,7 +138,8 @@ impl IoState {
         // Thread clones write through the parent's shared stdout/stderr buffers
         // so concurrent output interleaves in real chronological order.
         let thread_output_sink = {
-            let mut parent_sink = output_sink::OutputSinkWriteGuard::new(&self.output_sink, "output_sink");
+            let mut parent_sink =
+                output_sink::OutputSinkWriteGuard::new(&self.output_sink, "output_sink");
             // When the parent flushes stdout immediately (CLI / REPL mode) and the
             // thread is spawned at top level, the clone must do the same so its
             // `say`/`pass` output lands in real chronological order relative to the

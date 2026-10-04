@@ -590,7 +590,8 @@ impl Interpreter {
         // `$=pod`.
         self.collect_pod_sources(&preprocessed)?;
         let file_name = self
-            .io.program_path
+            .io
+            .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
         // #8719: one source file, one runtime identity. The unit stamp every

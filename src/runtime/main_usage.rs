@@ -126,7 +126,8 @@ impl Interpreter {
                 }
             }
             let docs = self
-                .declarator_docs.doc_comments
+                .declarator_docs
+                .doc_comments
                 .get(&candidate.doc_key)
                 .map(|doc| format!("-- {}", doc.doc.contents()));
             let mut parts = vec![prog_name.clone()];
