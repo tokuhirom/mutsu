@@ -147,5 +147,4 @@ impl Interpreter {
         let end = pos + to as usize;
         (end <= chars.len()).then_some(end)
     }
-
 }

@@ -380,19 +380,13 @@ impl Interpreter {
             None
         };
         let parsed = scoped.as_ref().map_or(parsed, |pattern| pattern);
-        // One rule invocation: a grammar method its body calls writes to the
-        // invocation's own cursor, which is filed on each end it produces (#9803).
-        self.enter_rule_cursor();
-        let mut ends = if first_only {
+        if first_only {
             self.regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
                 .into_iter()
                 .collect()
         } else {
             self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
-        };
-        let cursor = self.leave_rule_cursor();
-        Self::file_rule_cursor(cursor, &mut ends);
-        ends
+        }
     }
 
     /// Keep named grammar-rule frames visible while a rule's pattern is

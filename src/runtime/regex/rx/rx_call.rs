@@ -28,7 +28,6 @@ use crate::vm::vm_stats_regex_vm::record_regex_eager;
 /// (rule, caller package, caller `:i`) → (token generation, the call's target).
 type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallTarget)>;
 
-
 thread_local! {
     /// The verdict for a call, per (rule, caller package, caller `:i`),
     /// stamped with the token generation it was reached under — the inline
@@ -186,12 +185,10 @@ impl Interpreter {
             // An eager call holds the window around its evaluation only; the
             // seed loop pushes the routine frame itself, around each
             // candidate's evaluation (`subrule_candidate_ends_with_frame`).
-            (
-                CallTarget::Eager(..) | CallTarget::Wrapped | CallTarget::CustomHow(_),
-                window,
-            ) => self
-                .rx_call_rule_frame(name, pkg, window)
-                .map(|w| CallWindow { routine: None, ..w }),
+            (CallTarget::Eager(..) | CallTarget::Wrapped | CallTarget::CustomHow(_), window) => {
+                self.rx_call_rule_frame(name, pkg, window)
+                    .map(|w| CallWindow { routine: None, ..w })
+            }
             (_, Some(saved)) => {
                 self.restore_subrule_dynamic_params(saved);
                 None

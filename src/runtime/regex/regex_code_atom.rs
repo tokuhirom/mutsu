@@ -169,10 +169,7 @@ impl Interpreter {
         pos: usize,
         current_caps: &RegexCaptures,
     ) -> Option<(usize, RegexCaptures)> {
-        'run: {
-            let interp = &mut *self;
-            interp.regex_var_decl_run(code, chars, pos, current_caps)
-        }
+        self.regex_var_decl_run(code, chars, pos, current_caps)
     }
 
     fn regex_var_decl_run(

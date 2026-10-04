@@ -17,8 +17,8 @@
 //!
 //! The compiled engine models the invocation as a `Frame` (ADR-0135 D3) and owns
 //! the instance there: [`Interpreter::rx_cursor_of`] creates it the first time
-//! a call in that frame runs a grammar method, publishes it in
-//! `Interpreter::rx_cursor` for that one call, and the frame's return files the
+//! a call in that frame runs a grammar method, hands it to that call as the
+//! method's invocant, and the frame's return files the
 //! instance on the callee's capture node, whose Match materializes its
 //! attributes (`match_lazy`). An invocation that never calls a method never
 //! creates one.
@@ -90,36 +90,6 @@ impl Interpreter {
         cursor
     }
 
-    /// Open the cursor scope of a rule invocation the walk is about to
-    /// evaluate. Pair with [`Self::leave_rule_cursor`].
-    // Cost: O(1) amortized.
-    #[inline]
-    pub(super) fn enter_rule_cursor(&mut self) {
-        self.regex_state.walk_cursors.push(None);
-    }
-
-    /// Close the scope [`Self::enter_rule_cursor`] opened: the grammar instance a
-    /// method the invocation called wrote to, if any, for the caller to file on
-    /// the invocation's ends.
-    // Cost: O(1).
-    #[inline]
-    pub(super) fn leave_rule_cursor(&mut self) -> Option<Value> {
-        self.regex_state.walk_cursors.pop().flatten()
-    }
-
-    /// File `cursor` on every end of the invocation that owned it.
-    // Cost: O(e), e = the ends.
-    pub(super) fn file_rule_cursor(
-        cursor: Option<Value>,
-        ends: &mut [(usize, crate::runtime::regex_types::RegexCaptures)],
-    ) {
-        if let Some(cursor) = cursor {
-            for (_, caps) in ends {
-                caps.set_cursor(cursor.clone());
-            }
-        }
-    }
-
     /// The cursor `slot` (the calling rule invocation's) holds, created on the
     /// first request: an instance of grammar `pkg` at `pos`.
     // Cost: O(1) once created; the first request is `new_grammar_cursor`'s.
@@ -147,18 +117,16 @@ impl Interpreter {
 /// code block of any subrule reads uninitialised attributes.
 ///
 /// The parse arms the invocant; the first engine run of the start rule's
-/// pattern takes it for that run (the walk's start-rule scope, or the compiled
-/// engine's root frame) and puts it back when the run ends, so a nested run —
+/// pattern takes it for that run (the compiled engine's root frame) and puts it
+/// back when the run ends, so a nested run —
 /// a subrule, or another regex the code calls — never sees it.
 #[derive(Default)]
 pub(crate) struct StartRuleInvocant {
     /// Armed by `.parse`, not yet taken by a run.
     armed: Option<Value>,
-    /// The walk's start-rule scope: its `walk_cursors` depth and the invocant.
-    walk: Option<(usize, Value)>,
     /// Published by the compiled engine for one `Code` op: `Some(invocant)`
     /// when the op runs in the start rule's own root frame, `Some(None)` in
-    /// any other frame, `None` when the walk runs the atom.
+    /// any other frame, `None` outside a `Code` op.
     rx_code: Option<Option<Value>>,
 }
 
@@ -213,18 +181,9 @@ impl Interpreter {
     }
 
     /// The invocant a code block at the current point runs on when it is the
-    /// start rule's own: the compiled engine's publication for this op, else
-    /// the walk's start-rule scope when it is the innermost invocation.
+    /// start rule's own: the compiled engine's publication for this op.
     // Cost: O(1).
     pub(super) fn code_block_start_invocant(&mut self) -> Option<Value> {
-        if let Some(published) = self.regex_state.start_invocant.rx_code.take() {
-            return published;
-        }
-        match &self.regex_state.start_invocant.walk {
-            Some((depth, inv)) if *depth == self.regex_state.walk_cursors.len() => {
-                Some(inv.clone())
-            }
-            _ => None,
-        }
+        self.regex_state.start_invocant.rx_code.take().flatten()
     }
 }

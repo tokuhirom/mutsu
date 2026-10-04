@@ -292,10 +292,13 @@ fn casefold_char_class(class: &CharClass) -> RegexAtom {
 
     let mut branches = Vec::new();
     if !single_items.is_empty() {
-        branches.push(one_atom_pattern(RegexAtom::CharClass(CharClass {
-            negated: false,
-            items: single_items,
-        }), false));
+        branches.push(one_atom_pattern(
+            RegexAtom::CharClass(CharClass {
+                negated: false,
+                items: single_items,
+            }),
+            false,
+        ));
     }
     branches.extend(expanded.into_iter().map(|chars| {
         RegexPattern {

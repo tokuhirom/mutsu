@@ -5,17 +5,12 @@
 //!
 //! `compiled` / `declined` count *patterns* (each is compiled at most once);
 //! `runs` counts engine entries the compiled program answered. The reasons
-//! are ADR-0135 D5's migration ratchet: what keeps a pattern on the walk.
+//! name the constructs the engine does not implement (such a match raises).
 //!
-//! A second line counts every *use* of the walk's code, declined pattern or
-//! not (`WalkUse`): the whole residue §4 E must bring to zero.
-//!
-//! `regex-walk: walked=N (reason=count …) bridged=M (…) leaf=L (…)`
-//!
-//! A third line counts the compiled engine's *eager* calls: a `<subrule>`
+//! A second line counts the compiled engine's *eager* calls: a `<subrule>`
 //! call whose ends the growing-seed loop computes up front (`regex_lr_seed`)
-//! instead of a frame resuming them. They run compiled programs, not the
-//! walk; the reasons say why the call is not a frame.
+//! instead of a frame resuming them. They run compiled programs too; the
+//! reasons say why the call is not a frame.
 //!
 //! `regex-eager: calls=N (reason=count …)`
 
@@ -59,50 +54,6 @@ pub(crate) fn record_regex_vm_run() {
     }
 }
 
-/// How a match used the tree walk's code instead of the compiled engine — the
-/// residue ADR-0135 §4 E has to remove before the walk can be deleted. Unlike
-/// `declined` above, these count *events*, not patterns.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum WalkUse {
-    /// A whole match the walk answered: the pattern has no program, the
-    /// dynamic context keeps the compiled engine out, or the entry point
-    /// (every end at a position) has no compiled form.
-    Walked,
-    /// A `<subrule>` call inside a compiled run that the walk's producer
-    /// answered (D5's bridge), or an interpolated pattern whose ends the walk
-    /// computed.
-    Bridged,
-    /// One atom of a compiled program the walk's single-atom arm matched.
-    Leaf,
-}
-
-impl WalkUse {
-    fn label(self) -> &'static str {
-        match self {
-            WalkUse::Walked => "walked",
-            WalkUse::Bridged => "bridged",
-            WalkUse::Leaf => "leaf",
-        }
-    }
-}
-
-type WalkUses = HashMap<(WalkUse, &'static str), u64>;
-
-fn walk_uses() -> &'static Mutex<WalkUses> {
-    static MAP: std::sync::OnceLock<Mutex<WalkUses>> = std::sync::OnceLock::new();
-    MAP.get_or_init(Default::default)
-}
-
-/// One use of the walk's code, with the reason the compiled engine did not
-/// answer it itself.
-#[inline]
-pub(crate) fn record_regex_walk(kind: WalkUse, reason: &'static str) {
-    if enabled() {
-        let mut map = walk_uses().lock().unwrap_or_else(|e| e.into_inner());
-        *map.entry((kind, reason)).or_insert(0) += 1;
-    }
-}
-
 fn eager_calls() -> &'static Mutex<HashMap<&'static str, u64>> {
     static MAP: std::sync::OnceLock<Mutex<HashMap<&'static str, u64>>> = std::sync::OnceLock::new();
     MAP.get_or_init(Default::default)
@@ -140,17 +91,6 @@ pub(super) fn dump() {
         COMPILED.load(Ordering::Relaxed),
         RUNS.load(Ordering::Relaxed)
     );
-    let uses = walk_uses().lock().unwrap_or_else(|e| e.into_inner());
-    let groups = [WalkUse::Walked, WalkUse::Bridged, WalkUse::Leaf].map(|kind| {
-        let mut counts: Vec<(&'static str, u64)> = uses
-            .iter()
-            .filter(|((k, _), _)| *k == kind)
-            .map(|((_, reason), n)| (*reason, *n))
-            .collect();
-        let total: u64 = counts.iter().map(|(_, n)| *n).sum();
-        format!("{}={total} ({})", kind.label(), reason_list(&mut counts))
-    });
-    eprintln!("[mutsu vm-stats] regex-walk: {}", groups.join(" "));
     let eager = eager_calls().lock().unwrap_or_else(|e| e.into_inner());
     let mut counts: Vec<(&'static str, u64)> = eager.iter().map(|(k, n)| (*k, *n)).collect();
     let total: u64 = counts.iter().map(|(_, n)| *n).sum();

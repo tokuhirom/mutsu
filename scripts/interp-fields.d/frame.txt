@@ -25,7 +25,6 @@ nqp_arg_scratch
 numeric_op_site
 outer_scope_locals
 pos_light_ic_epoch
-regex_quant_scratch
 resume_ip
 routine_stack
 stack

@@ -42,7 +42,6 @@ pub(super) fn separated_capture_delta_syms(
 }
 
 impl Interpreter {
-
     /// Append captures from a separated quantifier into `caps`, folding each
     /// side into its own positional/named group lists.
     pub(super) fn append_separated_captures(

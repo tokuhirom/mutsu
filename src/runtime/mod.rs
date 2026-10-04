@@ -2500,14 +2500,6 @@ pub struct Interpreter {
     /// contiguous stack, and a window cannot be handed out as an owned buffer.
     /// Bounded, and cleared before being returned to the pool.
     pub(crate) args_scratch_pool: Vec<Vec<Value>>,
-    /// Recycled position/trail-mark chains for the greedy quantifier walk.
-    /// `walk_quant_chain` records one end position and one `CapStore` mark per
-    /// iteration it grows, and it is entered once per scan position -- so a
-    /// pair of fresh `Vec`s there made growing those chains 10.7% of a failing
-    /// `/ \w+ 'QQQ' /` scan (#8450). The walk is recursive, so the pool holds
-    /// one buffer per nesting level in flight; bounded, and cleared before
-    /// being returned.
-    pub(crate) regex_quant_scratch: Vec<Vec<usize>>,
     block_stack: Vec<CodeFrame>,
     block_scope_depth: usize,
     /// A sigilless name (`my \foo = Obj.new`) whose assignment `CheckReadOnly`

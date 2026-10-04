@@ -221,15 +221,12 @@ impl Interpreter {
         code: &str,
         list: bool,
         chars: &[char],
-        _pos: usize,
         current_caps: &RegexCaptures,
         ignore_case: bool,
     ) -> Option<std::sync::Arc<RegexPattern>> {
-        let source: Option<String> = 'run: {
-            let interp = &mut *self;
-            interp.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)
-        };
-        self.parse_regex(&source?)
+        let source =
+            self.regex_code_interp_pattern(code, list, current_caps, chars, ignore_case)?;
+        self.parse_regex(&source)
     }
 
     /// Every end of an interpolated pattern `parsed` at `pos`, lowest priority
@@ -256,10 +253,11 @@ impl Interpreter {
         out
     }
 
-    /// [`Self::regex_code_interp_ends`] without the D6 record, for the
-    /// position-only matcher, which the compiled engine never stands in for.
+    /// Every end of the pattern a `<{ ... }>` / `<@(...)>` atom interpolates at
+    /// `pos`, for the position-only matcher.
     ///
-    /// Cost: as [`Self::regex_code_interp_ends`].
+    /// Cost: one run of the code, plus the interpolated pattern's all-ends
+    /// match at `pos`.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn regex_code_interp_ends_unrecorded(
         &mut self,

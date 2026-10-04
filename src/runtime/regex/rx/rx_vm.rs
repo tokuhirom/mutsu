@@ -30,7 +30,6 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexAtom, RegexCaptures, RegexQuant};
 use crate::symbol::Symbol;
 use crate::value::Value;
-use crate::vm::vm_stats_regex_vm::{WalkUse, record_regex_walk as walk_use};
 
 /// The program the loop is executing: the one the run started with, or the
 /// callee of the current frame.
@@ -356,9 +355,9 @@ impl Interpreter {
                     // Cost: O(n + r) plus the code's run (`regex_code_interp_parsed`),
                     // n = the subject's length, r = the result's rendered length;
                     // then O(w) to enter the yielded pattern as a frame, w = its
-                    // registers. A pattern that declines is matched up front
-                    // instead: its all-ends match, then O(c) per candidate entered,
-                    // c = the captures it adds.
+                    // registers. Outside a frame-running loop the pattern is
+                    // matched up front instead: its all-ends match, then O(c) per
+                    // candidate entered, c = the captures it adds.
                     RxOp::InterpEnds(i) => {
                         let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize]
                         else {
@@ -369,7 +368,6 @@ impl Interpreter {
                             code,
                             *list,
                             chars,
-                            pos,
                             levels.top().caps(),
                             program.atom_ic[i as usize],
                         );
@@ -399,7 +397,6 @@ impl Interpreter {
                                     continue 'run;
                                 }
                                 _ => {
-                                    walk_use(WalkUse::Leaf, "code-interp-declined");
                                     let cands = self
                                         .regex_code_interp_pattern_ends(&parsed, chars, pos, pkg);
                                     enter_cands!(cands)
@@ -743,7 +740,7 @@ impl Interpreter {
                             break 'run None;
                         };
                         pc += 1;
-                        match self.regex_repeat_count(code, pos, levels.top().caps()) {
+                        match self.eval_regex_repeat_code(code, levels.top().caps()) {
                             Some((lo, hi)) => {
                                 set_reg!(min, lo);
                                 set_reg!(max, hi.unwrap_or(usize::MAX));
