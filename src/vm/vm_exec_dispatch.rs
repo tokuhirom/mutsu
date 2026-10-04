@@ -6941,23 +6941,8 @@ impl Interpreter {
             }
             // Cost: O(1) amortized (name-index probes; see exec_set_var_dynamic_op), so a sub with
             // K `my` declarations pays O(K) per call.
-            OpCode::SetVarDynamic {
-                name_idx,
-                dynamic,
-                local_slot,
-                reset,
-                type_follows,
-                bind_declaration,
-            } => {
-                self.exec_set_var_dynamic_op(
-                    code,
-                    *name_idx,
-                    *dynamic,
-                    *local_slot,
-                    *reset,
-                    *type_follows,
-                    *bind_declaration,
-                );
+            OpCode::SetVarDynamic { .. } => {
+                self.exec_set_var_dynamic_op(code, &code.ops[*ip]);
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.

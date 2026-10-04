@@ -3507,16 +3507,26 @@ impl Interpreter {
     // Cost: O(1) amortized: the slot lookups and the `state`-name test are hash probes
     // into the chunk's name index (built once per chunk, O(L)), so a sub with K `my`
     // declarations pays O(K) per call.
-    pub(super) fn exec_set_var_dynamic_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        dynamic: bool,
-        local_slot: Option<u32>,
-        reset: crate::opcode::DeclReset,
-        type_follows: bool,
-        bind_declaration: bool,
-    ) {
+    pub(super) fn exec_set_var_dynamic_op(&mut self, code: &CompiledCode, op: &OpCode) {
+        let OpCode::SetVarDynamic {
+            name_idx,
+            dynamic,
+            local_slot,
+            reset,
+            type_follows,
+            bind_declaration,
+        } = op
+        else {
+            unreachable!("SetVarDynamic handler received another opcode")
+        };
+        let (name_idx, dynamic, local_slot, reset, type_follows, bind_declaration) = (
+            *name_idx,
+            *dynamic,
+            *local_slot,
+            *reset,
+            *type_follows,
+            *bind_declaration,
+        );
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
         // (five times per iteration of a loop body that declares five lexicals),
