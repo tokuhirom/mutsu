@@ -65,11 +65,15 @@ pub(crate) fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError> {
             ENCODE_TABLE.with(|t| *t.borrow_mut() = None);
         }
     }
-    ENCODE_TABLE.with(|t| {
+    let reentered = ENCODE_TABLE.with(|t| {
         let mut t = t.borrow_mut();
-        assert!(t.is_none(), "precomp_codec::encode is not reentrant");
+        let reentered = t.is_some();
         *t = Some(EncodeTable::default());
+        reentered
     });
+    if reentered {
+        return Err(EncodeError::Other("precomp_codec::encode is not reentrant"));
+    }
     let _reset = Reset;
     let payload = bincode::encode_to_vec(value, config())?;
     let strings =
@@ -161,19 +165,20 @@ pub(crate) fn roundtrip_enabled() -> bool {
     *ON.get_or_init(|| std::env::var("MUTSU_PRECOMP_ROUNDTRIP").is_ok_and(|v| v != "0"))
 }
 
-/// See [`roundtrip_enabled`].
+/// See [`roundtrip_enabled`]. `Err` describes how the codec failed its own
+/// round trip; a chunk it refuses to encode is returned unchanged.
 // Cost: O(n), n = size of the compiled code.
 pub(crate) fn roundtrip(
     code: crate::opcode::CompiledCode,
     fns: crate::opcode::CompiledFns,
-) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+) -> Result<(crate::opcode::CompiledCode, crate::opcode::CompiledFns), String> {
     let Ok(first) = encode_compiled(&code, &fns) else {
-        return (code, fns);
+        return Ok((code, fns));
     };
     let decoded = decode_compiled(&first)
-        .unwrap_or_else(|e| panic!("precomp codec: cannot decode its own encoding: {e}"));
+        .map_err(|e| format!("precomp codec: cannot decode its own encoding: {e}"))?;
     let second = encode_compiled(&decoded.0, &decoded.1)
-        .unwrap_or_else(|e| panic!("precomp codec: cannot re-encode a decoded chunk: {e}"));
+        .map_err(|e| format!("precomp codec: cannot re-encode a decoded chunk: {e}"))?;
     if first != second {
         let at = first
             .iter()
@@ -181,16 +186,17 @@ pub(crate) fn roundtrip(
             .position(|(a, b)| a != b)
             .unwrap_or(0);
         let lo = at.saturating_sub(48);
-        panic!(
+        return Err(format!(
             "precomp codec: a round trip changed the encoding ({} vs {} bytes), first difference at {at}:\n{:?}\n{:?}",
             first.len(),
             second.len(),
             String::from_utf8_lossy(&first[lo..(at + 48).min(first.len())]),
             String::from_utf8_lossy(&second[lo..(at + 48).min(second.len())]),
-        );
+        ));
     }
-    decoded
+    Ok(decoded)
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

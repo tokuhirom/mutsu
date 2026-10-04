@@ -1,16 +1,11 @@
 //! The codec of `CompiledFunction`: every field, in declaration order (see the parent module).
 
-#[allow(unused_imports)]
-use super::{
-    decode_map, decode_serde, decode_set, encode_map, encode_string_set, encode_sym_set,
-    encode_u32_set, require_empty,
-};
+use super::{decode_serde, decode_set, encode_sym_set};
 use crate::opcode::CompiledFunction;
 use crate::precomp_codec::DecodeCtx;
 use bincode::de::Decoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
-#[allow(unused_imports)]
 use bincode::serde::Compat;
 use bincode::{Decode, Encode};
 

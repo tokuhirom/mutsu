@@ -35,7 +35,10 @@ fn symbols_are_restored_by_name() {
     let (_, fns2) = decode_compiled(&bytes).expect("decodes");
     let mut names: Vec<&str> = fns2.keys().map(|k| k.as_str()).collect();
     names.sort();
-    assert!(names.iter().any(|n| n.contains("only-here-xyzzy")), "{names:?}");
+    assert!(
+        names.iter().any(|n| n.contains("only-here-xyzzy")),
+        "{names:?}"
+    );
 }
 
 /// A constant that records an object id cannot be cached: in another process
