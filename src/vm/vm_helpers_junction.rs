@@ -193,16 +193,15 @@ impl Interpreter {
                 | ValueView::Routine { is_regex: true, .. }
         );
         let closure_scope = self.install_regex_closure_scope(&right);
-        let matched = self.vm_smart_match(&left, &right);
+        let matched = self.vm_try_smart_match(&left, &right);
         self.uninstall_regex_closure_scope(closure_scope);
         // Check for pending regex security error (set by regex parse/match)
         if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
             return Err(err);
         }
-        // Check for pending dispatch error (e.g., from Any ~~ Pair method call)
-        if let Some(err) = self.take_pending_dispatch_error() {
-            return Err(err);
-        }
+        // An exception raised while matching (`Any ~~ Pair` naming a missing
+        // method, a user `ACCEPTS` that dies).
+        let matched = matched?;
         if is_regex {
             // When $/ is a Junction (from :nth with junction argument),
             // the ~~ operator collapses the result to a Bool.

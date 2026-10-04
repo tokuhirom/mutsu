@@ -68,11 +68,8 @@ impl Interpreter {
         full_name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Some(def) = self.resolve_function_with_alias(full_name, &args) {
+        if let Some(def) = self.resolve_function_with_alias(full_name, &args)? {
             return self.call_routine_def(&def, args);
-        }
-        if let Some(err) = self.take_pending_dispatch_error() {
-            return Err(err);
         }
         let env_name = format!("&{}", full_name);
         if let Some(callable) = self.env.get(&env_name).cloned() {
@@ -83,7 +80,7 @@ impl Interpreter {
         if let Some((_, short_name)) = crate::qualified::split_qualified(Symbol::intern(full_name))
         {
             let short_name = short_name.as_str();
-            if let Some(def) = self.resolve_function_with_alias(short_name, &args) {
+            if let Some(def) = self.resolve_function_with_alias(short_name, &args)? {
                 return self.call_routine_def(&def, args);
             }
             let env_short = format!("&{}", short_name);
@@ -1124,11 +1121,7 @@ impl Interpreter {
     /// out to resolve and consume inside a single dispatch of a single call,
     /// where the pending sources are fixed, so the memo is handed over
     /// unconditionally and the flag has no reader left (#7886).
-    pub(crate) fn resolve_function_multi_cached(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Arc<FunctionDef>> {
+    pub(crate) fn resolve_function_multi_cached(&mut self, name: &str, args: &[Value]) -> Resolved {
         self.resolve_function_multi_cached_sym(name, Symbol::intern(name), args)
     }
 
@@ -1141,7 +1134,7 @@ impl Interpreter {
         name: &str,
         name_sym: Symbol,
         args: &[Value],
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
             return self.resolve_function_with_types(name, args);
@@ -1168,22 +1161,19 @@ impl Interpreter {
         let key = (pkg_sym, name_sym, arg_keys);
         let generation = self.caches.fn_resolve_gen;
         if let Some(hit) = self.caches.func_multi_resolve_cache.get(generation, &key) {
-            return hit.clone();
+            return Ok(hit.clone());
         }
-        let resolved = self.resolve_function_with_types(name, args);
-        // Ambiguity is signaled by `None` + a pending dispatch error; that must be
-        // re-raised on every call, so don't cache it.
-        let ambiguous = resolved.is_none() && self.pending_dispatch_error.is_some();
-        if !ambiguous {
-            // Tagged with the generation the resolution ran under: the resolve
-            // itself cannot write the functions map, but assert that rather
-            // than assume it, since a stale tag would be served as fresh.
-            debug_assert_eq!(generation, self.caches.fn_resolve_gen);
-            self.caches
-                .func_multi_resolve_cache
-                .insert(generation, key, resolved.clone());
-        }
-        resolved
+        // A dispatch error (ambiguity, a `where` that died) must be raised on
+        // every call, so only an answer is cached.
+        let resolved = self.resolve_function_with_types(name, args)?;
+        // Tagged with the generation the resolution ran under: the resolve
+        // itself cannot write the functions map, but assert that rather than
+        // assume it, since a stale tag would be served as fresh.
+        debug_assert_eq!(generation, self.caches.fn_resolve_gen);
+        self.caches
+            .func_multi_resolve_cache
+            .insert(generation, key, resolved.clone());
+        Ok(resolved)
     }
 
     /// True when `class_name`'s MRO (or direct parents) includes a builtin
@@ -1620,11 +1610,12 @@ impl Interpreter {
         let current_def: Option<&FunctionDef> = match winner {
             Some(def) => Some(def),
             None => {
-                let saved_err = self.take_pending_dispatch_error();
-                resolved_def = self.resolve_function_multi_cached_sym(name, name_sym, args);
-                if let Some(err) = saved_err {
-                    self.set_pending_dispatch_error(err);
-                }
+                // A dispatch error here is the call's own, already raised
+                // (or not) by whoever resolved it; only the winner matters.
+                resolved_def = self
+                    .resolve_function_multi_cached_sym(name, name_sym, args)
+                    .ok()
+                    .flatten();
                 resolved_def.as_deref()
             }
         };

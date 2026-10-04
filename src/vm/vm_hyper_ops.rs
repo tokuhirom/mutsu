@@ -504,7 +504,7 @@ impl Interpreter {
             return Ok(right.clone());
         }
         if op.as_plain() == Some("~~") {
-            return Ok(Value::truth(self.vm_smart_match(left, right)));
+            return Ok(Value::truth(self.vm_try_smart_match(left, right)?));
         }
         // Try user-defined infix dispatch first when either operand is an
         // instance, to avoid built-in ops silently coercing objects.

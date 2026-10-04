@@ -665,7 +665,7 @@ impl Interpreter {
             );
         }
 
-        if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
+        if let Some(def) = self.resolve_function_with_alias(name, &call_args)? {
             // ADR-0059: the routine always runs, and the assignment writes
             // through the container it hands back. That container is produced
             // by the compiler — a `return-rw` operand, or the bare tail of an
@@ -688,9 +688,6 @@ impl Interpreter {
             // Rakudo names the value the routine returned: `sub f { 10 }; f() = 3`
             // is `Cannot modify an immutable Int (10)`.
             return Err(RuntimeError::assignment_ro_value(result));
-        }
-        if let Some(err) = self.take_pending_dispatch_error() {
-            return Err(err);
         }
 
         if let Some(callable) = self.env.get(&format!("&{}", name)).cloned() {

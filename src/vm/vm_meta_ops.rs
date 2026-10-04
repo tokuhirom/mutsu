@@ -55,7 +55,7 @@ impl Interpreter {
                     let exclude_end = op == "...^";
                     loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
-                    Value::truth(self.vm_smart_match(&right, &left))
+                    Value::truth(self.vm_try_smart_match(&right, &left)?)
                 } else if matches!(op, ".." | "..^" | "^.." | "^..^") {
                     // `a R.. b` == `b .. a`: build the range with operands
                     // reversed. Reuse the dedicated range builders (which pop
@@ -97,7 +97,7 @@ impl Interpreter {
                                 Vec::with_capacity(left_list.len() * right_list.len());
                             for l in &left_list {
                                 for r in &right_list {
-                                    results.push(Value::truth(self.vm_smart_match(l, r)));
+                                    results.push(Value::truth(self.vm_try_smart_match(l, r)?));
                                 }
                             }
                             Value::seq(results)

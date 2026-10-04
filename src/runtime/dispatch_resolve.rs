@@ -254,30 +254,26 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Option<Arc<FunctionDef>> {
-        self.clear_pending_dispatch_error();
+    ) -> Resolved {
         // Consult the sound multi-resolution cache (`func_multi_resolve_cache`)
         // rather than resolving from scratch: for a type+arity-deterministic
         // name it answers what `resolve_function_with_types` would, without the
         // per-call candidate gather + match + rank + dedup. Un-keyable
         // arguments, value-dependent candidates and ambiguity all resolve fresh
         // inside it, so this is behaviour-preserving.
-        if let Some(def) = self.resolve_function_multi_cached(name, arg_values) {
-            return Some(def);
-        }
-        if self.pending_dispatch_error.is_some() {
-            return None;
+        if let Some(def) = self.resolve_function_multi_cached(name, arg_values)? {
+            return Ok(Some(def));
         }
         // No `:` at all, so in particular no `::` qualifier.
         if name.contains(':') {
-            return None;
+            return Ok(None);
         }
         for alias in [format!("prefix:<{name}>"), format!("postfix:<{name}>")] {
-            if let Some(def) = self.resolve_function_with_types(&alias, arg_values) {
-                return Some(def);
+            if let Some(def) = self.resolve_function_with_types(&alias, arg_values)? {
+                return Ok(Some(def));
             }
         }
-        None
+        Ok(None)
     }
 
     /// Candidates for a package-qualified `name` that can absorb a call whose
@@ -346,14 +342,14 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         // The plain-routine tail below does not read the arguments, so its
         // answer is memoized (#9081, `plain_fn_resolve_memo.rs`).
         let plain_key = self.plain_fn_resolve_key(name);
         if let Some(key) = &plain_key
             && let Some(def) = self.plain_fn_resolve_memo_get(key)
         {
-            return Some(def);
+            return Ok(Some(def));
         }
         crate::vm::vm_stats::record_function_full_resolve(name);
         // The full resolution walk is the subsystem a slow Raku line most
@@ -398,15 +394,14 @@ impl Interpreter {
                 Symbol::intern("X::TypeCheck::Argument"),
                 attrs,
             )));
-            self.set_pending_dispatch_error(err);
-            return None;
+            return Err(err);
         }
         // Negative gate: if no registry key carries this base name at all, no
         // candidate scan below can match — skip the whole walk. This is the
         // common case for interpreter-native builtins (`make`, `prefix:<~>`,
         // …) that are dispatched *after* a failed user-function resolution.
         if !self.fn_base_name_registered(name) {
-            return None;
+            return Ok(None);
         }
         let name_sym = crate::qualified::known_symbol(name);
         if crate::qualified::is_qualified(name_sym) {
@@ -418,7 +413,7 @@ impl Interpreter {
             // exists to hide (`MScope::multi-lex(1)` answered where raku says
             // "Could not find symbol '&multi-lex' in 'MScope'").
             if self.qualified_name_hidden_here(name) {
-                return None;
+                return Ok(None);
             }
             if let Some(def) = self
                 .registry()
@@ -426,7 +421,7 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .cloned()
             {
-                return Some(def);
+                return Ok(Some(def));
             }
             let prefix = format!("{}/{arity}:", name);
             let untyped_key = format!("{}/{}", name, arity);
@@ -448,8 +443,8 @@ impl Interpreter {
                     .collect()
             };
             self.sort_candidates_by_specificity(&mut candidates);
-            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
-                return Some(def);
+            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
+                return Ok(Some(def));
             }
             // Capture-subsignature candidates (`multi foo(|c(...))`) are registered
             // at arity 0 because the capture consumes all arguments; the real
@@ -472,18 +467,19 @@ impl Interpreter {
             if !subsig_candidates.is_empty() {
                 self.sort_candidates_by_specificity(&mut subsig_candidates);
                 if let Some(def) =
-                    self.choose_best_matching_candidate(name, arg_values, subsig_candidates)
+                    self.choose_best_matching_candidate(name, arg_values, subsig_candidates)?
                 {
-                    return Some(def);
+                    return Ok(Some(def));
                 }
             }
             // A candidate whose declared arity differs from the call's because a
             // trailing parameter is optional/defaulted/slurpy.
             let flexible = self.qualified_flexible_arity_candidates(name);
             if !flexible.is_empty()
-                && let Some(def) = self.choose_best_matching_candidate(name, arg_values, flexible)
+                && let Some(def) =
+                    self.choose_best_matching_candidate(name, arg_values, flexible)?
             {
-                return Some(def);
+                return Ok(Some(def));
             }
             // Visibility was decided by the gate at the top of this branch.
             if let Some(def) = self
@@ -492,7 +488,7 @@ impl Interpreter {
                 .get(&Symbol::intern(name))
                 .cloned()
             {
-                return Some(def);
+                return Ok(Some(def));
             }
             // Try qualifying with the current package prefix when the
             // prefix package is visible in the current scope (i.e., exists
@@ -516,7 +512,7 @@ impl Interpreter {
                 if prefix_visible {
                     let qualified = crate::qualified::qualified(cur, name_sym);
                     if let Some(def) = self.registry().functions.get(&qualified).cloned() {
-                        return Some(def);
+                        return Ok(Some(def));
                     }
                     let q_prefix = format!("{qualified}/{arity}:");
                     let q_untyped_key = format!("{qualified}/{}", arity);
@@ -542,12 +538,12 @@ impl Interpreter {
                         qualified.as_str(),
                         arg_values,
                         q_candidates,
-                    ) {
-                        return Some(def);
+                    )? {
+                        return Ok(Some(def));
                     }
                 }
             }
-            return None;
+            return Ok(None);
         }
         // A compunit-private top-level routine of the unit currently executing
         // wins over every package entry: it is a lexical of that compunit, and
@@ -557,11 +553,11 @@ impl Interpreter {
             if let Some(key) = plain_key {
                 self.plain_fn_resolve_memo_insert(key, &def);
             }
-            return Some(def);
+            return Ok(Some(def));
         }
         // The frame-dependent fallback of the same lookup; not memoized.
         if let Some(def) = self.unit_private_routine(name) {
-            return Some(def);
+            return Ok(Some(def));
         }
         // Bare name: search the current package, then each enclosing package,
         // then GLOBAL (see `bare_name_packages`), stopping at the innermost one
@@ -601,7 +597,7 @@ impl Interpreter {
                     {
                         self.plain_fn_resolve_memo_insert(key, &def);
                     }
-                    return Some(def);
+                    return Ok(Some(def));
                 }
             }
         }

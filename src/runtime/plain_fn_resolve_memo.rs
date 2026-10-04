@@ -125,6 +125,7 @@ mod tests {
 
     fn resolve(i: &mut Interpreter, name: &str) -> Option<Arc<FunctionDef>> {
         i.resolve_function_with_types(name, &[Value::int(1)])
+            .expect("a plain routine resolves without a dispatch error")
     }
 
     /// A resolution of a plain sub is memoized, and a later write to the

@@ -50,7 +50,7 @@ impl Interpreter {
     /// its own) — see `routine_is_rw_capable`.
     fn named_sub_is_rw_capable(&mut self, name: &str, call_args: &[Value]) -> bool {
         self.resolve_function_with_alias(name, call_args)
-            .is_some_and(|def| Self::routine_is_rw_capable(&def))
+            .is_ok_and(|def| def.is_some_and(|def| Self::routine_is_rw_capable(&def)))
     }
 
     /// [`Interpreter::routine_is_rw_capable`] asked of a routine code object
@@ -110,7 +110,6 @@ impl Interpreter {
             let Some(callable) = self.rw_capable_callable_var(&name) else {
                 return self.builtin_incdec_nomatch(std::slice::from_ref(&op_label));
             };
-            let _ = self.take_pending_dispatch_error();
             let old = self
                 .call_sub_value(callable.clone(), call_args.clone(), true)?
                 .deref_container();

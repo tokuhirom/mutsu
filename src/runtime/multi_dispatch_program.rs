@@ -154,7 +154,7 @@ impl Interpreter {
         args: &[Value],
         program: &StageProgram,
         rejected: &mut std::collections::HashSet<u64>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         let mut matches: Vec<Arc<FunctionDef>> = Vec::new();
         let mut best_key: Option<CandidateRankKey> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
@@ -190,7 +190,7 @@ impl Interpreter {
         }
         if matches.is_empty() && threw.is_none() {
             self.pending_where_exception = outer_where_exception;
-            return None;
+            return Ok(None);
         }
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }

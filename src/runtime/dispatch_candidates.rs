@@ -173,7 +173,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         self.choose_best_matching_candidate_excluding(name, args, candidates, None)
     }
 
@@ -193,7 +193,7 @@ impl Interpreter {
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
         rejected: Option<&mut std::collections::HashSet<u64>>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         // Rank every candidate BEFORE trying to bind any of them.
         //
         // [`Self::candidate_rank_key`] reads only the declared signature and
@@ -270,7 +270,7 @@ impl Interpreter {
         args: &[Value],
         ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
         mut rejected: Option<&mut std::collections::HashSet<u64>>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         // The duplicate-registry-key dedup that used to sit here now runs
         // before the ranking loop above -- see the comment there. It stops one
         // candidate's `where` clause from being RUN once per key it happens to
@@ -356,7 +356,7 @@ impl Interpreter {
         mut matches: Vec<Arc<FunctionDef>>,
         threw: Option<(Arc<FunctionDef>, RuntimeError)>,
         outer_where_exception: Option<Box<RuntimeError>>,
-    ) -> Option<Arc<FunctionDef>> {
+    ) -> Resolved {
         if let Some((thrower, e)) = threw {
             // No candidate matched at all, or the thrower sorts at least as
             // narrow as (or was declared before) the best match: raku would
@@ -384,21 +384,15 @@ impl Interpreter {
                 }
             };
             if reached {
-                // Signal it the way an ambiguous dispatch is signalled: `None`
-                // plus a pending dispatch error, which every caller of the
-                // resolver already re-raises. A plain `pending_where_exception`
-                // stash would not survive the fallback path's deliberate
-                // re-resolve (it clears the pending error and resolves again),
-                // and the leftover would then be attributed to whichever
-                // candidate the second scan looked at first.
-                self.set_pending_dispatch_error(e);
+                // Raised the way an ambiguous dispatch is: as the resolution's
+                // error, which a caller that dispatches the call re-raises.
                 self.pending_where_exception = outer_where_exception;
-                return None;
+                return Err(e);
             }
         }
         self.pending_where_exception = outer_where_exception;
         if matches.len() <= 1 {
-            return matches.into_iter().next();
+            return Ok(matches.into_iter().next());
         }
 
         // `matches` is ALREADY in narrowest-first order — the scan walked the
@@ -434,7 +428,7 @@ impl Interpreter {
             let default_candidates: Vec<&Arc<FunctionDef>> =
                 tied.iter().filter(|def| def.is_default).collect();
             if default_candidates.len() == 1 {
-                return Some(default_candidates[0].clone());
+                return Ok(Some(default_candidates[0].clone()));
             }
             // Candidates that tie while needing a named bind check (an
             // explicit named parameter, or a `where` on a slurpy) are never
@@ -454,14 +448,12 @@ impl Interpreter {
             // `roast/integration/advent2011-day24.t` pins two verbatim
             // duplicate `multi sub Slurp($filename) {...}` with no named param.
             if Self::candidate_needs_named_bind_check(&matches[0]) {
-                return Some(matches.remove(0));
+                return Ok(Some(matches.remove(0)));
             }
-            self.pending_dispatch_error =
-                Some(self.ambiguous_multi_dispatch_error(name, args, &tied));
-            return None;
+            return Err(self.ambiguous_multi_dispatch_error(name, args, &tied));
         }
 
-        Some(matches.remove(0))
+        Ok(Some(matches.remove(0)))
     }
 
     /// Whether any *named* parameter of `def` carries a type constraint.

@@ -213,6 +213,8 @@ impl Interpreter {
         // Skip functions that need special interpreter handling.
         if !self.is_interpreter_handled_function(name)
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
+                .ok()
+                .flatten()
         {
             // Prefer the cross-thread shared captured body for a `state`-bearing
             // module sub so its `state` cell stays shared across threads (the

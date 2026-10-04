@@ -95,7 +95,11 @@ impl Interpreter {
             "postcircumfix:<{; }>"
         };
         let args = vec![target.clone(), Value::array(dims.to_vec())];
-        match self.resolve_function_with_types(op_name, &args) {
+        match self
+            .resolve_function_with_types(op_name, &args)
+            .ok()
+            .flatten()
+        {
             Some(def) => self.call_routine_def(&def, args).map(Some),
             None => Ok(None),
         }

@@ -208,7 +208,7 @@ impl Interpreter {
             RowCombine::SmartMatch => {
                 let mut acc = row.first().cloned().unwrap_or(Value::NIL);
                 for r in row.iter().skip(1) {
-                    acc = Value::truth(self.vm_smart_match(&acc, r));
+                    acc = Value::truth(self.vm_try_smart_match(&acc, r)?);
                 }
                 Ok(acc)
             }

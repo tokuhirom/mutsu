@@ -219,8 +219,7 @@ impl Interpreter {
             return false;
         }
         self.resolve_function_with_alias(name, args)
-            .map(|def| def.is_test_assertion)
-            .unwrap_or(false)
+            .is_ok_and(|def| def.is_some_and(|def| def.is_test_assertion))
     }
 
     pub(super) fn positional_values(args: &[Value]) -> Vec<&Value> {

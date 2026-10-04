@@ -186,11 +186,7 @@ impl Interpreter {
                     .map(|(v, _)| v),
             };
         }
-        self.clear_pending_dispatch_error();
-        let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {
-            if let Some(err) = self.take_pending_dispatch_error() {
-                return Err(err);
-            }
+        let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)? else {
             if !self.has_multi_candidates(&proto_name) {
                 return Err(self.multi_no_candidates_error(&proto_name, &args));
             }
@@ -310,7 +306,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Option<FunctionDef> {
+    ) -> Result<Option<FunctionDef>, RuntimeError> {
         let arity = arg_values
             .iter()
             .filter(|value| !value.is_string_pair_value())
@@ -337,8 +333,8 @@ impl Interpreter {
                 let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
             });
-            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
-                return Some((*def).clone());
+            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
+                return Ok(Some((*def).clone()));
             }
             // Same flexible-arity fallback the qualified branch of
             // `resolve_function_with_types` uses: a candidate with an
@@ -346,14 +342,16 @@ impl Interpreter {
             // declared arity, not the call's.
             let flexible = self.qualified_flexible_arity_candidates(name);
             if !flexible.is_empty()
-                && let Some(def) = self.choose_best_matching_candidate(name, arg_values, flexible)
+                && let Some(def) =
+                    self.choose_best_matching_candidate(name, arg_values, flexible)?
             {
-                return Some((*def).clone());
+                return Ok(Some((*def).clone()));
             }
-            return None;
+            return Ok(None);
         }
-        self.resolve_function_with_types(name, arg_values)
-            .map(|a| (*a).clone())
+        Ok(self
+            .resolve_function_with_types(name, arg_values)?
+            .map(|a| (*a).clone()))
     }
 
     /// The `X::Multi::NoMatch` a call that reached a routine's candidate set

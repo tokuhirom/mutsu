@@ -653,7 +653,11 @@ impl Interpreter {
     /// smartmatch by value — `(gather { take 1; take 2 }) ~~ (1, 2)` must
     /// compare elements, not an unforced placeholder. Returns `None` for
     /// anything genuinely lazy (never forces an infinite source).
-    fn reify_finite_lazy_for_match(&mut self, v: &Value) -> Option<Value> {
+    fn reify_finite_lazy_for_match(
+        &mut self,
+        v: &Value,
+        err: &mut Option<crate::value::RuntimeError>,
+    ) -> Option<Value> {
         let ValueView::LazyList(ll) = v.view() else {
             return None;
         };
@@ -669,13 +673,40 @@ impl Interpreter {
         match self.force_lazy_list_vm(&ll) {
             Ok(items) => Some(Value::seq(items)),
             Err(e) => {
-                self.set_pending_dispatch_error(e);
+                err.get_or_insert(e);
                 None
             }
         }
     }
 
     pub(super) fn vm_smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        self.vm_smart_match_into(left, right, &mut None)
+    }
+
+    /// [`Self::vm_smart_match`] reporting an exception raised while matching
+    /// (see [`Interpreter::try_smart_match`]).
+    // Cost: as `vm_smart_match`.
+    pub(super) fn vm_try_smart_match(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<bool, crate::value::RuntimeError> {
+        let mut err = None;
+        let matched = self.vm_smart_match_into(left, right, &mut err);
+        match err {
+            Some(e) => Err(e),
+            None => Ok(matched),
+        }
+    }
+
+    /// [`Self::vm_smart_match`], leaving the first exception raised while
+    /// matching in `err`.
+    fn vm_smart_match_into(
+        &mut self,
+        left: &Value,
+        right: &Value,
+        err: &mut Option<crate::value::RuntimeError>,
+    ) -> bool {
         // ADR-0058: list matching reads a Seq's elements through pure code, so
         // a still-deferred `.map`/`.grep` operand has to run its callback
         // first. Smartmatch answers a Bool, so a callback that throws here is
@@ -685,11 +716,11 @@ impl Interpreter {
         let _ = self.reify_map_grep_seq(right);
         // Force finite lazy operands first so list matching sees their
         // elements (see reify_finite_lazy_for_match).
-        if let Some(forced) = self.reify_finite_lazy_for_match(left) {
-            return self.vm_smart_match(&forced, right);
+        if let Some(forced) = self.reify_finite_lazy_for_match(left, err) {
+            return self.vm_smart_match_into(&forced, right, err);
         }
-        if let Some(forced) = self.reify_finite_lazy_for_match(right) {
-            return self.vm_smart_match(left, &forced);
+        if let Some(forced) = self.reify_finite_lazy_for_match(right, err) {
+            return self.vm_smart_match_into(left, &forced, err);
         }
         // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` dispatches
         // `$obj.ACCEPTS($x)` — the core smartmatch protocol. Check this BEFORE
@@ -718,7 +749,7 @@ impl Interpreter {
             match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                 Ok(v) => return v.truthy(),
                 Err(e) => {
-                    self.set_pending_dispatch_error(e);
+                    err.get_or_insert(e);
                     return false;
                 }
             }
@@ -769,7 +800,7 @@ impl Interpreter {
             match self.vm_call_on_value(right.clone(), call_args, None) {
                 Ok(v) => return v.truthy(),
                 Err(e) => {
-                    self.set_pending_dispatch_error(e);
+                    err.get_or_insert(e);
                     return false;
                 }
             }
@@ -782,7 +813,7 @@ impl Interpreter {
             && let ValueView::Enum { value, .. } = right_decont.descalarize().view()
             && self.has_user_method(&class_name.resolve(), "Numeric")
         {
-            return self.vm_smart_match(left, &value.to_value());
+            return self.vm_smart_match_into(left, &value.to_value(), err);
         }
         // Try pure matching first
         if let Some(result) = pure_smart_match(left, right) {
@@ -824,16 +855,16 @@ impl Interpreter {
                 Ok(result) => {
                     return result.truthy() == val.truthy();
                 }
-                Err(err) => {
-                    // Non-existing method or attribute dies.
-                    // Set pending dispatch error so the caller can propagate it.
-                    self.set_pending_dispatch_error(err);
+                Err(e) => {
+                    // Non-existing method or attribute dies; the caller
+                    // decides whether that propagates.
+                    err.get_or_insert(e);
                     return false;
                 }
             }
         }
 
         // Fall back to interpreter for complex cases
-        loan_env!(self, smart_match_values(left, right))
+        loan_env!(self, smart_match_into(left, right, err))
     }
 }

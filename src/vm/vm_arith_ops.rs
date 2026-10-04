@@ -380,7 +380,10 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        if let Some(def) = loan_env!(self, resolve_function_with_types("infix:<,>", &args)) {
+        if let Some(def) = loan_env!(self, resolve_function_with_types("infix:<,>", &args))
+            .ok()
+            .flatten()
+        {
             let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             self.stack.push(result);
@@ -477,7 +480,10 @@ impl Interpreter {
         {
             return result.map(Some);
         }
-        if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args))
+            .ok()
+            .flatten()
+        {
             // The native implementation is a *candidate*, not a fallback
             // (ADR-0071): a user `multi infix:<+>($a, $b)` joins the operator's
             // candidate set and only takes the call when it out-narrows the

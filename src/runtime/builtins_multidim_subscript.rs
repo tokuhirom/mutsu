@@ -207,7 +207,7 @@ impl Interpreter {
             args[1].clone(),
             Value::pair(name.to_string(), Value::truth(truthy)),
         ];
-        match self.resolve_function_with_types(op_name, &call_args) {
+        match self.resolve_function_with_types(op_name, &call_args)? {
             Some(def) => self.call_routine_def(&def, call_args).map(Some),
             None => Ok(None),
         }

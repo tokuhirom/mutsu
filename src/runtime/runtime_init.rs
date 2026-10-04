@@ -3162,7 +3162,6 @@ impl Interpreter {
             topic_state: Default::default(),
             async_state: Default::default(),
             block_scope_depth: 0,
-            pending_dispatch_error: None,
             pending_sigilless_store: None,
             regex_state: Default::default(),
             closure_env_overrides: HashMap::new(),

@@ -257,7 +257,10 @@ impl Interpreter {
         // .Stringy() is defined as `{ ~self }` which delegates to prefix:<~>.
         {
             let args = vec![val.clone()];
-            if let Some(def) = loan_env!(self, resolve_function_with_types("prefix:<~>", &args)) {
+            if let Some(def) = loan_env!(self, resolve_function_with_types("prefix:<~>", &args))
+                .ok()
+                .flatten()
+            {
                 let empty_fns = crate::opcode::CompiledFns::default();
                 let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
                 self.stack.push(result);

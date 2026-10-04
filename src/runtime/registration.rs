@@ -782,7 +782,7 @@ impl Interpreter {
         if !has_fn && !has_multi {
             return false;
         }
-        let def = self.resolve_function_with_types(name, args);
+        let def = self.resolve_function_with_types(name, args).ok().flatten();
         let Some(def) = def else {
             return false;
         };
@@ -824,7 +824,10 @@ impl Interpreter {
         // Resolution, not mere registration: the registry is flat, so this is
         // what decides whether the declaration is reachable from the running
         // package at all.
-        self.resolve_function_with_types(name, args).is_some()
+        self.resolve_function_with_types(name, args)
+            .ok()
+            .flatten()
+            .is_some()
     }
 
     /// A routine whose signature already pins the return value (`--> Nil`,

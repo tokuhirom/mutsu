@@ -711,7 +711,11 @@ impl Interpreter {
                     _ => idx.clone(),
                 };
                 let args = vec![target.clone(), idx_arg, val_peek];
-                if let Some(def) = self.resolve_function_with_types(op_name, &args) {
+                if let Some(def) = self
+                    .resolve_function_with_types(op_name, &args)
+                    .ok()
+                    .flatten()
+                {
                     self.stack.pop();
                     let empty_fns = crate::opcode::CompiledFns::default();
                     let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
