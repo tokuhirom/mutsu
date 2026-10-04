@@ -659,7 +659,25 @@ fn class_traits(
 /// lexical one. Only the sigilless form round-trips, matching what the
 /// converter renders.
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = leaf_str(node, "name")?;
+    let written = leaf_str(node, "name")?;
+    // The parser strips a `$` sigil into `__constant_sigil` and keeps the
+    // others in the name.
+    let (name, sigil) = match written.chars().next() {
+        _ if written.starts_with("term:<") && written.ends_with('>') => {
+            let term = &written["term:<".len()..written.len() - 1];
+            if !term.starts_with(['$', '@', '%', '&']) {
+                // A sigilless term is the plain constant name the parser
+                // records; the converter never renders `term:<foo>`.
+                return Err(unsupported(node));
+            }
+            (term.to_string(), "")
+        }
+        Some('$') => (written[1..].to_string(), "$"),
+        Some('@') => (written.clone(), "@"),
+        Some('%') => (written.clone(), "%"),
+        Some('&') => (written.clone(), "&"),
+        _ => (written, ""),
+    };
     let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
         None => true,
         Some(_) => match leaf_str(node, "scope")?.as_str() {
@@ -686,7 +704,7 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             ("__has_initializer".to_string(), None),
             (
                 "__constant_sigil".to_string(),
-                Some(Expr::Literal(Value::str_from(""))),
+                Some(Expr::Literal(Value::str_from(sigil))),
             ),
         ],
         where_constraint: None,
