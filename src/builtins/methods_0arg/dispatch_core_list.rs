@@ -67,6 +67,12 @@ pub(super) fn dispatch(
                     Some(Ok(Value::int(len as i64 - 1)))
                 }
                 ValueView::LazyList(_) => None,
+                // A buffer-backed instance of any class (upstream NativeCall's
+                // `CArray[T]`, a mixin over `CArray`) counts its elements.
+                _ if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) => {
+                    let len = buf_len_or_zero(&attributes);
+                    Some(Ok(Value::int(len as i64 - 1)))
+                }
                 _ => Some(Ok(Value::int(0))),
             })
         }

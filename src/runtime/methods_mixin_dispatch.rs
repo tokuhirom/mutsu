@@ -561,7 +561,13 @@ impl Interpreter {
             // value a role method wrote through `$!attr`.
             let (inner_cell, mut method_attrs) = match inner.as_ref().view() {
                 ValueView::Instance { attributes, .. } => {
-                    (Some(attributes.clone()), attributes.to_map())
+                    // The element storage of a buffer-backed instance (a
+                    // `CArray[T]`) is reached through `self`, never as an
+                    // attribute; a second holder would make the method's
+                    // in-place write fork it.
+                    let mut snapshot = attributes.to_map();
+                    crate::value::value_buf::remove_storage(&mut snapshot);
+                    (Some(attributes.clone()), snapshot)
                 }
                 _ => (None, AttrMap::new()),
             };

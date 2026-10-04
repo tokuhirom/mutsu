@@ -338,6 +338,7 @@ pub(crate) mod vm_stats;
 pub(crate) mod vm_stats_regex_vm;
 pub(crate) mod vm_string_regex_ops;
 mod vm_subscript_invocant_ref;
+mod vm_subscript_protocol;
 pub(crate) mod vm_subst_apply;
 pub(crate) mod vm_subst_exec;
 pub(crate) mod vm_subst_repl;

@@ -795,7 +795,11 @@ pub(crate) fn native_method_0arg_cascade(
             && matches!(inner.view(), ValueView::Package(_))
             && crate::value::role_mixin_suffix(mixins).is_some()
         {
-            let composed = crate::value::what_type_name(target);
+            // A type object renamed by `.^set_name` renders by that name.
+            let composed = mixins
+                .get("__mutsu_type_name__")
+                .map(Value::to_string_value)
+                .unwrap_or_else(|| crate::value::what_type_name(target));
             let rendered = if method == "gist" {
                 format!("({composed})")
             } else {
