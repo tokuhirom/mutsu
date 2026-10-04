@@ -560,15 +560,18 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// (which mutsu records in BOTH `parents` and `does_parents`), and
 /// `Trait::Is(name => "rw")` is the `rw` flag.
 #[allow(clippy::type_complexity)]
-fn class_traits(node: &RakuAstNode) -> Result<(Vec<String>, Vec<String>, bool), RuntimeError> {
+fn class_traits(
+    node: &RakuAstNode,
+) -> Result<(Vec<String>, Vec<String>, Vec<(String, Vec<Expr>)>, bool), RuntimeError> {
     let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), Vec::new(), false));
+        return Ok((Vec::new(), Vec::new(), Vec::new(), false));
     };
     let RakuAstFieldValue::List(items) = &f.value else {
         return Err(unsupported(node));
     };
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
+    let mut parent_args = Vec::new();
     let mut is_rw = false;
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
@@ -577,7 +580,11 @@ fn class_traits(node: &RakuAstNode) -> Result<(Vec<String>, Vec<String>, bool), 
         match t.class {
             RakuAstClass::TraitIs => {
                 if let Ok(type_node) = named_child(t, "type") {
-                    parents.push(simple_type_name(node, type_node)?);
+                    let parent = simple_type_name(node, type_node)?;
+                    if let Some(args) = super::type_lower::type_application_args(node, type_node)? {
+                        parent_args.push((parent.clone(), args));
+                    }
+                    parents.push(parent);
                 } else if let Ok(name_node) = named_child(t, "name") {
                     match positional_leaf(name_node)?.view() {
                         ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
@@ -588,7 +595,11 @@ fn class_traits(node: &RakuAstNode) -> Result<(Vec<String>, Vec<String>, bool), 
                 }
             }
             RakuAstClass::TraitDoes => {
-                let role = simple_type_name(node, named_child_or_positional(t)?)?;
+                let type_node = named_child_or_positional(t)?;
+                let role = simple_type_name(node, type_node)?;
+                if let Some(args) = super::type_lower::type_application_args(node, type_node)? {
+                    parent_args.push((role.clone(), args));
+                }
                 // mutsu's dispatcher reads `parents`, so a composed role has to
                 // appear there too — exactly what the parser records.
                 parents.push(role.clone());
@@ -597,7 +608,7 @@ fn class_traits(node: &RakuAstNode) -> Result<(Vec<String>, Vec<String>, bool), 
             _ => return Err(unsupported(node)),
         }
     }
-    Ok((parents, does_parents, is_rw))
+    Ok((parents, does_parents, parent_args, is_rw))
 }
 
 /// `constant X = 5` -> a `Stmt::VarDecl` carrying mutsu's `__constant` marker
@@ -699,7 +710,7 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
-    let (parents, does_parents, class_is_rw) = class_traits(node)?;
+    let (parents, does_parents, parent_args, class_is_rw) = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
@@ -724,7 +735,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // own site id as a parsed one does: a lexical class is registered
         // under a name mangled with it, which is what keeps it lexical.
         decl_id: crate::ast::next_class_decl_id(),
-        parent_args: Vec::new(),
+        parent_args,
         body_parents: Vec::new(),
     })
 }
@@ -2177,7 +2188,7 @@ fn is_colonpair_false(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::ColonPairFalse
 }
 
-fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn regex_subrule_argument_source(node: &RakuAstNode) -> Result<String, RuntimeError> {
     if is_literal_hash_index(node) {
         let operand = lower_expr(named_child(node, "operand")?)?;
         let postfix = named_child(node, "postfix")?;

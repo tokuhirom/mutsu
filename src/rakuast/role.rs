@@ -57,7 +57,13 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         .count();
     let mut traits = Vec::new();
     for stmt in &role.body[..header_len] {
-        let Stmt::DoesDecl { name, from_is, .. } = stmt else {
+        let Stmt::DoesDecl {
+            name,
+            args,
+            from_is,
+            ..
+        } = stmt
+        else {
             unreachable!("counted above");
         };
         let name = name.resolve();
@@ -65,7 +71,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         if name.starts_with("__mutsu_role_") {
             return Err(unsupported("role with `hides` / `is hidden`"));
         }
-        let type_node = build_type_node(&name)?;
+        let type_node = if let Some(args) = args {
+            super::type_args::parameterized_type_node(&name, Some(args))?
+        } else {
+            build_type_node(&name)?
+        };
         traits.push(Value::rakuast(Box::new(if *from_is {
             RakuAstNode {
                 class: RakuAstClass::TraitIs,
@@ -138,9 +148,7 @@ fn parent_clause(
     from_is: bool,
 ) -> Result<Stmt, RuntimeError> {
     let name = super::type_lower::type_constraint(owner, type_node)?;
-    let args = name
-        .find('[')
-        .and_then(|bracket| crate::parser::parse_bracket_arg_exprs(&name[bracket..]));
+    let args = super::type_lower::type_application_args(owner, type_node)?;
     Ok(Stmt::DoesDecl {
         name: Symbol::intern(&name),
         args,

@@ -1,0 +1,120 @@
+//! Source spelling and parsed expressions for parameterized type arguments.
+
+use super::convert::{
+    build_type_node, colonpair_value_expr, convert_expr, is_simple_type, node_field, unsupported,
+};
+use super::{RakuAstClass, RakuAstNode};
+use crate::ast::Expr;
+use crate::value::RuntimeError;
+
+/// Yield comma-separated arguments without splitting inside brackets or quotes.
+struct ArgSources<'a> {
+    rest: &'a str,
+}
+
+impl<'a> Iterator for ArgSources<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.rest.is_empty() {
+            return None;
+        }
+        let mut depth = 0usize;
+        let mut quote = None;
+        let mut escaped = false;
+        for (i, ch) in self.rest.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if let Some(open) = quote {
+                if ch == open {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '\'' | '"' => quote = Some(ch),
+                '(' | '[' | '{' | '<' => depth += 1,
+                ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
+                ',' if depth == 0 => {
+                    let source = &self.rest[..i];
+                    self.rest = &self.rest[i + 1..];
+                    return Some(source.trim());
+                }
+                _ => {}
+            }
+        }
+        let source = self.rest.trim();
+        self.rest = "";
+        Some(source)
+    }
+}
+
+/// Convert a type application, using parser expressions for argument values
+/// and its retained spelling for the colonpair form of a named argument.
+pub(super) fn parameterized_type_node(
+    spelling: &str,
+    parsed: Option<&[Expr]>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let open = spelling
+        .find('[')
+        .ok_or_else(|| unsupported("malformed parameterised type"))?;
+    let inner = spelling
+        .strip_suffix(']')
+        .ok_or_else(|| unsupported("malformed parameterised type"))?;
+    let base = &spelling[..open];
+    if !is_simple_type(base) {
+        return Err(unsupported("parameterised type over a non-simple base"));
+    }
+    let mut sources = ArgSources {
+        rest: &inner[open + 1..],
+    };
+    let mut fields = Vec::new();
+    if let Some(parsed) = parsed {
+        for expr in parsed {
+            let source = sources
+                .next()
+                .ok_or_else(|| unsupported("parameterised type argument count"))?;
+            let node = if let Some(stripped) = source.strip_prefix(':') {
+                // The ordinary expression AST stores `:key(value)` as the
+                // same FatArrow as `key => value`; its source spelling is
+                // retained on the declaration and selects the RakuAST form.
+                if stripped.contains('(') && source.ends_with(')') {
+                    colonpair_value_expr(expr)?
+                } else {
+                    return Err(unsupported("parameterised type colonpair form"));
+                }
+            } else if is_simple_type(source) {
+                build_type_node(source)?
+            } else {
+                convert_expr(expr)?
+            };
+            fields.push(node_field(None, node));
+        }
+        if sources.next().is_some() {
+            return Err(unsupported("parameterised type argument count"));
+        }
+    } else {
+        for source in sources {
+            fields.push(node_field(None, build_type_node(source)?));
+        }
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::TypeParameterized,
+        fields: vec![
+            node_field(Some("base-type"), super::bareword::simple_type_node(base)),
+            node_field(
+                Some("args"),
+                RakuAstNode {
+                    class: RakuAstClass::ArgList,
+                    fields,
+                },
+            ),
+        ],
+    })
+}
