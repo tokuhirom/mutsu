@@ -247,6 +247,10 @@ impl Interpreter {
             // there is nothing to switch; answers null.
             // Cost: O(1).
             "usecompileehllconfig" | "usecompilerhllconfig" => Ok(Value::NIL),
+            // nqp::force_gc() — collect now; answers null. The same collect
+            // `$*VM.request-garbage-collection` runs.
+            // Cost: as `Interpreter::request_garbage_collection`.
+            "force_gc" => self.request_garbage_collection().map(|()| Value::NIL),
             // nqp::getlexdyn($name): resolve a dynamic variable by a
             // runtime-computed name, the same way a compiled `%*NAME`/`$*NAME`
             // read would (`get_env_with_main_alias` is the chokepoint every

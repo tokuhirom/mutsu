@@ -1,12 +1,12 @@
 use Test;
 use nqp;
 
-# The HLL-Specific nqp:: ops (#11504). Expected answers are Rakudo 2026.09's
+# The HLL-Specific nqp:: ops and nqp::force_gc (#11504). Expected answers are Rakudo 2026.09's
 # except `hlllist` / `hllhash`: Rakudo answers its BOOTArray / BOOTHash VM
 # types, mutsu the type of what its own `nqp::list` / `nqp::hash` build (see
 # #11553 for the representation decision).
 
-plan 12;
+plan 14;
 
 is nqp::hllboxtype_i().^name, 'Int', 'hllboxtype_i';
 is nqp::hllboxtype_n().^name, 'Num', 'hllboxtype_n';
@@ -21,6 +21,14 @@ is nqp::getcurhllsym('nqp-hll-ops-bar'), 7, 'and getcurhllsym sees bindhllsym("R
 
 is nqp::hlllist().^name, nqp::list().^name, 'hlllist is the type nqp::list builds';
 is nqp::hllhash().^name, nqp::hash().^name, 'hllhash is the type nqp::hash builds';
+
+{
+    my $destroyed = 0;
+    my class D { submethod DESTROY { $destroyed++ } }
+    D.new for ^20;
+    ok nqp::isnull(nqp::force_gc()), 'force_gc answers null';
+    ok $destroyed > 0, 'force_gc collects, and DESTROY runs';
+}
 
 ok nqp::isnull(nqp::sethllconfig('Raku', nqp::hash())), 'sethllconfig answers null';
 # (Under Rakudo this switch leaves the program on the compiler's HLL config,

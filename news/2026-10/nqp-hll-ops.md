@@ -1,4 +1,4 @@
-# The HLL-specific `nqp::` ops
+# The HLL-specific `nqp::` ops and `nqp::force_gc`
 
 The ten HLL-specific `nqp::` ops are implemented (#11504):
 
@@ -17,5 +17,10 @@ The ten HLL-specific `nqp::` ops are implemented (#11504):
   compiler's configuration, and its test harness then dies at
   `done-testing`.
 
-The `nqp::` coverage table now counts 490 of 577 ops; the HLL-specific family
+`nqp::force_gc` runs a cycle collection right away, followed by any `DESTROY`
+calls that collection makes due. It is the same routine as
+`$*VM.request-garbage-collection`, which was moved out of the method body so
+both callers share it.
+
+The `nqp::` coverage table now counts 491 of 577 ops; the HLL-specific family
 is complete at 13 of 13.

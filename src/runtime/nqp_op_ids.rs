@@ -284,6 +284,7 @@ static NQP_OPS: [(&str, NqpOpTable); 456] = [
     ("flip", NqpOpTable::Str),
     ("floor_n", NqpOpTable::Value),
     ("flushfh", NqpOpTable::Fs),
+    ("force_gc", NqpOpTable::Builtin),
     ("freemem", NqpOpTable::Sys),
     ("fromI_I", NqpOpTable::Native),
     ("fromnum_I", NqpOpTable::Native),

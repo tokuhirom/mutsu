@@ -56,7 +56,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 27 / 31 | 4 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
-| Profiling | 0 / 3 | 3 | #11504 |
+| Profiling | 1 / 3 | 2 | #11504 |
 | Serialization context | 1 / 18 | 17 | #11504 |
 | Stream Decoding | 10 / 10 | 0 | #11503 |
 | String | 48 / 48 | 0 | #11495 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **490 / 577** | **87** | |
+| **Total** | **491 / 577** | **86** | |
 
 ## Missing ops by category
 
@@ -77,7 +77,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `bind`, `bindcomp`, `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
-- **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
+- **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
