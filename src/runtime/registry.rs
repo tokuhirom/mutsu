@@ -2056,6 +2056,7 @@ mod tests {
             body_fp_cache: std::sync::OnceLock::new(),
             captured_readonly: None,
             body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
         }
     }
 
