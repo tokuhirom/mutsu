@@ -216,6 +216,24 @@ impl Interpreter {
         // `registry().roles` nor `registry().classes`, only its mangled
         // storage name is.
         let role_name_str = self.lexical_env_remap_name(&op.name.resolve());
+        // While a role is being declared its own name is not yet visible to
+        // its traits, so `role Exception is Exception` (or `is ::Exception`)
+        // inherits the core `Exception`, not itself (#11072). A role declared
+        // in a package already differs from the outer name (`M::Base` vs
+        // `Base`); only a top-level role can shadow a core type this way, and
+        // its parent is that core type, spelled so it cannot resolve back to
+        // the role.
+        if op.from_is
+            && role_name_str == name
+            && crate::builtin_types::catalog::builtin_type_info(name).is_some()
+        {
+            self.registry_mut()
+                .role_parents
+                .entry(name.to_string())
+                .or_default()
+                .push(format!("CORE::{name}"));
+            return Ok(());
+        }
         // A sibling role referenced by its short name (`role Derived
         // does Base` inside `unit module M`, where Base is registered
         // as `M::Base`) must resolve to its qualified name — the same
