@@ -815,7 +815,6 @@ impl Interpreter {
                     {
                         return outcome;
                     }
-                    self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                     self.env.insert("/".to_string(), Value::NIL);
                     if is_full_parse {
                         return Ok(self.parse_failure_for_pattern(&text, start_source.as_deref()));
@@ -912,14 +911,6 @@ impl Interpreter {
                 // (which includes the start rule's own action) when there is one,
                 // then replay whatever reduced outside it.
                 let partial_end = partial_match.as_ref().map_or(0, |caps| caps.to);
-                if let Some(best_end) = partial_match.as_ref().map(|caps| caps.to)
-                    && let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
-                    && best_end as i64 > current
-                {
-                    self.env
-                        .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
-                }
-                self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                 if let Some(ref mut actions) = actions_obj {
                     match partial_match.take() {
                         Some(mut caps) => {
@@ -1008,7 +999,6 @@ impl Interpreter {
                 if let Some(ref mut actions) = actions_obj {
                     self.dispatch_partial_parse_actions(&captures, actions, &start_rule, &text)?;
                 }
-                self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                 self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.make_parse_failure_value(&text, captures.cursor_pos()));
             }
@@ -2184,39 +2174,7 @@ impl Interpreter {
             .map(|pat| self.longest_complete_prefix_end(pat, text))
             .unwrap_or(0)
             .max(known_end);
-        if let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
-            && best_end as i64 > current
-        {
-            self.env
-                .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
-        }
         self.make_parse_failure_value(text, best_end)
-    }
-
-    fn update_grammar_highwater_from_regex_farthest(&mut self, text_len: usize) {
-        let Some(farthest) = super::regex::regex_helpers::RegexFarthestPositionScope::current()
-        else {
-            return;
-        };
-        let Some(current) = self
-            .env
-            .get("*HIGHWATER")
-            .and_then(Value::as_int)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            return;
-        };
-        // PrettyErrors deliberately records the start of the wrapped token,
-        // rather than the engine's furthest consumed cursor. A failed literal
-        // can nevertheless leave the cursor one character beyond that marker
-        // (for example, the `f` in `flox`); bridge exactly that one-character
-        // gap without replacing a wrapper's more conservative position with a
-        // whitespace or custom-token endpoint.
-        let best_end = farthest.min(text_len);
-        if best_end == current.saturating_add(1) {
-            self.env
-                .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
-        }
     }
 
     /// How far a failed `.parse` got, for the failure message: the longest prefix of
