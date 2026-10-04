@@ -1375,7 +1375,7 @@ fn open_regex_quote_at(chars: &[char], pos: usize) -> Option<char> {
             escaped = false;
             continue;
         }
-        if ch == '\\' {
+        if ch == '\\' && open != Some('\u{FF62}') {
             escaped = true;
             continue;
         }
