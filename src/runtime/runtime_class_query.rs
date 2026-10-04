@@ -162,6 +162,9 @@ impl Interpreter {
             return false;
         }
         self.module.chain_declared_packages.contains(name)
+            // A qualified package a module's mainline declared is not bound in
+            // the frame env (ADR-0084 §7.6); its kind record outlives the load.
+            || self.is_qualified_package_decl(name)
             || (!crate::env::is_magic_sigilless_key(name)
                 && matches!(
                     self.env.get(name).map(Value::view),

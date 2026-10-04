@@ -463,6 +463,44 @@ impl Interpreter {
             });
         }
 
+        // A qualified `package`/`module` a module's mainline declared is not
+        // bound in the frame env (ADR-0084 §7.6), so the env scan above misses
+        // it; its kind record is the persistent one.
+        for package_decl in self.registry().package_kinds.keys() {
+            if !crate::qualified::is_qualified_str(package_decl) {
+                continue;
+            }
+            let decl_short = crate::qualified::last_segment(Symbol::intern(package_decl)).as_str();
+            if (package_name == "MY" || pkg_is_global)
+                && (self.module.need_hidden_classes.contains(package_decl)
+                    || self.module.need_hidden_classes.contains(decl_short))
+            {
+                continue;
+            }
+            if package_name != "MY"
+                && !pkg_is_global
+                && self.types.package_stash_hidden.contains(package_decl)
+            {
+                continue;
+            }
+            if self.is_my_scoped_package_item(package_decl) {
+                continue;
+            }
+            let Some(rest) = Self::stash_member_tail(package_decl, &package_name) else {
+                continue;
+            };
+            if rest.is_empty() {
+                continue;
+            }
+            let head = Self::stash_tail_sub_package(rest).unwrap_or(rest);
+            symbols.entry(head.to_string()).or_insert_with(|| {
+                Value::package(Symbol::intern(&Self::qualify_stash_name(
+                    &package_name,
+                    head,
+                )))
+            });
+        }
+
         if self.module.exported_subs.contains_key(&package_name)
             || self.module.exported_vars.contains_key(&package_name)
         {
