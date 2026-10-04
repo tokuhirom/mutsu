@@ -620,6 +620,10 @@ impl crate::runtime::Interpreter {
         // `$s.field.Int` empty instead of 0. A parameterised field keeps its
         // parameter, so `.of` / `.deref` work on the value that comes out.
         if declared == "Pointer" || declared.starts_with("Pointer[") {
+            // Upstream NativeCall's own Pointer type, when it is loaded.
+            if let Some(built) = self.native_pointer_of_declared(&declared, addr, true) {
+                return built.ok();
+            }
             return Some(crate::runtime::nativecall::make_typed_pointer(
                 addr,
                 pointer_parameter(&declared).unwrap_or("void"),

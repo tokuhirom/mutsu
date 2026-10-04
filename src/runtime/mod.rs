@@ -652,6 +652,7 @@ mod container_element_proxy;
 mod container_role_of;
 mod ctor_phase_plan;
 pub(crate) mod native_decl;
+mod native_pointer_value;
 pub(crate) mod native_pos_ref;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
