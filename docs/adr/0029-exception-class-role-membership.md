@@ -1,9 +1,8 @@
 # ADR-0029: Built-in `X::` exception ancestry is role membership, not a single parent — register it through the existing composed-role path
 
 - **Status**: Accepted (Slices 1-3 implemented 2026-08-17/18; residue items
-  R1-R4 fixed 2026-08-19; Slice 4's vendored-real-`Test` sweep remains blocked
-  on the separate `todo/deep/vendor-real-test-module.md` and is tracked there,
-  not as an open question of this ADR — see "Implementation status" at the end)
+  R1-R4 fixed 2026-08-19; Slice 4's vendored-real-`Test` sweep completed
+  2026-10-04 — see "Implementation status" at the end)
 - **Date**: 2026-08-17
 - **Context ticket**:
   [`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`](../../todo/deep/exception-class-hierarchy-is-mostly-unregistered.md)
@@ -520,7 +519,7 @@ regenerable rather than transcribed.
 | 2 — mechanical raku capture script | **Landed** 2026-08-17, #6591 (verdict made set-aware 2026-08-19, residue R3) |
 | 3 — land the corrected + missing data | **Landed** 2026-08-18, #6595 |
 | residue R1-R4 (role-to-role edge, `X::TooLateForREPR` pun, diff-verdict duplicate artifact, dual-registration documentation) | **Landed** 2026-08-19 |
-| 4 — probe what it unblocks, measured honestly | **Deferred** — blocked on `todo/deep/vendor-real-test-module.md` (out of this ADR's scope; tracked on that ticket) |
+| 4 — probe what it unblocks, measured honestly | **Completed** 2026-10-04, after #7554 made vendored `Test` the default |
 
 Where it lives: `register_x(name, parent, does)` at
 `src/runtime/runtime_init.rs:1630`; the marker roles seeded as `RoleDef`s at
@@ -548,10 +547,8 @@ Measured outcome against the ADR's own §1 baseline:
 | classes matching raku byte-for-byte | 47 of 105 | 357 of 373 | **373 of 373** |
 | `.new` fails (`X::Method::NotFound`) | 123 | 1 (`X::TooLateForREPR`) | **0** |
 
-All seven acceptance criteria are now met except criterion 6, which is scoped
-exclusively to Slice 4's vendored-real-`Test` sweep (blocked on
-`todo/deep/vendor-real-test-module.md`, a separate pre-existing ticket
-unrelated to this ADR's mechanism decision). Criterion 3's "empty diff" is
+All seven acceptance criteria are now met. Criterion 6's vendored-real-`Test`
+measurement is recorded under R5 below. Criterion 3's "empty diff" is
 now literally true — `python3 scripts/adr0029-capture-x-exception-data.py`
 reports `match: 373 wrong_mro: 0 wrong_roles: 0 missing: 0` over the same 373
 real rakudo `Exception` subtypes measured throughout this ADR.
@@ -586,12 +583,20 @@ R1-R4 are fixed as of 2026-08-19:
   dual-registered name (`X::Syntax.^roles`) fell through to class semantics
   and returned `()` instead of `(X::Comp)`. Fixed by giving role identity the
   same priority `.HOW.^name` already gives it (`methods_introspect.rs`).
-- **R5 (unchanged, deliberately out of scope this round)** — Slice 4's
-  designated *role-only* probe (`roast/S02-literals/quoting-unicode.t`)
-  already expired before this fix (it is whitelisted and passes 101/101); the
-  only remaining content of Slice 4 is the vendored-real-`Test` sweep, which
-  needs `todo/deep/vendor-real-test-module.md` first. That ticket is the
-  correct place to pick this up, not this ADR.
+- **R5 (completed 2026-10-04)** — #7554 landed, and the native `Test` provider
+  was subsequently removed by #7566. On `main` at `9840958a8`, the designated
+  role-only probe `roast/S02-literals/quoting-unicode.t` passes 101/101 under
+  the vendored upstream `Test`; its six historical `X::Comp::FailGoal ~~
+  X::Comp` assertion losses are absent. The direct exception-membership pin
+  passes 27/27. The full whitelisted roast suite passes 1426 files and 218756
+  assertions. The bundled-library suite passes 311/326 files and its gate
+  passes: every whitelisted file is green. None of the 15 non-whitelisted
+  failures reports an `X::` registration or role-membership mismatch. This is
+  a current-state measurement, not an isolated before/after comparison: the
+  old 291/311 battery result used a different corpus and many unrelated
+  interpreter fixes landed in between. The six recovered assertions are the
+  specifically documented historical effect; a broader numerical gain cannot
+  be assigned to this ADR alone.
 
 ## Outcome
 
@@ -605,9 +610,6 @@ emission quirk, which is normalised at the verdict level, not replicated), and
 named for (`X::Method::NotFound … new on <class>`) no longer reproduces
 anywhere in the corpus.
 
-What remains open is exclusively a *measurement*, not a design or
-implementation gap: Slice 4's "what does this unblock under the real, vendored
-`Test` module" sweep is blocked on `todo/deep/vendor-real-test-module.md`,
-which is unrelated to this ADR's mechanism and is where that follow-up now
-lives. `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md` has
-been trimmed to that single remaining item.
+Slice 4's real-`Test` measurement is recorded above. All of this ADR's named
+remainders are complete; the current suite result and its attribution limit are
+recorded in `news/2026-10/adr-0029-real-test-sweep.md`.
