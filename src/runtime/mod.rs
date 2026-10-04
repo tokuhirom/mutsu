@@ -643,6 +643,8 @@ mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 pub(crate) mod array_type_trait;
 mod carray_ref;
+mod carray_view;
+pub(crate) use carray_view::CArrayView;
 mod carray_repr;
 mod compunit_scope;
 mod constraint_meta;

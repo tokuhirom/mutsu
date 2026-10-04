@@ -584,6 +584,12 @@ impl Interpreter {
             // Cost: O(1).
             "elems" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
+                // An unmanaged CArray (a `nativecast` view) has no length.
+                if crate::runtime::CArrayView::of(&v).is_some() {
+                    return Some(Err(RuntimeError::new(
+                        "Don't know how many elements a C array returned from a library",
+                    )));
+                }
                 let n = match v.view() {
                     ValueView::Array(items, _) => items.len() as i64,
                     ValueView::Hash(map) => map.len() as i64,
