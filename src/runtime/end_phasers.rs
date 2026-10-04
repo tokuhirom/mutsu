@@ -508,7 +508,11 @@ impl EndWalker<'_> {
     /// `None` for a name that is not a package variable at all (a twigil, a
     /// positional capture, an already-qualified name).
     fn our_symbol_key(package: &str, name: &str) -> Option<String> {
-        if name.is_empty() || name.contains("::") {
+        if name.is_empty() {
+            return None;
+        }
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
             return None;
         }
         let first = name.chars().next().unwrap();
@@ -523,7 +527,10 @@ impl EndWalker<'_> {
                 return None;
             }
         }
-        if package == "GLOBAL" || package.contains("::&") {
+        let package_sym = Symbol::intern(package);
+        if package_sym == crate::symbol::wk::global_package()
+            || crate::qualified::is_routine_scoped_package(package_sym)
+        {
             return Some(name.to_string());
         }
         // A term key is the unqualified spelling only; the package store of
@@ -535,12 +542,14 @@ impl EndWalker<'_> {
                     .to_string(),
             );
         }
-        match first {
+        // The sigil stays in front of the package: `$x` -> `$P::x`.
+        let key = match first {
             '$' | '@' | '%' | '&' if name.len() > 1 => {
-                Some(format!("{first}{package}::{}", &name[1..]))
+                crate::qualified::qualified_var(package_sym, name_sym)
             }
-            _ => Some(format!("{package}::{name}")),
-        }
+            _ => crate::qualified::qualified(package_sym, name_sym),
+        };
+        Some(key.as_str().to_string())
     }
 
     /// Add one name to the visible set, if it is a per-frame lexical container.
@@ -556,7 +565,7 @@ impl EndWalker<'_> {
     /// `our` variable, a `constant`, a class and `$*PROGRAM-NAME` all still
     /// answer there).
     fn push_lexical(&mut self, name: &str) {
-        if name.contains("::") {
+        if crate::qualified::is_qualified(Symbol::intern(name)) {
             return;
         }
         let bare = match name.chars().next() {
@@ -630,7 +639,10 @@ impl<'ast> Visit<'ast> for EndWalker<'_> {
                     // would install a binding the body never reads. Such an
                     // `END` keeps the pre-seeding behaviour (it resolves against
                     // the live exit-time env).
-                    let lexicals: &[String] = if self.package == "GLOBAL" && self.depth > 1 {
+                    let lexicals: &[String] = if Symbol::intern(&self.package)
+                        == crate::symbol::wk::global_package()
+                        && self.depth > 1
+                    {
                         &self.lexicals
                     } else {
                         &[]

@@ -205,7 +205,7 @@ impl Interpreter {
 
     fn build_caller_frame(&self, frame: &RoutineFrame, callsite_line: Option<i64>) -> Value {
         let mut attrs = ValueMap::default();
-        let pkg: &str = if frame.package.is_empty() || frame.package == "GLOBAL" {
+        let pkg: &str = if crate::qualified::is_global_package(frame.package) {
             "Main"
         } else {
             frame.package.as_str()
@@ -246,10 +246,11 @@ impl Interpreter {
                 let Some((package, name)) = code_frame.routine_identity() else {
                     return false;
                 };
+                let global = crate::symbol::wk::global_package();
                 name == frame.name
                     && (package == frame.package
-                        || (frame.package == "GLOBAL" && package.is_empty())
-                        || (package == "GLOBAL" && frame.package.is_empty()))
+                        || (frame.package == global && package.is_empty())
+                        || (package == global && frame.package.is_empty()))
             })
             .map(|code_frame| self.code_frame_value(code_frame))
             .or_else(|| self.env.get(&format!("&{}", frame.name)).cloned())
@@ -581,11 +582,9 @@ impl Interpreter {
         let Some(key) = Self::eval_context_routine(ctx) else {
             return EvalContextRoutineState::Mainline;
         };
-        let live_frame = self
-            .routine_stack
-            .iter()
-            .rev()
-            .find(|f| !f.is_block && format!("{}::{}", f.package, f.name) == key);
+        let live_frame = self.routine_stack.iter().rev().find(|f| {
+            !f.is_block && crate::qualified::qualified(f.package, f.name).as_str() == key
+        });
         match live_frame {
             Some(frame) => {
                 let target_id =

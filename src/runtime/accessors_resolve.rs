@@ -553,7 +553,11 @@ impl Interpreter {
                     );
                     env.insert(
                         "__mutsu_routine_name".to_string(),
-                        Value::str(format!("{}::{}", frame.package, frame.name)),
+                        Value::str(
+                            crate::qualified::qualified(frame.package, frame.name)
+                                .as_str()
+                                .to_string(),
+                        ),
                     );
                     return Value::make_sub(
                         frame.package,
@@ -630,10 +634,13 @@ impl Interpreter {
             .map(|a| (*a).clone())
             .or_else(|| {
                 if has_packages {
-                    let fq = format!("{}::{}", self.current_package(), lookup_name);
+                    let fq = crate::qualified::qualified(
+                        self.current_package_sym(),
+                        Symbol::intern(lookup_name),
+                    );
                     self.registry()
                         .our_scoped_functions
-                        .get(&Symbol::intern(&fq))
+                        .get(&fq)
                         .map(|d| (**d).clone())
                         .or_else(|| {
                             let global_fq = format!("GLOBAL::{}", lookup_name);
@@ -768,54 +775,39 @@ impl Interpreter {
     /// through them is undefined (roast pseudo-6c: `!defined(&GLOBAL::say)`).
     /// `GLOBAL::CORE::not` still sees CORE because CORE is the innermost prefix.
     fn innermost_pseudo_is_package_only(name: &str) -> bool {
-        let pseudo = [
+        matches!(
+            Self::leading_pseudo_packages(name).1,
+            Some("GLOBAL" | "OUR")
+        )
+    }
+
+    /// The run of pseudo-package qualifiers (`SETTING::`, `OUTER::`,
+    /// `CALLER::`, ...) `name` opens with: the byte length of that prefix,
+    /// `::` separators included, and the innermost pseudo-package in it. Only
+    /// a segment followed by `::` is a qualifier, so the last segment never is.
+    // Cost: O(s), s = `::` segments of `name` (the split is memoized per symbol).
+    fn leading_pseudo_packages(name: &str) -> (usize, Option<&'static str>) {
+        const PSEUDO: [&str; 12] = [
             "SETTING", "CALLER", "CALLERS", "OUTER", "OUTERS", "CORE", "GLOBAL", "LEXICAL", "MY",
             "OUR", "DYNAMIC", "UNIT",
         ];
-        let mut rest = name;
-        let mut last: Option<&str> = None;
-        loop {
-            let mut found = false;
-            for pkg in &pseudo {
-                if let Some(after) = rest.strip_prefix(pkg)
-                    && let Some(after) = after.strip_prefix("::")
-                {
-                    rest = after;
-                    last = Some(pkg);
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
+        let segments = crate::qualified::segments(crate::qualified::known_symbol(name));
+        let mut len = 0;
+        let mut last = None;
+        for segment in &segments[..segments.len().saturating_sub(1)] {
+            let segment = segment.as_str();
+            if !PSEUDO.contains(&segment) {
                 break;
             }
+            len += segment.len() + 2;
+            last = Some(segment);
         }
-        matches!(last, Some("GLOBAL") | Some("OUR"))
+        (len, last)
     }
 
     /// Strip pseudo-package prefixes (SETTING::, OUTER::, CALLER::, CORE::, etc.)
     /// from a qualified name and return the final bare function name.
     pub(crate) fn strip_pseudo_packages(name: &str) -> &str {
-        let pseudo = [
-            "SETTING", "CALLER", "CALLERS", "OUTER", "OUTERS", "CORE", "GLOBAL", "LEXICAL", "MY",
-            "OUR", "DYNAMIC", "UNIT",
-        ];
-        let mut rest = name;
-        loop {
-            let mut found = false;
-            for pkg in &pseudo {
-                if let Some(after) = rest.strip_prefix(pkg)
-                    && let Some(after) = after.strip_prefix("::")
-                {
-                    rest = after;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
-                break;
-            }
-        }
-        rest
+        &name[Self::leading_pseudo_packages(name).0..]
     }
 }

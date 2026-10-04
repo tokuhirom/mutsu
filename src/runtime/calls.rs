@@ -358,7 +358,7 @@ impl Interpreter {
         // field (`::T $x` is `ParamDef { name: "x", type_capture: Some("T") }`),
         // not as a parameter of its own.
         let signature_has_type_captures = param_defs.iter().any(|pd| {
-            pd.name.starts_with("::")
+            crate::qualified::is_type_capture(&pd.name)
                 || pd.name == "__type_capture__"
                 || pd.captured_type_name().is_some()
         });
@@ -419,7 +419,7 @@ impl Interpreter {
         // and NOT when the constraint is a user-defined type (subset, class, etc.).
         let has_type_captures = param_defs
             .iter()
-            .any(|pd| pd.name.starts_with("::") || pd.name == "__type_capture__");
+            .any(|pd| crate::qualified::is_type_capture(&pd.name) || pd.name == "__type_capture__");
         let has_subsignature = param_defs
             .iter()
             .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some());

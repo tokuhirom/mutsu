@@ -50,7 +50,8 @@ impl Interpreter {
         if let Some(def) = self.resolve_proto_function(name) {
             return Some((name.to_string(), def));
         }
-        if name.contains(':') || name.contains("::") {
+        // No `:` at all, so in particular no `::` qualifier.
+        if name.contains(':') {
             return None;
         }
         for alias in [format!("prefix:<{name}>"), format!("postfix:<{name}>")] {
@@ -62,7 +63,7 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             // A `my`-scoped (non-`our`) proto/multi in a module is exported
             // and callable under its short name, but is never in the package
             // stash — a package-qualified call to it must stay unresolved,

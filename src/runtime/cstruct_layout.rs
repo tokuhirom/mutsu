@@ -223,10 +223,11 @@ pub(crate) unsafe fn read_field(base: usize, field: &FieldLayout) -> crate::valu
 /// an unusable handle.
 pub(crate) fn short_base_name(type_name: &str) -> &str {
     let base_end = type_name.find('[').unwrap_or(type_name.len());
-    match type_name[..base_end].rfind("::") {
-        Some(i) => &type_name[i + 2..],
-        None => type_name,
-    }
+    let short =
+        crate::qualified::last_segment(crate::symbol::Symbol::intern(&type_name[..base_end]));
+    // The short name is the tail of the base, so the result is the input from
+    // where that tail starts, parameterization included.
+    &type_name[base_end - short.as_str().len()..]
 }
 
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
@@ -376,10 +377,12 @@ impl crate::runtime::Interpreter {
         if reg.cstruct_classes.contains(name) {
             return Some(name.to_string());
         }
-        let short = name.rsplit("::").next().unwrap_or(name);
+        let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
         reg.cstruct_classes
             .iter()
-            .find(|c| c.rsplit("::").next().unwrap_or(c) == short)
+            .find(|c| {
+                crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str() == short
+            })
             .cloned()
     }
 
@@ -392,7 +395,7 @@ impl crate::runtime::Interpreter {
     /// enclosing CStruct: any class NativeCall holds by reference, i.e. one
     /// declared `is repr('CStruct')`, `'CPointer'` or `'CUnion'`.
     pub(crate) fn is_native_handle_class(&self, name: &str) -> bool {
-        let short = name.rsplit("::").next().unwrap_or(name);
+        let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
         let reg = self.registry();
         [
             &reg.cstruct_classes,
@@ -402,9 +405,10 @@ impl crate::runtime::Interpreter {
         .iter()
         .any(|set| {
             set.contains(name)
-                || set
-                    .iter()
-                    .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+                || set.iter().any(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
         })
     }
 
@@ -546,7 +550,8 @@ impl crate::runtime::Interpreter {
             let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
             return Some((end.div_ceil(align) * align, align));
         }
-        let short = type_name.rsplit("::").next().unwrap_or(type_name);
+        let short =
+            crate::qualified::last_segment(crate::symbol::Symbol::intern(type_name)).as_str();
         FieldType::from_type_name(short, |n| self.is_native_handle_class(n))
             .map(|ty| (ty.size(), ty.align()))
     }
@@ -622,7 +627,7 @@ impl crate::runtime::Interpreter {
         }
         Some(crate::runtime::nativecall::make_native_handle(
             if self.is_cstruct_class(&declared) {
-                declared.rsplit("::").next().unwrap_or(&declared)
+                crate::qualified::last_segment(crate::symbol::Symbol::intern(&declared)).as_str()
             } else {
                 "Pointer"
             },
@@ -853,14 +858,16 @@ impl crate::runtime::Interpreter {
             _ => return None,
         };
         let name = class_name.resolve();
-        let short = name.rsplit("::").next().unwrap_or(&name).to_string();
+        let short = crate::qualified::last_segment(class_name)
+            .as_str()
+            .to_string();
         let is_cunion = {
             let reg = self.registry();
             reg.cunion_classes.contains(&name)
-                || reg
-                    .cunion_classes
-                    .iter()
-                    .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+                || reg.cunion_classes.iter().any(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
         };
         let repr = if self.is_cstruct_class(&name) {
             "CStruct"
@@ -887,13 +894,14 @@ impl crate::runtime::Interpreter {
     /// `NativeHelpers::CStruct`'s `LinearArray[::T]` opens with
     /// `die "Need a CStruct" unless T.REPR eq 'CStruct'`.
     pub(crate) fn declared_class_repr(&self, name: &str) -> Option<&'static str> {
-        let short = name.rsplit("::").next().unwrap_or(name);
+        let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
         let reg = self.registry();
         let holds = |set: &rustc_hash::FxHashSet<String>| {
             set.contains(name)
-                || set
-                    .iter()
-                    .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
+                || set.iter().any(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
         };
         if holds(&reg.cstruct_classes) {
             Some("CStruct")

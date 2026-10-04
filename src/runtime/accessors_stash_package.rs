@@ -10,6 +10,9 @@ impl Interpreter {
     // Rakudo: O(1) (the package's persistent Stash) -- see #9171.
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
         let package_name = Self::normalize_stash_package(package);
+        // Classified once for the whole build (every member loop below asks).
+        let package_sym = Symbol::intern(&package_name);
+        let pkg_is_global = package_sym == crate::symbol::wk::global_package();
 
         // PROCESS:: pseudo-package: exposes process-level dynamic variables
         // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
@@ -44,14 +47,16 @@ impl Interpreter {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
                     }
-                    let fq = format!("{module}::{name}");
+                    let fq =
+                        crate::qualified::qualified(Symbol::intern(module), Symbol::intern(name));
+                    let fq = fq.as_str();
                     // A natively-provided module's routines are registered
                     // under their BARE name (there is no `Mod::name`
                     // `FunctionDef` to find), so the package-qualified lookup
                     // yields Nil and the stash entry would exist with no value
                     // behind it -- `::("Test::EXPORT::DEFAULT::&ok")` resolved
                     // the path and then answered Nil.
-                    let mut code = self.resolve_code_var(&fq);
+                    let mut code = self.resolve_code_var(fq);
                     if code.is_nil() {
                         code = self.export_alias_code_value(module, name);
                     }
@@ -116,7 +121,7 @@ impl Interpreter {
         // `GLOBAL::.<$x>` / `::("GLOBAL")::('$x')` find package-scoped `our`
         // declarations. Only GLOBAL and the root get these; a named user
         // package must not vacuum up every bare `our` name.
-        if package_name == "GLOBAL" || package_name.is_empty() {
+        if crate::qualified::is_global_package(package_sym) {
             for (key, val) in self.our_vars_iter() {
                 // `our_vars` carries both a bare mirror (`o`) and a
                 // fully-qualified one (`GLOBAL::o`) for a root-scope `our`
@@ -127,7 +132,7 @@ impl Interpreter {
                 // still yields its head as a sub-package, same as the env
                 // scan below).
                 let effective_key = key.strip_prefix("GLOBAL::").unwrap_or(key.as_str());
-                if let Some((head, _)) = effective_key.split_once("::") {
+                if let Some(head) = Self::stash_tail_sub_package(effective_key) {
                     // `our_vars` also carries internal bookkeeping markers
                     // qualified the same way a real sub-package would be
                     // (e.g. `__mutsu_sigilless_readonly::EvalPreseedTerm`);
@@ -216,7 +221,7 @@ impl Interpreter {
         // is pre-installed (`EndWalker::install_our_symbol`), so a dead-branch
         // `class Foo { if False { our $c = 1 } }` still lists `$c`. `or_insert`
         // so a live env value always wins over the pre-installed type object.
-        if package_name != "GLOBAL" && !package_name.is_empty() {
+        if !crate::qualified::is_global_package(package_sym) {
             for (key, val) in self.our_vars_iter() {
                 if let Some(stash_key) = Self::our_var_stash_member(key, &package_name) {
                     symbols.entry(stash_key).or_insert_with(|| val.clone());
@@ -342,11 +347,8 @@ impl Interpreter {
         }
 
         for class_name in self.registry().classes.keys() {
-            let class_short = class_name
-                .rsplit_once("::")
-                .map(|(_, short)| short)
-                .unwrap_or(class_name.as_str());
-            if (package_name == "MY" || package_name == "GLOBAL")
+            let class_short = crate::qualified::last_segment(Symbol::intern(class_name)).as_str();
+            if (package_name == "MY" || pkg_is_global)
                 && (self.need_hidden_classes.contains(class_name)
                     || self.need_hidden_classes.contains(class_short))
             {
@@ -354,7 +356,7 @@ impl Interpreter {
             }
             // Skip classes hidden from package stash lookups (transitive deps)
             if package_name != "MY"
-                && package_name != "GLOBAL"
+                && !pkg_is_global
                 && self.package_stash_hidden.contains(class_name)
             {
                 continue;
@@ -366,7 +368,7 @@ impl Interpreter {
             // Raku keeps core types in the setting, not the user's GLOBAL --
             // only a class the user actually declared (`class`/`package`/
             // `module`/`grammar`) is a genuine GLOBAL member.
-            if package_name == "GLOBAL" && !self.user_declared_classes.contains(class_name) {
+            if pkg_is_global && !self.user_declared_classes.contains(class_name) {
                 continue;
             }
             // Skip my-scoped classes (they should not appear in the package stash)
@@ -379,7 +381,7 @@ impl Interpreter {
             if rest.is_empty() {
                 continue;
             }
-            if let Some((head, _)) = rest.split_once("::") {
+            if let Some(head) = Self::stash_tail_sub_package(rest) {
                 symbols.entry(head.to_string()).or_insert_with(|| {
                     Value::package(Symbol::intern(&Self::qualify_stash_name(
                         &package_name,
@@ -398,7 +400,7 @@ impl Interpreter {
         for role_name in self.registry().roles.keys() {
             // Skip roles hidden from package stash lookups (transitive deps)
             if package_name != "MY"
-                && package_name != "GLOBAL"
+                && !pkg_is_global
                 && self.package_stash_hidden.contains(role_name)
             {
                 continue;
@@ -406,8 +408,7 @@ impl Interpreter {
             // GLOBAL is the root package: same reasoning as the classes loop
             // above -- only a role the user actually declared is a genuine
             // GLOBAL member, not every built-in role (`Positional`, `Iterable`, ...).
-            if package_name == "GLOBAL" && !self.registry().user_declared_roles.contains(role_name)
-            {
+            if pkg_is_global && !self.registry().user_declared_roles.contains(role_name) {
                 continue;
             }
             let Some(rest) = Self::stash_member_tail(role_name, &package_name) else {
@@ -416,7 +417,7 @@ impl Interpreter {
             if rest.is_empty() {
                 continue;
             }
-            if let Some((head, _)) = rest.split_once("::") {
+            if let Some(head) = Self::stash_tail_sub_package(rest) {
                 symbols.entry(head.to_string()).or_insert_with(|| {
                     Value::package(Symbol::intern(&Self::qualify_stash_name(
                         &package_name,

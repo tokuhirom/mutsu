@@ -505,7 +505,11 @@ impl Interpreter {
             .iter()
             .rev()
             .find(|f| !f.is_block)
-            .map(|f| format!("{}::{}", f.package, f.name))
+            .map(|f| {
+                crate::qualified::qualified(f.package, f.name)
+                    .as_str()
+                    .to_string()
+            })
     }
 
     /// The compilation unit the frame `CALLER::` names belongs to — the
@@ -1085,12 +1089,11 @@ impl Interpreter {
         cur_sym: Symbol,
         lexical_sym: Option<Symbol>,
     ) -> crate::runtime::BareNamePackages {
-        let global = Symbol::intern("GLOBAL");
+        let global = crate::symbol::wk::global_package();
         let cur = cur_sym.as_str();
-        let lexical = lexical_sym.map(|s| s.as_str());
-        if cur == "GLOBAL" {
-            return match (lexical_sym, lexical) {
-                (Some(sym), Some(pkg)) if pkg != "GLOBAL" => vec![sym, cur_sym].into(),
+        if cur_sym == global {
+            return match lexical_sym {
+                Some(sym) if sym != global => vec![sym, cur_sym].into(),
                 _ => vec![cur_sym].into(),
             };
         }
@@ -1118,20 +1121,18 @@ impl Interpreter {
         // walk must start from the part before the first `[`.
         let head = head.split('[').next().unwrap_or(head);
         let mut out = vec![cur_sym];
-        if let (Some(sym), Some(pkg)) = (lexical_sym, lexical)
-            && pkg != "GLOBAL"
+        if let Some(sym) = lexical_sym
+            && sym != global
             && !out.contains(&sym)
         {
             out.push(sym);
         }
-        let mut probe = head;
-        while !probe.is_empty() && probe != "GLOBAL" {
-            if probe != cur {
-                out.push(Symbol::intern(probe));
+        for probe in crate::qualified::package_ancestors(Symbol::intern(head)) {
+            if probe == global {
+                break;
             }
-            match probe.rsplit_once("::") {
-                Some((outer, _)) => probe = outer,
-                None => break,
+            if probe != cur_sym {
+                out.push(probe);
             }
         }
         // The routine's own lexical package encloses it just as `cur` does. A
@@ -1139,7 +1140,7 @@ impl Interpreter {
         // name (`Any+{R::W}`), whose outward walk never reaches the role's
         // enclosing package `R`, so the lexical package's ancestors are the
         // only way a `multi sub` declared in `R`'s body stays reachable.
-        if let Some(pkg) = lexical {
+        if let Some(pkg) = lexical_sym.map(|s| s.as_str()) {
             let base = Symbol::intern(pkg.split('[').next().unwrap_or(pkg));
             for sym in crate::qualified::package_ancestors(base).skip(1) {
                 if !crate::qualified::is_global_package(sym) && !out.contains(&sym) {

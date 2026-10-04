@@ -283,7 +283,7 @@ impl Interpreter {
                 }
             }
             let arg = arg.trim();
-            if arg.is_empty() || arg.starts_with("::") || captures.contains(arg) {
+            if arg.is_empty() || crate::qualified::is_type_capture(arg) || captures.contains(arg) {
                 continue;
             }
             // Only consider a bare uppercase type identifier.
