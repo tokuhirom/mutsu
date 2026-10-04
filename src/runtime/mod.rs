@@ -814,6 +814,7 @@ mod module_preload_failure;
 mod pragma_monkey_eval;
 mod pragma_strict;
 pub(crate) mod process_stash;
+pub(crate) mod thread_usage;
 mod str_subclass_stringy;
 mod subscript_adverb_assoc;
 pub(crate) use str_subclass_stringy::{str_mixin_payload, str_subclass_payload};

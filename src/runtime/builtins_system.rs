@@ -250,8 +250,14 @@ where
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
             .expect("thread body taken twice");
-        f()
+        let end = crate::runtime::thread_usage::ThreadEndGuard::new();
+        let result = f();
+        end.complete();
+        result
     });
+    if spawned.is_ok() {
+        crate::runtime::thread_usage::note_thread_started();
+    }
     if spawned.is_err() {
         // The thread never existed: hand back the GC registration taken on its
         // behalf above, or every later stop-the-world waits for it forever.

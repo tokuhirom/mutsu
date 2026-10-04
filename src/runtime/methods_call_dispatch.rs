@@ -983,6 +983,10 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_method(&target, method, &args) {
             return result;
         }
+        // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
+        if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
+            return result;
+        }
         // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
         // default for a process dynamic variable by running the initializer
         // block (which typically does `PROCESS::<$name> = ...`). Real Rakudo runs

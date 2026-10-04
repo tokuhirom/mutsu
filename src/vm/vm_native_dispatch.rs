@@ -509,6 +509,9 @@ impl Interpreter {
         if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
             return Some(result);
         }
+        if let Some(result) = self.try_core_type_object_method(target, method_name, args) {
+            return Some(result);
+        }
         // Collection gist bypass
         if method_sym == "gist" && args.is_empty() && collection_contains_instance(target) {
             return None;

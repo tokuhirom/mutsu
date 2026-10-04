@@ -176,6 +176,7 @@ impl Interpreter {
             // graph until the join returns).
             crate::gc::block_quiescent(|| handle.join())
                 .map_err(|_| RuntimeError::new("Thread panicked"))?;
+            crate::runtime::thread_usage::note_thread_joined();
         }
         // Sync shared variables back to env after thread completes
         self.sync_shared_vars_to_env();
