@@ -1054,6 +1054,7 @@ impl Compiler {
                 index_first: false,
                 target_slot,
                 concat_append: false,
+                element_share: false,
             });
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));

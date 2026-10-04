@@ -97,12 +97,6 @@ impl Interpreter {
         outer_positional: bool,
         inner_positional: bool,
     ) -> Option<Result<(), RuntimeError>> {
-        // Slice 2b's `=`-element share is captured in the body and would be
-        // silently dropped by committing here; the only safe answer while one is
-        // pending is to decline without clearing the flag.
-        if self.element_share_pending {
-            return None;
-        }
         // The name-keyed cross-thread lanes own the store whenever a thread
         // shares this env, and this is their own gate.
         if self.threads.shared_vars_active {

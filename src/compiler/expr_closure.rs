@@ -600,7 +600,7 @@ impl Compiler {
     /// `=` shares the source container by reference (raku stores the same Array
     /// object in the element's scalar). Returns a `:=`-bind-wrapped value so the
     /// existing index-bind machinery installs a shared `ContainerRef` cell and
-    /// promotes the source; the caller additionally emits `MarkElementShare` so
+    /// promotes the source; the caller sets `IndexAssignExprNamed::element_share` so
     /// the runtime records the element as a value share (replace-on-reassign),
     /// not a true bind. Only `@`/`%` element targets and direct container-var
     /// RHS are handled here; a scalar source (`@aoa[i] = $x`) stays a copy.
@@ -1254,15 +1254,13 @@ impl Compiler {
                     index_first: true,
                     target_slot,
                     concat_append: true,
+                    element_share: false,
                 });
                 return;
             }
             match &share_value {
                 Some(bind_value) => self.compile_bind_index_value(bind_value),
                 None => self.compile_bind_index_value(value),
-            }
-            if share_value.is_some() {
-                self.code.emit(OpCode::MarkElementShare);
             }
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::IndexAssignExprNamed {
@@ -1271,6 +1269,7 @@ impl Compiler {
                 index_first: true,
                 target_slot,
                 concat_append: false,
+                element_share: share_value.is_some(),
             });
         } else if let Some((name, chain)) = self.index_assign_deep_nested_target(target) {
             // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
@@ -1361,6 +1360,7 @@ impl Compiler {
                 index_first: false,
                 target_slot,
                 concat_append: false,
+                element_share: false,
             });
         } else if let Expr::ArrayLiteral(elements) = target {
             // List construction container assignment:

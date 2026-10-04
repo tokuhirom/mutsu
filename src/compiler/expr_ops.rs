@@ -312,6 +312,7 @@ impl Compiler {
                             index_first: false,
                             target_slot,
                             concat_append: false,
+                            element_share: false,
                         });
                     }
                     // For complex targets without a simple name, leave result on stack.
