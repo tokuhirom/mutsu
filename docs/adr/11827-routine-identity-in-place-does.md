@@ -1,6 +1,6 @@
 # ADR-11827: A routine has identity; `does` on it composes in place
 
-- **Status**: Proposed (maintainer asked for this ADR on 2026-10-04). Phase 1 is in progress; see §5.
+- **Status**: Proposed (maintainer asked for this ADR on 2026-10-04). Phase 1 is implemented; see §5.
 - **Date**: 2026-10-04
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11827](https://github.com/tokuhirom/mutsu/issues/11827)
@@ -134,6 +134,6 @@ phase 1 when every reader reads the cell, and kept as is until then.
 
 | Phase | Content | State |
 | --- | --- | --- |
-| 1 | Cell on `SubData` / `FunctionDef`; `does` writes it; method dispatch and role checks on routine receivers read it; `.clone` gets a fresh cell | in progress |
+| 1 | Cell on `SubData` / `FunctionDef`; `does` writes it; method dispatch and role checks on routine receivers read it; `.clone` gets a fresh cell | done (`t/oo/routine-does-identity.t`) |
 | 2 | Method traits on one persistent `Method`; `$!do` on a method reaches dispatch | planned |
 | 3 | Remove `ROUTINE_MIXIN_ROLES` | planned |
