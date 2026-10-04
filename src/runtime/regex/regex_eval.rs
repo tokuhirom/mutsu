@@ -260,6 +260,14 @@ impl Interpreter {
         for (i, slot) in visible_caps.positional.iter().enumerate() {
             env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
         }
+        // `$N` beyond what this match has captured so far is unset, not the
+        // `$N` an earlier, unrelated match left in the enclosing scope.
+        // Cost: O(s), s = stale captures left in the enclosing scope.
+        let mut stale = visible_caps.positional.len();
+        while self.env.get(&stale.to_string()).is_some() {
+            env.push((stale.to_string(), Value::NIL));
+            stale += 1;
+        }
         // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
         // matched-so-far text (not just an array of positional captures). A
         // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
