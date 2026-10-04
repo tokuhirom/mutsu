@@ -421,6 +421,9 @@ impl Interpreter {
             "bindpos" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(2).cloned().unwrap_or(Value::NIL);
+                if self.carray_bind_before_start(&target, iarg(args, 1)) {
+                    return Some(Ok(val));
+                }
                 if let Some(attrs) = crate::runtime::carray_ref::ref_attrs(&target) {
                     return Some(self.carray_ref_bind(&attrs, iarg(args, 1), val));
                 }
