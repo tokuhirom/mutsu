@@ -368,6 +368,21 @@ impl Value {
         }
     }
 
+    /// Set `.made` on an already-materialized Match cursor. An action can
+    /// retain its `$/` cursor before calling `make`; both the retained cursor
+    /// and the parse tree must then observe the same AST.
+    // Cost: O(1) expected for the attribute write.
+    pub(crate) fn set_match_ast_in_place(&self, ast: Value) -> bool {
+        if !self.is_match_instance() {
+            return false;
+        }
+        let ValueView::Instance { attributes, .. } = self.view() else {
+            return false;
+        };
+        attributes.insert("ast", ast);
+        true
+    }
+
     /// [`Self::match_with_attrs`], but preserving the instance identity —
     /// `Match.make` writes the updated Match back under the SAME id, because
     /// consumers re-read live objects by `(class, id)` match (see the grammar
@@ -399,5 +414,21 @@ impl Value {
     /// A Match with `.ast` set, preserving the instance identity (`Match.make`).
     pub(crate) fn match_with_ast_keeping_id(&self, ast: Value) -> Option<Value> {
         self.match_with_attrs_keeping_id(vec![("ast", ast)])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn materialized_match_ast_write_reaches_retained_cursor() {
+        let cursor = Value::make_instance(Symbol::intern("Match"), AttrMap::default());
+        let retained = cursor.clone();
+        assert!(cursor.set_match_ast_in_place(Value::int(42)));
+        assert_eq!(
+            retained.match_attr("ast").and_then(|v| v.as_int()),
+            Some(42)
+        );
     }
 }

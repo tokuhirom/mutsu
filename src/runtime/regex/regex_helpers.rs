@@ -342,18 +342,55 @@ impl ReducedSubruleLog {
     /// earlier nodes are reductions from backtracked alternatives whose action
     /// effects Raku preserves.
     pub(crate) fn into_repeated_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
-        let mut last = std::collections::HashMap::<(String, usize, usize), usize>::new();
-        for (index, (rule, caps)) in self.entries.iter().enumerate() {
-            last.insert((rule.clone(), caps.from, caps.to), index);
+        let entries = self.entries;
+        let mut last = std::collections::HashMap::<(&str, usize, usize), usize>::new();
+        for (index, (rule, caps)) in entries.iter().enumerate() {
+            last.insert((rule.as_str(), caps.from, caps.to), index);
         }
-        self.entries
-            .into_iter()
+        let repeated: Vec<_> = entries
+            .iter()
             .enumerate()
-            .filter_map(|(index, entry)| {
-                let key = (entry.0.clone(), entry.1.from, entry.1.to);
-                (last.get(&key).copied() != Some(index)).then_some(entry)
+            .map(|(index, (rule, caps))| {
+                last.get(&(rule.as_str(), caps.from, caps.to)).copied() != Some(index)
             })
+            .collect();
+        entries
+            .into_iter()
+            .zip(repeated)
+            .filter_map(|(entry, repeated)| repeated.then_some(entry))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod reduced_subrule_log_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_entries_keep_only_superseded_rule_and_span() {
+        let cap = |from, to| {
+            Arc::new(CapNode {
+                from,
+                to,
+                sym: None,
+                action_name: None,
+                ast: None,
+                children: None,
+            })
+        };
+        let log = ReducedSubruleLog {
+            entries: vec![
+                ("a".into(), cap(0, 1)),
+                ("b".into(), cap(0, 1)),
+                ("a".into(), cap(1, 2)),
+                ("a".into(), cap(0, 1)),
+            ],
+            seen: Default::default(),
+        };
+        let repeated = log.into_repeated_entries();
+        assert_eq!(repeated.len(), 1);
+        assert_eq!(repeated[0].0, "a");
+        assert_eq!((repeated[0].1.from, repeated[0].1.to), (0, 1));
     }
 }
 
