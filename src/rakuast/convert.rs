@@ -3464,8 +3464,8 @@ fn pointy_block_from_lambda(
 /// plain string (not a `Name` node), the package-scoped default spelling emits
 /// no `scope`, and `my constant Y = 7` emits `scope => "my"`.
 ///
-/// A sigilled constant (`constant @a = 1, 2`) or a typed one carries shape this
-/// does not model yet, so both stay a boundary.
+/// A sigilled constant (`constant @a = 1, 2`) keeps its sigil in `name`. A
+/// typed one carries shape this does not model yet, so it stays a boundary.
 fn constant_declaration(
     name: &str,
     expr: &Expr,
@@ -3487,9 +3487,14 @@ fn constant_declaration(
             _ => String::new(),
         })
     });
-    if sigil.is_some_and(|s| !s.is_empty()) {
-        return Err(unsupported("sigilled constant"));
-    }
+    // rakudo's `name` carries the sigil (`"@a"`, `"$x"`). The parser keeps
+    // it in the name for `@` / `%` / `&` and strips a `$`.
+    let name = match sigil.as_deref().unwrap_or("") {
+        "" => name.to_string(),
+        "$" => format!("${name}"),
+        sigil @ ("@" | "%" | "&") if name.starts_with(sigil) => name.to_string(),
+        _ => return Err(unsupported("sigilled constant")),
+    };
     if custom_traits
         .iter()
         .any(|(n, _)| n != "__constant" && n != "__constant_sigil" && n != "__has_initializer")
@@ -3502,7 +3507,7 @@ fn constant_declaration(
     if !is_our {
         fields.push(leaf_field(Some("scope"), Value::str_from("my")));
     }
-    fields.push(leaf_field(Some("name"), Value::str(name.to_string())));
+    fields.push(leaf_field(Some("name"), Value::str(name)));
     fields.push(node_field(
         Some("initializer"),
         RakuAstNode {
