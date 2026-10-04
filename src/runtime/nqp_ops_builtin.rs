@@ -538,10 +538,10 @@ impl Interpreter {
             }
             // A role attribute lives in the mixin's role cell; anything else
             // is the inner value's (see `nqp_attr_value`).
-            ValueView::Mixin(inner, mixins) => {
-                if !mixins.set_role_attribute_by_name(attr_key, val.clone()) {
-                    return Self::nqp_bindattr_value(op, inner, attr, val);
-                }
+            ValueView::Mixin(inner, mixins)
+                if !mixins.set_role_attribute_by_name(attr_key, val.clone()) =>
+            {
+                return Self::nqp_bindattr_value(op, inner, attr, val);
             }
             _ => {}
         }
