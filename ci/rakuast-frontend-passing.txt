@@ -60,6 +60,7 @@ t/collections/bound-element-readonly.t
 t/collections/buf-accepts-element-count.t
 t/collections/buf-typed-element-width.t
 t/collections/buf-uint64-element-assign.t
+t/collections/constant-hash-element-ro.t
 t/collections/container-bind-element.t
 t/collections/count-only.t
 t/collections/deep-element-bind-writeback-coherence.t
@@ -93,6 +94,7 @@ t/collections/hash/hash-coercion-type-odd-elements.t
 t/collections/hash/hash-colonpair-fat-arrow.t
 t/collections/hash/hash-composer-angle-words.t
 t/collections/hash/hash-composer-dot-twigil-value.t
+t/collections/hash/hash-composer-first-element.t
 t/collections/hash/hash-composer-listop-argument.t
 t/collections/hash/hash-composer-statement-list.t
 t/collections/hash/hash-composer-statement-non-pair-element.t
@@ -174,6 +176,7 @@ t/collections/itemized-slip-raku-still-flattens.t
 t/collections/iterable-instance-list-methods.t
 t/collections/lazy-seq/blob-for-iteration.t
 t/collections/lazy-seq/bracket-array-lazy-sequence.t
+t/collections/lazy-seq/constant-array-lazy.t
 t/collections/lazy-seq/eager-ops-cannot-lazy.t
 t/collections/lazy-seq/element-store-seq-itemization.t
 t/collections/lazy-seq/empty-map-preserves-lazy-contract.t
@@ -329,6 +332,7 @@ t/collections/range-pair/pair-subscript-exists.t
 t/collections/range-pair/pair-subscript-store-is-refused.t
 t/collections/range-pair/pair-subscript-stores-into-a-container-value.t
 t/collections/range-pair/pair-type.t
+t/collections/range-pair/pair-value-consumers-accept-both-flavors.t
 t/collections/range-pair/pair-value-container.t
 t/collections/range-pair/pair-value-element-writethrough.t
 t/collections/range-pair/pair-value-incdec-in-loop.t
@@ -475,6 +479,7 @@ t/collections/subscript/object-subscript-protocol.t
 t/collections/subscript/out-of-range-scalar-index.t
 t/collections/subscript/positional-index-custom-bind-pos.t
 t/collections/subscript/positional-index-on-any.t
+t/collections/subscript/positional-index-rat-on-range.t
 t/collections/subscript/positional-instance-range-slice.t
 t/collections/subscript/postcircumfix-subscript-call-adverbs.t
 t/collections/subscript/rw-slice-arg-is-not-a-container.t
@@ -861,6 +866,7 @@ t/control/bare-block-followed-by-word-infix.t
 t/control/begin-compile-time.t
 t/control/begin-forward-call-undeclared.t
 t/control/begin-nested-block.t
+t/control/begin-prologue-binding-declaration.t
 t/control/begin-prologue-no-strict-auto-declared.t
 t/control/begin-prologue-static-state.t
 t/control/begin-static-definite-scalar.t
@@ -1322,6 +1328,7 @@ t/lang/operators/prefix-minus-user-overload.t
 t/lang/operators/prefix-operator-overloading.t
 t/lang/operators/prefix-stacked-loose-unary.t
 t/lang/operators/prefix-tilde-hash.t
+t/lang/operators/prefix-tilde-junction.t
 t/lang/operators/reduction-fat-arrow.t
 t/lang/operators/reduction-unicode-ops.t
 t/lang/operators/reduction-user-op-arity.t
@@ -1332,6 +1339,7 @@ t/lang/operators/stacked-prefix-operators.t
 t/lang/operators/user-infix-core-rank-memo.t
 t/lang/operators/user-infix-minus-vs-pointy-arrow.t
 t/lang/operators/user-infix-non-int-operands.t
+t/lang/operators/user-postcircumfix-core-delegation.t
 t/lang/operators/user-postcircumfix-index-instance.t
 t/lang/operators/xx-constant-repeat.t
 t/lang/operators/xx-count-numifies-aggregates.t
@@ -1340,6 +1348,7 @@ t/lang/operators/xx-reevaluates-lhs.t
 t/lang/operators/xx-thunk-reeval.t
 t/lang/operators/yada-operator-precedence.t
 t/lang/parsing/bare-adverb-listop-arg.t
+t/lang/parsing/bare-constant-statement-modifier.t
 t/lang/parsing/bare-perl5-unary-obsolete.t
 t/lang/parsing/bare-return-expression.t
 t/lang/parsing/bare-return-with-parens.t
@@ -1376,6 +1385,7 @@ t/lang/pod-item-lists.t
 t/lang/pod-object-model.t
 t/lang/pod-table-equals-separator.t
 t/lang/pod-table.t
+t/lang/quoting/adverb-value-begin-time-interpolation.t
 t/lang/quoting/angle-spaceship-quote-word.t
 t/lang/quoting/backslash-unrecognized.t
 t/lang/quoting/corner-quote-backslash.t
@@ -2562,6 +2572,7 @@ t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
 t/rakuast/rakuast-semantic-hierarchy.t
+t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-signature-decl.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
@@ -2644,6 +2655,7 @@ t/regex/match/nomatch-candidate-signature-slurpy-and-smiley.t
 t/regex/match/numeric-opaque-object-no-match.t
 t/regex/match/pair-smartmatch.t
 t/regex/match/positional-match-index-coercion.t
+t/regex/match/proto-new-no-match.t
 t/regex/match/quanthash-mutability-smartmatch.t
 t/regex/match/regex-alternation-untaken-branch-list-capture.t
 t/regex/match/regex-block-stale-captures.t
@@ -3131,6 +3143,7 @@ t/routines/signature/destructure-keeps-source-itemization.t
 t/routines/signature/destructure-named-alias.t
 t/routines/signature/destructure-rest-params-named-default.t
 t/routines/signature/destructuring-sigilless-params.t
+t/routines/signature/direct-call-outer-var-ignores-callers-readonly-param.t
 t/routines/signature/dualstore-param-not-mirrored.t
 t/routines/signature/dynamic-param-out-redirects-say.t
 t/routines/signature/fast-cache-sigilless-param-alias.t
@@ -3392,6 +3405,7 @@ t/types/coercion/coercion-type-str-numeric-failure.t
 t/types/coercion/coercion-typed-attr-ctor.t
 t/types/coercion/coercion-types.t
 t/types/coercion/coercion.t
+t/types/coercion/constant-hash-coerce-once.t
 t/types/coercion/container-type-coercion.t
 t/types/coercion/core-type-not-shadowed-in-typematch.t
 t/types/coercion/dd-instance.t
@@ -3468,6 +3482,7 @@ t/types/enum-subset/enum-rational-value-lookup.t
 t/types/enum-subset/enum-string-value-coerce.t
 t/types/enum-subset/enum-type-object-coercion.t
 t/types/enum-subset/enum-uint-subset.t
+t/types/enum-subset/enum-value-as-positional-index.t
 t/types/enum-subset/enum-value-caret-name.t
 t/types/enum-subset/enum-value-class-redeclaration.t
 t/types/enum-subset/enum-value-how-metaclass.t
@@ -3552,6 +3567,7 @@ t/types/numeric/rat-complex-stringify-regressions.t
 t/types/numeric/rat-div-bigint.t
 t/types/numeric/rat-num-correct-rounding.t
 t/types/numeric/rat-numerator-uint-refinement-forwarding.t
+t/types/numeric/rat-overflow-dynamic-var.t
 t/types/numeric/rat-overflow-literal-arith.t
 t/types/numeric/rat-subclass-payload.t
 t/types/numeric/rat.t
@@ -3674,6 +3690,7 @@ t/types/temporal/dateish-methods.t
 t/types/temporal/datetime-date-only-string.t
 t/types/temporal/datetime-formatter-conversions.t
 t/types/temporal/datetime-offset-in-minutes.t
+t/types/temporal/datetime-regressions.t
 t/types/temporal/datetime-subclass-arithmetic.t
 t/types/temporal/datetime-timezoneclash.t
 t/types/temporal/duration-narrow-num-value.t
@@ -3684,6 +3701,7 @@ t/types/temporal/instant-duration-do-real.t
 t/types/temporal/temporal-invalidformat.t
 t/types/temporal/version-subclass-dynamic-operators.t
 t/types/temporal/version-subclass-identity.t
+t/types/trans.t
 t/types/whatever-block-numeric-nomatch.t
 t/types/whatever-code-fixes.t
 t/types/whatever-compound-assign.t
@@ -3719,7 +3737,10 @@ t/vm/binding/bound-container-pair-writethrough.t
 t/vm/binding/const-fold-infix-override.t
 t/vm/binding/const-fold.t
 t/vm/binding/const-inline-dce.t
+t/vm/binding/constant-hash-gather.t
+t/vm/binding/constant-hash-map.t
 t/vm/binding/constant-shadow.t
+t/vm/binding/constant-twigil-nyi.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t
