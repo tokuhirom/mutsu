@@ -266,9 +266,10 @@ scripts/dev stop <id>
   `t/types/numeric/int-operator-forms-parity.t` pin that every form agrees.
 - **A name derived from other names is built once, not per execution.** Use
   [`src/qualified.rs`](src/qualified.rs) (`qualified`, `package_ancestors`, `is_qualified`,
-  `is_global_package`) instead of run-time `format!("{pkg}::{name}")` / `contains("::")`, and
-  `MetaNs` (`src/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` is a shrinking
-  ratchet and `make check-magic-keys` a ban; `src/parser/` and `src/compiler/` are exempt.
+  `is_global_package`; `known_symbol` / `is_qualified_str` when only the text is at hand)
+  instead of run-time `format!("{pkg}::{name}")` / `contains("::")`, and `MetaNs`
+  (`src/meta_ns.rs`) for `__mutsu_*` keys. `make check-name-scans` and `make check-magic-keys`
+  are bans; `src/parser/` and `src/compiler/` are exempt.
 - **An AST analysis implements `crate::ast_visit::Visit`** ([ADR-0137](docs/adr/0137-typed-ast-visitor-for-analyses.md)),
   never a private recursive `match` over `Stmt`/`Expr` (whose `_ =>` silently skips variants) and
   never a `serde_json` dump of the tree. `make check-ast-walkers` is a shrinking ratchet over
