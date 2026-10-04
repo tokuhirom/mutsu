@@ -169,7 +169,11 @@ impl Compiler {
         } else {
             let jump_end = self.code.emit(OpCode::Jump(0));
             self.code.patch_jump(jump_else);
-            if has_element_source_capture {
+            // A `with X { } else { }` else-block topicalizes the same element
+            // (`$_ = v` stores into `%h<k>`), so its `given` consumes the tag;
+            // any other else shape must not inherit it.
+            let else_topicalizes = matches!(else_branch, [Stmt::Given { .. }]);
+            if has_element_source_capture && !else_topicalizes {
                 self.code.emit(OpCode::ClearElementSource);
             }
             if needs_cond_value {
