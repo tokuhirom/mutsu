@@ -920,9 +920,9 @@ impl Interpreter {
                     .classes
                     .get(&owner)
                     .is_some_and(|class_def| class_def.native_methods.contains(&method_name));
-                let grammar_token = registry
-                    .token_defs
-                    .contains_key(&Symbol::intern(&format!("{owner}::{method_name}")));
+                let grammar_token = registry.token_defs.contains_key(&Symbol::intern(
+                    crate::qualified::qualified_text(&owner, &method_name).as_str(),
+                ));
 
                 Ok(Value::int(
                     (user_method
@@ -1156,7 +1156,10 @@ impl Interpreter {
                 // handle with it — so the stub was created, populated, and never
                 // consulted, leaving `.add` "no such method" and `.succ`/`.pred`
                 // falling through to the numeric successor.
-                let class_name = match class_name.rsplit("::").next() {
+                let class_name = match Some(
+                    crate::qualified::last_segment(crate::qualified::known_symbol(&class_name))
+                        .as_str(),
+                ) {
                     Some(short)
                         if short != class_name
                             && !self.registry().classes.contains_key(&class_name)

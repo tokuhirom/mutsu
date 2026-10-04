@@ -421,7 +421,9 @@ impl Interpreter {
         }
         // `our method` also registers as a package-scoped sub
         if decl.is_our {
-            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            let qualified_name = crate::qualified::qualified_text(cx.name, &resolved_method_name)
+                .as_str()
+                .to_string();
             let (our_params, our_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
             let func_def = crate::ast::FunctionDef {
@@ -499,7 +501,9 @@ impl Interpreter {
                 std::sync::Arc::new(func_def.clone()),
             );
             // Also register under the qualified name for consistency
-            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            let qualified_name = crate::qualified::qualified_text(cx.name, &resolved_method_name)
+                .as_str()
+                .to_string();
             self.registry_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),

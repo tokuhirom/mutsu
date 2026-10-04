@@ -155,7 +155,10 @@ impl<'ast> Visit<'ast> for PrivateAccess<'_> {
                 // call may itself be a nested name (`$c!Cookie::Jar::Cookie::match`
                 // is owner `Cookie::Jar::Cookie`, not `Cookie::Jar`).
                 let name = name.resolve();
-                if let Some((owner_class, method_name)) = name.rsplit_once("::") {
+                if let Some((owner_class, method_name)) =
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
                     // `owner_class` is the short name as written in source
                     // (`Renderer`), while `caller_class` is always the fully
                     // qualified registered name (`Outer::Inner::Renderer`).
@@ -272,7 +275,7 @@ impl<'ast> Visit<'ast> for PrivateCallsExist<'_> {
         {
             let method_name = name.resolve();
             // Skip owner-qualified calls (e.g., Class::method)
-            if method_name.contains("::") {
+            if crate::qualified::is_qualified_str(&method_name) {
                 return;
             }
             let has_method = self

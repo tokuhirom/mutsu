@@ -73,7 +73,8 @@ impl Interpreter {
                     // `Pkg::rule` / `Pkg::rule:sym<x>` -> the bare rule name a
                     // capture is stored under (`rule`).
                     let ks = k.as_str();
-                    let bare = ks.rsplit("::").next().unwrap_or(ks);
+                    let bare =
+                        crate::qualified::last_segment(crate::qualified::known_symbol(ks)).as_str();
                     let bare = bare.split(':').next().unwrap_or(bare).to_string();
                     v.iter().map(move |d| (bare.clone(), d.clone()))
                 })

@@ -4941,7 +4941,7 @@ impl Interpreter {
                 // their overrides — mirroring the public-method case below.
                 if let Some(private_rest) = method.strip_prefix('!') {
                     let resolved = if let Some((owner_class, pm_name)) =
-                        private_rest.split_once("::")
+                        crate::qualified::split_first(crate::qualified::known_symbol(private_rest))
                     {
                         self.resolve_private_method_with_owner(&cls, owner_class, pm_name, &args)
                             .map(|r| (r, pm_name))

@@ -56,7 +56,10 @@ impl Interpreter {
             for sym in syms.iter() {
                 let name = sym.to_string_value();
                 self.cur_repo.pending_global_symbols.remove(&name);
-                if let Some((_, short)) = name.rsplit_once("::") {
+                if let Some((_, short)) =
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
                     self.cur_repo.pending_global_symbols.remove(short);
                 }
             }

@@ -49,7 +49,10 @@ type RegistryUndo = Vec<(Symbol, Option<Arc<FunctionDef>>)>;
 
 impl Interpreter {
     fn hoisted_decl_key(&self, name: &str) -> Symbol {
-        Symbol::intern(&format!("{}::{}", self.current_package(), name))
+        crate::qualified::qualified(
+            self.current_package_sym(),
+            crate::qualified::known_symbol(name),
+        )
     }
 
     /// Registry keys owned by the routine `name` in the current package. A
@@ -57,7 +60,7 @@ impl Interpreter {
     /// costs one intern; a `multi` family additionally spans candidate keys
     /// (`Pkg::name/2`, `Pkg::name/2:Int`, …) and pays a key scan.
     fn routine_registry_keys(&self, name: &str, multi: bool) -> Vec<Symbol> {
-        let single = format!("{}::{}", self.current_package(), name);
+        let single = self.current_package_qualified(name).to_string();
         let single_sym = Symbol::intern(&single);
         if !multi {
             return vec![single_sym];

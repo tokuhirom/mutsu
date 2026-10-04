@@ -124,9 +124,7 @@ impl Interpreter {
             ValueView::Routine { is_regex: true, .. } => "Regex",
             // Keep in sync with `value_type_name`: a builtin-method lookup
             // handle (package = owning type) is a Method, otherwise a Sub.
-            ValueView::Routine { package, .. }
-                if !package.with_str(|p| p == "GLOBAL" || p.is_empty()) =>
-            {
+            ValueView::Routine { package, .. } if !crate::qualified::is_global_package(package) => {
                 "Method"
             }
             ValueView::Routine { .. } => "Sub",
@@ -742,7 +740,11 @@ impl Interpreter {
                         k.push(format!("&{}/multi.{}", name, idx));
                     }
                     if let (Some(owner), Some(name)) = (&owner, &method_name) {
-                        k.push(format!("{}::{}", owner, name));
+                        k.push(
+                            crate::qualified::qualified_text(owner, name)
+                                .as_str()
+                                .to_string(),
+                        );
                     }
                     if let Some(name) = &method_name {
                         k.push(format!("&{}", name));
@@ -795,7 +797,11 @@ impl Interpreter {
                                     })
                             });
                         if let Some(owner) = owner {
-                            k.push(format!("{}::{}", owner, *attr_name));
+                            k.push(
+                                crate::qualified::qualified_text(&owner, attr_name.as_str())
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                         k.push(attr_name.to_string());
                     }
@@ -826,11 +832,19 @@ impl Interpreter {
                     {
                         // Try scoped key with param name
                         if !param_name.is_empty() {
-                            k.push(format!("{}::{}", *owner, param_name));
+                            k.push(
+                                crate::qualified::qualified_text(owner.as_str(), &param_name)
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                         // For anonymous params, try with just the sigil
                         if param_name.is_empty() || !param_name.starts_with(&sigil) {
-                            k.push(format!("{}::{}", *owner, sigil));
+                            k.push(
+                                crate::qualified::qualified_text(owner.as_str(), &sigil)
+                                    .as_str()
+                                    .to_string(),
+                            );
                         }
                     }
                     // Fallback: try plain param name
@@ -865,7 +879,11 @@ impl Interpreter {
                     }
                 }
                 if !sub_data.package.is_empty() && !sub_data.name.is_empty() {
-                    k.push(format!("{}::{}", sub_data.package, sub_data.name));
+                    k.push(
+                        crate::qualified::qualified_text(sub_data.package, sub_data.name)
+                            .as_str()
+                            .to_string(),
+                    );
                 }
                 if !sub_data.name.is_empty() {
                     // Try &-prefixed key first (to disambiguate from package names)
@@ -877,7 +895,11 @@ impl Interpreter {
             ValueView::Routine { package, name, .. } => {
                 let mut k = Vec::new();
                 if !package.is_empty() && !name.is_empty() {
-                    k.push(format!("{}::{}", package.resolve(), name.resolve()));
+                    k.push(
+                        crate::qualified::qualified_text(package.resolve(), name.resolve())
+                            .as_str()
+                            .to_string(),
+                    );
                 }
                 if !name.is_empty() {
                     k.push(format!("&{}", name.resolve()));

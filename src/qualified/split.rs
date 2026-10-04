@@ -35,6 +35,19 @@ pub(crate) fn split_qualified(name: Symbol) -> Option<(Symbol, Symbol)> {
     split
 }
 
+/// `name` split at its FIRST `::` into the leading segment and the rest
+/// (`A::B::c` -> (`A`, `B::c`)), or `None` when it is unqualified: the
+/// memoized `split_once("::")`.
+// Cost: O(1) amortized (the segment split is memoized per symbol).
+pub(crate) fn split_first(name: Symbol) -> Option<(&'static str, &'static str)> {
+    if !super::is_qualified(name) {
+        return None;
+    }
+    let text = name.as_str();
+    let head = segments(name)[0].as_str();
+    Some((head, &text[head.len() + 2..]))
+}
+
 /// The last `::` segment of `name`, or `name` itself when it is unqualified:
 /// `name.rsplit("::").next()`, decided once per symbol. Unlike
 /// [`super::unqualified_part`] a leading sigil is not carried over.
@@ -175,6 +188,13 @@ mod tests {
         assert!(ends_with_segments("C", "C"));
         assert!(!ends_with_segments("A::XC", "C"));
         assert!(!ends_with_segments("C", "A::C"));
+    }
+
+    #[test]
+    fn split_first_agrees_with_split_once() {
+        for text in ["A::B::c", "a::b", "plain", "::x", "x::"] {
+            assert_eq!(split_first(s(text)), text.split_once("::"), "{text}");
+        }
     }
 
     #[test]

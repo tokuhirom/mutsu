@@ -235,7 +235,7 @@ impl Interpreter {
                 // an ordinary registered class with the same basename.  For
                 // example, Native::Statement's `count` must not shadow the
                 // generated accessor on SQLite::Statement.
-                if !class_name.contains("::") {
+                if !crate::qualified::is_qualified_str(class_name) {
                     return None;
                 }
                 if self
@@ -246,7 +246,9 @@ impl Interpreter {
                 {
                     return None;
                 }
-                let short = class_name.rsplit("::").next().unwrap_or(class_name);
+                let short =
+                    crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
+                        .as_str();
                 self.native_call_specs
                     .get(&Self::native_method_key(short, method))
             })?

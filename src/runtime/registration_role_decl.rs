@@ -68,7 +68,7 @@ impl Interpreter {
         for param_def in type_param_defs {
             if param_def.name == "__type_only__"
                 && let Some(type_name) = param_def.type_constraint.as_deref()
-                && !type_name.starts_with("::")
+                && !crate::qualified::is_type_capture(type_name)
                 && !self.is_resolvable_type(type_name)
             {
                 let mut attrs = ValueMap::default();

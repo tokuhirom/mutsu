@@ -871,6 +871,23 @@ impl Interpreter {
     /// [`Self::current_package_str`] or [`Self::current_package_sym`] on a hot
     /// path: this one allocates.
     // Cost: O(n), n = package name length (one allocation).
+    /// `<current package>::<name>`, built once per pair (see
+    /// [`crate::qualified::qualified`]); the interner's own `&'static str`.
+    // Cost: O(|name|) for the name's lookup hash, then one memo probe.
+    pub(crate) fn current_package_qualified(
+        &self,
+        name: impl crate::qualified::NamePart,
+    ) -> &'static str {
+        crate::qualified::qualified(self.current_package_sym(), name.name_sym()).as_str()
+    }
+
+    /// Whether the current package is exactly `GLOBAL` (an unset, empty
+    /// package is not; see [`Self::current_package_is_global`] for both).
+    // Cost: O(1).
+    pub(crate) fn current_package_is_global_name(&self) -> bool {
+        self.current_package_sym() == crate::symbol::wk::global_package()
+    }
+
     pub(crate) fn current_package(&self) -> String {
         self.current_package_str().to_owned()
     }

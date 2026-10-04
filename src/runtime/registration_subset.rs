@@ -97,8 +97,14 @@ impl Interpreter {
         // to be rejected during dispatch).
         let already_qualified =
             name == pkg || name.starts_with(&format!("{}::", pkg)) || name.starts_with("GLOBAL::");
-        if !is_my && !already_qualified && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
-            let qualified = format!("{}::{}", pkg, name);
+        if !is_my
+            && !already_qualified
+            && !crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg))
+            && pkg != "Main"
+        {
+            let qualified = crate::qualified::qualified_text(&pkg, name)
+                .as_str()
+                .to_string();
             self.subset_predicate_cache.remove(&qualified);
             self.registry_mut()
                 .subsets
@@ -149,9 +155,11 @@ impl Interpreter {
         // leaking a global short name.
         if !is_my
             && !pkg.is_empty()
-            && pkg != "GLOBAL"
+            && !crate::qualified::is_global_name(&pkg)
             && pkg != "Main"
-            && let Some((_, short)) = canonical.rsplit_once("::")
+            && let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(&canonical))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
             && !short.is_empty()
             && !Self::is_builtin_type(short)
         {
