@@ -1210,7 +1210,7 @@ impl FirstMatcher for InterpFirstMatcher<'_> {
             }
             Ok(self.0.eval_predicate_truthy(&pred))
         } else {
-            Ok(self.0.smart_match(item, pattern))
+            self.0.try_smart_match(item, pattern)
         }
     }
 }

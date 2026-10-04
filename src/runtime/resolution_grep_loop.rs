@@ -435,7 +435,7 @@ impl Interpreter {
                 while result.len() < feed.max_matches
                     && let Some(item) = feed.fetch(list_items.len())
                 {
-                    if self.smart_match(&item, &pattern) {
+                    if self.try_smart_match(&item, &pattern)? {
                         result.push(item.clone());
                         matched.push(list_items.len());
                     }
@@ -444,7 +444,7 @@ impl Interpreter {
                 return Ok((Value::array(result), list_items, Some(matched)));
             }
             for (i, item) in list_items.iter().enumerate() {
-                if self.smart_match(item, &pattern) {
+                if self.try_smart_match(item, &pattern)? {
                     result.push(item.clone());
                     matched.push(i);
                 }

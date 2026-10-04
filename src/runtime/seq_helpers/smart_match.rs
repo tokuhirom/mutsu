@@ -268,14 +268,42 @@ impl Interpreter {
     }
 
     pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        self.smart_match_into(left, right, &mut None)
+    }
+
+    /// Smartmatch reporting an exception raised while matching (a user
+    /// `ACCEPTS` that dies, a method named by a Pair matcher that does not
+    /// exist), which [`Interpreter::smart_match`] reports as "no match".
+    // Cost: as `smart_match`.
+    pub(crate) fn try_smart_match(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<bool, RuntimeError> {
+        let mut err = None;
+        let matched = self.smart_match_into(left, right, &mut err);
+        match err {
+            Some(e) => Err(e),
+            None => Ok(matched),
+        }
+    }
+
+    /// [`Interpreter::smart_match`], leaving the first exception raised while
+    /// matching in `err`.
+    pub(crate) fn smart_match_into(
+        &mut self,
+        left: &Value,
+        right: &Value,
+        err: &mut Option<RuntimeError>,
+    ) -> bool {
         // A regex literal that closed over its defining scope (`RegexCaptured`)
         // needs that scope live while its embedded code runs.
         if let Some(saved) = self.install_regex_closure_scope(right) {
-            let r = self.smart_match_inner(left, right);
+            let r = self.smart_match_inner(left, right, err);
             self.uninstall_regex_closure_scope(Some(saved));
             return r;
         }
-        self.smart_match_inner(left, right)
+        self.smart_match_inner(left, right, err)
     }
 
     /// `$x ~~ SomeType` for a type object on the right: the type check
@@ -384,13 +412,18 @@ impl Interpreter {
         self.type_matches_value(&type_name_resolved, left)
     }
 
-    fn smart_match_inner(&mut self, left: &Value, right: &Value) -> bool {
+    fn smart_match_inner(
+        &mut self,
+        left: &Value,
+        right: &Value,
+        err: &mut Option<RuntimeError>,
+    ) -> bool {
         // A first-class element container on the LHS (`ContainerRef`, e.g. a
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
         // smartmatch — test the contained value (Raku container semantics).
         if let ValueView::ContainerRef(cell) = left.view() {
             let inner = cell.lock().unwrap().clone();
-            return self.smart_match_inner(&inner, right);
+            return self.smart_match_inner(&inner, right, err);
         }
         // ADR-0040 slices 1-2: a `Range`/`Seq`/`Set`-family value stored as a
         // real `Array`/`Hash` element is itemized as `Scalar(inner)`. Raku's
@@ -403,11 +436,11 @@ impl Interpreter {
         // see `ValueView::Array`/`ValueView::Hash`.)
         if let ValueView::Scalar(inner) = left.view() {
             let inner = (*inner).clone();
-            return self.smart_match_inner(&inner, right);
+            return self.smart_match_inner(&inner, right, err);
         }
         if let ValueView::Scalar(inner) = right.view() {
             let inner = (*inner).clone();
-            return self.smart_match_inner(left, &inner);
+            return self.smart_match_inner(left, &inner, err);
         }
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
@@ -431,7 +464,7 @@ impl Interpreter {
                 match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                     Ok(v) => v.truthy(),
                     Err(e) => {
-                        self.set_pending_dispatch_error(e);
+                        err.get_or_insert(e);
                         false
                     }
                 }
@@ -508,16 +541,20 @@ impl Interpreter {
             }
             (ValueView::Junction { kind, values }, _) => match kind {
                 crate::value::JunctionKind::Any => {
-                    values.iter().any(|v| self.smart_match(v, right))
+                    values.iter().any(|v| self.smart_match_into(v, right, err))
                 }
                 crate::value::JunctionKind::All => {
-                    values.iter().all(|v| self.smart_match(v, right))
+                    values.iter().all(|v| self.smart_match_into(v, right, err))
                 }
                 crate::value::JunctionKind::One => {
-                    values.iter().filter(|v| self.smart_match(v, right)).count() == 1
+                    values
+                        .iter()
+                        .filter(|v| self.smart_match_into(v, right, err))
+                        .count()
+                        == 1
                 }
                 crate::value::JunctionKind::None => {
-                    values.iter().all(|v| !self.smart_match(v, right))
+                    values.iter().all(|v| !self.smart_match_into(v, right, err))
                 }
             },
             // Smartmatch against a flip-flop matcher object produced by ff/fff
@@ -545,15 +582,15 @@ impl Interpreter {
                     .unwrap_or(0);
 
                 let (lhs_hit, rhs_hit) = if seq > 0 {
-                    (false, self.smart_match(left, &rhs_pat))
+                    (false, self.smart_match_into(left, &rhs_pat, err))
                 } else {
-                    let lhs_match = self.smart_match(left, &lhs_pat);
+                    let lhs_match = self.smart_match_into(left, &lhs_pat, err);
                     if !lhs_match {
                         (false, false)
                     } else if is_fff {
                         (true, false)
                     } else {
-                        (true, self.smart_match(left, &rhs_pat))
+                        (true, self.smart_match_into(left, &rhs_pat, err))
                     }
                 };
 
@@ -969,7 +1006,7 @@ impl Interpreter {
             // Array/List ~~ Regex: iterate elements, match each individually
             (ValueView::Array(items, ..), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
-                    if self.smart_match(item, right) {
+                    if self.smart_match_into(item, right, err) {
                         return true;
                     }
                 }
@@ -978,7 +1015,7 @@ impl Interpreter {
             }
             (ValueView::Seq(items), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
-                    if self.smart_match(item, right) {
+                    if self.smart_match_into(item, right, err) {
                         return true;
                     }
                 }
@@ -987,7 +1024,7 @@ impl Interpreter {
             }
             (ValueView::Slip(items), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
-                    if self.smart_match(item, right) {
+                    if self.smart_match_into(item, right, err) {
                         return true;
                     }
                 }
@@ -998,7 +1035,7 @@ impl Interpreter {
             (ValueView::Hash(map), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for key in map.keys() {
                     let key_val = Value::str(key.clone());
-                    if self.smart_match(&key_val, right) {
+                    if self.smart_match_into(&key_val, right, err) {
                         return true;
                     }
                 }
@@ -1182,13 +1219,21 @@ impl Interpreter {
                 false
             }
             (_, ValueView::Junction { kind, values }) => match kind {
-                crate::value::JunctionKind::Any => values.iter().any(|v| self.smart_match(left, v)),
-                crate::value::JunctionKind::All => values.iter().all(|v| self.smart_match(left, v)),
+                crate::value::JunctionKind::Any => {
+                    values.iter().any(|v| self.smart_match_into(left, v, err))
+                }
+                crate::value::JunctionKind::All => {
+                    values.iter().all(|v| self.smart_match_into(left, v, err))
+                }
                 crate::value::JunctionKind::One => {
-                    values.iter().filter(|v| self.smart_match(left, v)).count() == 1
+                    values
+                        .iter()
+                        .filter(|v| self.smart_match_into(left, v, err))
+                        .count()
+                        == 1
                 }
                 crate::value::JunctionKind::None => {
-                    values.iter().all(|v| !self.smart_match(left, v))
+                    values.iter().all(|v| !self.smart_match_into(left, v, err))
                 }
             },
             // Pair ~~ Pair compares the keys and smartmatches the values. A
@@ -1196,28 +1241,28 @@ impl Interpreter {
             // operation; their distinction matters when binding call
             // arguments, not when a pair is used as a matcher.
             (ValueView::Pair(left_key, left_value), ValueView::Pair(right_key, right_value)) => {
-                left_key == right_key && self.smart_match(left_value, right_value)
+                left_key == right_key && self.smart_match_into(left_value, right_value, err)
             }
             (
                 ValueView::Pair(left_key, left_value),
                 ValueView::ValuePair(right_key, right_value),
             ) => {
                 *left_key == right_key.to_string_value()
-                    && self.smart_match(left_value, right_value)
+                    && self.smart_match_into(left_value, right_value, err)
             }
             (
                 ValueView::ValuePair(left_key, left_value),
                 ValueView::Pair(right_key, right_value),
             ) => {
                 left_key.to_string_value() == *right_key
-                    && self.smart_match(left_value, right_value)
+                    && self.smart_match_into(left_value, right_value, err)
             }
             (
                 ValueView::ValuePair(left_key, left_value),
                 ValueView::ValuePair(right_key, right_value),
             ) => {
                 left_key.to_string_value() == right_key.to_string_value()
-                    && self.smart_match(left_value, right_value)
+                    && self.smart_match_into(left_value, right_value, err)
             }
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z.
@@ -1275,18 +1320,18 @@ impl Interpreter {
             // so accept both representations.
             (ValueView::Hash(map), ValueView::Pair(key, val)) => {
                 if let Some(hash_val) = map.get(key.as_str()) {
-                    self.smart_match(hash_val, val)
+                    self.smart_match_into(hash_val, val, err)
                 } else {
                     // Key not in hash: compare against an undefined type object.
-                    self.smart_match(&Value::package(Symbol::intern("Mu")), val)
+                    self.smart_match_into(&Value::package(Symbol::intern("Mu")), val, err)
                 }
             }
             (ValueView::Hash(map), ValueView::ValuePair(key, val)) => {
                 let key = key.to_string_value();
                 if let Some(hash_val) = map.get(&key) {
-                    self.smart_match(hash_val, val)
+                    self.smart_match_into(hash_val, val, err)
                 } else {
-                    self.smart_match(&Value::package(Symbol::intern("Mu")), val)
+                    self.smart_match_into(&Value::package(Symbol::intern("Mu")), val, err)
                 }
             }
             // Hash ~~ Hash: structural equality (eqv)
@@ -1297,7 +1342,7 @@ impl Interpreter {
                 for (k, lv) in lmap.iter() {
                     match rmap.get(k) {
                         Some(rv) => {
-                            if !self.smart_match(lv, rv) {
+                            if !self.smart_match_into(lv, rv, err) {
                                 return false;
                             }
                         }
@@ -1394,7 +1439,7 @@ impl Interpreter {
                 }
                 let lhs = Self::extract_list_items(left);
                 let rhs = Self::extract_list_items(right);
-                self.list_smartmatch(&lhs, &rhs)
+                self.list_smartmatch(&lhs, &rhs, err)
             }
             // Parametric role smartmatch: R1[C2] ~~ R1[C1] (subtyping)
             (
@@ -1641,15 +1686,17 @@ impl Interpreter {
                         _ => Value::package(Symbol::intern(&role)),
                     })
                     .collect();
-                self.smart_match_inner(left, base.as_ref())
-                    && roles.iter().all(|role| self.smart_match_inner(left, role))
+                self.smart_match_inner(left, base.as_ref(), err)
+                    && roles
+                        .iter()
+                        .all(|role| self.smart_match_inner(left, role, err))
             }
             (_, ValueView::Mixin(pun_inner, pun_mixins))
                 if pun_mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
                     && !matches!(left.view(), ValueView::Package(name)
                         if pun_mixins.contains_key(MetaNs::Role.str_key_for_str(name.resolve()))) =>
             {
-                self.smart_match_inner(left, pun_inner.as_ref())
+                self.smart_match_inner(left, pun_inner.as_ref(), err)
             }
             // When RHS is a CustomType, use Raku type checking protocol
             (_, ValueView::CustomType(c)) => self.custom_type_check(left, c.id, &c.how),
@@ -1783,7 +1830,7 @@ impl Interpreter {
                             ValueView::Enum { value, .. } => value.to_value(),
                             _ => right.clone(),
                         };
-                        self.smart_match_inner(&n, &right)
+                        self.smart_match_inner(&n, &right, err)
                     }
                     _ => false,
                 }
@@ -1965,7 +2012,7 @@ impl Interpreter {
                 _,
             ) if class_name == "X::AdHoc" => {
                 if let Some(payload) = attributes.as_map().get("payload") {
-                    self.smart_match(payload, right)
+                    self.smart_match_into(payload, right, err)
                 } else {
                     false
                 }
@@ -2134,7 +2181,12 @@ impl Interpreter {
     /// ** matches 0 or more elements. Consecutive **s are collapsed.
     /// Cost: O(e) element smartmatches without `**`; with k `**` wildcards the
     /// backtracking search is O(e^k) worst case.
-    fn list_smartmatch(&mut self, lhs: &[Value], rhs: &[Value]) -> bool {
+    fn list_smartmatch(
+        &mut self,
+        lhs: &[Value],
+        rhs: &[Value],
+        err: &mut Option<RuntimeError>,
+    ) -> bool {
         // Collapse consecutive HyperWhatevers in rhs
         let rhs_collapsed: Vec<&Value> = {
             let mut result = Vec::new();
@@ -2152,7 +2204,7 @@ impl Interpreter {
             }
             result
         };
-        self.list_smartmatch_recursive(lhs, 0, &rhs_collapsed, 0)
+        self.list_smartmatch_recursive(lhs, 0, &rhs_collapsed, 0, err)
     }
 
     fn list_smartmatch_recursive(
@@ -2161,6 +2213,7 @@ impl Interpreter {
         li: usize,
         rhs: &[&Value],
         ri: usize,
+        err: &mut Option<RuntimeError>,
     ) -> bool {
         // Both exhausted -- match
         if li == lhs.len() && ri == rhs.len() {
@@ -2174,7 +2227,7 @@ impl Interpreter {
         if matches!(rhs[ri].view(), ValueView::HyperWhatever) {
             // Try consuming 0, 1, 2, ... elements from LHS
             for skip in 0..=(lhs.len() - li) {
-                if self.list_smartmatch_recursive(lhs, li + skip, rhs, ri + 1) {
+                if self.list_smartmatch_recursive(lhs, li + skip, rhs, ri + 1, err) {
                     return true;
                 }
             }
@@ -2185,16 +2238,21 @@ impl Interpreter {
             return false;
         }
         // Match current element using smartmatch
-        if self.element_smartmatch(&lhs[li], rhs[ri]) {
-            self.list_smartmatch_recursive(lhs, li + 1, rhs, ri + 1)
+        if self.element_smartmatch(&lhs[li], rhs[ri], err) {
+            self.list_smartmatch_recursive(lhs, li + 1, rhs, ri + 1, err)
         } else {
             false
         }
     }
 
     /// Smartmatch a single element: delegate to full smartmatch.
-    fn element_smartmatch(&mut self, lhs_elem: &Value, rhs_elem: &Value) -> bool {
-        self.smart_match(lhs_elem, rhs_elem)
+    fn element_smartmatch(
+        &mut self,
+        lhs_elem: &Value,
+        rhs_elem: &Value,
+        err: &mut Option<RuntimeError>,
+    ) -> bool {
+        self.smart_match_into(lhs_elem, rhs_elem, err)
     }
 
     /// Parse junction operators in :nth argument strings.

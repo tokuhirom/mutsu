@@ -359,7 +359,7 @@ impl Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut results = Vec::with_capacity(items.len());
         for item in items {
-            if self.vm_smart_match(item, matcher) {
+            if self.vm_try_smart_match(item, matcher)? {
                 results.push(item.clone());
             }
         }

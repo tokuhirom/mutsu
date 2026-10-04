@@ -387,7 +387,7 @@ impl Interpreter {
             let pred = self.call_sub_value(matcher.clone(), vec![item.clone()], true)?;
             Ok(self.eval_predicate_truthy(&pred))
         } else {
-            Ok(self.smart_match(item, matcher))
+            self.try_smart_match(item, matcher)
         }
     }
 
