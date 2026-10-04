@@ -196,7 +196,8 @@ impl Interpreter {
             }
             "loaded" => {
                 let loaded = self
-                    .module.cur_repo
+                    .module
+                    .cur_repo
                     .loaded
                     .get(&prefix)
                     .cloned()

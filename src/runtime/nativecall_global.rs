@@ -227,7 +227,8 @@ impl Interpreter {
             return None;
         }
         let spec = self
-            .module.native_call_specs
+            .module
+            .native_call_specs
             .get(&Self::native_method_key(class_name, method))
             .or_else(|| {
                 // A short descriptor is needed for native handles that still
@@ -249,7 +250,8 @@ impl Interpreter {
                 let short =
                     crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
                         .as_str();
-                self.module.native_call_specs
+                self.module
+                    .native_call_specs
                     .get(&Self::native_method_key(short, method))
             })?
             .clone();

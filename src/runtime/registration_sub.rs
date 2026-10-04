@@ -867,7 +867,8 @@ impl Interpreter {
             // every compunit's bodies can reach it. This is about the NAME, so
             // a `multi` prelude needs it too — its candidates live under
             // `GLOBAL::name/N`, but the name they answer to is the same one.
-            crate::runtime::cow_table_mut(&mut self.module.prelude_sub_names).insert(Symbol::intern(name));
+            crate::runtime::cow_table_mut(&mut self.module.prelude_sub_names)
+                .insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.
@@ -1705,7 +1706,8 @@ impl Interpreter {
             && self.current_package_is_global_name()
             && let Some(owner) = self.module.module_load_stack.last()
             && let Some(tags) = self
-                .module.module_owned_exports
+                .module
+                .module_owned_exports
                 .get(owner)
                 .and_then(|exports| exports.get(name))
                 .cloned()
@@ -1741,7 +1743,8 @@ impl Interpreter {
                 .copied()
                 .collect();
             for key in keys {
-                crate::runtime::cow_table_mut(&mut self.module.prelude_registered_functions).insert(key);
+                crate::runtime::cow_table_mut(&mut self.module.prelude_registered_functions)
+                    .insert(key);
                 crate::runtime::cow_table_mut(&mut self.module.prelude_declaring_units)
                     .entry(key)
                     .or_default()
