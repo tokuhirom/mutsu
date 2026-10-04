@@ -1010,7 +1010,11 @@ pub(crate) fn for_each_interned_since(
 
 /// The number of interned qualified symbols whose text holds a `/`.
 pub(crate) fn interned_slash_count() -> usize {
-    global_table().read().unwrap().slash_ids.len()
+    global_table()
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .slash_ids
+        .len()
 }
 
 /// [`for_each_interned_since`] over only the qualified symbols whose text holds
@@ -1021,7 +1025,7 @@ pub(crate) fn for_each_slash_interned_since(
     from: usize,
     mut f: impl FnMut(Symbol, &'static str, usize),
 ) -> usize {
-    let table = global_table().read().unwrap();
+    let table = global_table().read().unwrap_or_else(|e| e.into_inner());
     for &(id, slash) in table.slash_ids.iter().skip(from) {
         f(Symbol(id), table.id_to_str[id as usize], slash as usize);
     }

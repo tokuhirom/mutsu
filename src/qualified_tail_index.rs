@@ -219,12 +219,12 @@ pub(crate) fn names_in_family(family: &str) -> Vec<Symbol> {
     // holding a `/`, which the symbol table lists apart: any other name is in
     // no family, so it need not be visited at all.
     {
-        let idx = FAMILY_INDEX.read().unwrap();
+        let idx = FAMILY_INDEX.read().unwrap_or_else(|e| e.into_inner());
         if idx.scanned == crate::symbol::interned_slash_count() {
             return idx.names(family);
         }
     }
-    let mut idx = FAMILY_INDEX.write().unwrap();
+    let mut idx = FAMILY_INDEX.write().unwrap_or_else(|e| e.into_inner());
     let idx = &mut *idx;
     // Most names hold one `/`: size for one spelling each up front, so the
     // first catch-up (every routine key interned before it) does not grow

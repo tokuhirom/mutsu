@@ -30,11 +30,10 @@ fn record_export_tags(
     if !table.contains_key(key) {
         table.insert(key.to_string(), Default::default());
     }
-    let entry = table
-        .get_mut(key)
-        .expect("row inserted above")
-        .entry(name.to_string())
-        .or_default();
+    let Some(row) = table.get_mut(key) else {
+        return;
+    };
+    let entry = row.entry(name.to_string()).or_default();
     for tag in tags {
         if !entry.contains(tag) {
             entry.insert(tag.clone());
@@ -229,7 +228,7 @@ impl Interpreter {
             let family_keys: std::borrow::Cow<'_, [Symbol]> = match new_keys {
                 Some(new_keys) if recorded => new_keys.into(),
                 // The index records qualified, sigil-less spellings only.
-                _ if crate::str_scan::has_double_colon(family)
+                _ if crate::qualified::is_qualified(fq_sym)
                     && !family.starts_with(['$', '@', '%', '&']) =>
                 {
                     crate::qualified_tail_index::names_in_family(family).into()
