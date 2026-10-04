@@ -3177,7 +3177,6 @@ impl Interpreter {
             pending_supply_authoritative_free_vars: Vec::new(),
             pending_whenever_inherited_owned: Vec::new(),
             last_block_my_declared: Vec::new(),
-            recorded_free_var_writes: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
             threads: thread_sharing::ThreadSharing::root(),
             container_element_proxy: None,

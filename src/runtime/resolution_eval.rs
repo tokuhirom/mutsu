@@ -351,7 +351,7 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
-        self.eval_block_value_opts(body, false)
+        self.eval_block_value_inner(body, CarrierBody::Unowned, false, None, None, None)
     }
 
     /// `eval_block_value`, but for a body that belongs to a specific,
@@ -468,12 +468,14 @@ impl Interpreter {
         )
     }
 
-    /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
-    /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`).
-    pub(crate) fn eval_block_value_opts(
+    /// `eval_block_value` for an EVAL'd compilation unit's mainline (see
+    /// `Compiler::mark_as_eval_unit`), also reporting the free variables the
+    /// unit assigns into `free_var_writes_out` (topic and system names
+    /// included; the caller filters).
+    pub(crate) fn eval_unit_value(
         &mut self,
         body: &[Stmt],
-        is_eval_unit: bool,
+        free_var_writes_out: &mut Vec<String>,
     ) -> Result<Value, RuntimeError> {
         // An EVAL'd unit records its free-variable writes for the same reason a
         // `where` clause does, and more urgently: `EVAL '$a = 32'` assigns to a
@@ -487,12 +489,14 @@ impl Interpreter {
         // retain-on-miss list then refreshes the slot in whichever frame declares
         // the lexical, and `propagate_pending_caller_writes` carries the value
         // across each intervening frame exit.
-        let kind = if is_eval_unit {
-            CarrierBody::EvalUnit
-        } else {
-            CarrierBody::Unowned
-        };
-        self.eval_block_value_inner(body, kind, is_eval_unit, None, None, None)
+        self.eval_block_value_inner(
+            body,
+            CarrierBody::EvalUnit,
+            true,
+            None,
+            Some(free_var_writes_out),
+            None,
+        )
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -744,12 +748,6 @@ impl Interpreter {
                     // lexicals — a system name like `&?BLOCK` is per-frame and
                     // replaying it corrupts the caller's own binding.
                     self.record_runtime_name_write(&name);
-                    // Append-only log: `parse_and_eval_with_operators` reads back
-                    // the names ITS snippet wrote, to keep them out of the
-                    // "drop the EVAL's own `my` lexicals" cleanup.
-                    if crate::env::is_plain_user_lexical(&name) {
-                        self.recorded_free_var_writes.push(name.clone());
-                    }
                 } else {
                     self.record_caller_var_writeback(&name);
                 }
