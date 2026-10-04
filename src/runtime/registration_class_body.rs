@@ -546,6 +546,17 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
+        self.register_proto_method_decl(cx.name, stmt)
+    }
+
+    /// Install a `proto method` as the dispatcher of `owner`'s `NAME`
+    /// candidates -- the class's own, or a composed role's (the composing
+    /// class owns the copy).
+    pub(super) fn register_proto_method_decl(
+        &mut self,
+        owner: &str,
+        stmt: &Stmt,
+    ) -> Result<(), RuntimeError> {
         let Stmt::ProtoDecl {
             name: proto_name,
             param_defs,
@@ -567,7 +578,7 @@ impl Interpreter {
             .collect();
         let fdef = FunctionDef {
             is_cached: false,
-            package: Symbol::intern(cx.name),
+            package: Symbol::intern(owner),
             name: *proto_name,
             params: effective_params,
             param_defs: effective_param_defs,
@@ -595,9 +606,9 @@ impl Interpreter {
         let proto_params = fdef.params.clone();
         let proto_param_defs = fdef.param_defs.clone();
         self.registry_mut()
-            .set_proto_method(cx.name, &method_name, fdef);
+            .set_proto_method(owner, &method_name, fdef);
         self.apply_method_is_traits(
-            cx.name,
+            owner,
             &method_name,
             &proto_params,
             &proto_param_defs,

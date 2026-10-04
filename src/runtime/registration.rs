@@ -180,6 +180,22 @@ impl Interpreter {
             if where_clauses(required) != where_clauses(candidate) {
                 return false;
             }
+            // Named parameters are part of a multi's dispatch signature too:
+            // a composing class's `multi method set(:$b!)` must not replace
+            // the role's `multi method set(:$ip!)` (IP::Addr's handler role).
+            let named_signature = |def: &MethodDef| -> Vec<(String, Option<String>, bool)> {
+                let mut named: Vec<_> = def
+                    .param_defs
+                    .iter()
+                    .filter(|pd| pd.named)
+                    .map(|pd| (pd.name.clone(), pd.type_constraint.clone(), pd.required))
+                    .collect();
+                named.sort();
+                named
+            };
+            if named_signature(required) != named_signature(candidate) {
+                return false;
+            }
         }
         true
     }

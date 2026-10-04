@@ -88,6 +88,7 @@ impl Interpreter {
                 }
             }
         }
+        super::regex::regex_token_method::clear_last_token_delegate();
         let value = self.call_method_with_values(cursor, start_rule, rule_args.to_vec())?;
         // rakudo requires the start rule -- regex-shaped or not -- to hand
         // back a Match/Cursor; a method that returns anything else (commonly
@@ -120,7 +121,19 @@ impl Interpreter {
             return Ok(self.make_parse_failure_value(text, best_end));
         }
         let value = if let Some(actions) = actions_obj.as_mut() {
-            self.invoke_grammar_actions(value, actions, start_rule)?
+            // A method that delegates (`method TOP { self.rule }`) returns
+            // the delegate rule's own Match, so that rule's action -- not a
+            // `TOP` one -- is what fires on it.
+            let delegate = value
+                .match_from()
+                .zip(value.match_to())
+                .and_then(|(f, t)| {
+                    super::regex::regex_token_method::last_token_delegate_for(
+                        usize::try_from(f).ok()?,
+                        usize::try_from(t).ok()?,
+                    )
+                });
+            self.invoke_grammar_actions(value, actions, delegate.as_deref().unwrap_or(start_rule))?
         } else {
             value
         };

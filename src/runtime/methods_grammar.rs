@@ -618,6 +618,13 @@ impl Interpreter {
                                 })
                                 .collect();
                         }
+                        // A lone Pair (`:args(:validate)`, IP::Addr) is not
+                        // a Capture or list: rakudo passes the start rule no
+                        // arguments at all (verified: `TOP(Bool :$validate)`
+                        // sees its default).
+                        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                            rule_args = Vec::new();
+                        }
                         _ => {
                             rule_args = vec![value.clone()];
                         }

@@ -3504,7 +3504,18 @@ impl Interpreter {
                             "rule".to_string(),
                             Value::str(method.to_string()),
                         ));
-                        return self.dispatch_package_parse(&cn, "subparse", &call_args);
+                        let result = self.dispatch_package_parse(&cn, "subparse", &call_args)?;
+                        // Remember which rule produced this Match, so a
+                        // method-shaped start rule that returns it fires that
+                        // rule's action (`method TOP { self.rule }`).
+                        if let (Some(from), Some(to)) = (result.match_from(), result.match_to())
+                            && let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to))
+                        {
+                            crate::runtime::regex::regex_token_method::record_token_delegate(
+                                method, from, to,
+                            );
+                        }
+                        return Ok(result);
                     }
                 }
                 // ADR-0019 E1b: authoritative TypeId classifier owner (was

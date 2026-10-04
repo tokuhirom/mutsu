@@ -380,6 +380,24 @@ impl Interpreter {
             {
                 continue;
             }
+            // A role's `proto method` dispatches the composing class's
+            // candidates: install it on the class, unless the class declared
+            // its own proto for the name.
+            if let Stmt::ProtoDecl {
+                name,
+                is_method: true,
+                ..
+            } = &op.raw
+            {
+                if self
+                    .registry()
+                    .method_entry_proto(cx.name, &name.resolve())
+                    .is_none()
+                {
+                    self.register_proto_method_decl(cx.name, &op.raw)?;
+                }
+                continue;
+            }
             let is_type_decl = op.kind == crate::opcode::DeferredBodyOpKind::TypeDecl;
             // A `token`/`rule`/`regex` in a role body is composed into
             // the consuming grammar, exactly like a method: it must

@@ -27,8 +27,33 @@ struct TokenMethodMatch {
 }
 
 thread_local! {
+    /// `(name, from, to)` of the most recent token-method call that matched,
+    /// kept apart from `LAST_TOKEN_METHOD_MATCH` because that slot is
+    /// consumed (`take`n) by the custom-HOW hooks. A method-shaped start rule
+    /// (`method TOP { self.rule }`) reads this to learn which rule produced
+    /// the Match it returned, so that rule's action fires.
+    static LAST_TOKEN_DELEGATE: RefCell<Option<(String, usize, usize)>> =
+        const { RefCell::new(None) };
     static LAST_TOKEN_METHOD_MATCH: RefCell<Option<TokenMethodMatch>> =
         const { RefCell::new(None) };
+}
+
+/// Record that the token method `name` just matched `from..to`.
+pub(crate) fn record_token_delegate(name: &str, from: usize, to: usize) {
+    LAST_TOKEN_DELEGATE.with(|slot| *slot.borrow_mut() = Some((name.to_string(), from, to)));
+}
+
+/// Forget the delegate recorded by an earlier token-method call.
+pub(crate) fn clear_last_token_delegate() {
+    LAST_TOKEN_DELEGATE.with(|slot| slot.borrow_mut().take());
+}
+
+/// The name of the last token method that matched exactly `from..to`, if any.
+pub(crate) fn last_token_delegate_for(from: usize, to: usize) -> Option<String> {
+    LAST_TOKEN_DELEGATE.with(|slot| match &*slot.borrow() {
+        Some((name, f, t)) if *f == from && *t == to => Some(name.clone()),
+        _ => None,
+    })
 }
 
 impl Interpreter {
@@ -351,6 +376,9 @@ impl Interpreter {
             &caps.named,
             target,
         );
+        LAST_TOKEN_DELEGATE.with(|slot| {
+            *slot.borrow_mut() = Some((name.to_string(), pos, end));
+        });
         LAST_TOKEN_METHOD_MATCH.with(|slot| {
             *slot.borrow_mut() = Some(TokenMethodMatch {
                 pkg: pkg.to_string(),
