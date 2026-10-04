@@ -187,15 +187,7 @@ impl Interpreter {
                 Ok(Value::str(format!("{}.new(...)", name)))
             }
             "request-garbage-collection" => {
-                // Clear persisted closure environments to release stale Instance
-                // references that would otherwise prevent DESTROY from firing.
-                // This mimics a real GC that would trace live references and
-                // collect unreachable objects.
-                self.closure_env_overrides.clear();
-                crate::gc::collect_on_request();
-                // Process pending DESTROY submethods for objects whose refcount
-                // dropped to 0 (possibly including items freed by the clear above).
-                self.run_pending_instance_destroys()?;
+                self.request_garbage_collection()?;
                 Ok(Value::NIL)
             }
             "platform-library-name" => {
@@ -271,6 +263,22 @@ impl Interpreter {
     /// crate version, which is stable across a build and distinct across
     /// releases — enough for consumers that key precomp directories on it
     /// (e.g. Repository::Precomp::Cleanup).
+    /// `$*VM.request-garbage-collection` and `nqp::force_gc`: run a collect
+    /// now, then the DESTROY submethods it made due.
+    // Cost: one cycle collect (see `gc::collect_on_request`) plus the pending
+    // DESTROYs.
+    pub(in crate::runtime) fn request_garbage_collection(&mut self) -> Result<(), RuntimeError> {
+        // Clear persisted closure environments to release stale Instance
+        // references that would otherwise prevent DESTROY from firing.
+        // This mimics a real GC that would trace live references and
+        // collect unreachable objects.
+        self.closure_env_overrides.clear();
+        crate::gc::collect_on_request();
+        // Process pending DESTROY submethods for objects whose refcount
+        // dropped to 0 (possibly including items freed by the clear above).
+        self.run_pending_instance_destroys()
+    }
+
     pub(in crate::runtime) fn compiler_id() -> String {
         format!("{}-{}", Self::COMPILER_NAME, env!("CARGO_PKG_VERSION"))
     }

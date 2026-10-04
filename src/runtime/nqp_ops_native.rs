@@ -163,6 +163,28 @@ impl Interpreter {
                     )),
                 }
             }
+            // nqp::freshcoderef($code): a new code object with the same body,
+            // captures and name -- distinct from `$code` (not `eqaddr`), so
+            // renaming or rebinding one leaves the other alone.
+            // Cost: O(e), e = entries of the captured environment (a
+            // copy-on-write clone).
+            "freshcoderef" => {
+                let code = operand(args, 0);
+                match code.view() {
+                    ValueView::Sub(data) => {
+                        Ok(Value::sub_value(crate::gc::Gc::new((**data).clone())))
+                    }
+                    _ => Err(RuntimeError::new(
+                        "freshcoderef requires a code object".to_string(),
+                    )),
+                }
+            }
+            // nqp::markcodestatic($code): mark a code object as static for the
+            // serialization context, so precompilation does not treat it as a
+            // closure. mutsu does not serialize compiled code, so there is
+            // nothing to mark; answers null, as Rakudo does.
+            // Cost: O(1).
+            "markcodestatic" => Ok(Value::NIL),
             // nqp::takeclosure($block): capture the block's outer lexicals as
             // they are now. A mutsu block value already is a closure over its
             // creation-time environment, so the block itself is the answer --

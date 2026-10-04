@@ -49,15 +49,15 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Processes | 4 / 4 | 0 | #11501 |
 | File / Directory / Network | 25 / 25 | 0 | #11501 |
 | Hash | 8 / 8 | 0 | #11494 |
-| HLL-Specific | 3 / 13 | 10 | #11504 |
+| HLL-Specific | 13 / 13 | 0 | #11504 |
 | Input/Output | 14 / 14 | 0 | #11501 |
 | Relational / Logic | 40 / 40 | 0 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 29 / 31 | 2 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
-| Profiling | 0 / 3 | 3 | #11504 |
-| Serialization context | 1 / 18 | 17 | #11504 |
+| Profiling | 1 / 3 | 2 | #11504 |
+| Serialization context | 3 / 18 | 15 | #11504 |
 | Stream Decoding | 10 / 10 | 0 | #11503 |
 | String | 48 / 48 | 0 | #11495 |
 | System Introspection | 29 / 29 | 0 | #11501 |
@@ -68,18 +68,17 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **482 / 577** | **95** | |
+| **Total** | **495 / 577** | **82** | |
 
 ## Missing ops by category
 
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
-- **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
-- **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
-- **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
+- **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
+- **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `getobjsc`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
