@@ -22,6 +22,11 @@ struct Inner {
     /// Set once a composition is stored; never cleared.
     composed: AtomicBool,
     overrides: RwLock<Option<Gc<MixinOverrides>>>,
+    /// A `Signature` bound to the routine's `Code.$!signature`
+    /// (`nqp::bindattr($r, Code, '$!signature', $sig)`, upstream
+    /// NativeCall's `nativecast(Signature, $ptr)`), which `.signature`
+    /// answers from then on.
+    signature: RwLock<Option<super::Value>>,
 }
 
 /// See the module docs. Cloning shares the cell: a clone of the handle is the
@@ -54,6 +59,20 @@ impl RoutineCell {
         self.0.composed.store(true, Ordering::Release);
     }
 
+    /// The `Signature` bound to the routine's `$!signature`, if any.
+    // Cost: O(1).
+    pub(crate) fn bound_signature(&self) -> Option<super::Value> {
+        self.0.signature.read().ok().and_then(|g| g.clone())
+    }
+
+    /// Bind `signature` as the routine's `$!signature`.
+    // Cost: O(1).
+    pub(crate) fn bind_signature(&self, signature: super::Value) {
+        if let Ok(mut slot) = self.0.signature.write() {
+            *slot = Some(signature);
+        }
+    }
+
     /// A new, unshared cell starting from this one's composition: what a
     /// Raku-level `.clone` of the routine gets (ADR-11827 §2.3).
     // Cost: O(1).
@@ -61,6 +80,9 @@ impl RoutineCell {
         let fresh = Self::default();
         if let Some(overrides) = self.get() {
             fresh.set(overrides);
+        }
+        if let Some(signature) = self.bound_signature() {
+            fresh.bind_signature(signature);
         }
         fresh
     }

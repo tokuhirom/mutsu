@@ -869,7 +869,6 @@ impl Interpreter {
                     // returns (a class trait's `$class.HOW does R` during
                     // class registration -- Staticish's `my %bypass`), and
                     // every later call of a mixed-in method reads it empty.
-                    let env_before: HashSet<Symbol> = self.env.keys().copied().collect();
                     let mut declared: HashSet<String> = HashSet::new();
                     Self::collect_role_body_declared_names(&ops, &mut declared);
                     for ancestor in self.role_ancestor_names(role_name) {
@@ -887,7 +886,7 @@ impl Interpreter {
                         decl_file.as_deref(),
                     )?;
                     self.run_composed_role_ancestor_bodies(role_name, role_name)?;
-                    self.persist_role_body_lexicals(role_name, &env_before, &declared);
+                    self.persist_role_body_lexicals(role_name, &declared);
                     self.run_role_body_block(
                         role_name,
                         Value::package(Symbol::intern(&base_type)),

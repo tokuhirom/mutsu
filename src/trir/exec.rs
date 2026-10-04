@@ -449,7 +449,7 @@ impl Interpreter {
                     let obj = self.opop();
                     let (name, conv) = **site;
                     let code_do = if name.code_do {
-                        self.nqp_code_do_attr(&obj, "$!do", None)
+                        self.nqp_code_do_attr(&obj, name.name.as_str(), None)
                     } else {
                         None
                     };
@@ -465,7 +465,7 @@ impl Interpreter {
                     let _class = self.opop();
                     let obj = self.opop();
                     let code_do = if name.code_do {
-                        self.nqp_code_do_attr(&obj, "$!do", Some(&val))
+                        self.nqp_code_do_attr(&obj, name.name.as_str(), Some(&val))
                     } else {
                         None
                     };

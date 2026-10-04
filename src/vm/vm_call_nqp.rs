@@ -206,7 +206,7 @@ impl Interpreter {
         let [obj, _class, val] = ops;
         let val = (site.operands() == 3).then_some(val);
         if site.name.code_do
-            && let Some(done) = self.nqp_code_do_attr(&obj, "$!do", val.as_ref())
+            && let Some(done) = self.nqp_code_do_attr(&obj, site.name.name.as_str(), val.as_ref())
         {
             let result = match site.kind {
                 crate::runtime::nqp_attr::NqpAttrSiteKind::Get => {

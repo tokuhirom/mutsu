@@ -150,11 +150,28 @@ impl Interpreter {
                 Value::str(return_type.to_string()),
             );
         }
+        // A Method's signature starts with its invocant, implicit or not
+        // (`method m(--> Int)` has arity 1), as `.^find_method(...)` reports
+        // it: upstream NativeCall's `$!arity` counts it.
+        let has_invocant = param_defs
+            .iter()
+            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+        let (params, param_defs) = if has_invocant {
+            (params.to_vec(), param_defs.to_vec())
+        } else {
+            let mut names = Vec::with_capacity(params.len() + 1);
+            names.push(String::new());
+            names.extend_from_slice(params);
+            let mut defs = Vec::with_capacity(param_defs.len() + 1);
+            defs.push(Self::make_invocant_param(pkg));
+            defs.extend_from_slice(param_defs);
+            (names, defs)
+        };
         let sub_val = Value::make_sub(
             Symbol::intern(pkg),
             Symbol::intern(method_name),
-            params.to_vec(),
-            param_defs.to_vec(),
+            params,
+            param_defs,
             body.to_vec(),
             is_rw,
             trait_env,

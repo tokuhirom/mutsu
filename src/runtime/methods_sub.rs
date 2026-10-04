@@ -1135,6 +1135,10 @@ impl Interpreter {
             return Some(Ok(Value::truth(!data.is_rw)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
+            // A signature bound to `$!signature` answers for the routine.
+            if let Some(sig) = data.routine_cell.bound_signature() {
+                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+            }
             // A multi sub's dispatcher answers its proto's arity/count.
             if let Some(sig) = self.sub_dispatcher_signature(data) {
                 return Some(Ok(Self::signature_arity_or_count(&sig, method)));

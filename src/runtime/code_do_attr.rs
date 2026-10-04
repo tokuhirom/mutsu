@@ -364,9 +364,10 @@ impl Interpreter {
         Ok(body.clone())
     }
 
-    /// The `$!do` case of the nqp attribute ops, shared by the generic op
-    /// table, the VM's `NqpAttrC` site and TRIR. `None` when `obj`/`name` do
-    /// not address a code object's `$!do`, and the caller's ordinary
+    /// The `$!do` (and `$!signature`) case of the nqp attribute ops, shared
+    /// by the generic op table, the VM's `NqpAttrC` site and TRIR. `None`
+    /// when `obj`/`name` do not address such a code object attribute, and
+    /// the caller's ordinary
     /// attribute body runs. A read answers the body; a bind answers `Ok(())`
     /// and the caller hands back what its op returns (the value, or the
     /// invocant for `p6bindattrinvres`).
@@ -377,6 +378,19 @@ impl Interpreter {
         name: &str,
         bind: Option<&Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        if name == "$!signature" {
+            let code = Self::unwrap_callable_mixin(obj.clone());
+            let ValueView::Sub(data) = code.view() else {
+                return None;
+            };
+            return Some(Ok(match bind {
+                None => self.sub_signature_value(&data),
+                Some(signature) => {
+                    data.routine_cell.bind_signature(signature.clone());
+                    signature.clone()
+                }
+            }));
+        }
         let Some(data) = code_do_target(obj, name) else {
             // A `Method` object `.^find_method` / `.^lookup` handed out: its
             // `$!do` is its candidate's body for dispatch (ADR-11827 §2.4).
