@@ -435,7 +435,7 @@ impl Interpreter {
         // the same name, if any, is only the construction seed (`R.new` puns
         // the role into a class instance whose cell kept the seed).
         if owner_str.is_empty()
-            && let Some((attributes, key)) = Self::mixin_role_attr_by_name(self_val, bare)
+            && let Some((attributes, key)) = self.mixin_role_attr_by_name(self_val, bare)
         {
             let map = attributes.as_map();
             return Some(f(&attributes, &map, key));
@@ -455,7 +455,7 @@ impl Interpreter {
         // routine or value the role was mixed into; upstream NativeCall's
         // replacement body reads `$!arity` this way, #11203). Find the
         // attribute in whichever mixed-in role layer stores it.
-        if let Some((attributes, key)) = Self::mixin_role_attr_by_name(self_val, bare) {
+        if let Some((attributes, key)) = self.mixin_role_attr_by_name(self_val, bare) {
             let map = attributes.as_map();
             return Some(f(&attributes, &map, key));
         }
@@ -465,10 +465,19 @@ impl Interpreter {
     /// The role cell and key that store the role attribute `bare` in one of
     /// `val`'s mixin layers, searched outermost first; `None` when no layer
     /// has it.
-    // Cost: O(m * a), m = mixin layers (bounded by 8), a = attributes stored
-    // in a layer's role cell. Taken only when the dispatch stack names no
-    // owner that holds the attribute.
+    ///
+    /// A layer composing several roles seeds each role attribute under every
+    /// one of its roles (`MixinOverrides::seed_missing_attributes` cannot tell
+    /// which role declared it), while a role method writes only its own
+    /// role's key. So the key of the role that *declares* `bare` is the store
+    /// of record; the other spellings are stale seeds, and picking one of them
+    /// by hash order made the read nondeterministic.
+    // Cost: O(m * (r + a)), m = mixin layers (bounded by 8), r = roles
+    // composed in a layer, a = attributes stored in a layer's role cell.
+    // Taken only when the dispatch stack names no owner that holds the
+    // attribute.
     fn mixin_role_attr_by_name(
+        &self,
         val: &Value,
         bare: crate::symbol::Symbol,
     ) -> Option<(
@@ -481,9 +490,27 @@ impl Interpreter {
             match current.view() {
                 ValueView::Mixin(inner_value, mixins) => {
                     let cell = mixins.attributes().clone();
-                    let key = cell.as_map().keys().copied().find(|k| {
-                        let k = k.as_str();
-                        k.starts_with("__mutsu_role_attr__\0") && k.ends_with(suffix.as_str())
+                    let declared = mixins
+                        .keys()
+                        .filter_map(|key| key.strip_prefix(MetaNs::Role.prefix()))
+                        .filter(|role| self.mixin_role_declares_attr(mixins, role, bare.as_str()))
+                        .map(|role| mixins.role_attribute_key(role, bare.as_str()))
+                        .find(|key| cell.as_map().contains_key(*key));
+                    let key = declared.or_else(|| {
+                        let map = cell.as_map();
+                        let mut found: Vec<_> = map
+                            .keys()
+                            .copied()
+                            .filter(|k| {
+                                let k = k.as_str();
+                                k.starts_with("__mutsu_role_attr__\0")
+                                    && k.ends_with(suffix.as_str())
+                            })
+                            .collect();
+                        // No declaring role is known: still answer the same way
+                        // on every run.
+                        found.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+                        found.first().copied()
                     });
                     // Pre-cell storage keeps a role attribute under its bare name.
                     let key = key.or_else(|| cell.as_map().contains_key(bare).then_some(bare));

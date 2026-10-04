@@ -64,10 +64,4 @@ impl RoutineCell {
         }
         fresh
     }
-
-    /// Whether two handles are the same routine's cell.
-    // Cost: O(1).
-    pub(crate) fn same(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
 }
