@@ -460,14 +460,14 @@ impl Interpreter {
     /// Mark `name` as registered while loading a foreign compunit via runtime
     /// `require` (see [`Self::require_loaded_type_names`]'s doc comment).
     pub(crate) fn mark_require_loaded_type_name(&mut self, name: String) {
-        crate::runtime::cow_table_mut(&mut self.require_loaded_type_names).insert(name);
+        crate::runtime::cow_table_mut(&mut self.module.require_loaded_type_names).insert(name);
     }
 
     /// Check whether `name` was registered while loading a foreign compunit
     /// via runtime `require`, and so must not be trusted by a lookup that
     /// ignores the declaring call frame's lifetime.
     pub(crate) fn is_require_loaded_type_name(&self, name: &str) -> bool {
-        self.require_loaded_type_names.contains(name)
+        self.module.require_loaded_type_names.contains(name)
     }
 
     /// Check whether `fq_name` is the source-facing name of a lexically scoped
@@ -578,7 +578,7 @@ impl Interpreter {
         let Some(key) = key else {
             return true;
         };
-        let Some(&declaring_unit) = self.class_declaring_units.get(&key) else {
+        let Some(&declaring_unit) = self.module.class_declaring_units.get(&key) else {
             // Roles and enums do not currently record a declaring unit. Keep
             // their existing behavior until they have equivalent provenance.
             return true;
@@ -608,7 +608,7 @@ impl Interpreter {
             }
             // Only the running unit's own declarations: a type another unit
             // declared (a module this one imported) is not in this pad.
-            let Some(&declaring_unit) = self.class_declaring_units.get(item) else {
+            let Some(&declaring_unit) = self.module.class_declaring_units.get(item) else {
                 continue;
             };
             if self
@@ -851,7 +851,7 @@ impl Interpreter {
         if !lib_paths.is_empty() {
             options.insert("I".to_string(), one_or_list(lib_paths));
         }
-        self.preload_modules = preload_modules.to_vec();
+        self.module.preload_modules = preload_modules.to_vec();
         if !preload_modules.is_empty() {
             options.insert("M".to_string(), one_or_list(preload_modules));
         }
@@ -874,8 +874,8 @@ impl Interpreter {
         }
         let at = self
             .default_site_repo_position()
-            .unwrap_or(self.lib_paths.len());
-        crate::runtime::cow_table_mut(&mut self.lib_paths).insert(at, path);
+            .unwrap_or(self.module.lib_paths.len());
+        crate::runtime::cow_table_mut(&mut self.module.lib_paths).insert(at, path);
     }
 
     /// Index of the entry `add_default_site_repo` registered, if it is still in
@@ -883,7 +883,7 @@ impl Interpreter {
     fn default_site_repo_position(&self) -> Option<usize> {
         let dir = self.default_repo_dir("site")?;
         let marker = format!("inst#{}", dir.display());
-        self.lib_paths.iter().position(|p| *p == marker)
+        self.module.lib_paths.iter().position(|p| *p == marker)
     }
 
     /// Insert a search path at the FRONT of the chain, ahead of everything set up
@@ -901,12 +901,12 @@ impl Interpreter {
     /// already deeper in the chain must still promote it to the front
     /// (`t/modules/compunit/lib-path-precedence.t`).
     pub(crate) fn lib_path_is_front(&self, path: &str) -> bool {
-        self.lib_paths.first().is_some_and(|p| p == path)
+        self.module.lib_paths.first().is_some_and(|p| p == path)
     }
 
     pub fn prepend_lib_path(&mut self, path: String) {
         if !path.is_empty() {
-            crate::runtime::cow_table_mut(&mut self.lib_paths).insert(0, path);
+            crate::runtime::cow_table_mut(&mut self.module.lib_paths).insert(0, path);
         }
     }
 }

@@ -127,13 +127,14 @@ impl Interpreter {
         // record either way so it cannot go stale; the module's own
         // `sub EXPORT` wins when both exist.
         let inherited = self
+            .module
             .module_load_stack
             .last()
             .cloned()
-            .and_then(|m| self.pending_inner_export_subs.remove(&m));
+            .and_then(|m| self.module.pending_inner_export_subs.remove(&m));
         // This module's exports go to the importer *below* it on the load
         // stack (None when a user script is the importer).
-        let importer = self.module_load_stack.iter().rev().nth(1).cloned();
+        let importer = self.module.module_load_stack.iter().rev().nth(1).cloned();
         // The module body runs under GLOBAL, so `sub EXPORT` registers as
         // `GLOBAL::EXPORT`. Only participate when it is actually present.
         // A custom EXPORT hook may be a multi, whose candidates are stored
@@ -152,8 +153,9 @@ impl Interpreter {
                 let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
                 self.restore_caller_env_keeping_dynamics(caller_env);
                 self.install_export_map(&result, importer.as_deref());
-                if let Some(m) = self.module_load_stack.last().cloned() {
-                    self.module_export_defs
+                if let Some(m) = self.module.module_load_stack.last().cloned() {
+                    self.module
+                        .module_export_defs
                         .insert(m, ModuleExportDef::Value(export_sub));
                 }
             }
@@ -196,12 +198,13 @@ impl Interpreter {
         let candidates = self.export_routine_candidates();
         self.remove_export_routine();
         self.install_export_map(&result, importer.as_deref());
-        if let Some(m) = self.module_load_stack.last().cloned() {
+        if let Some(m) = self.module.module_load_stack.last().cloned() {
             // `module_env` is the module's own scope: a re-`use` of an
             // already-loaded module re-runs EXPORT there too (see
             // `rerun_module_export`), since the new importer's own scope
             // holds none of the module's lexicals.
-            self.module_export_defs
+            self.module
+                .module_export_defs
                 .insert(m, ModuleExportDef::Sub(candidates, module_env));
         }
         Ok(())
@@ -211,10 +214,14 @@ impl Interpreter {
     /// (its returned map may depend on the `use` arguments). No-op for modules
     /// without one.
     pub(super) fn rerun_module_export(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let Some(def) = self.module_export_defs.get(module).cloned() else {
+        let Some(def) = self.module.module_export_defs.get(module).cloned() else {
             return Ok(());
         };
-        let export_args = self.pending_use_export_args.take().unwrap_or_default();
+        let export_args = self
+            .module
+            .pending_use_export_args
+            .take()
+            .unwrap_or_default();
         let saved_env = self.env.clone();
         let result = match def {
             ModuleExportDef::Sub(candidates, mut module_env) => {
@@ -253,7 +260,7 @@ impl Interpreter {
         // runs `sub EXPORT` on every import, so a re-`use` must report its
         // load the same way the first one did.
         self.restore_caller_env_keeping_dynamics(saved_env);
-        let importer = self.module_load_stack.last().cloned();
+        let importer = self.module.module_load_stack.last().cloned();
         self.install_export_map(&result, importer.as_deref());
         Ok(())
     }
@@ -321,7 +328,8 @@ impl Interpreter {
         if key == "&EXPORT"
             && let Some(importer) = inner_export_importer
         {
-            self.pending_inner_export_subs
+            self.module
+                .pending_inner_export_subs
                 .insert(importer.to_string(), value);
             return;
         }
@@ -331,10 +339,11 @@ impl Interpreter {
             // A bareword call of this name must keep re-checking `env` for
             // this installed value instead of caching straight through to a
             // same-named package sub (#8746) — see the field's doc comment.
-            self.export_amp_override_names
+            self.module
+                .export_amp_override_names
                 .insert(crate::symbol::Symbol::intern(op));
             if let Some(file) = self.executing_source_file_for_module_load() {
-                self.unit_imported_callables.insert(
+                self.module.unit_imported_callables.insert(
                     (
                         crate::symbol::Symbol::intern(&file),
                         crate::symbol::Symbol::intern(op),
@@ -347,10 +356,10 @@ impl Interpreter {
                 op.split_once(":<").map(|(c, _)| c),
                 Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
             ) {
-                crate::runtime::cow_table_mut(&mut self.imported_operator_names)
+                crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)
                     .insert(op.to_string());
                 if normalized_op != op {
-                    crate::runtime::cow_table_mut(&mut self.imported_operator_names)
+                    crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)
                         .insert(normalized_op.clone());
                 }
             }
@@ -399,7 +408,8 @@ impl Interpreter {
         // tells that opcode the env key it is about to read really came from
         // such an import (#9047).
         if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_') {
-            self.export_term_override_names
+            self.module
+                .export_term_override_names
                 .insert(crate::symbol::Symbol::intern(&env_key));
         }
         // A sigilless term is also part of the LOADING module's own scope, so
@@ -412,9 +422,10 @@ impl Interpreter {
         // `t`). `module_export_terms` only feeds the last-resort
         // `module_scope_lexicals`.
         if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_')
-            && !self.module_load_stack.is_empty()
+            && !self.module.module_load_stack.is_empty()
         {
-            self.module_export_terms
+            self.module
+                .module_export_terms
                 .push((env_key.clone(), value.clone()));
         }
         // `&term:<today>` makes the bareword `today` a call to the routine,

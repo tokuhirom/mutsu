@@ -29,7 +29,7 @@ impl Interpreter {
         role_def: &RoleDef,
     ) -> (Symbol, String) {
         let saved = (self.current_unit, self.current_package());
-        if let Some(unit) = self.class_declaring_units.get(role).copied() {
+        if let Some(unit) = self.module.class_declaring_units.get(role).copied() {
             self.current_unit = unit;
         }
         if let Some(pkg) = crate::qualified::package_parent(Symbol::intern(role)) {
@@ -413,7 +413,7 @@ impl Interpreter {
         // it, so a lexical (`my role R`) one is visible in that unit's own
         // `UNIT::` and not in an importer's (`my_scoped_type_visible_here`).
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        crate::runtime::cow_table_mut(&mut self.class_declaring_units)
+        crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
 
         if let Some(decl) = our_scope_violation {

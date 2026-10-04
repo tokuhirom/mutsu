@@ -103,7 +103,7 @@ impl Interpreter {
                 items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
                 pos: 0,
                 func,
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(args[1].clone()),
                 plan: Default::default(),
             }))
@@ -122,7 +122,7 @@ impl Interpreter {
                 items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
                 pos: 0,
                 func,
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::Map,
                 plan: Default::default(),
             }))
@@ -312,7 +312,7 @@ impl Interpreter {
                 items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
                 pos: 0,
                 func,
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode,
                 plan: Default::default(),
             }))

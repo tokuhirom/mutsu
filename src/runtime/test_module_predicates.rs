@@ -28,8 +28,12 @@ impl Interpreter {
     /// [`Self::test_mode_active`] it is already true for the very first test
     /// call (`plan`), before any `TestState` exists.
     pub(crate) fn test_module_loaded(&self) -> bool {
-        self.loaded_modules.contains("Test")
-            || self.loaded_modules.iter().any(|m| m.starts_with("Test::"))
+        self.module.loaded_modules.contains("Test")
+            || self
+                .module
+                .loaded_modules
+                .iter()
+                .any(|m| m.starts_with("Test::"))
     }
 
     /// Whether `name` is a routine `Test` or roast's `Test::Util` provides.

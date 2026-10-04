@@ -445,6 +445,7 @@ impl Interpreter {
                         return Some(value);
                     }
                     if let Some(value) = self
+                        .module
                         .module_scope_lexicals
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))

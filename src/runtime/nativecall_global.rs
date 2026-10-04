@@ -223,11 +223,11 @@ impl Interpreter {
         invocant: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.native_call_specs.is_empty() {
+        if self.module.native_call_specs.is_empty() {
             return None;
         }
         let spec = self
-            .native_call_specs
+            .module.native_call_specs
             .get(&Self::native_method_key(class_name, method))
             .or_else(|| {
                 // A short descriptor is needed for native handles that still
@@ -249,7 +249,7 @@ impl Interpreter {
                 let short =
                     crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
                         .as_str();
-                self.native_call_specs
+                self.module.native_call_specs
                     .get(&Self::native_method_key(short, method))
             })?
             .clone();
@@ -303,7 +303,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.native_call_specs.is_empty() {
+        if self.module.native_call_specs.is_empty() {
             return None;
         }
         let class_name = match target.view() {

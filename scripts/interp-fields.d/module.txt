@@ -24,6 +24,7 @@ lexical_fatal_mode
 lib_paths
 loaded_modules
 loading_without_import
+module
 module_declared_unit_packages
 module_export_defs
 module_export_terms

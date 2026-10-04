@@ -157,7 +157,7 @@ impl Interpreter {
         if !name.contains("::") && self.is_name_suppressed(name) {
             return false;
         }
-        self.chain_declared_packages.contains(name)
+        self.module.chain_declared_packages.contains(name)
             || (!crate::env::is_magic_sigilless_key(name)
                 && matches!(
                     self.env.get(name).map(Value::view),

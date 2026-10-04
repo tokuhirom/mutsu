@@ -88,7 +88,7 @@ impl Interpreter {
         };
 
         let key = format!("{FNPTR_KEY_PREFIX}{addr:x}");
-        crate::runtime::cow_table_mut(&mut self.native_call_specs).insert(
+        crate::runtime::cow_table_mut(&mut self.module.native_call_specs).insert(
             key.clone(),
             NativeCallSpec {
                 library: None,

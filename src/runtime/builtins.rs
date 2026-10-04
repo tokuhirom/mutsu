@@ -851,7 +851,7 @@ impl Interpreter {
                 // name. Mirrors the sub `is export` path: the export package is
                 // the current package at declaration time. Suppressed exports
                 // (e.g. inside an inner block) are skipped, like other exports.
-                if self.suppress_exports {
+                if self.module.suppress_exports {
                     return Ok(Value::NIL);
                 }
                 let Some(name) = args.first() else {

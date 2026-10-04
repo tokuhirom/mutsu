@@ -384,7 +384,7 @@ impl Interpreter {
         // class it declares need not be nested in: `HTML::Component::Tag::META`
         // declares `class HTML::Component::Tag::META-CHARSET` with the
         // `is html-attr` trait it imported.
-        if let Some(unit_pkg) = self.module_load_stack.last().cloned()
+        if let Some(unit_pkg) = self.module.module_load_stack.last().cloned()
             && !found.contains(&unit_pkg)
             && has_local(self, &unit_pkg)
         {

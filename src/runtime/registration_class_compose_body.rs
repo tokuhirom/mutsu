@@ -421,7 +421,7 @@ impl Interpreter {
                 // attribute defaults, which resolve in the role's package, see
                 // an empty alias table.
                 if is_use_decl {
-                    self.import_target_package = Some(base_role_name.to_string());
+                    self.module.import_target_package = Some(base_role_name.to_string());
                 }
             } else if is_regex_decl || is_proto_token_decl {
                 self.set_current_package(cx.name.to_string());
@@ -473,7 +473,7 @@ impl Interpreter {
                 self.set_current_package(saved_body_pkg.clone());
             }
             if is_use_decl {
-                self.import_target_package = None;
+                self.module.import_target_package = None;
                 // The role's compunit finished loading long before this body
                 // ran, so nothing will ever fold these names into the role's own
                 // package scope. Do it here (#8842).

@@ -46,11 +46,11 @@ impl Interpreter {
         &self,
     ) -> (bool, bool, crate::runtime::NewlineMode, bool, bool) {
         (
-            self.fatal_mode,
-            self.strict_mode,
+            self.module.fatal_mode,
+            self.module.strict_mode,
             self.io.newline_mode,
-            self.monkey_typing,
-            self.lexical_fatal_mode,
+            self.module.monkey_typing,
+            self.module.lexical_fatal_mode,
         )
     }
 
@@ -60,11 +60,11 @@ impl Interpreter {
         &mut self,
         state: (bool, bool, crate::runtime::NewlineMode, bool, bool),
     ) {
-        self.fatal_mode = state.0;
-        self.strict_mode = state.1;
+        self.module.fatal_mode = state.0;
+        self.module.strict_mode = state.1;
         self.io.newline_mode = state.2;
-        self.monkey_typing = state.3;
-        self.lexical_fatal_mode = state.4;
+        self.module.monkey_typing = state.3;
+        self.module.lexical_fatal_mode = state.4;
     }
 
     /// Prepare `val` for a write-through into a `ContainerRef` cell (`$ref = v`

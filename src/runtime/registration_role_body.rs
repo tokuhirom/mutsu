@@ -597,7 +597,7 @@ impl Interpreter {
                 *is_my,
                 0,
             );
-            if self.suppress_exports {
+            if self.module.suppress_exports {
                 continue;
             }
             let (export_pkg, export_short) = match crate::qualified::split_qualified(

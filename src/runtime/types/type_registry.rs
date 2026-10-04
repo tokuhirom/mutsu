@@ -574,14 +574,14 @@ impl Interpreter {
         // make every imported routine's topic read see the stale module value.
         // A byte scan: this runs on free-variable reads and only has the
         // name's text. TODO: take the caller's `Symbol` (#11507).
-        if self.module_scope_lexicals.is_empty()
+        if self.module.module_scope_lexicals.is_empty()
             || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
         {
             return None;
         }
-        self.lookup_in_running_package(&self.module_scope_lexicals, name)
+        self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
     }
 
     /// The module-scope value for a name that came from a nested `use`, rather
@@ -592,13 +592,14 @@ impl Interpreter {
     pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
         // A byte scan, as in `module_scope_lexical`. TODO: take the caller's
         // `Symbol` (#11507).
-        if self.module_imported_lexical_names.is_empty()
+        if self.module.module_imported_lexical_names.is_empty()
             || name.is_empty()
             || crate::runtime::utils::has_double_colon(name)
         {
             return None;
         }
-        let imported = self.lookup_in_running_package(&self.module_imported_lexical_names, name)?;
+        let imported =
+            self.lookup_in_running_package(&self.module.module_imported_lexical_names, name)?;
         (*imported)
             .then(|| self.module_scope_lexical(name))
             .flatten()
@@ -741,10 +742,10 @@ impl Interpreter {
     /// declaration the name belongs to (a CStruct field's type alias) even
     /// though no frame of that module is running.
     pub(crate) fn module_scope_lexical_for_owner(&self, owner: &str, name: &str) -> Option<&Value> {
-        if self.module_scope_lexicals.is_empty() || name.is_empty() {
+        if self.module.module_scope_lexicals.is_empty() || name.is_empty() {
             return None;
         }
-        Self::lookup_in_package_chain(&self.module_scope_lexicals, owner, name)
+        Self::lookup_in_package_chain(&self.module.module_scope_lexicals, owner, name)
     }
 
     /// Whether `name` is a core type name that no user declaration shadows.
@@ -1290,7 +1291,7 @@ impl Interpreter {
 
     pub(crate) fn set_attributes_pragma(&mut self, smiley: &str) {
         // smiley is ":D", ":U", ":_", or empty
-        self.attributes_pragma = smiley.to_string();
+        self.module.attributes_pragma = smiley.to_string();
     }
 
     /// Check if a constraint string refers to a known type (built-in or user-defined).

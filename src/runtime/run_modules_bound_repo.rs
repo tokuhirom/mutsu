@@ -60,7 +60,8 @@ impl Interpreter {
                     let canonical = std::fs::canonicalize(&prefix)
                         .unwrap_or_else(|_| std::path::PathBuf::from(&prefix));
                     let known = known.get_or_insert_with(|| {
-                        self.lib_paths
+                        self.module
+                            .lib_paths
                             .iter()
                             .filter(|p| !p.starts_with("inst#"))
                             .map(|p| {

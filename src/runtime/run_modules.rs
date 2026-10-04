@@ -42,7 +42,7 @@ impl Interpreter {
         // Raku's repository chain. Resolving every `inst#` entry up front — as
         // this used to — inverts that chain, so an installed module shadowed an
         // explicit `-I` path, which is the one thing the flag exists to prevent.
-        for base in self.lib_paths.iter() {
+        for base in self.module.lib_paths.iter() {
             if let Some(prefix) = base.strip_prefix("inst#") {
                 if let Some(found) = self.resolve_in_inst_repo(prefix, module) {
                     return Some(found);
@@ -65,7 +65,7 @@ impl Interpreter {
         // candidates last so an explicit `use lib`/`-I`/`MUTSULIB` module or
         // an `mzef`-installed (site-repo) version always shadows the bundled copy
         // (BATTERIES.md §3/§6).
-        for base in self.bundled_lib_paths.iter() {
+        for base in self.module.bundled_lib_paths.iter() {
             let base_path = Path::new(base.as_str());
             for ext in &extensions {
                 let filename = format!("{}{}", base_name, ext);
@@ -165,7 +165,7 @@ impl Interpreter {
         }
         if !candidates.is_empty() {
             return self
-                .select_dist_candidate(candidates, &self.pending_dist_selectors)
+                .select_dist_candidate(candidates, &self.module.pending_dist_selectors)
                 .map(|(source_path, json_str)| (source_path, Some(json_str)));
         }
         // `find_module_file_id_in_dist_json` is a hand-rolled scan that only
@@ -282,8 +282,8 @@ impl Interpreter {
     /// battery like OO::Monitors registers its EXPORTHOW::DECLARE declarator
     /// keyword during the scan of `use OO::Monitors`.
     pub(crate) fn parser_scan_lib_paths(&self) -> Vec<String> {
-        let mut paths = (*self.lib_paths).clone();
-        paths.extend(self.bundled_lib_paths.iter().cloned());
+        let mut paths = (*self.module.lib_paths).clone();
+        paths.extend(self.module.bundled_lib_paths.iter().cloned());
         paths
     }
 
@@ -500,7 +500,7 @@ impl Interpreter {
         let has_no_precompilation = Self::source_has_no_precompilation(&code);
         let dependency_disables_precomp = self.dependency_disables_precomp(&code);
         let precomp_eligible =
-            self.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
+            self.module.precomp_enabled && !has_no_precompilation && !dependency_disables_precomp;
 
         // Try loading from precompilation cache when eligible. A hit skips the
         // parse, so the parser state the parse would have left behind must be
@@ -636,7 +636,7 @@ impl Interpreter {
     /// For a module loaded from an inst# installation repo, find the distribution JSON
     /// and build a distribution Value. Returns None if the module is not from an inst# repo.
     fn detect_inst_distribution(&self, module: &str) -> Option<Value> {
-        for base in self.lib_paths.iter() {
+        for base in self.module.lib_paths.iter() {
             // Skip plain directories rather than giving up on the whole search:
             // `-I` paths normally sit in front of the site repository, so bailing
             // out at the first non-`inst#` entry meant this never looked at the
@@ -768,9 +768,9 @@ impl Interpreter {
             .copied()
             .unwrap_or(super::end_order::RUNTIME);
         self.control.module_load_order.push(order);
-        let saved_suppress = std::mem::replace(&mut self.suppress_exports, true);
+        let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, true);
         let result = self.load_module_inner(module, Some((source_path, None)));
-        self.suppress_exports = saved_suppress;
+        self.module.suppress_exports = saved_suppress;
         self.control.module_load_order.pop();
         result
     }
@@ -799,9 +799,10 @@ impl Interpreter {
         // inside that body sees its own unit name on top, precisely because
         // it has not been popped yet.
         let importer_package = self
+            .module
             .import_target_package
             .clone()
-            .or_else(|| self.unit_module_loading_stack.last().cloned())
+            .or_else(|| self.module.unit_module_loading_stack.last().cloned())
             .unwrap_or_else(|| self.current_package());
         // #7797: which COMPUNIT (not package) is doing the importing, captured
         // before anything below switches `?FILE`/`current_unit` to this
@@ -811,22 +812,22 @@ impl Interpreter {
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
-        let export_args = self.pending_use_export_args.take();
+        let export_args = self.module.pending_use_export_args.take();
         let (source_path, inst_dist_json) = match resolved {
             Some(found) => found,
             None => self
                 .resolve_module_path(module)
                 .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
         };
-        crate::runtime::cow_table_mut(&mut self.module_source_packages).insert(
+        crate::runtime::cow_table_mut(&mut self.module.module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
         );
         // Detect distribution context for $?DISTRIBUTION.
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.
-        let saved_distribution = self.current_distribution.clone();
-        let saved_distribution_floor = self.current_distribution_frame_floor;
+        let saved_distribution = self.module.current_distribution.clone();
+        let saved_distribution_floor = self.module.current_distribution_frame_floor;
         // Prefer the dist JSON of the distribution resolve_module_path actually
         // selected (selectors / highest-version pick): a by-name rescan could
         // land on a DIFFERENT dist that also provides this short name. The
@@ -856,14 +857,14 @@ impl Interpreter {
             self.registry().roles.keys().cloned().collect(),
         );
         if let Some(dist) = &module_dist {
-            self.current_distribution = Some(dist.clone());
+            self.module.current_distribution = Some(dist.clone());
             // Everything this module's own mainline runs from here on sits at or
             // above this frame height; frames below belong to whoever triggered
             // the load (see `build_resources_for_package`).
-            self.current_distribution_frame_floor = self.routine_stack_len();
+            self.module.current_distribution_frame_floor = self.routine_stack_len();
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
-            crate::runtime::cow_table_mut(&mut self.package_distributions)
+            crate::runtime::cow_table_mut(&mut self.module.package_distributions)
                 .insert(module.to_string(), dist.clone());
         }
         // Save and restore the language version around module loading.
@@ -896,7 +897,7 @@ impl Interpreter {
             })?;
         // Track operator subs exported by this module so EVAL can see them.
         for name in Self::extract_module_exported_operator_names(&stmts) {
-            crate::runtime::cow_table_mut(&mut self.imported_operator_names).insert(name);
+            crate::runtime::cow_table_mut(&mut self.module.imported_operator_names).insert(name);
         }
         // Validate any `package EXPORTHOW { ... }` directives before running the
         // module: a member named `<directive>::<declarator>` must use a known
@@ -935,8 +936,10 @@ impl Interpreter {
                 if crate::qualified::is_qualified(sym) || known {
                     Vec::new()
                 } else {
-                    crate::runtime::cow_table_mut(&mut self.module_visibility.unit_package_names)
-                        .insert(sym);
+                    crate::runtime::cow_table_mut(
+                        &mut self.module.module_visibility.unit_package_names,
+                    )
+                    .insert(sym);
                     vec![sym]
                 }
             }
@@ -960,7 +963,7 @@ impl Interpreter {
             // `package_distributions["Foo"]` with B's own distribution).
             let effective_pkg = unit_name.clone().unwrap_or_else(|| "GLOBAL".to_string());
             if effective_pkg != *module {
-                crate::runtime::cow_table_mut(&mut self.package_distributions)
+                crate::runtime::cow_table_mut(&mut self.module.package_distributions)
                     .insert(effective_pkg, dist.clone());
             }
         }
@@ -977,7 +980,8 @@ impl Interpreter {
             // `unit module`/`unit class` -- see `module_loading_unit_stack`.
             let module_unit_for_loading_stack =
                 self.unit_of_source(Some(&source_path.to_string_lossy()));
-            self.module_loading_unit_stack
+            self.module
+                .module_loading_unit_stack
                 .push((module_unit_for_loading_stack, self.routine_stack_len()));
             self.premerge_top_level_uses(module_unit_for_loading_stack, &stmts);
             // Scope `current_unit` to this module's own compilation unit while
@@ -999,17 +1003,18 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
-                crate::runtime::cow_table_mut(&mut self.unit_module_packages).insert(
+                crate::runtime::cow_table_mut(&mut self.module.unit_module_packages).insert(
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
                 );
-                crate::runtime::cow_table_mut(&mut self.module_declared_unit_packages).insert(
-                    crate::symbol::Symbol::intern(module),
-                    crate::symbol::Symbol::intern(name),
-                );
+                crate::runtime::cow_table_mut(&mut self.module.module_declared_unit_packages)
+                    .insert(
+                        crate::symbol::Symbol::intern(module),
+                        crate::symbol::Symbol::intern(name),
+                    );
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
-                self.unit_module_loading_stack.push(name);
+                self.module.unit_module_loading_stack.push(name);
                 true
             } else {
                 false
@@ -1077,15 +1082,16 @@ impl Interpreter {
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
-            let saved_imports = std::mem::take(&mut self.module_imported_names);
-            let saved_export_terms = std::mem::take(&mut self.module_export_terms);
-            let saved_imported_routine_aliases = std::mem::take(&mut self.imported_routine_aliases);
-            let saved_imported_env_aliases = std::mem::take(&mut self.imported_env_aliases);
+            let saved_imports = std::mem::take(&mut self.module.module_imported_names);
+            let saved_export_terms = std::mem::take(&mut self.module.module_export_terms);
+            let saved_imported_routine_aliases =
+                std::mem::take(&mut self.module.imported_routine_aliases);
+            let saved_imported_env_aliases = std::mem::take(&mut self.module.imported_env_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
             // Pragmas set by a module are lexical to that module. The module
             // mainline runs in this interpreter, so restore the caller's mode
             // after it finishes instead of letting `use strict` leak outward.
-            let saved_strict_mode = self.strict_mode;
+            let saved_strict_mode = self.module.strict_mode;
             // See `hide_toplevel_global_routines`: a package-less top-level
             // routine in the module (e.g. its own `sub MAIN`) must not collide
             // with -- or silently overwrite -- a same-named one the loading
@@ -1126,7 +1132,7 @@ impl Interpreter {
             // operator the module imports for itself (`use CSS::Units :pt;`
             // then `12pt`) landed in the role's package and the module's own
             // `12pt` died with "Bogus postfix".
-            let saved_import_target = self.import_target_package.take();
+            let saved_import_target = self.module.import_target_package.take();
             // `parse_module_source` left the module's declarator docs behind
             // (from its parse, or replayed from the precompilation cache).
             let module_docs = crate::parser::decl_doc::take_unit_docs();
@@ -1140,7 +1146,7 @@ impl Interpreter {
                 }),
                 Err(err) => Err(err),
             };
-            self.import_target_package = saved_import_target;
+            self.module.import_target_package = saved_import_target;
             self.declarator_docs = saved_declarator_docs;
             // Snapshot the env exactly as the module body left it, before any
             // of the restoration below (the `leaked_packages` removal, the
@@ -1152,17 +1158,18 @@ impl Interpreter {
             self.restore_monkey_see_no_eval(saved_monkey_see_no_eval);
             self.pending_rw_writeback_sources
                 .truncate(saved_pending_rw_writeback_len);
-            self.strict_mode = saved_strict_mode;
-            let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
+            self.module.strict_mode = saved_strict_mode;
+            let imported = std::mem::replace(&mut self.module.module_imported_names, saved_imports);
             let module_routine_aliases = std::mem::replace(
-                &mut self.imported_routine_aliases,
+                &mut self.module.imported_routine_aliases,
                 saved_imported_routine_aliases,
             );
-            self.imported_env_aliases = saved_imported_env_aliases;
+            self.module.imported_env_aliases = saved_imported_env_aliases;
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // Hook-installed sigilless terms the env diff may have missed (see
             // `module_export_terms`).
-            let export_terms = std::mem::replace(&mut self.module_export_terms, saved_export_terms);
+            let export_terms =
+                std::mem::replace(&mut self.module.module_export_terms, saved_export_terms);
             module_scope_names.extend(export_terms);
             // `module_imported_names` records the ENV KEY the import landed under,
             // because the restore loop below has to undo that exact key. For the
@@ -1429,9 +1436,9 @@ impl Interpreter {
                 }
             }
             if pushed_unit {
-                self.unit_module_loading_stack.pop();
+                self.module.unit_module_loading_stack.pop();
             }
-            self.module_loading_unit_stack.pop();
+            self.module.module_loading_unit_stack.pop();
             self.current_unit = saved_unit;
             self.set_current_package(saved_package);
             if result.is_ok() {
@@ -1482,8 +1489,12 @@ impl Interpreter {
             // keeps them as the program's MAIN afterwards.
             // A `need` imports nothing, so an exported MAIN stays the
             // module's own (`use Mod ()` must not dispatch it).
-            let main_exported = (!self.loading_without_import
-                && self.exported_subs.values().any(|m| m.contains_key("MAIN")))
+            let main_exported = (!self.module.loading_without_import
+                && self
+                    .module
+                    .exported_subs
+                    .values()
+                    .any(|m| m.contains_key("MAIN")))
                 || self.env.get("&MAIN").is_some_and(|v| {
                     matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
                 });
@@ -1550,7 +1561,7 @@ impl Interpreter {
                 granted_packages.insert(qualified);
             }
         }
-        if let Some(owned_types) = self.module_owned_types.get(module).cloned() {
+        if let Some(owned_types) = self.module.module_owned_types.get(module).cloned() {
             let own_prefix = format!("{module}::");
             for qualified in owned_types.declared {
                 if let Some((package, _)) = qualified.rsplit_once("::") {
@@ -1563,7 +1574,7 @@ impl Interpreter {
             }
         }
         {
-            let declaring = crate::runtime::cow_table_mut(&mut self.package_declaring_units);
+            let declaring = crate::runtime::cow_table_mut(&mut self.module.package_declaring_units);
             for pkg in &granted_packages {
                 declaring.entry((*pkg).to_string()).or_insert(module_unit);
             }
@@ -1606,7 +1617,7 @@ impl Interpreter {
         // this code, and the packages a module declares are not derivable
         // from its name -- `Acme/Cow.rakumod` declares `unit module Cow;`.
         // See `Interpreter::module_granted_packages`.
-        crate::runtime::cow_table_mut(&mut self.module_visibility.module_granted_packages)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_granted_packages)
             .entry(module.to_string())
             .or_default()
             .extend(grant);
@@ -1720,7 +1731,7 @@ impl Interpreter {
             let mut owners: Vec<String> = new_types.clone();
             if let Some(dist) = &module_dist {
                 for name in &owners {
-                    crate::runtime::cow_table_mut(&mut self.package_distributions)
+                    crate::runtime::cow_table_mut(&mut self.module.package_distributions)
                         .entry(name.clone())
                         .or_insert_with(|| dist.clone());
                 }
@@ -1738,7 +1749,7 @@ impl Interpreter {
                                 .map(|(k, v)| (k.clone(), v.clone())),
                         );
                 }
-                crate::runtime::cow_table_mut(&mut self.module_scope_lexicals)
+                crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
                     .entry(owner.clone())
                     .or_default()
                     .extend(
@@ -1751,7 +1762,7 @@ impl Interpreter {
                             .map(|(k, v)| (k.clone(), v.clone())),
                     );
                 let imported_names =
-                    crate::runtime::cow_table_mut(&mut self.module_imported_lexical_names)
+                    crate::runtime::cow_table_mut(&mut self.module.module_imported_lexical_names)
                         .entry(owner)
                         .or_default();
                 for name in &imported_lexical_names {
@@ -1760,8 +1771,8 @@ impl Interpreter {
             }
         }
         crate::parser::set_current_language_version(&saved_language_version);
-        self.current_distribution = saved_distribution;
-        self.current_distribution_frame_floor = saved_distribution_floor;
+        self.module.current_distribution = saved_distribution;
+        self.module.current_distribution_frame_floor = saved_distribution_floor;
         Ok(precompiled)
     }
 
@@ -2156,7 +2167,8 @@ impl Interpreter {
         }
         let (_code, compiled_fns) = self.compile_block_raw(stmts);
         for cf in compiled_fns.into_values() {
-            self.imported_compiled_fns
+            self.module
+                .imported_compiled_fns
                 .entry(cf.fingerprint)
                 .or_insert_with(|| cf);
         }

@@ -234,9 +234,9 @@ impl Interpreter {
             frame.visit_roots(visitor);
         }
         visit_map_values(visitor, &self.predictive_seq_iters);
-        visit_opt(visitor, &self.current_distribution);
-        visit_map_values(visitor, &self.package_distributions);
-        for inner in self.exported_sub_values.values() {
+        visit_opt(visitor, &self.module.current_distribution);
+        visit_map_values(visitor, &self.module.package_distributions);
+        for inner in self.module.exported_sub_values.values() {
             visit_map_values(visitor, inner);
         }
         visit_opt(visitor, &self.trait_mod_writeback_value);
@@ -246,7 +246,7 @@ impl Interpreter {
         for inner in self.lexicals.package_lexicals.values() {
             visit_map_values(visitor, inner);
         }
-        for inner in self.module_scope_lexicals.values() {
+        for inner in self.module.module_scope_lexicals.values() {
             visit_map_values(visitor, inner);
         }
         for inner in self.lexicals.unit_lexicals.values() {

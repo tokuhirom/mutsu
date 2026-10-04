@@ -55,10 +55,11 @@ impl Interpreter {
     /// itself. A compunit that did not still folds the keyword to a constant
     /// and never reaches here.
     pub(super) fn export_installed_term(&self, name: &str) -> Option<Value> {
-        if self.export_term_override_names.is_empty() {
+        if self.module.export_term_override_names.is_empty() {
             return None;
         }
         if !self
+            .module
             .export_term_override_names
             .contains(&Symbol::intern(name))
         {

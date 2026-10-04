@@ -1510,14 +1510,14 @@ impl Interpreter {
                         // precompilation cache when available. Explicitly
                         // constructed FileSystem repositories default to
                         // precomp-disabled behavior.
-                        let saved_precomp = self.precomp_enabled;
+                        let saved_precomp = self.module.precomp_enabled;
                         if !repo_precomp_enabled {
-                            self.precomp_enabled = false;
+                            self.module.precomp_enabled = false;
                         }
                         let loaded = self.load_module_from_path(&short_name_str, source_path);
-                        self.precomp_enabled = saved_precomp;
+                        self.module.precomp_enabled = saved_precomp;
                         let precompiled = loaded?;
-                        crate::runtime::cow_table_mut(&mut self.loaded_modules)
+                        crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
                             .insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));

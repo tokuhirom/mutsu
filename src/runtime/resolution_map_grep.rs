@@ -781,7 +781,7 @@ impl Interpreter {
                             // callback must throw immediately rather than be
                             // collected silently — e.g. `"a".map: *.Int` inside a
                             // `use fatal` scope should surface X::Str::Numeric.
-                            if vm.fatal_mode
+                            if vm.module.fatal_mode
                                 && let Some(err) = vm.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);

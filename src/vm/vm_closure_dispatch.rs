@@ -159,13 +159,13 @@ impl Interpreter {
         // state so that `use fatal` propagates into lazily-evaluated sub-closures
         // (e.g. a WhateverCode created inside a `use fatal` block still throws
         // when evaluated after the block has returned).
-        guard.fatal_mode = data.captured_fatal_mode;
+        guard.module.fatal_mode = data.captured_fatal_mode;
         // #9521: the explicit-`use fatal`-only channel (see
         // `Interpreter::lexical_fatal_mode`'s doc comment) needs the same
         // creation-time capture, so an argument-explosion check running
         // inside this closure's body is gated on ITS OWN lexical state too,
         // not the caller's.
-        guard.lexical_fatal_mode = data.captured_fatal_mode;
+        guard.module.lexical_fatal_mode = data.captured_fatal_mode;
         let result =
             guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
         // Under `use fatal` (active at this point, before the guard drops
@@ -174,7 +174,7 @@ impl Interpreter {
         // produces a Failure — matching Raku semantics where the pragma is
         // captured at closure-creation time and applies to every invocation
         // of the closure, even after the creating scope has exited.
-        if guard.fatal_mode {
+        if guard.module.fatal_mode {
             result.and_then(|val| {
                 if let Some(err) = guard.failure_to_runtime_error_if_unhandled(&val) {
                     Err(err)

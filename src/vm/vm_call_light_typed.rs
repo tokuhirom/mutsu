@@ -612,7 +612,7 @@ impl Interpreter {
         let saved_pragmas = self.save_pragma_state();
         // #9521: initialise from the callee's OWN declaration-site pragma
         // state -- see `call_compiled_function_fast`'s identical comment.
-        self.lexical_fatal_mode = cf.captured_fatal_mode;
+        self.module.lexical_fatal_mode = cf.captured_fatal_mode;
 
         // Push a routine frame for the body's duration so `routine_stack`
         // consumers (`enclosing_routine_exists()`, `CALLER::`,

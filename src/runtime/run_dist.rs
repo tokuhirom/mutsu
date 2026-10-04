@@ -56,6 +56,7 @@ impl Interpreter {
         // exactly that shape, and it is what stopped HTTP::UserAgent from
         // loading IO::Socket::SSL for an https request.
         let floor = self
+            .module
             .current_distribution_frame_floor
             .min(self.routine_stack.len());
         for frame in self.routine_stack[floor..].iter().rev() {
@@ -77,17 +78,25 @@ impl Interpreter {
             {
                 return self.build_resources_from_dist(&dist);
             }
-            if let Some(dist) = self.package_distributions.get(frame.package.as_str()) {
+            if let Some(dist) = self
+                .module
+                .package_distributions
+                .get(frame.package.as_str())
+            {
                 return self.build_resources_from_dist(&dist.clone());
             }
         }
         // Priority 2: current_distribution (set during module loading) — the
         // right answer for top-level module code that is not inside any routine.
-        if let Some(dist) = &self.current_distribution {
+        if let Some(dist) = &self.module.current_distribution {
             return self.build_resources_from_dist(&dist.clone());
         }
         // Priority 3: Look up by current package
-        if let Some(dist) = self.package_distributions.get(&self.current_package()) {
+        if let Some(dist) = self
+            .module
+            .package_distributions
+            .get(&self.current_package())
+        {
             return self.build_resources_from_dist(&dist.clone());
         }
         // Outside any distribution Rakudo's `%?RESOURCES` is `Nil`, not an empty Hash.
@@ -188,17 +197,17 @@ impl Interpreter {
     /// its enclosing module (`Zef`), which is the compilation unit that owns the
     /// source file. Falls back to the currently-loading distribution.
     pub(crate) fn resolve_package_distribution(&self, pkg: &str) -> Option<Value> {
-        if let Some(dist) = self.package_distributions.get(pkg) {
+        if let Some(dist) = self.module.package_distributions.get(pkg) {
             return Some(dist.clone());
         }
         let mut rest = pkg;
         while let Some(idx) = rest.rfind("::") {
             rest = &rest[..idx];
-            if let Some(dist) = self.package_distributions.get(rest) {
+            if let Some(dist) = self.module.package_distributions.get(rest) {
                 return Some(dist.clone());
             }
         }
-        self.current_distribution.clone()
+        self.module.current_distribution.clone()
     }
 
     /// Walk up from `source_path` looking for an actual `META6.json` on disk —

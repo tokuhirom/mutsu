@@ -432,7 +432,9 @@ impl Interpreter {
         // `EVAL_UNIT_PARENTS` lock. On `benchmarks/bench-fib.raku`, which
         // declares no module and no `EVAL`, that dead work was 4.9% of the run
         // (#7788).
-        if self.unit_module_packages.is_empty() && self.module_source_packages.is_empty() {
+        if self.module.unit_module_packages.is_empty()
+            && self.module.module_source_packages.is_empty()
+        {
             return None;
         }
         // `def_file` is already interned; hand the `Symbol` straight to the
@@ -444,7 +446,7 @@ impl Interpreter {
             .map(|file| self.unit_of_source_sym(Some(file)))
             .unwrap_or(self.current_unit);
         loop {
-            if let Some(package) = self.unit_module_packages.get(&unit) {
+            if let Some(package) = self.module.unit_module_packages.get(&unit) {
                 return Some(*package);
             }
             let Some(parent) = crate::runtime::eval_unit_parent(unit) else {
@@ -452,7 +454,7 @@ impl Interpreter {
             };
             unit = parent;
         }
-        def_file.and_then(|file| self.module_source_packages.get(&file).copied())
+        def_file.and_then(|file| self.module.module_source_packages.get(&file).copied())
     }
 
     pub(crate) fn pop_routine(&mut self) {
@@ -615,7 +617,7 @@ impl Interpreter {
     /// methods unable to call them (zef's `role Plugin`'s `sub DEBUG`, caught by
     /// the bundled-library gate).
     pub(crate) fn executing_source_file_for_module_load(&self) -> Option<String> {
-        if let Some(&(_, depth_at_push)) = self.module_loading_unit_stack.last()
+        if let Some(&(_, depth_at_push)) = self.module.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push
         {
             return self.current_source_file();

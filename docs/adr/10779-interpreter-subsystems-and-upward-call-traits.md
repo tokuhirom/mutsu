@@ -239,4 +239,9 @@ these preconditions:
     from `io` to `module` -- they are per-compilation-unit metadata, saved and restored
     around a module load -- and moved into their own `DeclaratorDocs` holder
     (`src/runtime/declarator_docs.rs`), so that save/restore is one clone; 226 → 210.
-  - Next: `module`, then `types`.
+  - `module`: done. `ModuleState` (`src/runtime/module_state.rs`) holds the 69 search-path,
+    loaded-module, per-load compunit/package, export/import, operator-import, distribution
+    and lexical-pragma fields (`DeclaratorDocs` stays a sibling holder of the same
+    subsystem). `new()`/`fork_for_thread()` are exactly the entries `Interpreter::new`/
+    `clone_for_thread` spelled out per field, comments included; 210 → 142.
+  - Next: `types`.

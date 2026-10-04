@@ -60,7 +60,7 @@ impl Interpreter {
         if direct.exists() {
             return Some(direct);
         }
-        for base in self.lib_paths.iter() {
+        for base in self.module.lib_paths.iter() {
             let candidate = Path::new(base).join(file);
             if candidate.exists() {
                 return Some(candidate);
@@ -137,7 +137,7 @@ impl Interpreter {
 
         // Try loading from precompilation cache. A hit skips the parse, so replay
         // the parser state it would have produced (see `precomp::ParseEffects`).
-        let stmts = if self.precomp_enabled {
+        let stmts = if self.module.precomp_enabled {
             if let Some(unit) = crate::precomp::load_cached_unit(&path, None) {
                 crate::parser::set_current_language_version(&unit.effects.language_version);
                 crate::parser::replay_cached_type_names(
@@ -208,7 +208,11 @@ impl Interpreter {
             // case it becomes the importer's MAIN. Remove only non-exported
             // leaked MAINs.
             self.promote_exported_main_to_global();
-            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
+            let main_exported = self
+                .module
+                .exported_subs
+                .values()
+                .any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
                 self.registry_mut().functions_mut(),
                 &before_function_keys,
@@ -345,6 +349,7 @@ impl Interpreter {
     /// invisible to dispatch (and dropped as a leak).
     pub(crate) fn promote_exported_main_to_global(&mut self) {
         let pkgs_with_main: Vec<String> = self
+            .module
             .exported_subs
             .iter()
             .filter(|(p, m)| {
@@ -452,7 +457,7 @@ impl Interpreter {
                     // its `unit module` declaration; a later nested load must
                     // still resolve that dependency's helpers while its own
                     // body runs.
-                    && !self.module_registered_functions.contains(k)
+                    && !self.module.module_registered_functions.contains(k)
             })
             .copied()
             .collect();
@@ -471,6 +476,7 @@ impl Interpreter {
                     !name.is_empty()
                         && Self::is_toplevel_global_routine_key(&format!("GLOBAL::{name}"))
                         && !self
+                            .module
                             .module_registered_functions
                             .contains(&Symbol::intern(&format!("GLOBAL::{name}")))
                 })
@@ -760,29 +766,30 @@ impl Interpreter {
             }
             self.require_load_from_file(&file, module_name.as_deref())?;
             if let Some(module) = module_name.as_ref() {
-                crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.clone());
+                crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
+                    .insert(module.clone());
             }
         } else if let Some(module) = module_name.as_ref() {
             // For `require`, force a full reload if the module was previously loaded
             // but its functions were cleaned up by pop_import_scope (e.g. when
             // a previous `require` happened inside a block that has since exited).
             let prefix = format!("{module}::");
-            if self.loaded_modules.contains(module)
+            if self.module.loaded_modules.contains(module)
                 && !self
                     .registry()
                     .functions
                     .keys()
                     .any(|k| k.as_str().starts_with(&prefix))
             {
-                crate::runtime::cow_table_mut(&mut self.loaded_modules).remove(module);
+                crate::runtime::cow_table_mut(&mut self.module.loaded_modules).remove(module);
             }
-            let saved = std::mem::replace(&mut self.require_propagates_missing_module, true);
+            let saved = std::mem::replace(&mut self.module.require_propagates_missing_module, true);
             let result = if dist_selectors.is_empty() {
                 self.use_module(module)
             } else {
                 self.use_module(&format!("{module}{dist_selectors}"))
             };
-            self.require_propagates_missing_module = saved;
+            self.module.require_propagates_missing_module = saved;
             result?;
         } else {
             return Err(RuntimeError::new("require expects a module name"));

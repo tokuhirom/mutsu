@@ -80,11 +80,12 @@ impl Interpreter {
             return;
         };
         let unit = self.unit_of_source(source_path.or(def.source_file.as_deref()));
-        crate::runtime::cow_table_mut(&mut self.unit_private_routines)
+        crate::runtime::cow_table_mut(&mut self.module.unit_private_routines)
             .entry(unit)
             .or_default()
             .insert(Symbol::intern(name), def);
-        crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(Symbol::intern(name));
+        crate::runtime::cow_table_mut(&mut self.module.unit_private_names)
+            .insert(Symbol::intern(name));
         // The declaration's code-variable binding is only the live-scope
         // record. Calls resolve through the unit-private table after the
         // composition scope has ended.
@@ -136,7 +137,7 @@ impl Interpreter {
         // registered for its `EXPORT::<tag>` stash, but its package-less
         // routines stay lexical to it like any private helper. A later `use`
         // re-installs them from the stash aliases (`import_module`).
-        let exported = if self.loading_without_import {
+        let exported = if self.module.loading_without_import {
             std::collections::HashSet::new()
         } else {
             match module {
@@ -159,7 +160,7 @@ impl Interpreter {
             // An export an earlier module load installed stays visible through
             // `hide_toplevel_global_routines` (it skips these keys), so it is
             // still here without having been declared by this body.
-            if self.module_registered_functions.contains(&key) {
+            if self.module.module_registered_functions.contains(&key) {
                 continue;
             }
             // `our sub name {...}` in a package-less compunit IS a GLOBAL stash
@@ -172,7 +173,7 @@ impl Interpreter {
                 continue;
             }
             let name_sym = Symbol::intern(&name);
-            if self.prelude_sub_names.contains(&name_sym) {
+            if self.module.prelude_sub_names.contains(&name_sym) {
                 continue;
             }
             let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
@@ -204,14 +205,14 @@ impl Interpreter {
             // during THIS load while remaining lexical to the role's file --
             // which is exactly where the role's methods look for it.
             let unit = self.unit_of_source(Some(def.source_file.as_deref().unwrap_or(source_path)));
-            crate::runtime::cow_table_mut(&mut self.unit_private_routines)
+            crate::runtime::cow_table_mut(&mut self.module.unit_private_routines)
                 .entry(unit)
                 .or_default()
                 .insert(name_sym, def);
             names.push(name_sym);
         }
         for name_sym in names {
-            crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(name_sym);
+            crate::runtime::cow_table_mut(&mut self.module.unit_private_names).insert(name_sym);
             // The bare `&name` env binding is the other way the routine stayed
             // reachable from the loading scope (`say &helper`); it is written by
             // the same registration and has to travel with the registry entry.
@@ -278,7 +279,7 @@ impl Interpreter {
         let mut moved = false;
         for (key, name_sym) in candidates {
             if multi_names.contains(name_sym.resolve().as_str())
-                || self.prelude_sub_names.contains(&name_sym)
+                || self.module.prelude_sub_names.contains(&name_sym)
             {
                 continue;
             }
@@ -291,7 +292,7 @@ impl Interpreter {
             // does not reinstate `GLOBAL::` keys (a parameter default or any
             // other scope the load happened to run inside) left the importer's
             // bodies with "Unknown function" (#10232).
-            let def = if self.module_registered_functions.contains(&key) {
+            let def = if self.module.module_registered_functions.contains(&key) {
                 let Some(def) = self.registry().functions.get(&key).cloned() else {
                     continue;
                 };
@@ -304,11 +305,11 @@ impl Interpreter {
                     .remove(&key);
                 def
             };
-            crate::runtime::cow_table_mut(&mut self.unit_private_routines)
+            crate::runtime::cow_table_mut(&mut self.module.unit_private_routines)
                 .entry(unit)
                 .or_default()
                 .insert(name_sym, def);
-            crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(name_sym);
+            crate::runtime::cow_table_mut(&mut self.module.unit_private_names).insert(name_sym);
             moved = true;
         }
         if moved {
@@ -320,9 +321,9 @@ impl Interpreter {
     fn own_exported_routine_names(&self, module: &str) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
         for table in [
-            &self.exported_subs,
-            &self.unit_module_exported_subs,
-            &self.module_owned_exports,
+            &self.module.exported_subs,
+            &self.module.unit_module_exported_subs,
+            &self.module.module_owned_exports,
         ] {
             if let Some(exports) = table.get(module) {
                 names.extend(exports.keys().cloned());
@@ -334,13 +335,13 @@ impl Interpreter {
     /// Every routine name any loaded module has exported, in any form.
     pub(super) fn exported_routine_names(&self) -> std::collections::HashSet<String> {
         let mut names = std::collections::HashSet::new();
-        for table in self.exported_subs.values() {
+        for table in self.module.exported_subs.values() {
             names.extend(table.keys().cloned());
         }
-        for table in self.unit_module_exported_subs.values() {
+        for table in self.module.unit_module_exported_subs.values() {
             names.extend(table.keys().cloned());
         }
-        for table in self.module_owned_exports.values() {
+        for table in self.module.module_owned_exports.values() {
             names.extend(table.keys().cloned());
         }
         names
@@ -360,11 +361,11 @@ impl Interpreter {
     /// compiles in its caller's lexical scope, exactly as
     /// `user_infix_override` treats a user-declared operator).
     pub(crate) fn unit_private_routine(&self, name: &str) -> Option<Arc<FunctionDef>> {
-        if self.unit_private_names.is_empty() {
+        if self.module.unit_private_names.is_empty() {
             return None;
         }
         let name_sym = Symbol::lookup(name)?;
-        if !self.unit_private_names.contains(&name_sym)
+        if !self.module.unit_private_names.contains(&name_sym)
             || self.imported_in_open_unit_scope(name_sym)
         {
             return None;
@@ -405,7 +406,7 @@ impl Interpreter {
     /// when it seclusion-moves a routine here, and only a call through the
     /// name puts one back.
     pub(crate) fn visible_unit_private_routines(&self) -> Vec<(Symbol, Arc<FunctionDef>)> {
-        if self.unit_private_names.is_empty() {
+        if self.module.unit_private_names.is_empty() {
             return Vec::new();
         }
         // The SAME precedence `unit_private_routine` applies to one name:
@@ -422,7 +423,7 @@ impl Interpreter {
             let mut unit = Some(anchor);
             for _ in 0..64 {
                 let Some(sym) = unit else { break };
-                if let Some(table) = self.unit_private_routines.get(&sym) {
+                if let Some(table) = self.module.unit_private_routines.get(&sym) {
                     out.extend(table.iter().map(|(name, def)| (*name, def.clone())));
                 }
                 unit = crate::runtime::eval_unit_parent(sym);
@@ -443,7 +444,7 @@ impl Interpreter {
     // Cost: O(s * p), s = open import scopes, p = enclosing packages; O(1)
     // when no import scope is open.
     pub(crate) fn imported_in_open_unit_scope(&self, name_sym: Symbol) -> bool {
-        if self.import_scope_stack.is_empty() {
+        if self.module.import_scope_stack.is_empty() {
             return false;
         }
         // `current_unit` only: the frame-based anchor falls back to the
@@ -452,7 +453,7 @@ impl Interpreter {
         // recorded its *own* imports (`Cro::Iri`'s `decode-percents`).
         let unit = self.current_unit;
         let packages = self.bare_name_packages_syms();
-        self.import_scope_stack.iter().any(|scope| {
+        self.module.import_scope_stack.iter().any(|scope| {
             scope.unit == unit
                 && !scope.own_routine_imports.is_empty()
                 && packages.iter().any(|&package| {
@@ -477,6 +478,7 @@ impl Interpreter {
         for _ in 0..64 {
             let sym = unit?;
             if let Some(def) = self
+                .module
                 .unit_private_routines
                 .get(&sym)
                 .and_then(|table| table.get(&name_sym))
@@ -493,8 +495,12 @@ impl Interpreter {
     /// the name-keyed resolution caches, which are not keyed by unit.
     #[inline]
     pub(crate) fn is_unit_scoped_routine_name(&self, name: &str) -> bool {
-        if self.unit_private_names.is_empty()
-            && self.module_visibility.module_routine_providers.is_empty()
+        if self.module.unit_private_names.is_empty()
+            && self
+                .module
+                .module_visibility
+                .module_routine_providers
+                .is_empty()
         {
             return false;
         }
@@ -506,9 +512,15 @@ impl Interpreter {
     /// the module is merged (ADR-11136).
     #[inline]
     pub(crate) fn is_unit_scoped_routine_sym(&self, name: Symbol) -> bool {
-        (!self.unit_private_names.is_empty() && self.unit_private_names.contains(&name))
-            || (!self.module_visibility.module_routine_providers.is_empty()
+        (!self.module.unit_private_names.is_empty()
+            && self.module.unit_private_names.contains(&name))
+            || (!self
+                .module
+                .module_visibility
+                .module_routine_providers
+                .is_empty()
                 && self
+                    .module
                     .module_visibility
                     .module_routine_providers
                     .contains_key(&name))

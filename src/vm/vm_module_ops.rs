@@ -19,9 +19,9 @@ impl Interpreter {
             let n = arg_count as usize;
             let split = self.stack.len().saturating_sub(n);
             let args: Vec<Value> = self.stack.split_off(split);
-            self.pending_use_export_args = Some(args);
+            self.module.pending_use_export_args = Some(args);
         } else {
-            self.pending_use_export_args = None;
+            self.module.pending_use_export_args = None;
         }
         let tags: Vec<String> = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))

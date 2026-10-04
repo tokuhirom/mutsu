@@ -154,7 +154,7 @@ impl Interpreter {
             wanted(name_str)
                 && name_str != "MAIN"
                 && name_str != "EXPORT"
-                && !self.prelude_sub_names.contains(name)
+                && !self.module.prelude_sub_names.contains(name)
                 && !self
                     .our_scoped_package_items
                     .contains(crate::qualified::qualified(Symbol::intern("GLOBAL"), *name).as_str())
@@ -162,7 +162,7 @@ impl Interpreter {
         if names.is_empty() {
             return;
         }
-        let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
+        let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         for name in names {
             let families = table.entry(name).or_default();
             families.entry(decl_unit).or_default();
@@ -170,7 +170,7 @@ impl Interpreter {
                 families.entry(main).or_default();
             }
         }
-        self.operator_import_gen += 1;
+        self.module.operator_import_gen += 1;
         self.invalidate_fn_resolution();
     }
 
@@ -258,7 +258,7 @@ impl Interpreter {
             }
         }
         let importer = self.current_unit;
-        let Some(families) = self.operator_import_units.get(&name_sym) else {
+        let Some(families) = self.module.operator_import_units.get(&name_sym) else {
             return;
         };
         let grant: Vec<Symbol> = families
@@ -271,13 +271,13 @@ impl Interpreter {
         if grant.is_empty() {
             return;
         }
-        let table = crate::runtime::cow_table_mut(&mut self.operator_import_units);
+        let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         if let Some(families) = table.get_mut(&name_sym) {
             for unit in grant {
                 families.entry(unit).or_default().insert(importer);
             }
         }
-        self.operator_import_gen += 1;
+        self.module.operator_import_gen += 1;
     }
 
     /// Scope the main script's own package-less family of `name` to the main
@@ -301,18 +301,19 @@ impl Interpreter {
         let main = crate::runtime::main_unit();
         if self.unit_of_source(source_file) != main
             || self
+                .module
                 .operator_import_units
                 .get(&name_sym)
                 .is_some_and(|families| families.contains_key(&main))
         {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.operator_import_units)
+        crate::runtime::cow_table_mut(&mut self.module.operator_import_units)
             .entry(name_sym)
             .or_default()
             .entry(main)
             .or_default();
-        self.operator_import_gen += 1;
+        self.module.operator_import_gen += 1;
         self.invalidate_fn_resolution();
     }
 }

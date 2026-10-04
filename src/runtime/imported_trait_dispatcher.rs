@@ -30,7 +30,7 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn imported_trait_dispatcher(&self, name: &str) -> Option<Value> {
         let name_sym = Symbol::lookup(name)?;
-        if !self.export_amp_override_names.contains(&name_sym) {
+        if !self.module.export_amp_override_names.contains(&name_sym) {
             return None;
         }
         let value = dispatch_key::with_amp_name(name, |amp| self.env.get(amp).cloned())?;

@@ -784,7 +784,7 @@ impl Compiler {
     /// never actually forces/sinks it, so a stored unhandled `Failure` must
     /// not explode merely because the bare mention was reached: Raku decides
     /// a Failure's fate at *construction* time (throwing immediately there
-    /// under `use fatal` — matched by the various `self.fatal_mode`
+    /// under `use fatal` — matched by the various `self.module.fatal_mode`
     /// assignment-time checks in the VM), not by re-examining it at every
     /// later mention. `my $f = "a".Int; { use fatal; $f; }` must not throw —
     /// `$f` was made without fatal, so it stays soft forever; the same is
