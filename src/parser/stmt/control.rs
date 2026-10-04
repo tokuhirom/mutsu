@@ -412,6 +412,7 @@ fn topicalize(expr: &Expr) -> Stmt {
 mod conditionals;
 mod for_loops;
 mod for_params;
+pub(crate) use for_params::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 mod given_when;
 mod labeled_loop;
 mod loop_repeat;

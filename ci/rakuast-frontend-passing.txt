@@ -692,6 +692,7 @@ t/concurrency/supply/supply-block-head-is-lazy.t
 t/concurrency/supply/supply-block-lexical-privacy.t
 t/concurrency/supply/supply-block-lexical-survives-rw-accessor-write.t
 t/concurrency/supply/supply-block-lexical-thread-lane.t
+t/concurrency/supply/supply-block-nested-whenever-serialize.t
 t/concurrency/supply/supply-block-tap-streams-emits.t
 t/concurrency/supply/supply-block-transform.t
 t/concurrency/supply/supply-categorize.t
@@ -864,6 +865,8 @@ t/control/decl-time-value-block-keeps-the-topic.t
 t/control/do-block-newline-then-loop-keyword.t
 t/control/done-paren-stmt-modifier.t
 t/control/eval-begin-phaser.t
+t/control/for-array-destructure.t
+t/control/for-destructure-object-hash-default.t
 t/control/for-literal-list-view-readonly.t
 t/control/for-live-array-name-collision.t
 t/control/for-loop-instance-writeback.t
@@ -1051,6 +1054,7 @@ t/grammar/grammar-frugal-ratchet-sigspace.t
 t/grammar/grammar-inline-adverb-bracket-scope.t
 t/grammar/grammar-make-named-argument.t
 t/grammar/grammar-meta-mro.t
+t/grammar/grammar-named-cursor.t
 t/grammar/grammar-optional-ordered-alternative.t
 t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
@@ -1119,6 +1123,7 @@ t/io/io-path-accepts-subclass.t
 t/io/io-path-add-relative.t
 t/io/io-path-child-concat.t
 t/io/io-path-constructor-parts.t
+t/io/io-path-cwd-spec-and-named-unpack.t
 t/io/io-path-dir-test-filter.t
 t/io/io-path-gist-spec.t
 t/io/io-path-lines-words-lazy.t
@@ -1609,6 +1614,7 @@ t/modules/rakudo-internals-json.t
 t/modules/resources-second-use-module.t
 t/modules/role-body-use-imports-into-role-package.t
 t/modules/role-body-use-module-imports-own-operator.t
+t/modules/routine-do-bind-same-name-module.t
 t/modules/scalar-trailing-package-separator.t
 t/modules/script-multi-does-not-join-module-family.t
 t/modules/strict-module-scope.t
@@ -1732,6 +1738,7 @@ t/nativecall/nativecall-buf-lifetime.t
 t/nativecall/nativecall-constant-type-alias.t
 t/nativecall/nativecall-cpointer-class-in-module.t
 t/nativecall/nativecall-cstruct-in-module.t
+t/nativecall/nativecall-deref-registered-name.t
 t/nativecall/nativecall-native-lib-sub.t
 t/nativecall/nativecall-parametric-buf-param-marshals-address.t
 t/nativecall/nativecall-return-constant-aliased-cstruct.t
@@ -1942,6 +1949,7 @@ t/oo/construct/tweak-fail-returns-failure.t
 t/oo/construct/version-subclass-constructor.t
 t/oo/delete-adverb-on-mixin.t
 t/oo/does-mutates-the-object.t
+t/oo/enum-value-does-not-block-unrelated-rebind.t
 t/oo/eval-does-not-leak-use-fatal.t
 t/oo/fatal-mode-does-not-leak-into-callee.t
 t/oo/forward-declaration.t
@@ -2006,6 +2014,7 @@ t/oo/method/lazy-method-deferral-frame.t
 t/oo/method/lazy-method-map-grep.t
 t/oo/method/lazylist-sink-method-forces-gather.t
 t/oo/method/light-frame-latch-across-method-dispatch.t
+t/oo/method/list-map-count-method-rows.t
 t/oo/method/lvalue-method-writeback-coherence.t
 t/oo/method/metamethod-dispatch.t
 t/oo/method/metaop-assign-readonly-method-result.t
@@ -2199,7 +2208,9 @@ t/oo/role/lexical-role-two-modules.t
 t/oo/role/map-rejects-role-mixed-sub-as-callable.t
 t/oo/role/mixin-but-role-angle-value.t
 t/oo/role/mixin-method-reaches-enclosing-role-multi-sub.t
+t/oo/role/mixin-nqp-attr-role-cell.t
 t/oo/role/mixin-role-application-order.t
+t/oo/role/mixin-role-attr-closure-two-roles.t
 t/oo/role/mixin-role-attribute-cell.t
 t/oo/role/mixin-role-group-candidate.t
 t/oo/role/mixin-role-transitive-does.t
@@ -2243,6 +2254,7 @@ t/oo/role/role-bless-pun.t
 t/oo/role/role-body-class-is-composing-class.t
 t/oo/role/role-body-guard-parameterisation.t
 t/oo/role/role-body-lexicals-sub-parameterised.t
+t/oo/role/role-body-statics-only-declared.t
 t/oo/role/role-body-sub-proto.t
 t/oo/role/role-body-use-flat-role-name.t
 t/oo/role/role-body-use-survives-block-scope-rollback.t
@@ -2321,6 +2333,7 @@ t/oo/role/typed-array-element-container-ref-role-check.t
 t/oo/role/uppercase-is-trait-reaches-trait-mod-on-a-role.t
 t/oo/role/walk-mixin-role.t
 t/oo/role/wrapped-accessor-role-method-rw-wrapper.t
+t/oo/routine-does-identity.t
 t/oo/runtime-mixin-stub-requirement.t
 t/oo/self-in-nested-sub-coherence.t
 t/oo/self-is-lexical-in-blocks.t
@@ -2331,6 +2344,7 @@ t/oo/stub-fail-semantics.t
 t/oo/stub-redefine-position.t
 t/oo/subset-param-binding-failure-message.t
 t/oo/subset-refinee.t
+t/oo/subset-refinement.t
 t/oo/subset-shadows-builtin-type.t
 t/oo/subset-uint-allomorph.t
 t/oo/subset-where-fail-message.t
@@ -2444,6 +2458,7 @@ t/rakuast/rakuast-eval.t
 t/rakuast/rakuast-expr.t
 t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-folded-literals.t
+t/rakuast/rakuast-for-destructuring.t
 t/rakuast/rakuast-for-pointy-params.t
 t/rakuast/rakuast-for-signature.t
 t/rakuast/rakuast-for.t
@@ -2773,6 +2788,7 @@ t/routines/call/return-trailing-colon.t
 t/routines/call/return-trailing-comma.t
 t/routines/call/return-type-undeclared-invalidtype.t
 t/routines/call/returns-coercion-type.t
+t/routines/call/returns-declaring-scope-type.t
 t/routines/call/routine-code-object-capture.t
 t/routines/call/run-capture.t
 t/routines/call/run-main-default-args-to-capture.t
@@ -2836,6 +2852,7 @@ t/routines/closure/lexsub-free-var-closure-before-declaration.t
 t/routines/closure/loop-bind-closure-capture.t
 t/routines/closure/loop-body-local-closure-capture.t
 t/routines/closure/loop-var-closure-capture.t
+t/routines/closure/loop-var-nested-closure-freeze.t
 t/routines/closure/nested-closure-resources-file-attribution.t
 t/routines/closure/pointy-block-light-bind.t
 t/routines/closure/proxy-fetch-closure-scope.t
@@ -3038,8 +3055,10 @@ t/routines/signature/coercion-param-scalar-rebind-no-recoerce.t
 t/routines/signature/coercion-type-param-default.t
 t/routines/signature/cro-client-nested-param-shadow.t
 t/routines/signature/defaulted-param-positional-light.t
+t/routines/signature/destructure-anonymous-type-constraint.t
 t/routines/signature/destructure-keeps-source-itemization.t
 t/routines/signature/destructure-named-alias.t
+t/routines/signature/destructure-rest-params-named-default.t
 t/routines/signature/destructuring-sigilless-params.t
 t/routines/signature/dualstore-param-not-mirrored.t
 t/routines/signature/dynamic-param-out-redirects-say.t
@@ -3054,6 +3073,7 @@ t/routines/signature/for-loop-coercion-param.t
 t/routines/signature/for-loop-param-getupvalue-hijack.t
 t/routines/signature/for-loop-param-type-enforced.t
 t/routines/signature/for-loop-sigilless-param-shadows-term.t
+t/routines/signature/for-multi-destructuring-params.t
 t/routines/signature/for-multi-param-fresh-per-iteration.t
 t/routines/signature/for-multi-param-hash-subsignature.t
 t/routines/signature/for-multi-param-keeps-outer-topic.t
@@ -3100,6 +3120,7 @@ t/routines/signature/named-param-container-share.t
 t/routines/signature/named-param-default-reads-earlier-named.t
 t/routines/signature/named-param-no-leak-from-caller.t
 t/routines/signature/named-param-rename-is-copy-readonly-leak.t
+t/routines/signature/named-param-rename-redeclaration.t
 t/routines/signature/named-param-subsignature-dispatch.t
 t/routines/signature/named-param-type-constraint-enforced.t
 t/routines/signature/named-params.t
@@ -3135,7 +3156,9 @@ t/routines/signature/parameterized-call.t
 t/routines/signature/parameterized-quanthash-key-typecheck.t
 t/routines/signature/parameterized-type-object.t
 t/routines/signature/pod-declarator-param-trailing-extent.t
+t/routines/signature/pointy-anon-destructure-later-param.t
 t/routines/signature/pointy-block-destructure-expr.t
+t/routines/signature/pointy-block-destructure.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
 t/routines/signature/pointy-sigilless-param-traits.t
@@ -3510,6 +3533,7 @@ t/types/string/str-naive-word-wrapper.t
 t/types/string/str-num-inf-nan.t
 t/types/string/str-numeric-long-decimal-exact-rat.t
 t/types/string/str-numeric-marker.t
+t/types/string/str-numeric-op-failure.t
 t/types/string/str-numify-decimal-rat.t
 t/types/string/str-operator-forms-parity.t
 t/types/string/str-per-call-bounds.t
@@ -3543,6 +3567,7 @@ t/types/string/uniprop-bidi-class-on.t
 t/types/string/uniprop-bidi-class-rtl-letters.t
 t/types/string/uniprop-bidi-class-separators.t
 t/types/string/uniprop-emoji-modifier-segmentation.t
+t/types/string/uniprop-general-category.t
 t/types/string/uniprop-grapheme-cluster-break-uax29.t
 t/types/string/uniprop-joining-group.t
 t/types/string/uniprop-joining-type.t
@@ -3731,6 +3756,7 @@ t/vm/nqp-pure-op-direct-path.t
 t/vm/nqp-radix-scan-from-pos.t
 t/vm/nqp-relational-ops.t
 t/vm/nqp-repeat-loops.t
+t/vm/nqp-serialization-context-ops.t
 t/vm/nqp-sha1.t
 t/vm/nqp-type-conversion-ops.t
 t/vm/nqp-unicode-prop-ops.t
@@ -3745,6 +3771,7 @@ t/vm/scope/declaration-scope.t
 t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-scope-pragma.t
+t/vm/scope/dynamic-var-not-found.t
 t/vm/scope/dynamic-var-postdeclaration-scope-boundary.t
 t/vm/scope/dynamic-var-read-not-found.t
 t/vm/scope/dynamic-var-start-leak.t
