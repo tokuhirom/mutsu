@@ -117,6 +117,8 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut i = 0usize;
     let mut in_single = false;
     let mut in_double = false;
+    // `(start, end)` of the line comment most recently copied into `out`.
+    let mut line_comment: Option<(usize, usize)> = None;
     let mut escaped = false;
     let mut in_charclass = false;
     let mut brace_depth = 0usize;
@@ -216,6 +218,7 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
         // <selectors> ... }`).  Embedded `#` backtick comments end at their
         // matching delimiter and may be followed by more pattern text.
         if c == '#' && !in_single && !in_double && brace_depth == 0 && angle_depth == 0 {
+            let comment_start = out.len();
             out.push(c);
             i += 1;
             if chars.get(i) == Some(&'`') {
@@ -250,6 +253,7 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                         break;
                     }
                 }
+                line_comment = Some((comment_start, out.len()));
             }
             continue;
         }
@@ -396,7 +400,12 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                 i = j;
                 continue;
             }
-            let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
+            // Text of a line comment that ends `out` is not pattern: a `?` or
+            // `*` closing it is not a quantifier, and the term before it is
+            // still the previous atom.
+            let after_comment = line_comment.filter(|&(_, end)| end == out.len());
+            let scan_end = after_comment.map_or(out.len(), |(start, _)| start);
+            let prev = out[..scan_end].chars().rev().find(|ch| !ch.is_whitespace());
             // `should_insert`'s prev-position rules recognize `|`, `(`, `[`,
             // `{`, `^`, `<`, `%` as syntax that suppresses the following
             // `<.ws>`. When the character we just read from `out` was
@@ -442,11 +451,15 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     Some(n) => n,
                     None => '\0',
                 };
-                if super::rule_ws_quantified::is_quantifier_start(next)
+                if after_comment.is_none()
+                    && super::rule_ws_quantified::is_quantifier_start(next)
                     && super::rule_ws_quantified::wrap_last_atom_with_ws(&mut out)
                 {
                     // `<item> +`: the whitespace repeats with the atom.
-                } else if out.trim_end().ends_with("**") && !last_char_is_escaped(&out) {
+                } else if after_comment.is_none()
+                    && out.trim_end().ends_with("**")
+                    && !last_char_is_escaped(&out)
+                {
                     // `a ** 1..3`: the whitespace between `**` and its count
                     // is layout inside the quantifier, not sigspace.
                     if !out.ends_with(' ') {
@@ -460,7 +473,11 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     out.push(' ');
                 } else if should_insert(p, n) {
                     let escaped = last_char_is_escaped(&out);
-                    super::rule_ws_quantified::mark_backtracking_before_ws(&mut out, next, escaped);
+                    if after_comment.is_none() {
+                        super::rule_ws_quantified::mark_backtracking_before_ws(
+                            &mut out, next, escaped,
+                        );
+                    }
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
                     }
