@@ -1,0 +1,20 @@
+mod lazy_pipe_ctors;
+mod mixin_wrapped_methods;
+mod operator_scope;
+mod plain_fn_resolve_memo;
+mod registry_gen;
+/// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
+pub(crate) mod stack_id;
+pub(crate) mod unbounded_range;
+mod undeclared_names;
+pub(crate) mod undeclared_routines;
+mod unicode;
+mod unicode_name_prop;
+mod unit_multi_scope;
+mod unit_private_routines;
+mod user_method_probe_memo;
+pub(crate) mod utf8_c8;
+pub(crate) mod utils;
+pub(crate) mod value_iterator;
+mod which_identity;
+pub(crate) mod worker_pool;
