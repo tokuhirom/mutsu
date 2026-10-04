@@ -269,3 +269,39 @@ alias captured by a nested routine, an immutable `:=` that kept a bare value,
 `my $y := $x`) still asks the registry, so a caller's same-named mark can still
 decide it. #11263 records that a `constant` anywhere in the file makes §7.1's
 immutable binding cell unreachable from another frame.
+
+### 7.3 A rebind decides its binding cell (#9277, 2026-10-04)
+
+A `:=` rebind made inside a routine (`sub f { $w := 42 }`, `sub g { $y := $z }`)
+changed the outer variable's binding but not its writability: the rebind's
+registry mark was journaled and undone when the routine returned, so `$w`
+stayed assignable and a `$y` declared `:= 5` stayed immutable after being
+rebound to a container. The rebinding routine itself did not record any kind
+either, so `$w = 5` right after `$w := 42` in the same routine went through.
+
+The binding cell a captured, rebound variable already has (ADR-0097 §14, §14.1)
+now carries the rebind's decision (`seat_in_binding_cell`):
+
+- **Writer.** Every reseat of a `$` variable's binding cell decides it. A bare
+  value is seated in a readonly binding cell of the kind rakudo refuses an
+  assignment for (`Immutable`, `TypeObject`), or of the source binding's kind
+  when the value came from a readonly one (`$m := $p`, `$p` a parameter: a
+  readonly variable). A container makes the cell writable, or readonly for a
+  readonly source. When the by-name store already wrote the new binding
+  through the cell (a mainline lexical a routine captured), the decision is
+  taken from what the cell now holds.
+- **Readers.** `CheckReadOnly` and the named `++`/`--`/`OP=` check also ask
+  one of the writing code's *own* slots when it holds a binding cell
+  (`own_slot_rebind_decision`): the slot is the frame's view of a binding
+  another frame may have rebound, while the registry still holds this
+  frame's mark from before that rebind. A name with several slots keeps
+  asking the registry. A free-variable rebind (`SetGlobal`) of a binding whose
+  decision is `Immutable` or `TypeObject` is let through, as
+  `rebind_of_immutable` already lets a registry-marked one.
+
+A readonly binding cell made at a declaration (`my $a := 1`) is deliberately
+not treated as a binding cell of its own: `my $f := $a` aliases it as the
+value's container, so seating a later rebind of `$a` in it would rebind `$f`
+too (`t/vm/binding/bind-rebind-leaves-earlier-alias.t`). A captured and
+rebound `$a` gets the usual binding cell wrapped around it instead.
+`t/routines/rebind-in-routine-decides-writability.t` pins the cases.

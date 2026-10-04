@@ -1159,11 +1159,19 @@ impl Interpreter {
     /// it sees the rebind, while a name `:=`-bound to the old container keeps
     /// it. A write THROUGH the cell would instead reach that old container
     /// (#9416). Reports `false`, touching nothing, for any other name.
-    pub(super) fn unit_scope_lexical_rebind(&mut self, name: &str, val: &Value) -> bool {
+    /// `source_kind` is the readonly kind of the binding the value came from
+    /// (see `seat_in_binding_cell`).
+    pub(super) fn unit_scope_lexical_rebind(
+        &mut self,
+        name: &str,
+        val: &Value,
+        source_kind: Option<crate::ast::ReadonlyKind>,
+    ) -> bool {
         let Some(cell) = self.unit_lexical_slot(name).and_then(Self::binding_cell_of) else {
             return false;
         };
-        Self::seat_in_binding_cell(val.clone(), cell);
+        let scalar = !name.starts_with(['@', '%', '&']);
+        Self::seat_in_binding_cell(val.clone(), cell, scalar, source_kind);
         true
     }
 

@@ -64,7 +64,17 @@ impl Interpreter {
                     return Err(Self::readonly_binding_error(kind, &bound));
                 }
                 Some(FreeVarBinding::Writable) => binding_decided_writable = true,
-                None => {}
+                None => {
+                    // One of this code's own slots, holding a binding cell a
+                    // rebind decided (#9277).
+                    match self.own_slot_rebind_decision(code, code.const_sym(name_idx)) {
+                        Some(FreeVarBinding::Readonly(kind, bound)) => {
+                            return Err(Self::readonly_binding_error(kind, &bound));
+                        }
+                        Some(FreeVarBinding::Writable) => binding_decided_writable = true,
+                        None => {}
+                    }
+                }
             }
         }
         // Probe through the pre-interned constant Symbol:
@@ -129,6 +139,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let decision = if crate::value::readonly_binding_cells_possible() {
             self.free_var_binding_decision(code, name, name_sym)
+                .or_else(|| self.own_slot_rebind_decision(code, name_sym))
         } else {
             None
         };
@@ -223,6 +234,34 @@ impl Interpreter {
             Some(v) => v.clone(),
             None => self.env().get_sym(sym)?.clone(),
         };
+        Self::binding_chain_decision(binding)
+    }
+
+    /// What the binding in one of `code`'s own local slots says about its
+    /// writability, when that binding is a rebound binding cell: a `:=`
+    /// rebind made by another frame (a routine rebinding the captured
+    /// variable) decided it on the cell, while this frame's registry mark is
+    /// still the one from before the rebind (#9277). `None` for a name with
+    /// several slots, a slot holding no rebound cell, or no decision.
+    // Cost: O(1); the cell chain is bounded by `MAX_BINDING_CHAIN`.
+    pub(super) fn own_slot_rebind_decision(
+        &self,
+        code: &CompiledCode,
+        sym: crate::symbol::Symbol,
+    ) -> Option<FreeVarBinding> {
+        let [slot] = code.local_slots_of(sym) else {
+            return None;
+        };
+        let binding = self.locals.get(*slot as usize)?;
+        Self::binding_cell_of(binding)?;
+        Self::binding_chain_decision(binding.clone())
+    }
+
+    /// The decision recorded along the binding-cell chain starting at
+    /// `binding`: a readonly kind anywhere on it wins, else a writable
+    /// decision, else `None`.
+    // Cost: O(c), c = cells on the chain, bounded by `MAX_BINDING_CHAIN`.
+    fn binding_chain_decision(binding: Value) -> Option<FreeVarBinding> {
         // A binding cell (ADR-0097 §14) holds the variable's container: the
         // kind is on whichever cell of the chain was seated for the bind.
         // Bounded: no Raku container contains itself, but a cell cycle left by
