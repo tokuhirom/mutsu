@@ -314,7 +314,7 @@ impl Interpreter {
                 // call-frame handling further up the stack.
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = self.dead_return_error();
-                    if self.control.check_phaser_depth > 0 {
+                    if self.control.check_phaser_depth > entry_check_phaser_depth {
                         let wrapped = Self::wrap_in_begin_time(
                             inner_err,
                             self.control
@@ -337,7 +337,12 @@ impl Interpreter {
                     self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(inner_err);
                 }
-                if self.control.check_phaser_depth > 0 {
+                // Wrap only an error leaving a BEGIN/CHECK region this run
+                // entered. A nested run inside one (an `EVAL` the phaser body
+                // calls, `throws-like 'code', ...`) hands its error back to that
+                // body as is, so the body can still catch it; the run that owns
+                // the region wraps whatever escapes it.
+                if self.control.check_phaser_depth > entry_check_phaser_depth {
                     let wrapped = Self::wrap_in_begin_time(
                         e,
                         self.control

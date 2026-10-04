@@ -721,7 +721,7 @@ impl Compiler {
         let filtered: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
         filtered.len() == 1
             && matches!(filtered[0], Stmt::Expr(Expr::Call { name, .. })
-                if name.resolve() == "__mutsu_stub_die" || name.resolve() == "__mutsu_stub_warn")
+                if crate::ast::stub::is_marker(&name.resolve()))
     }
 
     /// Reorder statements so that when a stub class is followed later by its

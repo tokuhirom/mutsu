@@ -62,6 +62,12 @@ impl Interpreter {
             self.current_unit = saved_unit;
         }
         self.pop_routine();
-        outcome
+        // A `fail` raised inside the body (a call that fails: `...`, a
+        // missing `$*x`) ends the routine with a Failure value, exactly as
+        // the untyped entries do at their routine boundary (#11728).
+        match outcome {
+            Err(e) if e.is_fail() => Ok(TrOutcome::Value(self.fail_error_to_failure_value(&e))),
+            other => other,
+        }
     }
 }

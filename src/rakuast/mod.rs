@@ -350,6 +350,10 @@ pub enum RakuAstClass {
     Submethod,
     // `self` — a term with no fields of its own.
     TermSelf,
+    /// `...` / `!!!` / `???` (the yada-yada stubs).
+    StubFail,
+    StubDie,
+    StubWarn,
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
     StatementUse,
@@ -576,6 +580,9 @@ impl RakuAstClass {
             Package => "RakuAST::Package",
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
+            StubFail => "RakuAST::Stub::Fail",
+            StubDie => "RakuAST::Stub::Die",
+            StubWarn => "RakuAST::Stub::Warn",
             Pragma => "RakuAST::Pragma",
             StatementUse => "RakuAST::Statement::Use",
             StatementLanguageVersion => "RakuAST::Statement::LanguageVersion",
@@ -593,6 +600,9 @@ impl RakuAstClass {
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
+                | RakuAstClass::StubFail
+                | RakuAstClass::StubDie
+                | RakuAstClass::StubWarn
                 | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
                 | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
                 | RakuAstClass::RegexQuantifierZeroOrMore
@@ -711,6 +721,8 @@ impl RakuAstClass {
             // for an instance, but `RakuAST::Expression` is only reachable
             // through this list.
             | TermSelf => TERM,
+            // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
+            StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
             RegexLiteral
             | RegexQuote
@@ -1249,6 +1261,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Package,
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
+    RakuAstClass::StubFail,
+    RakuAstClass::StubDie,
+    RakuAstClass::StubWarn,
     RakuAstClass::Pragma,
     RakuAstClass::StatementUse,
     RakuAstClass::StatementLanguageVersion,

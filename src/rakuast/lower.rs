@@ -3222,6 +3222,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             "Nil" => Ok(Expr::Literal(Value::NIL)),
             name => Ok(Expr::BareWord(name.to_string())),
         },
+        // `Map:D` (a `Type::Definedness`) in expression position, such as a
+        // role argument `does R[Map:D]`: the bareword the parser keeps for the
+        // smiley spelling.
+        RakuAstClass::TypeDefinedness => Ok(Expr::BareWord(simple_type_name(node, node)?)),
         // `Term::Named.new("now")` -> the argument-less `now` call the parser
         // produces for the term.
         RakuAstClass::TermNamed => match positional_leaf(node)?.view() {
@@ -3233,6 +3237,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         },
         // `self` -> the bareword the parser produces for it.
         RakuAstClass::TermSelf => Ok(Expr::BareWord("self".to_string())),
+        // `...` / `!!!` / `???` -> the parser's stub marker call, with the
+        // message as its only argument when there is one.
+        RakuAstClass::StubFail | RakuAstClass::StubDie | RakuAstClass::StubWarn => {
+            let name = match node.class {
+                RakuAstClass::StubFail => crate::ast::stub::FAIL,
+                RakuAstClass::StubDie => crate::ast::stub::DIE,
+                _ => crate::ast::stub::WARN,
+            };
+            Ok(Expr::Call {
+                name: crate::symbol::Symbol::intern(name),
+                args: arg_exprs(node)?,
+            })
+        }
         // `True`/`False` -> the Bool literal; any other setting enum value
         // (`Less`, `Kept`) -> the bareword the parser produces for it.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {

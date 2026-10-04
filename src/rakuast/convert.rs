@@ -206,6 +206,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Call { name, args } => {
             if is_desugar_marker(name.as_str()) {
                 let args = call_args_as_exprs(args)?;
+                if let Some(stub) = stub_node(name.as_str(), &args) {
+                    return Ok(Some(statement_expression(stub?)));
+                }
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args) {
                     return Ok(Some(statement_expression(method_lvalue_assignment(
                         convert_expr(&call)?,
@@ -1227,6 +1230,30 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     Some((call, value))
 }
 
+/// A yada-yada stub (`...`, `!!!`, `???`) -> `Stub::Fail` / `Die` / `Warn`,
+/// carrying an `args` list only when the source wrote a message; `None` for
+/// any other call.
+// Cost: O(n), n = size of the message.
+fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeError>> {
+    use crate::ast::stub;
+    let class = match name {
+        stub::FAIL => RakuAstClass::StubFail,
+        stub::DIE => RakuAstClass::StubDie,
+        stub::WARN => RakuAstClass::StubWarn,
+        _ => return None,
+    };
+    if args.is_empty() {
+        return Some(Ok(RakuAstNode {
+            class,
+            fields: Vec::new(),
+        }));
+    }
+    Some(arg_list(args).map(|list| RakuAstNode {
+        class,
+        fields: vec![node_field(Some("args"), list)],
+    }))
+}
+
 /// The bound value of an indexed bind's `__mutsu_bind_index_value(rhs, meta)`
 /// marker, or `None` for any other value. The marker's source metadata is
 /// derived from `rhs`, so lowering rebuilds it.
@@ -1700,6 +1727,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             quoted_regex_node(tree)
         }
         Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
+            if let Some(stub) = stub_node(name.as_str(), args) {
+                return stub;
+            }
             if is_desugar_marker(name.as_str()) {
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), args) {
                     return Ok(method_lvalue_assignment(
