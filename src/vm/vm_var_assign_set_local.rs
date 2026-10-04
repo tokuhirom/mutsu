@@ -3706,7 +3706,11 @@ impl Interpreter {
             // value in place -- unless the compiler proved nothing can observe
             // that (`DeclReset::SeedIfUnbound`), which spares a hot loop body an
             // env write per declaration per iteration (#9537).
+            // A typed scalar also resets on its first execution when it
+            // shadows an outer binding: SetVarType must see this declaration's
+            // Nil seed, not the outer value, before the initializer runs.
             let reset_existing = reset == crate::opcode::DeclReset::Shadow
+                || reset == crate::opcode::DeclReset::Fresh && type_follows
                 || reset == crate::opcode::DeclReset::Fresh
                     && had_binding
                     && self
@@ -3714,7 +3718,12 @@ impl Interpreter {
                         .loop_local_vars
                         .last()
                         .is_some_and(|set| set.contains(&name_sym));
-            let default = if name.starts_with('@') {
+            let default = if type_follows && !name.starts_with(['@', '%']) {
+                // The following SetVarType seeds the declared type object (or
+                // a native default). Resetting to Any would leave that seed
+                // blocked when an initializer throws in a later iteration.
+                Value::NIL
+            } else if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
                 Value::hash(ValueMap::default())

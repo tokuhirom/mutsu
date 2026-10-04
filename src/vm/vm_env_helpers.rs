@@ -2750,6 +2750,18 @@ impl Interpreter {
 
     pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
+            self.update_local_at_slot(code, slot, name, val);
+        }
+    }
+
+    pub(crate) fn update_local_at_slot(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        name: &str,
+        val: &Value,
+    ) {
+        if slot < self.locals.len() {
             // A slot that holds the very cell `name` resolves to already shows
             // the value the caller just stored through that cell; replacing it
             // with the bare value would leave the env naming a container the
