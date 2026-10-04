@@ -156,7 +156,9 @@ pub(crate) use op::{
     parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,
     parse_set_compound_assign_op, short_circuit_compound_assign_expr,
 };
-pub(crate) use paren::{looks_like_parenthesized_assignment, parenthesized_assign_expr};
+pub(crate) use paren::{
+    looks_like_parenthesized_assignment, paren_list_assign_expr, parenthesized_assign_expr,
+};
 pub(crate) use sink::{
     parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical,
     rewrite_scalar_assignment_rhs_as_sink, rewrite_scalar_assignment_stmt_as_sink,

@@ -20,6 +20,7 @@ t/collections/array/array-grab.t
 t/collections/array/array-head-tail-return-element-container.t
 t/collections/array/array-index-inf.t
 t/collections/array/array-int-width-expression-decl.t
+t/collections/array/array-is-copy-list-arg.t
 t/collections/array/array-itemized-tree-and-hyper-list.t
 t/collections/array/array-list-preserves-any-after-assignment.t
 t/collections/array/array-literal-eager-gather.t
@@ -53,6 +54,7 @@ t/collections/array/push-pair-in-container-and-list-values.t
 t/collections/array/splice-offset-out-of-range-by-value-invocant.t
 t/collections/array/splice-regression.t
 t/collections/bind-hash-element-source-in-loop.t
+t/collections/bind-scalar-to-ternary-element.t
 t/collections/bound-element-readonly-travels.t
 t/collections/bound-element-readonly.t
 t/collections/buf-accepts-element-count.t
@@ -210,6 +212,7 @@ t/collections/lazy-seq/item-contextualized-list-var.t
 t/collections/lazy-seq/item-deref-assign-comma.t
 t/collections/lazy-seq/item-deref-lvalue-assign.t
 t/collections/lazy-seq/item-function-itemize.t
+t/collections/lazy-seq/item-listop.t
 t/collections/lazy-seq/itemized-seq-stays-single.t
 t/collections/lazy-seq/iteration-buffer.t
 t/collections/lazy-seq/iteration-end-sentinel-object.t
@@ -285,12 +288,17 @@ t/collections/lazy-seq/walk-lazy.t
 t/collections/lazy-seq/whatever-index-on-lazy-cannot-lazy.t
 t/collections/lazy-seq/words-lazy-close.t
 t/collections/list-accepts-hash.t
+t/collections/list-alias-shadowed-name.t
+t/collections/list-assign-existing.t
 t/collections/list-cache-no-args.t
+t/collections/list-container-aliasing.t
+t/collections/list-destructure-result.t
 t/collections/list-element-bind-runtime.t
 t/collections/list-fmt.t
 t/collections/list-functions.t
 t/collections/list-methods-read-only-what-they-need.t
 t/collections/list-numeric-comparison.t
+t/collections/list-readonly-binding-element.t
 t/collections/list-sqrt.t
 t/collections/list-str-calls-element-str.t
 t/collections/list-str-type-object-in-container.t
@@ -984,6 +992,7 @@ t/exceptions/failure-sink-handled.t
 t/exceptions/failure-string-interpolation.t
 t/exceptions/gather-lazy-consume-propagates-exception.t
 t/exceptions/get-out.t
+t/exceptions/grep-first-bool-exception.t
 t/exceptions/handles-wildcard-delegate-error-propagates.t
 t/exceptions/invocant-marker-exception-classes.t
 t/exceptions/issue-7770-failure-method-rethrow.t
@@ -1007,6 +1016,7 @@ t/exceptions/private-method-binding-error.t
 t/exceptions/resume.t
 t/exceptions/return-target-dead-reaches-nearest-catch.t
 t/exceptions/routine-unwrap-error.t
+t/exceptions/runtime-error-test-failures-not-printed.t
 t/exceptions/rw-method-lvalue-args-error.t
 t/exceptions/rw-param-typed-exception-class.t
 t/exceptions/say-gist-exception-propagates.t
@@ -1168,6 +1178,7 @@ t/io/is-lazy-io-lines.t
 t/io/kernel-cpu-cores.t
 t/io/kernel-type-object-hostname.t
 t/io/lines-named-args.t
+t/io/list-assign-greedy-slurp.t
 t/io/method-implicit-named-slurpy.t
 t/io/mkdir-mode.t
 t/io/mkdir-rmdir.t
@@ -1340,6 +1351,7 @@ t/lang/parsing/bom-stripping.t
 t/lang/parsing/paren-adjacent-colonpairs.t
 t/lang/parsing/paren-decl-compound-assign.t
 t/lang/parsing/paren-index-bind-positional.t
+t/lang/parsing/paren-list-assign-expr-position.t
 t/lang/parsing/paren-scalar-list-target.t
 t/lang/parsing/parser-anonymous-constant.t
 t/lang/parsing/parser-anonymous-state-assignment.t
@@ -1817,6 +1829,7 @@ t/oo/attribute/attr-type-constraint-memo.t
 t/oo/attribute/attr-typed-container-assign.t
 t/oo/attribute/attribute-accessor-container-identity.t
 t/oo/attribute/attribute-accessor-overrides-which.t
+t/oo/attribute/attribute-container-identity.t
 t/oo/attribute/attribute-container-rw.t
 t/oo/attribute/attribute-default-typecheck.t
 t/oo/attribute/attribute-defaults-and-set-build.t
@@ -1879,6 +1892,7 @@ t/oo/attribute/undeclared-attribute-in-every-position.t
 t/oo/bind-topic-does-not-corrupt-ancestor-frames.t
 t/oo/block-scope-trailing-value-does-not-clobber-topic.t
 t/oo/class/also-is-qualified-parent.t
+t/oo/class/array-subclass-user-multi-falls-back-to-inherited.t
 t/oo/class/c3-mro-long-chain.t
 t/oo/class/class-allomorph-inheritance.t
 t/oo/class/class-attr-begin-eval.t
@@ -1988,6 +2002,7 @@ t/oo/method/assign-pos-method-return-value.t
 t/oo/method/bound-nil-method-warn.t
 t/oo/method/builtin-subclass-method-override.t
 t/oo/method/callframe-code-name-method-unit.t
+t/oo/method/capture-param-method-forwards-caller-containers.t
 t/oo/method/captured-outer-method-compiled-gate.t
 t/oo/method/class-body-lexical-shadowed-by-method-closure.t
 t/oo/method/class-body-write-to-method-captured-lexical.t
@@ -2018,6 +2033,7 @@ t/oo/method/gate-b-class-method-outer-lexical.t
 t/oo/method/gate-b-jit-method-mut-writeback.t
 t/oo/method/gate-b-method-lvalue-writeback.t
 t/oo/method/has-decl-nested-in-method-closures.t
+t/oo/method/hash-subclass-qualified-base-method.t
 t/oo/method/hash-subclass-store-in-method.t
 t/oo/method/hyper-hash-method-scalar.t
 t/oo/method/hyper-method-call-subscript.t
@@ -2519,6 +2535,7 @@ t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-parameter-optional-traits.t
+t/rakuast/rakuast-paren-list-assign.t
 t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-pointy-slurpy-params.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
@@ -2729,6 +2746,7 @@ t/regex/regex-tree-named-array-lookaround.t
 t/regex/regex-tree-static-execution.t
 t/regex/regex-tree-value-provenance.t
 t/regex/regex-unspace.t
+t/regex/regex-value-interp-parse-memo.t
 t/regex/regex-word-boundary.t
 t/regex/rx-ignoremark-adverb.t
 t/regex/rx-literal-in-block-topic.t
@@ -3286,7 +3304,9 @@ t/routines/sub-rw-writeback-attr-source-no-leak.t
 t/routines/subdata-nested-sub-compiled-fns.t
 t/routines/undeclared-routine-found-in-every-position.t
 t/routines/undeclared-routine-suggests-unit-own-subs.t
+t/tooling/bail-out-exit-status.t
 t/tooling/cli-lib-repo-chain.t
+t/tooling/cli-option-errors.t
 t/tooling/cli-rakudo-internals-include.t
 t/tooling/cmp-ok-string-ops.t
 t/tooling/command-line-negation.t
@@ -3307,6 +3327,8 @@ t/tooling/main-enum-subset.t
 t/tooling/main-semicolon.t
 t/tooling/missing-test-module-use-warns.t
 t/tooling/plan-whatever.t
+t/tooling/profiler-cli-options.t
+t/tooling/profiler-unit-file-identity.t
 t/tooling/prompt-eof-any.t
 t/tooling/rakuseen.t
 t/tooling/skip-list-vs-test.t
@@ -3487,6 +3509,7 @@ t/types/numeric/approx-equal-tolerance.t
 t/types/numeric/base-tier-magic-vars.t
 t/types/numeric/big-denominator-rat-str.t
 t/types/numeric/bigfatrat-variant.t
+t/types/numeric/bigint-arith-borrowed-operands.t
 t/types/numeric/bigint-bitmask-regression.t
 t/types/numeric/bigint-negate-and-rat-overflow-precision.t
 t/types/numeric/bigint-raku-repr.t
@@ -3738,6 +3761,7 @@ t/vm/codegen/compile-time-vars.t
 t/vm/codegen/compiler-id.t
 t/vm/codegen/compiler-vm-new-defaults.t
 t/vm/codegen/create-slots-resources-buf-strict-escape.t
+t/vm/codegen/jit-call-shims-on-off-parity.t
 t/vm/codegen/jit-hot-loop.t
 t/vm/codegen/jit-tier-b-arith.t
 t/vm/codegen/jit-tier-b-infix-override.t
@@ -3836,6 +3860,7 @@ t/vm/scope/declaration-scope.t
 t/vm/scope/dynamic-array-hash-var-not-found.t
 t/vm/scope/dynamic-codevar-chdir.t
 t/vm/scope/dynamic-scope-pragma.t
+t/vm/scope/dynamic-var-missing-failure.t
 t/vm/scope/dynamic-var-not-found.t
 t/vm/scope/dynamic-var-postdeclaration-scope-boundary.t
 t/vm/scope/dynamic-var-read-not-found.t

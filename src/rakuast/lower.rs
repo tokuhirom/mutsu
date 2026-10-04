@@ -1764,10 +1764,22 @@ fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> 
 
 /// `ApplyInfix(left => <call>, Assignment, right)` -- an rw routine or
 /// callable lvalue (`f(1) = v`, `$c(2) = v`) -- through the parser's own
-/// `assign_to_target_expr`, or `None` when the left side is not a call.
+/// `assign_to_target_expr`, and an assignment to a parenthesised list
+/// (`($a, $b) = …`) through `paren_list_assign_expr`; `None` for any other
+/// left side.
 // Cost: O(n), n = size of the node.
 fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
+    // `(LVALUES) = rhs`: an assignment to a parenthesised list.
+    if left.class == RakuAstClass::CircumfixParentheses
+        && let Expr::ArrayLiteral(items) = match lower_expr(left)? {
+            Expr::Grouped(inner) => *inner,
+            other => other,
+        }
+    {
+        let value = lower_expr(named_child(node, "right")?)?;
+        return Ok(Some(crate::parser::paren_list_assign_expr(items, value)));
+    }
     let is_call = left.class == RakuAstClass::CallName
         || (left.class == RakuAstClass::ApplyPostfix
             && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));

@@ -1348,6 +1348,13 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
                 args: call_args.clone(),
             }
         }
+        // `(LVALUES) = rhs` assigns to a parenthesised list
+        // (`parser::paren_list_assign_expr`).
+        "__mutsu_assign_callable_lvalue"
+            if call_args.is_empty() && matches!(target, Expr::ArrayLiteral(_)) =>
+        {
+            Expr::Grouped(Box::new(target.clone()))
+        }
         "__mutsu_assign_callable_lvalue" => {
             if !matches!(target, Expr::Var(_) | Expr::CodeVar(_)) {
                 return None;
