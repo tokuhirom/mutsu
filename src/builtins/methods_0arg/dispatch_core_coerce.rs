@@ -164,59 +164,6 @@ pub(crate) fn complex_not_real_error(
     err
 }
 
-/// Build the `X::Numeric::CannotConvert` Failure raised when a non-finite Num
-/// (`NaN`/`Inf`/`-Inf`) is coerced to `Int`.
-fn cannot_convert_to_int_failure(source: &Value, f: f64) -> Value {
-    let label = if f.is_nan() {
-        "NaN"
-    } else if f.is_sign_positive() {
-        "Inf"
-    } else {
-        "-Inf"
-    };
-    let msg = format!("Cannot convert {label} to Int");
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg));
-    attrs.insert("source".to_string(), source.clone());
-    attrs.insert("target".to_string(), Value::str_from("Int"));
-    let ex = Value::make_instance(Symbol::intern("X::Numeric::CannotConvert"), attrs);
-    let mut failure_attrs = std::collections::HashMap::new();
-    failure_attrs.insert("exception".to_string(), ex);
-    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
-}
-
-/// Truncate a numeric `Value` toward zero to an `Int`, returning `None` for a
-/// non-numeric value. A non-finite `Num` or a zero-denominator `Rational`
-/// yields the same lazy `Failure` a direct `.Int` would. Used both by the
-/// `.Int` coercion arm and by `Str.Int` after parsing a numeric string form
-/// (radix `:16<ff>`, rational `3/4`, ...) through the full numeric grammar,
-/// mirroring raku's "numify then truncate" semantics.
-fn numeric_to_int(target: &Value) -> Option<Value> {
-    Some(match target.view() {
-        ValueView::Int(i) => Value::int(i),
-        ValueView::BigInt(_) => target.clone(),
-        ValueView::Num(f) => {
-            if f.is_nan() || f.is_infinite() {
-                cannot_convert_to_int_failure(target, f)
-            } else {
-                Value::int(f as i64)
-            }
-        }
-        ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {
-            RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
-        }
-        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => Value::int(n / d),
-        ValueView::BigRat(_, d) if d.is_zero() => {
-            RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
-        }
-        // Truncating a big rational must not silently clamp to `i64::MAX` —
-        // `(16045690981097406464/1).Int` is that integer, not 9223372036854775807.
-        ValueView::BigRat(n, d) => Value::from_bigint(n / d),
-        ValueView::Complex(r, _) => Value::int(r as i64),
-        _ => return None,
-    })
-}
-
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -886,37 +833,14 @@ pub(super) fn dispatch(
                 };
             }
             let result = match target.view() {
-                ValueView::Int(i) => Value::int(i),
-                ValueView::BigInt(_) => target.clone(),
-                ValueView::Num(f) => {
-                    if f.is_nan() || f.is_infinite() {
-                        let msg = format!(
-                            "Cannot convert {} to Int",
-                            if f.is_nan() {
-                                "NaN".to_string()
-                            } else if f.is_sign_positive() {
-                                "Inf".to_string()
-                            } else {
-                                "-Inf".to_string()
-                            }
-                        );
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg));
-                        attrs.insert("source".to_string(), target.clone());
-                        attrs.insert("target".to_string(), Value::str_from("Int"));
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::Numeric::CannotConvert"),
-                            attrs,
-                        );
-                        let mut failure_attrs = std::collections::HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        return Some(Some(Ok(Value::make_instance(
-                            crate::symbol::Symbol::intern("Failure"),
-                            failure_attrs,
-                        ))));
-                    }
-                    Value::int(f as i64)
-                }
+                // A real number: the numeric types' `Int` rows' implementation
+                // (ADR-11276, `method_table::coerce`).
+                ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..) => crate::builtins::method_table::coerce::int_of(target)?,
                 ValueView::Instance {
                     class_name,
                     attributes,
@@ -941,25 +865,6 @@ pub(super) fn dispatch(
                         .unwrap_or(0.0);
                     Value::int(numeric as i64)
                 }
-                ValueView::Rat(_, 0) => {
-                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                        "Int", "Rational",
-                    ))));
-                }
-                ValueView::FatRat(_, 0) => {
-                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                        "Int", "Rational",
-                    ))));
-                }
-                ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                ValueView::FatRat(n, d) if d != 0 => Value::int(n / d),
-                ValueView::BigRat(_, d) if d.is_zero() => {
-                    return Some(Some(Ok(RuntimeError::divide_by_zero_failure_for_method(
-                        "Int", "Rational",
-                    ))));
-                }
-                // Do not clamp: a big rational's truncation is a big integer.
-                ValueView::BigRat(n, d) if !d.is_zero() => Value::from_bigint(n / d),
                 // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
                 ValueView::Str(s) => {
                     if s.trim().is_empty() {
@@ -971,7 +876,7 @@ pub(super) fn dispatch(
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
-                            .and_then(numeric_to_int)
+                            .and_then(crate::builtins::method_table::coerce::int_of)
                     {
                         // raku's `Str.Int` parses via the full numeric grammar
                         // and truncates the result, so numeric string forms the
@@ -992,7 +897,7 @@ pub(super) fn dispatch(
                     if im != 0.0 {
                         return Some(Some(Err(complex_not_real_error(re, im, "Int", target))));
                     }
-                    Value::int(re as i64)
+                    crate::builtins::method_table::coerce::int_of(target)?
                 }
                 ValueView::Hash(h) => Value::int(h.len() as i64),
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
@@ -1044,7 +949,7 @@ pub(super) fn dispatch(
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
-                            .and_then(numeric_to_int)
+                            .and_then(crate::builtins::method_table::coerce::int_of)
                     {
                         // Same numeric-string forms as `.Int` (radix `:16<ff>`,
                         // rational `3/4`, ...): numify then truncate, then the
@@ -1119,13 +1024,12 @@ pub(super) fn dispatch(
             _ => None,
         },
         "Num" => {
+            // A real number: the numeric types' `Num` rows' implementation
+            // (ADR-11276, `method_table::coerce`).
+            if let Some(result) = crate::builtins::method_table::coerce::num_of(target) {
+                return Some(Some(Ok(result)));
+            }
             let result = match target.view() {
-                ValueView::Int(i) => Value::num(i as f64),
-                ValueView::BigInt(n) => {
-                    use num_traits::ToPrimitive;
-                    Value::num(n.to_f64().unwrap_or(f64::INFINITY))
-                }
-                ValueView::Num(f) => Value::num(f),
                 ValueView::Instance {
                     class_name,
                     attributes,
@@ -1149,21 +1053,6 @@ pub(super) fn dispatch(
                         })
                         .unwrap_or(0.0);
                     Value::num(numeric)
-                }
-                ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d == 0 => Value::num(if n == 0 {
-                    f64::NAN
-                } else if n > 0 {
-                    f64::INFINITY
-                } else {
-                    f64::NEG_INFINITY
-                }),
-                ValueView::Rat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
-                ValueView::FatRat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
-                // Correctly rounded: converting numerator and denominator to
-                // f64 separately loses the last bit (`Num(0.7777777777777777777771)`
-                // must equal `Num(0.777777777777777777777)`).
-                ValueView::BigRat(n, d) if !d.is_zero() => {
-                    Value::num(crate::value::bigrat_to_f64(n, d))
                 }
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
                 // plus a trimmed copy).
