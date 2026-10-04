@@ -360,3 +360,24 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     native entry's shape probe and bit tests (about 50 instructions each); it was +6.8%
     before the miss memo, the shape mask and the raw-path change. The empty loop is
     unchanged.
+- 2026-10-04, slice 3, stringification: `List.join` with and without a separator, and `Str`
+  with no arguments on `Str`, `Int`, `Num`, `Rat`, `FatRat` and `Complex`, are rows. Both
+  are `Handler::Narrow`.
+  - `join` declines a list that holds an element needing the interpreter (an instance or
+    mixin whose `Str` may be user code, a Junction, a deferred Seq), a `Proxy` (FETCHed at
+    render time, ADR-0040 §9.2) or an undefined element (Rakudo warns for each one,
+    #11838).
+  - `Str` declines a zero-denominator rational, whose `X::Numeric::DivideByZero` carries
+    the interpreter's context.
+  - The 0-argument and 1-argument `join` cascade arms had diverging copies of the element
+    walk: only the 1-argument one resolved `is default` holes and refused mixin and lazy
+    elements. Both now call `method_table::list::join_source_items` and `join_items`.
+  - A Pair's `.join($sep)` is the Pair's own `.Str` (`a\t1`), as in Rakudo. The 1-argument
+    arm had joined key and value with the separator.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`:
+    - `$s.Str` 1,311M to 359M (-72.6%);
+    - `$i.Str` -63.2%, `$n.Str` -55.7%, `$r.Str` -53.8%;
+    - `$l.join("-")` (a List) -52.8%, `@a.join` -51.7%, `@a.join(",")` -49.4%.
+    - `%h.Str` (a `Hash`; no row) is +0.8%, the same residual cost of the two bit tests
+      noted for `"42".Int`. The empty loop is unchanged.
