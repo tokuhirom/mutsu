@@ -447,6 +447,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             is_public: true,
             default,
             handles: Vec::new(),
+            handles_terms: Vec::new(),
             is_rw: true,
             is_readonly: false,
             type_constraint: attr_type,

@@ -17,6 +17,7 @@ pub(in crate::parser) use constant_subset::inline_subset_term;
 pub(in crate::parser::stmt) use constant_subset::{constant_decl, constant_stmt, subset_decl};
 pub(in crate::parser::stmt) use enum_decl::collect_dynamic_enum_value_names;
 pub(crate) use enum_decl::{anon_enum_decl, enum_decl};
+pub(crate) use handles::handle_specs_from_term;
 pub(in crate::parser::stmt) use handles::parse_handle_specs;
 pub(in crate::parser::stmt) use has_decl::has_decl;
 pub(in crate::parser::stmt) use helpers::parse_array_shape_suffix;

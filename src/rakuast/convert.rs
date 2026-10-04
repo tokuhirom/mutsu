@@ -1032,6 +1032,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_built,
             default_is_seed,
             default_is_trait,
+            handles_terms,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
@@ -1052,17 +1053,30 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
                 _ => return Err(unsupported("attribute with a `:_` smiley")),
             };
-            if !handles.is_empty()
-                || matches!(is_required, Some(Some(_)))
-                || where_constraint.is_some()
-                || *is_alias
-                || *is_our
-                || *is_my
-                || is_type.is_some()
-                || deprecated_message.is_some()
-                || !unknown_traits.is_empty()
-            {
-                return Err(unsupported("attribute with traits / smiley / scope"));
+            let deferred = [
+                (
+                    !handles.is_empty() && handles_terms.is_empty(),
+                    "attribute with a `handles` spelling not kept as a term",
+                ),
+                (
+                    matches!(is_required, Some(Some(_))),
+                    "attribute with an `is required` reason",
+                ),
+                (
+                    where_constraint.is_some(),
+                    "attribute with a `where` constraint",
+                ),
+                (*is_alias, "attribute alias"),
+                (*is_our || *is_my, "`my` / `our` attribute"),
+                (is_type.is_some(), "attribute with an `is TYPE` trait"),
+                (
+                    deprecated_message.is_some(),
+                    "attribute with `is DEPRECATED`",
+                ),
+                (!unknown_traits.is_empty(), "attribute with a custom trait"),
+            ];
+            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
+                return Err(unsupported(what));
             }
             let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
             let twigil = if *is_public { "." } else { "!" };
@@ -1087,6 +1101,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     is_required: is_required.is_some(),
                     is_default: is_default.clone(),
                     is_built: *is_built,
+                    handles_terms: handles_terms.clone(),
+                    handles: handles.clone(),
                 },
             )?;
             Ok(Some(statement_expression(decl)))

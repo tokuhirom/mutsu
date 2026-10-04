@@ -17,6 +17,7 @@ pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
 pub(crate) use primary::next_anon_role_name;
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::is_pseudo_package;
+pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;

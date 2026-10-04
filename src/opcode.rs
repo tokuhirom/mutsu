@@ -535,6 +535,7 @@ impl CompiledAttrDecl {
             is_public,
             default,
             handles,
+            handles_terms: _,
             is_rw,
             is_readonly,
             type_constraint,

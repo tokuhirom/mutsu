@@ -2253,6 +2253,13 @@ pub(crate) enum Stmt {
         is_public: bool,
         default: Option<Expr>,
         handles: Vec<HandleSpec>,
+        /// The written term of each `handles` clause (`<a b>`, `'x'`, `*`),
+        /// in source order, kept so RakuAST can render `Trait::Handles` as
+        /// written. Empty when a clause's spelling is one
+        /// `parser::handle_specs_from_term` does not rebuild `handles` from;
+        /// only the RakuAST converter reads it.
+        #[serde(default)]
+        handles_terms: Vec<Expr>,
         is_rw: bool,
         is_readonly: bool,
         type_constraint: Option<String>,

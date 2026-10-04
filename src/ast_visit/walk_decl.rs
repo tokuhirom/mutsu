@@ -51,6 +51,8 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             is_public: _,
             default,
             handles,
+            // Source records of the `handles` clauses, for RakuAST only.
+            handles_terms: _,
             is_rw: _,
             is_readonly: _,
             type_constraint,

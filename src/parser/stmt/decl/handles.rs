@@ -204,3 +204,50 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
     }
     Ok(())
 }
+
+/// The written term of one `handles` clause that spans `input` up to `rest`,
+/// when reading it as a term rebuilds exactly the clause's `specs`; `None`
+/// for a spelling the term does not capture (a rename pair, a regex, a
+/// variable or slip, a bare name).
+// Cost: O(n), n = length of the clause.
+pub(in crate::parser) fn handles_clause_term(
+    input: &str,
+    rest: &str,
+    specs: &[HandleSpec],
+) -> Option<crate::ast::Expr> {
+    let (after, term) = crate::parser::primary::primary(input).ok()?;
+    if after.len() != rest.len() {
+        return None;
+    }
+    let rebuilt = handle_specs_from_term(&term)?;
+    let same = rebuilt.len() == specs.len()
+        && rebuilt.iter().zip(specs).all(|(a, b)| match (a, b) {
+            (HandleSpec::Name(x), HandleSpec::Name(y)) => x == y,
+            (HandleSpec::Wildcard, HandleSpec::Wildcard) => true,
+            _ => false,
+        });
+    same.then_some(term)
+}
+
+/// The specs a `handles` term names: a method name (`'x'`), a list of them
+/// (`<a b>`, `('a', 'b')`), or every method (`*`). `None` for any other term.
+// Cost: O(n), n = size of the term.
+pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<HandleSpec>> {
+    use crate::ast::Expr;
+    match term {
+        Expr::Whatever => Some(vec![HandleSpec::Wildcard]),
+        Expr::Literal(value) => Some(vec![HandleSpec::Name(value.as_str()?.to_string())]),
+        Expr::Grouped(inner) => handle_specs_from_term(inner),
+        Expr::ArrayLiteral(items) => {
+            let mut specs = Vec::with_capacity(items.len());
+            for item in items {
+                let Expr::Literal(value) = item else {
+                    return None;
+                };
+                specs.push(HandleSpec::Name(value.as_str()?.to_string()));
+            }
+            Some(specs)
+        }
+        _ => None,
+    }
+}
