@@ -326,10 +326,8 @@ impl Compiler {
                 } = left
                 {
                     if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
-                        let temp_name = format!(
-                            "__mutsu_xx_target_{}",
-                            STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
-                        );
+                        let temp_name =
+                            format!("__mutsu_xx_target_{}", super::compile_session::mint());
                         self.compile_expr(target);
                         self.code.emit(OpCode::Dup);
                         self.emit_set_named_var(&temp_name);

@@ -25,8 +25,6 @@ use crate::symbol::Symbol;
 /// keeps it as is.
 const LEXSUB_ALIAS_PREFIX: &str = "__mutsu_lexsub_";
 
-static LEXSUB_ALIAS_SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 impl Compiler {
     /// Whether a sub declared here binds its free variables per activation of
     /// the declaring scope: inside a routine body (mutsu#9111), or inside a
@@ -78,7 +76,7 @@ impl Compiler {
         }
         // Two declarations with identical text share a fingerprint; the
         // serial keeps their aliases apart when one's frame calls the other's.
-        let serial = LEXSUB_ALIAS_SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let serial = super::compile_session::mint();
         let tag = fingerprint.unwrap_or(0);
         let mut out = Vec::new();
         for var in vars {
