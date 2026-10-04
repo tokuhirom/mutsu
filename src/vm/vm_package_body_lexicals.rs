@@ -98,8 +98,7 @@ impl Interpreter {
         }
         // `get_value_mut`: only the entry's value is reached, so the table's
         // name filter stays valid.
-        crate::runtime::cow_table_mut(&mut self.lexicals.package_lexicals)
-            .get_value_mut(cur, &key)
+        crate::runtime::cow_table_mut(&mut self.lexicals.package_lexicals).get_value_mut(cur, &key)
     }
 
     /// Run the element store `store` on the package-block `@`/`%` lexical
