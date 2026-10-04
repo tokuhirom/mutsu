@@ -4142,7 +4142,66 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
                 Value::str(if b { "True" } else { "False" }.to_string()),
             )],
         }),
+        ValueView::Mixin(..) => match allomorph_word(v) {
+            Some(word) => Ok(word_quote(word)),
+            None => Err(unsupported("mixin literal")),
+        },
         other => Err(unsupported(&format!("literal {other:?}"))),
+    }
+}
+
+/// The word of an allomorph literal (`<42>` is `IntStr` 42 spelled "42"), or
+/// `None` for any other mixin. Only a word `parser::angle_words_expr` reads
+/// back as this one allomorph qualifies: one without whitespace or a
+/// quote-word escape, and not the bracket content of a numeric literal term
+/// (`<1/2>` is a `Rat`, not a `RatStr`).
+// Cost: O(k), k = length of the word.
+fn allomorph_word(v: &Value) -> Option<&str> {
+    let ValueView::Mixin(inner, overrides) = v.view() else {
+        return None;
+    };
+    let overrides = overrides.overrides();
+    if overrides.len() != 1 {
+        return None;
+    }
+    let word = overrides.get("Str")?.as_str()?;
+    let numeric = matches!(
+        inner.view(),
+        ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Num(_)
+            | ValueView::Complex(..)
+    );
+    let plain = !word.is_empty()
+        && !word
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '\\' | '<' | '>' | '#'));
+    (numeric && plain && !crate::parser::angle_word_is_numeric_literal(word)).then_some(word)
+}
+
+/// `<word>` -> `QuotedString(processors => <words val>, segments => (word,))`.
+fn word_quote(word: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::QuotedString,
+        fields: vec![
+            RakuAstField {
+                name: Some("processors"),
+                value: RakuAstFieldValue::List(vec![
+                    Value::str("words".to_string()),
+                    Value::str("val".to_string()),
+                ]),
+            },
+            RakuAstField {
+                name: Some("segments"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::StrLiteral,
+                    fields: vec![leaf_field(None, Value::str(word.to_string()))],
+                }))]),
+            },
+        ],
     }
 }
 
