@@ -2893,6 +2893,23 @@ impl Interpreter {
                     }
                 };
                 self.locals[idx] = container.clone();
+                // `my $alias := $src` binds the new name to `$src`'s Scalar,
+                // so the alias is exactly as writable as that container: decide
+                // the shared cell writable when the source is, as a fresh `my`
+                // declaration does (`decide_declared_binding_writable`). A
+                // nested routine writing `$alias` by name then asks the cell,
+                // not the name-keyed registry, which may hold a caller's
+                // same-named readonly parameter (ADR-11142 §2.3, #11539). A
+                // readonly source (a parameter) is left undecided, so the
+                // registry keeps refusing writes through its alias; a cell that
+                // already carries a decision keeps it.
+                if is_vardecl
+                    && let ValueView::ContainerRef(cell) = container.view()
+                    && cell.binding_decision().is_none()
+                    && self.readonly_kind(&resolved_source).is_none()
+                {
+                    cell.set_binding_decision(None);
+                }
                 // Update source in locals if present
                 if !source_keeps_binding_cell
                     && let Some(source_idx) =
