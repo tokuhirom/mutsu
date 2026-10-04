@@ -313,6 +313,7 @@ t/collections/listop-block-arg-trailing-comma.t
 t/collections/listop-classify-whatevercode-topic.t
 t/collections/listop-loose-bool-prefix-arg.t
 t/collections/listop-map-defers.t
+t/collections/listop-math-functions.t
 t/collections/listop-shadow-declared.t
 t/collections/listop-unicode-numeric-arg.t
 t/collections/listop-word-logical.t
@@ -1091,6 +1092,7 @@ t/grammar/grammar-sibling-implicit-core-parent.t
 t/grammar/grammar-sigilless-alias-silent-action.t
 t/grammar/grammar-silent-action-order.t
 t/grammar/grammar-silent-subrule-action-gate.t
+t/grammar/grammar-subrule-method-probe-generation.t
 t/grammar/grammar-token-instance-method.t
 t/grammar/grammar-user-highwater.t
 t/grammar/my-token-visible-from-methods.t
@@ -1424,6 +1426,7 @@ t/lang/term-binding-smiley-name.t
 t/lang/term-keyword-call-form-undeclared.t
 t/lang/term-keyword-not-listop-head.t
 t/lang/tight-and-ternary-precedence.t
+t/lang/tolerance-dynamic.t
 t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/adr0110-trir-module-linkage.t
@@ -1695,6 +1698,7 @@ t/nativecall/map-native-rw-param.t
 t/nativecall/missing-optional-native-int-param-defaults-zero.t
 t/nativecall/mixin-native-method-delegation.t
 t/nativecall/native-aggregate-ctor.t
+t/nativecall/native-allomorph-objat-ctor.t
 t/nativecall/native-array-backed-instance-methods.t
 t/nativecall/native-array-backed-instance.t
 t/nativecall/native-array-bound-element-wrap.t
@@ -2060,6 +2064,7 @@ t/oo/method/lazy-method-deferral-frame.t
 t/oo/method/lazy-method-map-grep.t
 t/oo/method/lazylist-sink-method-forces-gather.t
 t/oo/method/light-frame-latch-across-method-dispatch.t
+t/oo/method/list-join-str-method-rows.t
 t/oo/method/list-map-count-method-rows.t
 t/oo/method/lvalue-method-writeback-coherence.t
 t/oo/method/metamethod-dispatch.t
@@ -2139,11 +2144,13 @@ t/oo/method/nested-method-local-sub-code-var.t
 t/oo/method/nested-sub-in-method-compiled.t
 t/oo/method/nextcallee-method-invocant.t
 t/oo/method/nextsame-in-qualified-method-call.t
+t/oo/method/numeric-coercion-method-rows.t
 t/oo/method/numeric-equality-falls-back-to-the-numeric-method.t
 t/oo/method/perl5-unary-topic-method-arg.t
 t/oo/method/placeholder-named-in-method-do.t
 t/oo/method/plain-method-dispatch-boundary.t
 t/oo/method/plain-method-lane-with-arguments.t
+t/oo/method/postfix-i-vs-method-i.t
 t/oo/method/private-method-apostrophe-name.t
 t/oo/method/private-method-call-in-closure.t
 t/oo/method/private-method-compiled-dispatch.t
@@ -2163,6 +2170,7 @@ t/oo/method/qualified-method-call.t
 t/oo/method/qualified-name-method-multi-part-qualifier.t
 t/oo/method/qualified-parent-method-on-type-object.t
 t/oo/method/range-method.t
+t/oo/method/real-rounding-method-rows.t
 t/oo/method/recursive-param-method-call.t
 t/oo/method/reduction-zero-arg-method-call.t
 t/oo/method/render-method-captured-writeback.t
@@ -2205,6 +2213,7 @@ t/oo/mop/builtin-type-introspection.t
 t/oo/mop/can-built-in-mro-candidates.t
 t/oo/mop/can-does.t
 t/oo/mop/can-method.t
+t/oo/mop/can-methods-drift.t
 t/oo/mop/can-multi-dispatcher.t
 t/oo/mop/can-ok-cool-bridging-methods.t
 t/oo/mop/can-ok-type-object.t
@@ -2521,6 +2530,7 @@ t/rakuast/rakuast-hyper-function-infix.t
 t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
 t/rakuast/rakuast-identity.t
+t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-name.t
@@ -2874,6 +2884,7 @@ t/routines/call/run-capture.t
 t/routines/call/run-main-default-args-to-capture.t
 t/routines/call/sequence-self-reference-under-reflective-capture.t
 t/routines/call/sleep-listop-expression.t
+t/routines/call/statement-call-sinks-its-value.t
 t/routines/call/tail-block-leave-phaser.t
 t/routines/call/tail-stmt-call-named-value.t
 t/routines/call/tied-container-store-through-capture-cell.t
@@ -3043,6 +3054,7 @@ t/routines/dispatch/parallel-dispatch-regression.t
 t/routines/dispatch/plain-sub-dispatch-resolution-memo.t
 t/routines/dispatch/proto-add-dispatchee.t
 t/routines/dispatch/proto-candidate-otf-dispatch.t
+t/routines/dispatch/proto-defined-candidate.t
 t/routines/dispatch/proto-dispatch-interpreter-path.t
 t/routines/dispatch/proto-explicit-child-fresh-candidates.t
 t/routines/dispatch/proto-rw-redispatch-coherence.t
@@ -3078,6 +3090,7 @@ t/routines/eval-routine-magical-outside-routine.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/for-values-routine-aliases-containers.t
 t/routines/gather-infinite-coroutine.t
+t/routines/generic-where.t
 t/routines/hash-literal-nested-placeholder.t
 t/routines/infix-routine-lone-list-arg.t
 t/routines/init-check-class-in-routine.t
@@ -3366,6 +3379,7 @@ t/tooling/testing-is-approx.t
 t/types/angle-list-numeric-words.t
 t/types/any-are.t
 t/types/any-list-derived-methods-use-user-list.t
+t/types/any-reverse-rotate.t
 t/types/any-serial.t
 t/types/base64-battery.t
 t/types/blob-buf-concat-result-type.t
@@ -3397,6 +3411,7 @@ t/types/coercion/allomorph-range-endpoint.t
 t/types/coercion/allomorphic-types.t
 t/types/coercion/angle-named-arg-allomorph.t
 t/types/coercion/angle-word-signed-allomorph.t
+t/types/coercion/bareword-coercer-single-arg.t
 t/types/coercion/buf-bare-coercion.t
 t/types/coercion/coerce-real-numeric.t
 t/types/coercion/coercion-already-target-type.t
@@ -3417,6 +3432,7 @@ t/types/coercion/instance-stringify-identity.t
 t/types/coercion/is-eqv.t
 t/types/coercion/lexical-class-coercion.t
 t/types/coercion/nil-hash-coercion.t
+t/types/coercion/nil-numeric-coercion-zero.t
 t/types/coercion/nqp-objprimspec-and-str-int-coerce-ops.t
 t/types/coercion/objat-gist-raku.t
 t/types/coercion/object-type-reprs.t
@@ -3471,6 +3487,7 @@ t/types/cool-aggregate-numeric-methods.t
 t/types/cool-type-object-string-methods.t
 t/types/defined-or-div-mod.t
 t/types/dot-assign-numeric-chain.t
+t/types/ecosystem-rational-complex-numeric.t
 t/types/enum-subset/builtin-enum-base-tier.t
 t/types/enum-subset/definite-scalar-nil-reassignment.t
 t/types/enum-subset/enum-bare-key-sub-scope.t
@@ -3534,6 +3551,12 @@ t/types/numeric/bit-shift-large.t
 t/types/numeric/bitwise-bool-scalar-operand.t
 t/types/numeric/bitwise-prefix-spacing.t
 t/types/numeric/bitwise.t
+t/types/numeric/complex-cool-coercion.t
+t/types/numeric/complex-int-rat-coerce.t
+t/types/numeric/complex-integer-power.t
+t/types/numeric/complex-round-scale.t
+t/types/numeric/complex-uint-coerce.t
+t/types/numeric/complex.t
 t/types/numeric/decimal-literal-big-integer-part.t
 t/types/numeric/decimal-point-illegal-comp-group.t
 t/types/numeric/divide-by-zero-message.t
@@ -3557,6 +3580,7 @@ t/types/numeric/numeric-accepts-object-numeric.t
 t/types/numeric/numeric-fn-string-coercion.t
 t/types/numeric/numeric-func-on-allomorph.t
 t/types/numeric/numeric-functions.t
+t/types/numeric/numeric-real-target.t
 t/types/numeric/numeric-subclass-user-str-interpolation.t
 t/types/numeric/numeric-uninitialized-arith.t
 t/types/numeric/numeric-uninitialized-infix.t
@@ -3566,14 +3590,17 @@ t/types/numeric/radix-literals.t
 t/types/numeric/rat-complex-stringify-regressions.t
 t/types/numeric/rat-div-bigint.t
 t/types/numeric/rat-num-correct-rounding.t
+t/types/numeric/rat-numerator-denominator-nude.t
 t/types/numeric/rat-numerator-uint-refinement-forwarding.t
 t/types/numeric/rat-overflow-dynamic-var.t
 t/types/numeric/rat-overflow-literal-arith.t
 t/types/numeric/rat-subclass-payload.t
 t/types/numeric/rat.t
+t/types/numeric/roots-are-complex.t
 t/types/numeric/round-exact-scale.t
 t/types/numeric/round-scale-bigint.t
 t/types/numeric/roundrobin-itemization.t
+t/types/numeric/sign-complex.t
 t/types/numeric/signal-enum-complete.t
 t/types/numeric/signal-enum-type-constraint.t
 t/types/numeric/signal-pipe-cloexec.t
@@ -4010,6 +4037,7 @@ t/vm/writeback/rmw-slot-writeback.t
 t/vm/writeback/scalar-array-share.t
 t/vm/writeback/scalar-attr-shares-assigned-container.t
 t/vm/writeback/scalar-bind-to-non-scalar-container.t
+t/vm/writeback/scalar-clone.t
 t/vm/writeback/scalar-held-array-splice.t
 t/vm/writeback/scalar-incdec-forms-agree.t
 t/vm/writeback/scalar-positional-exists.t
