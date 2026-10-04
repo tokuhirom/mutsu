@@ -604,6 +604,42 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A `:=` element bind on a native container with a role mixed in
+        // (`my @a is R`) goes to the role's BIND-POS/BIND-KEY, as it does for
+        // a class instance below; replacing the object with a plain Array
+        // would drop the role.
+        let bind_method = if is_positional {
+            "BIND-POS"
+        } else {
+            "BIND-KEY"
+        };
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.env().get(&var_name).cloned())
+            .map(|t| t.deref_container())
+            && let ValueView::Mixin(..) = target.view()
+            && self.mixin_composes_method(&target, bind_method)
+            && matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            )
+        {
+            let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+            let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let val_arg = match val.view() {
+                ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                _ => val.clone(),
+            };
+            let result =
+                self.call_method_with_values(target, bind_method, vec![idx_arg, val_arg])?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
