@@ -301,7 +301,7 @@ impl Interpreter {
         // chokepoint's third root needs no probe here: it is keyed on
         // SIGIL-LESS names (an `our $a = [...]` reached as bare `a`), which the
         // `@` requirement above has already excluded.
-        if self.unit_lexical_slot(var_name).is_some()
+        if self.unit_lexical_slot(var_name, None).is_some()
             || self.our_package_container_key(var_name).is_some()
         {
             return None;

@@ -68,7 +68,7 @@ impl Interpreter {
         if crate::qualified::is_global_package(self.current_package_sym()) {
             return None;
         }
-        self.unit_lexical_slot(name)
+        self.unit_lexical_slot(name, None)
             .filter(|v| v.is_container_ref())
             .cloned()
     }

@@ -120,15 +120,6 @@ and its deletion criterion.
       - every entry of `scripts/layer-deps-baseline.txt`, so `check-layer-deps` reads 0.
 
       Progress is recorded in ADR-10779 §Implementation status, not here.
-- [ ] **Qualified names are built once, not by run-time string surgery** —
-      [#11507](https://github.com/tokuhirom/mutsu/issues/11507) (ratchet:
-      [#8899](https://github.com/tokuhirom/mutsu/issues/8899)). The work replaces the
-      run-time `format!("{pkg}::{name}")`, `== "GLOBAL"` and `"::"`
-      splitting/classification outside the parser and compiler with `src/qualified.rs`'s
-      memoizing constructors. `make check-name-scans` counts these sites: 549 on 2026-10-03
-      (qualify 155, global-cmp 78, scan 316), down from 577. The completion criterion is that all three counts
-      reach 0, `scripts/name-scans-baseline.txt` is deleted, and the check becomes a plain ban,
-      as `check-magic-keys` did.
 - [ ] **Every documented `nqp::` op is implemented** — tracking issue
       [#11488](https://github.com/tokuhirom/mutsu/issues/11488) (user decision 2026-10-03). This
       replaces the 2026-07 "added on demand, never as a porting campaign" rule

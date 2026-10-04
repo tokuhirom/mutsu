@@ -1039,7 +1039,7 @@ impl Interpreter {
         let cell = match gate_slot {
             Some(s) => self.locals.get(s),
             None => self
-                .unit_lexical_slot(&name)
+                .unit_lexical_slot(&name, None)
                 .filter(|v| v.is_container_ref())
                 .or_else(|| self.env().get_sym(name_sym)),
         }

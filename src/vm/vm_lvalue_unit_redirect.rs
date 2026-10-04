@@ -48,7 +48,7 @@ impl Interpreter {
         if self.lexicals.unit_lexicals.is_empty() || self.find_local_slot(code, target).is_some() {
             return None;
         }
-        let cell = self.unit_lexical_slot(target)?;
+        let cell = self.unit_lexical_slot(target, None)?;
         if !matches!(cell.view(), ValueView::ContainerRef(_)) {
             return None;
         }

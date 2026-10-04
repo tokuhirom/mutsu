@@ -4683,7 +4683,7 @@ impl Interpreter {
         var_name: &str,
         cell_addr: &mut Option<usize>,
     ) -> Option<&mut Value> {
-        if let Some(root) = self.unit_lexical_slot_mut(var_name) {
+        if let Some(root) = self.unit_lexical_slot_mut(var_name, None) {
             let root = root as *mut Value;
             let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
