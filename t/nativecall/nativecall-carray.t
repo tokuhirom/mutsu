@@ -30,12 +30,12 @@ $s[1] = 'BETA';
 is $s[1], 'BETA',                    'CArray[Str] element assign/read';
 
 # --- strlen over a CArray[uint8] used as a NUL-terminated char* ---
-sub c_strlen(CArray[uint8] $p) returns int64 is native('c') is symbol('strlen') { * }
+sub c_strlen(CArray[uint8] $p) returns int64 is native('c', v6) is symbol('strlen') { * }
 is c_strlen(CArray[uint8].new(104, 105, 0)), 2, 'strlen(CArray[uint8]) counts to NUL';
 
 # --- memcmp over two numeric CArrays (read-only, two buffers) ---
 sub c_memcmp(CArray[uint8] $a, CArray[uint8] $b, size_t $n) returns int32
-    is native('c') is symbol('memcmp') { * }
+    is native('c', v6) is symbol('memcmp') { * }
 my $a = CArray[uint8].new(1, 2, 3);
 my $b = CArray[uint8].new(1, 2, 3);
 my $c = CArray[uint8].new(1, 2, 4);
@@ -44,7 +44,7 @@ ok c_memcmp($a, $c, 3) < 0,          'memcmp orders unequal uint8 buffers';
 
 # --- int32 element type (memcmp over 2 int32 = 8 bytes) ---
 sub c_memcmp32(CArray[int32] $a, CArray[int32] $b, size_t $n) returns int32
-    is native('c') is symbol('memcmp') { * }
+    is native('c', v6) is symbol('memcmp') { * }
 my $x = CArray[int32].new(1000, 2000);
 my $y = CArray[int32].new(1000, 2000);
 my $z = CArray[int32].new(1000, 2001);
@@ -53,7 +53,7 @@ ok c_memcmp32($x, $z, 8) != 0,       'memcmp of unequal int32 buffers is non-zer
 
 # --- memcpy fills the destination CArray (writeback / out-array) ---
 sub c_memcpy(CArray[uint8] $dst, CArray[uint8] $src, size_t $n) returns Pointer
-    is native('c') is symbol('memcpy') { * }
+    is native('c', v6) is symbol('memcpy') { * }
 my $dst = CArray[uint8].new(0, 0, 0, 0);
 my $src = CArray[uint8].new(9, 8, 7, 6);
 c_memcpy($dst, $src, 4);
@@ -63,13 +63,13 @@ is-deeply (^4).map({ $dst[$_] }).List, (9, 8, 7, 6), 'memcpy filled the whole ds
 
 # --- char** end-to-end: strsep(char **stringp, char *delim) returns the first
 #     token as char*, exercising the CArray[Str] -> char** marshalling ---
-sub c_strsep(CArray[Str] $sp, Str $delim) returns Str is native('c') is symbol('strsep') { * }
+sub c_strsep(CArray[Str] $sp, Str $delim) returns Str is native('c', v6) is symbol('strsep') { * }
 is c_strsep(CArray[Str].new('one,two,three'), ','), 'one',
     'strsep over a CArray[Str] char** returns the first token';
 
 # --- num64 element type round-trips through a byte-wise memcmp ---
 sub c_memcmp64(CArray[num64] $a, CArray[num64] $b, size_t $n) returns int32
-    is native('c') is symbol('memcmp') { * }
+    is native('c', v6) is symbol('memcmp') { * }
 my $p = CArray[num64].new(1.5e0, 2.5e0);
 my $q = CArray[num64].new(1.5e0, 2.5e0);
 is c_memcmp64($p, $q, 16), 0,        'memcmp of equal num64 buffers is 0';

@@ -63,7 +63,7 @@ is takes-them(0, 5), -5, 'and the ssize_t return type is signed';
 # `Bool` unboxes to 1/0 in a native integer slot -- which is how `True` reaches
 # a C `_Bool` parameter. Before this it went through the numeric catch-all and
 # every Bool argument arrived as 0.
-sub c_abs(int32 $n --> int32) is native('c') is symbol('abs') { * }
+sub c_abs(int32 $n --> int32) is native('c', v6) is symbol('abs') { * }
 is c_abs(True), 1, 'a Bool argument unboxes to 1 at the C boundary';
 
 # A `unit module` is where prelude scoping breaks: the runtime package switch is

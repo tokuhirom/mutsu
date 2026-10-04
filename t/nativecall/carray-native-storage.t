@@ -47,7 +47,7 @@ is $p.of, uint16,                    'and remembers the element type it was cast
 # A native call is handed that same pointer, so a write C makes is a write to
 # the Raku object with nothing copied back.
 sub c_memcpy(CArray[uint8] $dst, CArray[uint8] $src, size_t $n) returns Pointer
-    is native('c') is symbol('memcpy') { * }
+    is native('c', v6) is symbol('memcpy') { * }
 my $dst = CArray[uint8].new(0, 0, 0, 0);
 c_memcpy($dst, CArray[uint8].new(9, 8, 7, 6), 4);
 is-deeply $dst.list, (9, 8, 7, 6),   'a callee writes straight into the array';
@@ -57,7 +57,7 @@ is-deeply $dst.list, (9, 8, 7, 6),   'a callee writes straight into the array';
 # taken before the write stands in for `NativeHelpers::Blob`'s managed
 # `carray-from-blob`.
 sub c_memcpy_p(Pointer $dst, CArray[uint8] $src, size_t $n) returns Pointer
-    is native('c') is symbol('memcpy') { * }
+    is native('c', v6) is symbol('memcpy') { * }
 my $late = CArray[uint8].new(0, 0, 0);
 my $addr = nativecast(Pointer[uint8], $late);
 c_memcpy_p($addr, CArray[uint8].new(1, 2, 3), 3);
