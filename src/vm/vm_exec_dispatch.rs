@@ -1271,7 +1271,8 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
-            // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
+            // Cost: O(n) + O(a) per store, n = a qualified package name's
+            // length (0 for other names), a = aliases recorded for this variable (the
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)
             // when an `@`/`%` target copies its container.
