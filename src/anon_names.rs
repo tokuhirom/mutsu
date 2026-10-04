@@ -29,7 +29,7 @@
 //! safe precisely because nothing it names is ever registered.
 //!
 //! A module parse whose result can be cached uses a third mode,
-//! [`with_content_unit`] (ADR-11756 §2.3). A cached AST, and the bytecode
+//! `with_content_unit` (ADR-11756 §2.3). A cached AST, and the bytecode
 //! compiled from it, carry these names into a later process, where a
 //! process-global counter value would mean something else. In that mode every
 //! name and id is minted as `(content session << 24) | ordinal`. The session is
