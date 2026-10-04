@@ -69,6 +69,20 @@ impl Interpreter {
             _ => None,
         };
         let new_on_package = if method == "new" { package_sym } else { None };
+        if let Some(name) = package_sym {
+            let role_name = name.as_str();
+            if !self.registry().classes.contains_key(role_name)
+                && self.is_role(role_name)
+                // CALL-ME already has the role callable/coercion dispatch path.
+                && !matches!(method, "new" | "CALL-ME")
+                && self.role_or_parent_has_method(&self.role_group_name(role_name), method)
+            {
+                self.ensure_role_punned_to_class(role_name)?;
+                let result = self.try_compiled_method_or_interpret_inner(target, method_sym, args);
+                self.withdraw_role_pun(role_name);
+                return result;
+            }
+        }
         if let Some(class_name) = new_on_package
             && crate::runtime::types::strip_type_smiley(class_name.as_str())
                 .1
