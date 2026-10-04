@@ -692,6 +692,27 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         },
                     ));
                 }
+                // Quoted word lists can also use guillemets (or ASCII double
+                // angles). Parse the whole colonpair so the quote supplies the
+                // named argument's value instead of leaving it after `:name`.
+                if (r.starts_with('«') || r.starts_with("<<"))
+                    && let Ok((
+                        after,
+                        Expr::Binary {
+                            op: crate::token_kind::TokenKind::FatArrow,
+                            right,
+                            ..
+                        },
+                    )) = expression(input)
+                {
+                    return Ok((
+                        after,
+                        CallArg::Named {
+                            name,
+                            value: Some(*right),
+                        },
+                    ));
+                }
                 // If followed by `.method` (possibly with whitespace), treat as positional
                 {
                     let trimmed = r.trim_start_matches([' ', '\t']);
