@@ -781,7 +781,8 @@ impl Interpreter {
     pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
         let package = self.current_package();
         let tags = if crate::qualified::is_global_name(&package) {
-            self.module.module_load_stack
+            self.module
+                .module_load_stack
                 .last()
                 .and_then(|module| self.module.module_owned_exports.get(module))
                 .and_then(|exports| exports.get(name))

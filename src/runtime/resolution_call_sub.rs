@@ -154,17 +154,23 @@ impl Interpreter {
         name: &str,
     ) -> Option<crate::runtime::nativecall::NativeCallSpec> {
         if crate::qualified::is_qualified_str(name) {
-            return self.module.native_call_specs.get(name).cloned().or_else(|| {
-                crate::qualified::split_qualified(crate::qualified::known_symbol(name))
-                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
-                    .and_then(|(_, short)| self.module.native_call_specs.get(short).cloned())
-            });
+            return self
+                .module
+                .native_call_specs
+                .get(name)
+                .cloned()
+                .or_else(|| {
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                        .and_then(|(_, short)| self.module.native_call_specs.get(short).cloned())
+                });
         }
         // Trace a `FunctionDef` to its declaring package's native descriptor
         // for `name`, if it has one — see the doc comment above.
         let native_of_true_owner = |def: &FunctionDef| {
             let owner = def.package.resolve();
-            self.module.native_call_specs
+            self.module
+                .native_call_specs
                 .get(
                     &crate::qualified::qualified_text(&owner, name)
                         .as_str()

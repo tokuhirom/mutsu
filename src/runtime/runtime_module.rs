@@ -169,9 +169,11 @@ impl Interpreter {
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
-        self.module.imported_routine_aliases.contains(&Symbol::intern(
-            crate::qualified::qualified_text(package, name).as_str(),
-        ))
+        self.module
+            .imported_routine_aliases
+            .contains(&Symbol::intern(
+                crate::qualified::qualified_text(package, name).as_str(),
+            ))
     }
 
     /// Whether `name` is an imported routine alias of any package a bare name
@@ -190,9 +192,9 @@ impl Interpreter {
     }
 
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
-        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).remove(&Symbol::intern(
-            crate::qualified::qualified_text(package, name).as_str(),
-        ));
+        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).remove(
+            &Symbol::intern(crate::qualified::qualified_text(package, name).as_str()),
+        );
     }
 
     pub(crate) fn record_imported_exported_proto(
@@ -651,7 +653,9 @@ impl Interpreter {
             // is directly `use`d at the top level, un-hide it and its related
             // classes from the package stash. This handles the case where the
             // module was first loaded transitively by a non-contributing module.
-            if self.module.module_load_stack.is_empty() && crate::qualified::is_qualified_str(module) {
+            if self.module.module_load_stack.is_empty()
+                && crate::qualified::is_qualified_str(module)
+            {
                 let is_contributor = {
                     let registry = self.registry();
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
