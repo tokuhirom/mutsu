@@ -140,11 +140,14 @@ impl Interpreter {
             // concrete Sub identity.  Use a forwarding Sub which re-enters
             // named dispatch, so a wrapper installed through `&dir` also
             // affects a later `dir(...)` call.
-            let dispatch_name = if package.is_empty() || package == "GLOBAL" {
-                name.to_string()
-            } else {
-                format!("{package}::{name}")
-            };
+            let dispatch_name =
+                if crate::qualified::is_global_package(crate::qualified::known_symbol(package)) {
+                    name.to_string()
+                } else {
+                    crate::qualified::qualified_text(package, name)
+                        .as_str()
+                        .to_string()
+                };
             let forwarding = self.routine_dispatch_sub(package, name, &dispatch_name);
             let data = match forwarding.view() {
                 ValueView::Sub(data) => data.clone(),
@@ -347,7 +350,7 @@ impl Interpreter {
             // lookup handle (package = owning type) as the bare name; `.Str`
             // is the bare name for both (Rakudo warns on the coercion too).
             let display = super::methods_instance_ops::format_operator_name(name);
-            let is_method = !(package == "GLOBAL" || package.is_empty());
+            let is_method = !(crate::qualified::is_global_name(package) || package.is_empty());
             if method == "gist" && !is_method {
                 return Some(Ok(Value::str(format!("&{}", display))));
             }
@@ -430,7 +433,9 @@ impl Interpreter {
             ))));
         }
         if method == "dispatcher" && args.is_empty() {
-            let qualified = format!("{}::{}", package, name);
+            let qualified = crate::qualified::qualified_text(package, name)
+                .as_str()
+                .to_string();
             // A `proto` declaration makes the dispatcher explicit, but a set of
             // `multi`s written without one still has a dispatcher (Raku
             // generates it), and `.dispatcher` on a candidate returns it in
@@ -458,7 +463,9 @@ impl Interpreter {
         // `Sub`-shaped arms in `methods_instance_ops.rs` never see the value
         // and the call dies with "No such method".
         if matches!(method, "is_dispatcher" | "multi") && args.is_empty() {
-            let qualified = format!("{}::{}", package, name);
+            let qualified = crate::qualified::qualified_text(package, name)
+                .as_str()
+                .to_string();
             let is_multi = self.resolve_proto_function(&qualified).is_some()
                 || self.resolve_proto_function_with_alias(name).is_some()
                 || self.has_multi_candidates(name);
@@ -748,7 +755,7 @@ impl Interpreter {
                         continue;
                     }
                     if let Some(constraint) = &pd.type_constraint
-                        && !constraint.starts_with("::")
+                        && !crate::qualified::is_type_capture(constraint)
                         && !capture_decls.contains(constraint.as_str())
                         && !self.type_matches_value(constraint, assumed)
                     {

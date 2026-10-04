@@ -935,7 +935,8 @@ impl Interpreter {
                     i += 2;
                     continue;
                 }
-                return s[..i].contains("::");
+                // Pattern text, not a symbol: split without interning.
+                return crate::qualified::text_segments(&s[..i]).nth(1).is_some();
             }
             i += 1;
         }

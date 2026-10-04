@@ -156,6 +156,15 @@ impl Interpreter {
             {
                 return None;
             }
+            // The same for a role mixed into a native container (`my @a is R`):
+            // its elements live behind the role's `iterator`, which the native
+            // impl cannot see.
+            if matches!(target.view(), ValueView::Mixin(..))
+                && self.mixin_composes_method(target, "iterator")
+                && !self.mixin_composes_method(target, method_name)
+            {
+                return None;
+            }
         }
         // A `Seq.new($iterator)`/`IO::Handle.lines` body whose source has not
         // been pulled yet (ADR-0034 §2.3) reads as an empty `Vec` through the
@@ -507,6 +516,9 @@ impl Interpreter {
             return None;
         }
         if let Some(result) = self.try_rakudo_internals_method(target, method_name, args) {
+            return Some(result);
+        }
+        if let Some(result) = self.try_core_type_object_method(target, method_name, args) {
             return Some(result);
         }
         // Collection gist bypass

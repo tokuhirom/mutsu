@@ -6,8 +6,8 @@ unit module NCPointerMod;
 # this module never mentions `Pointer` itself. Uses libc only (CI-safe).
 
 sub posix_memalign(Pointer $p is rw, int64 $align, int64 $size)
-    returns int32 is native('c') { * }
-sub free(Pointer $p) is native('c') { * }
+    returns int32 is native('c', v6) { * }
+sub free(Pointer $p) is native('c', v6) { * }
 
 #| Allocate `$size` bytes aligned to `$align`; return the (non-NULL) Pointer.
 sub alloc-aligned(Int $align, Int $size) is export {

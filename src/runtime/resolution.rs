@@ -80,7 +80,7 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_function(&self, name: &str) -> Option<Arc<FunctionDef>> {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             // Try direct lookup first
             if let Some(def) = self
                 .registry()
@@ -92,18 +92,21 @@ impl Interpreter {
             }
             // If not found, try qualifying with the current package prefix
             // when the prefix package is visible in the current scope.
-            if self.current_package() != "GLOBAL" {
-                let prefix_visible = if let Some((pkg_prefix, _)) = name.rsplit_once("::") {
+            if !self.current_package_is_global_name() {
+                let prefix_visible = if let Some((pkg_prefix, _)) =
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
                     self.env.get(pkg_prefix).is_some()
                         || self
                             .env
-                            .get(&format!("{}::{}", self.current_package(), pkg_prefix))
+                            .get(self.current_package_qualified(pkg_prefix))
                             .is_some()
                 } else {
                     false
                 };
                 if prefix_visible {
-                    let qualified = format!("{}::{}", self.current_package(), name);
+                    let qualified = self.current_package_qualified(name).to_string();
                     if let Some(def) = self
                         .registry()
                         .functions
@@ -168,7 +171,7 @@ impl Interpreter {
         // resolve `MOD::foo`. This fires only for genuinely-hidden owned exports,
         // so an unrelated `Foo::bar` in a sibling package block is never
         // spuriously resolved.
-        if !self.module_owned_exports.is_empty() {
+        if !self.module.module_owned_exports.is_empty() {
             if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
                 return Some(def);
             }
@@ -191,6 +194,7 @@ impl Interpreter {
         let mut probe = context;
         loop {
             if self
+                .module
                 .module_owned_exports
                 .get(probe)
                 .is_some_and(|owned| owned.contains_key(name))
@@ -199,7 +203,9 @@ impl Interpreter {
             {
                 return Some(def);
             }
-            match probe.rsplit_once("::") {
+            match crate::qualified::split_qualified(crate::qualified::known_symbol(probe))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 Some((outer, _)) => probe = outer,
                 None => return None,
             }
@@ -341,7 +347,9 @@ impl Interpreter {
         defs: &mut Vec<std::sync::Arc<FunctionDef>>,
         seen: &mut std::collections::HashSet<String>,
     ) {
-        let exact_key = format!("{scope}::{name}");
+        let exact_key = crate::qualified::qualified_text(scope, name)
+            .as_str()
+            .to_string();
         if !seen.contains(name)
             && let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key))
         {
@@ -367,7 +375,9 @@ impl Interpreter {
         name: &str,
         defs: &mut Vec<std::sync::Arc<FunctionDef>>,
     ) {
-        let exact_key = format!("{scope}::{name}");
+        let exact_key = crate::qualified::qualified_text(scope, name)
+            .as_str()
+            .to_string();
         if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
@@ -446,7 +456,7 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<Vec<std::sync::Arc<FunctionDef>>> {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             let mut defs = Vec::new();
             if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
@@ -458,9 +468,10 @@ impl Interpreter {
             }
             // Walk the MRO of the package part, merging proto candidates from
             // every ancestor (dedup by candidate identity, derived-first).
-            if let Some(pos) = name.rfind("::") {
-                let pkg = &name[..pos];
-                let token_name = &name[pos + 2..];
+            if let Some((pkg, token_name)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+            {
+                let (pkg, token_name) = (pkg.as_str(), token_name.as_str());
                 let mut seen: std::collections::HashSet<String> = defs
                     .iter()
                     .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
@@ -508,23 +519,24 @@ impl Interpreter {
     }
 
     pub(crate) fn has_proto_token(&self, name: &str) -> bool {
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             if self.registry().proto_tokens.contains(name) {
                 return true;
             }
             // Walk MRO for qualified names
-            if let Some(pos) = name.rfind("::") {
-                let pkg = &name[..pos];
-                let token_name = &name[pos + 2..];
+            if let Some((pkg, token_name)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(name))
+            {
+                let (pkg, token_name) = (pkg.as_str(), token_name.as_str());
                 for ancestor in self.mro_readonly(pkg) {
                     if ancestor == pkg {
                         continue;
                     }
-                    if self
-                        .registry()
-                        .proto_tokens
-                        .contains(&format!("{ancestor}::{token_name}"))
-                    {
+                    if self.registry().proto_tokens.contains(
+                        &crate::qualified::qualified_text(&ancestor, token_name)
+                            .as_str()
+                            .to_string(),
+                    ) {
                         return true;
                     }
                 }
@@ -533,11 +545,11 @@ impl Interpreter {
         }
         // Check current package MRO
         for scope in self.mro_readonly(&self.current_package()) {
-            if self
-                .registry()
-                .proto_tokens
-                .contains(&format!("{scope}::{name}"))
-            {
+            if self.registry().proto_tokens.contains(
+                &crate::qualified::qualified_text(&scope, name)
+                    .as_str()
+                    .to_string(),
+            ) {
                 return true;
             }
         }

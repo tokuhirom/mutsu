@@ -85,7 +85,7 @@ impl Interpreter {
                 items,
                 pos: 0,
                 func: args.first().cloned(),
-                fatal: self.fatal_mode,
+                fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::Grep,
                 plan: Default::default(),
             }));
@@ -170,7 +170,7 @@ impl Interpreter {
                         items: crate::value::MapGrepItems::Live(target.clone()),
                         pos: 0,
                         func: args.first().cloned(),
-                        fatal: self.fatal_mode,
+                        fatal: self.module.fatal_mode,
                         mode: crate::value::MapGrepMode::GrepArray(target.clone()),
                         plan: Default::default(),
                     }));
@@ -198,7 +198,7 @@ impl Interpreter {
                         items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(items)),
                         pos: 0,
                         func: args.first().cloned(),
-                        fatal: self.fatal_mode,
+                        fatal: self.module.fatal_mode,
                         mode: crate::value::MapGrepMode::Grep,
                         plan: Default::default(),
                     }));

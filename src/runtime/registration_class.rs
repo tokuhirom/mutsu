@@ -368,7 +368,9 @@ pub(super) fn should_treat_role_arg_as_type_expr(input: &str) -> bool {
         return false;
     }
     looks_like_type_arg_expr(trimmed)
-        && (trimmed.contains(':') || trimmed.contains('(') || trimmed.contains("::"))
+        && (trimmed.contains(':')
+            || trimmed.contains('(')
+            || crate::qualified::is_qualified_str(trimmed))
 }
 
 /// Substitute type parameters in a method definition.
@@ -764,10 +766,12 @@ impl Interpreter {
             return parent.to_string();
         }
         let pkg = self.current_package();
-        if pkg.is_empty() || pkg == "GLOBAL" {
+        if crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg)) {
             return parent.to_string();
         }
-        let qualified = format!("{}::{}", pkg, base);
+        let qualified = crate::qualified::qualified_text(&pkg, base)
+            .as_str()
+            .to_string();
         let registered = {
             let reg = self.registry();
             reg.classes.contains_key(&qualified) || reg.roles.contains_key(&qualified)
@@ -825,7 +829,8 @@ impl Interpreter {
             .map(|(base, _)| base)
             .unwrap_or(parent);
         let child_name = crate::value::user_facing_type_name(child_name);
-        let child_short = child_name.rsplit("::").next().unwrap_or(&child_name);
+        let child_short =
+            crate::qualified::last_segment(crate::qualified::known_symbol(&child_name)).as_str();
         does_parents.iter().any(|candidate| candidate == parent)
             && base == child_short
             && crate::runtime::types::is_builtin_role_name(base)
@@ -837,10 +842,10 @@ impl Interpreter {
         } else {
             (name, "")
         };
-        let lookup = base.strip_prefix("::").unwrap_or(base);
+        let lookup = crate::qualified::type_capture_name(base).unwrap_or(base);
         // Well-known builtin parent types should not be resolved to a
         // package-scoped variant (e.g. "Grammar" → "HTTP::Parser::Grammar").
-        if !lookup.contains("::")
+        if !crate::qualified::is_qualified_str(lookup)
             && matches!(
                 lookup,
                 "Any"
@@ -868,7 +873,7 @@ impl Interpreter {
         // own source name. Bare parent names still go through the lexical env
         // remapping in the VM, so explicit `my class C is C` remains a genuine
         // self-inheritance error.
-        if lookup.contains("::") {
+        if crate::qualified::is_qualified_str(lookup) {
             let registry = self.registry();
             if registry.classes.contains_key(lookup)
                 || registry.roles.contains_key(lookup)
@@ -893,7 +898,7 @@ impl Interpreter {
         // already falls back to this alias table; `is`/`does`/`hides` parent
         // resolution must too, or a `does`-role imported this way is wrongly
         // rejected as an unknown typename (ecosystem `IP::Addr`'s `IPv4-Basic`).
-        if !lookup.contains("::")
+        if !crate::qualified::is_qualified_str(lookup)
             && let Some(resolved) = self.package_type_alias(lookup)
         {
             return format!("{}{}", resolved, suffix);
@@ -902,8 +907,11 @@ impl Interpreter {
         // be resolved (e.g. because `C1` lives outside module `M`), try the
         // bare suffix (`C1`).  This handles cross-package parents in classes
         // declared inside a `unit module`/`unit class` body.
-        if lookup.contains("::") {
-            let bare = lookup.rsplit_once("::").map(|(_, b)| b).unwrap_or(lookup);
+        if crate::qualified::is_qualified_str(lookup) {
+            let bare = crate::qualified::split_qualified(crate::qualified::known_symbol(lookup))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                .map(|(_, b)| b)
+                .unwrap_or(lookup);
             // Single guard for all four lookups (avoids stacking read guards).
             let needs_bare = {
                 let registry = self.registry();

@@ -22,9 +22,9 @@ plan 16;
 }
 
 sub posix_memalign(Pointer $p is rw, int64 $align, int64 $size)
-    returns int32 is native('c') { * }
-sub free(int64 $p) is native('c') { * }
-sub memset(int64 $p, int32 $c, int64 $n) returns int64 is native('c') { * }
+    returns int32 is native('c', v6) { * }
+sub free(int64 $p) is native('c', v6) { * }
+sub memset(int64 $p, int32 $c, int64 $n) returns int64 is native('c', v6) { * }
 
 # --- is rw Pointer out-parameter writes a real address back ---
 {
@@ -55,9 +55,9 @@ sub memset(int64 $p, int32 $c, int64 $n) returns int64 is native('c') { * }
 
 # --- a `returns Pointer` function yields a real Pointer object ---
 {
-    sub malloc(int64 $size) returns Pointer is native('c') { * }
-    sub free_p(Pointer $p) is native('c') is symbol('free') { * }
-    sub memset_p(Pointer $p, int32 $c, int64 $n) returns Pointer is native('c') is symbol('memset') { * }
+    sub malloc(int64 $size) returns Pointer is native('c', v6) { * }
+    sub free_p(Pointer $p) is native('c', v6) is symbol('free') { * }
+    sub memset_p(Pointer $p, int32 $c, int64 $n) returns Pointer is native('c', v6) is symbol('memset') { * }
 
     my $p = malloc(128);
     is $p.^name, 'NativeCall::Types::Pointer', 'malloc returns a Pointer object';

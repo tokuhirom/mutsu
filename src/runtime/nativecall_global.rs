@@ -118,6 +118,10 @@ impl Interpreter {
             // declared type says a pointer lives there. Same trust every
             // NativeCall signature already gets.
             let held = unsafe { (addr as *const usize).read_unaligned() };
+            // Upstream NativeCall's own Pointer type, when it is loaded.
+            if let Some(built) = self.native_pointer_of_declared(target, held, false) {
+                return built;
+            }
             return Ok(crate::runtime::nativecall::make_pointer_object(held));
         }
         // A CStruct/CUnion/CPointer target: the variable holds a pointer to the
@@ -223,10 +227,11 @@ impl Interpreter {
         invocant: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.native_call_specs.is_empty() {
+        if self.module.native_call_specs.is_empty() {
             return None;
         }
         let spec = self
+            .module
             .native_call_specs
             .get(&Self::native_method_key(class_name, method))
             .or_else(|| {
@@ -235,7 +240,7 @@ impl Interpreter {
                 // an ordinary registered class with the same basename.  For
                 // example, Native::Statement's `count` must not shadow the
                 // generated accessor on SQLite::Statement.
-                if !class_name.contains("::") {
+                if !crate::qualified::is_qualified_str(class_name) {
                     return None;
                 }
                 if self
@@ -246,8 +251,11 @@ impl Interpreter {
                 {
                     return None;
                 }
-                let short = class_name.rsplit("::").next().unwrap_or(class_name);
-                self.native_call_specs
+                let short =
+                    crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
+                        .as_str();
+                self.module
+                    .native_call_specs
                     .get(&Self::native_method_key(short, method))
             })?
             .clone();
@@ -301,7 +309,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.native_call_specs.is_empty() {
+        if self.module.native_call_specs.is_empty() {
             return None;
         }
         let class_name = match target.view() {

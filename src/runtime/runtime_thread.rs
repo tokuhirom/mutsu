@@ -199,7 +199,9 @@ impl Interpreter {
     /// container slot names and `::`-qualified names are excluded for the same
     /// reason `collect_unit_lexical_names` excludes them.
     pub(crate) fn transient_lane_candidate(key: &str) -> bool {
-        Self::is_plain_lexical_name(key) && !key.contains("__ANON") && !key.contains("::")
+        Self::is_plain_lexical_name(key)
+            && !key.contains("__ANON")
+            && !crate::qualified::is_qualified_str(key)
     }
 
     /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
@@ -265,9 +267,9 @@ impl Interpreter {
         // sequence" under prove. Gate on the Test module being loaded: an
         // empty `TestState` flips `test_mode_active`, which would otherwise
         // change bare-word resolution for non-Test programs that spawn threads.
-        if self.test_module_loaded() && !self.tap.active() {
+        if self.test_module_loaded() && !self.io.tap.active() {
             // `clone_for_thread` below shares the counter of an EXISTING state.
-            self.tap.ensure_state();
+            self.io.tap.ensure_state();
         }
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
         // shared-var seeding and the child's env clone below iterate the env
@@ -534,114 +536,20 @@ impl Interpreter {
                     || self.threads.thread_decl_in_flight.contains(n)
                     || self.threads.thread_param_shadow_vars.borrow().contains(n)
             });
-        let mut cloned_handles = HashMap::new();
-        let handles_guard = self.io_handles();
-        for (id, handle) in &handles_guard.map {
-            if handle.closed || !referenced_handle_ids.contains(id) {
-                continue;
-            }
-            let cloned = IoHandleState {
-                target: handle.target,
-                mode: handle.mode,
-                path: handle.path.clone(),
-                line_separators: handle.line_separators.clone(),
-                line_chomp: handle.line_chomp,
-                encoding: handle.encoding.clone(),
-                file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
-                socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
-                listener: handle.listener.as_ref().and_then(|l| l.try_clone().ok()),
-                closed: handle.closed,
-                out_buffer_capacity: handle.out_buffer_capacity,
-                out_buffer_pending: handle.out_buffer_pending.clone(),
-                bin: handle.bin,
-                nl_out: handle.nl_out.clone(),
-                bytes_written: handle.bytes_written,
-                read_attempted: handle.read_attempted,
-                stream_hit_eof: handle.stream_hit_eof,
-                utf16_bom_written: handle.utf16_bom_written,
-                utf16_detected_be: handle.utf16_detected_be,
-                argfiles_index: handle.argfiles_index,
-                argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
-                argfiles_paths: handle.argfiles_paths.clone(),
-                pending_words: handle.pending_words.clone(),
-                close_on_exhaust: handle.close_on_exhaust,
-                seq_reader: handle.seq_reader.as_ref().and_then(|r| r.try_clone()),
-            };
-            cloned_handles.insert(*id, cloned);
-        }
-        let cloned_next_handle_id = handles_guard.next_id;
-        drop(handles_guard);
-        // Thread clones write through the parent's shared stdout/stderr buffers
-        // so concurrent output interleaves in real chronological order.
-        let thread_output_sink = {
-            let mut parent_sink = self.output_sink_mut();
-            // When the parent flushes stdout immediately (CLI / REPL mode) and the
-            // thread is spawned at top level, the clone must do the same so its
-            // `say`/`pass` output lands in real chronological order relative to the
-            // main thread's direct writes. Otherwise the clone buffers into
-            // `shared_thread_output` and is only drained at the next sync point
-            // (`await` / `.result`), which lands a worker-thread test line *after*
-            // an intervening main-thread one — producing TAP "tests out of
-            // sequence". In buffered/capture mode (parent `immediate_stdout ==
-            // false`) the shared buffer is still used, so `run()` capture is
-            // unaffected.
-            let parent_immediate = parent_sink.immediate_stdout;
-            let shared_out = Arc::clone(
-                parent_sink
-                    .shared_thread_output
-                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
-            );
-            let shared_err = Arc::clone(
-                parent_sink
-                    .shared_thread_stderr
-                    .get_or_insert_with(|| Arc::new(Mutex::new(String::new()))),
-            );
-            Arc::new(RwLock::new(OutputSink {
-                output: String::new(),
-                stderr_output: String::new(),
-                output_emitted: false,
-                immediate_stdout: parent_immediate,
-                is_thread_clone: true,
-                shared_thread_output: Some(shared_out),
-                shared_thread_stderr: Some(shared_err),
-            }))
-        };
         let mut cloned = Self {
             open_role_group: None,
             literal_native_args: 0,
             static_call_args: false,
             env: self.env.clone(),
-            output_sink: thread_output_sink,
-            warn_output: String::new(),
-            warn_suppression_depth: 0,
-            warn_suppression_boundaries: Vec::new(),
-            surfaced_parse_warnings: std::collections::HashSet::new(),
-            tap: self.tap.clone_for_thread(),
+            io: self.io.fork_for_thread(&referenced_handle_ids),
             control: self.control.fork_for_thread(),
             main_hidden_from_usage: self.main_hidden_from_usage.clone(),
             explicit_run_main: self.explicit_run_main,
             nested_mode: self.nested_mode,
-            native_call_specs: self.native_call_specs.clone(),
+            module: self.module.fork_for_thread(),
             dispatch: self.dispatch.fork_for_thread(),
-            imported_operator_names: self.imported_operator_names.clone(),
-            operator_import_units: self.operator_import_units.clone(),
-            operator_import_gen: self.operator_import_gen,
-            unit_private_routines: self.unit_private_routines.clone(),
-            unit_private_names: self.unit_private_names.clone(),
-            class_declaring_units: self.class_declaring_units.clone(),
-            package_declaring_units: self.package_declaring_units.clone(),
-            module_visibility: self.module_visibility.clone(),
-            prelude_sub_names: self.prelude_sub_names.clone(),
             current_unit: self.current_unit,
             closures_created: 0,
-            lib_paths: self.lib_paths.clone(),
-            bundled_lib_paths: self.bundled_lib_paths.clone(),
-            io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
-                map: cloned_handles,
-                next_id: cloned_next_handle_id,
-            })),
-            program_path: self.program_path.clone(),
-            program_path_sym: self.program_path_sym,
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
@@ -662,7 +570,6 @@ impl Interpreter {
             pending_raw_invocant: None,
             pending_call_topic_bare: false,
             pending_call_topic_source: None,
-            require_propagates_missing_module: false,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,
@@ -672,12 +579,8 @@ impl Interpreter {
             thread_spawn_origin,
             args_scratch_pool: Vec::new(),
             regex_quant_scratch: Vec::new(),
-            test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
-            doc_comments: HashMap::new(),
-            doc_comment_list: Vec::new(),
-            why_cache: ValueMap::default(),
-            why_object_cache: HashMap::new(),
+            declarator_docs: declarator_docs::DeclaratorDocs::default(),
             type_metadata: self.type_metadata.clone(),
             topic_state: self.topic_state.fork_for_thread(),
             async_state: self.async_state.fork_for_thread(),
@@ -694,27 +597,10 @@ impl Interpreter {
             numeric_bridge_probe: Default::default(),
             attr_type_constraint_cache: Default::default(),
             pending_dispatch_error: None,
-            preload_modules: Vec::new(),
-            pending_dist_selectors: Vec::new(),
-            pending_use_export_args: None,
             pending_sigilless_store: None,
-            pending_inner_export_subs: ValueMap::default(),
-            module_export_defs: HashMap::new(),
             regex_state: self.regex_state.fork_for_thread(),
-            chroot_root: self.chroot_root.clone(),
-            loaded_modules: self.loaded_modules.clone(),
-            module_registered_functions: self.module_registered_functions.clone(),
             persistent_classes: self.persistent_classes.clone(),
-            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
-            prelude_registered_functions: self.prelude_registered_functions.clone(),
-            prelude_declaring_units: self.prelude_declaring_units.clone(),
-            module_package_globals: self.module_package_globals.clone(),
-            need_hidden_classes: self.need_hidden_classes.clone(),
-            cur_repo: self.cur_repo.clone(),
             package_stash_hidden: self.package_stash_hidden.clone(),
-            chain_declared_packages: self.chain_declared_packages.clone(),
-            module_toplevel: self.module_toplevel.for_thread(),
-            module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
             caches: self.caches.fork_for_thread(),
             pending_eval_sigilless: Vec::new(),
@@ -730,37 +616,13 @@ impl Interpreter {
             recorded_free_var_writes: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
-            user_io_read_buffers: self.user_io_read_buffers.clone(),
             threads: self.threads.fork_for_thread(captured_scalars),
             subset_predicate_cache: HashMap::new(),
             inline_subset_constraints: HashMap::new(),
             container_element_proxy: None,
             subset_where_fail: None,
-            module_load_stack: Vec::new(),
-            current_distribution: self.current_distribution.clone(),
-            current_distribution_frame_floor: 0,
-            package_distributions: self.package_distributions.clone(),
             package_type_aliases: self.package_type_aliases.clone(),
-            module_scope_lexicals: self.module_scope_lexicals.clone(),
-            module_imported_names: Vec::new(),
-            module_export_terms: Vec::new(),
-            module_imported_lexical_names: self.module_imported_lexical_names.clone(),
-            module_source_packages: self.module_source_packages.clone(),
-            unit_module_packages: self.unit_module_packages.clone(),
-            module_declared_unit_packages: self.module_declared_unit_packages.clone(),
-            exported_subs: self.exported_subs.clone(),
-            exported_vars: self.exported_vars.clone(),
-            exported_sub_values: self.exported_sub_values.clone(),
-            exported_token_defs: self.exported_token_defs.clone(),
-            unit_module_exported_subs: self.unit_module_exported_subs.clone(),
-            unit_module_loading_stack: Vec::new(),
-            import_target_package: None,
             lexicals: self.lexicals.fork_for_thread(),
-            module_loading_unit_stack: Vec::new(),
-            module_owned_exports: self.module_owned_exports.clone(),
-            module_owned_types: self.module_owned_types.clone(),
-            suppress_exports: false,
-            loading_without_import: false,
             in_lvalue_assignment: false,
             rw_return_context: false,
             in_does_rhs: false,
@@ -769,18 +631,7 @@ impl Interpreter {
             trait_mod_attr_writeback_value: None,
             trait_mod_default_writeback: None,
             hash_autovivify: false,
-            newline_mode: self.newline_mode,
-            import_scope_stack: Vec::new(),
-            use_attach_depth: None,
-            imported_routine_aliases: self.imported_routine_aliases.clone(),
-            imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
-            imported_env_aliases: self.imported_env_aliases.clone(),
-            strict_mode: self.strict_mode,
-            fatal_mode: self.fatal_mode,
-            lexical_fatal_mode: self.lexical_fatal_mode,
-            suppress_cross_eval_class_redeclaration_check: false,
             caller_env_stack: Vec::new(),
-            attributes_pragma: self.attributes_pragma.clone(),
             attr_var_defaults: self.attr_var_defaults.clone(),
             attr_var_defaults_epoch: self.attr_var_defaults_epoch,
             attr_var_defaults_current: Default::default(),
@@ -794,7 +645,6 @@ impl Interpreter {
             instance_type_metadata: Arc::new(RwLock::new(Arc::clone(
                 &self.instance_type_metadata.read().unwrap(),
             ))),
-            encoding_registry: self.encoding_registry.clone(),
             role_pun_construction: Vec::new(),
             raku_cycle_guards: self.raku_cycle_guards.fork_for_thread(),
             pending_proxy_subclass_attr: None,
@@ -806,7 +656,6 @@ impl Interpreter {
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),
             my_scoped_package_items: self.my_scoped_package_items.clone(),
-            require_loaded_type_names: self.require_loaded_type_names.clone(),
             our_scoped_package_items: self.our_scoped_package_items.clone(),
             lexical_class_scopes: self.lexical_class_scopes.clone(),
             lexical_class_pending: self.lexical_class_pending.clone(),
@@ -816,8 +665,6 @@ impl Interpreter {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
-            precomp_enabled: self.precomp_enabled,
-            monkey_typing: self.monkey_typing,
 
             // Merged VM execution registers (CP-3 collapse): a thread clone starts
             // with fresh per-execution registers, exactly as the former
@@ -850,20 +697,8 @@ impl Interpreter {
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
-            // Share the parent's captured module-sub bodies by value so a `start`
-            // block that calls a module sub with `state` reaches the same compiled
-            // body (and thus the same cross-thread `state` cell) the parent used.
-            imported_compiled_fns: self.imported_compiled_fns.clone(),
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
             pos_light_ic_epoch: 1,
-            // Which env keys an EXPORT hook installed is load-time knowledge,
-            // not per-thread run state: a routine the parent loaded may run on
-            // the thread and must still see its module's hook-installed names
-            // (`start { ... }` around Terminal::MultiProgress's `t.hide-cursor`,
-            // #9339).
-            export_amp_override_names: self.export_amp_override_names.clone(),
-            unit_imported_callables: self.unit_imported_callables.clone(),
-            export_term_override_names: self.export_term_override_names.clone(),
             user_declared_classes: self.user_declared_classes.clone(),
             outer_scope_locals: Vec::new(),
             enter_result_stack: Vec::new(),

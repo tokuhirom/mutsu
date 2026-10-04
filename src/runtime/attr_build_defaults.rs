@@ -418,8 +418,8 @@ impl Interpreter {
         // class even when a foreign module called `.new`.
         let saved_unit = self.current_unit;
         self.current_unit = captured_unit
-            .or_else(|| self.class_declaring_units.get(decl_package).copied())
-            .or_else(|| self.class_declaring_units.get(class_key).copied())
+            .or_else(|| self.module.class_declaring_units.get(decl_package).copied())
+            .or_else(|| self.module.class_declaring_units.get(class_key).copied())
             .unwrap_or(saved_unit);
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.current_unit = saved_unit;

@@ -27,7 +27,7 @@ impl Interpreter {
         if std::env::set_current_dir(&canonical).is_err() {
             return Ok(Value::FALSE);
         }
-        self.chroot_root = Some(canonical.clone());
+        self.io.chroot_root = Some(canonical.clone());
         let repr = Self::stringify_path(&canonical);
         self.env
             .insert("$*CHROOT".to_string(), Value::str(repr.clone()));

@@ -75,7 +75,11 @@ impl Interpreter {
                     // so the marshaller builds a typed pointer (`.of`/`.deref`).
                     Some(rt.to_string())
                 } else if self.is_cstruct_class(rt) {
-                    Some(rt.rsplit("::").next().unwrap_or(rt).to_string())
+                    Some(
+                        crate::qualified::last_segment(crate::qualified::known_symbol(rt))
+                            .as_str()
+                            .to_string(),
+                    )
                 } else {
                     None
                 };
@@ -84,7 +88,7 @@ impl Interpreter {
         };
 
         let key = format!("{FNPTR_KEY_PREFIX}{addr:x}");
-        crate::runtime::cow_table_mut(&mut self.native_call_specs).insert(
+        crate::runtime::cow_table_mut(&mut self.module.native_call_specs).insert(
             key.clone(),
             NativeCallSpec {
                 library: None,

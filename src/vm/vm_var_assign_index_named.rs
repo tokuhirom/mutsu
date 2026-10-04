@@ -604,6 +604,42 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A `:=` element bind on a native container with a role mixed in
+        // (`my @a is R`) goes to the role's BIND-POS/BIND-KEY, as it does for
+        // a class instance below; replacing the object with a plain Array
+        // would drop the role.
+        let bind_method = if is_positional {
+            "BIND-POS"
+        } else {
+            "BIND-KEY"
+        };
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.env().get(&var_name).cloned())
+            .map(|t| t.deref_container())
+            && let ValueView::Mixin(..) = target.view()
+            && self.mixin_composes_method(&target, bind_method)
+            && matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            )
+        {
+            let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+            let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let val_arg = match val.view() {
+                ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                _ => val.clone(),
+            };
+            let result =
+                self.call_method_with_values(target, bind_method, vec![idx_arg, val_arg])?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
@@ -2182,7 +2218,7 @@ impl Interpreter {
                                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                                 _ => Some((
                                     Some(source_name.clone()),
-                                    crate::gc::Gc::new(crate::value::ContainerCell::new(v)),
+                                    self.promote_bind_source_cell(source_name, v),
                                 )),
                             }
                         } else {
@@ -2542,7 +2578,7 @@ impl Interpreter {
                             Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                             _ => Some((
                                 Some(source_name.clone()),
-                                crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                                self.promote_bind_source_cell(source_name, val.clone()),
                             )),
                         }
                     } else if matches!(
@@ -3259,6 +3295,10 @@ impl Interpreter {
         raw_key: &str,
         val: Value,
     ) -> Result<Value, RuntimeError> {
+        // A routine symbol has its own assignment rules (`process_routines`).
+        if let Some(name) = raw_key.strip_prefix('&') {
+            return self.store_process_routine(name, val);
+        }
         // Map the sigiled stash key to the env dynamic-var key:
         //   $name → *name, @name → @*name, %name → %*name, name → *name
         let env_key = match raw_key.chars().next() {
@@ -5035,7 +5075,7 @@ impl Interpreter {
         let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
             .as_ref()
-            .map(|_| crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())));
+            .map(|name| self.promote_bind_source_cell(name, val.clone()));
         // ADR-0040 slice 4: the leaf of a 3+-level chain is an element store
         // like any other (see the two-level op's hook above). A `:=` bind keeps
         // its bare source value, and a slice/junction innermost subscript is
@@ -5610,7 +5650,7 @@ impl Interpreter {
                 Some(ValueView::ContainerRef(cell)) => Some((None, cell.clone())),
                 _ => Some((
                     Some(source_name.clone()),
-                    crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                    self.promote_bind_source_cell(source_name, val.clone()),
                 )),
             }
         } else {

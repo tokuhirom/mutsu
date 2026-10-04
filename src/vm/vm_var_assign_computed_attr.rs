@@ -429,6 +429,17 @@ impl Interpreter {
                 return Some(f(&attributes, &map, key));
             }
         }
+        // With no method on the dispatch stack to name the owner (a closure a
+        // role method made, run after it returned), the role cell is the store
+        // of record for the role's attribute: the wrapped instance's entry of
+        // the same name, if any, is only the construction seed (`R.new` puns
+        // the role into a class instance whose cell kept the seed).
+        if owner_str.is_empty()
+            && let Some((attributes, key)) = Self::mixin_role_attr_by_name(self_val, bare)
+        {
+            let map = attributes.as_map();
+            return Some(f(&attributes, &map, key));
+        }
         if let Some(attributes) = inner_cell {
             let map = attributes.as_map();
             if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
@@ -474,6 +485,8 @@ impl Interpreter {
                         let k = k.as_str();
                         k.starts_with("__mutsu_role_attr__\0") && k.ends_with(suffix.as_str())
                     });
+                    // Pre-cell storage keeps a role attribute under its bare name.
+                    let key = key.or_else(|| cell.as_map().contains_key(bare).then_some(bare));
                     if let Some(key) = key {
                         return Some((cell, key));
                     }

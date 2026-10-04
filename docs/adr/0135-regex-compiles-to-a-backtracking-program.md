@@ -1302,6 +1302,63 @@ rakudo's values. Under `MUTSU_RX_DIFF=1`, the same 16 files fail on this branch 
 each with the same first disagreement. Found on the way: a code block in a regex with no captures
 reads the previous statement's `$0` ([#11740](https://github.com/tokuhirom/mutsu/issues/11740)).
 
+### Slice E, twentieth part: the leaf atoms leave the walk, and no call bridges
+
+**Leaf atoms.** These atoms answer at most one end:
+
+- a builtin call (`<alpha>`, `<ws>`, `<wb>`, `<:Letter>`, an unknown name)
+- a backreference
+- `<(` / `)>`
+- `$x`
+- `"…"`
+- `<{ … }>`
+- `<~~>`
+
+The compiled engine matched them through the walk's single-candidate matcher. Their definitions
+now live in `regex_atom_leaf.rs`, outside the walk's modules, so the walk can be deleted without
+them (D7). `regex_leaf_atom` matches one of these atoms and `regex_builtin_named` matches a call
+of no rule. The compiled engine's `CapAtom` op and its `Single` call target call them directly.
+The walk's arms for the same atoms call them too, so each atom has one definition (D4). `CapAtom`
+still reaches the walk for one atom only: a lookaround whose body is `:m` (the nineteenth part
+compiles every other lookaround).
+
+**Call bridges.** Every remaining call bridge goes:
+
+- **`args-unbound` and `no-candidates`** become `Single`. A call whose arguments no candidate
+  binds, or whose candidates none parses, is matched as a call of no rule, as in the walk. The
+  type error was raised when the arguments were resolved.
+- **`qq-thunks`** become frames. The callee's `"…"` atoms read their qq thunks' results, which
+  the thunks produce at rule entry. Those results join the call's binding window
+  (`install_subrule_qq_thunks` in `rx_call_window`), so backtracking removes and re-installs them
+  with the frame. The callee is now resumed lazily: in
+  `regex t { "$x" a+ { $n++ } }` called from `regex TOP { <t> 'ab' }`, the block runs twice on
+  `qaaab`, as in rakudo. The bridge computed every end up front and ran it three times.
+- **`wrapped`** becomes `CallTarget::Wrapped`. The wrapper is user code around the rule's
+  invocation and answers at most one end (`try_wrapped_token_subrule_dispatch`). A proto with a
+  wrapped candidate is evaluated eagerly, as `Eager(…, "wrapped-candidate")`, because the
+  growing-seed loop dispatches the candidate's wrapper.
+- **`custom-how`** becomes `CallTarget::CustomHow`. The custom HOW's `find_method` may hand back
+  a wrapper to run (`try_custom_how_subrule_dispatch`). Otherwise the candidates go through the
+  growing-seed loop with its left-recursion bookkeeping forced, as the walk's producer does. The
+  old blocker bridged every call of every grammar once any custom HOW existed. Now only a call
+  of a rule takes this path.
+
+All three eager shapes (`Eager`, `Wrapped`, `CustomHow`) share `rx_eager_call_ends`. It holds the
+call's window around the evaluation only.
+
+Survey (`t/grammar`, `t/regex`, `t/modules`, debug build):
+
+- `bridged` 54 → 0 (`wrapped` 22, `custom-how` 15, `args-unbound` 10, `qq-thunks` 5,
+  `no-candidates` 2).
+- Leaves 1872 → 0: `builtin-call` 1408, `marker` 144, `var-interp` 127, `closure-interp` 71,
+  `backref` 65, `recurse-self` 43 and `qq-interp` 14.
+- Two eager leaves are new: `custom-how` 8 and `wrapped-candidate` 2.
+
+`t/regex/regex-leaf-atoms-compiled.t` and `t/grammar/grammar-call-bridges-compiled.t` pin
+rakudo's values. Under `MUTSU_RX_DIFF=1`, the same 16 files fail here and on `main`, each with
+the same first disagreement. The new grammar test also disagrees there: the walk still evaluates
+the qq-thunk callee eagerly, so its replay runs the block a third time.
+
 ### Reproducing §2
 
 ```raku

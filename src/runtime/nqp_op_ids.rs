@@ -1,5 +1,5 @@
 //! The compile-time registry of `nqp::` VALUE ops: one dense `u16` id per op
-//! name, plus which of the ten chained dispatch tables owns it.
+//! name, plus which of the twelve chained dispatch tables owns it.
 //!
 //! In NQP/Rakudo an `nqp::` value op is a `QAST::Op` node the QAST compiler
 //! turns into a single MoarVM instruction; it is not a call and has no name at
@@ -87,6 +87,10 @@ pub(crate) enum NqpOpTable {
     Sys,
     /// `call_nqp_op_fs` (runtime/nqp_ops_fs.rs)
     Fs,
+    /// `call_nqp_op_decoder` (runtime/nqp_ops_decoder.rs)
+    Decoder,
+    /// `call_nqp_op_capture` (runtime/call_capture.rs)
+    Capture,
 }
 
 /// Every registered op, as `(name without the `nqp::` prefix, owning table)`.
@@ -94,7 +98,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 410] = [
+static NQP_OPS: [(&str, NqpOpTable); 432] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -177,6 +181,15 @@ static NQP_OPS: [(&str, NqpOpTable); 410] = [
     ("box_u", NqpOpTable::Native),
     ("buildnativecall", NqpOpTable::Native),
     ("can", NqpOpTable::Process),
+    ("captureexistsnamed", NqpOpTable::Capture),
+    ("capturehasnameds", NqpOpTable::Capture),
+    ("capturenamedshash", NqpOpTable::Capture),
+    ("captureposarg", NqpOpTable::Capture),
+    ("captureposarg_i", NqpOpTable::Capture),
+    ("captureposarg_n", NqpOpTable::Capture),
+    ("captureposarg_s", NqpOpTable::Capture),
+    ("captureposelems", NqpOpTable::Capture),
+    ("captureposprimspec", NqpOpTable::Capture),
     ("ceil_n", NqpOpTable::Value),
     ("chars", NqpOpTable::Value),
     ("chdir", NqpOpTable::Fs),
@@ -214,6 +227,17 @@ static NQP_OPS: [(&str, NqpOpTable); 410] = [
     ("cwd", NqpOpTable::Fs),
     ("decode", NqpOpTable::Value),
     ("decodelocaltime", NqpOpTable::Sys),
+    ("decoderaddbytes", NqpOpTable::Decoder),
+    ("decoderbytesavailable", NqpOpTable::Decoder),
+    ("decoderconfigure", NqpOpTable::Decoder),
+    ("decoderempty", NqpOpTable::Decoder),
+    ("decodersetlineseps", NqpOpTable::Decoder),
+    ("decodertakeallchars", NqpOpTable::Decoder),
+    ("decodertakeavailablechars", NqpOpTable::Decoder),
+    ("decodertakebytes", NqpOpTable::Decoder),
+    ("decodertakechars", NqpOpTable::Decoder),
+    ("decodertakecharseof", NqpOpTable::Decoder),
+    ("decodertakeline", NqpOpTable::Decoder),
     ("decodetocodes", NqpOpTable::Str),
     ("decont", NqpOpTable::Builtin),
     ("decont_i", NqpOpTable::Native),
@@ -439,6 +463,7 @@ static NQP_OPS: [(&str, NqpOpTable); 410] = [
     ("rindex", NqpOpTable::Str),
     ("rindexfrom", NqpOpTable::Str),
     ("rmdir", NqpOpTable::Fs),
+    ("savecapture", NqpOpTable::Capture),
     ("say", NqpOpTable::Fs),
     ("seekfh", NqpOpTable::Fs),
     ("setbuffersizefh", NqpOpTable::Process),
@@ -499,6 +524,7 @@ static NQP_OPS: [(&str, NqpOpTable); 410] = [
     ("unshift_i", NqpOpTable::Process),
     ("unshift_n", NqpOpTable::Process),
     ("unshift_s", NqpOpTable::Process),
+    ("usecapture", NqpOpTable::Capture),
     ("what", NqpOpTable::Process),
     ("writefh", NqpOpTable::Fs),
     ("writeint", NqpOpTable::Value),

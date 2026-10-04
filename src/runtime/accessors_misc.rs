@@ -15,13 +15,14 @@ impl Interpreter {
         {
             return false;
         }
-        self.need_hidden_classes.contains(key)
+        self.module.need_hidden_classes.contains(key)
             || key
                 .strip_prefix("GLOBAL::")
-                .is_some_and(|name| self.need_hidden_classes.contains(name))
+                .is_some_and(|name| self.module.need_hidden_classes.contains(name))
             || crate::qualified::split_qualified(Symbol::intern(key))
-                .is_some_and(|(_, short)| self.need_hidden_classes.contains(short.as_str()))
+                .is_some_and(|(_, short)| self.module.need_hidden_classes.contains(short.as_str()))
             || self
+                .module
                 .need_hidden_classes
                 .iter()
                 .any(|name| key.ends_with(&format!("::{name}")))
@@ -58,8 +59,8 @@ impl Interpreter {
             std::sync::Arc::clone(&registry.proto_tokens),
             std::sync::Arc::clone(&registry.our_scoped_functions),
             std::sync::Arc::clone(&self.dispatch.user_declared_infix_ops),
-            std::sync::Arc::clone(&self.imported_routine_aliases),
-            std::sync::Arc::clone(&self.imported_exported_proto_tags),
+            std::sync::Arc::clone(&self.module.imported_routine_aliases),
+            std::sync::Arc::clone(&self.module.imported_exported_proto_tags),
         )
     }
 
@@ -87,8 +88,8 @@ impl Interpreter {
             && Arc::ptr_eq(&snapshot.4, &registry.proto_tokens)
             && Arc::ptr_eq(&snapshot.5, &registry.our_scoped_functions)
             && Arc::ptr_eq(&snapshot.6, &self.dispatch.user_declared_infix_ops)
-            && Arc::ptr_eq(&snapshot.7, &self.imported_routine_aliases)
-            && Arc::ptr_eq(&snapshot.8, &self.imported_exported_proto_tags)
+            && Arc::ptr_eq(&snapshot.7, &self.module.imported_routine_aliases)
+            && Arc::ptr_eq(&snapshot.8, &self.module.imported_exported_proto_tags)
     }
 
     // Cost: O(1) when the scope changed none of the snapshotted tables (the
@@ -125,8 +126,8 @@ impl Interpreter {
         // arithmetic (e.g. Test.rakumod's `$num_of_tests_run + 1`) after the
         // block exited, resetting the test counter to Nil.
         self.dispatch.user_declared_infix_ops = user_infix_ops;
-        self.imported_routine_aliases = imported_routine_aliases;
-        self.imported_exported_proto_tags = imported_exported_proto_tags;
+        self.module.imported_routine_aliases = imported_routine_aliases;
+        self.module.imported_exported_proto_tags = imported_exported_proto_tags;
         self.reinstate_module_functions(&mut functions, is_eval);
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.
@@ -265,9 +266,10 @@ impl Interpreter {
         let owned_exports = if is_eval {
             None
         } else {
-            self.module_load_stack
+            self.module
+                .module_load_stack
                 .last()
-                .and_then(|m| self.module_owned_exports.get(m))
+                .and_then(|m| self.module.module_owned_exports.get(m))
         };
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
             None => Vec::new(),

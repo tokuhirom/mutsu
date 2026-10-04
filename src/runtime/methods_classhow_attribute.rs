@@ -372,7 +372,9 @@ impl Interpreter {
             if has_local(self, pkg) {
                 found.push(pkg.to_string());
             }
-            match pkg.rsplit_once("::") {
+            match crate::qualified::split_qualified(crate::qualified::known_symbol(pkg))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 Some((parent, _)) => pkg = parent,
                 None => break,
             }
@@ -382,7 +384,7 @@ impl Interpreter {
         // class it declares need not be nested in: `HTML::Component::Tag::META`
         // declares `class HTML::Component::Tag::META-CHARSET` with the
         // `is html-attr` trait it imported.
-        if let Some(unit_pkg) = self.module_load_stack.last().cloned()
+        if let Some(unit_pkg) = self.module.module_load_stack.last().cloned()
             && !found.contains(&unit_pkg)
             && has_local(self, &unit_pkg)
         {
@@ -516,7 +518,10 @@ impl Interpreter {
                         is_role_argument = true;
                         break;
                     }
-                    let Some((outer, _)) = role_owner.rsplit_once("::") else {
+                    let Some((outer, _)) = crate::qualified::split_qualified(
+                        crate::qualified::known_symbol(role_owner),
+                    )
+                    .map(|(head, tail)| (head.as_str(), tail.as_str())) else {
                         break;
                     };
                     role_owner = outer;

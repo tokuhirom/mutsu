@@ -88,6 +88,9 @@ impl Interpreter {
                 let target = operand(args, 0);
                 let idx = args.get(1).map(crate::runtime::to_int).unwrap_or(0);
                 let val = uint64_value(&operand(args, 2));
+                if self.carray_bind_before_start(&target, idx) {
+                    return Some(Ok(val));
+                }
                 crate::runtime::nqp_backing::bind_elem(op, &target, idx, val, Value::int(0))
             }
             // nqp::atposref_i / _n / _u($list, $i): an lvalue for element `$i`
@@ -98,7 +101,9 @@ impl Interpreter {
             // Cost: O(1) for an element in range (promoted to a shared cell once).
             "atposref_i" | "atposref_n" | "atposref_u" | "atposref_s" => {
                 let target = operand(args, 0);
-                if crate::value::value_buf::buf_target(&target).is_some() {
+                if crate::value::value_buf::buf_target(&target).is_some()
+                    || crate::runtime::CArrayView::of(&target).is_some()
+                {
                     // A Buf holds numbers; it has no str element to refer to.
                     if op == "atposref_s" {
                         return Some(Err(RuntimeError::new(

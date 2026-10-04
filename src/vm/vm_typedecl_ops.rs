@@ -868,7 +868,7 @@ impl Interpreter {
             // exported role is, so `import M` of an inline `module M` finds it
             // (#10557); a module file's scan records the same entry.
             if *is_lexical
-                && !self.suppress_exports
+                && !self.module.suppress_exports
                 && let Some((_, tags)) = custom_traits
                     .iter()
                     .find(|(t, _)| t == "__mutsu_export_type")
@@ -1251,7 +1251,7 @@ impl Interpreter {
             if !name_is_qualified && self.has_class(&current_package) {
                 self.register_class_scoped_short_name(&name_str);
             }
-            if *is_export && !self.suppress_exports {
+            if *is_export && !self.module.suppress_exports {
                 // The compiler may have pre-qualified the role name
                 // (e.g. `R1` → `GH2613::R1`) when compiling under a
                 // `unit module`. Exports use the short bare name and
@@ -1461,7 +1461,7 @@ impl Interpreter {
             // The subset type itself is already registered under its bare name
             // in the global env by `register_subset_decl`, so importing only
             // needs to make `import M` succeed (and validate export tags).
-            if *is_export && !self.suppress_exports {
+            if *is_export && !self.module.suppress_exports {
                 let (export_pkg, export_short) = if let Some((pkg, short)) = name_split {
                     (pkg.as_str().to_string(), short.as_str().to_string())
                 } else {

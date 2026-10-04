@@ -238,7 +238,8 @@ impl Interpreter {
     /// Build a candidate closure that invokes `owner::method_name` on its first
     /// argument, forwarding any additional arguments: `-> $inst, *@a { $inst.OWNER::name(|@a) }`.
     fn make_walk_candidate(owner: &str, method_name: &str) -> Value {
-        let qualified = Symbol::intern(&format!("{owner}::{method_name}"));
+        let qualified =
+            Symbol::intern(crate::qualified::qualified_text(owner, method_name).as_str());
         let body = vec![Stmt::Expr(Expr::MethodCall {
             target: Box::new(Expr::Var("__walk_inst".to_string())),
             name: qualified,

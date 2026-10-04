@@ -785,7 +785,7 @@ impl Interpreter {
     }
 
     pub(super) fn apply_chroot(&self, path: PathBuf) -> PathBuf {
-        if let Some(root) = &self.chroot_root {
+        if let Some(root) = &self.io.chroot_root {
             if path.starts_with(root) {
                 return path;
             }

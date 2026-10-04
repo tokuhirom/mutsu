@@ -153,7 +153,7 @@ impl Interpreter {
                 && let Some((_, tags)) = custom_traits
                     .iter()
                     .find(|(t, _)| t == "__mutsu_export_type")
-                && !self.suppress_exports
+                && !self.module.suppress_exports
             {
                 let tags = match tags {
                     Some(Expr::ArrayLiteral(items)) => items

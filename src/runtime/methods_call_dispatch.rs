@@ -782,6 +782,20 @@ impl Interpreter {
                 }
             }
         }
+        // A role mixed into a native container (`my @a is R`, R `does
+        // Array::Agnostic`) keeps its elements behind the role's `iterator`.
+        // Any's iteration methods read that iterator, not the native storage
+        // the mixin wraps (which would answer `.head(3)` with the mixin as one
+        // item, or `.tail` with the whole inner array).
+        if matches!(method, "head" | "tail" | "first")
+            && matches!(target.view(), ValueView::Mixin(..))
+            && self.mixin_composes_method(&target, "iterator")
+            && !self.mixin_composes_method(&target, method)
+        {
+            // Cost: O(n) in the iterator's length, plus the method itself.
+            let items = self.drive_user_iterator_items(&target)?;
+            return self.call_method_with_values(Value::array(items), method, args);
+        }
         // Scalar containers are transparent for method dispatch (except .item,
         // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper
         // so an itemized aggregate shows its `$` sigil (`${a=>1}.raku` →
@@ -981,6 +995,10 @@ impl Interpreter {
         // `Rakudo::Internals.IS-WIN` / `.IS-MACOS` / `.INCLUDE`: the same
         // helper the VM's native method path answers them with.
         if let Some(result) = self.try_rakudo_internals_method(&target, method, &args) {
+            return result;
+        }
+        // `Kernel.cpu-cores`, `Thread.usage`, ... on the type object.
+        if let Some(result) = self.try_core_type_object_method(&target, method, &args) {
             return result;
         }
         // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
@@ -2970,22 +2988,26 @@ impl Interpreter {
             return result;
         }
 
-        // Qualified method: Class::method on Instance
-        if let Some(result) = self.dispatch_qualified_instance_method(&target, method, args.clone())
+        // A qualified call defers along the QUALIFIER's own chain, never the
+        // receiver's (#11592): `self.Q::m` with a `callsame` reaches Q's parent,
+        // and a role's method (`self.R::m`) has nothing to defer to.
+        if !method.starts_with('!')
+            && let Some((qualifier, actual)) =
+                super::methods_qualified::split_method_qualifier_last(method)
         {
-            return result;
-        }
-
-        // Qualified method on a runtime-mixed-in value (Mixin value): Class::method
-        if let Some(result) = self.dispatch_qualified_mixin_method(&target, method, args.clone()) {
-            return result;
-        }
-
-        // Qualified method on non-Instance values
-        if let Some(result) =
-            self.dispatch_qualified_non_instance_method(&target, method, args.clone())
-        {
-            return result;
+            let qualifier = self.lexical_env_remap_name(qualifier);
+            let pushed = if self.is_role(&qualifier) {
+                self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
+            } else {
+                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone())
+            };
+            let result = self.dispatch_qualified_method(&target, method, &args);
+            if pushed {
+                self.pop_method_dispatch();
+            }
+            if let Some(result) = result {
+                return result;
+            }
         }
 
         // Proxy subclass method dispatch
@@ -4941,7 +4963,7 @@ impl Interpreter {
                 // their overrides — mirroring the public-method case below.
                 if let Some(private_rest) = method.strip_prefix('!') {
                     let resolved = if let Some((owner_class, pm_name)) =
-                        private_rest.split_once("::")
+                        crate::qualified::split_first(crate::qualified::known_symbol(private_rest))
                     {
                         self.resolve_private_method_with_owner(&cls, owner_class, pm_name, &args)
                             .map(|r| (r, pm_name))

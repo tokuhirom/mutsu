@@ -73,6 +73,8 @@ impl Interpreter {
             NqpOpTable::P6 => self.call_nqp_op_p6(op, args),
             NqpOpTable::Sys => self.call_nqp_op_sys(op, args),
             NqpOpTable::Fs => self.call_nqp_op_fs(op, args),
+            NqpOpTable::Decoder => self.call_nqp_op_decoder(op, args),
+            NqpOpTable::Capture => self.call_nqp_op_capture(op, args),
         };
         match claimed {
             Some(result) => result,
@@ -292,6 +294,15 @@ impl Interpreter {
             // Cost: O(d), d = MRO length of the target type (class_mro, cached Arc); O(1) for a Pointer/Int target.
             "box_i" => {
                 let n = args.first().map(crate::runtime::to_int).unwrap_or(0);
+                // A CPointer-REPR class, or a mixin of one (upstream's
+                // `Pointer[T]`), boxes the address as an instance of *that*
+                // type, as MoarVM's CPointer REPR does: upstream NativeCall's
+                // `Pointer.new($addr)` is `nqp::box_i($addr, ::?CLASS)`.
+                if let Some(ty) = args.get(1)
+                    && let Some(boxed) = self.native_object_of_type(ty, n as usize)
+                {
+                    return Some(boxed);
+                }
                 let target = args
                     .get(1)
                     .map(|v| match v.view() {
@@ -301,15 +312,6 @@ impl Interpreter {
                     })
                     .unwrap_or_default();
                 let short = crate::runtime::cstruct_layout::short_base_name(&target);
-                // A class declared `is repr('CPointer')` boxes the address as
-                // an instance of *that* class, as MoarVM's CPointer REPR does:
-                // upstream NativeCall's `Pointer.new($addr)` is
-                // `nqp::box_i($addr, ::?CLASS)`.
-                if self.registry().cpointer_classes.contains(target.as_str()) {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("address".to_string(), Value::int(n));
-                    return Some(Ok(Value::make_instance(Symbol::intern(&target), attrs)));
-                }
                 if short == "Pointer" || short.starts_with("Pointer[") {
                     let of = short
                         .strip_prefix("Pointer[")

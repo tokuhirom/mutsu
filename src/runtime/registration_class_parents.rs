@@ -13,7 +13,7 @@ use super::*;
 /// Short (unqualified) name of the class being declared, for detecting a
 /// `does`-role that shares the class's own name (see below).
 fn short_of(s: &str) -> &str {
-    s.rsplit("::").next().unwrap_or(s)
+    crate::qualified::last_segment(crate::qualified::known_symbol(s)).as_str()
 }
 
 /// What `validate_class_parents` learned about a class's declared parents.
@@ -167,7 +167,8 @@ impl Interpreter {
                 resolved_parent_name.as_str()
             };
             // Strip leading `::` for comparison (e.g., `is ::F` refers to `F`)
-            let resolved_parent = base_parent.strip_prefix("::").unwrap_or(base_parent);
+            let resolved_parent =
+                crate::qualified::type_capture_name(base_parent).unwrap_or(base_parent);
             // A `does`-role of the class's own short name resolves to the like-named
             // CORE/existing role (a class cannot compose itself), so it is neither a
             // self-inheritance error nor a real inheritance parent.
@@ -269,8 +270,9 @@ impl Interpreter {
                 // package is not an unknown name, so rakudo passes it to
                 // `trait_mod:<is>` positionally (as the package object) rather
                 // than as the `:Name` named argument the deferral synthesises.
-                if self.chain_declared_packages.contains(base_parent)
+                if self.module.chain_declared_packages.contains(base_parent)
                     || self
+                        .module
                         .chain_declared_packages
                         .contains(resolved_parent_name.as_str())
                 {

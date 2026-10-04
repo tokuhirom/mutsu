@@ -9,6 +9,17 @@
 
 use super::*;
 
+/// When the process started, in nanoseconds since the epoch: recorded by the
+/// first interpreter's construction (`Interpreter::new` calls
+/// [`process_start_epoch_nanos`]), which is what Rakudo's `INITTIME` records.
+static PROCESS_START_NANOS: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+
+/// The process start time (see [`PROCESS_START_NANOS`]).
+// Cost: O(1).
+pub(crate) fn process_start_epoch_nanos() -> i64 {
+    *PROCESS_START_NANOS.get_or_init(crate::builtins::epoch_nanos)
+}
+
 impl Interpreter {
     /// Dispatch a `Rakudo::Internals.<method>` call. Returns `None` when the
     /// invocant is not the `Rakudo::Internals` type object or the method is not
@@ -16,6 +27,8 @@ impl Interpreter {
     ///
     /// - `IS-WIN` / `IS-MACOS`: platform predicates (NativeLibs picks the
     ///   library name by `Rakudo::Internals.IS-WIN()`), from the host target.
+    /// - `INITTIME`: when the process started, as a `Num` of seconds since
+    ///   the epoch (Telemetry measures its wallclock column from it).
     /// - `INCLUDE`: the `-I` paths the running process was started with, as a
     ///   `List` of `Str`, read from `%*COMPILING<%?OPTIONS><I>` exactly as
     ///   Rakudo does. Test suites use it to re-exec `$*EXECUTABLE` with the
@@ -26,7 +39,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "IS-WIN" | "IS-MACOS" | "INCLUDE") {
+        if !matches!(method, "IS-WIN" | "IS-MACOS" | "INCLUDE" | "INITTIME") {
             return None;
         }
         let ValueView::Package(name) = target.view() else {
@@ -46,6 +59,8 @@ impl Interpreter {
             "IS-MACOS" => Value::truth(cfg!(target_os = "macos")),
             // Cost: O(n), n = number of `-I` paths.
             "INCLUDE" => self.rakudo_internals_include(),
+            // Cost: O(1).
+            "INITTIME" => Value::num(process_start_epoch_nanos() as f64 / 1e9),
             _ => unreachable!(),
         }))
     }

@@ -353,7 +353,7 @@ impl Interpreter {
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             loan_env!(self, reset_atomic_var_key(name));
         }
-        if self.lexical_fatal_mode
+        if self.module.lexical_fatal_mode
             && !name.contains("__mutsu_")
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
         {

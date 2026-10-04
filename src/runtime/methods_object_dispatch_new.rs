@@ -559,7 +559,10 @@ impl Interpreter {
                                 .filter(|pd| !pd.named)
                                 .map(|pd| {
                                     let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
-                                        if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                        if crate::qualified::is_type_capture(tc)
+                                            || tc == "Any"
+                                            || tc == "Mu"
+                                        {
                                             1
                                         } else {
                                             5
@@ -1016,6 +1019,21 @@ impl Interpreter {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
                 "Cancellation" => return Ok(Self::cancellation_instance()),
+                // Encoding::Decoder::Builtin.new($encoding, :translate-nl):
+                // Rakudo's `nqp::decoderconfigure(nqp::create(self), ...)`.
+                crate::runtime::stream_decoder_object::DECODER_CLASS => {
+                    let encoding = args
+                        .iter()
+                        .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                        .map(Value::to_string_value)
+                        .unwrap_or_default();
+                    let translate_nl =
+                        Self::named_value(&args, "translate-nl").is_some_and(|v| v.truthy());
+                    return crate::runtime::stream_decoder_object::new_decoder(
+                        &encoding,
+                        translate_nl,
+                    );
+                }
                 "FakeScheduler" => {
                     // Shared single implementation with the VM's native fast path.
                     return Ok(Self::build_native_fakescheduler_value());
@@ -2252,8 +2270,12 @@ impl Interpreter {
                 if let Some(role_bindings) = role_bindings {
                     for (name, value) in &role_bindings {
                         self.env.insert(name.clone(), value.clone());
-                        self.env
-                            .insert(format!("{}::{}", class_key, name), value.clone());
+                        self.env.insert(
+                            crate::qualified::qualified_text(class_key, name)
+                                .as_str()
+                                .to_string(),
+                            value.clone(),
+                        );
                     }
                 }
                 // The object under construction exists from here on: an
@@ -2581,7 +2603,9 @@ impl Interpreter {
                                 captured_env.as_ref(),
                                 captured_unit.or_else(|| {
                                     declaring_package
-                                        .and_then(|p| self.class_declaring_units.get(p.as_str()))
+                                        .and_then(|p| {
+                                            self.module.class_declaring_units.get(p.as_str())
+                                        })
                                         .copied()
                                 }),
                             );

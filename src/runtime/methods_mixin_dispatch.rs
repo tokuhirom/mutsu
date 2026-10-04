@@ -507,6 +507,21 @@ impl Interpreter {
                     method_role_bindings.push((name.clone(), value.clone()));
                 }
             }
+            // `::?CLASS` in a role method is the class the role is composed
+            // into, here the mixin type (`K+{R[Str]}`), not the role: upstream
+            // NativeCall's `TypedCArray!allocate` reads
+            // `::?CLASS.^array_type` (#11203).
+            let class_type = match inner.as_ref().view() {
+                ValueView::Package(_) => Some(target.clone()),
+                ValueView::Instance { class_name, .. } => Some(Value::mixin_parts(
+                    Arc::new(Value::package(class_name)),
+                    mixins.clone(),
+                )),
+                _ => None,
+            };
+            if let Some(class_type) = class_type {
+                method_role_bindings.push(("?CLASS".to_string(), class_type));
+            }
             let mut def = def;
             def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
             // Role-body lexicals are persisted with the concrete punned role
@@ -591,6 +606,7 @@ impl Interpreter {
                         dispatch_token,
                         arg_sources: None,
                         in_wrapper: false,
+                        role_qualified: false,
                     });
             }
             let invocant = self

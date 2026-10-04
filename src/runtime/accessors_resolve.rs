@@ -594,6 +594,14 @@ impl Interpreter {
         }
         // Check if stored as a variable first (my &f = ...)
         let var_key = format!("&{}", bare_name);
+        // A process-level `&*name` (`PROCESS::<&name> = ...`, possibly made in
+        // a frame that has since returned, or on another thread) lives in the
+        // process stash (ADR-11318, #9881).
+        if bare_name.starts_with('*')
+            && let Some(val) = self.process_dynamic_read(&var_key)
+        {
+            return val.into_deref();
+        }
         if consult_env_amp && let Some(val) = self.env.get(&var_key) {
             // An `&` lexical may be a shared cell (the unvouched-escaping
             // capture, ADR-0055 §7.3): read through it, never hand the cell to

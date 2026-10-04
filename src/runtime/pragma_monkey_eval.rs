@@ -20,7 +20,7 @@ impl Interpreter {
         // At a module's top level the pragma covers the whole compunit, so
         // its routines keep it when another unit calls them.
         if on
-            && let Some(&(unit, depth_at_push)) = self.module_loading_unit_stack.last()
+            && let Some(&(unit, depth_at_push)) = self.module.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push
         {
             self.registry_mut().monkey_eval_units.insert(unit);

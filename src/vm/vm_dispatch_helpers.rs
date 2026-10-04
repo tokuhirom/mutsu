@@ -772,7 +772,7 @@ impl Interpreter {
         // body, so it must be dispatched over C FFI no matter how the callsite
         // reached it — including through a code object (`my &f = &dlsym; f(...)`).
         // See `try_dispatch_native_by_name`.
-        if !self.native_call_specs.is_empty()
+        if !self.module.native_call_specs.is_empty()
             && let Some(name) = Self::callable_value_name(&target)
             && let Some(result) = self.try_dispatch_native_by_name(&name, &args)?
         {

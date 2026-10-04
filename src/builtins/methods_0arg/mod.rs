@@ -418,6 +418,7 @@ pub(crate) fn native_method_0arg_cascade(
 
     // Cost: O(1), one scheduler yield for the calling OS thread.
     if method == "yield" && matches!(target.view(), ValueView::Package(name) if name == "Thread") {
+        crate::runtime::thread_usage::note_thread_yield();
         std::thread::yield_now();
         return Some(Ok(Value::NIL));
     }

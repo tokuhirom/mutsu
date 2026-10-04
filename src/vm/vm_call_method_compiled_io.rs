@@ -66,7 +66,7 @@ impl Interpreter {
     /// throw away the bytes it just gave us.
     fn call_user_io_eof(&mut self, target: &Value) -> Result<bool, RuntimeError> {
         if Self::user_io_handle_id(target)
-            .and_then(|id| self.user_io_read_buffers.get(&id))
+            .and_then(|id| self.io.user_io_read_buffers.get(&id))
             .is_some_and(|buf| !buf.is_empty())
         {
             return Ok(false);
@@ -93,11 +93,12 @@ impl Interpreter {
             return Ok(Self::extract_buf_bytes(&r));
         };
         while self
+            .io
             .user_io_read_buffers
             .get(&id)
             .is_none_or(|buf| buf.len() < n)
         {
-            let buffered = self.user_io_read_buffers.get(&id).map_or(0, Vec::len);
+            let buffered = self.io.user_io_read_buffers.get(&id).map_or(0, Vec::len);
             let want = n - buffered;
             let r = self.call_method_with_values(
                 target.clone(),
@@ -108,12 +109,13 @@ impl Interpreter {
             if chunk.is_empty() {
                 break;
             }
-            self.user_io_read_buffers
+            self.io
+                .user_io_read_buffers
                 .entry(id)
                 .or_default()
                 .extend(chunk);
         }
-        let buf = self.user_io_read_buffers.entry(id).or_default();
+        let buf = self.io.user_io_read_buffers.entry(id).or_default();
         let take = n.min(buf.len());
         Ok(buf.drain(..take).collect())
     }

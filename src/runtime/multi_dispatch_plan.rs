@@ -175,7 +175,7 @@ impl Interpreter {
             (
                 self.current_unit,
                 self.executing_unit_sym(),
-                self.operator_import_gen,
+                self.module.operator_import_gen,
             )
         });
         Some(BareMultiPlanKey {

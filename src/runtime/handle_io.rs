@@ -13,7 +13,7 @@ impl Interpreter {
     }
 
     pub(super) fn default_line_separators(&self) -> Vec<Vec<u8>> {
-        match self.newline_mode {
+        match self.io.newline_mode {
             NewlineMode::Lf => vec![b"\r\n".to_vec(), b"\n".to_vec()],
             NewlineMode::Cr => vec![b"\r".to_vec()],
             NewlineMode::Crlf => vec![b"\r\n".to_vec()],

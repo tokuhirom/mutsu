@@ -300,7 +300,9 @@ impl Interpreter {
         // token dispatch.
         for owner_sym in mro.iter() {
             let owner_str = owner_sym.as_str();
-            let token_key = format!("{owner_str}::{method_name}");
+            let token_key = crate::qualified::qualified_text(owner_str, method_name)
+                .as_str()
+                .to_string();
             if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
                 && let Some(first) = defs.first()
             {

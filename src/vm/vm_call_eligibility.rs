@@ -133,6 +133,8 @@ impl Interpreter {
             && !cf.code.uses_callframe
             // `samewith` needs the samewith context only the full path pushes.
             && !cf.code.uses_samewith
+            // `nqp::usecapture` needs the capture only the full paths record.
+            && !cf.code.uses_capture
             // A body that declares an inner sub (`my sub`, `proto`, ...)
             // relies on the full call path's routine-registry
             // snapshot/restore to take the declaration away again on return;
@@ -170,6 +172,8 @@ impl Interpreter {
             && !cf.code.uses_callframe
             // `samewith` needs the samewith context only the full path pushes.
             && !cf.code.uses_samewith
+            // `nqp::usecapture` needs the capture only the full paths record.
+            && !cf.code.uses_capture
             // A body that declares an inner sub (`my sub`, `proto`, ...)
             // relies on the full call path's routine-registry
             // snapshot/restore to take the declaration away again on return;
@@ -432,6 +436,8 @@ impl Interpreter {
             && !cf.code.uses_callframe
             // `samewith` needs the samewith context only the full path pushes.
             && !cf.code.uses_samewith
+            // `nqp::usecapture` needs the capture only the full paths record.
+            && !cf.code.uses_capture
             // Only allow return types that light_return_type_check can handle,
             // or a definite constant return (`--> Nil`, `--> True`), which the
             // light path serves by returning the constant (#9074).

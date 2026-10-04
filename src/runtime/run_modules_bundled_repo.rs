@@ -47,7 +47,7 @@ impl Interpreter {
     /// built on the first read of the tail's `next-repo` instead (see
     /// [`Interpreter::repo_next_link`]).
     pub(super) fn add_bundled_repos(&mut self) {
-        if self.bundled_lib_paths.is_empty() {
+        if self.module.bundled_lib_paths.is_empty() {
             return;
         }
         let Some(tail) = self.repo_chain_tail() else {
@@ -90,7 +90,7 @@ impl Interpreter {
     fn build_bundled_chain(&self) -> Value {
         // Build the sub-chain back to front so each link can point at the next.
         let mut head = Value::NIL;
-        for lib in self.bundled_lib_paths.iter().rev() {
+        for lib in self.module.bundled_lib_paths.iter().rev() {
             head = self.bundled_repo_link(lib, head);
         }
         head
@@ -156,7 +156,7 @@ impl Interpreter {
     /// `core.candidates` / `.installed` (what zef's `list-installed` and its
     /// ignore list read) keep describing the repository itself.
     pub(crate) fn bundled_core_repo(&self) -> Option<Value> {
-        let lib = self.bundled_lib_paths.iter().find(|lib| {
+        let lib = self.module.bundled_lib_paths.iter().find(|lib| {
             Path::new(lib.as_str())
                 .parent()
                 .and_then(|p| p.file_name())

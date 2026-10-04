@@ -11,6 +11,7 @@ mod heredoc;
 mod interp_code_call;
 mod interp_content;
 mod interp_helpers;
+mod interp_hyper_subscript;
 mod interp_var;
 mod q_string;
 mod quoted;

@@ -237,7 +237,10 @@ impl Interpreter {
             let known = |this: &Self, n: &str| {
                 this.is_role_type_name(n) || this.registry().classes.contains_key(n)
             };
-            let resolved_base = if let Some((declaring_package, _)) = cx.name.rsplit_once("::") {
+            let resolved_base = if let Some((declaring_package, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(cx.name))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 // A unit module's mainline runs with GLOBAL as the current
                 // package, even though the compiler has already qualified
                 // this role's storage name. Resolve a sibling parent from the
@@ -245,7 +248,9 @@ impl Interpreter {
                 // probe handles a nested name such as `Q::R` inside the unit
                 // module: first try `M::Q::R`, then leave an unrelated fully
                 // qualified name untouched.
-                let relative = format!("{declaring_package}::{role_base_str}");
+                let relative = crate::qualified::qualified_text(declaring_package, &role_base_str)
+                    .as_str()
+                    .to_string();
                 if known(self, &relative) {
                     Some(relative)
                 } else {
@@ -297,14 +302,15 @@ impl Interpreter {
         // would pull the wrong one and drop the parametric role's methods.
         // Skip when the application forwards a type param (`R1[::T]`),
         // which `resolve_role_candidate` rejects.
-        let concretized_parent = if role_name_str.contains('[') && !role_name_str.contains("::") {
-            self.resolve_role_candidate(&role_name_str)
-                .ok()
-                .flatten()
-                .map(|(rd, _, _)| rd)
-        } else {
-            None
-        };
+        let concretized_parent =
+            if role_name_str.contains('[') && !crate::qualified::is_qualified_str(&role_name_str) {
+                self.resolve_role_candidate(&role_name_str)
+                    .ok()
+                    .flatten()
+                    .map(|(rd, _, _)| rd)
+            } else {
+                None
+            };
         let role = match concretized_parent
             .or_else(|| self.registry().roles.get(base_role_name).cloned())
         {
@@ -363,7 +369,7 @@ impl Interpreter {
         // forwarding binding (parent-param -> `::T`) via the
         // role_type_params branch below and defer real composition to
         // class-application time.
-        let forwards_type_param = role_name_str.contains("::");
+        let forwards_type_param = crate::qualified::is_qualified_str(&role_name_str);
         // Evaluate this parent's precompiled bracket-argument chunks
         // (ADR-0019 D7-3), if any, instead of leaving candidate resolution
         // to re-parse the concatenated parent string — same bail-out as the
@@ -591,10 +597,14 @@ impl Interpreter {
                 *is_my,
                 0,
             );
-            if self.suppress_exports {
+            if self.module.suppress_exports {
                 continue;
             }
-            let (export_pkg, export_short) = match resolved_name.rsplit_once("::") {
+            let (export_pkg, export_short) = match crate::qualified::split_qualified(
+                crate::qualified::known_symbol(&resolved_name),
+            )
+            .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 Some((pkg, short)) => (pkg.to_string(), short.to_string()),
                 // A role body's own package IS the role, so an unqualified
                 // subset exports from the role's name (`use PDF::COS :IndRef`).

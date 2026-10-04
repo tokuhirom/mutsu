@@ -213,6 +213,24 @@ impl Interpreter {
         }
     }
 
+    /// A blessed object (or a native container with a role mixed in, as
+    /// `my @a is R`) whose own `AT-POS` backs its positional subscript, so a
+    /// slice adverb must read through `elems`/`AT-POS`/`EXISTS-POS` rather
+    /// than any native storage.
+    // Cost: O(1) registry lookups.
+    fn is_user_positional_object(&mut self, t: &Value) -> bool {
+        match t.view() {
+            ValueView::Instance { class_name, .. } => {
+                let class_name = class_name.resolve();
+                self.has_user_method_including_role(&class_name, "AT-POS")
+                    || (self.type_matches_value("Positional", t)
+                        && self.has_user_method_including_role(&class_name, "keys"))
+            }
+            ValueView::Mixin(..) => self.mixin_composes_method(t, "AT-POS"),
+            _ => false,
+        }
+    }
+
     pub(super) fn builtin_subscript_adverb(
         &mut self,
         args: &[Value],
@@ -291,11 +309,7 @@ impl Interpreter {
                 target_is_coerced_list = true;
                 target_is_coerced_scalar = true;
                 Value::real_array(vec![t.with_hash_itemized(false)])
-            } else if subscript_is_positional == Some(true)
-                && let ValueView::Instance { class_name, .. } = t.view()
-                && self.type_matches_value("Positional", &t)
-                && self.has_user_method_including_role(&class_name.resolve(), "keys")
-            {
+            } else if subscript_is_positional == Some(true) && self.is_user_positional_object(&t) {
                 // Rich Positional instances (including roles whose methods are
                 // kept in the role registry) need the same value/key/exists
                 // machinery as a plain list for slice adverbs. Snapshot their

@@ -62,6 +62,7 @@ impl Interpreter {
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            call_capture: None,
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
             saved_locals_base: Some(self.locals.push_frame(0)),
@@ -103,6 +104,7 @@ impl Interpreter {
         crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            call_capture: None,
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
             saved_locals_base: Some(self.locals.push_frame(0)),
@@ -445,6 +447,7 @@ impl Interpreter {
                         return Some(value);
                     }
                     if let Some(value) = self
+                        .module
                         .module_scope_lexicals
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))
@@ -2769,6 +2772,18 @@ impl Interpreter {
 
     pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
+            self.update_local_at_slot(code, slot, name, val);
+        }
+    }
+
+    pub(crate) fn update_local_at_slot(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        name: &str,
+        val: &Value,
+    ) {
+        if slot < self.locals.len() {
             // A slot that holds the very cell `name` resolves to already shows
             // the value the caller just stored through that cell; replacing it
             // with the bare value would leave the env naming a container the

@@ -12,12 +12,12 @@ impl Interpreter {
     /// does not accidentally claim a dependency's declarations.
     pub(crate) fn record_module_owned_type(&mut self, name: &str) {
         self.release_foreign_provenance(name);
-        let Some(module) = self.module_load_stack.last().cloned() else {
+        let Some(module) = self.module.module_load_stack.last().cloned() else {
             return;
         };
-        crate::runtime::cow_table_mut(&mut self.module_visibility.module_declared_types)
+        crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_declared_types)
             .insert(name.to_string());
-        crate::runtime::cow_table_mut(&mut self.module_owned_types)
+        crate::runtime::cow_table_mut(&mut self.module.module_owned_types)
             .entry(module)
             .or_default()
             .declared
@@ -26,7 +26,7 @@ impl Interpreter {
 
     /// Remember which of a module's own type aliases may cross an import.
     pub(crate) fn record_module_exported_type_alias(&mut self, module: &str, name: &str) {
-        let owned = crate::runtime::cow_table_mut(&mut self.module_owned_types)
+        let owned = crate::runtime::cow_table_mut(&mut self.module.module_owned_types)
             .entry(module.to_string())
             .or_default();
         if owned.declared.contains(name) {
@@ -35,7 +35,7 @@ impl Interpreter {
     }
 
     pub(crate) fn module_load_in_progress(&self) -> bool {
-        !self.module_load_stack.is_empty()
+        !self.module.module_load_stack.is_empty()
     }
 
     /// Whether `use <module>` has already been executed in this process.
@@ -44,7 +44,7 @@ impl Interpreter {
     /// expected to supply: a module still unloaded cannot be asked what it
     /// exports, so the pre-pass must defer rather than reject.
     pub(crate) fn is_module_loaded(&self, module: &str) -> bool {
-        self.loaded_modules.contains(module)
+        self.module.loaded_modules.contains(module)
     }
 
     /// True while some module compunit's mainline is currently running
@@ -56,13 +56,13 @@ impl Interpreter {
     /// lexical capture (`exec_register_sub_op`) does not treat a module's subs
     /// as the host program's mainline subs.
     pub(crate) fn module_load_active(&self) -> bool {
-        !self.module_load_stack.is_empty()
+        !self.module.module_load_stack.is_empty()
     }
 
     /// The open import scopes, outermost first: one per running block that
     /// holds a `use`/`import`/`no` of its own.
     pub(crate) fn import_scopes(&self) -> &[crate::runtime::ImportScopeSnapshot] {
-        &self.import_scope_stack
+        &self.module.import_scope_stack
     }
 
     /// Save current function/class/proto keys for lexical import scoping.
@@ -98,21 +98,21 @@ impl Interpreter {
                 shadowed_proto_names: HashSet::new(),
                 imported_env_keys: HashSet::new(),
                 shadowed_env_values: HashMap::new(),
-                imported_routine_aliases: self.imported_routine_aliases.clone(),
+                imported_routine_aliases: self.module.imported_routine_aliases.clone(),
                 own_routine_imports: HashSet::new(),
-                imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
-                newline_mode: self.newline_mode,
-                strict_mode: self.strict_mode,
-                fatal_mode: self.fatal_mode,
-                lexical_fatal_mode: self.lexical_fatal_mode,
-                monkey_typing: self.monkey_typing,
+                imported_exported_proto_tags: self.module.imported_exported_proto_tags.clone(),
+                newline_mode: self.io.newline_mode,
+                strict_mode: self.module.strict_mode,
+                fatal_mode: self.module.fatal_mode,
+                lexical_fatal_mode: self.module.lexical_fatal_mode,
+                monkey_typing: self.module.monkey_typing,
                 scope_classes,
-                imported_env_aliases: self.imported_env_aliases.clone(),
+                imported_env_aliases: self.module.imported_env_aliases.clone(),
                 leave_phasers: Vec::new(),
                 unit: self.executing_unit_sym_for_module_load(),
             }
         };
-        self.import_scope_stack.push(snapshot);
+        self.module.import_scope_stack.push(snapshot);
     }
 
     /// Record that `import_module` just wrote `key` into `env` as an
@@ -134,13 +134,14 @@ impl Interpreter {
         } else {
             format!("${key}")
         };
-        self.imported_env_aliases
+        self.module
+            .imported_env_aliases
             .insert(key_sym, Symbol::intern(&display));
         // A block's import over a name an enclosing import already bound
         // shadows that binding, and its scope exit puts it back (`use M :t;
         // { use M } t`). Only an import visible when the scope opened counts:
         // an alias a BEGIN-time preload left in `env` is not one.
-        if let Some(top) = self.import_scope_stack.last_mut()
+        if let Some(top) = self.module.import_scope_stack.last_mut()
             && top.imported_env_keys.insert(key_sym)
             && top.imported_env_aliases.contains_key(&key_sym)
             && let Some(previous) = self.env.get_sym(key_sym)
@@ -153,42 +154,47 @@ impl Interpreter {
     /// declaration may replace this alias, while another declaration after
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
-        let alias = Symbol::intern(&format!("{package}::{name}"));
+        let alias = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         // Only the importing compunit's own scope owns the import: a module
         // loaded while the importer's block is open records its own `use`s on
         // that block's scope otherwise, and the block then shadows the module's
         // private copy of the routine (`Cro::Iri`'s `decode-percents`).
         let importer = self.executing_unit_sym_for_module_load();
-        if let Some(top) = self.import_scope_stack.last_mut()
+        if let Some(top) = self.module.import_scope_stack.last_mut()
             && top.unit == importer
         {
             top.own_routine_imports.insert(alias);
         }
-        std::sync::Arc::make_mut(&mut self.imported_routine_aliases).insert(alias);
+        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).insert(alias);
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
-        self.imported_routine_aliases
-            .contains(&Symbol::intern(&format!("{package}::{name}")))
+        self.module
+            .imported_routine_aliases
+            .contains(&Symbol::intern(
+                crate::qualified::qualified_text(package, name).as_str(),
+            ))
     }
 
     /// Whether `name` is an imported routine alias of any package a bare name
     /// resolves through here (`bare_name_packages_syms`).
     // Cost: O(p), p = enclosing packages; O(1) when nothing was imported.
     pub(crate) fn imported_routine_alias_in_scope(&self, name: &str) -> bool {
-        if self.imported_routine_aliases.is_empty() {
+        if self.module.imported_routine_aliases.is_empty() {
             return false;
         }
         let name_sym = Symbol::intern(name);
         self.bare_name_packages_syms().iter().any(|&package| {
-            self.imported_routine_aliases
+            self.module
+                .imported_routine_aliases
                 .contains(&crate::qualified::qualified(package, name_sym))
         })
     }
 
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
-        std::sync::Arc::make_mut(&mut self.imported_routine_aliases)
-            .remove(&Symbol::intern(&format!("{package}::{name}")));
+        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).remove(
+            &Symbol::intern(crate::qualified::qualified_text(package, name).as_str()),
+        );
     }
 
     pub(crate) fn record_imported_exported_proto(
@@ -198,7 +204,7 @@ impl Interpreter {
         tags: impl IntoIterator<Item = String>,
     ) {
         let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        std::sync::Arc::make_mut(&mut self.imported_exported_proto_tags)
+        std::sync::Arc::make_mut(&mut self.module.imported_exported_proto_tags)
             .entry(key)
             .or_default()
             .extend(tags);
@@ -210,7 +216,7 @@ impl Interpreter {
         name: &str,
     ) -> Option<HashSet<String>> {
         let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        self.imported_exported_proto_tags.get(&key).cloned()
+        self.module.imported_exported_proto_tags.get(&key).cloned()
     }
 
     /// Run `body` (a role's deferred-body `use`/`need` statement) and persist
@@ -252,16 +258,16 @@ impl Interpreter {
             .filter(|k| !before.contains(*k))
             .filter(|k| {
                 let s = k.resolve();
-                s.contains("::") && !s.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&s) && !s.starts_with("GLOBAL::")
             })
             .copied()
             .collect();
         if !new_keys.is_empty() {
-            let table = crate::runtime::cow_table_mut(&mut self.module_registered_functions);
+            let table = crate::runtime::cow_table_mut(&mut self.module.module_registered_functions);
             for key in new_keys {
                 table.insert(key);
             }
-            crate::runtime::cow_table_mut(&mut self.packages_with_deferred_use_imports)
+            crate::runtime::cow_table_mut(&mut self.module.packages_with_deferred_use_imports)
                 .insert(owner_sym);
         }
         result
@@ -282,8 +288,11 @@ impl Interpreter {
     /// `compute_bare_name_packages` does for the same reason.
     pub(crate) fn package_has_deferred_use_imports(&self, class_name: &str) -> bool {
         let base = class_name.split('[').next().unwrap_or(class_name);
-        Symbol::lookup(base)
-            .is_some_and(|sym| self.packages_with_deferred_use_imports.contains(&sym))
+        Symbol::lookup(base).is_some_and(|sym| {
+            self.module
+                .packages_with_deferred_use_imports
+                .contains(&sym)
+        })
     }
 
     /// Restore function/class/proto registries to the last saved snapshot,
@@ -306,7 +315,7 @@ impl Interpreter {
             .filter(|key| {
                 class_snapshot.contains(*key)
                     || self.persistent_classes.contains(*key)
-                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
                     // A lexical `my class` is stored under its mangled,
                     // per-declaration name (ADR-0047 P1: `P\u{0}<decl-id>`),
                     // which no other scope can spell, so it is no import
@@ -319,7 +328,7 @@ impl Interpreter {
                     // escaped instances and the module's own code need it, and
                     // whether its name resolves here is the ADR-11136 gate's
                     // call, not the registry's.
-                    || self.module_visibility.module_declared_types.contains(*key)
+                    || self.module.module_visibility.module_declared_types.contains(*key)
             })
             .cloned()
             .collect();
@@ -346,7 +355,7 @@ impl Interpreter {
     }
 
     pub(crate) fn pop_import_scope(&mut self) {
-        if let Some(snapshot) = self.import_scope_stack.pop() {
+        if let Some(snapshot) = self.module.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
                 functions: func_snapshot,
                 classes: class_snapshot,
@@ -402,11 +411,12 @@ impl Interpreter {
             // `sub f { use FiniteField; ... }` inside a module leaked its
             // `infix:<**>` into every later call in that package.
             let scope_aliases: HashSet<Symbol> = self
+                .module
                 .imported_routine_aliases
                 .difference(&imported_routine_aliases)
                 .copied()
                 .collect();
-            let module_keys = std::mem::take(&mut self.module_registered_functions);
+            let module_keys = std::mem::take(&mut self.module.module_registered_functions);
             self.registry_mut().functions_mut().retain(|key, _| {
                 if func_snapshot.contains(key) {
                     return true;
@@ -431,7 +441,7 @@ impl Interpreter {
                         return false;
                     }
                 }
-                ks.contains("::") && !ks.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
             });
             // An imported proto/multi family has lexical shadowing semantics,
             // but its candidates share the importing package's flat registry
@@ -440,7 +450,7 @@ impl Interpreter {
             self.registry_mut()
                 .functions_mut()
                 .extend(shadowed_functions);
-            self.module_registered_functions = module_keys;
+            self.module.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
             // module is loaded. `loaded_modules` is never rolled back, so a
@@ -466,14 +476,14 @@ impl Interpreter {
             // re-import, only the `GLOBAL::` alias goes.
             self.registry_mut().proto_subs_retain(|key| {
                 proto_sub_snapshot.contains(key)
-                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
             });
             self.registry_mut().proto_functions_mut().retain(|key, _| {
                 if proto_fn_snapshot.contains(key) {
                     return true;
                 }
                 let ks = key.resolve();
-                ks.contains("::") && !ks.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
             });
             self.registry_mut()
                 .proto_functions_mut()
@@ -484,14 +494,14 @@ impl Interpreter {
             if scope_classes {
                 self.restore_import_env_keys(imported_env_keys, &mut shadowed_env_values);
             }
-            self.newline_mode = newline_mode;
-            self.strict_mode = strict_mode;
-            self.fatal_mode = fatal_mode;
-            self.lexical_fatal_mode = lexical_fatal_mode;
-            self.monkey_typing = monkey_typing;
-            self.imported_routine_aliases = imported_routine_aliases;
-            self.imported_exported_proto_tags = imported_exported_proto_tags;
-            self.imported_env_aliases = imported_env_aliases;
+            self.io.newline_mode = newline_mode;
+            self.module.strict_mode = strict_mode;
+            self.module.fatal_mode = fatal_mode;
+            self.module.lexical_fatal_mode = lexical_fatal_mode;
+            self.module.monkey_typing = monkey_typing;
+            self.module.imported_routine_aliases = imported_routine_aliases;
+            self.module.imported_exported_proto_tags = imported_exported_proto_tags;
+            self.module.imported_env_aliases = imported_env_aliases;
             // Removing imported functions when a lexical import scope pops must
             // invalidate the name-keyed function-resolution caches: a sub that
             // was OTF-compiled and cached under its bare name while in scope
@@ -586,7 +596,7 @@ impl Interpreter {
         // around the load: a transitive `use` inside the module body must
         // resolve with ITS OWN (usually absent) selectors, not the outer ones.
         let (module, dist_selectors) = Self::split_dist_selectors(module);
-        let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
+        let saved = std::mem::replace(&mut self.module.pending_dist_selectors, dist_selectors);
         // `suppress_exports` is set for the whole duration of an enclosing
         // `CompUnit::Repository.need` load (see `load_module_from_path`), so
         // its own compunit's `is export` subs never get registered as
@@ -597,16 +607,16 @@ impl Interpreter {
         // though CT's own mainline genuinely imported it (#7805). `use`
         // always wants ordinary export semantics regardless of an ambient
         // `need`, so suspend the flag for exactly this nested load.
-        let saved_suppress_exports = std::mem::replace(&mut self.suppress_exports, false);
-        let saved_no_import = std::mem::replace(&mut self.loading_without_import, false);
+        let saved_suppress_exports = std::mem::replace(&mut self.module.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.module.loading_without_import, false);
         let result = self.use_module_with_tags_inner(module, tags, import);
-        self.loading_without_import = saved_no_import;
-        self.suppress_exports = saved_suppress_exports;
-        self.pending_dist_selectors = saved;
+        self.module.loading_without_import = saved_no_import;
+        self.module.suppress_exports = saved_suppress_exports;
+        self.module.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue
         // here so a native/pragma/already-loaded path (which never reaches
         // `load_module`) cannot leak this `use`'s args into a later one.
-        self.pending_use_export_args = None;
+        self.module.pending_use_export_args = None;
         result
     }
 
@@ -616,15 +626,15 @@ impl Interpreter {
         tags: &[String],
         import: bool,
     ) -> Result<(), RuntimeError> {
-        if self.loaded_modules.contains(module) {
+        if self.module.loaded_modules.contains(module) {
             if module == "strict" {
-                self.strict_mode = true;
+                self.module.strict_mode = true;
                 self.mark_strict_pragma(true);
             } else if module == "fatal" {
-                self.fatal_mode = true;
-                self.lexical_fatal_mode = true;
+                self.module.fatal_mode = true;
+                self.module.lexical_fatal_mode = true;
             } else if module == "MONKEY-TYPING" || module == "MONKEY" {
-                self.monkey_typing = true;
+                self.module.monkey_typing = true;
             }
             // The module stays loaded, so this `use` is a no-op — but a scope
             // that restored `env` wholesale since the load (a sub call around a
@@ -635,14 +645,17 @@ impl Interpreter {
             // Propagate package declarations from the already-loaded module
             // into the current chain so that chain_has_package_decl checks
             // correctly detect namespace contributions from transitive deps.
-            if let Some(pkgs) = self.module_packages.get(module).cloned() {
-                crate::runtime::cow_table_mut(&mut self.chain_declared_packages).extend(pkgs);
+            if let Some(pkgs) = self.module.module_packages.get(module).cloned() {
+                crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages)
+                    .extend(pkgs);
             }
             // When a module that declares a class/role matching its own name
             // is directly `use`d at the top level, un-hide it and its related
             // classes from the package stash. This handles the case where the
             // module was first loaded transitively by a non-contributing module.
-            if self.module_load_stack.is_empty() && module.contains("::") {
+            if self.module.module_load_stack.is_empty()
+                && crate::qualified::is_qualified_str(module)
+            {
                 let is_contributor = {
                     let registry = self.registry();
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
@@ -665,14 +678,15 @@ impl Interpreter {
             // bare too, even though the module itself is already loaded.
             if let Some(module_aliases) = self.package_type_aliases.get(module).cloned() {
                 let importer_package = self
+                    .module
                     .import_target_package
                     .clone()
-                    .or_else(|| self.unit_module_loading_stack.last().cloned())
+                    .or_else(|| self.module.unit_module_loading_stack.last().cloned())
                     .unwrap_or_else(|| self.current_package());
                 let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                     .entry(importer_package)
                     .or_default();
-                let exported = self.module_owned_types.get(module);
+                let exported = self.module.module_owned_types.get(module);
                 for (short, qualified) in module_aliases {
                     // The module's own alias table also holds private types
                     // and aliases it imported from dependencies. Copy only a
@@ -696,7 +710,7 @@ impl Interpreter {
             // itself (`use JSON::Fast <immutable !pretty>`); its returned map
             // is combined with the ordinary `is export` declarations the
             // colonpair tags select (see `export_hook_ordinary_tags`).
-            if self.module_export_defs.contains_key(module) {
+            if self.module.module_export_defs.contains_key(module) {
                 let ordinary_tags = Self::export_hook_ordinary_tags(tags);
                 return match self.import_module(module, &ordinary_tags) {
                     Ok(()) => Ok(()),
@@ -710,8 +724,8 @@ impl Interpreter {
                 Err(err) => Err(err),
             };
         }
-        if self.module_load_stack.iter().any(|m| m == module) {
-            let mut chain = self.module_load_stack.clone();
+        if self.module.module_load_stack.iter().any(|m| m == module) {
+            let mut chain = self.module.module_load_stack.clone();
             chain.push(module.to_string());
             return Err(RuntimeError::new(format!(
                 "circular module dependency detected: {}",
@@ -721,17 +735,17 @@ impl Interpreter {
         // At the top level (no modules currently loading), save and clear
         // the chain-scoped package declarations so each top-level `use` gets
         // a fresh chain. Nested uses inherit the parent's chain.
-        let is_top_level_use = self.module_load_stack.is_empty();
+        let is_top_level_use = self.module.module_load_stack.is_empty();
         let saved_chain_pkgs = if is_top_level_use {
-            std::mem::take(&mut self.chain_declared_packages)
+            std::mem::take(&mut self.module.chain_declared_packages)
         } else {
             Default::default()
         };
-        self.module_load_stack.push(module.to_string());
+        self.module.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
         let role_snapshot: HashSet<String> = self.registry().roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
-        let package_symbols_before = self.module_toplevel.package_symbols.clone();
+        let package_symbols_before = self.module.module_toplevel.package_symbols.clone();
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
 
         // NativeCall loads no Raku module here (the machinery is in the VM), but
@@ -783,13 +797,13 @@ impl Interpreter {
         ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {
-                self.monkey_typing = true;
+                self.module.monkey_typing = true;
             }
             if module == "MONKEY-SEE-NO-EVAL" || module == "MONKEY" {
                 self.set_monkey_see_no_eval(true);
             }
             Ok(())
-        } else if module.starts_with("Test::") && !self.require_propagates_missing_module {
+        } else if module.starts_with("Test::") && !self.module.require_propagates_missing_module {
             // Load Test:: submodules from source as regular modules.
             // Parse errors should propagate like other `use` failures.
             // Missing helper modules remain non-fatal for compatibility —
@@ -817,9 +831,12 @@ impl Interpreter {
             self.load_module(module)
         };
 
-        self.module_load_stack.pop();
+        self.module.module_load_stack.pop();
         if result.is_ok() {
-            let module_short = if let Some((_, short)) = module.rsplit_once("::") {
+            let module_short = if let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 short
             } else {
                 module
@@ -829,20 +846,20 @@ impl Interpreter {
                 if class_snapshot.contains(class_name) {
                     continue;
                 }
-                let class_short = class_name
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(class_name.as_str());
+                let class_short =
+                    crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
+                        .as_str();
                 if class_short != module_short {
-                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(class_name.clone());
-                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(class_short.to_string());
                 }
             }
             // A module's top-level package-qualified symbols live off the env
             // (ADR-0084 §2 group 2), so the new ones are scanned alongside.
             let new_package_symbols = self
+                .module
                 .module_toplevel
                 .package_symbols
                 .keys()
@@ -859,10 +876,7 @@ impl Interpreter {
                     continue;
                 }
                 let key_s = key.resolve();
-                let key_short = key_s
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(key_s.as_str());
+                let key_short = crate::qualified::last_segment(*key).as_str();
                 if !key_short
                     .chars()
                     .next()
@@ -871,9 +885,9 @@ impl Interpreter {
                     continue;
                 }
                 if key_short != module_short {
-                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(key_s.clone());
-                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(key_short.to_string());
                 }
             }
@@ -889,12 +903,16 @@ impl Interpreter {
             //   (b) its dependency chain includes a `package X {}` declaration
             //       (tracked in `chain_declared_packages` which is scoped to this load).
             // If neither condition holds, new classes/roles are hidden from X's stash.
-            if let Some((namespace, _)) = module.rsplit_once("::") {
+            if let Some((namespace, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 let module_declares_own_class = {
                     let registry = self.registry();
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
                 };
-                let chain_has_package_decl = self.chain_declared_packages.contains(namespace);
+                let chain_has_package_decl =
+                    self.module.chain_declared_packages.contains(namespace);
                 if !module_declares_own_class && !chain_has_package_decl {
                     // Hide newly registered classes/roles from the namespace stash
                     let class_names: Vec<String> =
@@ -922,22 +940,22 @@ impl Interpreter {
             }
             // Record which packages were declared during this module's chain
             // so they can be propagated when the module is re-used.
-            if !self.chain_declared_packages.is_empty() {
-                let chain = (*self.chain_declared_packages).clone();
-                crate::runtime::cow_table_mut(&mut self.module_packages)
+            if !self.module.chain_declared_packages.is_empty() {
+                let chain = (*self.module.chain_declared_packages).clone();
+                crate::runtime::cow_table_mut(&mut self.module.module_packages)
                     .insert(module.to_string(), chain);
             }
             // Restore the chain-scoped package declarations (top-level only)
             if is_top_level_use {
-                self.chain_declared_packages = saved_chain_pkgs;
+                self.module.chain_declared_packages = saved_chain_pkgs;
             }
 
             if module == "strict" {
-                self.strict_mode = true;
+                self.module.strict_mode = true;
                 self.mark_strict_pragma(true);
             } else if module == "fatal" {
-                self.fatal_mode = true;
-                self.lexical_fatal_mode = true;
+                self.module.fatal_mode = true;
+                self.module.lexical_fatal_mode = true;
             }
             // Remove GLOBAL:: function aliases for non-DEFAULT/non-MANDATORY
             // exports that were created by sub hoisting during module loading.
@@ -959,11 +977,12 @@ impl Interpreter {
             // into the inner module and its methods must still resolve them, so
             // hiding them here would break the inner module.
             let mut owned_exports: HashMap<String, HashSet<String>> = self
+                .module
                 .module_owned_exports
                 .get(module)
                 .cloned()
                 .unwrap_or_default();
-            if let Some(pkg_subs) = self.exported_subs.get(module) {
+            if let Some(pkg_subs) = self.module.exported_subs.get(module) {
                 for (name, symbol_tags) in pkg_subs {
                     owned_exports
                         .entry(name.clone())
@@ -987,7 +1006,9 @@ impl Interpreter {
                     if !func_keys_before.contains(&global_key) {
                         let removed = self.registry_mut().functions_mut().remove(&global_key);
                         if let Some(def) = removed {
-                            let qualified = Symbol::intern(&format!("{}::{}", module, name));
+                            let qualified = Symbol::intern(
+                                crate::qualified::qualified_text(module, name).as_str(),
+                            );
                             self.registry_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1012,7 +1033,9 @@ impl Interpreter {
                         let removed = self.registry_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
                             let suffix = mk.as_str().strip_prefix("GLOBAL::").unwrap().to_string();
-                            let qualified = Symbol::intern(&format!("{}::{}", module, suffix));
+                            let qualified = Symbol::intern(
+                                crate::qualified::qualified_text(module, &suffix).as_str(),
+                            );
                             self.registry_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1028,7 +1051,7 @@ impl Interpreter {
             // the caller's namespace while preserving regular function hoisting.
             let mut exported_op_names: HashSet<String> = HashSet::new();
             for source in ["GLOBAL", module] {
-                if let Some(subs) = self.exported_subs.get(source) {
+                if let Some(subs) = self.module.exported_subs.get(source) {
                     for name in subs.keys() {
                         if name.contains(":<") {
                             exported_op_names.insert(name.clone());
@@ -1036,7 +1059,7 @@ impl Interpreter {
                     }
                 }
             }
-            if let Some(subs) = self.unit_module_exported_subs.get(module) {
+            if let Some(subs) = self.module.unit_module_exported_subs.get(module) {
                 for name in subs.keys() {
                     if name.contains(":<") {
                         exported_op_names.insert(name.clone());
@@ -1094,13 +1117,13 @@ impl Interpreter {
             {
                 let mut exported_names: HashSet<String> = HashSet::new();
                 for source in ["GLOBAL", module] {
-                    if let Some(subs) = self.exported_subs.get(source) {
+                    if let Some(subs) = self.module.exported_subs.get(source) {
                         for name in subs.keys() {
                             exported_names.insert(name.clone());
                         }
                     }
                 }
-                if let Some(subs) = self.unit_module_exported_subs.get(module) {
+                if let Some(subs) = self.module.unit_module_exported_subs.get(module) {
                     for name in subs.keys() {
                         exported_names.insert(name.clone());
                     }
@@ -1130,7 +1153,8 @@ impl Interpreter {
                 self.invalidate_fn_resolution();
             }
 
-            crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.to_string());
+            crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
+                .insert(module.to_string());
             // Record the routines this module load registered, so a later
             // registry restore cannot drop them while `loaded_modules` still
             // claims the module is loaded.
@@ -1157,10 +1181,10 @@ impl Interpreter {
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
-                .filter(|k| k.as_str().contains("::"))
+                .filter(|k| crate::qualified::is_qualified_str(k.as_str()))
                 .copied()
                 .collect();
-            crate::runtime::cow_table_mut(&mut self.module_registered_functions)
+            crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
                 .extend(module_funcs);
             // Same for the module's `our` package variables, which live in `env`
             // rather than the routine registry. Collected BEFORE `import_module`
@@ -1180,17 +1204,17 @@ impl Interpreter {
                 .keys()
                 .filter(|k| {
                     !env_snapshot.contains(k)
-                        && (k.as_str().contains("::") || k.resolve() == module)
+                        && (crate::qualified::is_qualified_str(k.as_str()) || k.resolve() == module)
                 })
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();
             if !package_globals.is_empty() {
-                crate::runtime::cow_table_mut(&mut self.module_package_globals)
+                crate::runtime::cow_table_mut(&mut self.module.module_package_globals)
                     .entry(module.to_string())
                     .or_default()
                     .extend(package_globals);
             }
-            let import_tags = if self.module_export_defs.contains_key(module) {
+            let import_tags = if self.module.module_export_defs.contains_key(module) {
                 Self::export_hook_ordinary_tags(tags)
             } else {
                 tags.to_vec()

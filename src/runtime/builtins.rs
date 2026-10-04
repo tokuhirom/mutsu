@@ -851,7 +851,7 @@ impl Interpreter {
                 // name. Mirrors the sub `is export` path: the export package is
                 // the current package at declaration time. Suppressed exports
                 // (e.g. inside an inner block) are skipped, like other exports.
-                if self.suppress_exports {
+                if self.module.suppress_exports {
                     return Ok(Value::NIL);
                 }
                 let Some(name) = args.first() else {
@@ -887,7 +887,7 @@ impl Interpreter {
                 if !value.truthy() {
                     return Err(RuntimeError::new("use newline expects a true mode adverb"));
                 }
-                self.newline_mode = match name.as_str() {
+                self.io.newline_mode = match name.as_str() {
                     "lf" => NewlineMode::Lf,
                     "cr" => NewlineMode::Cr,
                     "crlf" => NewlineMode::Crlf,
@@ -895,7 +895,7 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!("Unknown newline mode: {}", name)));
                     }
                 };
-                let nl = match self.newline_mode {
+                let nl = match self.io.newline_mode {
                     NewlineMode::Lf => "\n",
                     NewlineMode::Cr => "\r",
                     NewlineMode::Crlf => "\r\n",

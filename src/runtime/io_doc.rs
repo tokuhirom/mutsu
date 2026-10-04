@@ -9,14 +9,14 @@ impl Interpreter {
     /// name to be found by -- its code object carries its documentation (see
     /// `crate::decl_doc::DeclDoc`) -- so it is listed for `$=pod` only.
     pub(super) fn install_doc_comments(&mut self, docs: Vec<DocComment>) {
-        self.why_cache.clear();
-        self.why_object_cache.clear();
-        self.doc_comments = docs
+        self.declarator_docs.why_cache.clear();
+        self.declarator_docs.why_object_cache.clear();
+        self.declarator_docs.doc_comments = docs
             .iter()
             .filter(|dc| !dc.is_anonymous)
             .map(|dc| (dc.key.clone(), dc.clone()))
             .collect();
-        self.doc_comment_list = docs;
+        self.declarator_docs.doc_comment_list = docs;
     }
 
     /// Add Pod::Block::Declarator entries to $=pod from doc_comment_list.
@@ -33,7 +33,7 @@ impl Interpreter {
         // from the AST: DOC INIT runs before the program's registration
         // opcodes, but Pod::To::Text needs both `.WHY` identity and the
         // routine's real signature at that point.
-        for dc in &self.doc_comment_list {
+        for dc in &self.declarator_docs.doc_comment_list {
             // The key first: it is what distinguishes the candidates of a
             // multi (`&mm/multi.0` vs `&mm/multi.1`) and one routine's `$a`
             // from another's. `wherefore_name` is the fallback for a
@@ -87,7 +87,9 @@ impl Interpreter {
             };
             let pod_entry = Interpreter::make_pod_declarator(&dc.doc, wherefore);
             if let Some(object_id) = object_id {
-                self.why_object_cache.insert(object_id, pod_entry.clone());
+                self.declarator_docs
+                    .why_object_cache
+                    .insert(object_id, pod_entry.clone());
             }
             pod_entries.push(pod_entry);
         }

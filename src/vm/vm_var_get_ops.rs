@@ -43,7 +43,7 @@ impl Interpreter {
     /// The value an `EXPORT` hook installed under the CORE term keyword `name`,
     /// if one did — the run-time half of `OpCode::GetShadowableTerm` (#9047).
     ///
-    /// Gated on [`Interpreter::export_term_override_names`] rather than probing
+    /// Gated on [`ModuleState::export_term_override_names`](crate::runtime::module_state::ModuleState::export_term_override_names) rather than probing
     /// `env` directly: a sigilless env key is shared with the sigil-stripped
     /// spelling of a same-named `our $True`, and only a key an EXPORT hook
     /// actually installed may shadow the keyword.
@@ -55,10 +55,11 @@ impl Interpreter {
     /// itself. A compunit that did not still folds the keyword to a constant
     /// and never reaches here.
     pub(super) fn export_installed_term(&self, name: &str) -> Option<Value> {
-        if self.export_term_override_names.is_empty() {
+        if self.module.export_term_override_names.is_empty() {
             return None;
         }
         if !self
+            .module
             .export_term_override_names
             .contains(&Symbol::intern(name))
         {

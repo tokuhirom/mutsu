@@ -58,7 +58,7 @@ impl Interpreter {
             && !crate::qualified::is_qualified(enum_sym)
         {
             let owner = self.current_package();
-            crate::runtime::cow_table_mut(&mut self.module_scope_lexicals)
+            crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
                 .entry(owner)
                 .or_default()
                 .insert(key, value);
@@ -93,7 +93,7 @@ impl Interpreter {
     // shares the table, t = recorded symbols).
     pub(crate) fn bind_package_symbol(&mut self, name: String, value: Value) {
         if self.at_module_toplevel() && !self.env.contains_key(&name) {
-            crate::runtime::cow_table_mut(&mut self.module_toplevel.package_symbols)
+            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.package_symbols)
                 .insert(Symbol::intern(&name), value);
             return;
         }
@@ -106,13 +106,16 @@ impl Interpreter {
     // Cost: O(c * d + |name|), c = running package candidates (at most 4),
     // d = package nesting depth, including the global table lookup.
     pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
-        if let Some(scoped) = self.lookup_in_running_package(&self.module_scope_lexicals, name) {
+        if let Some(scoped) =
+            self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
+        {
             return Some(scoped);
         }
-        if self.module_toplevel.package_symbols.is_empty() {
+        if self.module.module_toplevel.package_symbols.is_empty() {
             return None;
         }
-        self.module_toplevel
+        self.module
+            .module_toplevel
             .package_symbols
             .get(&Symbol::intern(name))
     }

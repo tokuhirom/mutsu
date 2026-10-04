@@ -8,7 +8,7 @@ The campaign replaces the 2026-07 "add `nqp::` ops on demand only" rule
 op set is a threshold function, so the whole documented set is closed category
 by category instead of one op per failing dist.
 
-**Measured 2026-10-03** with
+**Measured 2026-10-04** with
 
 ```sh
 scripts/nqp-op-coverage.py --mutsu target/debug/mutsu > table.md
@@ -40,7 +40,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Atomic | 0 / 11 | 11 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
 | Bit | 15 / 15 | 0 | #11491 |
-| Captures | 0 / 5 | 5 | #11496 |
+| Captures | 5 / 5 | 0 | #11496 |
 | Coercion | 10 / 10 | 0 | #11553 |
 | Conditional | 5 / 5 | 0 | #11500 |
 | Context Introspection | 4 / 24 | 20 | #11498 |
@@ -58,7 +58,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
 | Profiling | 0 / 3 | 3 | #11504 |
 | Serialization context | 1 / 18 | 17 | #11504 |
-| Stream Decoding | 0 / 10 | 10 | #11503 |
+| Stream Decoding | 10 / 10 | 0 | #11503 |
 | String | 48 / 48 | 0 | #11495 |
 | System Introspection | 29 / 29 | 0 | #11501 |
 | Threads | 0 / 7 | 7 | #11502 |
@@ -68,13 +68,12 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 1 / 4 | 3 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **434 / 577** | **143** | |
+| **Total** | **449 / 577** | **128** | |
 
 ## Missing ops by category
 
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
 - **Atomic** (#11502): `atomicadd_i`, `atomicbindattr`, `atomicdec_i`, `atomicinc_i`, `atomicload`, `atomicload_i`, `atomicstore`, `atomicstore_i`, `barrierfull`, `cas`, `cas_i`
-- **Captures** (#11496): `captureexistsnamed`, `capturehasnameds`, `captureposelems`, `savecapture`, `usecapture`
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **NativeCall** (#11504): `nativecallinvoke`
@@ -82,7 +81,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
-- **Stream Decoding** (#11503): `decoderaddbytes`, `decoderbytesavailable`, `decoderconfigure`, `decoderempty`, `decodersetlineseps`, `decodertakeallchars`, `decodertakeavailablechars`, `decodertakebytes`, `decodertakechars`, `decodertakeline`
 - **Threads** (#11502): `currentthread`, `newthread`, `threadid`, `threadjoin`, `threadlockcount`, `threadrun`, `threadyield`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
 - **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`

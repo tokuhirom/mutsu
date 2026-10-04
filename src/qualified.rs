@@ -53,7 +53,7 @@ use crate::symbol::{Symbol, wk};
 mod split;
 mod var;
 pub(crate) use split::{
-    ends_with_segments, is_inside_package, is_type_capture, last_segment, segments,
+    ends_with_segments, is_inside_package, is_type_capture, last_segment, segments, split_first,
     split_qualified, stash_stem, text_segments, type_capture_name,
 };
 pub(crate) use var::{QualifiedVar, qualified_var, split_qualified_var};
@@ -273,6 +273,56 @@ pub(crate) fn is_qualified(name: Symbol) -> bool {
 // Cost: O(|name|) for the lookup's hash, then O(1).
 pub(crate) fn is_qualified_str(name: &str) -> bool {
     is_qualified(known_symbol(name))
+}
+
+/// [`qualified`] for a caller that holds both halves only as text: each half
+/// goes through [`known_symbol`], so neither is re-interned per call.
+// Cost: O(|pkg| + |name|) for the two lookups' hashes, then one memo probe.
+pub(crate) fn qualified_text(pkg: impl NamePart, name: impl NamePart) -> Symbol {
+    qualified(pkg.name_sym(), name.name_sym())
+}
+
+/// Whether `pkg` is exactly `GLOBAL` (not the empty package; see
+/// [`is_global_package`] for both), for a caller holding it in any form.
+// Cost: O(|pkg|) for a text form's lookup hash, O(1) for a `Symbol`.
+pub(crate) fn is_global_name(pkg: impl NamePart) -> bool {
+    pkg.name_sym() == wk::global_package()
+}
+
+/// One half of a qualified name, whichever form the caller holds it in: a
+/// `Symbol` is used as is, text goes through [`known_symbol`].
+pub(crate) trait NamePart {
+    fn name_sym(&self) -> Symbol;
+}
+
+impl NamePart for Symbol {
+    fn name_sym(&self) -> Symbol {
+        *self
+    }
+}
+
+impl NamePart for str {
+    fn name_sym(&self) -> Symbol {
+        known_symbol(self)
+    }
+}
+
+impl NamePart for String {
+    fn name_sym(&self) -> Symbol {
+        known_symbol(self)
+    }
+}
+
+impl NamePart for std::borrow::Cow<'_, str> {
+    fn name_sym(&self) -> Symbol {
+        known_symbol(self)
+    }
+}
+
+impl<T: NamePart + ?Sized> NamePart for &T {
+    fn name_sym(&self) -> Symbol {
+        (**self).name_sym()
+    }
 }
 
 /// `name`'s `Symbol`, looked up first and interned only when it has never been

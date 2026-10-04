@@ -259,7 +259,7 @@ impl Interpreter {
             };
             let mut p = vec![multi_prefix("GLOBAL")];
             let pkg = self.current_package();
-            if pkg != "GLOBAL" {
+            if !crate::qualified::is_global_name(&pkg) {
                 p.push(multi_prefix(&pkg));
             }
             p

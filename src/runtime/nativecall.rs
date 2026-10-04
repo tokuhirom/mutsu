@@ -735,7 +735,7 @@ pub(crate) fn pointer_display_suffix(target: &Value) -> Option<String> {
     else {
         return None;
     };
-    if class_name.as_str().rsplit("::").next() != Some("Pointer") {
+    if crate::qualified::last_segment(class_name).as_str() != "Pointer" {
         return None;
     }
     let of = attributes.as_map().get("of").map(|v| match v.view() {

@@ -37,6 +37,15 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
     ) -> Option<usize> {
+        // The failure-position probe of a failed `.parse` re-walks the start
+        // rule purely to measure it (ADR-0009): it must not run user code a
+        // second time (#11608: an overridden `method ws` saw every position
+        // twice). Without running the method its extent is unknown, so the
+        // probe treats the call as no match; the probe's answer is only a
+        // diagnostic position.
+        if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
+            return None;
+        }
         // The pending-exception test is part of the recorded invocation: the
         // walk's replay runs after the compiled run raised it.
         let end: Option<(usize, RegexCaptures)> =

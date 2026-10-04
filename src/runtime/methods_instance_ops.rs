@@ -726,13 +726,14 @@ impl Interpreter {
                 // not `self`) must name the defining package — Raku reports
                 // X::Method::Private::Unqualified rather than the Permission
                 // error used for a qualified-but-untrusted call.
-                let was_qualified = private_rest.contains("::");
+                let was_qualified = crate::qualified::is_qualified_str(private_rest);
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method).
                 // Split at the LAST `::` — the owner class may itself be a nested
                 // name (`$c!Jar::Cookie::secret` is owner `Jar::Cookie`, method
                 // `secret`, NOT owner `Jar`, method `Cookie::secret`).
                 let (pm_name, owner_only, resolved) = if let Some((owner_class, pm_name)) =
-                    private_rest.rsplit_once("::")
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
                     // `owner_class` is the short name as written in
                     // source; canonicalize it relative to the caller's
@@ -1509,14 +1510,14 @@ impl Interpreter {
                         // precompilation cache when available. Explicitly
                         // constructed FileSystem repositories default to
                         // precomp-disabled behavior.
-                        let saved_precomp = self.precomp_enabled;
+                        let saved_precomp = self.module.precomp_enabled;
                         if !repo_precomp_enabled {
-                            self.precomp_enabled = false;
+                            self.module.precomp_enabled = false;
                         }
                         let loaded = self.load_module_from_path(&short_name_str, source_path);
-                        self.precomp_enabled = saved_precomp;
+                        self.module.precomp_enabled = saved_precomp;
                         let precompiled = loaded?;
-                        crate::runtime::cow_table_mut(&mut self.loaded_modules)
+                        crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
                             .insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
@@ -1641,6 +1642,11 @@ impl Interpreter {
                 && !self.grammar_has_user_method(&class_name.resolve(), method)
             {
                 let cls = class_name.resolve();
+                if let Some(result) =
+                    self.try_stream_decoder_method(&attributes, &cls, method, &args)
+                {
+                    return result;
+                }
                 if Self::native_method_blocks_on_other_thread(&cls, method) {
                     let snapshot = attributes.to_map();
                     return self.call_native_instance_method(&cls, &snapshot, method, args);
@@ -2364,7 +2370,8 @@ impl Interpreter {
                 // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
                 // resolves correctly.
                 let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
-                    private_rest.rsplit_once("::")
+                    crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
+                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
                     // Canonicalize the source-written owner name relative to
                     // the caller's package chain before using it both for
@@ -2691,7 +2698,9 @@ impl Interpreter {
                         return Ok(Value::str_from("()"));
                     }
                     let resolved = name.resolve();
-                    let short = resolved.split("::").last().unwrap_or(&resolved);
+                    let short =
+                        crate::qualified::last_segment(crate::qualified::known_symbol(&resolved))
+                            .as_str();
                     Ok(Value::str(format!("({})", short)))
                 }
                 _ => Ok(Value::str(target.to_string_value())),
@@ -2941,7 +2950,9 @@ impl Interpreter {
                     unreachable!()
                 };
                 let name = data.name.resolve();
-                let qualified = format!("{}::{}", data.package.resolve(), name);
+                let qualified = crate::qualified::qualified_text(data.package.resolve(), &name)
+                    .as_str()
+                    .to_string();
                 if self.has_multi_candidates(&name) {
                     // The dispatcher captures the candidates visible now, the
                     // way `&name` of a multi does (`sub_value_from_multi_candidates`).
@@ -3182,7 +3193,9 @@ impl Interpreter {
                         // fact; anything still carrying a body keeps the exact
                         // AST judgment.
                         if data.body.is_empty() && !data.name.is_empty() {
-                            let key = format!("{}::{}", data.package, data.name);
+                            let key = crate::qualified::qualified_text(&data.package, &data.name)
+                                .as_str()
+                                .to_string();
                             if let Some(def) = self.registry().functions.get(&Symbol::intern(&key))
                             {
                                 return Ok(Value::truth(def.is_stub));
@@ -3469,7 +3482,9 @@ impl Interpreter {
                     && let ValueView::Instance { class_name, .. } = target.view()
                 {
                     let cn = class_name.resolve();
-                    let qualified = format!("{}::{}", cn, method);
+                    let qualified = crate::qualified::qualified_text(&cn, method)
+                        .as_str()
+                        .to_string();
                     if self
                         .resolve_token_defs(&qualified)
                         .map(|d| !d.is_empty())

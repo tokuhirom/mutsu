@@ -106,11 +106,11 @@ impl Interpreter {
     /// parent of it) -- the frame-independent first half of
     /// [`Self::unit_private_routine`].
     pub(crate) fn current_unit_private_routine(&self, name: &str) -> Option<Arc<FunctionDef>> {
-        if self.unit_private_names.is_empty() {
+        if self.module.unit_private_names.is_empty() {
             return None;
         }
         let name_sym = Symbol::lookup(name)?;
-        if !self.unit_private_names.contains(&name_sym)
+        if !self.module.unit_private_names.contains(&name_sym)
             || self.imported_in_open_unit_scope(name_sym)
         {
             return None;

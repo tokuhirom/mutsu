@@ -105,6 +105,14 @@ impl Interpreter {
                 }
             }
         }
+        // A `constant` alias of a type names the aliased type, resolved here
+        // in the declaring scope as for a sub (#11555). A multi keeps its
+        // spellings, as `register_sub_decl_with_metadata` does.
+        if !decl.multi
+            && let Some(defs) = self.canonical_signature_param_types(&effective_param_defs)
+        {
+            effective_param_defs = defs;
+        }
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
         // signature-less method body that reads a bare `@_` directly (ADR-
         // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads
@@ -206,7 +214,9 @@ impl Interpreter {
                 // scope as parameter constraints.  Resolve a nested short
                 // name here so a class such as `class Attribute` shadows a
                 // core type with the same leaf name in `--> Attribute`.
-                self.resolve_method_type_name(cx.name, &resolved)
+                let resolved = self.resolve_method_type_name(cx.name, &resolved);
+                self.declared_type_alias_target(&resolved)
+                    .unwrap_or(resolved)
             }),
             compiled_code: installed_compiled_code,
             compiled_fns: installed_compiled_fns,
@@ -282,7 +292,7 @@ impl Interpreter {
         // `register_exported_operator_method_sub`'s forwarding body is
         // name-agnostic despite the name — it dispatches on whatever
         // `resolved_method_name` is.
-        if decl.is_export && !self.suppress_exports {
+        if decl.is_export && !self.module.suppress_exports {
             let tags = if decl.export_tags.is_empty() {
                 vec!["DEFAULT".to_string()]
             } else {
@@ -421,7 +431,9 @@ impl Interpreter {
         }
         // `our method` also registers as a package-scoped sub
         if decl.is_our {
-            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            let qualified_name = crate::qualified::qualified_text(cx.name, &resolved_method_name)
+                .as_str()
+                .to_string();
             let (our_params, our_param_defs) =
                 method_sub_form_params(&effective_params, &effective_param_defs);
             let func_def = crate::ast::FunctionDef {
@@ -499,7 +511,9 @@ impl Interpreter {
                 std::sync::Arc::new(func_def.clone()),
             );
             // Also register under the qualified name for consistency
-            let qualified_name = format!("{}::{}", cx.name, resolved_method_name);
+            let qualified_name = crate::qualified::qualified_text(cx.name, &resolved_method_name)
+                .as_str()
+                .to_string();
             self.registry_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),

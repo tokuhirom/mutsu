@@ -482,17 +482,25 @@ fn lower_conditional_chain(
     Ok(else_branch)
 }
 
-/// Lower `for SOURCE -> $x { … }` to `Stmt::For`. Only a single-parameter pointy
-/// block is handled; the bare `for @x { … }` (`$_`) form and multi-parameter
-/// blocks are the current coverage boundary.
+/// Lower `for SOURCE BLOCK` to `Stmt::For`. A plain block (`for @x { … $_ }`)
+/// has no explicit parameter and the body sees `$_`. A pointy block's
+/// parameters land where the parser puts them: one in `param` / `param_def`
+/// (keeping its type and traits), several in `params` / `params_def`.
 fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let iterable = lower_expr(named_child(node, "source")?)?;
     let block = named_child(node, "body")?;
-    // A pointy block (`-> $x { … }`) names the loop variable; a plain block
-    // (`for @x { … $_ }`) has no explicit parameter and the body sees `$_`.
-    let param = match block.class {
-        RakuAstClass::PointyBlock => pointy_single_param(block)?,
-        RakuAstClass::Block => None,
+    let (param, param_def, params, params_def) = match block.class {
+        RakuAstClass::Block => (None, None, Vec::new(), Vec::new()),
+        RakuAstClass::PointyBlock => {
+            let (names, mut defs) = signature_positional_params(block)?;
+            match defs.len() {
+                // `for @x -> { … }` is the parser's `explicit_zero_params`
+                // form, which the converter never renders.
+                0 => return Err(unsupported(node)),
+                1 => (names.into_iter().next(), defs.pop(), Vec::new(), Vec::new()),
+                _ => (None, None, names, defs),
+            }
+        }
         _ => return Err(unsupported(node)),
     };
     // Both a Block and a PointyBlock wrap their statements in a `body` Blockoid.
@@ -500,9 +508,9 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(Stmt::For {
         iterable,
         param,
-        param_def: Box::new(None),
-        params: Vec::new(),
-        params_def: Vec::new(),
+        param_def: Box::new(param_def),
+        params,
+        params_def,
         body,
         label: None,
         mode: crate::ast::ForMode::Normal,
@@ -1423,32 +1431,6 @@ fn positional_param(name: &str) -> ParamDef {
     }
 }
 
-/// The single loop variable of a pointy block's signature (`-> $x`), with its
-/// `$` sigil stripped, or `None` when the block takes no explicit parameter.
-fn pointy_single_param(pointy: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
-    let Ok(sig) = named_child(pointy, "signature") else {
-        return Ok(None);
-    };
-    let params = list_field(sig, "parameters")?;
-    match params.len() {
-        0 => Ok(None),
-        1 => {
-            let ValueView::RakuAst(p0) = params[0].view() else {
-                return Err(unsupported(pointy));
-            };
-            let target = named_child(p0, "target")?;
-            if target.class != RakuAstClass::ParameterTargetVar {
-                return Err(unsupported(pointy));
-            }
-            let raw = leaf_str(target, "name")?;
-            Ok(Some(
-                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
-            ))
-        }
-        _ => Err(unsupported(pointy)),
-    }
-}
-
 /// Lower `while COND { … }` to `Stmt::While`.
 fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let is_until = node.class == RakuAstClass::StatementLoopUntil;
@@ -1509,6 +1491,33 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let blockoid = named_child(block, "body")?;
     lower_stmts(named_child_or_positional(blockoid)?)
+}
+
+/// A nameless `Method` / `Submethod` -> `parser::anon_method_expr` over its
+/// written parameters. A declared invocant is folded into the receiver by the
+/// parser, so a signature naming one stays the boundary.
+// Cost: O(n), n = size of the node.
+fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let (_, param_defs) = signature_positional_params(node)?;
+    if param_defs.iter().any(|p| p.is_invocant) {
+        return Err(unsupported(node));
+    }
+    let (return_type, custom_traits) = routine_return_type(node, None)?;
+    if !custom_traits.is_empty() {
+        return Err(unsupported(node));
+    }
+    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let declarator = if node.class == RakuAstClass::Submethod {
+        crate::ast::RoutineDeclarator::Submethod
+    } else {
+        crate::ast::RoutineDeclarator::Method
+    };
+    Ok(crate::parser::anon_method_expr(
+        param_defs,
+        return_type,
+        body,
+        declarator,
+    ))
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
@@ -2940,6 +2949,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it
         // keeps its `sub` spelling on the way back, so a re-read of the lowered
         // tree renders the same node.
+        // A nameless `Method` / `Submethod` is a method literal; the parser's
+        // own builder puts the synthetic receiver back in front.
+        RakuAstClass::Method | RakuAstClass::Submethod
+            if !node.fields.iter().any(|f| f.name == Some("name")) =>
+        {
+            lower_method_literal(node)
+        }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
             let (return_type, custom_traits) = routine_return_type(node, None)?;

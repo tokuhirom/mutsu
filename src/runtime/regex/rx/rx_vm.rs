@@ -480,23 +480,30 @@ impl Interpreter {
                                 // A frame's binding window: rewinding past the
                                 // call uninstalls it (`rx_scope`). An eager
                                 // evaluation installs its own around itself.
-                                let (window, lr_window) =
-                                    if matches!(verdict, Ok(CallTarget::Eager(..))) {
-                                        (None, window)
-                                    } else {
-                                        let window = window.map(|window| {
-                                            let k = self.rx_window_adopt(&mut scopes, window);
-                                            reg_trail.push((UNDO_ENTER, k));
-                                            k
-                                        });
-                                        (window, None)
-                                    };
+                                let (window, lr_window) = if matches!(
+                                    verdict,
+                                    Ok(CallTarget::Eager(..)
+                                        | CallTarget::Wrapped
+                                        | CallTarget::CustomHow(_))
+                                ) {
+                                    (None, window)
+                                } else {
+                                    let window = window.map(|window| {
+                                        let k = self.rx_window_adopt(&mut scopes, window);
+                                        reg_trail.push((UNDO_ENTER, k));
+                                        k
+                                    });
+                                    (window, None)
+                                };
                                 match verdict {
-                                    Ok(CallTarget::Eager(cands, why)) => {
-                                        walk_use(WalkUse::Leaf, why);
-                                        let mut ends = self.rx_lr_call_ends(
+                                    Ok(
+                                        target @ (CallTarget::Eager(..)
+                                        | CallTarget::Wrapped
+                                        | CallTarget::CustomHow(_)),
+                                    ) => {
+                                        let mut ends = self.rx_eager_call_ends(
                                             &program.atoms[atom as usize],
-                                            &cands,
+                                            &target,
                                             lr_window,
                                             call_args.as_deref().unwrap_or(&[]),
                                             chars,
@@ -598,16 +605,9 @@ impl Interpreter {
                                         }
                                     }
                                     Ok(CallTarget::Single) => {
-                                        walk_use(WalkUse::Leaf, "builtin-call");
                                         pc += 1;
-                                        match self.regex_match_atom_with_capture_in_pkg(
-                                            &program.atoms[atom as usize],
-                                            chars,
-                                            pos,
-                                            levels.top().caps(),
-                                            pkg,
-                                            ic,
-                                        ) {
+                                        match self.regex_builtin_named(name.spec(), chars, pos, pkg)
+                                        {
                                             Some((end, delta)) => {
                                                 levels.edit(|s| s.merge_delta(delta));
                                                 pos = end;

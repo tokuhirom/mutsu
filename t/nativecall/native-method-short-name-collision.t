@@ -8,7 +8,7 @@ plan 1;
 # different, registered class with the same basename.
 class NativeCollision::Thing is repr('CStruct') {
     has int32 $.value;
-    method count(--> int32) is native('c') is symbol('getpid') { * }
+    method count(--> int32) is native('c', v6) is symbol('getpid') { * }
 }
 
 class NativeCollision::Other::Thing {

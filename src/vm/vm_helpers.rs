@@ -26,7 +26,7 @@ impl Interpreter {
     /// the running script) are the same unit: the main script.
     #[inline]
     pub(crate) fn unit_of_source(&self, source_file: Option<&str>) -> Symbol {
-        match (source_file, self.program_path.as_deref()) {
+        match (source_file, self.io.program_path.as_deref()) {
             (None, _) => crate::runtime::main_unit(),
             (Some(file), Some(prog)) if file == prog => crate::runtime::main_unit(),
             (Some(file), _) => Symbol::intern(file),
@@ -46,11 +46,11 @@ impl Interpreter {
         &self,
     ) -> (bool, bool, crate::runtime::NewlineMode, bool, bool) {
         (
-            self.fatal_mode,
-            self.strict_mode,
-            self.newline_mode,
-            self.monkey_typing,
-            self.lexical_fatal_mode,
+            self.module.fatal_mode,
+            self.module.strict_mode,
+            self.io.newline_mode,
+            self.module.monkey_typing,
+            self.module.lexical_fatal_mode,
         )
     }
 
@@ -60,11 +60,11 @@ impl Interpreter {
         &mut self,
         state: (bool, bool, crate::runtime::NewlineMode, bool, bool),
     ) {
-        self.fatal_mode = state.0;
-        self.strict_mode = state.1;
-        self.newline_mode = state.2;
-        self.monkey_typing = state.3;
-        self.lexical_fatal_mode = state.4;
+        self.module.fatal_mode = state.0;
+        self.module.strict_mode = state.1;
+        self.io.newline_mode = state.2;
+        self.module.monkey_typing = state.3;
+        self.module.lexical_fatal_mode = state.4;
     }
 
     /// Prepare `val` for a write-through into a `ContainerRef` cell (`$ref = v`

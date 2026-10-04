@@ -103,9 +103,9 @@ impl Interpreter {
         body: impl FnOnce(&mut Self) -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {
         let depth = self.current_toplevel_depth();
-        let saved = self.module_toplevel.depth.replace(depth);
+        let saved = self.module.module_toplevel.depth.replace(depth);
         let result = body(self);
-        self.module_toplevel.depth = saved;
+        self.module.module_toplevel.depth = saved;
         result
     }
 
@@ -127,7 +127,8 @@ impl Interpreter {
             // it in place rather than leave a stale id in front.
             && !self.env.contains_key_sym(key)
         {
-            crate::runtime::cow_table_mut(&mut self.module_toplevel.callable_ids).insert(key, id);
+            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.callable_ids)
+                .insert(key, id);
             return;
         }
         self.env.insert_sym_noting(key, Value::int(id));
@@ -137,7 +138,8 @@ impl Interpreter {
     /// the depths it started at (see [`Self::run_module_mainline`]).
     // Cost: O(1).
     pub(crate) fn at_module_toplevel(&self) -> bool {
-        self.module_toplevel
+        self.module
+            .module_toplevel
             .depth
             .is_some_and(|depth| depth == self.current_toplevel_depth())
     }
@@ -149,7 +151,7 @@ impl Interpreter {
     pub(crate) fn registration_callable_id(&self, key: Symbol) -> Option<i64> {
         match self.env().get_sym(key) {
             Some(v) => v.as_int(),
-            None => self.module_toplevel.callable_ids.get(&key).copied(),
+            None => self.module.module_toplevel.callable_ids.get(&key).copied(),
         }
         .filter(|id| *id != 0)
     }

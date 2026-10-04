@@ -437,6 +437,20 @@ impl Interpreter {
                 // Getter: return current uncaught_handler or Nil
                 Ok(state_scheduler::get_uncaught_handler().unwrap_or(Value::NIL))
             }
+            // `ThreadPoolScheduler.usage` (what `Telemetry` samples): the
+            // supervisor, then workers / queued / completed tasks of the
+            // general, timer and affinity pools. mutsu runs every task on one
+            // worker pool, with no supervisor thread, so only the general
+            // columns are non-zero.
+            // Cost: O(1) under the pool lock.
+            "usage" if !is_current_thread => {
+                let (workers, queued) = crate::runtime::worker_pool::usage();
+                let mut row = [0i64; crate::vm::SCHEDULER_USAGE_COLUMNS];
+                row[1] = workers as i64;
+                row[2] = queued as i64;
+                row[3] = crate::runtime::thread_usage::tasks_completed();
+                Ok(Self::native_int_row(&row))
+            }
             "loads" => {
                 // Number of outstanding (spawned-but-unfinished) scheduled tasks.
                 // A CurrentThreadScheduler cue runs inline (never increments), so

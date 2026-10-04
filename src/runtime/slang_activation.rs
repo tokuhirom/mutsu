@@ -169,7 +169,7 @@ pub(crate) fn run_slang_activation(
             // slang when given one (`use L10N::BG 'no-slangification'`) must not
             // slang the importing unit here either (#9550).
             if let Some(args) = use_args {
-                interp.pending_use_export_args =
+                interp.module.pending_use_export_args =
                     Some(args.into_iter().map(SlangUseArg::into_value).collect());
             }
             interp
@@ -202,7 +202,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.program_path.clone());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
         let result = crate::rakuast::str_dot_ast_with_slang(source, slang.as_deref());
         crate::parser::clear_parser_lib_paths();
         result

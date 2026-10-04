@@ -206,7 +206,11 @@ impl Interpreter {
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
         // `is ::Foo` means the same as `is Foo` in Raku.
-        let strip_colons = |s: &str| s.strip_prefix("::").unwrap_or(s).to_string();
+        let strip_colons = |s: &str| {
+            crate::qualified::type_capture_name(s)
+                .unwrap_or(s)
+                .to_string()
+        };
         // Resolve generic type captures in parent names so a class nested in a
         // parametric role body (`class A is Array[T] {}`, composed with `T = Int`)
         // inherits from the concrete `Array[Int]`. Outside a role composition no
@@ -462,7 +466,7 @@ impl Interpreter {
         // the declaring unit so those evaluations can still see this file's
         // private top-level routines.
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        crate::runtime::cow_table_mut(&mut self.class_declaring_units)
+        crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, &final_parents)?;
         Ok(deferred_custom_traits)

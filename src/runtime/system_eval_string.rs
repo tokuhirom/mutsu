@@ -121,12 +121,7 @@ impl Interpreter {
         // Include all user-defined operators (infix, prefix, postfix,
         // circumfix, postcircumfix) so the EVAL parser can recognize them.
         for key in self.registry().functions.keys() {
-            let key_s = key.resolve();
-            let name = if let Some(pos) = key_s.rfind("::") {
-                &key_s[pos + 2..]
-            } else {
-                key_s.as_str()
-            };
+            let name = crate::qualified::last_segment(*key).as_str();
             if name.starts_with("circumfix:")
                 || name.starts_with("postcircumfix:")
                 || name.starts_with("infix:")
@@ -149,7 +144,7 @@ impl Interpreter {
         // Also include operators imported via `use Module` at runtime. This
         // captures prefix/infix/postfix operators declared with `is export`
         // in loaded modules, without exposing non-exported subs.
-        for name in self.imported_operator_names.iter() {
+        for name in self.module.imported_operator_names.iter() {
             seen.insert(name.clone());
         }
         let mut names: Vec<String> = seen.into_iter().collect();
@@ -160,11 +155,7 @@ impl Interpreter {
     pub(crate) fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
         let mut assoc = HashMap::new();
         for (key, value) in self.dispatch.operator_assoc.iter() {
-            let name = if let Some(pos) = key.rfind("::") {
-                &key[pos + 2..]
-            } else {
-                key.as_str()
-            };
+            let name = crate::qualified::last_segment(crate::qualified::known_symbol(key)).as_str();
             if name.starts_with("infix:<") {
                 assoc.insert(name.to_string(), value.clone());
             }
@@ -179,12 +170,7 @@ impl Interpreter {
     pub(crate) fn collect_eval_user_sub_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for key in self.registry().functions.keys() {
-            let key_s = key.resolve();
-            let short = if let Some(pos) = key_s.rfind("::") {
-                &key_s[pos + 2..]
-            } else {
-                key_s.as_str()
-            };
+            let short = crate::qualified::last_segment(*key).as_str();
             // A multi candidate is keyed `Pkg::name/arity…`, so the bare
             // routine name stops at the first `/`. Without this, an imported
             // multi (every `Test` assertion is one) reached the preseed as
@@ -353,18 +339,18 @@ impl Interpreter {
             ));
         }
         let previous_pod = self.env.get("=pod").cloned();
-        let previous_doc_comments = self.doc_comments.clone();
-        let previous_doc_comment_list = self.doc_comment_list.clone();
-        let previous_why_cache = self.why_cache.clone();
-        let previous_why_object_cache = self.why_object_cache.clone();
+        let previous_doc_comments = self.declarator_docs.doc_comments.clone();
+        let previous_doc_comment_list = self.declarator_docs.doc_comment_list.clone();
+        let previous_why_cache = self.declarator_docs.why_cache.clone();
+        let previous_why_object_cache = self.declarator_docs.why_object_cache.clone();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
         // A pragma the EVAL'd unit turns on is scoped to that unit. `use fatal`
         // is the one that bites: mutsu keeps it as an interpreter-wide flag, so
         // without this the *caller* kept throwing on every later soft Failure
         // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
         // common assertion shape, so one of them poisoned the rest of the file.)
-        let saved_fatal_mode = self.fatal_mode;
-        let saved_lexical_fatal_mode = self.lexical_fatal_mode;
+        let saved_fatal_mode = self.module.fatal_mode;
+        let saved_lexical_fatal_mode = self.module.lexical_fatal_mode;
         // ... and the EVAL'd unit does not INHERIT one either. `fatal` is
         // lexical to a compilation unit and EVAL compiles a fresh one, so a
         // caller's `use fatal` — or `try`'s implicit one — must not fatalize the
@@ -375,8 +361,8 @@ impl Interpreter {
         // -> X::OutOfRange case that once argued for inheriting it proves
         // nothing: an out-of-range subscript throws there with or without
         // `fatal`.)
-        self.fatal_mode = false;
-        self.lexical_fatal_mode = false;
+        self.module.fatal_mode = false;
+        self.module.lexical_fatal_mode = false;
         // Unlike `fatal` (a runtime dynamic-scope check the EVAL'd unit
         // legitimately inherits from its caller -- `raku -e 'use
         // MONKEY-SEE-NO-EVAL; use fatal; try { EVAL q["bar"[5]] }; say
@@ -390,8 +376,8 @@ impl Interpreter {
         // {} }] }; say $!.^name'` -> X::Syntax::Augment::WithoutMonkeyTyping,
         // not the method-clash error an inherited pragma would reach).
         // `roast/S12-class/augment-supersede.t` exercises exactly this shape.
-        let saved_monkey_typing = self.monkey_typing;
-        self.monkey_typing = false;
+        let saved_monkey_typing = self.module.monkey_typing;
+        self.module.monkey_typing = false;
         // CALLER:: from the EVAL'd unit's mainline must not resolve directly in
         // the scope that invoked EVAL (see push_eval_caller_frames for the
         // frame layout raku exposes).
@@ -491,18 +477,18 @@ impl Interpreter {
         } else {
             self.env.remove("=pod");
         }
-        self.doc_comments = previous_doc_comments;
-        self.doc_comment_list = previous_doc_comment_list;
-        self.why_cache = previous_why_cache;
-        self.why_object_cache = previous_why_object_cache;
+        self.declarator_docs.doc_comments = previous_doc_comments;
+        self.declarator_docs.doc_comment_list = previous_doc_comment_list;
+        self.declarator_docs.why_cache = previous_why_cache;
+        self.declarator_docs.why_object_cache = previous_why_object_cache;
         if let Some(saved) = saved_in_eval {
             self.env.insert("__mutsu_in_eval".to_string(), saved);
         } else {
             self.env.remove("__mutsu_in_eval");
         }
-        self.fatal_mode = saved_fatal_mode;
-        self.lexical_fatal_mode = saved_lexical_fatal_mode;
-        self.monkey_typing = saved_monkey_typing;
+        self.module.fatal_mode = saved_fatal_mode;
+        self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
+        self.module.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
         let eval_main_keys: Vec<Symbol> = self
             .registry()

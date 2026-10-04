@@ -364,7 +364,10 @@ impl Interpreter {
                     // `Foo::pkg(invocant)` and an in-body call to a `my
                     // method` resolve).
                     if decl.is_our {
-                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        let qualified_name =
+                            crate::qualified::qualified_text(name, &resolved_method_name)
+                                .as_str()
+                                .to_string();
                         let (our_params, our_param_defs) =
                             method_sub_form_params(&effective_params, &effective_param_defs);
                         let func_def = crate::ast::FunctionDef {
@@ -434,7 +437,10 @@ impl Interpreter {
                             Symbol::intern(&resolved_method_name),
                             std::sync::Arc::new(func_def.clone()),
                         );
-                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        let qualified_name =
+                            crate::qualified::qualified_text(name, &resolved_method_name)
+                                .as_str()
+                                .to_string();
                         self.registry_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
@@ -448,7 +454,7 @@ impl Interpreter {
                     // then `import Foo` exposes a `greet` sub — for any
                     // method name, not just an operator-categorical one; see
                     // the class walker's identical fix).
-                    if decl.is_export && !self.suppress_exports {
+                    if decl.is_export && !self.module.suppress_exports {
                         let tags = if decl.export_tags.is_empty() {
                             vec!["DEFAULT".to_string()]
                         } else {
@@ -681,6 +687,22 @@ impl Interpreter {
                     let _ = self.run_block_raw(std::slice::from_ref(stmt));
                 }
                 other => {
+                    // #11596: a `proto method` conflicts with a method the
+                    // core type itself declares, exactly like a plain one.
+                    if let Stmt::ProtoDecl {
+                        name: proto_name,
+                        is_method: true,
+                        ..
+                    } = other
+                        && let Some(message) =
+                            crate::builtins::native_method_row::augment_core_method_conflict(
+                                name,
+                                &proto_name.resolve(),
+                                false,
+                            )
+                    {
+                        return Err(RuntimeError::new(message));
+                    }
                     let _ = self.eval_block_value(std::slice::from_ref(other));
                 }
             }
@@ -842,7 +864,9 @@ impl Interpreter {
     /// Recorded under its short name (the last `::` segment), which is what
     /// `nqp::create` matches it by.
     pub(crate) fn register_vm_storage_class(&mut self, name: &str, is_hash: bool) {
-        let name = name.rsplit("::").next().unwrap_or(name).to_string();
+        let name = crate::qualified::last_segment(crate::qualified::known_symbol(name))
+            .as_str()
+            .to_string();
         if is_hash {
             self.registry_mut().vmhash_classes.insert(name);
         } else {
@@ -1691,7 +1715,7 @@ impl Interpreter {
                 // import itself. See the twin in
                 // `run_composed_role_deferred_body` (#8842).
                 if is_use_or_need {
-                    self.import_target_package = Some(pkg.to_string());
+                    self.module.import_target_package = Some(pkg.to_string());
                 }
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
@@ -1734,7 +1758,7 @@ impl Interpreter {
                 self.set_current_package(saved_pkg.clone());
             }
             if is_use_or_need {
-                self.import_target_package = None;
+                self.module.import_target_package = None;
                 // See the twin in `run_composed_role_deferred_body` (#8842).
                 self.record_deferred_body_imports(type_owner, import_mark);
             }

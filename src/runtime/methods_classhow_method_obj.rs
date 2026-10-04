@@ -637,7 +637,11 @@ impl Interpreter {
             // name"`), without which `__mutsu_owner_sub` was never set on the
             // Parameter object and the comment was unreachable (roast
             // S26-documentation/why-trailing.t's "invocant comment" case).
-            let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
+            let owner_key = owner_class.map(|owner| {
+                crate::qualified::qualified_text(owner, name)
+                    .as_str()
+                    .to_string()
+            });
             let signature = crate::value::signature::make_signature_value_with_owner(
                 sig_info,
                 owner_key,

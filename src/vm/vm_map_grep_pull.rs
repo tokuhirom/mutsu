@@ -293,7 +293,7 @@ impl Interpreter {
         let caller_code = self.current_code;
         // `use fatal` is lexical to the `.map` call site, not to
         // whoever consumes the Seq — see `SeqSource::MapGrep::fatal`.
-        let saved_fatal = std::mem::replace(&mut self.fatal_mode, fatal);
+        let saved_fatal = std::mem::replace(&mut self.module.fatal_mode, fatal);
         // Run the callback under its DECLARING package, exactly as
         // `call_compiled_closure_in_unit` does when a Sub value is
         // invoked from a foreign frame. The map loop drives the block
@@ -368,7 +368,7 @@ impl Interpreter {
                 self.eval_map_over_items_planned(func.clone(), items.slice(start, end), plan)
             }
         };
-        self.fatal_mode = saved_fatal;
+        self.module.fatal_mode = saved_fatal;
         self.reconcile_caller_after_lazy_force(caller_code);
         // A `fail` (and `...`, which IS a `fail`) raised by the
         // callback escapes as a `Control::Fail` error, which the next

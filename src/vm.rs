@@ -196,6 +196,7 @@ mod vm_backtrace;
 mod vm_backtrace_lazy;
 mod vm_check_read_only;
 mod vm_closure_build;
+mod vm_core_type_object_methods;
 mod vm_data_ops;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
@@ -301,7 +302,9 @@ pub(crate) mod vm_poll;
 mod vm_positional_index_key;
 mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
+pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;
 mod vm_rakudo_internals;
+pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;
@@ -490,6 +493,11 @@ pub(crate) struct CatchHandlerCode {
 
 pub(crate) struct VmCallFrame {
     pub saved_env: Env,
+    /// The callee's argument capture, recorded only for code that reads it
+    /// (`nqp::usecapture`, see `runtime::call_capture`). Kept on the frame
+    /// rather than in the env so a return merge can never copy it into the
+    /// caller.
+    pub call_capture: Option<crate::value::Value>,
     /// The caller's `cur_source_line` at frame push, restored on pop (the line
     /// the callee body's ops advanced to must not leak into the caller).
     pub saved_cur_line: i64,

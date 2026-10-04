@@ -1,5 +1,6 @@
 mod regex_alias_subcap;
 pub(crate) mod regex_arg_purity;
+mod regex_atom_leaf;
 mod regex_backref_scope;
 pub(crate) mod regex_builtin_rule;
 mod regex_call_graph;
