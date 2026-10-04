@@ -419,8 +419,12 @@ impl Compiler {
                 // enclosing level's captures (`/ $<x>=(\w) ( $<x> ) /` fails).
                 // So does one with code: `$/` inside a capture group's block is
                 // the group's own match so far, and `$0` its own first capture.
-                let nested =
-                    pattern_captures(p) || pattern_contains_backref(p) || pattern_contains_code(p);
+                // So does one with a `<(` / `)>` marker: the group is the Match
+                // the marker narrows (#11570).
+                let nested = pattern_captures(p)
+                    || pattern_contains_backref(p)
+                    || pattern_contains_code(p)
+                    || super::rx_capture_ops::pattern_sets_capture_marker(p);
                 let start = self.reg();
                 self.ops.push(RxOp::Mark(start));
                 if nested {

@@ -510,11 +510,10 @@ impl Interpreter {
         // descends into the node's own captures.
         let no_rule = || Some(Symbol::intern(""));
         let mut sub = if let Some(mut gs) = group_subcap.take() {
-            // Keep the group's nested captures, but pin the span to the
-            // aliased group's extent.
+            // Keep the group's nested captures and its own span: the group's
+            // extent, already narrowed by a `<(` / `)>` inside it
+            // (`$<x>=(a )> b)` is `a`, #11570; see `capture_group_span`).
             let gsm = std::sync::Arc::make_mut(&mut gs);
-            gsm.from = from;
-            gsm.to = to;
             if gsm.action_name.is_none() {
                 gsm.action_name = no_rule();
             }
