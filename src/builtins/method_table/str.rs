@@ -31,6 +31,7 @@ macro_rules! rows {
 macro_rules! text_rows {
     ($owner:literal) => {
         rows![$owner:
+            "chars" => chars,
             "codes" => codes,
             "ord" => ord,
             "uc" => uc,
@@ -50,7 +51,6 @@ macro_rules! text_rows {
 }
 
 pub(super) static ROWS: &[MethodRow] = rows!["Str":
-    "chars" => chars,
     "Bool" => bool,
 ];
 pub(super) static STR_TEXT_ROWS: &[MethodRow] = text_rows!("Str");
