@@ -21,3 +21,11 @@ multi sub late(Int $x) { "late-int $x" }
 multi sub late(Str $x) { "late-str $x" }
 multi sub late(Num $x) is export { "late-num $x" }
 multi sub late(Bool $x) { "late-bool $x" }
+
+# A tag only the first candidate carries still covers the later ones.
+multi sub tagfirst(Int $x) is export(:early) { "tagfirst-int $x" }
+multi sub tagfirst(Str $x) is export { "tagfirst-str $x" }
+
+# An operator whose own name holds a `/`.
+multi sub infix:<+/+>(Int $a, Str $b) is export { "op-int-str $a $b" }
+multi sub infix:<+/+>(Str $a, Int $b) is export { "op-str-int $a $b" }

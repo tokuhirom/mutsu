@@ -6,6 +6,12 @@
 
 use super::*;
 
+/// Export tags per routine per package (or module): `table[package][name]` is
+/// the set of tags `name` is exported under. Fx-hashed: every `is export`
+/// probes these by short keys several times (#11761).
+pub(crate) type ExportTagTable =
+    rustc_hash::FxHashMap<String, rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>>>;
+
 pub(crate) struct ModuleState {
     /// NativeCall (`is native`) sub descriptors, keyed by sub name. Populated at
     /// declaration; a call to a name present here is routed through C FFI
@@ -260,7 +266,7 @@ pub(crate) struct ModuleState {
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
-    pub(crate) exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    pub(crate) exported_subs: std::sync::Arc<ExportTagTable>,
     /// Exported variable/constant symbols by package and export tag.
     pub(crate) exported_vars: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
@@ -283,8 +289,7 @@ pub(crate) struct ModuleState {
     /// when the actual runtime package registration used "GLOBAL".
     /// Populated during `load_module` so that `import_module` can perform
     /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
-    pub(crate) unit_module_exported_subs:
-        std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    pub(crate) unit_module_exported_subs: std::sync::Arc<ExportTagTable>,
     /// Stack of unit-module names currently being loaded; used by
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
@@ -336,8 +341,7 @@ pub(crate) struct ModuleState {
     /// that declared it. The `use MOD` tag-filter consults this so it only
     /// hides MOD's *own* exports and never a symbol MOD imported from a
     /// transitively-`use`d module (which MOD's methods must still resolve).
-    pub(crate) module_owned_exports:
-        std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    pub(crate) module_owned_exports: std::sync::Arc<ExportTagTable>,
     /// Qualified classes and roles declared by each module's own body. A
     /// module without a `unit` declarator may still declare a type in an
     /// unrelated package (for example `class Test::Handle`); that package is

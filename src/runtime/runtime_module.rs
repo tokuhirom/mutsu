@@ -977,12 +977,12 @@ impl Interpreter {
             // (e.g. a nested `use Other :tag`). Those are legitimately imported
             // into the inner module and its methods must still resolve them, so
             // hiding them here would break the inner module.
-            let mut owned_exports: HashMap<String, HashSet<String>> = self
-                .module
-                .module_owned_exports
-                .get(module)
-                .cloned()
-                .unwrap_or_default();
+            let mut owned_exports: rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>> =
+                self.module
+                    .module_owned_exports
+                    .get(module)
+                    .cloned()
+                    .unwrap_or_default();
             if let Some(pkg_subs) = self.module.exported_subs.get(module) {
                 for (name, symbol_tags) in pkg_subs {
                     owned_exports
@@ -993,7 +993,10 @@ impl Interpreter {
             }
             for (name, symbol_tags) in &owned_exports {
                 let is_mandatory = symbol_tags.contains("MANDATORY");
-                if !want_all && !is_mandatory && symbol_tags.is_disjoint(&requested_tags) {
+                if !want_all
+                    && !is_mandatory
+                    && !symbol_tags.iter().any(|tag| requested_tags.contains(tag))
+                {
                     // This export should NOT be imported under the current tags —
                     // hide it from GLOBAL. Rather than DELETE it (which would lose
                     // the definition and make a later `use MOD :tag` unable to
