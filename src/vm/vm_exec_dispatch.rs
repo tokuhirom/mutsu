@@ -1624,6 +1624,13 @@ impl Interpreter {
                             None
                         };
                         match decision {
+                            // A rebind replaces a binding to a value or a type
+                            // object, as `rebind_of_immutable` lets it above.
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
+                                crate::ast::ReadonlyKind::Immutable
+                                | crate::ast::ReadonlyKind::TypeObject,
+                                _,
+                            )) if is_rebind => {}
                             Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
                                 kind,
                                 bound,
@@ -2406,7 +2413,7 @@ impl Interpreter {
                         // than stopping at the first.
                         self.set_env_with_main_alias(&name, container.clone());
                         if let Some(cell) = binding_cell.clone() {
-                            self.reseat_env_binding_cell(name_sym, cell);
+                            self.reseat_env_binding_cell(name_sym, cell, source_kind);
                         }
                         let source_is_unit_lexical =
                             self.unit_scope_lexical_bind(&resolved_source, &container);
@@ -2588,10 +2595,14 @@ impl Interpreter {
                 // the same resolver `unit_scope_lexical_write` calls again,
                 // unconditionally, further down for the general `unit`
                 // compunit case.
-                if is_rebind
-                    && !val.is_container_ref()
-                    && self.unit_scope_lexical_rebind(&name, &val)
-                {
+                if is_rebind && !val.is_container_ref() && {
+                    // A value rebound from a readonly binding (`$m := $p`,
+                    // `$p` a parameter) keeps that binding's kind.
+                    let source_kind = bind_source
+                        .as_deref()
+                        .and_then(|source| self.readonly_kind(source));
+                    self.unit_scope_lexical_rebind(&name, &val, source_kind)
+                } {
                     *ip += 1;
                     return Ok(());
                 }
@@ -2866,7 +2877,12 @@ impl Interpreter {
                     self.set_env_with_main_alias(&name, val.clone());
                 }
                 if let Some(cell) = binding_cell {
-                    self.reseat_env_binding_cell(name_sym, cell);
+                    // A value rebound from a readonly binding (`$m := $p`,
+                    // `$p` a parameter) keeps that binding's kind.
+                    let source_kind = bind_source
+                        .as_deref()
+                        .and_then(|source| self.readonly_kind(source));
+                    self.reseat_env_binding_cell(name_sym, cell, source_kind);
                 }
                 if sg_is_vardecl
                     && !carrier_logged_before

@@ -1001,11 +1001,19 @@ impl Interpreter {
         let Some(new) = self.locals.get(idx).cloned() else {
             return;
         };
-        let Some(binding) = Self::seat_in_binding_cell(new, cell) else {
+        let name = code.locals[idx].clone();
+        let scalar = !name.starts_with(['@', '%', '&']);
+        // The store just recorded this frame's verdict on the bind in the
+        // registry, which is authoritative for the frame's own name.
+        let source_kind = if scalar {
+            self.readonly_kind(&name)
+        } else {
+            None
+        };
+        let Some(binding) = Self::seat_in_binding_cell(new, cell, scalar, source_kind) else {
             return;
         };
         self.locals[idx] = binding.clone();
-        let name = code.locals[idx].clone();
         self.env_mut().insert(name, binding);
     }
 
@@ -1014,15 +1022,20 @@ impl Interpreter {
     /// stores through `SetGlobal` into its own env entry, so move what the
     /// store left there into the binding cell the declaring frame and every
     /// sibling closure share (#9307).
+    ///
+    /// `source_kind` is the readonly kind of the binding a container rebind
+    /// aliases (see [`Self::seat_in_binding_cell`]).
     pub(super) fn reseat_env_binding_cell(
         &mut self,
         name: crate::symbol::Symbol,
         cell: crate::gc::Gc<crate::value::ContainerCell>,
+        source_kind: Option<crate::ast::ReadonlyKind>,
     ) {
         let Some(new) = self.env().get_sym(name).cloned() else {
             return;
         };
-        if let Some(binding) = Self::seat_in_binding_cell(new, cell) {
+        let scalar = !name.as_str().starts_with(['@', '%', '&']);
+        if let Some(binding) = Self::seat_in_binding_cell(new, cell, scalar, source_kind) {
             self.env_mut().insert_sym(name, binding);
         }
     }
@@ -1030,22 +1043,86 @@ impl Interpreter {
     /// Put the binding `new` a rebind just stored inside the binding cell
     /// `cell`, returning the cell as the value the variable now holds, or
     /// `None` when `new` already is that cell.
+    ///
+    /// The rebind also decides the binding's writability on the cell, since
+    /// every holder of the binding shares it and the readonly registry's mark
+    /// for the name is undone when a rebinding routine returns (ADR-11142
+    /// §2.3, #9277). For a `$` variable (`scalar`):
+    ///
+    /// - bound to a bare value, the value is seated in a readonly binding cell
+    ///   of the kind rakudo refuses an assignment for (`$x := 42`, `$x :=
+    ///   Int`, or `source_kind` when the value came from a readonly binding
+    ///   such as a parameter), else in a plain container;
+    /// - bound to a container (`$x := $y`), the cell is writable, or readonly
+    ///   for `source_kind` when the source binding is (`$x := $ro-param`).
+    ///
+    /// An `@`/`%` rebind leaves the decision alone.
+    // Cost: O(c), c = binding cells chained in front of the new container.
     pub(super) fn seat_in_binding_cell(
         new: Value,
         cell: crate::gc::Gc<crate::value::ContainerCell>,
+        scalar: bool,
+        source_kind: Option<crate::ast::ReadonlyKind>,
     ) -> Option<Value> {
         if matches!(new.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell)) {
+            // The store already wrote the new binding through the cell (a
+            // by-name write to a unit lexical); only the decision is left.
+            if scalar {
+                let content = cell
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                if content.is_container_ref() {
+                    cell.set_binding_decision(source_kind);
+                } else {
+                    cell.set_binding_decision(Self::rebound_value_kind(&content));
+                }
+            }
             return None;
         }
         let container = if new.is_container_ref() {
+            if scalar {
+                cell.set_binding_decision(source_kind);
+            }
             Self::innermost_container(new)
         } else {
-            new.into_container_ref()
+            match source_kind
+                .or_else(|| Self::rebound_value_kind(&new))
+                .filter(|_| scalar)
+            {
+                Some(kind) => {
+                    cell.set_binding_decision(None);
+                    Value::container_ref(crate::gc::Gc::new(
+                        crate::value::ContainerCell::new_readonly_binding(new, kind),
+                    ))
+                }
+                None => {
+                    if scalar {
+                        cell.set_binding_decision(None);
+                    }
+                    new.into_container_ref()
+                }
+            }
         };
         *cell
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
         Some(Value::container_ref(cell))
+    }
+
+    /// The readonly kind a `$` variable `:=`-bound straight to the value `v`
+    /// has: `TypeObject` for a type object, `Immutable` for a value with no
+    /// container of its own (the shapes `bind_marks_type_object` and
+    /// `bind_marks_immutable` mark at a declaration), else none.
+    // Cost: O(1).
+    fn rebound_value_kind(v: &Value) -> Option<crate::ast::ReadonlyKind> {
+        if Self::bind_source_is_type_object(v) {
+            Some(crate::ast::ReadonlyKind::TypeObject)
+        } else if Self::bind_source_has_no_container(v) {
+            Some(crate::ast::ReadonlyKind::Immutable)
+        } else {
+            None
+        }
     }
 
     /// Peel binding cells off `v` (see `binding_cell_of`), returning the
