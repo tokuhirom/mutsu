@@ -286,8 +286,8 @@ impl TrirCompiler<'_> {
     // Cost: O(n), n = length of `name`.
     pub(super) fn is_plain_outer_name(name: &str) -> bool {
         !(name.is_empty()
-            || name.contains("::")
-            || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '=']))
+            || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '='])
+            || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)))
     }
 
     fn compile_unary(&mut self, op: &TokenKind, expr: &Expr, sink: bool) -> Option<TrKind> {

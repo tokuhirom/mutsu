@@ -62,7 +62,7 @@ impl Interpreter {
             let shadow = pd
                 .type_constraint
                 .as_deref()
-                .filter(|c| !c.starts_with("::"))
+                .filter(|c| !crate::qualified::is_type_capture(c))
                 .and_then(|c| self.resolve_type_object(c))
                 .unwrap_or(Value::NIL);
             self.env.insert(pd.name.clone(), shadow);

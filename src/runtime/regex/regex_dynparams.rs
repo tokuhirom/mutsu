@@ -189,7 +189,7 @@ impl Interpreter {
             return self.registry().proto_token_params.get(name).cloned();
         }
         for scope in self.qualified_name_scopes(pkg) {
-            for owner in self.mro_readonly(&scope) {
+            for owner in self.mro_readonly(scope.as_str()) {
                 let found = crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
                     self.registry().proto_token_params.get(key).cloned()
                 });

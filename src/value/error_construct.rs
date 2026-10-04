@@ -201,7 +201,7 @@ impl RuntimeError {
         };
         // Every `::`-separated segment has to look like a type name, so an
         // ordinary sentence that merely opens with `X::` is left alone.
-        let well_formed = name.split("::").all(|seg| {
+        let well_formed = crate::qualified::text_segments(name).all(|seg| {
             seg.starts_with(|c: char| c.is_ascii_uppercase())
                 && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         });

@@ -43,7 +43,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if pkg.is_empty() || pkg == "GLOBAL" {
+        if crate::qualified::is_global_package(pkg) {
             return None;
         }
         if self.resolve_token_defs_in_pkg(name, pkg).is_empty() {
@@ -563,7 +563,7 @@ impl Interpreter {
             .get(pkg.as_str())
             .cloned()?;
         if spec.lookup_name.is_empty()
-            || spec.lookup_name.contains("::")
+            || crate::qualified::is_qualified(spec.lookup_sym)
             || !spec
                 .lookup_name
                 .chars()

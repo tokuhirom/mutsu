@@ -647,7 +647,7 @@ impl Interpreter {
                         )
                         .with_parameter_object(pd, Some(&*self)));
                 }
-            } else if resolved_constraint.starts_with("::") {
+            } else if crate::qualified::is_type_capture(&resolved_constraint) {
                 // `::?CLASS` / `::?ROLE` / `::(expr)`: reported as a capture by
                 // `captured_type_name` and already bound above. They are no
                 // nominal check, so skip the arms below as they always have.
@@ -2875,8 +2875,9 @@ impl Interpreter {
                                                 !ch.is_ascii_alphanumeric() && ch != '_'
                                             })
                                     })
-                                    || package_name.strip_suffix(source_name).is_some_and(
-                                        |prefix| prefix.is_empty() || prefix.ends_with("::"),
+                                    || crate::qualified::ends_with_segments(
+                                        package_name,
+                                        source_name,
                                     )
                             }
                         }
@@ -3522,7 +3523,7 @@ impl Interpreter {
                     // dropped -- the same split #8815 made on the type-check
                     // path, for the same reason.
                     let bound_type_constraint = bound_type_constraint.map(|tc| {
-                        if let Some(captured_name) = tc.strip_prefix("::") {
+                        if let Some(captured_name) = crate::qualified::type_capture_name(&tc) {
                             std::borrow::Cow::Owned(self.resolved_type_capture_name(captured_name))
                         } else {
                             match self.try_resolved_type_capture_name(&tc) {

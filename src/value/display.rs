@@ -83,8 +83,9 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         }
         return std::borrow::Cow::Borrowed(name);
     }
-    let demangled = name
-        .split("::")
+    let demangled = crate::qualified::segments(crate::symbol::Symbol::intern(name))
+        .iter()
+        .map(|segment| segment.as_str())
         .map(|segment| {
             let base = strip_site_keys(segment);
             anon_type_display_name(&base).unwrap_or(base)
@@ -196,7 +197,7 @@ fn user_declared_nativecall_name(slot: usize) -> bool {
 /// prelude out of this set; a nested `module M { class void { } }` registers
 /// `M::void`, which never collides in the first place.
 pub(crate) fn note_user_declared_type_name(name: &str) {
-    if name.contains("::") {
+    if crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)) {
         return;
     }
     if let Some(slot) = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == name) {

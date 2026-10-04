@@ -98,8 +98,8 @@ impl Interpreter {
         if !crate::runtime::registration_sub::any_routine_mixin_roles() {
             return sub_val;
         }
-        let qualified = format!("{package}::{name}");
-        let roles = crate::runtime::registration_sub::routine_mixin_roles(&qualified);
+        let qualified = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        let roles = crate::runtime::registration_sub::routine_mixin_roles(qualified.as_str());
         let mut result = sub_val;
         for role_name in roles {
             result = self
@@ -126,8 +126,8 @@ impl Interpreter {
         if !crate::runtime::registration_sub::any_routine_mixin_roles() {
             return sub_val;
         }
-        let qualified = format!("{package}::{name}");
-        let roles = crate::runtime::registration_sub::routine_mixin_roles(&qualified);
+        let qualified = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        let roles = crate::runtime::registration_sub::routine_mixin_roles(qualified.as_str());
         if roles.is_empty() {
             return sub_val;
         }
@@ -249,7 +249,10 @@ impl Interpreter {
                             .filter(|pd| !pd.named)
                             .map(|pd| {
                                 let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
-                                    if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                    if crate::qualified::is_type_capture(tc)
+                                        || tc == "Any"
+                                        || tc == "Mu"
+                                    {
                                         1
                                     } else {
                                         5
@@ -621,10 +624,12 @@ impl Interpreter {
     /// `does` runs with its defining module as the current package), then the
     /// general declared-type resolution. None when neither names a role.
     fn resolve_short_role_name(&self, name: &str) -> Option<(String, Vec<Value>, bool)> {
-        if !name.contains("::") {
-            let qualified = format!("{}::{}", self.current_package(), name);
-            if self.registry().roles.contains_key(&qualified) {
-                return Some((qualified, Vec::new(), false));
+        let name_sym = Symbol::intern(name);
+        if !crate::qualified::is_qualified(name_sym) {
+            let qualified =
+                crate::qualified::qualified(self.current_package_sym(), name_sym).as_str();
+            if self.registry().roles.contains_key(qualified) {
+                return Some((qualified.to_string(), Vec::new(), false));
             }
         }
         let resolved = self.resolve_declared_type_name(name);
@@ -1135,7 +1140,7 @@ impl Interpreter {
         // so those rebuild sites can re-apply it.
         if let ValueView::Sub(sub_data) = inner.view() {
             crate::runtime::registration_sub::note_routine_mixin_role(
-                &format!("{}::{}", sub_data.package, sub_data.name),
+                crate::qualified::qualified(sub_data.package, sub_data.name).as_str(),
                 role_name,
             );
         }

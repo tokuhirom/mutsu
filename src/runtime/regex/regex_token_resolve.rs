@@ -323,17 +323,19 @@ impl Interpreter {
         name: &str,
         pkg: Symbol,
     ) -> Vec<Arc<FunctionDef>> {
-        if name.contains("::") {
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
             // A qualified subrule (`<Schema::Core::element>`) is written relative
             // to the package it appears in, so `Schema::Core` inside `module
             // YAMLish` means `YAMLish::Schema::Core`. Try the name as written
             // first, then under each enclosing package.
-            let mut out = self.collect_qualified_token_defs(name);
+            let mut out = self.collect_qualified_token_defs(name_sym);
             for scope in self.qualified_name_scopes(pkg) {
                 if !out.is_empty() {
                     break;
                 }
-                out = self.collect_qualified_token_defs(&format!("{scope}::{name}"));
+                out =
+                    self.collect_qualified_token_defs(crate::qualified::qualified(scope, name_sym));
             }
             return out;
         }
@@ -343,9 +345,10 @@ impl Interpreter {
     /// The `<Pkg::rule>` half of [`Self::resolve_token_defs_in_pkg`]: every
     /// candidate registered under this exact qualified name, including the proto
     /// variants and the ones the qualifier's ancestors contribute.
-    fn collect_qualified_token_defs(&self, name: &str) -> Vec<Arc<FunctionDef>> {
+    fn collect_qualified_token_defs(&self, name_sym: Symbol) -> Vec<Arc<FunctionDef>> {
+        let name = name_sym.as_str();
         let mut out = Vec::new();
-        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(name)) {
+        if let Some(defs) = self.registry().token_defs.get(&name_sym) {
             out.extend(defs.clone());
         }
         for &key in self.proto_variant_keys_sorted(name).iter() {
@@ -355,9 +358,8 @@ impl Interpreter {
         }
         // Walk the MRO for qualified names, merging proto candidates from
         // every ancestor (dedup by candidate identity, derived-first).
-        if let Some(pos) = name.rfind("::") {
-            let qual_pkg = &name[..pos];
-            let token_name = &name[pos + 2..];
+        if let Some((qual_pkg, token_name)) = crate::qualified::split_qualified(name_sym) {
+            let (qual_pkg, token_name) = (qual_pkg.as_str(), token_name.as_str());
             let mut seen: std::collections::HashSet<String> = out
                 .iter()
                 .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
@@ -392,10 +394,8 @@ impl Interpreter {
             // Namespace nesting is lexical visibility, but it is not
             // represented in a role/class MRO. A method in `X::RR` must be
             // able to resolve the `my regex nr` registered under `X`.
-            let mut scope = pkg.to_string();
-            while let Some((parent, _)) = scope.rsplit_once("::") {
-                scope = parent.to_string();
-                self.collect_token_defs_for_scope_dedup(&scope, name, &mut out, &mut seen);
+            for scope in crate::qualified::package_ancestors(pkg).skip(1) {
+                self.collect_token_defs_for_scope_dedup(scope.as_str(), name, &mut out, &mut seen);
                 if !out.is_empty() {
                     return out;
                 }

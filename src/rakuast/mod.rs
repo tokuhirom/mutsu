@@ -827,9 +827,10 @@ pub fn type_object_isa(actual: &str, expected: &str) -> bool {
     if is_name_part && expected == "RakuAST::Name" {
         return false;
     }
-    if let Some(rest) = actual.strip_prefix(expected)
-        && rest.starts_with("::")
-    {
+    if crate::qualified::is_inside_package(
+        crate::symbol::Symbol::intern(actual),
+        crate::symbol::Symbol::intern(expected),
+    ) {
         return true;
     }
     if semantic_type_object_ancestors(actual).contains(&expected) {
@@ -857,8 +858,10 @@ pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
     let mut mro = vec![class_name.to_string()];
     let is_name_part =
         class_name == "RakuAST::Name::Part" || class_name.starts_with("RakuAST::Name::Part::");
-    let mut namespace = class_name;
-    while let Some((parent, _)) = namespace.rsplit_once("::") {
+    let mut namespace = crate::symbol::Symbol::intern(class_name);
+    while let Some(parent) = crate::qualified::package_parent(namespace) {
+        let parent_sym = parent;
+        let parent = parent_sym.as_str();
         if parent == "RakuAST" {
             break;
         }
@@ -868,7 +871,7 @@ pub fn type_object_mro(class_name: &str) -> Option<Vec<String>> {
         if is_registered_type_object(parent) && !mro.iter().any(|name| name == parent) {
             mro.push(parent.to_string());
         }
-        namespace = parent;
+        namespace = parent_sym;
     }
     for ancestor in semantic_type_object_ancestors(class_name) {
         if !mro.iter().any(|name| name == ancestor) {

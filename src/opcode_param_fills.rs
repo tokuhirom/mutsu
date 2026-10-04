@@ -59,7 +59,7 @@ impl CompiledFunction {
         if pd
             .type_constraint
             .as_deref()
-            .is_some_and(|tc| tc.starts_with("::"))
+            .is_some_and(crate::qualified::is_type_capture)
         {
             return None;
         }

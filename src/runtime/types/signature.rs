@@ -1595,7 +1595,7 @@ pub(in crate::runtime) fn code_signature_matches_value(
     use crate::value::signature::{param_defs_to_sig_info, signature_smartmatch};
 
     fn resolve_captured_constraint(interpreter: &Interpreter, constraint: &str) -> String {
-        if let Some(captured) = constraint.strip_prefix("::")
+        if let Some(captured) = crate::qualified::type_capture_name(constraint)
             && let Some(ValueView::Package(name)) = interpreter.env.get(captured).map(Value::view)
         {
             return name.resolve();

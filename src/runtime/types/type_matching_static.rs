@@ -22,7 +22,7 @@ impl Interpreter {
         // comparing, or a type object's own bare-name self-check (`has
         // Session $x` defaulting to the `Session` type object) never bridges
         // back to its own declared constraint.
-        let last = qualified.rsplit("::").next().unwrap_or(qualified);
+        let last = crate::qualified::last_segment(Symbol::intern(qualified)).as_str();
         let last = last
             .split_once('\u{0}')
             .map_or(last, |(stripped, _)| stripped);
@@ -62,6 +62,8 @@ impl Interpreter {
         // short names that setup is the whole cost, and `type_matches` asked
         // for it three times per call. Hoisting the two answers into one byte
         // scan each was 9% of a `Buf.push` loop (#7696).
+        // TODO: take both names as `Symbol`s and ask `qualified::is_qualified`
+        // (#11507); an intern per call here would cost more than the scan.
         let constraint_qualified = has_double_colon(constraint);
         let value_type_qualified = has_double_colon(value_type);
         if constraint_qualified

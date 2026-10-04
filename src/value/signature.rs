@@ -462,10 +462,21 @@ impl SubSignatureKey {
         Self::Id(id)
     }
     pub(crate) fn from_method(owner: &str, name: &str, candidate_idx: usize) -> Self {
-        Self::Method(format!("{owner}::{name}#{candidate_idx}"))
+        let qualified = crate::qualified::qualified(
+            crate::symbol::Symbol::intern(owner),
+            crate::symbol::Symbol::intern(name),
+        );
+        Self::Method(format!("{}#{candidate_idx}", qualified.as_str()))
     }
     pub(crate) fn from_routine_handle(package: &str, name: &str) -> Self {
-        Self::RoutineHandle(format!("{package}::{name}"))
+        Self::RoutineHandle(
+            crate::qualified::qualified(
+                crate::symbol::Symbol::intern(package),
+                crate::symbol::Symbol::intern(name),
+            )
+            .as_str()
+            .to_string(),
+        )
     }
     pub(crate) fn from_regex(key: RegexSignatureKey) -> Self {
         Self::Regex(key)
@@ -880,8 +891,8 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
         // prefix (see `ParamDef::captured_type_name`); an ident capture is
         // carried by `type_capture` above and leaves `type_constraint` free for
         // the nominal half.
-        Some(t) if t.starts_with("::") => {
-            type_captures.push(Value::str(t[2..].to_string()));
+        Some(t) if let Some(captured) = crate::qualified::type_capture_name(t) => {
+            type_captures.push(Value::str(captured.to_string()));
             Value::Package(crate::symbol::wk::any())
         }
         // A parameter that is ONLY a capture (`::T $x`) has no nominal type:
@@ -1314,7 +1325,7 @@ fn render_signature(info: &SigInfo) -> String {
         if i > 0 {
             if part == ";;" {
                 // ;; replaces the comma
-            } else if parts[i - 1] == ";;" || parts[i - 1].ends_with("::") {
+            } else if parts[i - 1] == ";;" || parts[i - 1].as_bytes().ends_with(b"::") {
                 // After `;;` or an invocant's `Type $name::` marker, raku uses
                 // a plain space rather than a comma before the next param.
                 params_str.push(' ');

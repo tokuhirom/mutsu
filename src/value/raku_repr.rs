@@ -288,7 +288,12 @@ pub(crate) fn enum_raku_repr(enum_type: &str, key: &str) -> String {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'');
     if is_ident {
-        format!("{}::{}", enum_type, key)
+        crate::qualified::qualified(
+            crate::symbol::Symbol::intern(&enum_type),
+            crate::symbol::Symbol::intern(key),
+        )
+        .as_str()
+        .to_string()
     } else {
         format!("{}::<{}>", enum_type, key)
     }

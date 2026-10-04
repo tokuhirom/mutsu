@@ -114,10 +114,12 @@ impl Interpreter {
                 package,
                 ..
             } => {
-                let full_name = if package.resolve().is_empty() {
+                let full_name = if package.as_str().is_empty() {
                     name.resolve()
                 } else {
-                    format!("{}::{}", package, name)
+                    crate::qualified::qualified(package, name)
+                        .as_str()
+                        .to_string()
                 };
                 Some(format!("<{}>", full_name))
             }
@@ -459,7 +461,7 @@ impl Interpreter {
     /// `name` without the auto-package qualification (`G::x` -> `x`) a body
     /// compiled inside `grammar G { ... }` records its free-variable writes under.
     pub(super) fn strip_regex_pkg_prefix<'a>(pkg: &Symbol, name: &'a str) -> &'a str {
-        if *pkg == "GLOBAL" {
+        if *pkg == crate::symbol::wk::global_package() {
             return name;
         }
         name.strip_prefix(&format!("{pkg}::")).unwrap_or(name)

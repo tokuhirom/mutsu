@@ -112,9 +112,14 @@ pub(super) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
 ///
 /// The one place the RakuAST layer splits a name's text. The layer converts a
 /// parsed program once, like the parser that produced the text; it never runs
-/// per execution.
-pub(super) fn identifier_segments(name: &str) -> std::str::Split<'_, &'static str> {
-    name.split("::")
+/// per execution. The split itself is memoized per symbol
+/// ([`crate::qualified::segments`]).
+pub(super) fn identifier_segments(
+    name: &str,
+) -> impl Iterator<Item = &'static str> + Clone + use<> {
+    crate::qualified::segments(crate::symbol::Symbol::intern(name))
+        .iter()
+        .map(|seg| seg.as_str())
 }
 
 /// Whether `name` is a `::`-qualified identifier (`A::B`, `Foo::v`): two or
@@ -147,8 +152,8 @@ pub(super) fn tail_parts(tail: &str) -> impl Iterator<Item = Value> + '_ {
 /// The package a stash lookup names, in the parser's spelling: `Foo::Bar::`
 /// -> `Foo::Bar`, `::` -> the empty string. `None` when `stash` is not a stash
 /// lookup at all.
-pub(super) fn stash_stem(stash: &str) -> Option<&str> {
-    stash.strip_suffix("::")
+pub(super) fn stash_stem(stash: &str) -> Option<&'static str> {
+    crate::qualified::stash_stem(crate::symbol::Symbol::intern(stash)).map(|stem| stem.as_str())
 }
 
 /// The `Name` of a stash lookup on `stem` (see [`stash_stem`]): its identifier
