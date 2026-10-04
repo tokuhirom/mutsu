@@ -20,8 +20,8 @@
 //! `PathBuf` that `resolve_path` / `resolve_io_path_buf` return. Callers pass
 //! that resolved path, never the string the user wrote.
 //!
-//! This module is the one place those spellings live; each file routine only
-//! decides which of them applies.
+//! This module is the one place those spellings live; each I/O routine only
+//! decides which of them applies. Socket errors use the same libuv and C text.
 
 use super::*;
 use std::io::ErrorKind;
@@ -58,6 +58,12 @@ pub(crate) fn libuv_text(err: &std::io::Error) -> String {
         ErrorKind::ExecutableFileBusy => Some("text file is busy"),
         ErrorKind::FileTooLarge => Some("file too large"),
         ErrorKind::TooManyLinks => Some("too many links"),
+        ErrorKind::ConnectionRefused => Some("connection refused"),
+        ErrorKind::AddrInUse => Some("address already in use"),
+        ErrorKind::AddrNotAvailable => Some("address not available"),
+        ErrorKind::TimedOut => Some("connection timed out"),
+        ErrorKind::HostUnreachable => Some("host is unreachable"),
+        ErrorKind::NetworkUnreachable => Some("network is unreachable"),
         _ => None,
     };
     if let Some(text) = known {
