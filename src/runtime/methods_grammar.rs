@@ -1526,11 +1526,12 @@ impl Interpreter {
         Ok(match self.regex_state.action_made.take() {
             Some(ast) => match match_obj.match_with_ast_lazy(ast.clone()) {
                 Some(v) => v,
-                // The action itself observed `$/` (materializing it) — fall
-                // back to the eager rebuild, same as the main walk.
-                None => match_obj
-                    .match_with_attrs(vec![("ast", ast)])
-                    .unwrap_or(match_obj),
+                // The action observed `$/`, materializing this cursor. Keep
+                // its identity and update it where retained references see it.
+                None => {
+                    match_obj.set_match_ast_in_place(ast);
+                    match_obj
+                }
             },
             None => match_obj,
         })
@@ -1747,7 +1748,9 @@ impl Interpreter {
         // reduction order (bottom-up within each child).
         // Keep the parent frame installed for that entire walk so child action
         // methods can read and mutate parent-owned dynamic variables.
-        let updated_attrs = attributes.clone();
+        // This is a private working map. Its child containers are rebuilt
+        // below before publication, so a shallow Value copy is sufficient.
+        let mut updated_attrs = attributes.as_map().clone();
         macro_rules! restore_on_error {
             ($expr:expr) => {
                 match $expr {
@@ -1955,7 +1958,7 @@ impl Interpreter {
         }
 
         // Rebuild match_obj with updated children
-        let match_obj = Value::make_instance(class_name, (updated_attrs.clone()).to_map());
+        let match_obj = Value::make_instance(class_name, updated_attrs.clone());
 
         // Interior node with no action method of its own: the children (and
         // silent captures) above are already dispatched, and none of the env
@@ -1968,11 +1971,7 @@ impl Interpreter {
                 match Self::actions_class_name_of(actions) {
                     None => false,
                     Some(cn) => {
-                        let sym_hit = match updated_attrs
-                            .as_map()
-                            .get("sym_variant")
-                            .map(Value::view)
-                        {
+                        let sym_hit = match updated_attrs.get("sym_variant").map(Value::view) {
                             Some(ValueView::Str(sym_val)) => {
                                 let sym_name =
                                     self.variant_action_method_name(Some(&cn), rule_name, &sym_val);
@@ -1997,9 +1996,7 @@ impl Interpreter {
         // Save old named capture env vars so parent captures don't leak into child actions
         let saved_named_captures = self.take_action_named_captures();
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
-        if let Some(ValueView::Hash(named_hash)) =
-            updated_attrs.as_map().get("named").map(Value::view)
-        {
+        if let Some(ValueView::Hash(named_hash)) = updated_attrs.get("named").map(Value::view) {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
@@ -2008,9 +2005,7 @@ impl Interpreter {
         // First, save and clear any existing positional captures from parent/sibling action
         // calls so they don't leak into this action method's scope.
         let saved_positional = self.take_action_positional_captures();
-        if let Some(ValueView::Array(pos_arr, _)) =
-            updated_attrs.as_map().get("list").map(Value::view)
-        {
+        if let Some(ValueView::Array(pos_arr, _)) = updated_attrs.get("list").map(Value::view) {
             for (i, v) in pos_arr.iter().enumerate() {
                 self.env.insert_sym(
                     super::methods_grammar_action_env::positional_key_sym(i),
@@ -2025,7 +2020,7 @@ impl Interpreter {
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
         let sym_method_name = if let Some(ValueView::Str(sym_val)) =
-            updated_attrs.as_map().get("sym_variant").map(Value::view)
+            updated_attrs.get("sym_variant").map(Value::view)
         {
             let cn = Self::actions_class_name_of(actions);
             Some(self.variant_action_method_name(cn.as_deref(), rule_name, &sym_val))
@@ -2146,13 +2141,13 @@ impl Interpreter {
         // If make() was called (via action_made which persists across env restore),
         // update .ast on match
         let final_obj = if let Some(ast) = self.regex_state.action_made.take() {
-            let attrs = updated_attrs;
+            let mut attrs = updated_attrs;
             attrs.insert("ast".to_string(), ast);
             // Preserve actions attribute if present
             if let Some(act_val) = attributes.as_map().get("actions") {
                 attrs.insert("actions".to_string(), act_val.clone());
             }
-            Value::make_instance(class_name, (attrs).to_map())
+            Value::make_instance(class_name, attrs)
         } else {
             match_obj
         };
