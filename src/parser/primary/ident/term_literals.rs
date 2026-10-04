@@ -36,6 +36,15 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Some((name, consumed_len, callable)) =
         crate::parser::stmt::simple::match_user_declared_term_symbol(input)
     {
+        // An imported type may also be registered as a sigilless term. Let the
+        // identifier parser consume its definiteness smiley as part of the
+        // type name; otherwise `(CArray:D)` leaves `:D` after `CArray`.
+        if !callable
+            && starts_with_type_smiley(&input[consumed_len..])
+            && can_name_type_smiley(&name)
+        {
+            return Err(PError::expected("definiteness-constrained type"));
+        }
         if is_identifier_name(&input[..consumed_len]) && is_fat_arrow_key(&input[consumed_len..]) {
             return Err(PError::expected("declared term symbol"));
         }
@@ -73,6 +82,7 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
     if let Ok((rest, name)) = crate::parser::stmt::parse_raku_ident(input)
         && crate::parser::stmt::simple::is_imported_value_term(name)
         && !is_fat_arrow_key(rest)
+        && !(starts_with_type_smiley(rest) && can_name_type_smiley(name))
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_imported_function(name))
     {
         return Ok((rest, Expr::BareWord(name.to_string())));
@@ -335,6 +345,13 @@ fn starts_with_type_smiley(rest: &str) -> bool {
     !chars
         .next()
         .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+}
+
+/// The same name gate used by identifier parsing for `Type:D` and native
+/// `int:D`: other lowercase terms keep their colonpair interpretation.
+pub(super) fn can_name_type_smiley(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        || crate::native_types::is_native_type_name(name)
 }
 
 /// Hand a just-parsed CORE term keyword to the run-time resolver when the

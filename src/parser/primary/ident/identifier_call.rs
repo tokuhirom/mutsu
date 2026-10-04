@@ -1755,12 +1755,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // prefix of a longer adverb name.
         if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
             && !r[2..].starts_with('<')
+            && super::term_literals::can_name_type_smiley(&full_name)
             && (full_name
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
-                || (crate::native_types::is_native_type_name(&full_name)
-                    && !r[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')))
+                || !r[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-'))
         {
             let smiley = &r[..2];
             full_name.push_str(smiley);
