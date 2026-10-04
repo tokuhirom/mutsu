@@ -343,6 +343,34 @@ pub(crate) fn find_graphemes(
     }
 }
 
+/// `text` with up to `limit` (all when `None`) occurrences of the non-empty
+/// `needle` replaced by `repl`, matching only hits that start and end on
+/// grapheme boundaries (`"\x[FF76]\x[FF9E]".subst("\x[FF76]", "Y")` is
+/// unchanged, as in Rakudo) — `str::replace` would split the grapheme.
+///
+/// Cost: O(n + r*m), n = bytes of `text`, r = replacements, m = bytes of `repl`.
+pub(crate) fn replace_graphemes(
+    text: &str,
+    needle: &str,
+    repl: &str,
+    limit: Option<usize>,
+) -> String {
+    let idx = GraphemeIndex::build(text);
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    let mut done = 0;
+    while limit.is_none_or(|l| done < l)
+        && let Some(b) = find_graphemes(text, &idx, at, needle)
+    {
+        out.push_str(&text[at..b]);
+        out.push_str(repl);
+        at = b + needle.len();
+        done += 1;
+    }
+    out.push_str(&text[at..]);
+    out
+}
+
 /// Byte offset of the last occurrence of `needle` that starts at or before
 /// byte `max_start` and starts and ends on grapheme boundaries (`.rindex`).
 pub(crate) fn rfind_graphemes(
