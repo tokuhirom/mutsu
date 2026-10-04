@@ -91,7 +91,7 @@ impl Interpreter {
     /// Find an encoding by name (case-insensitive). Returns the entry index if found.
     pub(crate) fn find_encoding(&self, name: &str) -> Option<&EncodingEntry> {
         let name_fc = name.to_lowercase();
-        self.encoding_registry.iter().find(|e| {
+        self.io.encoding_registry.iter().find(|e| {
             e.name.to_lowercase() == name_fc
                 || e.alternative_names
                     .iter()
@@ -104,7 +104,7 @@ impl Interpreter {
     pub(crate) fn register_encoding(&mut self, entry: EncodingEntry) -> Result<(), String> {
         // Check for conflicts
         let name_fc = entry.name.to_lowercase();
-        for existing in self.encoding_registry.iter() {
+        for existing in self.io.encoding_registry.iter() {
             if existing.name.to_lowercase() == name_fc {
                 return Err(entry.name);
             }
@@ -118,7 +118,7 @@ impl Interpreter {
         }
         for alt in &entry.alternative_names {
             let alt_fc = alt.to_lowercase();
-            for existing in self.encoding_registry.iter() {
+            for existing in self.io.encoding_registry.iter() {
                 if existing.name.to_lowercase() == alt_fc {
                     return Err(alt.clone());
                 }
@@ -131,7 +131,7 @@ impl Interpreter {
                 }
             }
         }
-        crate::runtime::cow_table_mut(&mut self.encoding_registry).push(entry);
+        crate::runtime::cow_table_mut(&mut self.io.encoding_registry).push(entry);
         Ok(())
     }
 
@@ -804,8 +804,8 @@ impl Interpreter {
     }
 
     pub fn set_program_path(&mut self, path: &str) {
-        self.program_path = Some(path.to_string());
-        self.program_path_sym = Some(Symbol::intern(path));
+        self.io.program_path = Some(path.to_string());
+        self.io.program_path_sym = Some(Symbol::intern(path));
         let io_path = self.make_io_path_instance(path);
         self.env.insert("*PROGRAM".to_string(), io_path);
         self.env

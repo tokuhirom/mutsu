@@ -91,7 +91,7 @@ impl Interpreter {
             .map_err(|e| RuntimeError::new(format!("Failed to read module {}: {}", file, e)))?;
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
-        crate::parser::set_parser_program_path(self.program_path.clone());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
         // `$?FILE` inside the required file is its own file, not the
         // requirer's — mirrors `run_modules::parse_module_source`.
         let saved_source_file =

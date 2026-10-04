@@ -23,7 +23,7 @@ impl Interpreter {
         let mut declarants = ValueMap::default();
         // Only a declarator block reads a declarant: a unit without one needs
         // none, and building them clones every routine body.
-        if !self.doc_comment_list.is_empty() {
+        if !self.declarator_docs.doc_comment_list.is_empty() {
             let mut scan = PodDeclarants {
                 package: "GLOBAL".to_string(),
                 out: &mut declarants,

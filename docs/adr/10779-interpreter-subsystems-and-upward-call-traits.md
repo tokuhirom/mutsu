@@ -231,6 +231,12 @@ these preconditions:
     package/unit-lexical, `state`, escaping-`our`, lexsub-alias, nested-capture, readonly and
     block-declaration fields. `new()`/`fork_for_thread()` are exactly the entries
     `Interpreter::new`/`clone_for_thread` spelled out per field, comments included; 266 → 226.
-  - Next: `io` (most of it already lives in `OutputSink`/`IoHandleTable`/`TapState`; its
-    `doc_comments`/`why_*` fields are declarator docs and need re-classifying first), then
-    `module` and `types`.
+  - `io`: done. `IoState` (`src/runtime/io_state.rs`) holds the 14 output-sink, `warn`
+    suppression, IO-handle, program-path/chroot, newline-mode, encoding-registry and TAP
+    fields; `fork_for_thread` also takes over the per-thread output-sink and handle-snapshot
+    construction `clone_for_thread` did inline. The four declarator-doc fields
+    (`doc_comments`, `doc_comment_list`, `why_cache`, `why_object_cache`) were re-classified
+    from `io` to `module` -- they are per-compilation-unit metadata, saved and restored
+    around a module load -- and moved into their own `DeclaratorDocs` holder
+    (`src/runtime/declarator_docs.rs`), so that save/restore is one clone; 226 → 210.
+  - Next: `module`, then `types`.

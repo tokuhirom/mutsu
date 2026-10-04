@@ -176,18 +176,18 @@ impl Interpreter {
             return false;
         }
         let line = self
-            .test_assertion_line_stack
+            .io.test_assertion_line_stack
             .last()
             .copied()
             .or(self.test_pending_callsite_line)
             .unwrap_or(1);
-        self.test_assertion_line_stack.push(line);
+        self.io.test_assertion_line_stack.push(line);
         true
     }
 
     pub(crate) fn pop_test_assertion_context(&mut self, pushed: bool) {
         if pushed {
-            self.test_assertion_line_stack.pop();
+            self.io.test_assertion_line_stack.pop();
         }
     }
 
@@ -198,14 +198,14 @@ impl Interpreter {
     /// leaves it holding every entry pushed since the boundary too. See
     /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
     pub(crate) fn test_assertion_line_stack_depth(&self) -> usize {
-        self.test_assertion_line_stack.len()
+        self.io.test_assertion_line_stack.len()
     }
 
     /// Truncate `test_assertion_line_stack` back to `depth` (see
     /// [`Self::test_assertion_line_stack_depth`]).
     pub(crate) fn truncate_test_assertion_line_stack(&mut self, depth: usize) {
-        self.test_assertion_line_stack
-            .truncate(depth.min(self.test_assertion_line_stack.len()));
+        self.io.test_assertion_line_stack
+            .truncate(depth.min(self.io.test_assertion_line_stack.len()));
     }
 
     pub(crate) fn routine_is_test_assertion_by_name(&mut self, name: &str, args: &[Value]) -> bool {

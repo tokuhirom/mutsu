@@ -183,7 +183,7 @@ impl Interpreter {
         let lib_dirs = scan(
             UseLibDirs {
                 file: file.as_deref(),
-                program: self.program_path.as_deref(),
+                program: self.io.program_path.as_deref(),
                 out: Vec::new(),
             },
             stmts,

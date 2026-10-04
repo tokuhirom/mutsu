@@ -433,7 +433,7 @@ impl Interpreter {
         // stderr output includes a file/line reference. The callsite line
         // was set by the VM right before dispatching this builtin.
         let file = self
-            .program_path
+            .io.program_path
             .clone()
             .unwrap_or_else(|| "-e".to_string());
         let line = self

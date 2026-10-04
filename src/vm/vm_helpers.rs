@@ -26,7 +26,7 @@ impl Interpreter {
     /// the running script) are the same unit: the main script.
     #[inline]
     pub(crate) fn unit_of_source(&self, source_file: Option<&str>) -> Symbol {
-        match (source_file, self.program_path.as_deref()) {
+        match (source_file, self.io.program_path.as_deref()) {
             (None, _) => crate::runtime::main_unit(),
             (Some(file), Some(prog)) if file == prog => crate::runtime::main_unit(),
             (Some(file), _) => Symbol::intern(file),
@@ -48,7 +48,7 @@ impl Interpreter {
         (
             self.fatal_mode,
             self.strict_mode,
-            self.newline_mode,
+            self.io.newline_mode,
             self.monkey_typing,
             self.lexical_fatal_mode,
         )
@@ -62,7 +62,7 @@ impl Interpreter {
     ) {
         self.fatal_mode = state.0;
         self.strict_mode = state.1;
-        self.newline_mode = state.2;
+        self.io.newline_mode = state.2;
         self.monkey_typing = state.3;
         self.lexical_fatal_mode = state.4;
     }

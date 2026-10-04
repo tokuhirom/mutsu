@@ -1017,6 +1017,8 @@ pub(crate) use resolution_sequence::value_is_definite;
 pub(crate) mod control_state;
 pub(crate) mod dispatch_state;
 pub(crate) mod lexical_state;
+pub(crate) mod io_state;
+pub(crate) mod declarator_docs;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
@@ -2336,40 +2338,6 @@ impl Interpreter {
 /// `make_mut` under an active share would then copy the table on every write.
 pub struct Interpreter {
     env: Env,
-    /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
-    /// and thread-clone interleaving. Lifted behind `Arc<RwLock<…>>` (PR-B) so
-    /// the VM and the Interpreter can reach it as peers, exactly like
-    /// `io_handles` (③後段/④; see `docs/vm-output-ownership.md`). Access through
-    /// the `output_sink()` / `output_sink_mut()` guarded accessors.
-    output_sink: Arc<RwLock<OutputSink>>,
-    warn_output: String,
-    warn_suppression_depth: usize,
-    /// `control_handlers.len()` recorded at each active `push_warn_suppression`
-    /// call (`quietly`, the Hash hyper). A `warn` raised while suppressed must
-    /// resume in place rather than reach a CONTROL handler registered outside
-    /// the suppressed region -- rakudo's `quietly` installs its own
-    /// resume-everything CONTROL, so an outer handler never sees the warning
-    /// at all (#9607). The innermost entry bounds how far `try_control_inline`
-    /// searches; a CONTROL declared *inside* the suppressed region is still
-    /// above the boundary and gets first look, matching rakudo's nesting order.
-    warn_suppression_boundaries: Vec<usize>,
-    /// Parse warnings (e.g. "Duplicate 'is export' trait") already surfaced
-    /// during the current top-level `run()` invocation, keyed by (origin
-    /// file, message text). A module's source can be parsed more than once
-    /// within a single run — once during the importer's export scan, once
-    /// more when the `use` actually loads it — and each parse's warnings are
-    /// drained and printed independently, so without this the same warning
-    /// prints once per parse. Reset at the top of `run()` (not left to
-    /// accumulate for the process lifetime), so a *separate* top-level
-    /// program sharing this Interpreter instance (a later REPL line, e.g.)
-    /// still sees its own warnings rather than having them silently
-    /// swallowed by a stale entry. See
-    /// `todo/tickets/module-parse-warning-reported-twice.md`.
-    surfaced_parse_warnings: std::collections::HashSet<(Option<String>, String)>,
-    /// All TAP / `Test` module runtime state (counter, subtest stack, bail-out).
-    /// See [`TapState`] — extracted out of this struct so its ownership can later
-    /// move (lever B). Access only through `self.tap`'s methods.
-    tap: TapState,
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
@@ -2479,15 +2447,6 @@ pub struct Interpreter {
     /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
     /// `MUTSU_BUNDLE_DIR`).
     bundled_lib_paths: std::sync::Arc<Vec<String>>,
-    /// Open IO handles (files/sockets/listeners) shared between the VM and the
-    /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
-    /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
-    io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
-    pub(crate) program_path: Option<String>,
-    /// [`Self::program_path`] interned, set with it (`set_program_path`), so
-    /// the per-call unit lookup (`unit_of_source_sym`) compares two symbols
-    /// instead of resolving one back to text.
-    pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration, held as its interned `Symbol` id. A relaxed atomic (not a
@@ -2702,17 +2661,7 @@ pub struct Interpreter {
     /// one buffer per nesting level in flight; bounded, and cleared before
     /// being returned.
     pub(crate) regex_quant_scratch: Vec<Vec<usize>>,
-    test_assertion_line_stack: Vec<i64>,
     block_stack: Vec<CodeFrame>,
-    doc_comments: HashMap<String, DocComment>,
-    /// Ordered list of doc comments for $=pod
-    doc_comment_list: Vec<DocComment>,
-    /// Cache for .WHY results so identity checks (=:=) work
-    why_cache: ValueMap,
-    /// Pod declarators keyed by the concrete WHEREFORE object's stable id.
-    /// DOC INIT uses AST-built declarants before runtime registration, so a
-    /// name key would collide for multis and same-named parameters.
-    why_object_cache: HashMap<u64, Value>,
     type_metadata: std::sync::Arc<HashMap<String, ValueMap>>,
     block_scope_depth: usize,
     /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
@@ -2771,7 +2720,6 @@ pub struct Interpreter {
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
     module_export_defs: HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
-    chroot_root: Option<PathBuf>,
     loaded_modules: std::sync::Arc<HashSet<String>>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
     /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
@@ -2983,17 +2931,6 @@ pub struct Interpreter {
     /// (an env-keyed side table was lost on scope exit).
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
     predictive_seq_iters: HashMap<usize, Value>,
-    /// Bytes a user `IO::Handle` subclass's `READ` handed back BEYOND what the
-    /// caller asked for, keyed by the handle instance's id.
-    ///
-    /// `IO::Handle.read($n)` is specified to keep the excess and serve the next
-    /// read from it, which is what makes `Type/IO/Handle.rakudoc`'s second
-    /// worked example work: its `READ` ignores the byte count and returns the
-    /// whole buffer every time, and rakudo still prints `one` then `two`.
-    /// Without the buffer the first `.get` swallowed both lines.
-    /// TODO: entries are never reclaimed; a custom read handle is rare and the
-    /// buffer is bounded by one `READ` call's result.
-    pub(crate) user_io_read_buffers: HashMap<u64, Vec<u8>>,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire
@@ -3242,7 +3179,6 @@ pub struct Interpreter {
     /// empty Hash entry and returns it).  Set during reduce with `is raw`
     /// callbacks so that container semantics are preserved.
     pub(crate) hash_autovivify: bool,
-    pub(crate) newline_mode: NewlineMode,
     /// Stack of snapshots for lexical import scoping.
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
     /// before a block with `use`.
@@ -3354,9 +3290,6 @@ pub struct Interpreter {
     /// share pays the one deep clone via `Arc::make_mut`. Collapses to a plain
     /// VM field once the Interpreter execution path is removed (PLAN.md ④/⑤).
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
-    /// Registry of encodings (both built-in and user-registered).
-    /// Each entry maps a canonical name to an EncodingEntry.
-    encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
     /// Roles whose `.new` is currently constructing through their pun. `.new` on
     /// a role composes it into a class of the same name and re-enters
     /// `dispatch_new` to run *that class's* constructor; the role name is pushed
@@ -3793,6 +3726,12 @@ pub struct Interpreter {
     /// Package/unit/`our`/`state` variable storage and lexical bookkeeping that
     /// lives outside the frames (the `lexicals` subsystem, ADR-10779).
     pub(crate) lexicals: lexical_state::LexicalState,
+    /// Output sinks, IO handles, process paths and TAP state (the `io`
+    /// subsystem, ADR-10779).
+    pub(crate) io: io_state::IoState,
+    /// The compilation unit's declarator docs (`#|`/`#=`) and the `.WHY`
+    /// caches over them (ADR-0136, ADR-10779).
+    pub(crate) declarator_docs: declarator_docs::DeclaratorDocs,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.

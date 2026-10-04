@@ -222,8 +222,8 @@ impl Interpreter {
     /// Name-keyed persistent stores and per-run caches that hold live
     /// `Value`s across statements/calls (as opposed to pure metadata).
     fn visit_persistent_caches(&self, visitor: &mut dyn RootVisitor) {
-        visit_map_values(visitor, &self.why_cache);
-        visit_map_values(visitor, &self.why_object_cache);
+        visit_map_values(visitor, &self.declarator_docs.why_cache);
+        visit_map_values(visitor, &self.declarator_docs.why_object_cache);
         for inner in self.type_metadata.values() {
             visit_map_values(visitor, inner);
         }

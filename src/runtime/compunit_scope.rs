@@ -63,7 +63,7 @@ impl Interpreter {
     pub(crate) fn unit_of_source_sym(&self, file: Option<Symbol>) -> Symbol {
         match file {
             None => crate::runtime::main_unit(),
-            Some(f) if Some(f) == self.program_path_sym => crate::runtime::main_unit(),
+            Some(f) if Some(f) == self.io.program_path_sym => crate::runtime::main_unit(),
             Some(f) => f,
         }
     }

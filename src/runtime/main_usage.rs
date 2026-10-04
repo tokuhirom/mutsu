@@ -126,7 +126,7 @@ impl Interpreter {
                 }
             }
             let docs = self
-                .doc_comments
+                .declarator_docs.doc_comments
                 .get(&candidate.doc_key)
                 .map(|doc| format!("-- {}", doc.doc.contents()));
             let mut parts = vec![prog_name.clone()];
@@ -360,7 +360,7 @@ impl Interpreter {
         sp: &SigParam,
     ) -> Option<String> {
         let key = format!("&{}::{}{}", def.name, sp.sigil, sp.name);
-        let mut why = self.doc_comments.get(&key)?.doc.contents();
+        let mut why = self.declarator_docs.doc_comments.get(&key)?.doc.contents();
         if let Some(default_expr) = &pd.default
             && let Ok(value) = self.eval_param_default_expr(pd, default_expr)
             && crate::runtime::types::value_is_defined(&value)
