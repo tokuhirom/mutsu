@@ -532,8 +532,18 @@ impl Interpreter {
             });
             return Ok(());
         }
-        if let ValueView::Instance { attributes, .. } = obj.view() {
-            attributes.bind_attr_through(attr_key, val);
+        match obj.view() {
+            ValueView::Instance { attributes, .. } => {
+                attributes.bind_attr_through(attr_key, val);
+            }
+            // A role attribute lives in the mixin's role cell; anything else
+            // is the inner value's (see `nqp_attr_value`).
+            ValueView::Mixin(inner, mixins)
+                if !mixins.set_role_attribute_by_name(attr_key, val.clone()) =>
+            {
+                return Self::nqp_bindattr_value(op, inner, attr, val);
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -639,6 +649,14 @@ impl Interpreter {
                     "eigenstates" => Some(Value::array(values.to_vec())),
                     _ => None,
                 };
+            }
+            // A value with roles mixed in keeps their attributes in its role
+            // cell (`nqp::getattr($r, $r.WHAT, '$!entry-point')` on a routine
+            // that does NativeCall's `Native`), the rest on the inner value.
+            ValueView::Mixin(inner, mixins) => {
+                return mixins
+                    .role_attribute_by_name(bare)
+                    .or_else(|| Self::nqp_attr_value(inner, name));
             }
             _ => {}
         }

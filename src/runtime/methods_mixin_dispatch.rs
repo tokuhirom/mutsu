@@ -534,14 +534,21 @@ impl Interpreter {
             // Inject both stores before executing a role method so bare role
             // lexicals such as `my \\value = T` resolve to this composition's
             // value rather than to a bareword.
-            self.inject_class_body_statics(def.lexical_package.as_str());
+            // The env here is still the caller's: what is injected is
+            // restored after the call with the role parameters, so a static
+            // never leaks into the calling frame (it clobbered a caller
+            // closure's own `c` capture in upstream NativeCall, #11203).
+            self.inject_class_body_statics_saving(
+                def.lexical_package.as_str(),
+                &mut saved_role_params,
+            );
             if let Some(ValueView::Array(type_args, _)) = mixins
                 .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
                 .map(Value::view)
             {
                 let (_, punned_name) =
                     Self::parametric_role_pun_name(&role_name, type_args.as_slice());
-                self.inject_class_body_statics(&punned_name);
+                self.inject_class_body_statics_saving(&punned_name, &mut saved_role_params);
             }
             // Build the attribute set visible to the role method body.
             // Start with the inner instance's own attributes (e.g. class
@@ -632,7 +639,8 @@ impl Interpreter {
                 self.dispatch.method_dispatch_stack.pop();
                 self.pop_samewith_context();
             }
-            for (name, previous) in &saved_role_params {
+            // Newest first: a name saved twice gets its oldest value back.
+            for (name, previous) in saved_role_params.iter().rev() {
                 if let Some(prev) = previous {
                     self.env.insert(name.clone(), prev.clone());
                 } else {

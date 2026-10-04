@@ -318,6 +318,7 @@ impl Interpreter {
             &decl.body,
             decl.is_rw,
             false,
+            decl.return_type.as_deref(),
             &decl.custom_traits,
         )?;
         // `my method` in roles are role-private, skip method table.

@@ -18,13 +18,11 @@ impl Interpreter {
     /// `package_lexicals[owner]`, so a method that closes over one still
     /// resolves it once the composing frame's env is gone.
     ///
-    /// `env_before` is the env key set captured immediately before the body
-    /// ran; `declared` names what the body itself declared (each
+    /// `declared` names what the body itself declared (each
     /// `DeferredBodyOp::declared_vars`, plus the role's bound type params).
-    /// A declared name counts as a body lexical even when a same-named
-    /// binding already leaked into the outer env, and it is the only way a
-    /// type object (`my class KV { ... }`) is kept — an undeclared package
-    /// value in scope belongs to the surrounding compunit, not to this body.
+    /// Only a declared name is a body lexical -- even when a same-named
+    /// binding already leaked into the outer env; anything else in the env
+    /// belongs to the scope that composed the role.
     ///
     /// Both role-composition routes need this. A `class C does R` runs the
     /// body through `compose_role_body`; punning the role instead
@@ -33,18 +31,19 @@ impl Interpreter {
     /// the composing frame's env only — so every method of a punned role
     /// lost its own body scope, reporting `Undeclared name: KV` for a body
     /// `my class` and reading a body `my $x` back as `Nil`.
-    pub(crate) fn persist_role_body_lexicals(
-        &mut self,
-        owner: &str,
-        env_before: &HashSet<Symbol>,
-        declared: &HashSet<String>,
-    ) {
+    pub(crate) fn persist_role_body_lexicals(&mut self, owner: &str, declared: &HashSet<String>) {
         let new_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
             .filter_map(|(k, v)| {
                 let bare = k.resolve();
-                if env_before.contains(k) && !declared.contains(bare.as_str()) {
+                // Only what the body declared is its lexical. A name the env
+                // gained otherwise is the composing scope's: a role composed
+                // from a routine's trait handler runs where the caller's
+                // lexicals are visible, and recording them as body statics
+                // injected the caller's `$c` into a later method call's
+                // caller frame (upstream NativeCall's `-> |c` body, #11203).
+                if !declared.contains(bare.as_str()) {
                     return None;
                 }
                 if crate::qualified::is_qualified_str(&bare)
@@ -353,7 +352,6 @@ impl Interpreter {
         // role was first parameterised — inside a `with`/`given`
         // block, that would retopicalize the caller.
         let saved_topic = self.env.get("_").cloned();
-        let body_env_before: HashSet<crate::symbol::Symbol> = self.env.keys().copied().collect();
         // `$?CLASS` in a role body is the class being composed: Rakudo runs
         // the body once per consuming class, so `my @attrs =
         // $?CLASS.^attributes` computes each class's own list (SBOM). The
@@ -563,7 +561,7 @@ impl Interpreter {
                 .map(|s| s.resolve().to_string())
                 .collect();
             declared.extend(role_param_values.keys().map(|k| k.to_string()));
-            self.persist_role_body_lexicals(cx.name, &body_env_before, &declared);
+            self.persist_role_body_lexicals(cx.name, &declared);
         }
         // Rename each newly-declared nested class to its
         // per-composition parameterized name and record an alias so a

@@ -304,6 +304,10 @@ impl Interpreter {
     }
 
     pub(super) fn sub_signature_value(&self, data: &crate::value::SubData) -> Value {
+        // A signature bound to the routine's `$!signature` (ADR-11827 cell).
+        if let Some(bound) = data.routine_cell.bound_signature() {
+            return bound;
+        }
         // `.assuming(...)` clones the primed sub's `SubData` verbatim --
         // `id`, `compiled_routine`, `compiled_code` all unchanged -- and only
         // mutates `assumed_positional`/`assumed_named` on the clone (see the

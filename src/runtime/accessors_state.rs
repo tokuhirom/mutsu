@@ -294,7 +294,8 @@ impl Interpreter {
             return None;
         }
         if self.wrap_sub_id_for_name(name).is_some() {
-            return self.get_wrapped_sub(name);
+            let sub = self.get_wrapped_sub(name)?;
+            return self.wrapped_sub_is_the_callee(&sub, name).then_some(sub);
         }
         let name = Symbol::intern(name);
         if !crate::qualified::is_qualified(name) {
@@ -303,10 +304,43 @@ impl Interpreter {
         let bare = crate::qualified::unqualified_part(name);
         self.wrap_sub_id_for_name(bare.as_str())?;
         let sub = self.get_wrapped_sub(bare.as_str())?;
-        let ValueView::Sub(data) = sub.view() else {
+        // A routine with roles mixed in (`$r does Native[...]`) is wrapped as
+        // that mixin; its package is the inner routine's.
+        let code = Self::unwrap_callable_mixin(sub.clone());
+        let ValueView::Sub(data) = code.view() else {
             return None;
         };
         (crate::qualified::qualified(data.package, bare) == name).then(|| sub.clone())
+    }
+
+    /// Whether the routine wrapped under the bare name `name` is the one a
+    /// call spelled `name` reaches here. The wrap is recorded by bare name,
+    /// so a same-named routine of another package -- a local `our sub` that
+    /// shadows a `need`ed module's native one, whose `$!do` was bound -- must
+    /// not run the other routine's chain.
+    // Cost: O(1) expected: an env probe and one function resolution; O(f),
+    // f = registered functions, when only multi candidates answer the name.
+    fn wrapped_sub_is_the_callee(&self, sub: &Value, name: &str) -> bool {
+        let sub = Self::unwrap_callable_mixin(sub.clone());
+        let ValueView::Sub(wrapped) = sub.view() else {
+            return true;
+        };
+        if let Some(local) = self.env.get(&format!("&{name}"))
+            && let ValueView::Sub(local) = Self::unwrap_callable_mixin(local.clone()).view()
+            && local.package != wrapped.package
+        {
+            return false;
+        }
+        match self.resolve_function(name) {
+            Some(def) => def.package == wrapped.package,
+            // Only multi candidates answer the name here: the call reaches
+            // the wrapped routine only if it is one of them.
+            None if self.has_multi_function_unindexed(name) => {
+                self.registry()
+                    .has_multi_function(None, &[wrapped.package], name)
+            }
+            None => true,
+        }
     }
 
     /// Whether ANY routine has been `.wrap`ped in this program.

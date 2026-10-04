@@ -6275,20 +6275,30 @@ pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind 
 }
 
 /// The plain lexicals a deferred role-body statement declares: a `VarDecl`,
-/// or the ones in a bind group [`role_body_plan`] keeps whole.
-// Cost: O(n), n = number of statements in `stmt`'s group.
+/// or the ones in a bind group [`role_body_plan`] keeps whole, or the ones a
+/// phaser declares into the body (`INIT my Lock $setup-lock .= new;` in
+/// upstream NativeCall's `Native` role).
+// Cost: O(n), n = number of statements in `stmt`'s group and phaser bodies.
 pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
-    crate::ast::scope_members(std::slice::from_ref(stmt))
-        .filter_map(|s| match s {
-            Stmt::VarDecl {
-                name,
-                is_our: false,
-                is_dynamic: false,
-                ..
-            } => Some(Symbol::intern(name)),
-            _ => None,
-        })
-        .collect()
+    let mut out = Vec::new();
+    // A phaser's body is one more statement list of this scope, so it joins
+    // the work list rather than being walked separately.
+    let mut pending: Vec<&[Stmt]> = vec![std::slice::from_ref(stmt)];
+    while let Some(stmts) = pending.pop() {
+        for s in crate::ast::scope_members(stmts) {
+            match s {
+                Stmt::VarDecl {
+                    name,
+                    is_our: false,
+                    is_dynamic: false,
+                    ..
+                } => out.push(Symbol::intern(name)),
+                Stmt::Phaser { body, .. } => pending.push(body),
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]

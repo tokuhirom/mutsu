@@ -30,8 +30,9 @@ pub(crate) struct NqpAttrName {
     /// element store, which a Map/List subclass instance keeps outside its
     /// attribute store, so only the generic body answers it.
     pub(crate) container_storage: bool,
-    /// The name is `$!do`: on a code object it is the routine's body
-    /// (`runtime::code_do_attr`), which only the interpreter can answer.
+    /// The name is `$!do` or `$!signature`: on a code object it is the
+    /// routine's body or bound signature (`runtime::code_do_attr`), which
+    /// only the interpreter can answer.
     pub(crate) code_do: bool,
 }
 
@@ -46,7 +47,7 @@ impl NqpAttrName {
             read_key: Symbol::intern(Interpreter::nqp_attr_bare(name)),
             write_key: (!write.is_empty()).then(|| Symbol::intern(write)),
             container_storage: matches!(write, "storage" | "reified"),
-            code_do: name == "$!do",
+            code_do: matches!(name, "$!do" | "$!signature"),
         }
     }
 }

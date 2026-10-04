@@ -911,6 +911,31 @@ impl Registry {
         self.bump_method_generation();
     }
 
+    /// Make `body` the innermost entry of a method candidate's chain, under
+    /// the reserved `$!do` handle, replacing a body bound earlier
+    /// (`crate::runtime::code_do_attr`).
+    // Cost: O(c), c = wrappers on the candidate.
+    pub(crate) fn bind_method_do_body(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        body: Value,
+    ) {
+        let handle = crate::runtime::code_do_attr::DO_BODY_HANDLE;
+        let chain = self
+            .method_wrap_chains
+            .entry((
+                class_name.to_string(),
+                method_name.to_string(),
+                candidate_idx,
+            ))
+            .or_default();
+        chain.retain(|(h, _)| *h != handle);
+        chain.insert(0, (handle, body));
+        self.bump_method_generation();
+    }
+
     /// Pop the outermost wrapper off a method candidate's chain, returning it
     /// if the chain was non-empty (ADR-0019 E10's `.unwrap()`-with-no-args
     /// leg).
@@ -925,7 +950,16 @@ impl Registry {
             method_name.to_string(),
             candidate_idx,
         );
-        let popped = self.method_wrap_chains.get_mut(&key).and_then(Vec::pop);
+        // A bound `$!do` body is the method's body, not a wrapper.
+        let popped = self
+            .method_wrap_chains
+            .get_mut(&key)
+            .filter(|chain| {
+                chain
+                    .last()
+                    .is_some_and(|(h, _)| *h != crate::runtime::code_do_attr::DO_BODY_HANDLE)
+            })
+            .and_then(Vec::pop);
         if popped.is_some() {
             self.bump_method_generation();
         }

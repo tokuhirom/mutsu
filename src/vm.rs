@@ -347,6 +347,7 @@ mod vm_trait_mod_export_ops;
 mod vm_try_catch_gather;
 mod vm_try_catch_ops;
 mod vm_type_object_concreteness;
+mod vm_type_term;
 mod vm_typedecl_ops;
 mod vm_value_helpers;
 mod vm_var_assign_coerce;

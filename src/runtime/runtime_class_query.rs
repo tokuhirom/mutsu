@@ -440,6 +440,30 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::inject_class_body_statics`], recording each injected name's
+    /// previous binding in `saved` so the caller can restore its env.
+    // Cost: O(s), s = statics of `class_name`.
+    pub(crate) fn inject_class_body_statics_saving(
+        &mut self,
+        class_name: &str,
+        saved: &mut Vec<(String, Option<Value>)>,
+    ) {
+        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
+            return;
+        };
+        if statics.is_empty() {
+            return;
+        }
+        let to_inject: Vec<(String, Value)> = statics
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, v) in to_inject {
+            saved.push((k.clone(), self.env.get(&k).cloned()));
+            self.env.insert(k, v);
+        }
+    }
+
     /// Whether one of `class_name`'s methods declares a class or role in its
     /// body (`Registry::classes_with_method_type_decls`).
     // Cost: O(1) expected, hash lookup.

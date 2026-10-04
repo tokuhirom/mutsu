@@ -1112,12 +1112,19 @@ impl Interpreter {
             // lexical type (`my subset ofTest ...; --> ofTest`) lives under a
             // mangled storage name (ADR-0047), so answer the type object the
             // spelling is bound to in the closure's scope, which is the one
-            // the bare `ofTest` term evaluates to.
+            // the bare `ofTest` term evaluates to. Otherwise it is the type
+            // object the bare spelling evaluates to here
+            // ([`Self::imported_type_term`]).
             let type_name = match data.env.get(&type_name).map(Value::view) {
                 Some(ValueView::Package(p)) if p.as_str().contains('\u{0}') => {
                     p.resolve().to_string()
                 }
-                _ => self.lexical_env_remap_name(&type_name),
+                _ => {
+                    if let Some(term) = self.imported_type_term(&type_name) {
+                        return Some(Ok(term));
+                    }
+                    self.lexical_env_remap_name(&type_name)
+                }
             };
             return Some(Ok(Value::package(Symbol::intern(&type_name))));
         }
@@ -1128,6 +1135,10 @@ impl Interpreter {
             return Some(Ok(Value::truth(!data.is_rw)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
+            // A signature bound to `$!signature` answers for the routine.
+            if let Some(sig) = data.routine_cell.bound_signature() {
+                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+            }
             // A multi sub's dispatcher answers its proto's arity/count.
             if let Some(sig) = self.sub_dispatcher_signature(data) {
                 return Some(Ok(Self::signature_arity_or_count(&sig, method)));

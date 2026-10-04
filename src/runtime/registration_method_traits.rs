@@ -29,6 +29,7 @@ impl Interpreter {
         body: &[crate::ast::Stmt],
         is_rw: bool,
         is_proto: bool,
+        return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
@@ -48,6 +49,7 @@ impl Interpreter {
             body,
             is_rw,
             is_proto,
+            return_type,
             traits,
         );
         match saved_package_var {
@@ -68,6 +70,7 @@ impl Interpreter {
         let crate::ast::Stmt::ProtoDecl {
             name,
             param_defs,
+            return_type,
             body,
             trait_args,
             ..
@@ -89,6 +92,7 @@ impl Interpreter {
             body,
             false,
             true,
+            return_type.as_deref(),
             trait_args,
         )
     }
@@ -103,56 +107,86 @@ impl Interpreter {
         body: &[crate::ast::Stmt],
         is_rw: bool,
         is_proto: bool,
+        return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
     ) -> Result<(), RuntimeError> {
+        // One code object for the whole declaration: every trait handler
+        // composes onto, and binds `$!do` on, the same Method (ADR-11827
+        // §2.4), as the named-sub trait loop threads one `$r`.
+        let mut trait_env = self.env.clone();
+        // Add method lookup markers so .wrap stores in
+        // method_wrap_chains (keyed by class+method).
+        trait_env.insert(
+            "__mutsu_lookup_class".to_string(),
+            Value::str(pkg.to_string()),
+        );
+        trait_env.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(method_name.to_string()),
+        );
+        // A `proto method` is the dispatcher itself, so it carries no
+        // candidate index: that absence is what makes `.is_dispatcher`
+        // answer True (`sub_multi_method_dispatcher_name`).
+        if !is_proto {
+            trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+        }
+        // The code object passed to a user `trait_mod:<is>` candidate
+        // must report as a `Method`, not a `Sub`, the same way
+        // `sub_value_from_function_def` tags a real method's code
+        // object — otherwise a candidate typed `(Method $m, ...)`
+        // (the only form `raku` accepts for a method-level trait)
+        // never type-checks and the trait application silently does
+        // nothing.
+        trait_env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::str_from("Method"),
+        );
+        // `.returns` / `.signature.returns`, which upstream NativeCall's
+        // `is native` reads to marshal the result.
+        trait_env.remove_sym(crate::symbol::well_known::return_type());
+        if let Some(return_type) = return_type {
+            trait_env.insert(
+                "__mutsu_return_type".to_string(),
+                Value::str(return_type.to_string()),
+            );
+        }
+        // A Method's signature starts with its invocant, implicit or not
+        // (`method m(--> Int)` has arity 1), as `.^find_method(...)` reports
+        // it: upstream NativeCall's `$!arity` counts it.
+        let has_invocant = param_defs
+            .iter()
+            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+        let (params, param_defs) = if has_invocant {
+            (params.to_vec(), param_defs.to_vec())
+        } else {
+            let mut names = Vec::with_capacity(params.len() + 1);
+            names.push(String::new());
+            names.extend_from_slice(params);
+            let mut defs = Vec::with_capacity(param_defs.len() + 1);
+            defs.push(Self::make_invocant_param(pkg));
+            defs.extend_from_slice(param_defs);
+            (names, defs)
+        };
+        let sub_val = Value::make_sub(
+            Symbol::intern(pkg),
+            Symbol::intern(method_name),
+            params,
+            param_defs,
+            body.to_vec(),
+            is_rw,
+            trait_env,
+        );
         for (trait_name, trait_arg) in traits {
             if is_parser_marker(trait_name) {
                 continue;
             }
-            let mut trait_env = self.env.clone();
-            // Add method lookup markers so .wrap stores in
-            // method_wrap_chains (keyed by class+method).
-            trait_env.insert(
-                "__mutsu_lookup_class".to_string(),
-                Value::str(pkg.to_string()),
-            );
-            trait_env.insert(
-                "__mutsu_lookup_method".to_string(),
-                Value::str(method_name.to_string()),
-            );
-            // A `proto method` is the dispatcher itself, so it carries no
-            // candidate index: that absence is what makes `.is_dispatcher`
-            // answer True (`sub_multi_method_dispatcher_name`).
-            if !is_proto {
-                trait_env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
-            }
-            // The code object passed to a user `trait_mod:<is>` candidate
-            // must report as a `Method`, not a `Sub`, the same way
-            // `sub_value_from_function_def` tags a real method's code
-            // object — otherwise a candidate typed `(Method $m, ...)`
-            // (the only form `raku` accepts for a method-level trait)
-            // never type-checks and the trait application silently does
-            // nothing.
-            trait_env.insert(
-                "__mutsu_callable_type".to_string(),
-                Value::str_from("Method"),
-            );
-            let sub_val = Value::make_sub(
-                Symbol::intern(pkg),
-                Symbol::intern(method_name),
-                params.to_vec(),
-                param_defs.to_vec(),
-                body.to_vec(),
-                is_rw,
-                trait_env,
-            );
             let trait_arg_val = if let Some(arg_expr) = trait_arg {
                 Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
             } else {
                 None
             };
             let type_obj = self.resolve_type_object(trait_name);
-            let mut args = vec![sub_val];
+            let mut args = vec![sub_val.clone()];
             if let Some(type_val) = type_obj {
                 args.push(type_val);
                 if let Some(arg_val) = trait_arg_val {
