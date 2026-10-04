@@ -506,11 +506,11 @@ impl Interpreter {
                     // are intentionally NOT merged into the parent `named` map.
                     // Store inner captures as subcaptures of this group
                     let mut subcap = inner_caps.clone();
-                    subcap.from = pos;
-                    subcap.to = end;
+                    let (from, to) =
+                        super::regex_match_delta::capture_group_span(&mut subcap, pos, end);
                     new_caps.positional.push(PosSlot {
-                        from: pos,
-                        to: end,
+                        from,
+                        to,
                         subcap: Some(std::sync::Arc::new(subcap.into_cap_node())),
                         ..Default::default()
                     });

@@ -67,15 +67,32 @@ pub(super) fn capture_group_delta(
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
     new_caps.extend_regex_vars(inner_caps.regex_vars().clone());
     let mut subcap = inner_caps;
-    subcap.from = pos;
-    subcap.to = end;
+    let (from, to) = capture_group_span(&mut subcap, pos, end);
     new_caps.positional.push(PosSlot {
-        from: pos,
-        to: end,
+        from,
+        to,
         subcap: Some(std::sync::Arc::new(subcap.into_cap_node())),
         ..Default::default()
     });
     new_caps
+}
+
+/// The span a capture group's sub-Match covers: `pos .. end`, narrowed by a
+/// `<(` / `)>` inside the group. A capture group is its own Match, so those
+/// markers set ITS boundaries and do not reach the enclosing match
+/// (`"xab" ~~ /(a )> b)/` is `ab` with `$0` = `a`, as in rakudo, #11570).
+/// The markers are consumed: `caps.from`/`caps.to` become the span.
+// Cost: O(1).
+pub(super) fn capture_group_span(
+    caps: &mut RegexCaptures,
+    pos: usize,
+    end: usize,
+) -> (usize, usize) {
+    let from = caps.capture_start.take().unwrap_or(pos);
+    let to = caps.capture_end.take().unwrap_or(end).max(from);
+    caps.from = from;
+    caps.to = to;
+    (from, to)
 }
 
 /// One `|` / `||` branch's inner match, padded into the alternation's shared

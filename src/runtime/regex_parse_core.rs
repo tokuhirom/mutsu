@@ -1315,6 +1315,15 @@ impl Interpreter {
                 continue;
             }
             let in_char_class = angles.last().is_some_and(|f| f.char_class);
+            // `<(` is the capture-start token: neither an assertion that a `>`
+            // closes nor a group that a `)` closes. Its partner `)>` is
+            // matched below (#11570).
+            if ch == '<' && !in_char_class && chars.peek() == Some(&'(') {
+                body.push(ch);
+                body.push('(');
+                chars.next();
+                continue;
+            }
             if ch == '<' {
                 let char_class = matches!(chars.peek(), Some('[' | '-' | '+' | ':'));
                 body.push(ch);
@@ -1376,6 +1385,14 @@ impl Interpreter {
                         }
                     }
                 }
+                continue;
+            }
+            // `)>` is the capture-end token wherever it appears, never a group
+            // close followed by a stray `>` (`/(a )> b)/` captures `ab`, #11570).
+            if ch == ')' && close_ch == ')' && !in_char_class && chars.peek() == Some(&'>') {
+                body.push(ch);
+                body.push('>');
+                chars.next();
                 continue;
             }
             if ch == open_ch && !in_char_class {
