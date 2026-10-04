@@ -644,7 +644,11 @@ impl Interpreter {
         } else if args.len() == 1 {
             crate::builtins::native_method_1arg(target, method_sym, &args[0])
         } else if args.is_empty() {
-            crate::builtins::native_method_0arg(target, method_sym)
+            // The cascade without the method table: `try_native_method` asked
+            // the table for this very receiver and method before calling here,
+            // and a row it would answer from but the lever-A gate above refused
+            // must not answer here either.
+            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
         } else {
             return None;
         };
