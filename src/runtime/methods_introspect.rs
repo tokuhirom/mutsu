@@ -124,9 +124,7 @@ impl Interpreter {
             ValueView::Routine { is_regex: true, .. } => "Regex",
             // Keep in sync with `value_type_name`: a builtin-method lookup
             // handle (package = owning type) is a Method, otherwise a Sub.
-            ValueView::Routine { package, .. }
-                if !crate::qualified::is_global_package(package) =>
-            {
+            ValueView::Routine { package, .. } if !crate::qualified::is_global_package(package) => {
                 "Method"
             }
             ValueView::Routine { .. } => "Sub",
