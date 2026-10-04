@@ -1009,7 +1009,7 @@ impl Interpreter {
                 self.toplevel_package_symbol(&qualified)
                     .cloned()
                     .or_else(|| {
-                        self.has_type_direct(&qualified)
+                        self.has_type_or_package_kind(&qualified)
                             .then(|| Value::package(crate::symbol::Symbol::intern(&qualified)))
                     })
             })
@@ -1025,7 +1025,7 @@ impl Interpreter {
                 let key =
                     crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
                 self.env.get_sym(key).cloned().or_else(|| {
-                    self.has_type_direct(key.as_str())
+                    self.has_type_or_package_kind(key.as_str())
                         .then(|| Value::package(key))
                 })
             })

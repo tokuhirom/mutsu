@@ -1132,6 +1132,12 @@ impl Interpreter {
                 std::mem::take(&mut self.module.imported_routine_aliases);
             let saved_imported_env_aliases = std::mem::take(&mut self.module.imported_env_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
+            // A module is its own lexical scope: a `my role R` in its body must
+            // not read as a further candidate of the loading scope's (or an
+            // earlier module's) same-named `my role R`
+            // (`lexical_role_continuation`).
+            let saved_pending = std::mem::take(&mut self.types.lexical_class_pending);
+            let saved_pending_scopes = std::mem::take(&mut self.types.lexical_class_pending_scopes);
             // Pragmas set by a module are lexical to that module. The module
             // mainline runs in this interpreter, so restore the caller's mode
             // after it finishes instead of letting `use strict` leak outward.
@@ -1192,6 +1198,8 @@ impl Interpreter {
             };
             self.module.import_target_package = saved_import_target;
             self.declarator_docs = saved_declarator_docs;
+            self.types.lexical_class_pending = saved_pending;
+            self.types.lexical_class_pending_scopes = saved_pending_scopes;
             // Snapshot the env exactly as the module body left it, before any
             // of the restoration below (the `leaked_packages` removal, the
             // `saved_plain_env` restore, `unit_lexicals` extraction) strips

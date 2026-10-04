@@ -34,7 +34,7 @@ impl Interpreter {
             && matches!(
                 filtered[0],
                 Stmt::Expr(Expr::Call { name, .. })
-                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+                    if crate::ast::stub::is_marker(name.as_str())
             )
     }
 

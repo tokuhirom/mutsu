@@ -44,7 +44,9 @@ use super::trans::{parse_trans_adverbs, process_trans_escapes};
 /// word-logicals (`and`/`or`/`xor`/`andthen`/`orelse`), and may take no
 /// argument at all. `r` is positioned right after the operator token and its
 /// trailing whitespace.
-fn parse_stub_message(r: &str) -> PResult<'_, Expr> {
+/// The message a stub operator wrote, or none: a stub without one carries no
+/// argument, and the runtime supplies `ast::stub::DEFAULT_MESSAGE`.
+fn parse_stub_message(r: &str) -> PResult<'_, Vec<Expr>> {
     if r.starts_with(';')
         || r.is_empty()
         || r.starts_with('}')
@@ -54,9 +56,10 @@ fn parse_stub_message(r: &str) -> PResult<'_, Expr> {
         || crate::parser::primary::ident::predicates::is_stmt_modifier_ahead(r)
         || starts_with_loose_word_logical(r)
     {
-        return Ok((r, Expr::Literal(Value::str_from("Stub code executed"))));
+        return Ok((r, Vec::new()));
     }
-    expression_no_word_logical(r)
+    let (r, msg) = expression_no_word_logical(r)?;
+    Ok((r, vec![msg]))
 }
 
 /// `origin` is the regex's text in the unit being parsed; `source` is that
@@ -329,12 +332,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         // Make sure it's not "...^"/"…^" (sequence exclude-end) — that's handled in infix.
         if !r.starts_with('^') {
             let (r, _) = ws(r)?;
-            let (r, msg) = parse_stub_message(r)?;
+            let (r, args) = parse_stub_message(r)?;
             return Ok((
                 r,
                 Expr::Call {
-                    name: Symbol::intern("__mutsu_stub_die"),
-                    args: vec![msg],
+                    name: Symbol::intern(crate::ast::stub::FAIL),
+                    args,
                 },
             ));
         }
@@ -343,12 +346,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // !!! — fatal stub operator
     if let Some(r) = input.strip_prefix("!!!") {
         let (r, _) = ws(r)?;
-        let (r, msg) = parse_stub_message(r)?;
+        let (r, args) = parse_stub_message(r)?;
         return Ok((
             r,
             Expr::Call {
-                name: Symbol::intern("__mutsu_stub_die"),
-                args: vec![msg],
+                name: Symbol::intern(crate::ast::stub::DIE),
+                args,
             },
         ));
     }
@@ -356,12 +359,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // ??? — admonitory stub operator
     if let Some(r) = input.strip_prefix("???") {
         let (r, _) = ws(r)?;
-        let (r, msg) = parse_stub_message(r)?;
+        let (r, args) = parse_stub_message(r)?;
         return Ok((
             r,
             Expr::Call {
-                name: Symbol::intern("__mutsu_stub_warn"),
-                args: vec![msg],
+                name: Symbol::intern(crate::ast::stub::WARN),
+                args,
             },
         ));
     }

@@ -535,6 +535,11 @@ impl Interpreter {
                 .classes
                 .keys()
                 .any(|k| k.starts_with(&prefix))
+            || self
+                .registry()
+                .package_kinds
+                .keys()
+                .any(|k| k.starts_with(&prefix))
             || self.module.exported_subs.contains_key(package)
             || self.module.exported_vars.contains_key(package)
     }
@@ -725,7 +730,11 @@ impl Interpreter {
                 || self.has_class(name)
                 || self.is_role(name)
                 || (self.registry().enum_types.contains_key(name)
-                    && !self.is_my_scoped_package_item(name)))
+                    && !self.is_my_scoped_package_item(name))
+                // A qualified `package`/`module` a module's mainline declared
+                // is not bound in the frame env (ADR-0084 §7.6); its kind
+                // record is the persistent one.
+                || self.is_qualified_package_decl(name))
         {
             return Value::package(Symbol::intern(name));
         }

@@ -54,7 +54,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Relational / Logic | 40 / 40 | 0 | #11491 |
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
-| Objects | 17 / 31 | 14 | #11499 |
+| Objects | 27 / 31 | 4 | #11499 |
 | Parametric Extensions | 0 / 5 | 5 | #11499 |
 | Profiling | 0 / 3 | 3 | #11504 |
 | Serialization context | 1 / 18 | 17 | #11504 |
@@ -66,9 +66,9 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Trigonometric | 10 / 10 | 0 | #11490 |
 | Type / Conversion | 36 / 53 | 17 | #11553 |
 | Unicode Properties | 8 / 8 | 0 | #11495 |
-| Miscellaneous | 1 / 4 | 3 | #11499 |
+| Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **467 / 577** | **110** | |
+| **Total** | **480 / 577** | **97** | |
 
 ## Missing ops by category
 
@@ -76,12 +76,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Context Introspection** (#11498): `bindlex`, `bindlex_i`, `bindlex_n`, `bindlex_s`, `bindlexdyn`, `ctxouter`, `curlexpad`, `getlex`, `getlex_i`, `getlex_n`, `getlex_s`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `getlexrel`, `getlexrelcaller`, `getlexreldyn`, `lexprimspec`
 - **HLL-Specific** (#11504): `bindcurhllsym`, `getcurhllsym`, `hllboxtype_i`, `hllboxtype_n`, `hllboxtype_s`, `hllhash`, `hlllist`, `sethllconfig`, `usecompileehllconfig`, `usecompilerhllconfig`
 - **NativeCall** (#11504): `nativecallinvoke`
-- **Objects** (#11499): `bind`, `bindcomp`, `call`, `callmethod`, `findmethod`, `how`, `how_nd`, `objectid`, `rebless`, `reprname`, `setwho`, `tryfindmethod`, `what_nd`, `who`
+- **Objects** (#11499): `bind`, `bindcomp`, `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `force_gc`, `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `createsc`, `deserialize`, `forceouterctx`, `freshcoderef`, `getobjsc`, `markcodestatic`, `popcompsc`, `pushcompsc`, `scgetdesc`, `scgethandle`, `scgetobjidx`, `scobjcount`, `scsetcode`, `scsetdesc`, `scsetobj`, `serialize`, `setobjsc`
 - **Type / Conversion** (#11553): `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`, `bootnumarray`, `bootstr`, `bootstrarray`, `iscoderef`, `iscont_i`, `iscont_n`, `iscont_s`, `ishash`, `isint`, `isnum`, `isrwcont`, `isstr`
-- **Miscellaneous** (#11499): `getcodename`, `setdebugtypename`, `takeclosure`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6invokehandler`

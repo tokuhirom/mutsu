@@ -3776,8 +3776,7 @@ impl Compiler {
                 let non_setline_body: Vec<_> = body.iter().filter(|s| !s.is_marker()).collect();
                 let is_stub_body = non_setline_body.len() == 1
                     && matches!(non_setline_body[0], Stmt::Expr(Expr::Call { name: fn_name, .. })
-                        if fn_name.resolve() == "__mutsu_stub_die"
-                            || fn_name.resolve() == "__mutsu_stub_warn");
+                        if crate::ast::stub::is_marker(&fn_name.resolve()));
                 if *is_unit {
                     // unit module/package — set package for the rest of the scope
                     self.current_package = qualified_name.clone();

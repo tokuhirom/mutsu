@@ -332,7 +332,7 @@ impl Interpreter {
     /// reads `/etc/os-release` on Linux) and shared by `Value` clone (a cheap
     /// handle copy, see `Value`'s internal `Arc`/`Gc` reprs) into every
     /// interpreter/thread that reads it thereafter.
-    fn cached_distro_instance() -> Value {
+    pub(in crate::runtime) fn cached_distro_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_distro_instance).clone()
     }
@@ -364,13 +364,13 @@ impl Interpreter {
     }
 
     /// Process-constant `$*VM` instance.
-    fn cached_vm_instance() -> Value {
+    pub(in crate::runtime) fn cached_vm_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_vm_instance).clone()
     }
 
     /// Process-constant `$*KERNEL` instance.
-    fn cached_kernel_instance() -> Value {
+    pub(in crate::runtime) fn cached_kernel_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_kernel_instance).clone()
     }

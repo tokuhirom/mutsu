@@ -251,9 +251,16 @@ impl Interpreter {
                     is_unit: false,
                     ..
                 }
-                | Stmt::RoleDecl { name, .. }
                 | Stmt::EnumDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. } => *name,
+                // A `my role` is lexical to the module, like a `my class`: two
+                // modules may each declare their own `my role Type` without
+                // either becoming the provider of the bare name.
+                Stmt::RoleDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } if !custom_traits.iter().any(|(t, _)| t == "__my_scoped") => *name,
                 _ => continue,
             };
             if crate::qualified::is_qualified(name) {

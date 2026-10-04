@@ -30,10 +30,9 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    SupplierEmitAction, ZipAction, supplier_done, supplier_emit, supplier_emit_callbacks,
+    SupplierEmitAction, ZipAction, supplier_emit, supplier_emit_callbacks,
     supplier_mark_preserved_consumed, supplier_produce_update_acc, supplier_unique_mark_seen,
-    take_supplier_done_callbacks, zip_buffer_value, zip_latest_buffer_value, zip_latest_state_info,
-    zip_state_info,
+    zip_buffer_value, zip_latest_buffer_value, zip_latest_state_info, zip_state_info,
 };
 
 impl Interpreter {
@@ -96,9 +95,9 @@ impl Interpreter {
                 SupplierEmitAction::HeadLimitReached { supplier_id: sid } => {
                     let deferred_promises =
                         crate::runtime::native_methods::supplier_done_deferred(sid);
-                    for done_cb in take_supplier_done_callbacks(sid) {
-                        let _ = self.invoke_done_callback(done_cb);
-                    }
+                    // The head stage is done: so is everything derived from
+                    // it (`.head(n).reduce(...)` emits its fold now).
+                    let _ = self.propagate_supplier_done(sid);
                     for (promise, result) in deferred_promises {
                         promise.keep(result, String::new(), String::new());
                     }
@@ -244,10 +243,7 @@ impl Interpreter {
         value: Value,
     ) -> Result<(), RuntimeError> {
         self.handle_supply_forward(downstream_supplier_id, value)?;
-        supplier_done(downstream_supplier_id);
-        for done_cb in take_supplier_done_callbacks(downstream_supplier_id) {
-            let _ = self.invoke_done_callback(done_cb);
-        }
+        self.finish_derived_supplier(downstream_supplier_id);
         Ok(())
     }
 }

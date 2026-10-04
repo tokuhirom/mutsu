@@ -720,6 +720,7 @@ impl Interpreter {
                 self.builtin_multidim_exists_adverb_dyn(&mut args)
             }
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
+            "__mutsu_stub_fatal" => self.builtin_stub_fatal(&args),
             "__mutsu_undeclared_var_die" => self.builtin_undeclared_var_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),

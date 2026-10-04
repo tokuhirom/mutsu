@@ -739,11 +739,13 @@ pub(in crate::runtime) fn supplier_mark_preserved_consumed(supplier_id: u64) {
     }
 }
 
-pub(crate) fn supplier_done(supplier_id: u64) {
+/// Mark the supplier done and wake its sinks and pending promises. Returns
+/// `false` (and does nothing) when it had already terminated.
+pub(crate) fn supplier_done(supplier_id: u64) -> bool {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if state.done || state.quit_reason.is_some() {
-            return;
+            return false;
         }
         state.done = true;
         let seq = next_emit_seq();
@@ -758,7 +760,9 @@ pub(crate) fn supplier_done(supplier_id: u64) {
         for promise in pending {
             promise.keep(result.clone(), String::new(), String::new());
         }
+        return true;
     }
+    false
 }
 
 /// Mark the supplier as done but return pending promises WITHOUT resolving them.

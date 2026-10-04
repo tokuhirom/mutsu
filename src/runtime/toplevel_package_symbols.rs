@@ -85,6 +85,26 @@ impl Interpreter {
             && !self.env.contains_key(qualified)
     }
 
+    /// Whether the type registry knows `name`, or a `package`/`module` of that
+    /// qualified name was declared. A qualified package a module's mainline
+    /// declares is not bound in the frame env (ADR-0084 §7.6), so its kind
+    /// record is what answers for it.
+    // Cost: O(1) avg, a few hash probes.
+    pub(crate) fn has_type_or_package_kind(&self, name: &str) -> bool {
+        self.has_type_direct(name) || self.is_qualified_package_decl(name)
+    }
+
+    /// Whether a non-`my` `package`/`module`/`grammar` was declared under the
+    /// qualified name `name`. Such a declaration a module's mainline makes is
+    /// not bound in the frame env (ADR-0084 §7.6); its kind record
+    /// (`Registry::package_kinds`) is the persistent answer.
+    // Cost: O(|name|) to classify, plus O(1) avg hash probes.
+    pub(crate) fn is_qualified_package_decl(&self, name: &str) -> bool {
+        crate::qualified::is_qualified_str(name)
+            && self.registry().package_kinds.contains_key(name)
+            && !self.is_my_scoped_package_item(name)
+    }
+
     /// Bind the package-qualified symbol `name` to `value`: in
     /// [`ModuleToplevel::package_symbols`](super::toplevel_callable_ids::ModuleToplevel::package_symbols) when a module's mainline makes the
     /// binding directly, else in the frame env.

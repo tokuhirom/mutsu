@@ -1130,6 +1130,7 @@ mod native_str_coercion;
 mod nqp_atomic_forms;
 mod nqp_cond_forms;
 pub(crate) mod nqp_forms;
+mod nqp_object_forms;
 mod nqp_p6_forms;
 mod numeric_operand_names;
 mod outer_ref;
