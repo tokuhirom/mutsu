@@ -1064,7 +1064,7 @@ impl Interpreter {
             let saved_plain_env: HashMap<crate::symbol::Symbol, Value> = self
                 .env
                 .keys()
-                .filter(|key| !key.resolve().contains("::"))
+                .filter(|key| !key.as_str().contains("::"))
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();

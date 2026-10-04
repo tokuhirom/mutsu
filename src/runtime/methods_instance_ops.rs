@@ -1198,14 +1198,14 @@ impl Interpreter {
             // path methods are class methods). Repr methods stay on the
             // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`
             // (the generic instance repr), not the type object's `(Unix)`.
-            if (class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::"))
+            if (class_name == "IO::Spec" || class_name.as_str().starts_with("IO::Spec::"))
                 && !matches!(method, "gist" | "raku" | "perl" | "Str" | "Stringy")
             {
                 let pkg = Value::package(class_name);
                 return self.call_method_with_values(pkg, method, args);
             }
             // Distribution::Path / ::Hash / ::Installation
-            if class_name.resolve().starts_with("Distribution::")
+            if class_name.as_str().starts_with("Distribution::")
                 && let Some(result) = self.dispatch_distribution_method(
                     &class_name.resolve(),
                     &(attributes).as_map(),
@@ -1228,7 +1228,7 @@ impl Interpreter {
             }
             // The compile-time $*LANG object graph (ADR-0026 slang activation):
             // slang_grammar/slang_actions/define_slang on Mutsu::Slang::CompLang.
-            if class_name.resolve().starts_with("Mutsu::Slang::")
+            if class_name.as_str().starts_with("Mutsu::Slang::")
                 && let Some(result) =
                     self.dispatch_slang_comp_lang_method(&class_name.resolve(), method, &args)
             {
@@ -1239,7 +1239,7 @@ impl Interpreter {
             // `next-repo` links starting at self. Plain `use lib` paths install
             // FileSystem nodes here so repository introspection sees the same
             // chain as module resolution.
-            if class_name.resolve().starts_with("CompUnit::Repository") {
+            if class_name.as_str().starts_with("CompUnit::Repository") {
                 match method {
                     "repo-chain" => {
                         let mut chain = vec![target.clone()];
@@ -3143,7 +3143,7 @@ impl Interpreter {
             // type rather than dying with "No such method 'new_type'".
             "new_type"
                 if matches!(target.view(), ValueView::Package(n)
-                    if n.resolve().starts_with("Metamodel::")
+                    if n.as_str().starts_with("Metamodel::")
                         || self.is_metamodel_how_class(&n.resolve())) =>
             {
                 let how_class = match target.view() {

@@ -492,7 +492,7 @@ impl Interpreter {
                 snapshot
                     .functions
                     .iter()
-                    .filter(|key| **key == *target_single || key.resolve().starts_with(&prefix))
+                    .filter(|key| **key == *target_single || key.as_str().starts_with(&prefix))
                     .copied()
                     .collect()
             })
@@ -500,7 +500,7 @@ impl Interpreter {
                 self.registry()
                     .functions
                     .keys()
-                    .filter(|key| **key == *target_single || key.resolve().starts_with(&prefix))
+                    .filter(|key| **key == *target_single || key.as_str().starts_with(&prefix))
                     .copied()
                     .collect()
             });
@@ -611,12 +611,18 @@ impl Interpreter {
         // `unit module` name differs from its provided module path.
         let candidate_prefix = format!("{}::{}/", package, name);
         let candidate_defs: Vec<(String, Arc<FunctionDef>)> = if def.is_none() {
+            // Compared in place on the interned key: a module exporting a multi
+            // family re-registers its exports once per candidate, so this scan
+            // runs O(candidates) times per load, and resolving every key to an
+            // owned `String` first made it the costliest part of `use Test`.
+            // (The base-name index cannot narrow it: each registration in
+            // between clears that index.)
             self.registry()
                 .functions
                 .iter()
                 .filter_map(|(key, candidate)| {
-                    let key = key.resolve();
-                    key.strip_prefix(&candidate_prefix)
+                    key.as_str()
+                        .strip_prefix(candidate_prefix.as_str())
                         .map(|suffix| (suffix.to_string(), candidate.clone()))
                 })
                 .collect()
@@ -1258,7 +1264,7 @@ impl Interpreter {
                 .get(&Symbol::intern(&source_single))
                 .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
                 && self.registry().functions.iter().any(|(key, def)| {
-                    key.resolve().starts_with(&source_prefix)
+                    key.as_str().starts_with(&source_prefix)
                         && def.declarator == crate::ast::RoutineDeclarator::Method
                 });
             let bare_file_multi = bare_file_module
@@ -1266,7 +1272,7 @@ impl Interpreter {
                     .registry()
                     .functions
                     .keys()
-                    .any(|key| key.resolve().starts_with(&module_export_prefix));
+                    .any(|key| key.as_str().starts_with(&module_export_prefix));
             let imported_proto = self
                 .registry()
                 .proto_functions
@@ -1282,7 +1288,7 @@ impl Interpreter {
                     .registry()
                     .functions
                     .keys()
-                    .any(|key| key.resolve().starts_with(&format!("GLOBAL::{name}/")));
+                    .any(|key| key.as_str().starts_with(&format!("GLOBAL::{name}/")));
             // A top-level package-block import such as Zef::CLI's exported
             // `proto MAIN` has no target family to hide: the module's own
             // promoted GLOBAL candidates are the family we are importing.
@@ -1385,7 +1391,7 @@ impl Interpreter {
             let imports_only_sub = !function_entries.is_empty()
                 && function_entries
                     .iter()
-                    .all(|(key, _)| !key.resolve().contains('/'));
+                    .all(|(key, _)| !key.as_str().contains('/'));
             if ((imported_proto || imports_only_sub) && !self.import_scope_stack.is_empty())
                 || global_family_present
             {

@@ -1011,7 +1011,7 @@ impl Interpreter {
                     for mk in multi_keys {
                         let removed = self.registry_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
-                            let suffix = mk.resolve().strip_prefix("GLOBAL::").unwrap().to_string();
+                            let suffix = mk.as_str().strip_prefix("GLOBAL::").unwrap().to_string();
                             let qualified = Symbol::intern(&format!("{}::{}", module, suffix));
                             self.registry_mut()
                                 .functions_mut()
@@ -1157,7 +1157,7 @@ impl Interpreter {
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
-                .filter(|k| k.resolve().contains("::"))
+                .filter(|k| k.as_str().contains("::"))
                 .copied()
                 .collect();
             crate::runtime::cow_table_mut(&mut self.module_registered_functions)
@@ -1180,7 +1180,7 @@ impl Interpreter {
                 .keys()
                 .filter(|k| {
                     !env_snapshot.contains(k)
-                        && (k.resolve().contains("::") || k.resolve() == module)
+                        && (k.as_str().contains("::") || k.resolve() == module)
                 })
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();

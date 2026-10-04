@@ -202,7 +202,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = args[0].view()
-                    && class_name.resolve().starts_with("Mutsu::Slang::")
+                    && class_name.as_str().starts_with("Mutsu::Slang::")
                 {
                     return Ok(Self::slang_handle_mixin(
                         &class_name.resolve(),
@@ -218,7 +218,7 @@ impl Interpreter {
                 // fell through to the generic `but`-style composition and the
                 // role was lost, taking the whole slang registration with it.
                 if let ValueView::Package(sym) = args[0].view()
-                    && sym.resolve().starts_with("Mutsu::Slang::")
+                    && sym.as_str().starts_with("Mutsu::Slang::")
                 {
                     return Ok(Self::slang_handle_mixin(
                         crate::runtime::slang_activation::GRAMMAR_HANDLE_CLASS,

@@ -270,7 +270,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .iter()
-                .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
+                .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
                 .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             candidates.extend(more);

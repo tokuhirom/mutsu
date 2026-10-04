@@ -645,7 +645,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .iter()
-                .filter(|(key, _)| key.resolve().starts_with(&prefix_base))
+                .filter(|(key, _)| key.as_str().starts_with(&prefix_base))
                 .map(|(_, def)| (**def).clone())
                 .collect();
             for def in candidates {
@@ -667,7 +667,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .iter()
-                .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
+                .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
                 .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             candidates.sort_by(|a, b| {

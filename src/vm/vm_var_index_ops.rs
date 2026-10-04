@@ -2031,7 +2031,7 @@ impl Interpreter {
                 ValueView::Int(i),
             ) if i >= 0
                 && attributes.contains_key("address")
-                && class_name.resolve().starts_with("CArray[") =>
+                && class_name.as_str().starts_with("CArray[") =>
             {
                 let cn = class_name.resolve();
                 let elem = cn

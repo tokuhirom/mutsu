@@ -298,7 +298,7 @@ impl Interpreter {
                 let path_val = match sources[pos].view() {
                     ValueView::Instance { class_name, .. }
                         if class_name == "IO::Path"
-                            || class_name.resolve().starts_with("IO::Path::") =>
+                            || class_name.as_str().starts_with("IO::Path::") =>
                     {
                         sources[pos].clone()
                     }

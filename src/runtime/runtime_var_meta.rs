@@ -992,8 +992,7 @@ impl Interpreter {
         // A native array's element descriptor (`IntPosRef` & co.) is the same
         // kind of thing as a `Scalar`: a per-element container whose content
         // the descriptor stands in for.
-        let is_scalar_container =
-            class_name == "Scalar" || class_name.resolve().ends_with("PosRef");
+        let is_scalar_container = class_name == "Scalar" || class_name.as_str().ends_with("PosRef");
         let value = self.var_meta_contained_value(target)?;
         // A `Scalar` container is NOT `Positional`, so subscripting it follows
         // the one-item rule every non-positional value obeys (`42[0]` is `42`,

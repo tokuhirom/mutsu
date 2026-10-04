@@ -44,13 +44,14 @@ fn collect_use_declared_type_names(
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
-        if i > 0 && is_ident(bytes[i - 1]) {
+        // Every declarator starts with one of these; reject other positions on
+        // one comparison before the (Unicode) identifier-boundary test.
+        if !matches!(bytes[i], 'c' | 'r' | 'g' | 'e' | 's') || (i > 0 && is_ident(bytes[i - 1])) {
             i += 1;
             continue;
         }
-        let rest: String = bytes[i..bytes.len().min(i + 8)].iter().collect();
         let Some(kw) = DECLARATORS.iter().find(|kw| {
-            rest.starts_with(**kw) && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
+            chars_start_with(&bytes[i..], kw) && !is_ident(*bytes.get(i + kw.len()).unwrap_or(&' '))
         }) else {
             i += 1;
             continue;
@@ -75,6 +76,14 @@ fn collect_use_declared_type_names(
     crate::parser::source_declares_export_hook(&source)
 }
 
+/// Whether `chars` begins with the ASCII keyword `kw`, compared in place: the
+/// declarator scan above tries five keywords at every source position, so it
+/// must not build a `String` per position to ask.
+// Cost: O(k), k = keyword length.
+fn chars_start_with(chars: &[char], kw: &str) -> bool {
+    kw.len() <= chars.len() && kw.bytes().zip(chars).all(|(b, &c)| c == char::from(b))
+}
+
 /// Record the `constant NAME = ...;` names a used module's source declares.
 ///
 /// A `constant` bound to a bare type name aliases that type and is usable
@@ -91,7 +100,8 @@ fn collect_source_constant_names(bytes: &[char], out: &mut HashSet<String>) {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
-        if (i > 0 && is_ident(bytes[i - 1]))
+        if bytes[i] != 'c'
+            || (i > 0 && is_ident(bytes[i - 1]))
             || !bytes[i..].starts_with(&['c', 'o', 'n', 's', 't', 'a', 'n', 't'])
             || bytes.get(i + 8).is_some_and(|c| is_ident(*c))
         {

@@ -19,6 +19,7 @@
 //!   `tr///` tables, version strings, messages) is not a name and is never
 //!   reported, so a string literal `"return"` cannot look like a `return`.
 
+mod legacy_args;
 mod visit_mut;
 mod walk_decl;
 mod walk_expr;
@@ -27,6 +28,7 @@ mod walk_mut_expr;
 mod walk_mut_stmt;
 mod walk_stmt;
 
+pub(crate) use legacy_args::{legacy_arg_reads, legacy_arg_uses, legacy_arg_writes};
 pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
 use visit_mut::{exprs_mut, params_mut, traits_mut};
 use visit_mut::{walk_call_arg_mut, walk_handle_spec_mut, walk_regex_tree_mut};

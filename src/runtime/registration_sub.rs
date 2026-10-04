@@ -1017,7 +1017,7 @@ impl Interpreter {
             let shadows_outer_multi = self
                 .fn_keys_for_base(name)
                 .iter()
-                .any(|k| k.resolve().starts_with(&multi_prefix));
+                .any(|k| k.as_str().starts_with(&multi_prefix));
             if !shadows_outer_multi
                 && !self.registry().functions.contains_key(&fq_sym)
                 && let Some(cached) = self
@@ -1348,7 +1348,7 @@ impl Interpreter {
         // export bridge trigger the ordinary sub-vs-multi redeclaration rule;
         // real multi candidates remain part of the check.
         let has_multi = self.registry().functions.iter().any(|(k, def)| {
-            k.resolve().starts_with(&multi_prefix)
+            k.as_str().starts_with(&multi_prefix)
                 && def.declarator != crate::ast::RoutineDeclarator::Method
         });
         let has_proto = self.registry().proto_subs_contains(&single_key);
@@ -1487,7 +1487,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .keys()
-                .filter(|k| k.resolve().starts_with(&multi_prefix))
+                .filter(|k| k.as_str().starts_with(&multi_prefix))
                 .all(|k| is_outer_routine_key(*k));
         if multi {
             if has_single
@@ -1729,7 +1729,7 @@ impl Interpreter {
                 .registry()
                 .functions
                 .keys()
-                .filter(|k| k.resolve().starts_with(&prefix))
+                .filter(|k| k.as_str().starts_with(&prefix))
                 .copied()
                 .collect();
             for key in keys {
@@ -2278,7 +2278,7 @@ impl Interpreter {
         let has_inline_markers = self
             .env
             .keys()
-            .any(|marker| marker.resolve().starts_with(&inline_marker_prefix));
+            .any(|marker| marker.as_str().starts_with(&inline_marker_prefix));
         self.registry_mut()
             .functions_mut()
             .retain(|existing, _def| {

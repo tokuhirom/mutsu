@@ -762,7 +762,7 @@ impl Interpreter {
                     .registry()
                     .functions
                     .keys()
-                    .any(|k| k.resolve().starts_with(&prefix))
+                    .any(|k| k.as_str().starts_with(&prefix))
             {
                 crate::runtime::cow_table_mut(&mut self.loaded_modules).remove(module);
             }
