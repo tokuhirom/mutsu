@@ -62,16 +62,11 @@ pub(super) fn dispatch(
         // Cost: O(1) (borrows the payload).
         "ord" => Some(Some(crate::builtins::method_table::str::ord(target, &[]))),
         // Cost: O(n), n = chars of the invocant.
-        "ords" => {
-            let s = target.to_string_value();
-            let normalized: String = s.nfc().collect();
-            let ords: Vec<Value> = normalized
-                .chars()
-                .map(|c| Value::int(c as u32 as i64))
-                .collect();
-            // `.ords` returns a Seq (like `.comb`), not a List.
-            Some(Some(Ok(Value::seq(ords))))
-        }
+        // The `Str`/`Cool` row's handler (ADR-11276); a Seq, like `.comb`.
+        "ords" => Some(Some(crate::builtins::method_table::str_iter::ords(
+            target,
+            &[],
+        ))),
         "uniprop" => {
             match target.view() {
                 ValueView::Package(_) => {

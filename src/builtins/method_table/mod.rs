@@ -47,6 +47,7 @@ mod num;
 mod rational;
 pub(crate) mod real;
 pub(crate) mod str;
+pub(crate) mod str_iter;
 pub(crate) mod str_search;
 mod stringify;
 
@@ -92,6 +93,8 @@ static FAMILIES: &[&[MethodRow]] = &[
     str::ROWS,
     str::STR_TEXT_ROWS,
     str::COOL_TEXT_ROWS,
+    str_iter::STR_ROWS,
+    str_iter::COOL_ROWS,
     str_search::STR_ROWS,
     str_search::COOL_ROWS,
     str_search::STR_SUBSTR_2,

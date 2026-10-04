@@ -15,11 +15,12 @@ pub(super) fn dispatch(
             Some(crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[]))
         }
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
-        "words" => Some(Some(Ok(crate::value::str_iter_seq(
+        // `Cool.words` and its siblings below: the `Str`/`Cool` rows'
+        // handlers (ADR-11276, `method_table::str_iter`).
+        "words" => Some(Some(crate::builtins::method_table::str_iter::words(
             target,
-            crate::value::StrIterMode::Words,
-            None,
-        )))),
+            &[],
+        ))),
         // `Cool.codes` and the other `Cool` text methods below: the `Str`
         // rows' handlers (ADR-11276), on the receiver's string form.
         // Cost: O(n), n = chars of the invocant's string form.
@@ -35,11 +36,10 @@ pub(super) fn dispatch(
             {
                 return Some(None);
             }
-            Some(Some(Ok(crate::value::str_iter_seq(
+            Some(Some(crate::builtins::method_table::str_iter::lines(
                 target,
-                crate::value::StrIterMode::Lines { chomp: true },
-                None,
-            ))))
+                &[],
+            )))
         }
         // `Str.Date` / `Str.DateTime` coerce an ISO-formatted string to a
         // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
@@ -267,11 +267,10 @@ pub(super) fn dispatch(
         // Cost: O(n), n = chars of the invocant (one Str per grapheme; eager, so
         // `.comb.head(k)` still pays O(n)).
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
-        "comb" => Some(Some(Ok(crate::value::str_iter_seq(
+        "comb" => Some(Some(crate::builtins::method_table::str_iter::comb(
             target,
-            crate::value::StrIterMode::Graphemes,
-            None,
-        )))),
+            &[],
+        ))),
         "fmt" => {
             // .fmt() with no arguments: use default format and separator
             Some(match target.view() {
