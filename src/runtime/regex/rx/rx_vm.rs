@@ -477,9 +477,9 @@ impl Interpreter {
                                 // evaluation installs its own around itself.
                                 let (window, lr_window) = if matches!(
                                     verdict,
-                                    Ok(CallTarget::Eager(..)
+                                    CallTarget::Eager(..)
                                         | CallTarget::Wrapped
-                                        | CallTarget::CustomHow(_))
+                                        | CallTarget::CustomHow(_)
                                 ) {
                                     (None, window)
                                 } else {
@@ -491,11 +491,9 @@ impl Interpreter {
                                     (window, None)
                                 };
                                 match verdict {
-                                    Ok(
-                                        target @ (CallTarget::Eager(..)
-                                        | CallTarget::Wrapped
-                                        | CallTarget::CustomHow(_)),
-                                    ) => {
+                                    target @ (CallTarget::Eager(..)
+                                    | CallTarget::Wrapped
+                                    | CallTarget::CustomHow(_)) => {
                                         let mut ends = self.rx_eager_call_ends(
                                             &program.atoms[atom as usize],
                                             &target,
@@ -514,7 +512,7 @@ impl Interpreter {
                                         pc += 1;
                                         enter_cands!(ends)
                                     }
-                                    Ok(CallTarget::Plain(callee, callee_pkg)) => {
+                                    CallTarget::Plain(callee, callee_pkg) => {
                                         if frame.is_some_and(|f| {
                                             frames[f as usize].depth >= MAX_FRAME_DEPTH
                                         }) {
@@ -536,7 +534,7 @@ impl Interpreter {
                                             continue 'run;
                                         }
                                     }
-                                    Ok(CallTarget::Proto(cands)) => {
+                                    CallTarget::Proto(cands) => {
                                         self.ltm_rank_proto(
                                             &cands, chars, pos, ltm_order, proto_rank,
                                         );
@@ -599,7 +597,7 @@ impl Interpreter {
                                             }
                                         }
                                     }
-                                    Ok(CallTarget::Symbolic) => {
+                                    CallTarget::Symbolic => {
                                         crate::vm::vm_stats_regex_vm::record_regex_eager(
                                             "symbolic-name",
                                         );
@@ -620,7 +618,7 @@ impl Interpreter {
                                         pc += 1;
                                         enter_cands!(ends)
                                     }
-                                    Ok(CallTarget::Single) => {
+                                    CallTarget::Single => {
                                         pc += 1;
                                         match self.regex_builtin_named(name.spec(), chars, pos, pkg)
                                         {
@@ -635,7 +633,7 @@ impl Interpreter {
                                     // A grammar method gets this invocation's own
                                     // cursor, not a throwaway one: what it writes to
                                     // its attributes is the Match's (#9803).
-                                    Ok(CallTarget::Method) => {
+                                    CallTarget::Method => {
                                         pc += 1;
                                         let slot = frame
                                             .map_or(&root_cursor, |f| &frames[f as usize].cursor);
@@ -654,38 +652,6 @@ impl Interpreter {
                                             }
                                             None => false,
                                         }
-                                    }
-                                    Err(why) => {
-                                        walk_use(WalkUse::Bridged, why);
-                                        // A grammar method the call runs gets this
-                                        // invocation's own cursor, not a throwaway one:
-                                        // what it writes to its attributes is the Match's
-                                        // (#9803).
-                                        if self.subrule_names_user_method(name.spec(), pkg) {
-                                            let slot = frame.map_or(&root_cursor, |f| {
-                                                &frames[f as usize].cursor
-                                            });
-                                            let cursor = self.rx_cursor_of(slot, chars, pos, pkg);
-                                            self.regex_state.rx_cursor = Some(cursor);
-                                        }
-                                        let mut cands = self.regex_match_atom_all_with_arg_values(
-                                            &program.atoms[atom as usize],
-                                            chars,
-                                            pos,
-                                            levels.top().caps(),
-                                            pkg,
-                                            ic,
-                                            commit,
-                                            call_args,
-                                        );
-                                        self.regex_state.rx_cursor = None;
-                                        // Ratchet commits to the highest-priority end, the
-                                        // last (the producer's order is lowest first).
-                                        if commit && cands.len() > 1 {
-                                            cands.drain(..cands.len() - 1);
-                                        }
-                                        pc += 1;
-                                        enter_cands!(cands)
                                     }
                                 }
                             }

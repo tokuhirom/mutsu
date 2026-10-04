@@ -279,7 +279,7 @@ impl LtmNfa {
                             }
                         }
                         LeafKind::Plural => {
-                            for end in plural_ends(interp, atom, chars, pos, *pkg, *ic) {
+                            for end in plural_ends(interp, atom, chars, pos, *pkg) {
                                 reach(end, *next, stack, work);
                             }
                         }
@@ -496,7 +496,7 @@ fn dyn_call(
         {
             out.fate = Some(pos);
         } else {
-            out.ends = plural_ends(interp, atom, chars, pos, pkg, ic);
+            out.ends = plural_ends(interp, atom, chars, pos, pkg);
         }
         return out;
     }
@@ -513,25 +513,22 @@ fn dyn_call(
     out
 }
 
-/// Every end of `atom` at `pos`, from the plural atom matcher.
+/// The end of the builtin call `atom` (`<alpha>`, `<ident>`, …) at `pos`, by
+/// its shared definition (`regex_builtin_named`).
+// Cost: O(1) for a class or a boundary; O(w) for `<ws>`, w = the whitespace.
 fn plural_ends(
     interp: &mut Interpreter,
     atom: &RegexAtom,
     chars: &[char],
     pos: usize,
     pkg: Symbol,
-    ic: bool,
 ) -> Vec<usize> {
+    let RegexAtom::Named(name) = atom else {
+        return Vec::new();
+    };
     interp
-        .regex_match_atom_all_with_capture_in_pkg(
-            atom,
-            chars,
-            pos,
-            &RegexCaptures::default(),
-            pkg,
-            ic,
-        )
-        .into_iter()
+        .regex_builtin_named(name.spec(), chars, pos, pkg)
         .map(|(end, _)| end)
+        .into_iter()
         .collect()
 }
