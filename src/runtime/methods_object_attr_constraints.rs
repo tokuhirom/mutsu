@@ -165,7 +165,8 @@ impl Interpreter {
             let storage_key = super::attribute_storage_key(class_attrs_info, attr_name, *sigil);
             if let Some(constraint) =
                 super::attribute_type_constraint(class_attrs_info, attr, &type_constraints)
-                && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
+                && (constraint.starts_with(char::is_uppercase)
+                    || crate::qualified::is_type_capture(&constraint))
                 && let Some(value) = attrs.get(storage_key)
                 && !value.is_nil()
             {

@@ -54,7 +54,7 @@ impl Interpreter {
     fn eval_role_arg_values(&mut self, arg_exprs: &[String]) -> Result<Vec<Value>, RuntimeError> {
         let mut values = Vec::with_capacity(arg_exprs.len());
         for expr in arg_exprs {
-            if expr.trim_start().starts_with("::") {
+            if crate::qualified::is_type_capture(expr.trim_start()) {
                 return Err(RuntimeError::new(
                     "X::Syntax::Malformed: cannot use ::T in role application".to_string(),
                 ));
@@ -69,7 +69,7 @@ impl Interpreter {
                 // Try evaluating it; use the result only if it is an enum value.
                 let trimmed = expr.trim();
                 if !trimmed.contains(['[', '(', ' '])
-                    && trimmed.contains("::")
+                    && crate::qualified::is_qualified_str(trimmed)
                     && let Ok(value) = crate::parse_dispatch::parse_fragment(expr)
                         .and_then(|(stmts, _)| self.eval_block_value(&stmts))
                     && matches!(value.view(), ValueView::Enum { .. })
@@ -122,7 +122,7 @@ impl Interpreter {
     /// bareword colonpair (`:name(...)`/`:name`/`:!name`, not `::Type`).
     fn namify_reparsed_colonpair_role_arg(source: &str, value: Value) -> Value {
         let trimmed = source.trim_start();
-        if !trimmed.starts_with(':') || trimmed.starts_with("::") {
+        if !trimmed.starts_with(':') || crate::qualified::is_type_capture(trimmed) {
             return value;
         }
         match value.view() {
@@ -138,7 +138,7 @@ impl Interpreter {
         let Some(constraint) = constraint else {
             return 0;
         };
-        if constraint.starts_with("::") {
+        if crate::qualified::is_type_capture(constraint) {
             return 1;
         }
         if constraint == "Any" || constraint == "Mu" {
@@ -222,7 +222,7 @@ impl Interpreter {
             let arg_exprs = parse_role_type_args(args_str);
             if arg_exprs
                 .iter()
-                .any(|expr| expr.trim_start().starts_with("::"))
+                .any(|expr| crate::qualified::is_type_capture(expr.trim_start()))
             {
                 return Err(RuntimeError::new(
                     "X::Syntax::Malformed: cannot use ::T in role application".to_string(),

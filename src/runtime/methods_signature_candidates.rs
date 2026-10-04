@@ -232,7 +232,7 @@ impl Interpreter {
         // same way a bare sub reference does, so check that table too,
         // reporting the first-declared candidate's location (mirroring the
         // multi-dispatcher convention above).
-        let exact_local = Symbol::intern(&format!("{package}::{name}"));
+        let exact_local = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         let exact_global = Symbol::intern(&format!("GLOBAL::{name}"));
         let registry = self.registry();
         if let Some(def) = registry
@@ -484,8 +484,12 @@ impl Interpreter {
             // Check if the sub is a method (has a non-GLOBAL package context
             // and uses Class::method format in doc comments)
             let pkg = data.package.resolve();
-            if !pkg.is_empty() && pkg != "GLOBAL" {
-                Some(format!("{}::{}", pkg, name))
+            if !crate::qualified::is_global_package(crate::qualified::known_symbol(&pkg)) {
+                Some(
+                    crate::qualified::qualified_text(&pkg, &name)
+                        .as_str()
+                        .to_string(),
+                )
             } else {
                 Some(format!("&{}", name))
             }

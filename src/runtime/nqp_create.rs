@@ -132,7 +132,11 @@ impl Interpreter {
                 let name = crate::runtime::utils::value_type_name(&ty);
                 (
                     name,
-                    self.create_kind(name, name.rsplit("::").next().unwrap_or(name)),
+                    self.create_kind(
+                        name,
+                        crate::qualified::last_segment(crate::qualified::known_symbol(name))
+                            .as_str(),
+                    ),
                 )
             }
         };

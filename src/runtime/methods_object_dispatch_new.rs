@@ -559,7 +559,10 @@ impl Interpreter {
                                 .filter(|pd| !pd.named)
                                 .map(|pd| {
                                     let mut s = if let Some(tc) = pd.type_constraint.as_deref() {
-                                        if tc.starts_with("::") || tc == "Any" || tc == "Mu" {
+                                        if crate::qualified::is_type_capture(tc)
+                                            || tc == "Any"
+                                            || tc == "Mu"
+                                        {
                                             1
                                         } else {
                                             5
@@ -2252,8 +2255,12 @@ impl Interpreter {
                 if let Some(role_bindings) = role_bindings {
                     for (name, value) in &role_bindings {
                         self.env.insert(name.clone(), value.clone());
-                        self.env
-                            .insert(format!("{}::{}", class_key, name), value.clone());
+                        self.env.insert(
+                            crate::qualified::qualified_text(class_key, name)
+                                .as_str()
+                                .to_string(),
+                            value.clone(),
+                        );
                     }
                 }
                 // The object under construction exists from here on: an

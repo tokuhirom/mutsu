@@ -22,7 +22,9 @@ impl Interpreter {
         for phaser in class_leave_phasers.iter().rev() {
             self.run_class_body_chunk_or_raw(phaser.chunk.as_ref(), &phaser.body)?;
             for outer_name in cx.saved_env.keys() {
-                let class_scoped_name = format!("{}::{}", cx.name, outer_name);
+                let class_scoped_name = crate::qualified::qualified_text(cx.name, outer_name)
+                    .as_str()
+                    .to_string();
                 if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
                     self.env.insert_sym(*outer_name, updated);
                 }
@@ -75,7 +77,7 @@ impl Interpreter {
                 if saved_env.contains_key_sym(*k) && !declared_statics.contains(bare.as_str()) {
                     return None;
                 }
-                if bare.contains("::")
+                if crate::qualified::is_qualified_str(&bare)
                     || bare.starts_with("__")
                     || bare.starts_with('?')
                     || bare.starts_with('!')
@@ -84,7 +86,9 @@ impl Interpreter {
                 {
                     return None;
                 }
-                let qualified = format!("{name}::{bare}");
+                let qualified = crate::qualified::qualified_text(name, &bare)
+                    .as_str()
+                    .to_string();
                 if declared_statics.contains(bare.as_str()) {
                     // A declared `my` static reassigned by a LATER body
                     // statement compiles the write package-qualified
@@ -233,14 +237,16 @@ impl Interpreter {
             .iter()
             .filter_map(|(k, v)| {
                 let bare = k.resolve();
-                if bare.contains("::") {
+                if crate::qualified::is_qualified_str(&bare) {
                     return None;
                 }
                 let ValueView::Package(p) = v.view() else {
                     return None;
                 };
                 let target = p.resolve();
-                let prefix = format!("{name}::{bare}");
+                let prefix = crate::qualified::qualified_text(name, &bare)
+                    .as_str()
+                    .to_string();
                 // The storage name is either exactly `Outer::Inner` or the
                 // mangled `Outer::Inner\0<decl-id>` form a lexical class gets
                 // when it collides with an out-of-scope namesake.

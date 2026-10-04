@@ -47,7 +47,7 @@ impl Interpreter {
                 if env_before.contains(k) && !declared.contains(bare.as_str()) {
                     return None;
                 }
-                if bare.contains("::")
+                if crate::qualified::is_qualified_str(&bare)
                     || bare.starts_with("__")
                     || bare.starts_with('?')
                     || bare.starts_with('!')

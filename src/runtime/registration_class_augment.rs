@@ -364,7 +364,10 @@ impl Interpreter {
                     // `Foo::pkg(invocant)` and an in-body call to a `my
                     // method` resolve).
                     if decl.is_our {
-                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        let qualified_name =
+                            crate::qualified::qualified_text(name, &resolved_method_name)
+                                .as_str()
+                                .to_string();
                         let (our_params, our_param_defs) =
                             method_sub_form_params(&effective_params, &effective_param_defs);
                         let func_def = crate::ast::FunctionDef {
@@ -434,7 +437,10 @@ impl Interpreter {
                             Symbol::intern(&resolved_method_name),
                             std::sync::Arc::new(func_def.clone()),
                         );
-                        let qualified_name = format!("{}::{}", name, resolved_method_name);
+                        let qualified_name =
+                            crate::qualified::qualified_text(name, &resolved_method_name)
+                                .as_str()
+                                .to_string();
                         self.registry_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
@@ -842,7 +848,9 @@ impl Interpreter {
     /// Recorded under its short name (the last `::` segment), which is what
     /// `nqp::create` matches it by.
     pub(crate) fn register_vm_storage_class(&mut self, name: &str, is_hash: bool) {
-        let name = name.rsplit("::").next().unwrap_or(name).to_string();
+        let name = crate::qualified::last_segment(crate::qualified::known_symbol(name))
+            .as_str()
+            .to_string();
         if is_hash {
             self.registry_mut().vmhash_classes.insert(name);
         } else {

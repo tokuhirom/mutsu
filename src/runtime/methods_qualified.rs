@@ -41,8 +41,10 @@ fn extended_name_adverb_start(method: &str) -> usize {
 /// [`extended_name_adverb_start`]).
 pub(super) fn split_method_qualifier_last(method: &str) -> Option<(&str, &str)> {
     let cut = extended_name_adverb_start(method);
-    let at = method[..cut].rfind("::")?;
-    Some((&method[..at], &method[at + 2..]))
+    let (head, _) =
+        crate::qualified::split_qualified(crate::qualified::known_symbol(&method[..cut]))?;
+    // The adverb (from `cut` on) stays on the method half.
+    Some((head.as_str(), &method[head.as_str().len() + 2..]))
 }
 
 impl Interpreter {
@@ -133,7 +135,10 @@ impl Interpreter {
         }
         // Owner-qualified: !Owner::method. Split at the LAST `::` so a nested owner
         // class name (`$x!Jar::Cookie::secret`) keeps its full qualifier.
-        if let Some((owner_class, private_name)) = private_rest.rsplit_once("::") {
+        if let Some((owner_class, private_name)) =
+            crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+        {
             let caller_class = self.private_calling_package();
             let (canonical_owner, caller_allowed) =
                 self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
@@ -208,7 +213,9 @@ impl Interpreter {
                         if crate::value::is_internal_anon_type_name(&n) {
                             Value::str_from("()")
                         } else {
-                            let short = n.rsplit("::").next().unwrap_or(&n);
+                            let short =
+                                crate::qualified::last_segment(crate::qualified::known_symbol(&n))
+                                    .as_str();
                             Value::str(format!("({})", short))
                         }
                     }
@@ -394,7 +401,7 @@ impl Interpreter {
                             &super::registration_class::type_value_name(val),
                         );
                     }
-                    if spec.contains('[') && !spec.contains("::") {
+                    if spec.contains('[') && !crate::qualified::is_qualified_str(&spec) {
                         ctx = Some(spec);
                     }
                 }

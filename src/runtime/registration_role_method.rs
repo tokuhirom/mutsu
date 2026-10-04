@@ -49,7 +49,10 @@ impl Interpreter {
         let mut enclosing_prefixes: Vec<String> = Vec::new();
         {
             let mut rest = name;
-            while let Some((pfx, _)) = rest.rsplit_once("::") {
+            while let Some((pfx, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(rest))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 enclosing_prefixes.push(pfx.to_string());
                 rest = pfx;
             }
@@ -65,7 +68,9 @@ impl Interpreter {
                 if !rest.is_empty() && !enclosing_prefixes.iter().any(|p| p == rest) {
                     enclosing_prefixes.push(rest.to_string());
                 }
-                match rest.rsplit_once("::") {
+                match crate::qualified::split_qualified(crate::qualified::known_symbol(rest))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                {
                     Some((pfx, _)) => rest = pfx,
                     None => break,
                 }
@@ -74,7 +79,7 @@ impl Interpreter {
         for pd in &decl.param_defs {
             if let Some(tc) = pd.type_constraint.as_deref() {
                 // Skip type captures (::T), invocant markers, and role type params
-                if tc.starts_with("::")
+                if crate::qualified::is_type_capture(tc)
                     || tc == "__invocant__"
                     || cx.type_params.iter().any(|tp| tp == tc)
                 {
@@ -143,7 +148,7 @@ impl Interpreter {
                     // [#7993]: https://github.com/tokuhirom/mutsu/issues/7993
                     || enclosing_prefixes
                         .iter()
-                        .any(|pfx| self.is_resolvable_type(&format!("{pfx}::{tc_base}")))
+                        .any(|pfx| self.is_resolvable_type(crate::qualified::qualified_text(pfx, tc_base).as_str()))
                     // Last resort: any registered type known by this
                     // short name. A compound role name in a `unit
                     // package` (`my role Packet::Empty`) leaves the
@@ -152,7 +157,7 @@ impl Interpreter {
                     // reach a sibling like `P::DecodeBuffer`; a
                     // short-name match still finds it, mirroring how the
                     // sub pre-pass accepts any type declared in the unit.
-                    || (!tc.contains("::")
+                    || (!crate::qualified::is_qualified_str(tc)
                         && self.type_known_by_short_name(tc_base));
                 if !resolvable_without_deferred {
                     // A type supplied by a module `use`d within this role
@@ -403,11 +408,13 @@ impl Interpreter {
             // here instead of re-deriving the same resolution.
             let resolved_indirect = self.resolve_declared_type_name(&check.tc_base);
             let resolvable = self.is_resolvable_type(&check.tc)
-                || check
-                    .enclosing_prefixes
-                    .iter()
-                    .any(|pfx| self.is_resolvable_type(&format!("{pfx}::{}", check.tc_base)))
-                || (!check.tc.contains("::") && self.type_known_by_short_name(&check.tc_base))
+                || check.enclosing_prefixes.iter().any(|pfx| {
+                    self.is_resolvable_type(
+                        crate::qualified::qualified_text(pfx, &check.tc_base).as_str(),
+                    )
+                })
+                || (!crate::qualified::is_qualified_str(&check.tc)
+                    && self.type_known_by_short_name(&check.tc_base))
                 || (resolved_indirect != check.tc_base
                     && self.is_resolvable_type(&resolved_indirect));
             if !resolvable {

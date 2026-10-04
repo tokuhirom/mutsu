@@ -312,7 +312,9 @@ impl Interpreter {
                 // class's own methods ("Unknown function"). Accept the multi
                 // key shape as well.
                 if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
-                    let fq = format!("{}::{}", cx.name, sub_name);
+                    let fq = crate::qualified::qualified_text(cx.name, sub_name)
+                        .as_str()
+                        .to_string();
                     let multi_prefix = format!("{fq}/");
                     let registered = {
                         let registry = self.registry();
@@ -525,7 +527,9 @@ impl Interpreter {
             .sync_accessor_entries(Symbol::intern(cx.name));
         self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt))?;
         for outer_name in cx.saved_env.keys() {
-            let class_scoped_name = format!("{}::{}", cx.name, outer_name);
+            let class_scoped_name = crate::qualified::qualified_text(cx.name, outer_name)
+                .as_str()
+                .to_string();
             if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
                 self.env.insert_sym(*outer_name, updated);
             }
@@ -686,7 +690,9 @@ impl Interpreter {
             }
         } else {
             for outer_name in cx.saved_env.keys() {
-                let class_scoped_name = format!("{}::{}", cx.name, outer_name);
+                let class_scoped_name = crate::qualified::qualified_text(cx.name, outer_name)
+                    .as_str()
+                    .to_string();
                 if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
                     self.env.insert_sym(*outer_name, updated);
                 }

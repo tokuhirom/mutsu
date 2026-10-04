@@ -245,7 +245,9 @@ impl Interpreter {
             if let Some(private_rest) = method.strip_prefix('!') {
                 let caller_class = self.private_calling_package();
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
-                let resolved = if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                let resolved = if let Some((owner_class, pm_name)) =
+                    crate::qualified::split_first(crate::qualified::known_symbol(private_rest))
+                {
                     // Canonicalize the source-written owner name relative to
                     // the caller's package chain — a short name never
                     // matches a fully qualified MRO entry.
