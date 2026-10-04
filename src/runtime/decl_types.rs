@@ -171,6 +171,11 @@ pub(crate) struct SubsetDef {
     /// inline against the checking frame's env, its writes were lost and its
     /// reads saw whatever that frame held under the name (#10868).
     pub(crate) predicate_closure: Option<Value>,
+    /// The predicate as a callable value for `.^refinement`, built at the
+    /// declaration (a non-code predicate is wrapped as `{ $_ ~~ PRED }`).
+    /// Unlike `predicate_closure` its presence does not change how the type
+    /// check runs. `None` for a subset with no `where` clause.
+    pub(crate) refinement: Option<Value>,
 }
 
 #[derive(Debug, Clone)]

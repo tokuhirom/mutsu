@@ -204,6 +204,7 @@ impl Interpreter {
         }
         for def in self.registry().subsets.values() {
             visit_opt(visitor, &def.predicate_closure);
+            visit_opt(visitor, &def.refinement);
         }
         for fallbacks in self.types.method_fallbacks.values() {
             for (cond, calc) in fallbacks {

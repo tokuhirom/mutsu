@@ -538,6 +538,32 @@ impl Interpreter {
                     .to_string_value();
                 Ok(Value::str(shorten_type_name(&full)))
             }
+            // `S.^refinement`: the `where` predicate as a callable; `Mu` for a
+            // subset without one. `UInt` is a builtin, not in the registry.
+            // Cost: O(1) for a declared subset.
+            "refinement" if args.len() == 1 => {
+                let name = self.mop_receiver_owner(&args[0]);
+                if name == "UInt" {
+                    // TODO: compile to bytecode -- a builtin has no
+                    // declaration site to build the callable from.
+                    return self.eval_eval_string("-> $_ { $_ >= 0 }");
+                }
+                let Some(def) = self.registry().subsets.get(&name).cloned() else {
+                    let how = self.dispatch_how(&args[0], &[])?;
+                    let how_name = match how.view() {
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
+                        _ => "Mu".to_string(),
+                    };
+                    return Err(crate::runtime::did_you_mean::method_not_found(
+                        "refinement",
+                        &how_name,
+                    ));
+                };
+                Ok(def
+                    .refinement
+                    .clone()
+                    .unwrap_or_else(|| Value::package(Symbol::intern("Mu"))))
+            }
             "refinee" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
                 let Some(base) = self
