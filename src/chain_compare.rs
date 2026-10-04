@@ -37,9 +37,6 @@
 
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static CHAIN_CMP_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Build a single (possibly negated) comparison `left OP right`.
 pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bool) -> Expr {
@@ -73,7 +70,9 @@ fn build_chain_cmp_expr(
         return make_chain_cmp(left, op, operands[index + 1].clone(), negated);
     }
 
-    let tmp_idx = CHAIN_CMP_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    // Minted from the compile session, so a cacheable compile names its temps
+    // the same in every process (ADR-11756 §2.3).
+    let tmp_idx = crate::compiler::compile_session::mint();
     let tmp_name = format!("__mutsu_chain_cmp_{tmp_idx}");
     let tmp_var = Expr::Var(tmp_name.clone());
     let cmp = make_chain_cmp(left, op, tmp_var.clone(), negated);

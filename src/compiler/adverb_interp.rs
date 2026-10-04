@@ -164,6 +164,9 @@ impl Compiler {
     }
 
     fn try_eval_expression_list(&self, content: &str) -> Option<String> {
+        // A re-parse consults the parser's whole scope state, which no
+        // recorded question summarises (ADR-11756 §2.2).
+        super::compile_inputs::mark_uncacheable("compile-time re-parse of an adverb");
         let (stmts, _) = crate::parse_dispatch::parse_fragment(content).ok()?;
         let expr = match stmts.as_slice() {
             [Stmt::Expr(e)] => e,

@@ -25,7 +25,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static RATIONAL_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = RATIONAL_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(RATIONAL_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(RATIONAL_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -61,7 +61,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static POINTER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = POINTER_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(NATIVECALL_POINTER_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(NATIVECALL_POINTER_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -103,7 +103,7 @@ impl Interpreter {
             NATIVECALL_SUB_PRELUDES
                 .iter()
                 .map(|(_, src)| {
-                    let mut stmts = crate::parse_dispatch::parse_source(src)
+                    let mut stmts = crate::runtime::prelude_source::parse_prelude_source(src)
                         .map(|(s, _)| s)
                         .unwrap_or_default();
                     Self::mark_prelude_subs(&mut stmts);
@@ -175,7 +175,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static IO_SOCKET_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = IO_SOCKET_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(IO_SOCKET_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(IO_SOCKET_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -224,9 +224,11 @@ impl Interpreter {
         use std::sync::OnceLock;
         static TRAIT_MOD_IS_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_IS_STMTS.get_or_init(|| {
-            let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_NATIVECALL_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default();
+            let mut stmts = crate::runtime::prelude_source::parse_prelude_source(
+                TRAIT_MOD_IS_NATIVECALL_PRELUDE,
+            )
+            .map(|(s, _)| s)
+            .unwrap_or_default();
             Self::mark_prelude_subs(&mut stmts);
             stmts
         });
@@ -274,9 +276,10 @@ impl Interpreter {
         use std::sync::OnceLock;
         static TRAIT_MOD_IS_DEFAULT_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_IS_DEFAULT_STMTS.get_or_init(|| {
-            let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_DEFAULT_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default();
+            let mut stmts =
+                crate::runtime::prelude_source::parse_prelude_source(TRAIT_MOD_IS_DEFAULT_PRELUDE)
+                    .map(|(s, _)| s)
+                    .unwrap_or_default();
             Self::mark_prelude_subs(&mut stmts);
             stmts
         });
@@ -295,7 +298,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static TRAIT_MOD_DOES_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_DOES_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(TRAIT_MOD_DOES_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(TRAIT_MOD_DOES_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -328,7 +331,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static METAMODEL_ROLE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = METAMODEL_ROLE_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(METAMODEL_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(METAMODEL_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -357,7 +360,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static ENUMERATION_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = ENUMERATION_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(ENUMERATION_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(ENUMERATION_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });
@@ -386,7 +389,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static X_WRAPPER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = X_WRAPPER_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(X_WRAPPER_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(X_WRAPPER_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

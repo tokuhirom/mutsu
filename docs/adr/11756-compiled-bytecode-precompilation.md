@@ -287,3 +287,30 @@ Phase 2 (registration) gets its own ADR after step 5 lands and is measured.
   (`stmt_pool`, the plans' `ParamDef`s), whose `Symbol`s are interned per
   occurrence. Per §2.4, they are the first candidate for a native codec if
   step 4's net measurement asks for more.
+- **Steps 3 and 4**:
+  - `src/compiler/compile_inputs.rs` records each question the compiler asks
+    of state outside its AST, together with its answer, and re-asks them on a
+    hit.
+  - `src/precomp/bytecode.rs` stores the compiled section as `{hash}.code`
+    beside the AST entry, keyed on the compile context. That context includes
+    the stable hash of the statements compiled, which also covers the
+    undeclared-routine guards.
+  - `src/runtime/module_bytecode.rs` serves the module mainline behind
+    `MUTSU_PRECOMP_BYTECODE=1`, with `MUTSU_PRECOMP_VERIFY=1` and
+    `MUTSU_PRECOMP_TRACE=1`.
+
+  §2.3's content-addressed sessions are wired up. A module load claims a
+  `ModuleUnit` (source identity plus occurrence) before it parses. Its parse,
+  its post-parse rewrites (BEGIN-prologue slots), its compile and the builtin
+  preludes each mint from a session derived from content. An AST cache entry
+  records the parse session it came from. Fingerprints go through
+  `ast::stable_hash`, which hashes symbols by name, combines map entries in
+  any order and skips object ids.
+
+  With verify on, all of `t/` (6443 files) passes, and so does the roast
+  whitelist, from an empty shared cache with four jobs in parallel. Measured
+  on `use Test; ok 1;` minus an empty script (release build, warm cache,
+  callgrind), loading costs **84.9M instructions without the compiled section
+  and 64.7M with it**. Of the rest, routine registration takes 23.5M (phase 2)
+  and the decode 8.7M. A module whose compile holds a Signature literal is not
+  cached yet ([#11841](https://github.com/tokuhirom/mutsu/issues/11841)).

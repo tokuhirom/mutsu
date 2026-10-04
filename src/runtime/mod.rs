@@ -51,6 +51,13 @@ use std::sync::{Arc, Mutex, RwLock};
 /// (ADR-0047 P1) -- so they must never coincide, or a lexical role's storage
 /// name would read as a candidate of an unrelated package-scoped `R`.
 pub(crate) fn next_role_id() -> u64 {
+    // Minted at compile time into a role's declaration plan. Inside a cacheable
+    // module compile it comes from the compile's content-addressed session, so
+    // a cached plan's id cannot collide with one minted in the loading process
+    // (ADR-11756 §2.3); its high bit keeps it above every counter value.
+    if crate::compiler::compile_session::in_content_session() {
+        return crate::compiler::compile_session::mint();
+    }
     crate::ast::next_global_decl_id()
 }
 use std::time::Duration;
@@ -614,6 +621,7 @@ mod catch_inline;
 mod control_inline;
 mod cool_type_object_gate;
 pub(crate) mod json;
+mod module_bytecode;
 mod module_reinstate;
 mod numeric_subclass_repr;
 mod proxy_store;
@@ -1019,6 +1027,7 @@ pub(crate) mod dispatch_state;
 pub(crate) mod io_state;
 pub(crate) mod lexical_state;
 pub(crate) mod module_state;
+mod prelude_source;
 pub(crate) mod return_target;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;

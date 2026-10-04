@@ -109,7 +109,7 @@ enum SerValue {
     Instance {
         class_name: Symbol,
         attributes: HashMap<String, SerValue>,
-        id: u64,
+        id: crate::ast::stable_hash::ProcessLocalId,
         /// A `Signature`'s structured parameter data. It normally lives in a
         /// process-global side table keyed by the instance id, which nothing in
         /// a serialized value can reach: a `Signature` literal restored from
@@ -328,7 +328,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             Ok(SerValue::Instance {
                 class_name,
                 attributes: ser_attrs?,
-                id,
+                id: crate::ast::stable_hash::ProcessLocalId(id),
                 sig_info,
             })
         }
@@ -583,7 +583,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Instance {
             class_name,
             attributes,
-            id,
+            id: crate::ast::stable_hash::ProcessLocalId(id),
             ..
         } => Value::from_repr(ValueRepr::Instance {
             class_name,

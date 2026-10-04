@@ -334,7 +334,7 @@ impl Compiler {
                             self.code.ops.len()
                         );
                         let key_sym = crate::symbol::Symbol::intern(&key);
-                        let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym.id(), 0));
+                        let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                         Some((guard_idx, key_sym))
                     } else {
                         None
@@ -365,15 +365,14 @@ impl Compiler {
                     let ip = self.code.ops.len();
                     let key_sym = if let Some((guard_idx, key_sym)) = state_guard {
                         // A taken guard lands on the `StateVarInit` below.
-                        self.code.ops[guard_idx] =
-                            OpCode::StateVarInitGuard(key_sym.id(), ip as u32);
+                        self.code.ops[guard_idx] = OpCode::StateVarInitGuard(key_sym, ip as u32);
                         key_sym
                     } else {
                         let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                         crate::symbol::Symbol::intern(&key)
                     };
                     self.code.state_locals.push((slot as usize, key_sym));
-                    self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
+                    self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     self.code.emit(OpCode::GetLocal(slot));
                 } else if name.starts_with('@') || name.starts_with('%') {
                     // A container decl WITH an explicit initializer (`my @o = $x`)

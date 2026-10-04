@@ -480,7 +480,12 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // rakudo installs an END when the compiler walks past its declaration, so
     // the number it gets here — a strictly source-order counter — is what
     // orders it against the compunit's other ENDs at exit.
-    let end_index = matches!(kind, PhaserKind::End).then(crate::ast::next_end_phaser_index);
+    // A module's ENDs are ordered by load order, never by this source index,
+    // and a cached module AST does not carry it; a cacheable module parse
+    // leaves it unset too, so a fresh parse and a cache hit compile alike
+    // (ADR-11756 §2.3).
+    let end_index = (matches!(kind, PhaserKind::End) && !crate::anon_names::in_content_unit())
+        .then(crate::ast::next_end_phaser_index);
     Ok((
         rest,
         Stmt::Phaser {

@@ -49,6 +49,30 @@ pub(crate) fn dispatcher_possible() -> bool {
     DISPATCHER_SEEN.load(Ordering::Relaxed)
 }
 
+/// A symbol set as a `Vec` in name order. The compiler's analyses collect into
+/// `HashSet`s whose iteration order depends on each process's hash seed, and
+/// the resulting lists are stored in compiled code: sorting them makes a
+/// compile reproducible, which the compiled-bytecode cache's verify mode
+/// relies on (ADR-11756 §2.5).
+// Cost: O(k log k), k = symbols in the set.
+pub(crate) fn sorted_by_name(set: impl IntoIterator<Item = Symbol>) -> Vec<Symbol> {
+    let mut out: Vec<Symbol> = set.into_iter().collect();
+    out.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    out
+}
+
+/// Set both compile-time latches as a compile that set them would have: what a
+/// load served from the compiled-bytecode cache replays (ADR-11756 §2.2).
+// Cost: O(1).
+pub(crate) fn replay_compile_latches(reflective: bool, dispatcher: bool) {
+    if reflective {
+        REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+    }
+    if dispatcher {
+        DISPATCHER_SEEN.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin. Called
 /// on every compilation unit's source text before it is parsed (or served from
 /// the precompilation cache), and on every string entering a constant pool —
@@ -4514,19 +4538,18 @@ pub(crate) enum OpCode {
     Trace(u32),
 
     /// State variable initialization.
-    /// slot = local slot index, key_idx = interned `Symbol` id (see
-    /// `Symbol::from_id`/`Symbol::id`) for the unique state key — not a
-    /// constant-pool index.
+    /// slot = local slot index, key = the interned unique state key (a
+    /// `Symbol`, so precompiled code maps it through its symbol table).
     /// Pops init value from stack.
     /// If state_vars has key: set `locals[slot]` = stored value (discard init).
     /// If not: set `locals[slot]` = init value, store in state_vars.
-    StateVarInit(u32, u32),
+    StateVarInit(u32, crate::symbol::Symbol),
     /// Guard for state variable initialization.
-    /// Check if state key (arg 0, an interned `Symbol` id like `StateVarInit`)
+    /// Check if state key (arg 0, an interned `Symbol` like `StateVarInit`)
     /// exists. If yes: push stored value and jump to the absolute instruction
     /// offset (arg 1). If no: fall through so the RHS initializer can be
     /// compiled next.
-    StateVarInitGuard(u32, u32),
+    StateVarInitGuard(crate::symbol::Symbol, u32),
     /// Mark whether a declared variable should report `.VAR.dynamic` true.
     SetVarDynamic {
         name_idx: u32,
@@ -8933,10 +8956,13 @@ impl CompiledCode {
         crate::ast::collect_all_my_decl_names(&self.stmt_pool, &mut decls);
         // Keep only names that are NOT compiled local slots (those are already
         // excluded from the merge via `method_local_keys`/`code.locals`).
-        self.env_only_decls = decls
+        let mut env_only: Vec<String> = decls
             .into_iter()
             .filter(|n| !self.locals.iter().any(|l| l == n))
             .collect();
+        // Name order, not the set's per-process hash order (ADR-11756 §2.5).
+        env_only.sort_unstable();
+        self.env_only_decls = env_only;
         // Always scan for reflective caller-lexical access (independent of the
         // needs_env_sync early returns below), so the global flag is set even for
         // loop/block or zero-local frames.
@@ -10725,8 +10751,8 @@ impl CompiledCode {
                 }
             }
         }
-        self.needs_cell_named_sub = ncns.into_iter().collect();
-        self.needs_cell_named_sub_free = ncns_free.into_iter().collect();
+        self.needs_cell_named_sub = sorted_by_name(ncns);
+        self.needs_cell_named_sub_free = sorted_by_name(ncns_free);
         // Escaping-our-sub decl-site boxing: a local that a directly-nested
         // `our sub` READS or WRITES must be boxed into a shared cell AND persisted
         // (the registry routine outlives the block, with no closure env), so a call
@@ -10757,8 +10783,8 @@ impl CompiledCode {
                 }
             }
         }
-        self.needs_cell_escaping_our_sub = nceos.into_iter().collect();
-        self.needs_cell_escaping_our_sub_free = nceos_free.into_iter().collect();
+        self.needs_cell_escaping_our_sub = sorted_by_name(nceos);
+        self.needs_cell_escaping_our_sub_free = sorted_by_name(nceos_free);
         // A `my enum`'s type and variant names are this code's OWN lexical
         // bindings, but they get no local slot, so every bareword read of one
         // landed in `free` above. Left there, the free-var exemption in the
@@ -10808,10 +10834,10 @@ impl CompiledCode {
             }
         }
         self.nested_sub_written_free = nested_written;
-        self.free_var_syms = free.into_iter().collect();
+        self.free_var_syms = sorted_by_name(free);
         self.outer_ref_names = outer_ref_names;
-        self.free_var_writes = free_writes.into_iter().collect();
-        self.free_var_rebinds = free_rebinds.into_iter().collect();
+        self.free_var_writes = sorted_by_name(free_writes);
+        self.free_var_rebinds = sorted_by_name(free_rebinds);
         for sym in own_rebinds {
             let slots: Vec<u32> = sym.with_str(|s| {
                 self.locals
@@ -10825,16 +10851,17 @@ impl CompiledCode {
                 self.note_rebound_slot(Some(slot));
             }
         }
-        self.free_var_container_writes = free_container_writes.into_iter().collect();
-        self.captured_mutated_locals = captured_mutated.into_iter().collect();
-        self.needs_cell_locals = needs_cell.into_iter().collect();
-        self.needs_cell_regex = needs_cell_regex.into_iter().collect();
+        self.free_var_container_writes = sorted_by_name(free_container_writes);
+        self.captured_mutated_locals = sorted_by_name(captured_mutated);
+        self.needs_cell_locals = sorted_by_name(needs_cell);
+        self.needs_cell_regex = sorted_by_name(needs_cell_regex);
         // A self-capturing declaration only matters when the local actually gets a
         // cell — otherwise there is no cell for the declaration to preserve.
-        self.self_capture_decl_locals = self_capture_decl
-            .into_iter()
-            .filter(|sym| self.needs_cell_locals.contains(sym))
-            .collect();
+        self.self_capture_decl_locals = sorted_by_name(
+            self_capture_decl
+                .into_iter()
+                .filter(|sym| self.needs_cell_locals.contains(sym)),
+        );
         for (cc_idx, sym) in self_capture_closures {
             if self.self_capture_decl_locals.contains(&sym)
                 && let Some(nested) = self.closure_compiled_codes.get_mut(cc_idx as usize)
@@ -10845,7 +10872,7 @@ impl CompiledCode {
                 }
             }
         }
-        self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
+        self.needs_cell_free_vars = sorted_by_name(needs_cell_free);
         // Tell each closure we embed which of ITS free variables we (the creating
         // frame) vouch for: a plain lexical we declare and never mutate after the
         // capture op runs. Only such a capture can be installed with overwrite
@@ -10891,27 +10918,28 @@ impl CompiledCode {
         // exclusion is real, but it is not caused by the cell: it is caused by
         // `box_captured_lexicals` publishing the cell into the name-keyed
         // `shared_vars` lane, and that is where parameters are excluded now.
-        self.needs_cell_unvouched_locals = escaping_captured_own
-            .iter()
-            .copied()
-            .filter(|sym| !vouched.contains(sym))
-            .filter(|sym| {
-                sym.with_str(|s| {
-                    // `box_captured_lexicals` boxes `$` scalars and, for this
-                    // unvouched-escaping case only, `&` code lexicals; an
-                    // `@`/`%` lexical takes the decl-site container cell
-                    // instead (`needs_cell_unvouched_containers`, just below).
-                    //
-                    // `&` used to be excluded here alongside `@`/`%`, but it has
-                    // no decl-site cell to fall back on, so it landed in NEITHER
-                    // complement: a reassigned `&f` captured by an escaping
-                    // closure had neither the vouch nor a cell, and a same-named
-                    // `&` lexical in the calling frame won. That is exactly the
-                    // hole the dichotomy exists to close.
-                    crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%'])
-                })
-            })
-            .collect();
+        self.needs_cell_unvouched_locals = sorted_by_name(
+            escaping_captured_own
+                .iter()
+                .copied()
+                .filter(|sym| !vouched.contains(sym))
+                .filter(|sym| {
+                    sym.with_str(|s| {
+                        // `box_captured_lexicals` boxes `$` scalars and, for this
+                        // unvouched-escaping case only, `&` code lexicals; an
+                        // `@`/`%` lexical takes the decl-site container cell
+                        // instead (`needs_cell_unvouched_containers`, just below).
+                        //
+                        // `&` used to be excluded here alongside `@`/`%`, but it has
+                        // no decl-site cell to fall back on, so it landed in NEITHER
+                        // complement: a reassigned `&f` captured by an escaping
+                        // closure had neither the vouch nor a cell, and a same-named
+                        // `&` lexical in the calling frame won. That is exactly the
+                        // hole the dichotomy exists to close.
+                        crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%'])
+                    })
+                }),
+        );
         // The container half of the same complement. It is delivered at the
         // DECLARATION site rather than at each capture, so the set is computed
         // here (where the vouch is known) but consumed by `exec_set_local_op`.
@@ -10929,13 +10957,16 @@ impl CompiledCode {
         // to a same-named caller local. `exec_apply_var_trait_op` reads and
         // writes through the cell now (`read_var_trait_target` /
         // `write_var_trait_target`), so the name scan is gone.
-        self.needs_cell_unvouched_containers = escaping_captured_own
-            .into_iter()
-            .filter(|sym| !vouched.contains(sym))
-            .filter(|sym| {
-                sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
-            })
-            .collect();
+        self.needs_cell_unvouched_containers = sorted_by_name(
+            escaping_captured_own
+                .into_iter()
+                .filter(|sym| !vouched.contains(sym))
+                .filter(|sym| {
+                    sym.with_str(|s| {
+                        crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%'])
+                    })
+                }),
+        );
         for nested in &mut self.closure_compiled_codes {
             let authoritative: Vec<Symbol> = nested
                 .free_var_syms

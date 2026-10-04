@@ -1169,5 +1169,5 @@ impl Compiler {
 /// 6.d on.
 // Cost: O(1).
 fn regex_captures_topic() -> bool {
-    !crate::parser::current_language_version_starts_with("6.c")
+    !super::compile_inputs::current_language_version_starts_with("6.c")
 }

@@ -217,9 +217,13 @@ impl Interpreter {
         self.set_our_var(qualified, cell);
     }
 
-    pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
+    pub(super) fn exec_state_var_init_op(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        base_key: crate::symbol::Symbol,
+    ) {
         let init_val = self.stack.pop().unwrap_or(Value::NIL);
-        let base_key = crate::symbol::Symbol::from_id(key_idx);
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];

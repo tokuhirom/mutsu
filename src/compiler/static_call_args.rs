@@ -47,7 +47,7 @@ impl Compiler {
             // (`Interpreter::static_args_may_bind`, #10944).
             Expr::BareWord(name) => {
                 !name.contains(':')
-                    && (crate::parser::is_user_declared_type(name)
+                    && (super::compile_inputs::is_user_declared_type(name)
                         || crate::runtime::utils::is_known_type_constraint(name))
             }
             // The synthetic marker the parser appends to a parenthesized

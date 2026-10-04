@@ -49,6 +49,30 @@ pub(crate) fn next_global_decl_id() -> u64 {
     CLASS_DECL_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Serde for a declaration-site id (`ClassDecl`/`RoleDecl::decl_id`).
+///
+/// An id minted by a content-addressed module parse means the same in every
+/// process, and the bytecode compiled from that AST refers to it, so it is
+/// stored and restored as is (ADR-11756 §2.3). Any other id came from the
+/// process-global counter and means nothing in another process: a node read
+/// back mints a fresh one, exactly as re-parsing the source would (#9733).
+pub(crate) mod decl_id_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(id: &u64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(*id)
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+        let id = u64::deserialize(deserializer)?;
+        Ok(if crate::anon_names::is_content_id(id) {
+            id
+        } else {
+            crate::ast::next_class_decl_id()
+        })
+    }
+}
+
 /// Specifies how delegation (`handles`) should forward methods.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum HandleSpec {
@@ -129,7 +153,7 @@ pub(crate) struct ParamDef {
     /// shape dimensions (ADR-0133). Shared by every clone of this parse node;
     /// filled by the compiler when it compiles the routine owning the
     /// signature. Code that rewrites one of those expressions must reset it.
-    #[serde(skip)]
+    #[serde(default)]
     pub(crate) code: ParamCode,
 }
 
@@ -140,7 +164,8 @@ pub(crate) struct ParamDef {
 /// resolves through the env the binder has set up (earlier parameters, `$_`,
 /// the routine's captures), exactly as the `eval_block_value` compile it
 /// replaces resolved them.
-#[derive(Debug)]
+#[derive(Debug, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct ParamChunks {
     /// The `where` clause: the block's statements for `where { ... }`, the
     /// expression itself otherwise.
@@ -180,6 +205,31 @@ impl ParamCode {
     #[inline]
     pub(crate) fn is_filled(&self) -> bool {
         self.0.get().is_some()
+    }
+}
+
+/// A parameter's compiled chunks travel with compiled bytecode
+/// (ADR-11756 §2.4), but not with the AST cache: a `ParamDef` inside a cached
+/// compile carries them as bytes in the codec's own encoding, and anywhere else
+/// it serializes as empty, the way a freshly parsed node starts.
+impl serde::Serialize for ParamCode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = self
+            .get()
+            .filter(|_| crate::precomp_codec::encoding_active())
+            .and_then(|chunks| crate::precomp_codec::encode_nested(chunks).ok());
+        serializer.serialize_some(&bytes)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ParamCode {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let bytes: Option<Vec<u8>> = Option::deserialize(deserializer)?.flatten();
+        let code = ParamCode::default();
+        if let Some(chunks) = bytes.and_then(|b| crate::precomp_codec::decode_nested(&b)) {
+            code.fill(|| chunks);
+        }
+        Ok(code)
     }
 }
 
@@ -666,14 +716,11 @@ pub(crate) fn function_body_fingerprint(
     param_defs: &[ParamDef],
     body: &[Stmt],
 ) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    // Slice hashing writes a length prefix, which is what keeps the three
-    // fields from colliding into each other the way the old `\x00` separators
-    // guarded against.
-    params.hash(&mut hasher);
-    param_defs.hash(&mut hasher);
-    body.hash(&mut hasher);
-    hasher.finish()
+    // Stable across processes (symbols hash by name): the fingerprint names
+    // compiled routines, and the compiled-bytecode cache carries those names
+    // into another process (ADR-11756 §2.3). Sequence lengths are hashed, so
+    // the three fields cannot run into each other.
+    stable_hash::stable_hash(&(params, param_defs, body))
 }
 
 /// Line-insensitive identity of a routine declaration for redeclaration
@@ -688,14 +735,13 @@ pub(crate) fn registration_identity_fingerprint(
     body: &[Stmt],
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
-    params.hash(&mut hasher);
-    param_defs.hash(&mut hasher);
+    stable_hash::stable_hash_into(&(params, param_defs), &mut hasher);
     let kept = || body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
     // Stand in for the length prefix a slice hash would have written, so a
     // body cannot collide with a longer one whose extra statements hash empty.
     kept().count().hash(&mut hasher);
     for stmt in kept() {
-        stmt.hash(&mut hasher);
+        stable_hash::stable_hash_into(stmt, &mut hasher);
     }
     hasher.finish()
 }
@@ -2223,7 +2269,7 @@ pub(crate) enum Stmt {
         /// its mangled storage name when the module was parsed and under the
         /// bare name on every cache hit: the warm/cold divergence
         /// `crate::precomp`'s module docs warn about (#9733).
-        #[serde(skip, default = "crate::ast::next_class_decl_id")]
+        #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
         /// Parsed argument expressions for a bracketed `is`/`does`/`hides`
         /// parent (`is Parent[Args]`), keyed by the full concatenated parent
@@ -2372,7 +2418,7 @@ pub(crate) enum Stmt {
         /// `my role` is stored under `Name\u{0}<decl_id>` so two same-named
         /// lexical roles in different scopes keep their own identity
         /// (ADR-0047 P1, #9894). 0 means "no stable site".
-        #[serde(skip, default = "crate::ast::next_class_decl_id")]
+        #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
     },
     DoesDecl {
@@ -2437,7 +2483,7 @@ pub(crate) enum Stmt {
         /// `my subset` is stored under `Name\u{0}<decl_id>` so two same-named
         /// lexical subsets in different scopes keep their own identity
         /// (ADR-0047 P1). 0 means "no stable site" (a synthesized node).
-        #[serde(skip, default = "crate::ast::next_class_decl_id")]
+        #[serde(with = "crate::ast::decl_id_serde")]
         decl_id: u64,
     },
     Phaser {
@@ -2571,6 +2617,7 @@ pub(crate) mod method_assign_decl;
 mod placeholder_kind;
 pub(crate) mod placeholders;
 pub(crate) mod signature_decl;
+pub(crate) mod stable_hash;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) use signature_decl::{

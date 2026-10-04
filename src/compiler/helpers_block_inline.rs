@@ -829,6 +829,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for HeredocScopeScan<'_> {
         }
         match expr {
             Expr::HeredocInterpolation(content, true) => {
+                super::compile_inputs::mark_uncacheable("compile-time heredoc interpolation");
                 let resolved = crate::parser::interpolate_heredoc_content(content);
                 let mut vars = UndeclaredHeredocVar {
                     sub_locals: self.block_locals,

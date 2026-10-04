@@ -88,7 +88,7 @@ impl Interpreter {
         use std::sync::OnceLock;
         static ITERATOR_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = ITERATOR_STMTS.get_or_init(|| {
-            crate::parse_dispatch::parse_source(ITERATOR_ROLE_PRELUDE)
+            crate::runtime::prelude_source::parse_prelude_source(ITERATOR_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

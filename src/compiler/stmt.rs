@@ -1520,7 +1520,7 @@ impl Compiler {
                         self.current_package, name, placeholder_ip
                     );
                     let key_sym = Symbol::intern(&key);
-                    let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym.id(), 0));
+                    let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym, 0));
                     Some((guard_idx, key_sym))
                 } else {
                     None
@@ -1896,9 +1896,9 @@ impl Compiler {
                         // Patch the guard jump target to the StateVarInit instruction
                         let state_init_ip = self.code.ops.len();
                         self.code.ops[guard_idx] =
-                            OpCode::StateVarInitGuard(key_sym.id(), state_init_ip as u32);
+                            OpCode::StateVarInitGuard(key_sym, state_init_ip as u32);
                         self.code.state_locals.push((slot as usize, key_sym));
-                        self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
+                        self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     } else {
                         // No guard (e.g., chained state declarations) — use the
                         // original approach where RHS is always evaluated.
@@ -1909,7 +1909,7 @@ impl Compiler {
                         let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                         let key_sym = Symbol::intern(&key);
                         self.code.state_locals.push((slot as usize, key_sym));
-                        self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
+                        self.code.emit(OpCode::StateVarInit(slot, key_sym));
                     }
                 } else {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");

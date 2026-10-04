@@ -1019,6 +1019,25 @@ impl Interpreter {
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.run_block_with(stmts, None)
+    }
+
+    /// [`Self::run_block`] for a module's mainline: its main body is compiled
+    /// through the compiled-bytecode cache when `slot` names the module
+    /// (ADR-11756). Phaser queues compile as usual.
+    pub(super) fn run_module_block(
+        &mut self,
+        stmts: &[Stmt],
+        slot: Option<super::module_bytecode::ModuleCodeSlot>,
+    ) -> Result<(), RuntimeError> {
+        self.run_block_with(stmts, slot)
+    }
+
+    fn run_block_with(
+        &mut self,
+        stmts: &[Stmt],
+        slot: Option<super::module_bytecode::ModuleCodeSlot>,
+    ) -> Result<(), RuntimeError> {
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(stmts);
         // Run PRE phasers (before ENTER)
@@ -1030,7 +1049,13 @@ impl Interpreter {
             }
         }
         self.run_block_raw(&enter_ph)?;
-        let body_result = self.run_block_raw(&body_main);
+        let body_result = match &slot {
+            Some(slot) if !body_main.is_empty() => {
+                let (code, fns) = self.compile_module_mainline(&body_main, slot);
+                self.run_compiled_block_raw(&code, &fns)
+            }
+            _ => self.run_block_raw(&body_main),
+        };
         let queue_res = if Self::should_run_success_queue_raw(&body_result, self.env.get("_")) {
             self.run_block_raw(&success_ph)
         } else {
@@ -1079,16 +1104,15 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Compile a raw statement block with the same compiler context as
-    /// `run_block_raw` (mainline placeholder scope, current package,
-    /// distribution), without executing it. Pure compilation — touches no `env`
-    /// and runs no user code — so the VM can call it without an env loan and then
-    /// execute the result in-place via `VM::run_nested` (CP-3 collapse PoC),
-    /// avoiding the `mem::take`/`VM::new` ping-pong.
-    pub(crate) fn compile_block_raw(
+    /// The compiler an on-the-fly block compile starts from, seeded with what
+    /// it needs to know about the running code, and the compilation unit the
+    /// result belongs to. Shared by [`Self::compile_block_raw`] and the module
+    /// mainline compile, whose cache records exactly these inputs
+    /// (`module_bytecode`).
+    // Cost: O(1).
+    pub(crate) fn block_compiler(
         &self,
-        stmts: &[Stmt],
-    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+    ) -> (crate::compiler::Compiler, Option<crate::symbol::Symbol>) {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
@@ -1122,6 +1146,20 @@ impl Interpreter {
         // it, so a chunk compiled with no `?FILE` in scope still names a file.
         let compile_unit =
             crate::unit_source_file::current().or_else(|| self.current_source_file_sym());
+        (compiler, compile_unit)
+    }
+
+    /// Compile a raw statement block with the same compiler context as
+    /// `run_block_raw` (mainline placeholder scope, current package,
+    /// distribution), without executing it. Pure compilation — touches no `env`
+    /// and runs no user code — so the VM can call it without an env loan and then
+    /// execute the result in-place via `VM::run_nested` (CP-3 collapse PoC),
+    /// avoiding the `mem::take`/`VM::new` ping-pong.
+    pub(crate) fn compile_block_raw(
+        &self,
+        stmts: &[Stmt],
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+        let (compiler, compile_unit) = self.block_compiler();
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let (mut code, mut fns) = compiler.compile(stmts);
         if crate::precomp_codec::roundtrip_enabled() {

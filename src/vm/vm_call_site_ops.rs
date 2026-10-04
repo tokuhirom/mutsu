@@ -393,13 +393,12 @@ impl Interpreter {
         self.value_is_defined_dispatch(&val)
     }
 
-    /// `OpCode::StateVarInitGuard` condition, keyed on the opcode's `key_idx`:
+    /// `OpCode::StateVarInitGuard` condition, keyed on the opcode's state key:
     /// when the state var is already initialized, pushes the `NIL` placeholder
     /// `StateVarInit` discards and returns true (skip the RHS initializer);
     /// otherwise returns false (fall through and run it).
     #[inline]
-    pub(super) fn state_var_init_guard_taken(&mut self, key_idx: u32) -> bool {
-        let base_key = crate::symbol::Symbol::from_id(key_idx);
+    pub(super) fn state_var_init_guard_taken(&mut self, base_key: crate::symbol::Symbol) -> bool {
         let scoped_key = self.scoped_state_key(base_key);
         if self.get_state_var(scoped_key).is_some() {
             self.stack.push(Value::NIL);
