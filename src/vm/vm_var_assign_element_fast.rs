@@ -66,13 +66,6 @@ impl Interpreter {
         if !is_positional {
             return None;
         }
-        // Slice 2b's `=`-element share is captured in the preamble and consumed
-        // by the lane's caller; the early call site is above that capture, so
-        // the only safe answer while one is pending is to decline (and, above
-        // all, NOT to clear the flag).
-        if self.element_share_pending {
-            return None;
-        }
         // The two name-keyed cross-thread lanes (`try_shared_hash_element_assign`
         // / `try_shared_array_element_assign`) are skipped by running here, and
         // they own the store whenever a thread shares this env. Their own gate

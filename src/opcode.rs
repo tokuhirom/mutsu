@@ -1812,15 +1812,6 @@ pub(crate) enum OpCode {
     /// does not hold a container (so a plain `$x = $y` stays a copy).
     MarkArrayShareSource(u32),
 
-    /// Slice 2b (`docs/scalar-array-sharing.md`): flag the upcoming
-    /// `IndexAssignExprNamed` as a `=`-reference share of an array/hash element
-    /// (`@aoa[i] = @row` / `%h<k> = @row`). The RHS is compiled as a `:=` bind so
-    /// the element holds a shared `ContainerRef` cell and the source is promoted,
-    /// but this marker records the element as a *value* share (not a bind) so a
-    /// later non-share reassignment (`@aoa[i] = 42`) REPLACES the slot instead of
-    /// writing through the shared cell (raku value semantics).
-    MarkElementShare,
-
     // -- String --
     /// Infix `~` (string concatenation). Stack: `[left, right] → [result]` (right on top).
     ///
@@ -3438,6 +3429,14 @@ pub(crate) enum OpCode {
         /// string, O(len) per append; the fused store can release the
         /// container's reference first and grow the buffer in place.
         concat_append: bool,
+        /// Slice 2b (`docs/scalar-array-sharing.md`): this store is a
+        /// `=`-reference share of an array/hash element (`@aoa[i] = @row` /
+        /// `%h<k> = @row`). The RHS is compiled as a `:=` bind so the element
+        /// holds a shared `ContainerRef` cell and the source is promoted, but
+        /// the element is recorded as a *value* share (not a bind) so a later
+        /// non-share reassignment (`@aoa[i] = 42`) REPLACES the slot instead of
+        /// writing through the shared cell (raku value semantics).
+        element_share: bool,
     },
     /// Assign through a pseudo-stash with a literal key: `MY::<$x> = v`,
     /// `PROCESS::<$x> = v`. Stack: `[value] → [value]`.

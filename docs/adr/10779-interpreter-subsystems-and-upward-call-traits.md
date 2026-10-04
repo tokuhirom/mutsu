@@ -283,3 +283,9 @@ these preconditions:
     its recursion, and `try_smart_match` returns it to `~~`, `when`, `grep` and `first`.
     As a field, only `~~` took it: a `grep` whose `ACCEPTS` died swallowed the exception, and
     the next unrelated `~~` raised it.
+- D3, `element_share_pending` (2026-10-04): 93 → 92 fields. `MarkElementShare` was always
+  emitted immediately before the one `IndexAssignExprNamed` that consumed it, so the fact is
+  now that op's `element_share` operand, fixed at compile time. A mark whose consumer is the
+  next op takes this form; one whose consumer is some later store stays in the mark-context
+  word (`SHAPED_DECL`). `rw_param_rebinds` is refiled as `frame`: it is saved and restored
+  with each VM call frame.

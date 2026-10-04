@@ -26,7 +26,6 @@ pending_sigilless_store
 pending_skip_constraint_recheck
 pending_where_exception
 recorded_free_var_writes
-rw_param_rebinds
 rw_return_context
 shaped_decl_context
 sigilless_bind_source

@@ -2814,11 +2814,6 @@ pub struct Interpreter {
     /// been set, so the `SetLocal` write-through fast path only pays the marker
     /// lookup when at least one `=`-array-shared scalar exists.
     pub(crate) array_share_active: bool,
-    /// Slice 2b: set by `MarkElementShare` to flag the upcoming
-    /// `IndexAssignExprNamed` as a `=`-reference share of an array/hash element
-    /// (vs a true `:=` bind). Consumed by `exec_index_assign_expr_named_op`,
-    /// which marks the written element `__mutsu_elem_share::` after the store.
-    pub(crate) element_share_pending: bool,
     /// Set by `StashVarDeclInit`: the raw, uncoerced initializer of the `@`/`%`
     /// declaration currently being processed, so `ApplyVarTrait`'s
     /// custom-container branches can hand the class's `STORE` the RHS with its

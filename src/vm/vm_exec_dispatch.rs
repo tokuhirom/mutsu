@@ -3519,11 +3519,6 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
-            OpCode::MarkElementShare => {
-                self.element_share_pending = true;
-                *ip += 1;
-            }
-            // Cost: O(1).
             OpCode::MarkConstantContext => {
                 self.constant_context().set(true);
                 *ip += 1;
@@ -5472,6 +5467,7 @@ impl Interpreter {
                 index_first,
                 target_slot,
                 concat_append,
+                element_share,
             } => {
                 let appended_in_place = *concat_append
                     && self.exec_index_concat_append_op(
@@ -5491,6 +5487,7 @@ impl Interpreter {
                         *name_idx,
                         *is_positional,
                         *target_slot,
+                        *element_share,
                     )?;
                     self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 }

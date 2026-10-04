@@ -150,7 +150,13 @@ impl Interpreter {
             Some(result) => result?,
             None => {
                 let pre = self.attr_elem_env_snapshot(code, name_idx);
-                self.exec_index_assign_expr_named_op(code, name_idx, is_positional, target_slot)?;
+                self.exec_index_assign_expr_named_op(
+                    code,
+                    name_idx,
+                    is_positional,
+                    target_slot,
+                    false,
+                )?;
                 self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
             }
         }

@@ -582,11 +582,18 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
+        element_share: bool,
     ) -> Result<(), RuntimeError> {
         // A package-block `my %h` reached from one of the package's routines
         // lives in the package store, which every path below is blind to.
         self.with_package_lexical_seeded(code, name_idx, |vm| {
-            vm.exec_index_assign_expr_named_op_unseeded(code, name_idx, is_positional, target_slot)
+            vm.exec_index_assign_expr_named_op_unseeded(
+                code,
+                name_idx,
+                is_positional,
+                target_slot,
+                element_share,
+            )
         })
     }
 
@@ -596,6 +603,7 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
+        element_share: bool,
     ) -> Result<(), RuntimeError> {
         // `self[...] = ...` in a role method names the implicit invocant, not
         // an ordinary lexical aggregate.  Handle a role-mixed aggregate before
@@ -663,8 +671,11 @@ impl Interpreter {
         // for. Consulted FIRST so the common store pays none of them; it
         // touches nothing unless it commits, so a decline leaves the rest of
         // this function running exactly as it did before.
-        if let Some(result) =
-            self.try_fast_array_element_assign_early(code, name_idx, is_positional, target_slot)
+        // An `=`-element share is recorded by the full path below, which the
+        // early lanes skip, so they are not consulted for one.
+        if !element_share
+            && let Some(result) =
+                self.try_fast_array_element_assign_early(code, name_idx, is_positional, target_slot)
         {
             return result;
         }
@@ -673,8 +684,9 @@ impl Interpreter {
         // `%h{$k} = $v` has already been refused for. It was the LAST thing this
         // dispatch chain tried until now, which is why the hash store cost 3,642
         // instructions against the array store's 1,115 (#8069).
-        if let Some(result) =
-            self.try_fast_hash_element_assign_early(code, name_idx, is_positional, target_slot)
+        if !element_share
+            && let Some(result) =
+                self.try_fast_hash_element_assign_early(code, name_idx, is_positional, target_slot)
         {
             return result;
         }
@@ -782,8 +794,13 @@ impl Interpreter {
             }
             saved
         });
-        let result =
-            self.exec_index_assign_expr_named_op_seeded(code, name_idx, is_positional, target_slot);
+        let result = self.exec_index_assign_expr_named_op_seeded(
+            code,
+            name_idx,
+            is_positional,
+            target_slot,
+            element_share,
+        );
         if let Some(cell) = unit_cell {
             // The owning frame's slot may have been resynced with the seeded
             // (or re-built) container by a slot-aware store path: that value
@@ -881,6 +898,7 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
+        element_share: bool,
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx);
         let touched_index = self.stack.last().and_then(|idx| match idx.view() {
@@ -894,6 +912,7 @@ impl Interpreter {
             name_idx,
             is_positional,
             target_slot,
+            element_share,
         );
         if let Some(ll) = lazy_source {
             self.restore_lazy_array_slot(code, var_name, ll);
@@ -961,6 +980,7 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
+        element_share: bool,
     ) -> Result<(), RuntimeError> {
         // ADR-0040 slice 1: itemize the rvalue BEFORE any of the fast/slow
         // dispatch paths below run, so every element-assign destination (the
@@ -1118,12 +1138,11 @@ impl Interpreter {
         }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind
         // (so the bind machinery installs a shared `ContainerRef` cell and
-        // promotes the source) plus a `MarkElementShare` flag. Capture which
+        // promotes the source) with `element_share` set. Capture which
         // element to mark as a `=` value share — a simple Int/Str subscript — so
         // a later non-share reassignment REPLACES the slot instead of writing
         // through the shared cell. Complex subscripts keep pure `:=` semantics.
-        let elem_share_mark: Option<(String, String)> = if self.element_share_pending {
-            self.element_share_pending = false;
+        let elem_share_mark: Option<(String, String)> = if element_share {
             let var_name = Self::const_str(code, name_idx).to_string();
             self.stack.last().and_then(|idx| match idx.view() {
                 ValueView::Int(n) if n >= 0 => Some((var_name, idx.to_string_value())),
