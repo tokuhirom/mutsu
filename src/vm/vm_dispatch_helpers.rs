@@ -1,4 +1,4 @@
-use super::vm_closure_dispatch::TopicArgSite;
+use super::vm_closure_dispatch::{ClosureTopic, TopicArgSite};
 use super::*;
 
 impl Interpreter {
@@ -668,10 +668,8 @@ impl Interpreter {
                 &data,
                 &cc,
                 args,
-                explicit_topic,
-                capture_rw_topic,
+                ClosureTopic::from_loop(explicit_topic, capture_rw_topic),
                 fns,
-                TopicArgSite::default(),
             );
         }
         // A code object built from a registry routine carries that routine's own
@@ -685,10 +683,8 @@ impl Interpreter {
                 &data,
                 &cf.code,
                 args,
-                explicit_topic,
-                capture_rw_topic,
+                ClosureTopic::from_loop(explicit_topic, capture_rw_topic),
                 fns,
-                TopicArgSite::default(),
             );
         }
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
@@ -712,10 +708,8 @@ impl Interpreter {
             &data,
             &cc,
             args,
-            explicit_topic,
-            capture_rw_topic,
+            ClosureTopic::from_loop(explicit_topic, capture_rw_topic),
             fns,
-            TopicArgSite::default(),
         )
     }
 

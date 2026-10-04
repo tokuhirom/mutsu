@@ -90,10 +90,8 @@ impl Interpreter {
             &data,
             &cc,
             args,
-            topic,
-            false,
+            super::vm_closure_dispatch::ClosureTopic::from_loop(topic, false),
             &fns,
-            super::vm_closure_dispatch::TopicArgSite::default(),
         )
     }
 }
