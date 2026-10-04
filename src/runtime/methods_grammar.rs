@@ -767,7 +767,6 @@ impl Interpreter {
         // rule sees it; an enclosing parse's invocant is disarmed meanwhile.
         let outer_invocant = self.arm_start_rule_invocant(None);
         let result = (|| -> Result<Value, RuntimeError> {
-            let _farthest_scope = super::regex::regex_helpers::RegexFarthestPositionScope::enter();
             let invocant = self.build_start_rule_invocant(
                 Symbol::intern(package_name),
                 &text,

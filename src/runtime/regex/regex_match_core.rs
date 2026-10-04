@@ -687,7 +687,6 @@ impl Interpreter {
         store: &mut CapStore,
         matches: &mut MatchSink<'_>,
     ) -> bool {
-        super::regex_helpers::record_regex_farthest_position(pos);
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
                 let snap = store.snapshot();
@@ -1259,7 +1258,6 @@ impl Interpreter {
         if next == current && !zero_width_ok {
             return None;
         }
-        super::regex_helpers::record_regex_farthest_position(next);
         store.merge_delta(delta);
         Self::store_apply_named_capture(store, token, current, next, pos_base);
         let hash_base = if hash_per_iter {
