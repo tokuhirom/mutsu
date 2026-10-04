@@ -204,12 +204,7 @@ fn import_is_pragma_like(module: &str) -> bool {
     }
     matches!(
         module,
-        "MONKEY"
-            | "MONKEY-SEE-NO-EVAL"
-            | "MONKEY-TYPING"
-            | "MONKEY-GUTS"
-            | "NativeCall"
-            | "NativeCall::Types"
+        "MONKEY" | "MONKEY-SEE-NO-EVAL" | "MONKEY-TYPING" | "MONKEY-GUTS"
     )
 }
 

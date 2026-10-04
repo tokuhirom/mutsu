@@ -51,6 +51,9 @@ impl Interpreter {
     /// a module body -- still does, because the prelude is a whole-compunit
     /// splice.
     pub(super) fn inject_nativecall_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if true {
+            return;
+        } // EXPERIMENT(#11203): upstream NativeCall
         if !source.mentions_module("NativeCall")
             || source.contains("class Pointer")
             || source.contains("class void")
@@ -93,6 +96,9 @@ impl Interpreter {
     /// importers, and the re-exported copy collides with the importer's own
     /// injected copy as an `X::Redeclaration` (see [`NATIVECALL_SUB_PRELUDES`]).
     pub(super) fn inject_nativecall_subs_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if true {
+            return;
+        } // EXPERIMENT(#11203): upstream NativeCall
         if !source.mentions_module("NativeCall") {
             return;
         }
@@ -215,6 +221,9 @@ impl Interpreter {
     /// alongside it would be a redeclaration, and the user's handler is the one
     /// that should win.
     pub(super) fn inject_trait_mod_is_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if true {
+            return;
+        } // EXPERIMENT(#11203): upstream NativeCall
         if !source.contains("trait_mod:<is>")
             || !source.mentions_module("NativeCall")
             || Self::declares_toplevel_sub(stmts, "trait_mod:<is>")
