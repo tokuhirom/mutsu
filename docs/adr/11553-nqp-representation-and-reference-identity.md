@@ -33,7 +33,9 @@ problem with three observable parts:
    writable. A native lexical's `.VAR` is currently a generic `Scalar`, and a
    read-only parameter can refer to a caller's writable container. The
    existing `nqp::iscont` compiler form converts its argument to `.VAR`, which
-   has already lost the distinction.
+   has already lost the distinction. A native element reference returned by
+   `nqp::atposref_i/n/s` can also be bound to another name and inspected later;
+   this is a first-class container, not only a property of a call's syntax.
 
 The coverage campaign [#11488](https://github.com/tokuhirom/mutsu/issues/11488)
 requires a real implementation or a justified "Not applicable" entry for each
@@ -55,6 +57,7 @@ Measured with `use nqp` on 2026-10-04:
 | `iscont_i(my int $i)` / `iscont_i(my $x)` | 1 | 0 |
 | `isrwcont(my $x)` / `isrwcont(1)` | 1 | 0 |
 | `isrwcont($p is rw)` / `isrwcont($p)` | 1 | 0 |
+| `iscont_i(atposref_i(list_i(1), 0))` / `iscont_i(atpos_i(list_i(1), 0))` | 1 | 0 |
 
 `bootarray`, `boothash`, `bootint`, `bootintarray`, `bootnum`,
 `bootnumarray`, `bootstr` and `bootstrarray` answer type names `BOOTArray`,
@@ -64,18 +67,47 @@ Measured with `use nqp` on 2026-10-04:
 `iscoderef(sub {})` is 0, while
 `iscoderef(nqp::getattr(sub {}, Code, '$!do'))` is 1: a high-level callable
 and its executable code body are different objects.
+`hllize(nqp::list(1, 2))` and `hllize(nqp::hash("x", 1))` return high-level
+`List` and `Hash` objects with `P6opaque` representation. They are not the
+same objects as their raw inputs (`eqaddr` is 0), so `islist`/`ishash` change
+from 1 to 0. Yet a raw `bindpos`/`bindkey` write is visible through the
+high-level result: the two objects share element storage. A raw native element
+reference remains a native container after `my $r := atposref_i(...)`:
+`iscont_i($r)` and `isrwcont($r)` are both 1. Its `.VAR` is not a substitute
+for the reference operand (`iscont_i($r.VAR)` is 0).
+`hllize(box_i(42, bootint()))` and `hllize(box_s("x", bootstr()))`
+likewise produce high-level `Int` and `Str` values for which `isint` and
+`isstr` change from 1 to 0.
 
 ## 3. Proposed decision
 
-### 3.1 Preserve the representation on the value, not in a side registry
+### 3.1 Separate object identity from element storage
 
-Represent the raw VM identity as part of the value's own backing object.
-Collection backings distinguish VMArray/VMHash from high-level Array/Hash;
-the marker survives aliases, itemized holders, element access, cloning and
-argument passing. BOOT integer, number and string boxes have their own value
-shape instead of reusing the high-level `Int`, `Num` and `Str` variants. The
-code body read from `Code.$!do` likewise has a distinct MVMCode shape, with
-the existing body identity and call behavior retained.
+Represent the raw VM identity on the *object*, separately from its element
+storage. A raw VMArray/VMHash and a high-level `List`/`Hash` created by
+`hllize` must be different objects with different REPR answers while sharing
+mutable storage. The raw object's type/REPR identity survives aliases,
+itemized holders and argument passing; `hllize` creates a high-level object
+that points to the same storage. An explicit clone follows Rakudo's clone
+semantics rather than blindly copying an origin flag.
+
+This requires an object shell separate from the storage node for raw
+collections and their high-level wrappers. `ArrayData`/`HashData` currently
+combine contents and `.WHICH` identity, so a field added to either one cannot
+by itself satisfy the `hllize` observation: the raw and high-level objects
+would have the same REPR or the same identity. The implementation must
+separate those concerns while retaining the shared mutation and GC tracing
+rules. A new tag or wrapper is an implementation choice to be checked against
+ADR-0005's eight-byte `Value` and the JIT's tag assumptions.
+
+BOOT integer, number and string boxes likewise need raw object identity
+distinct from high-level `Int`, `Num` and `Str`. The executable code body
+read from `Code.$!do` needs MVMCode identity distinct from the high-level
+routine. `code_do_attr.rs` already constructs a distinct direct-code `Sub`
+and records its identity with `__mutsu_wrap_direct`. The implementation should
+move that fact to an explicit code-body kind used by both existing direct-call
+dispatch and the REPR classifier, rather than create a second, unrelated
+code-body mechanism or add another name-keyed marker.
 
 The eight BOOT type objects have explicit identities and REPR metadata. The
 corresponding constructors (`list`, `hash`, typed `list_*`, `box_*`, `create`)
@@ -85,37 +117,44 @@ itself passes its REPR test, as Rakudo does. This is a BOOT-specific promise:
 it does not claim that every existing high-level mutsu value now has a complete
 MoarVM body (ADR-0015 §5).
 
-The representation bit must live on the shared backing, not on a temporary
-`Value` holder. Two aliases to the same VM collection must answer alike after
-itemization or a parameter bind. Adding a name-keyed registry or inferring the
-representation from the collection's elements would violate that invariant.
+Two aliases to the *same object* must answer alike. A raw object and its HLL
+wrapper must answer differently even when they share storage. A name-keyed
+registry or a classification inferred from elements would violate both rules.
 
-### 3.2 Preserve the lvalue used as an NQP operand
+### 3.2 Preserve both the binding view and first-class references
 
-The compiler lowers the four container tests from an lvalue expression to a
-typed reference descriptor. The descriptor identifies a lexical, attribute
-or element storage location, its native kind (object, int, num or str), and
-whether this *binding* is writable. A read-only parameter gets a read-only
-descriptor even when the caller supplied a writable cell; an `is rw` parameter
-keeps the writable descriptor. `my int $i` retains its native kind instead of
-round-tripping through a generic `.VAR` `Scalar`.
+The compiler preserves the lvalue of an NQP container-test operand instead
+of compiling it as an ordinary decontainerized value. For a lexical,
+attribute or element it carries the storage location, native kind (object,
+int, num or str), and whether this *binding* is writable. A read-only
+parameter gets a read-only binding view even when the caller supplied a
+writable cell; an `is rw` parameter keeps a writable view. `my int $i`
+retains its native kind instead of round-tripping through a generic `.VAR`
+`Scalar`. Literal and other bare-value operands have no container.
 
-The descriptor is transient call data, not an extra `Interpreter` field or a
-second store for the value. Its location points to the existing slot/cell and
-uses that storage's locking rules. Ordinary expression evaluation still reads
-the value. The compiler handles non-lvalue expressions as bare values, so
-`isrwcont(1)` and `iscont_i(1)` return 0 without constructing a fake container.
-The existing `iscont` uses this same lowering and stops relying on `.VAR`
-class names. This keeps the five container tests consistent across lexical,
-parameter, attribute and element forms.
+This call-site view is insufficient for `atposref_*` and other first-class
+references: their native kind, writable status and storage identity must live
+on the reference value and survive `:=`, captures and argument passing. A
+native lexical reference that escapes a frame must use a managed cell, not a
+raw pointer into the frame's local array. Reuse the existing `VarRef`,
+`CaptureVarCell`, native positional-reference and slot-addressed binding
+metadata mechanisms where they can represent this information. Extend one
+of them only after checking its alias and lifetime behavior; do not add a
+parallel name-keyed registry or a new `Interpreter` field.
+
+`iscont_i/n/s` and `isrwcont` classify both the direct binding view and an
+already materialized reference. The existing `iscont` should use the same
+reference facts where applicable; `.VAR` class-name inference alone cannot
+answer the native-kind or writability tests. The compiler and VM must agree
+for the ordinary `NqpOp` path, TRIR and any JIT inlining.
 
 ### 3.3 Keep one implementation per predicate
 
-One representation classifier supplies `islist`, `ishash`, `isstr`, `isint`,
-`isnum` and `iscoderef`; one descriptor classifier supplies `iscont`,
+One object-REPR classifier supplies `islist`, `ishash`, `isstr`, `isint`,
+`isnum` and `iscoderef`; one reference classifier supplies `iscont`,
 `iscont_i/n/s` and `isrwcont`. The `nqp::` op tables expose those classifiers
-through `OpCode::NqpOp`, with the necessary lvalue lowering in the compiler.
-No new tree-walk or interpreter method-dispatch fallback is introduced.
+through bytecode, with the necessary lvalue lowering in the compiler. No new
+tree-walk or interpreter method-dispatch fallback is introduced.
 
 ## 4. Rejected approaches
 
@@ -126,9 +165,15 @@ No new tree-walk or interpreter method-dispatch fallback is introduced.
   An alias or `box_*` call would immediately disagree with its source.
 - **Return BOOT names as ordinary `Package` values.** `reprname`, `WHAT`,
   `create` and boxing would have no matching body or type identity.
+- **Put one raw/HLL flag on the shared `ArrayData`/`HashData`.** `hllize`
+  returns a different object that shares the raw object's storage; one flag
+  on that storage cannot give them different REPR answers.
 - **Infer writable/native status from `.VAR`'s Raku class or from the
   contained value.** A read-only parameter and an `is rw` parameter can
-  refer to the same caller variable but must answer differently.
+  refer to the same caller variable but must answer differently; a native
+  positional reference can be assigned to a new name and tested later.
+- **Only carry an lvalue descriptor for the duration of one call.** This
+  misses a first-class `atposref_*` result bound with `:=` and tested later.
 - **Classify the operands in `runtime/methods.rs`.** This would add the
   forbidden tree-walk slow path and still discard lvalue information before
   the classification.
@@ -137,13 +182,18 @@ No new tree-walk or interpreter method-dispatch fallback is introduced.
 
 1. Pin the Rakudo matrix above in focused `t/vm/` tests, including BOOT type
    objects, raw-versus-Raku collections, aliases, `Code.$!do`, native
-   lexicals, read-only and `is rw` parameters, and non-lvalue operands.
-2. Add BOOT type and value identities and update all existing operations that
-   construct, inspect, serialize or trace those value shapes. Include
-   `nqp::islist` in the same representation pass.
-3. Add the lvalue descriptor compiler/VM path, then implement all five
-   container tests through it. Pin that writes still reach the original
-   location and that a read-only parameter never gains write access.
+   lexicals, read-only and `is rw` parameters, non-lvalue operands,
+   `hllize`'s distinct object/shared mutation, and a native element
+   reference retained through `:=` and a call. Cover scalar `hllize` as well.
+2. Separate raw and HLL object identities from their shared collection
+   storage; add BOOT type and value identities and update all operations that
+   construct, inspect, serialize or trace those shapes. Include `hllize`,
+   `hlllist`, `hllhash` and `islist` in the same representation pass. Pin the
+   eight-byte `Value`, collection sizes, GC and JIT invariants.
+3. Extend the existing reference/call-argument machinery to preserve both
+   direct binding views and first-class native references, then implement
+   all five container tests through it. Pin that writes still reach the
+   original location and that a read-only parameter never gains write access.
 4. Register all 17 ops in `NQP_OPS`, rerun
    `scripts/nqp-op-coverage.py`, and update `docs/nqp-op-coverage.md` from
    36/53 to 53/53 Type / Conversion ops. The tests must agree with Rakudo;
