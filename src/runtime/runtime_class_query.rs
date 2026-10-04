@@ -470,7 +470,7 @@ impl Interpreter {
     /// [`RegistryReadGuard`](crate::runtime::registry::RegistryReadGuard)).
     #[inline]
     pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
-        crate::runtime::registry::RegistryReadGuard::new(&self.registry, "registry")
+        crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry")
     }
 
     /// Current registry write generation — bumped on every `registry_mut()`
@@ -479,7 +479,8 @@ impl Interpreter {
     /// caches only when the function set could actually have changed).
     #[inline]
     pub(crate) fn registry_write_generation(&self) -> u64 {
-        self.registry_write_gen
+        self.types
+            .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -489,9 +490,10 @@ impl Interpreter {
     pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
         // Any write access may mutate the registry, so bump the generation
         // several resolution caches consult (cheap relaxed increment).
-        self.registry_write_gen
+        self.types
+            .registry_write_gen
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        crate::runtime::registry::RegistryWriteGuard::new(&self.registry, "registry")
+        crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry, "registry")
     }
 
     /// Read access to the shared [`IoHandleTable`](io_handles::IoHandleTable).

@@ -881,7 +881,10 @@ impl Interpreter {
         // results are materialized once and callers need not spell the
         // constructor differently.
         if name_sym.with_str(|name| name == "Map")
-            && !self.user_declared_classes.contains(&name_sym.resolve())
+            && !self
+                .types
+                .user_declared_classes
+                .contains(&name_sym.resolve())
         {
             return Some(self.builtin_map_coerce(args));
         }

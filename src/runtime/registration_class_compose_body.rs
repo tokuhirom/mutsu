@@ -217,8 +217,9 @@ impl Interpreter {
             .rename_method_owner(old_owner, new_owner);
         self.registry_mut().sync_accessor_entries(old_owner);
         self.registry_mut().sync_accessor_entries(new_owner);
-        if crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(old_name) {
-            crate::runtime::cow_table_mut(&mut self.user_declared_classes).insert(new_name.clone());
+        if crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(old_name) {
+            crate::runtime::cow_table_mut(&mut self.types.user_declared_classes)
+                .insert(new_name.clone());
         }
         // Register the new type object so `R::G::A[Int]` resolves; the caller
         // aliases the bare `G::A` reference to the same value.

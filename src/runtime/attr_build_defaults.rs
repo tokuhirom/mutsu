@@ -89,7 +89,8 @@ impl Interpreter {
         let Some(cell) = Self::self_instance_attrs(inv) else {
             return;
         };
-        self.build_attr_writes
+        self.types
+            .build_attr_writes
             .borrow_mut()
             .push(super::BuildWriteFrame {
                 cell_addr: crate::gc::Gc::as_ptr(&cell) as usize,
@@ -99,7 +100,8 @@ impl Interpreter {
 
     /// Stop recording and return the attribute cell keys BUILD assigned.
     pub(crate) fn pop_build_write_frame(&self) -> HashSet<Symbol> {
-        self.build_attr_writes
+        self.types
+            .build_attr_writes
             .borrow_mut()
             .pop()
             .map(|f| f.written)
@@ -410,8 +412,8 @@ impl Interpreter {
         // the default resolves within its owning class even where no
         // method-class stack frame is active (`resolve_suppressed_type`'s
         // `constructing_class` fallback).
-        let saved_constructing = self.constructing_class.take();
-        self.constructing_class = Some(decl_package.to_string());
+        let saved_constructing = self.types.constructing_class.take();
+        self.types.constructing_class = Some(decl_package.to_string());
         // The default chunk runs during construction, not while the class's
         // compilation unit is active. Restore that lexical unit explicitly so
         // a bare call can reach a compunit-private sub declared beside the
@@ -423,7 +425,7 @@ impl Interpreter {
             .unwrap_or(saved_unit);
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.current_unit = saved_unit;
-        self.constructing_class = saved_constructing;
+        self.types.constructing_class = saved_constructing;
         self.set_current_package(saved_package);
         for (key, old_val) in saved_attr_env {
             if let Some(v) = old_val {

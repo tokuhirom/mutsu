@@ -82,8 +82,8 @@ impl Interpreter {
         // user-declared (which `register_class_decl` does for everything), a
         // `Parameter+{Query}` would answer `.named` with X::Method::NotFound,
         // because a built-in base contributes no *declared* attribute list.
-        if !self.user_declared_classes.contains(base_class) {
-            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
+        if !self.types.user_declared_classes.contains(base_class) {
+            crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(&name);
         }
         Ok(name)
     }
@@ -100,7 +100,7 @@ impl Interpreter {
         if BASES.contains(&class_name) {
             return true;
         }
-        !self.user_declared_classes.contains(class_name)
+        !self.types.user_declared_classes.contains(class_name)
             && self.registry().classes.contains_key(class_name)
             && self
                 .class_mro(class_name)

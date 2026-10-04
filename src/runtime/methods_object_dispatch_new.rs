@@ -224,7 +224,8 @@ impl Interpreter {
                     .map(|c| c.language_version.clone())
             })
             .or_else(|| {
-                self.type_metadata
+                self.types
+                    .type_metadata
                     .get(&role_name)
                     .and_then(|m| m.get("language-revision"))
                     .map(|v| format!("6.{}", v.to_string_value()))
@@ -343,6 +344,7 @@ impl Interpreter {
         // the delegation below straight back here forever.
         if let ValueView::Package(name) = target.view()
             && !self
+                .types
                 .role_pun_construction
                 .iter()
                 .any(|n| n == &name.resolve())
@@ -661,9 +663,9 @@ impl Interpreter {
                 self.registry_mut()
                     .class_role_param_bindings
                     .insert(base_name_str.clone(), bindings);
-                self.role_pun_construction.push(base_name_str.clone());
+                self.types.role_pun_construction.push(base_name_str.clone());
                 let constructed = self.dispatch_new(Value::package(base_name), args.clone());
-                self.role_pun_construction.pop();
+                self.types.role_pun_construction.pop();
                 match saved_bindings {
                     Some(saved) => {
                         self.registry_mut()
@@ -767,11 +769,12 @@ impl Interpreter {
             // original base name for the generic class path below, but bypass
             // this builtin-constructor match so `class Set is Hash {}` creates
             // a Set instance rather than an immutable builtin QuantHash.
-            let constructor_dispatch_name = if self.user_declared_classes.contains(&cn_resolved) {
-                "__mutsu_user_class__"
-            } else {
-                base_class_name
-            };
+            let constructor_dispatch_name =
+                if self.types.user_declared_classes.contains(&cn_resolved) {
+                    "__mutsu_user_class__"
+                } else {
+                    base_class_name
+                };
             let is_datetime_subclass = cn_resolved != "DateTime"
                 && self
                     .class_mro(class_key)
@@ -1622,7 +1625,12 @@ impl Interpreter {
             // this very role is constructing through its own pun (see the
             // delegation at the end of the branch), so the re-entry falls
             // through to the class path below instead of looping here.
-            let role = if self.role_pun_construction.iter().any(|n| n == &cn_resolved) {
+            let role = if self
+                .types
+                .role_pun_construction
+                .iter()
+                .any(|n| n == &cn_resolved)
+            {
                 None
             } else {
                 self.registry().roles.get(&cn_resolved).cloned()
@@ -1733,9 +1741,9 @@ impl Interpreter {
                 // `new`-declaring branch above performs.
                 let pre_existing_class = self.registry().classes.contains_key(&cn_resolved);
                 self.ensure_role_punned_to_class(&cn_resolved)?;
-                self.role_pun_construction.push(cn_resolved.clone());
+                self.types.role_pun_construction.push(cn_resolved.clone());
                 let constructed = self.dispatch_new(target.clone(), args.clone());
-                self.role_pun_construction.pop();
+                self.types.role_pun_construction.pop();
                 if !pre_existing_class {
                     self.withdraw_role_pun(&cn_resolved);
                 }

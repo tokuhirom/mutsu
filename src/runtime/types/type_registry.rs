@@ -539,7 +539,7 @@ impl Interpreter {
         // on every type check in the program (`try_resolved_type_capture_name`).
         // TODO: take the caller's `Symbol` and ask `qualified::is_qualified`
         // (#11507); an intern per type check would cost more than the scan.
-        if self.package_type_aliases.is_empty()
+        if self.types.package_type_aliases.is_empty()
             || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
         {
@@ -555,7 +555,7 @@ impl Interpreter {
         // unconditionally first paid its four-table `contains_key` (a `Str`
         // constraint checked on every typed binding) even though the lookup
         // below was going to answer `None` anyway (#8899).
-        let target = self.lookup_in_running_package(&self.package_type_aliases, name)?;
+        let target = self.lookup_in_running_package(&self.types.package_type_aliases, name)?;
         // A directly registered name is its own resolution; the module alias is
         // only ever the fallback for a short name nothing else accounts for.
         if self.has_type_direct(name) {

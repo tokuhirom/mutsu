@@ -57,7 +57,7 @@ impl Interpreter {
         let generation = self.registry_write_generation();
         let key = (class, attr_sym);
         {
-            let mut cache = self.attr_type_constraint_cache.borrow_mut();
+            let mut cache = self.types.attr_type_constraint_cache.borrow_mut();
             if cache.generation != Some(generation) {
                 cache.answers.clear();
                 cache.generation = Some(generation);
@@ -75,7 +75,8 @@ impl Interpreter {
         // during it all the same: remember the answer only for the generation
         // it was computed under.
         if self.registry_write_generation() == generation {
-            self.attr_type_constraint_cache
+            self.types
+                .attr_type_constraint_cache
                 .borrow_mut()
                 .answers
                 .insert(key, answer.clone());

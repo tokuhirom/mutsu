@@ -43,6 +43,7 @@ impl Interpreter {
     ) -> Option<(Arc<Vec<crate::ast::Stmt>>, u64)> {
         use crate::runtime::regex_parse::REGEX_CODE_PARSE_CACHE;
         let cur_gen = self
+            .types
             .registry_write_gen
             .load(std::sync::atomic::Ordering::Relaxed);
         if let Some(hit) = REGEX_CODE_PARSE_CACHE.with(|c| {

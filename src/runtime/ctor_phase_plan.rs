@@ -35,6 +35,7 @@ impl Interpreter {
     ) -> Vec<ConstructionPhaseStep> {
         let mro = self.class_mro(cn);
         let class_lang_rev = self
+            .types
             .type_metadata
             .get(cn)
             .and_then(|m| m.get("language-revision"))
@@ -77,6 +78,7 @@ impl Interpreter {
                     .map(|(b, _)| b)
                     .unwrap_or(&role_name);
                 let role_lang_rev = self
+                    .types
                     .type_metadata
                     .get(role_base)
                     .and_then(|m| m.get("language-revision"))

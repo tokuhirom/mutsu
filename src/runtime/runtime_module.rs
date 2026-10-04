@@ -314,7 +314,7 @@ impl Interpreter {
             .keys()
             .filter(|key| {
                 class_snapshot.contains(*key)
-                    || self.persistent_classes.contains(*key)
+                    || self.types.persistent_classes.contains(*key)
                     || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
                     // A lexical `my class` is stored under its mangled,
                     // per-declaration name (ADR-0047 P1: `P\u{0}<decl-id>`),
@@ -661,7 +661,7 @@ impl Interpreter {
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
                 };
                 if is_contributor {
-                    crate::runtime::cow_table_mut(&mut self.package_stash_hidden).remove(module);
+                    crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden).remove(module);
                 }
             }
             // A re-`use` of an already-loaded module skips `load_module_inner`
@@ -676,14 +676,14 @@ impl Interpreter {
             // it first (importer "GLOBAL"), and `DBDish::Pg`'s own `use
             // DBDish::Pg::Native;` later must independently see `PGconn`
             // bare too, even though the module itself is already loaded.
-            if let Some(module_aliases) = self.package_type_aliases.get(module).cloned() {
+            if let Some(module_aliases) = self.types.package_type_aliases.get(module).cloned() {
                 let importer_package = self
                     .module
                     .import_target_package
                     .clone()
                     .or_else(|| self.module.unit_module_loading_stack.last().cloned())
                     .unwrap_or_else(|| self.current_package());
-                let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                let entry = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                     .entry(importer_package)
                     .or_default();
                 let exported = self.module.module_owned_types.get(module);
@@ -922,7 +922,7 @@ impl Interpreter {
                             && class_name.starts_with(namespace)
                             && class_name.get(namespace.len()..namespace.len() + 2) == Some("::")
                         {
-                            crate::runtime::cow_table_mut(&mut self.package_stash_hidden)
+                            crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
                                 .insert(class_name.clone());
                         }
                     }
@@ -932,7 +932,7 @@ impl Interpreter {
                             && role_name.starts_with(namespace)
                             && role_name.get(namespace.len()..namespace.len() + 2) == Some("::")
                         {
-                            crate::runtime::cow_table_mut(&mut self.package_stash_hidden)
+                            crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
                                 .insert(role_name.clone());
                         }
                     }

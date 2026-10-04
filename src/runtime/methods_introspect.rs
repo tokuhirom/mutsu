@@ -282,7 +282,7 @@ impl Interpreter {
         // Return custom HOW for CustomType/CustomTypeInstance
         // Check rebless map first for reblessed instances
         if let ValueView::CustomTypeInstance(d) = target.view()
-            && let Some(new_how) = self.rebless_map.get(&d.id).cloned()
+            && let Some(new_how) = self.types.rebless_map.get(&d.id).cloned()
         {
             return Ok(new_how);
         }
@@ -607,7 +607,7 @@ impl Interpreter {
         why: Value,
     ) -> Result<Value, RuntimeError> {
         let name = self.mop_receiver_owner(target);
-        crate::runtime::cow_table_mut(&mut self.type_metadata)
+        crate::runtime::cow_table_mut(&mut self.types.type_metadata)
             .entry(name)
             .or_default()
             .insert("__set_why__".to_string(), why.clone());
@@ -630,6 +630,7 @@ impl Interpreter {
         if !matches!(target.view(), ValueView::Package(_) | ValueView::Sub(_)) {
             let owner = self.mop_receiver_owner(target);
             if let Some(why) = self
+                .types
                 .type_metadata
                 .get(&owner)
                 .and_then(|m| m.get("__set_why__"))
@@ -687,6 +688,7 @@ impl Interpreter {
         // same answer in Rakudo.
         if let ValueView::Package(name) = target.view()
             && let Some(why) = self
+                .types
                 .type_metadata
                 .get(&name.resolve())
                 .and_then(|m| m.get("__set_why__"))
@@ -964,7 +966,8 @@ impl Interpreter {
                 // builtin type this is a genuine process-wide rename,
                 // matching real Rakudo (`Hash.^set_name(...)` renames `Hash`
                 // for every hash in the program, not just the caller's).
-                self.type_metadata
+                self.types
+                    .type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
                     .map(Value::to_string_value)
@@ -973,6 +976,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
                 let base = self
+                    .types
                     .type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
@@ -1109,7 +1113,8 @@ impl Interpreter {
     /// resolved elsewhere (`Package`, `Instance`, `Mixin`, ...) have their
     /// own overrides and never reach this helper.
     pub(super) fn builtin_display_name(&self, base: &'static str) -> String {
-        self.type_metadata
+        self.types
+            .type_metadata
             .get(base)
             .and_then(|m| m.get("__set_name__"))
             .map(Value::to_string_value)

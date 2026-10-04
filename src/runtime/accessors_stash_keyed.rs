@@ -43,7 +43,7 @@ impl Interpreter {
             return None;
         }
         // Skip env entries hidden from package stash lookups (transitive deps)
-        if package_name != "MY" && !is_global && self.package_stash_hidden.contains(key_s) {
+        if package_name != "MY" && !is_global && self.types.package_stash_hidden.contains(key_s) {
             return None;
         }
         // Skip my-scoped items (they should not appear in the package stash).

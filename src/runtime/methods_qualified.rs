@@ -1303,7 +1303,7 @@ impl Interpreter {
             if let Some(val) = attrs.get(method)
                 && args.is_empty()
             {
-                self.pending_proxy_subclass_attr =
+                self.types.pending_proxy_subclass_attr =
                     Some((subclass_attrs.clone(), method.to_string()));
                 return Some(Ok(val.clone()));
             }

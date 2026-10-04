@@ -295,7 +295,7 @@ impl Interpreter {
     /// enumerating built-in names, which is what a first attempt got wrong:
     /// `"hi".encode` is a `utf8`, a name no container list mentions.
     fn instance_is_plain_user_object(&mut self, class_name: &str) -> bool {
-        if !self.user_declared_classes.contains(class_name) {
+        if !self.types.user_declared_classes.contains(class_name) {
             return false;
         }
         const CONTAINER_BASES: &[&str] = &[

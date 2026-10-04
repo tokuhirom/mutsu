@@ -18,7 +18,7 @@ impl Interpreter {
         // A public attribute's auto-generated accessor is not yet installed
         // while `class_name`'s custom-HOW `compose` hook is still running
         // (see `classes_composing_accessors`'s doc comment, #8836).
-        if !self.classes_composing_accessors.contains(class_name) {
+        if !self.types.classes_composing_accessors.contains(class_name) {
             // First add accessor methods for public attributes (in order)
             for attr in &class_def.attributes {
                 if attr.is_public
@@ -127,7 +127,7 @@ impl Interpreter {
         // A public attribute's auto-generated accessor is not yet installed
         // while `class_name`'s custom-HOW `compose` hook is still running
         // (see `classes_composing_accessors`'s doc comment, #8836).
-        if !self.classes_composing_accessors.contains(class_name) {
+        if !self.types.classes_composing_accessors.contains(class_name) {
             for attr in &class_def.attributes {
                 if attr.is_public
                     && registry

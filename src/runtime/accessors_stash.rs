@@ -693,7 +693,7 @@ impl Interpreter {
             "tau" | "\u{03C4}" => return Value::num(std::f64::consts::TAU),
             _ => {}
         }
-        if !self.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
+        if !self.types.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
             return Value::package(Symbol::intern(name));
         }
 

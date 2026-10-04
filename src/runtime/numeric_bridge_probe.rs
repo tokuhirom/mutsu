@@ -76,18 +76,23 @@ impl Interpreter {
         target: &Value,
     ) -> bool {
         let generation = self.registry_write_generation();
-        if self.numeric_bridge_probe.generation != Some(generation) {
-            self.numeric_bridge_probe.answers.clear();
-            self.numeric_bridge_probe.generation = Some(generation);
-            self.numeric_bridge_probe.subset_shadowed = {
+        if self.types.numeric_bridge_probe.generation != Some(generation) {
+            self.types.numeric_bridge_probe.answers.clear();
+            self.types.numeric_bridge_probe.generation = Some(generation);
+            self.types.numeric_bridge_probe.subset_shadowed = {
                 let registry = self.registry();
                 registry.subsets.contains_key("Real") || registry.subsets.contains_key("Numeric")
             };
         }
-        if self.numeric_bridge_probe.subset_shadowed {
+        if self.types.numeric_bridge_probe.subset_shadowed {
             return self.compute_numeric_bridge_probe(class_name, target);
         }
-        let cached = self.numeric_bridge_probe.answers.get(&class_name).copied();
+        let cached = self
+            .types
+            .numeric_bridge_probe
+            .answers
+            .get(&class_name)
+            .copied();
         if let Some(cached) = cached {
             #[cfg(debug_assertions)]
             {
@@ -110,7 +115,10 @@ impl Interpreter {
         // entry would be filed under. Publish only when it did not, so an entry
         // is never keyed to a generation it was not computed at.
         if self.registry_write_generation() == generation {
-            self.numeric_bridge_probe.answers.insert(class_name, answer);
+            self.types
+                .numeric_bridge_probe
+                .answers
+                .insert(class_name, answer);
         }
         answer
     }

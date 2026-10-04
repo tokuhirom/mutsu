@@ -1714,7 +1714,7 @@ impl Interpreter {
                 // Also keep them against the module's own name: a later `use` of
                 // this already-loaded module copies from there into ITS importer
                 // (`use_module_with_tags_inner`'s already-loaded branch).
-                let table = crate::runtime::cow_table_mut(&mut self.package_type_aliases);
+                let table = crate::runtime::cow_table_mut(&mut self.types.package_type_aliases);
                 let own = table.entry(module.to_string()).or_default();
                 for (short, qualified) in &aliases {
                     own.entry(short.clone()).or_insert(qualified.clone());
@@ -1744,7 +1744,7 @@ impl Interpreter {
             for owner in owners {
                 let class_static_names = self.lexicals.class_body_static_names.get(&owner);
                 if !module_type_aliases.is_empty() {
-                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                    crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(owner.clone())
                         .or_default()
                         .extend(
