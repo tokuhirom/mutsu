@@ -34,13 +34,32 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 1,
         handler: Handler::Narrow(join),
     },
+    MethodRow {
+        owner: "List",
+        name: "keys",
+        arity: 0,
+        handler: Handler::Pure(keys),
+    },
+    MethodRow {
+        owner: "List",
+        name: "Numeric",
+        arity: 0,
+        handler: Handler::Pure(elems),
+    },
+    MethodRow {
+        owner: "List",
+        name: "Int",
+        arity: 0,
+        handler: Handler::Pure(elems),
+    },
 ];
 
 fn len(target: &Value) -> i64 {
     target.as_list_items().map_or(0, |items| items.len() as i64)
 }
 
-// Cost: O(1), a length read on the reified items.
+// Cost: O(1), a length read on the reified items. Also `List.Numeric` and
+// `List.Int`: a list numifies to its element count.
 fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::int(len(target)))
 }
@@ -48,6 +67,20 @@ fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 // Cost: O(1), a length read on the reified items.
 fn end(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::int(len(target) - 1))
+}
+
+/// `List.keys`: the lazy Seq of the list's indices, a counting iterator over
+/// its live length (Rakudo's `Seq.new(Rakudo::Iterator.CountOnly...)`).
+// Cost: O(1); O(1) per key pulled.
+pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::seq_list_gen(
+        crate::value::ListGen::positional(
+            target.clone(),
+            crate::value::PositionalMode::Keys,
+            false,
+        ),
+        false,
+    ))
 }
 
 // Cost: O(1), an emptiness test.

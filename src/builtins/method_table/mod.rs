@@ -42,7 +42,7 @@ pub(crate) mod coerce;
 mod complex;
 mod int;
 pub(crate) mod list;
-mod map;
+pub(crate) mod map;
 mod num;
 mod rational;
 pub(crate) mod real;

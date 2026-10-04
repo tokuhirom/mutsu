@@ -190,3 +190,15 @@ fn the_shape_test_knows_the_receiver() {
     // An inherited row sets the bit of the shape that reaches it.
     assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
 }
+
+/// `List`'s count rows reach `Array` through its MRO, and `Map`'s reach
+/// `Hash`.
+#[test]
+fn count_rows_reach_their_subtypes() {
+    for name in ["keys", "Numeric", "Int"] {
+        let sym = Symbol::intern(name);
+        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
+        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
+        assert_eq!(lookup(DispatchShape::Hash, sym, 0).unwrap().owner, "Map");
+    }
+}

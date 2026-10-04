@@ -381,3 +381,15 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
     - `$l.join("-")` (a List) -52.8%, `@a.join` -51.7%, `@a.join(",")` -49.4%.
     - `%h.Str` (a `Hash`; no row) is +0.8%, the same residual cost of the two bit tests
       noted for `"42".Int`. The empty loop is unchanged.
+- 2026-10-04, slice 3, the count family: `keys`, `Numeric` and `Int` on `List` and on `Map`,
+  and `chars` on `Cool`, are rows. Arrays and hashes reach them through `List` and `Map`.
+  - `List.keys` is the same lazy counting Seq the cascade built (`ListGen::positional`).
+  - `Map.keys` yields an object hash's real key objects and a plain hash's decoded `Str`
+    keys.
+  - The cascade's `.keys` arm calls both handlers.
+  - `chars` moves into the text rows `Str` and `Cool` share, so `$i.chars` and
+    `@a.chars` (the stringified list) reach the one handler.
+  - Callgrind on the profiling build, 200,000 calls per benchmark, second run, against the
+    same `main`: `@a.Int` 1,969M to 396M (-79.9%), `%h.Numeric` -79.3%, `$i.chars` -64.9%,
+    `@a.keys` -62.1%, `%h.keys` -60.0%. `@a.sum` (no row) -0.2%; the empty loop is
+    unchanged.

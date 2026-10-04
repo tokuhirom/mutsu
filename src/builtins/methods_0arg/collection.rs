@@ -323,19 +323,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::seq(keys)));
             }
             match target.view() {
-                ValueView::Hash(map) => {
-                    // Object hashes (`.WHICH`-keyed: `my %h{Any}`, a Set/Bag/Mix
-                    // `.hash`, or a `classify` keyed by non-Str values) yield their
-                    // real key objects; a plain hash yields decoded Str keys.
-                    let keys: Vec<Value> = if map.has_typed_keys() {
-                        map.keys()
-                            .map(|k| crate::runtime::utils::hash_typed_key(target, k))
-                            .collect()
-                    } else {
-                        map.keys().map(|k| Value::hash_key_decode(k)).collect()
-                    };
-                    Some(Ok(Value::seq(keys)))
-                }
+                // The `Map.keys` row's implementation (ADR-11276).
+                ValueView::Hash(_) => Some(crate::builtins::method_table::map::keys(target, &[])),
                 ValueView::Pair(key, _) => Some(Ok(Value::seq(vec![Value::str(key.clone())]))),
                 ValueView::ValuePair(key, _) => Some(Ok(Value::seq(vec![key.clone()]))),
                 // `.keys` reports positional indices of the array's own elements,
@@ -344,7 +333,10 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // `items` directly avoids `value_to_list`, which (correctly, for
                 // flattening) collapses an itemized array to one element and would
                 // make `.keys` yield only `(0,)`.
-                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Keys))),
+                // The `List.keys` row's implementation (ADR-11276).
+                ValueView::Array(..) => {
+                    Some(crate::builtins::method_table::list::keys(target, &[]))
+                }
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
                 }
