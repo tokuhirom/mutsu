@@ -218,6 +218,7 @@ impl Interpreter {
                 let held_recursion = state.recursion;
                 state.owner = None;
                 state.recursion = 0;
+                super::thread_lock_count::note_lock_released();
                 lock.lock_cv.notify_one();
                 loop {
                     state = cond
@@ -231,6 +232,7 @@ impl Interpreter {
                     }
                     state.owner = Some(me);
                     state.recursion = held_recursion.max(1);
+                    super::thread_lock_count::note_lock_taken();
                     drop(state);
 
                     let predicate_ok = if let Some(test) = maybe_test.clone() {
@@ -248,6 +250,7 @@ impl Interpreter {
                         .map_err(|_| RuntimeError::new("Lock state is poisoned"))?;
                     state.owner = None;
                     state.recursion = 0;
+                    super::thread_lock_count::note_lock_released();
                     lock.lock_cv.notify_one();
                 }
             }

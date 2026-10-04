@@ -98,7 +98,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 433] = [
+static NQP_OPS: [(&str, NqpOpTable); 440] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -225,6 +225,7 @@ static NQP_OPS: [(&str, NqpOpTable); 433] = [
     ("ctx", NqpOpTable::Builtin),
     ("ctxcaller", NqpOpTable::Builtin),
     ("ctxlexpad", NqpOpTable::Builtin),
+    ("currentthread", NqpOpTable::Process),
     ("cwd", NqpOpTable::Fs),
     ("decode", NqpOpTable::Value),
     ("decodelocaltime", NqpOpTable::Sys),
@@ -405,6 +406,7 @@ static NQP_OPS: [(&str, NqpOpTable); 433] = [
     ("neginf", NqpOpTable::Value),
     ("neverrepossess", NqpOpTable::Native),
     ("newexception", NqpOpTable::Builtin),
+    ("newthread", NqpOpTable::Process),
     ("nextfiledir", NqpOpTable::Value),
     ("normalizecodes", NqpOpTable::Str),
     ("not_i", NqpOpTable::Value),
@@ -505,6 +507,11 @@ static NQP_OPS: [(&str, NqpOpTable); 433] = [
     ("tc", NqpOpTable::Str),
     ("tclc", NqpOpTable::Str),
     ("tellfh", NqpOpTable::Fs),
+    ("threadid", NqpOpTable::Process),
+    ("threadjoin", NqpOpTable::Process),
+    ("threadlockcount", NqpOpTable::Process),
+    ("threadrun", NqpOpTable::Process),
+    ("threadyield", NqpOpTable::Process),
     ("throw", NqpOpTable::Builtin),
     ("time", NqpOpTable::Process),
     ("tonum_I", NqpOpTable::Native),

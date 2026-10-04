@@ -171,6 +171,7 @@ pub(crate) fn acquire_lock(
             None => {
                 state.owner = Some(me);
                 state.recursion = 1;
+                super::thread_lock_count::note_lock_taken();
                 return Ok(());
             }
             Some(owner) if owner == me => {
@@ -209,6 +210,7 @@ pub(crate) fn release_lock(
             } else {
                 state.recursion = 0;
                 state.owner = None;
+                super::thread_lock_count::note_lock_released();
                 // Drop the MutexGuard before notifying to reduce contention:
                 // waiters wake up and can immediately try to acquire the mutex.
                 drop(state);

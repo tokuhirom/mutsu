@@ -1350,7 +1350,6 @@ impl Interpreter {
                     // creates the thread WITHOUT starting it -- `.run` does that.
                     // The id is allocated here, not at `.run`: rakudo reports a
                     // real `.id` on a not-yet-started Thread.
-                    let mut attrs = HashMap::new();
                     let mut code = None;
                     let mut thread_name = "<anon>".to_string();
                     let mut app_lifetime = false;
@@ -1371,14 +1370,12 @@ impl Interpreter {
                             "Required named parameter 'code' not passed to Thread.new",
                         ));
                     };
-                    attrs.insert("code".to_string(), code);
-                    attrs.insert(
-                        "id".to_string(),
-                        Value::int(super::methods_collection_ops::next_thread_id() as i64),
-                    );
-                    attrs.insert("name".to_string(), Value::str(thread_name));
-                    attrs.insert("app_lifetime".to_string(), Value::truth(app_lifetime));
-                    return Ok(Value::make_instance(*class_name, attrs));
+                    return Ok(Self::new_thread_object(
+                        *class_name,
+                        code,
+                        thread_name,
+                        app_lifetime,
+                    ));
                 }
                 "Lock" | "Lock::Async" | "Lock::Soft" => {
                     // Shared with the VM's native fast path

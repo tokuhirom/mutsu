@@ -338,9 +338,7 @@ impl Interpreter {
                 }
                 // $*THREAD: the current thread's own Thread object.
                 if name == "*THREAD" || name == "$*THREAD" {
-                    self.stack.push(crate::runtime::current_thread_object(
-                        Self::make_thread_instance,
-                    ));
+                    self.stack.push(crate::runtime::current_thread_value());
                     *ip += 1;
                     return Ok(());
                 }

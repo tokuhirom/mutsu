@@ -98,7 +98,9 @@ static THREAD_HANDLES: std::sync::LazyLock<
     Mutex<HashMap<u64, crate::thread_compat::JoinHandle<()>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Starts at 2: id 1 is the initial thread's (`current_mutsu_thread_id`), and
+/// the first `Thread` created used to be handed that id too.
+static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(2);
 
 /// Ids of `Thread`s whose code has been handed to an OS thread, so
 /// `Thread.run` can refuse to start the same `Thread` twice (rakudo: "it is an
@@ -187,10 +189,22 @@ pub(super) fn set_current_thread_object(thread: Value) {
     THREAD_OBJECT.with(|cell| *cell.borrow_mut() = Some(thread));
 }
 
-/// The current OS thread's `$*THREAD` object, built by `make` on first use.
+/// The current OS thread's `$*THREAD` object (also `nqp::currentthread`),
+/// built on first use for a thread that no `Thread.start` / `.run` installed
+/// one for (the initial thread, a pool worker).
 // Cost: O(1).
-pub(crate) fn current_thread_object(make: impl FnOnce() -> Value) -> Value {
-    THREAD_OBJECT.with(|cell| cell.borrow_mut().get_or_insert_with(make).clone())
+pub(crate) fn current_thread_value() -> Value {
+    THREAD_OBJECT.with(|cell| {
+        cell.borrow_mut()
+            .get_or_insert_with(|| {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("id".to_string(), Value::int(current_mutsu_thread_id()));
+                attrs.insert("name".to_string(), Value::str_from("<anon>"));
+                attrs.insert("is_initial".to_string(), Value::truth(is_initial_thread()));
+                Value::make_instance(Symbol::intern("Thread"), attrs)
+            })
+            .clone()
+    })
 }
 
 /// Set the mutsu thread ID for the current thread.
