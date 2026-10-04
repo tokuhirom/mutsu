@@ -239,7 +239,14 @@ impl Interpreter {
             // legal `does` parent even though it appears in neither the class
             // registry nor `BUILTIN_TYPES`. Consult the single core-role oracle
             // instead of growing a fourth private list here.
-            if !self.registry().classes.contains_key(base_parent)
+            // A `CORE::`-spelled parent names a core type the class's own name
+            // shadows (`grammar Grammar`); it is known if the catalog has it.
+            let names_cataloged_core_type =
+                base_parent.strip_prefix("CORE::").is_some_and(|core| {
+                    crate::builtin_types::catalog::builtin_type_info(core).is_some()
+                });
+            if !names_cataloged_core_type
+                && !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
                 && !crate::runtime::types::is_builtin_role_name(base_parent)
                 && !self.registry().roles.contains_key(base_parent)

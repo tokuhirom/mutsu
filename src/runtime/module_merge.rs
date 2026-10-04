@@ -506,6 +506,20 @@ impl Interpreter {
         !self.bare_name_visible_here(sym)
             && self.resolve_suppressed_type(name).is_none()
             && self.resolve_type_in_current_package(name).is_none()
+            // A `constant` the running package declared in its own file scope
+            // is what the bareword means there, even when a package-less
+            // module published a same-named one (`unit module A` and a plain
+            // `constant X` module both declaring `TRIM-BEFORE`).
+            && {
+                let key = crate::term_names::term_key(name);
+                let pkg = self.current_package_sym();
+                (pkg.as_str().is_empty() || crate::qualified::is_global_package(pkg))
+                    || (self.module_scope_lexical(&key).is_none()
+                    && self
+                        .package_chain_var_fallback(crate::symbol::Symbol::intern(&key))
+                        .is_none()
+                    && self.get_our_var(&key).is_none())
+            }
     }
 
     /// Whether a block-level merge live here granted the package `top`

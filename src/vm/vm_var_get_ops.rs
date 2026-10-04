@@ -370,7 +370,17 @@ impl Interpreter {
             // in the very env slot that branch probes.
             self.poisoned_enum_alias_check(name)?;
             enum_val
-        } else if let Some(v) = self.term_value(name).cloned() {
+        } else if let Some(v) = self
+            .term_value(name)
+            .cloned()
+            // A same-named constant another module published bare (ADR-11136)
+            // and this routine's own compunit does not merge is not what the
+            // name means here: the running module's own declaration is.
+            .filter(|_| {
+                Symbol::lookup(name).is_none_or(|sym| self.bare_name_visible_here(sym))
+                    || self.running_module_bareword(name).is_none()
+            })
+        {
             // A sigil-less constant live in this scope's `env` — declared here
             // or imported by a block-scoped `use` — shadows a same-named type
             // (#9963): `{ use CG; G }` is CG's `constant G`, not the file's
