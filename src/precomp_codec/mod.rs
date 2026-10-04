@@ -191,3 +191,6 @@ pub(crate) fn roundtrip(
     }
     decoded
 }
+
+#[cfg(test)]
+mod tests;
