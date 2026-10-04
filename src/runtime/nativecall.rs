@@ -489,12 +489,20 @@ pub fn call_native_with_out_args(
                 ArgOwner::Ptr(addr as *const std::ffi::c_void),
             )
         } else {
-            let (ty, owner) = marshal_arg(ps, v).map_err(|msg| {
-                RuntimeError::new(format!(
+            let (ty, owner) = marshal_arg(ps, v).map_err(|e| match e {
+                MarshalError::Detail(msg) => RuntimeError::new(format!(
                     "NativeCall: argument {} to '{}': {msg}",
                     i + 1,
                     spec.symbol
-                ))
+                )),
+                MarshalError::Unbox(got) => RuntimeError::new(format!(
+                    "This type cannot unbox to a native integer: P6opaque, {got}"
+                )),
+                MarshalError::Repr(repr, got) => RuntimeError::new(format!(
+                    "Native call expected argument {} with {repr} representation, but got a \
+                     P6opaque ({got})",
+                    i + 1
+                )),
             })?;
             // A numeric CArray is backed by C memory in Raku, so any write the
             // callee performs must be reflected back into the caller's array.
@@ -1071,7 +1079,10 @@ fn decode_carray_elem(elem: CType, src: &[u8]) -> Value {
 }
 
 #[cfg(feature = "libffi")]
-fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, ArgOwner), String> {
+fn marshal_arg(
+    ps: &ParamSpec,
+    raw: &Value,
+) -> Result<(libffi::middle::Type, ArgOwner), MarshalError> {
     use libffi::middle::Type;
     if ps.ct == CType::CArray {
         return marshal_carray_arg(ps, raw);
@@ -1100,7 +1111,21 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
         CType::F32 => (Type::f32(), ArgOwner::F32(num() as f32)),
         CType::F64 => (Type::f64(), ArgOwner::F64(num())),
         CType::Pointer => {
-            // A by-value `Pointer` passes its current address as `void*`.
+            // A by-value `Pointer` passes its current address as `void*`. A
+            // defined plain value (a `Str`, a `Num`, a `Hash`) carries no
+            // address at all: rakudo refuses it, and passing NULL in its place
+            // let a callee that reads its argument crash (#11529).
+            if crate::runtime::types::value_is_defined(v)
+                && !matches!(
+                    v.view(),
+                    ValueView::Int(_)
+                        | ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::Array(..)
+                )
+            {
+                return Err(MarshalError::Unbox(crate::value::types::what_type_name(v)));
+            }
             let addr = pointer_address(v) as *const std::ffi::c_void;
             (Type::pointer(), ArgOwner::Ptr(addr))
         }
@@ -1139,55 +1164,90 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             // BIO *over* the caller's bytes) keeps seeing live memory for as
             // long as the Raku object is alive.
             match buf_storage_node(v) {
-                Some(node) => {
-                    // SAFETY: audited aliased in-place container write (see
-                    // `value::aliased_mut`) — this is the pointer C writes
-                    // through, and the `node` held in the owner keeps the
-                    // allocation alive for at least the duration of the call.
-                    // No Rust borrow into the buffer is live across it.
-                    let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }
-                        .bytes
-                        .as_mut_ptr();
-                    (
-                        Type::pointer(),
-                        ArgOwner::BufBytes {
-                            node: Some(node),
-                            buf: Vec::new(),
-                            data_ptr: data_ptr as *const std::ffi::c_void,
-                        },
-                    )
+                Some(node) => (Type::pointer(), storage_arg(node)),
+                // An undefined argument (a `Blob` type object, Nil) is a NULL
+                // pointer, as in Rakudo.
+                None if !crate::runtime::types::value_is_defined(v) => {
+                    (Type::pointer(), ArgOwner::Ptr(std::ptr::null()))
                 }
-                // Not a buffer instance at all (a type object passed where a
-                // buffer was declared): an empty per-call block.
-                None => {
-                    let bytes: Vec<u8> = Vec::new();
-                    let data_ptr = bytes.as_ptr() as *const std::ffi::c_void;
-                    (
-                        Type::pointer(),
-                        ArgOwner::BufBytes {
-                            node: None,
-                            buf: bytes,
-                            data_ptr,
-                        },
-                    )
-                }
+                // Anything else defined is not a buffer: refuse it (#11529)
+                // rather than hand C a dangling pointer to an empty block.
+                None => return Err(not_representable("VMArray", v)),
             }
         }
-        CType::Void => return Err("a parameter cannot have type void".to_string()),
+        CType::Void => return Err("a parameter cannot have type void".to_string().into()),
         // Routed to `callback_arg_owner` before `marshal_arg` is reached (it
         // needs the interpreter, which this function does not have).
-        CType::Callback => return Err("a callback parameter is marshalled earlier".to_string()),
+        CType::Callback => {
+            return Err("a callback parameter is marshalled earlier"
+                .to_string()
+                .into());
+        }
         // Routed to `marshal_carray_arg` above; unreachable here.
         CType::CArray => return marshal_carray_arg(ps, raw),
     })
+}
+
+/// A `Blob`/`Buf` or native-backed `CArray` argument passed as a `void*` **to
+/// its own storage** (ADR-0015 P2/P3): nothing is copied in and nothing is
+/// copied back, so a callee that fills it needs no sync point and one that
+/// retains the pointer keeps seeing live memory. Empty storage is a NULL
+/// pointer, as in MoarVM: an empty allocation's pointer is dangling, not an
+/// address C may be given (#11529).
+#[cfg(feature = "libffi")]
+fn storage_arg(node: crate::gc::Gc<crate::value::BufData>) -> ArgOwner {
+    if node.bytes.is_empty() {
+        return ArgOwner::Ptr(std::ptr::null());
+    }
+    // SAFETY: audited aliased in-place container write (see
+    // `value::aliased_mut`) — this is the pointer C writes through, and the
+    // `node` held in the owner keeps the allocation alive for at least the
+    // duration of the call. No Rust borrow into the buffer is live across it.
+    let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }
+        .bytes
+        .as_mut_ptr();
+    ArgOwner::BufBytes {
+        node: Some(node),
+        buf: Vec::new(),
+        data_ptr: data_ptr as *const std::ffi::c_void,
+    }
+}
+
+/// Why an argument could not be marshalled.
+#[cfg(feature = "libffi")]
+#[derive(Debug)]
+enum MarshalError {
+    /// A detail the caller prefixes with the argument position and routine.
+    Detail(String),
+    /// The argument's representation is not one the parameter can take:
+    /// (the parameter's REPR, the argument's type name).
+    Repr(&'static str, String),
+    /// A `Pointer` parameter was handed a value with no address: the
+    /// argument's type name.
+    Unbox(String),
+}
+
+#[cfg(feature = "libffi")]
+impl From<String> for MarshalError {
+    fn from(detail: String) -> Self {
+        MarshalError::Detail(detail)
+    }
+}
+
+/// Rakudo's refusal of an argument whose representation the parameter cannot
+/// take (`Native call expected argument 2 with CArray representation, but got
+/// a P6opaque (Str)`).
+#[cfg(feature = "libffi")]
+fn not_representable(repr: &'static str, v: &Value) -> MarshalError {
+    MarshalError::Repr(repr, crate::value::types::what_type_name(&resolve_arg(v)))
 }
 
 /// The storage node of a `Blob`/`Buf` native-call argument — the contiguous
 /// bytes C is handed a pointer into. Unwraps any `Scalar`/`ContainerRef`/
 /// `VarRef` container first (a `$`-variable argument arrives wrapped).
 ///
-/// `None` for anything that is not a buffer instance (a type object passed
-/// where a buffer was declared), which then gets an empty per-call block.
+/// `None` for anything that is not a buffer instance: an undefined argument
+/// then passes NULL, and a defined one is refused.
 #[cfg(feature = "libffi")]
 fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
     match v.view() {
@@ -1213,7 +1273,7 @@ fn buf_storage_node(v: &Value) -> Option<crate::gc::Gc<crate::value::BufData>> {
 fn marshal_carray_arg(
     ps: &ParamSpec,
     raw: &Value,
-) -> Result<(libffi::middle::Type, ArgOwner), String> {
+) -> Result<(libffi::middle::Type, ArgOwner), MarshalError> {
     use libffi::middle::Type;
     // An UNDEFINED argument (a type object / Nil) for a `CArray[T]` parameter
     // is a genuine NULL, as in Rakudo. Handing over a pointer to an empty
@@ -1240,21 +1300,7 @@ fn marshal_carray_arg(
     // its storage is equally right — the copy path could not see one at all and
     // passed an empty buffer.
     if let Some(node) = buf_storage_node(&resolve_arg(raw)) {
-        // SAFETY: audited aliased in-place container write (see
-        // `value::aliased_mut`) — this is the pointer C writes through, and the
-        // `node` held in the owner keeps the allocation alive for at least the
-        // duration of the call. No Rust borrow into the buffer is live across it.
-        let data_ptr = unsafe { crate::value::gc_contents_mut(&node) }
-            .bytes
-            .as_mut_ptr();
-        return Ok((
-            Type::pointer(),
-            ArgOwner::BufBytes {
-                node: Some(node),
-                buf: Vec::new(),
-                data_ptr: data_ptr as *const std::ffi::c_void,
-            },
-        ));
+        return Ok((Type::pointer(), storage_arg(node)));
     }
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags
@@ -1263,13 +1309,15 @@ fn marshal_carray_arg(
         .elem
         .or_else(|| carray_value_elem_type(raw))
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
-    let list = match resolve_array_value(raw) {
-        Some(arr) => arr
-            .with_array_inplace(|data, _| data.items().to_vec())
-            .unwrap_or_default(),
-        // A bare type object / Any becomes a null pointer.
-        None => Vec::new(),
+    // Anything else that is defined is not an array C can be handed: refuse it
+    // (#11529). Building an empty per-call buffer for it instead passed C a
+    // dangling non-NULL pointer, and a callee that read through it crashed.
+    let Some(arr) = resolve_array_value(raw) else {
+        return Err(not_representable("CArray", raw));
     };
+    let list = arr
+        .with_array_inplace(|data, _| data.items().to_vec())
+        .unwrap_or_default();
 
     if elem == CType::Str {
         let mut strings = Vec::with_capacity(list.len());
@@ -1309,7 +1357,13 @@ fn marshal_carray_arg(
     for (i, item) in list.iter().enumerate() {
         encode_carray_elem(elem, item, &mut buf[i * sz..(i + 1) * sz]);
     }
-    let data_ptr = buf.as_ptr() as *const std::ffi::c_void;
+    // An empty array is a NULL pointer, as MoarVM's empty storage is: an empty
+    // `Vec`'s pointer is dangling, not a valid address.
+    let data_ptr = if buf.is_empty() {
+        std::ptr::null()
+    } else {
+        buf.as_ptr() as *const std::ffi::c_void
+    };
     Ok((
         Type::pointer(),
         ArgOwner::CArrayNum {
