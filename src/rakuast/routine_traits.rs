@@ -19,12 +19,24 @@
 //! rather than rendered in an invented order. The parser records a bare
 //! `is export` as the `DEFAULT` tag, which renders bare: `is export(:DEFAULT)`
 //! means the same and comes back in that spelling.
+//!
+//! Any other `is NAME` / `is NAME(ARGS)` on a sub (`is native("libc")`,
+//! `is test-assertion`, a user `trait_mod:<is>`) is a `Trait::Is` too, with
+//! the argument as a `Circumfix::Parentheses`. The parser keeps these in
+//! `custom_traits` in source order, beside the `returns`/`of` marker, so they
+//! render in that order around the return-type trait. A list argument
+//! `(a, b)` is the parser's `Grouped(ArrayLiteral)`, and the parentheses are
+//! the circumfix. An angle argument `<x>` reads the same as `('x')` and
+//! comes back in that spelling; a multi-word `<a b>`, an internal `__` marker,
+//! a qualified name and the traits the parser folds into other fields stay
+//! refused.
 
 use super::convert::{
     leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
 };
 use super::lower::{named_child, named_child_or_positional, positional_leaf};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The tag a bare `is export` exports under.
@@ -226,4 +238,141 @@ pub(super) fn add_flags(
             .insert(0, leaf_field(Some("multiness"), Value::str_from("multi")));
     }
     Ok(())
+}
+
+/// Trait names the parser folds into a field of its own, or keeps as an
+/// internal marker, rather than leaving as a plain custom trait.
+fn is_generic_trait_name(name: &str) -> bool {
+    !(name.starts_with("__")
+        || name.starts_with("DEPRECATED")
+        || crate::qualified::is_qualified_str(name)
+        || matches!(
+            name,
+            "rw" | "raw"
+                | "export"
+                | "assoc"
+                | "equiv"
+                | "tighter"
+                | "looser"
+                | "readonly"
+                | "hidden-from-backtrace"
+                | "nodal"
+                | "pure"
+        ))
+}
+
+/// Whether `custom_traits` holds a trait that renders as a plain `Trait::Is`.
+// Cost: O(t), t = custom traits.
+pub(super) fn has_generic_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits.iter().any(|(t, _)| is_generic_trait_name(t))
+}
+
+/// The parser's argument of a custom trait, as the `(…)` circumfix rakudo
+/// renders: `Grouped(ArrayLiteral)` is `(a, b)` and any other expression is
+/// `(EXPR)`. `None` for a spelling the lowering would not rebuild.
+// Cost: O(e), e = size of the argument.
+fn custom_argument(argument: &Expr) -> Result<Option<RakuAstNode>, RuntimeError> {
+    match argument {
+        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
+            Ok(Some(super::attribute::paren_argument(inner)?))
+        }
+        Expr::Grouped(_) | Expr::ArrayLiteral(_) => Ok(None),
+        other => Ok(Some(super::attribute::paren_argument(other)?)),
+    }
+}
+
+/// Add a sub's plain custom traits (`is native("libc")`) to `node`'s
+/// `traits`, around the return-type trait as `custom_traits` orders them.
+/// `flags` says whether `add_flags` wrote an `is rw` / `raw` / `export`, whose
+/// place among these the parser does not keep.
+// Cost: O(t + a), t = custom traits, a = size of their arguments.
+pub(super) fn add_custom(
+    node: &mut RakuAstNode,
+    custom_traits: &[(String, Option<Expr>)],
+    flags: bool,
+) -> Result<(), RuntimeError> {
+    if !has_generic_traits(custom_traits) {
+        return Ok(());
+    }
+    if flags {
+        return Err(unsupported(
+            "routine with several traits (their source order is not kept)",
+        ));
+    }
+    let mut before = Vec::new();
+    let mut after = Vec::new();
+    let mut seen_return = false;
+    for (name, argument) in custom_traits {
+        if matches!(name.as_str(), "__return_via_trait" | "__return_via_of") {
+            seen_return = true;
+            continue;
+        }
+        if !is_generic_trait_name(name) {
+            continue;
+        }
+        let argument = match argument {
+            None => None,
+            Some(argument) => Some(
+                custom_argument(argument)?
+                    .ok_or_else(|| unsupported("trait with an angle-word list argument"))?,
+            ),
+        };
+        let item = Value::rakuast(Box::new(trait_is(name, argument)));
+        if seen_return {
+            after.push(item)
+        } else {
+            before.push(item)
+        }
+    }
+    if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("traits")) {
+        let RakuAstFieldValue::List(existing) = &mut field.value else {
+            return Err(unsupported("routine traits field"));
+        };
+        before.append(existing);
+        before.append(&mut after);
+        *existing = before;
+        return Ok(());
+    }
+    before.append(&mut after);
+    let at = node
+        .fields
+        .iter()
+        .position(|f| f.name == Some("body"))
+        .unwrap_or(node.fields.len());
+    node.fields.insert(
+        at,
+        RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(before),
+        },
+    );
+    Ok(())
+}
+
+/// Lower a `Trait::Is` that names a plain custom trait into the parser's
+/// `custom_traits` entry; `None` for a name the parser would not leave there.
+// Cost: O(a), a = size of the argument.
+pub(super) fn lower_custom(
+    owner: &RakuAstNode,
+    t: &RakuAstNode,
+) -> Result<Option<(String, Option<Expr>)>, RuntimeError> {
+    let name = positional_leaf(named_child(t, "name")?)?;
+    let ValueView::Str(name) = name.view() else {
+        return Ok(None);
+    };
+    if !is_generic_trait_name(&name) {
+        return Ok(None);
+    }
+    let argument = match named_child(t, "argument") {
+        Ok(argument) => {
+            let expr = super::attribute::lower_paren_argument(owner, argument)?;
+            Some(match expr {
+                list @ Expr::ArrayLiteral(_) => Expr::Grouped(Box::new(list)),
+                other => other,
+            })
+        }
+        Err(_) if t.fields.len() == 1 => None,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some((name.to_string(), argument)))
 }

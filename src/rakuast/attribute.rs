@@ -71,7 +71,7 @@ impl AttributeTraits {
 
 /// `(EXPR)` as a trait argument.
 // Cost: O(e), e = size of the expression.
-fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
         fields: vec![node_field(None, statement_expression(convert_expr(expr)?))],
@@ -84,7 +84,10 @@ fn paren_argument(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 
 /// The expression inside a `(EXPR)` trait argument.
 // Cost: O(e), e = size of the expression.
-fn lower_paren_argument(owner: &RakuAstNode, argument: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_paren_argument(
+    owner: &RakuAstNode,
+    argument: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
     let refuse = || super::lower::unsupported(owner);
     if argument.class != RakuAstClass::CircumfixParentheses {
         return Err(refuse());

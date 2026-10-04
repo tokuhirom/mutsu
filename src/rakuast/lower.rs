@@ -557,7 +557,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_raw: is_traits.is_raw,
         is_export: !is_traits.export_tags.is_empty(),
         export_tags: is_traits.export_tags,
-        is_test_assertion: false,
+        is_test_assertion: custom_traits.iter().any(|(t, _)| t == "test-assertion"),
         supersede: false,
         custom_traits,
     })
@@ -1055,6 +1055,11 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
+    // A method's custom traits are not covered yet (the converter declines
+    // them), so a hand-built one is not invented here either.
+    if super::routine_traits::has_generic_traits(&custom_traits) {
+        return Err(unsupported(node));
+    }
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
@@ -1102,6 +1107,8 @@ pub(super) fn routine_return_type(
         Err(_) => None,
     };
     let mut via_trait = None;
+    // Custom traits and the return marker, in source order.
+    let mut custom = Vec::new();
     if let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) {
         let RakuAstFieldValue::List(items) = &f.value else {
             return Err(unsupported(node));
@@ -1121,6 +1128,12 @@ pub(super) fn routine_return_type(
                     if read {
                         continue;
                     }
+                    if is_traits.is_some()
+                        && let Some(entry) = super::routine_traits::lower_custom(node, t)?
+                    {
+                        custom.push(entry);
+                        continue;
+                    }
                     return Err(unsupported(node));
                 }
                 _ => return Err(unsupported(node)),
@@ -1128,16 +1141,14 @@ pub(super) fn routine_return_type(
             if via_trait.is_some() {
                 return Err(unsupported(node));
             }
-            via_trait = Some((
-                simple_type_name(node, named_child_or_positional(t)?)?,
-                marker,
-            ));
+            via_trait = Some(simple_type_name(node, named_child_or_positional(t)?)?);
+            custom.push((marker.to_string(), None));
         }
     }
     match (arrow, via_trait) {
-        (Some(t), None) => Ok((Some(t), Vec::new())),
-        (None, Some((t, marker))) => Ok((Some(t), vec![(marker.to_string(), None)])),
-        (None, None) => Ok((None, Vec::new())),
+        (Some(t), None) => Ok((Some(t), custom)),
+        (None, Some(t)) => Ok((Some(t), custom)),
+        (None, None) => Ok((None, custom)),
         (Some(_), Some(_)) => Err(unsupported(node)),
     }
 }
@@ -1343,7 +1354,11 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         };
         match super::slurpy_marker_class(val) {
             Some(RakuAstClass::ParameterSlurpyFlattened) => def.slurpy = true,
-            Some(RakuAstClass::ParameterSlurpyUnflattened) => def.double_slurpy = true,
+            // The parser marks `**@a` both slurpy and double-slurpy.
+            Some(RakuAstClass::ParameterSlurpyUnflattened) => {
+                def.slurpy = true;
+                def.double_slurpy = true;
+            }
             // `+a` and `|c` are the parser's sigilless slurpies, told apart
             // by `onearg`.
             Some(RakuAstClass::ParameterSlurpySingleArgument) if def.sigilless => {
@@ -3013,8 +3028,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let body = lower_block(node)?;
             match params.len() {
                 // Only a plain parameter fits `Lambda`; an optional (`$p?`),
-                // trait-carrying or destructuring (`-> [$a, $b]`) one keeps its
-                // `ParamDef`, as the parser does.
+                // slurpy (`*@a`, `|c`), trait-carrying or destructuring
+                // (`-> [$a, $b]`) one keeps its `ParamDef`, as the parser does.
                 1 if param_defs.first().is_some_and(|param| {
                     !param.named
                         && param.type_constraint.is_none()
@@ -3022,6 +3037,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         && !param.optional_marker
                         && param.traits.is_empty()
                         && param.sub_signature.is_none()
+                        && !param.slurpy
+                        && !param.double_slurpy
                 }) =>
                 {
                     Ok(Expr::Lambda {

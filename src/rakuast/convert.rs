@@ -617,18 +617,36 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // multi, export, operator subs, and alternate signatures carry extra
             // RakuAST shape, deferred.
             let spelling = return_type_spelling(custom_traits)?;
-            if name_expr.is_some()
-                || associativity.is_some()
-                || precedence_trait.is_some()
-                || !signature_alternates.is_empty()
-                || *is_export != !export_tags.is_empty()
-                || *is_test_assertion
-                || *supersede
-                || custom_traits
-                    .iter()
-                    .any(|(t, _)| !is_return_spelling_marker(t) && t != OUR_SCOPED)
-            {
-                return Err(unsupported("sub with traits / multi / export"));
+            let deferred = [
+                (name_expr.is_some(), "sub with a computed name"),
+                (
+                    associativity.is_some() || precedence_trait.is_some(),
+                    "sub with an `is assoc` / precedence trait",
+                ),
+                (
+                    !signature_alternates.is_empty(),
+                    "sub with alternate signatures",
+                ),
+                (
+                    *is_export != !export_tags.is_empty(),
+                    "sub with an untagged `is export`",
+                ),
+                (
+                    *is_test_assertion && !custom_traits.iter().any(|(t, _)| t == "test-assertion"),
+                    "sub with `is test-assertion`",
+                ),
+                (*supersede, "`supersede` sub"),
+                (
+                    custom_traits.iter().any(|(t, _)| {
+                        t.starts_with("__") && !is_return_spelling_marker(t) && t != OUR_SCOPED
+                            || t.starts_with("DEPRECATED")
+                            || crate::qualified::is_qualified_str(t)
+                    }),
+                    "sub with an internal or qualified trait",
+                ),
+            ];
+            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
+                return Err(unsupported(what));
             }
             if return_type.is_none() && spelling != ReturnSpelling::Arrow {
                 // A `__return_via_*` marker without a return type would be a
@@ -642,16 +660,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
-            routine_traits::add_flags(
-                &mut node,
-                *multi,
-                false,
-                &routine_traits::IsTraits {
-                    is_rw: *is_rw,
-                    is_raw: *is_raw,
-                    export_tags: export_tags.clone(),
-                },
-            )?;
+            let flags = routine_traits::IsTraits {
+                is_rw: *is_rw,
+                is_raw: *is_raw,
+                export_tags: export_tags.clone(),
+            };
+            routine_traits::add_flags(&mut node, *multi, false, &flags)?;
+            routine_traits::add_custom(&mut node, custom_traits, !flags.nodes().is_empty())?;
             if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
                 // `scope => "our"` leads the node; `my` is the default scope
                 // and renders no field.
