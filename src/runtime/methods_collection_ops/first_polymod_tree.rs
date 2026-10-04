@@ -25,7 +25,8 @@ impl Interpreter {
     /// `:end`), on an Array, a List or a reified Seq: the receiver is scanned in
     /// doubling chunks, so only O(i) elements are decomposed and i+1 matcher
     /// calls run. O(e + i), e = elements, on any other list-like (decomposed
-    /// whole first).
+    /// whole first). O(1) on a live Supply: it only registers a grep and a
+    /// head stage on the supplier.
     pub(in crate::runtime) fn dispatch_first(
         &mut self,
         target: Value,
@@ -187,6 +188,31 @@ impl Interpreter {
         func: Option<Value>,
         has_end: bool,
     ) -> Result<Value, RuntimeError> {
+        // A live (Supplier-backed) source has emitted nothing yet when
+        // `.first` is called, so its `values` snapshot is empty. Build the
+        // pipeline rakudo does instead (`self.grep(|c).head`): a live grep
+        // stage, then a head(1) stage that emits the first match and is done.
+        // TODO: `:end` (`.grep(|c).tail`) still snapshots, because a live
+        // `.tail` has no pipeline stage yet -- see #11839.
+        if !has_end
+            && !attributes.contains_key("shared_on_demand")
+            && crate::runtime::native_methods::supplier_id_from_attrs(attributes).is_some()
+        {
+            let grepped = match func {
+                Some(matcher) => self.make_live_transform_supply(
+                    attributes,
+                    matcher,
+                    crate::runtime::native_methods::TransformMode::Grep,
+                ),
+                None => None,
+            };
+            return match grepped.as_ref().map(Value::view) {
+                Some(ValueView::Instance { attributes, .. }) => {
+                    self.native_supply(&attributes.as_map(), "head", Vec::new())
+                }
+                _ => self.native_supply(attributes, "head", Vec::new()),
+            };
+        }
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                 let mut a = HashMap::new();
