@@ -1538,6 +1538,10 @@ pub struct SubData {
     pub(crate) assumed_positional: Vec<Value>,
     pub(crate) assumed_named: ValueMap,
     pub id: u64,
+    /// True for the direct executable body (`Code.$!do` / MVMCode), which
+    /// bypasses a routine's wrap chain. The NQP representation test reads
+    /// this same fact; it must not be inferred from a second marker.
+    pub(crate) is_direct_code: bool,
     /// When true, this sub has an explicit empty signature `()` and should reject any arguments.
     pub(crate) empty_sig: bool,
     /// When true, this sub is a bare block `{ ... }` (not a pointy block or named sub).

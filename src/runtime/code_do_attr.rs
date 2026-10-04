@@ -21,7 +21,7 @@
 //! the bound body never defers to it.
 //!
 //! A `$!do` value is a direct code object: calling it runs that body without
-//! entering any wrap chain (the `__mutsu_wrap_direct` marker `nextcallee`
+//! entering any wrap chain (the `SubData::is_direct_code` flag `nextcallee`
 //! also uses). Rakudo's `$!do` is a `ForeignCode`; mutsu's is the `Sub`/`Block`
 //! itself, which is what callers do with it (call it, rename it, bind it).
 //!
@@ -68,11 +68,8 @@ const NAME_LINK_LIMIT: usize = 64;
 
 /// Whether `data` is a direct code object (runs without entering a wrap chain).
 // Cost: O(1).
-fn is_direct(data: &SubData) -> bool {
-    matches!(
-        data.env.get("__mutsu_wrap_direct").map(Value::view),
-        Some(ValueView::Bool(true))
-    )
+pub(crate) fn is_direct(data: &SubData) -> bool {
+    data.is_direct_code
 }
 
 /// The `(class, method, candidate)` slot of a method code object -- one a
@@ -124,9 +121,7 @@ fn direct_code(data: &Gc<SubData>) -> Value {
         return Value::sub_value(data.clone());
     }
     let mut direct = (**data).clone();
-    direct
-        .env
-        .insert("__mutsu_wrap_direct".to_string(), Value::TRUE);
+    direct.is_direct_code = true;
     direct
         .env
         .insert(DO_OWNER_KEY.to_string(), Value::sub_value(data.clone()));

@@ -1864,9 +1864,7 @@ impl Interpreter {
                 // wrap chain (which would recurse into the wrapper forever).
                 if let crate::value::ValueView::Sub(data) = next.view() {
                     let mut direct = crate::value::SubData::clone(&data);
-                    direct
-                        .env
-                        .insert("__mutsu_wrap_direct".to_string(), Value::TRUE);
+                    direct.is_direct_code = true;
                     return Ok(Value::sub_value(crate::gc::Gc::new(direct)));
                 }
                 return Ok(next);

@@ -525,12 +525,9 @@ impl Interpreter {
             if !skip_chain_once
                 && let Some(chain) = self.dispatch.wrap_chains.get(&data.id).cloned()
                 && !chain.is_empty()
-                // A nextcallee-returned wrappee carries __mutsu_wrap_direct:
-                // it is the inner code object and always runs directly.
-                && !matches!(
-                    data.env.get("__mutsu_wrap_direct").map(Value::view),
-                    Some(ValueView::Bool(true))
-                )
+                // A nextcallee-returned wrappee is a direct code body: it
+                // must not re-enter the wrapper chain.
+                && !crate::runtime::code_do_attr::is_direct(&data)
             {
                 let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
                 self.test_pending_callsite_line = callsite_line;
@@ -989,6 +986,7 @@ impl Interpreter {
                 assumed_positional: data.assumed_positional.clone(),
                 assumed_named: data.assumed_named.clone(),
                 id: data.id,
+                is_direct_code: data.is_direct_code,
                 empty_sig: data.empty_sig,
                 is_bare_block: data.is_bare_block,
                 compiled_code: data.compiled_code.clone(),

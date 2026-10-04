@@ -12,7 +12,7 @@
 //! `nqp_ops_native::uint64_value`, the `unbox_u` body.
 //!
 //! The ops whose answer depends on a representation mutsu does not have yet
-//! — `isstr` / `isint` / `isnum` / `ishash` / `iscoderef` and the `boot*`
+//! — `isstr` / `isint` / `isnum` / `ishash` and the `boot*`
 //! types (MoarVM's BOOT* REPRs), `iscont_i` / `_n` / `_s` (native lexical
 //! references) and `isrwcont` (a container descriptor's rw-ness) — are not
 //! here and stay loudly unsupported until #11553 settles that representation.
@@ -266,6 +266,12 @@ impl Interpreter {
             }
 
             // -- tests --
+            // A high-level Code/Sub is P6opaque, while its `$!do` is the
+            // direct executable body (MVMCode). Use the same classification
+            // that bypasses the wrap chain for that body.
+            // Cost: O(1) (one code-body flag read).
+            "iscoderef" => flag(matches!(operand(args, 0).view(), ValueView::Sub(data)
+                if crate::runtime::code_do_attr::is_direct(&data))),
             // Cost: O(1).
             "isinvokable" => flag(is_invokable(&operand(args, 0))),
             // nqp::isttyfh($fh): `IO::Handle.t` on the VM handle.
