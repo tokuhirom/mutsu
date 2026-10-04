@@ -64,7 +64,8 @@ pub(crate) use link::TrLink;
 mod tests;
 
 /// The kind of a TRIR slot or operand, as the compiler proved it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum TrKind {
     /// A native `int`: a raw `i64` in the int bank.
     Int,
@@ -93,7 +94,8 @@ pub(crate) use op::{TrCmp, TrOp};
 /// time; for a generic one it cannot, so a named variable is passed as a
 /// container and read back — the ordinary path's `WrapVarRef` reduced to what
 /// TRIR's own slots can express.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum TrArg {
     /// Already evaluated onto the operand stack of this kind's bank.
     Value(TrKind),
@@ -111,7 +113,8 @@ pub(crate) enum TrArg {
 }
 
 /// Who a call inside a TRIR body reaches.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum TrCallee {
     /// Another TRIR routine, resolved at compile time exactly as a
     /// [`TrCallSite`] resolves one.
@@ -121,7 +124,8 @@ pub(crate) enum TrCallee {
 }
 
 /// One call inside a TRIR body.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrInnerCall {
     pub(crate) callee: TrCallee,
     /// The callee's name — the dispatch key for a generic call, and the
@@ -140,14 +144,16 @@ pub(crate) struct TrInnerCall {
 /// resolution result is additionally memoized on the routine across calls,
 /// keyed by [`LexicalState::unit_lexical_gen`](crate::runtime::lexical_state::LexicalState::unit_lexical_gen), so a steady
 /// state pays one integer comparison.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrOuter {
     /// The free variable's name, sigil-less, exactly as `GetGlobal` spells it.
     pub(crate) name: Symbol,
 }
 
 /// One TRIR parameter's binding plan.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrParam {
     /// Slot the bound value goes to — a native slot when `kind.is_native()`,
     /// a boxed slot otherwise.
@@ -159,7 +165,7 @@ pub(crate) struct TrParam {
     pub(crate) is_rw: bool,
     /// The declared type's spelling, for the boundary coercion's error
     /// message. Empty when unconstrained.
-    pub(crate) type_name: &'static str,
+    pub(crate) type_name: crate::static_str::StaticStr,
     /// A nominal type constraint on a boxed parameter (`Uni:D \codes`),
     /// checked at bind time with the general binder's own type test. A
     /// failed check declines the TRIR call, so the untyped path raises the
@@ -177,7 +183,8 @@ pub(crate) struct TrParam {
 }
 
 /// A boxed parameter's nominal type check.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrParamCheck {
     /// The constraint without its smiley (`Uni` for `Uni:D`).
     pub(crate) base: String,
@@ -186,7 +193,8 @@ pub(crate) struct TrParamCheck {
 }
 
 /// One method call inside a TRIR body (`TrOp::MethodGen`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrMethodCall {
     pub(crate) name: Symbol,
     /// Positional arguments after the receiver.
@@ -202,7 +210,8 @@ pub(crate) struct TrMethodCall {
 /// is pushed, and no `is rw` container is minted: the arguments are read
 /// straight out of the caller's own frame slots and the `is rw` result is
 /// written straight back to them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct TrCallSite {
     /// The callee, resolved when the site was compiled. Re-checked per call
     /// against the table in hand ([`TrLink::current_in`]), so a routine that

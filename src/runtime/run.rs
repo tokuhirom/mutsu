@@ -1122,6 +1122,9 @@ impl Interpreter {
             crate::unit_source_file::current().or_else(|| self.current_source_file_sym());
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let (mut code, mut fns) = compiler.compile(stmts);
+        if crate::precomp_codec::roundtrip_enabled() {
+            (code, fns) = crate::precomp_codec::roundtrip(code, fns);
+        }
         self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
         (code, fns)
     }

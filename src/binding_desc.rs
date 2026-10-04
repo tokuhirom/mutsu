@@ -25,7 +25,8 @@ use crate::symbol::Symbol;
 /// Bitmap of the two per-slot facts that are settled by a scan of the slot's
 /// *name* alone, and therefore fixed at `Compiler::alloc_fresh_local` time for
 /// the life of the slot.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct BindingFlags(u8);
 
 impl BindingFlags {
@@ -83,7 +84,8 @@ impl BindingFlags {
 /// other readers, and the fallback here: a slot whose constraint this chunk did
 /// not declare, or declared in a way the bake cannot describe, reads
 /// [`Self::Unrecorded`] / [`Self::Conflicting`] and probes exactly as before.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum DeclaredConstraint {
     /// No declaration in this chunk registers a constraint for this slot — ask
     /// the env. Every slot starts here, and a slot the chunk merely *uses* (a
@@ -150,7 +152,8 @@ impl DeclaredConstraint {
 /// `bound_slice_sym`, `scalar_no_container_sym`) falls back to deriving the
 /// key from the slot's name on a `None`, exactly as it did when the field was
 /// a separate, possibly-shorter `Vec<Symbol>`.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct BindingDesc {
     /// The interned `__mutsu_sigilless_alias::<name>` env key.
     pub(crate) alias_sym: Option<Symbol>,

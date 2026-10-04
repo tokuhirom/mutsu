@@ -56,7 +56,8 @@ pub(crate) use infix_shape::{InfixRef, InfixShape, MetaLayer};
 ///
 /// Replaces the `Value::str("R")` / `"X"` / `"Z"` / `"reduce"` constant the
 /// compiler used to emit and the VM used to `match` as text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum MetaKind {
     /// `[op]=` compound assignment (`$x [+]= 6`), lowered as a reduction of the
     /// base op over exactly two operands — i.e. one application of the base op.
@@ -105,7 +106,8 @@ impl MetaKind {
 /// Built only by [`ReductionSpec::lower`], from the operator spelling the
 /// parser recorded. Every field below used to be re-derived from that spelling
 /// on each execution of [`crate::opcode::OpCode::Reduction`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct ReductionSpec {
     /// `[\op]` — the triangle/scan form, which yields every intermediate.
     pub(crate) scan: bool,
