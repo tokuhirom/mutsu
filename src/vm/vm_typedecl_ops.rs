@@ -1198,7 +1198,7 @@ impl Interpreter {
                     method_name_chunks,
                     method_decls,
                     *is_stub,
-                    *our_scope_violation,
+                    our_scope_violation.as_deref(),
                     parent_ops,
                     deferred_body_ops,
                     compiled_fns,

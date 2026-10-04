@@ -792,7 +792,7 @@ mod declaration_plan_tests {
             .find(|plan| plan.name.as_str() == "Stub")
             .expect("role Stub declaration plan");
         assert!(plan_stub.is_stub);
-        assert_eq!(plan_stub.our_scope_violation, None);
+        assert_eq!(plan_stub.our_scope_violation.as_deref(), None);
 
         let plan_plain = code
             .role_decl_plans
@@ -800,7 +800,7 @@ mod declaration_plan_tests {
             .find(|plan| plan.name.as_str() == "Plain")
             .expect("role Plain declaration plan");
         assert!(!plan_plain.is_stub);
-        assert_eq!(plan_plain.our_scope_violation, None);
+        assert_eq!(plan_plain.our_scope_violation.as_deref(), None);
 
         let (stmts, _) =
             crate::parse_dispatch::parse_source("role R { our $x = 1 }").expect("source parses");
@@ -810,7 +810,7 @@ mod declaration_plan_tests {
             .iter()
             .find(|plan| plan.name.as_str() == "R")
             .expect("role R declaration plan");
-        assert_eq!(plan_r.our_scope_violation, Some("variable"));
+        assert_eq!(plan_r.our_scope_violation.as_deref(), Some("variable"));
 
         let (stmts, _) =
             crate::parse_dispatch::parse_source("role R { class C {} }").expect("source parses");
@@ -820,7 +820,7 @@ mod declaration_plan_tests {
             .iter()
             .find(|plan| plan.name.as_str() == "R")
             .expect("role R declaration plan");
-        assert_eq!(plan_r.our_scope_violation, Some("class"));
+        assert_eq!(plan_r.our_scope_violation.as_deref(), Some("class"));
 
         // A `my class` inside a role is lexically scoped and allowed.
         let (stmts, _) =
@@ -831,7 +831,7 @@ mod declaration_plan_tests {
             .iter()
             .find(|plan| plan.name.as_str() == "R")
             .expect("role R declaration plan");
-        assert_eq!(plan_r.our_scope_violation, None);
+        assert_eq!(plan_r.our_scope_violation.as_deref(), None);
     }
 
     /// ADR-0019 D7-4: a role's `body_plan` is an ordered, typed mirror of

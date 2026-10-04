@@ -211,7 +211,7 @@ impl TrirCompiler<'_> {
                 slot,
                 kind,
                 is_rw,
-                type_name,
+                type_name: crate::static_str::StaticStr(type_name),
                 check,
                 sigilless: pd.sigilless,
                 implicit_any: tc.is_none() && !pd.block_param,

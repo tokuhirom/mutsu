@@ -1124,6 +1124,17 @@ impl Interpreter {
             crate::unit_source_file::current().or_else(|| self.current_source_file_sym());
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let (mut code, mut fns) = compiler.compile(stmts);
+        if crate::precomp_codec::roundtrip_enabled() {
+            // A diagnostic mode: a codec that cannot reproduce a chunk must
+            // stop the run loudly rather than execute something else.
+            match crate::precomp_codec::roundtrip(code, fns) {
+                Ok(decoded) => (code, fns) = decoded,
+                Err(msg) => {
+                    eprintln!("{msg}");
+                    std::process::exit(70);
+                }
+            }
+        }
         self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
         (code, fns)
     }

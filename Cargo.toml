@@ -118,7 +118,7 @@ serde_json = "1"
 # KEEP (a), TRIM (#10440): the precomp/scan-cache binary format, used only
 # through its serde bridge. The default `derive` feature (a proc-macro)
 # is unused.
-bincode = { version = "2", default-features = false, features = ["std", "serde"] }
+bincode = { version = "2", default-features = false, features = ["std", "serde", "derive"] }
 # KEEP (a): Unicode Collation Algorithm for `coll` and `collate`. It is
 # the largest subtree (~32 crates), but UCA is not something to own.
 icu_collator = "2.1"

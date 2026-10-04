@@ -269,3 +269,21 @@ user-visible wrong answer.
    workflow.
 
 Phase 2 (registration) gets its own ADR after step 5 lands and is measured.
+
+## 6. Implementation status
+
+- **Step 1** landed in [#11768](https://github.com/tokuhirom/mutsu/pull/11768):
+  `src/compiler/compile_session.rs`. The content-addressed session is not
+  wired yet; every session is still a counter session.
+- **Step 2**: `src/precomp_codec/`. It provides bincode 2 derives for plain
+  data and hand-written codecs for `CompiledCode`, `CompiledFunction`,
+  `CompiledFns`, `TrChunk`, `LexScopeChain` and `ClassOperandSite`.
+  `PortableValue` guards the constants, and `StaticStr` stands in for the two
+  `&'static str` fields. `MUTSU_PRECOMP_ROUNDTRIP=1` round-trips every compile
+  and runs the decoded copy. All of `t/` (6430 files) passes in that mode.
+  Measured on `use Test; ok 1;` (profiling build, warm cache), decoding every
+  compile of the process costs **6.7M instructions against 30.0M of
+  compiling**. Most of the decode is the serde-encoded AST fragments
+  (`stmt_pool`, the plans' `ParamDef`s), whose `Symbol`s are interned per
+  occurrence. Per §2.4, they are the first candidate for a native codec if
+  step 4's net measurement asks for more.

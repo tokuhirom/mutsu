@@ -19,7 +19,19 @@ pub(crate) enum DStrPart {
 /// instead. Keeping the substitution in its own step is what lets the bare
 /// infix ops stay strict — `Int + 1` throws `X::Numeric::Uninitialized` while
 /// `my Int $a; $a += 1` still yields `1`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum MetaAssignIdentity {
     /// `infix:<+>()` / `infix:<->()` are `0`.
     Zero,

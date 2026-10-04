@@ -275,3 +275,53 @@ impl LexScopeChain {
             .flat_map(|f| f.keys().map(String::as_str))
     }
 }
+
+/// Encoded with every frame and `local_map` in key order, so the encoding of a
+/// chain does not depend on the maps' per-instance hash seeds (ADR-11756 §2.4).
+impl bincode::Encode for LexScopeChain {
+    // Cost: O(n log n), n = locals in the map.
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        let LexScopeChain {
+            scopes,
+            local_map,
+            unit_root_index,
+            caller_lexical,
+        } = self;
+        (scopes.len() as u64).encode(encoder)?;
+        for frame in scopes {
+            let mut entries: Vec<(&String, &Option<u32>)> = frame.iter().collect();
+            entries.sort();
+            entries.encode(encoder)?;
+        }
+        let mut locals: Vec<(&String, &u32)> = local_map.iter().collect();
+        locals.sort();
+        locals.encode(encoder)?;
+        unit_root_index.encode(encoder)?;
+        caller_lexical.encode(encoder)
+    }
+}
+
+impl bincode::Decode<crate::precomp_codec::DecodeCtx> for LexScopeChain {
+    // Cost: O(n), n = size of the chain.
+    fn decode<D: bincode::de::Decoder<Context = crate::precomp_codec::DecodeCtx>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let frames = u64::decode(decoder)? as usize;
+        let mut scopes = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            let entries: Vec<(String, Option<u32>)> = bincode::Decode::decode(decoder)?;
+            scopes.push(entries.into_iter().collect::<ScopeFrame>());
+        }
+        let locals: Vec<(String, u32)> = bincode::Decode::decode(decoder)?;
+        Ok(LexScopeChain {
+            scopes,
+            local_map: locals.into_iter().collect(),
+            unit_root_index: bincode::Decode::decode(decoder)?,
+            caller_lexical: bincode::Decode::decode(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_with_context!(LexScopeChain, crate::precomp_codec::DecodeCtx);

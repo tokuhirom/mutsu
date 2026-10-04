@@ -14,7 +14,8 @@
 use super::*;
 
 /// An `nqp::getattr`/`bindattr` attribute-name operand, resolved once.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NqpAttrName {
     /// The operand as written (`'$!storage'`).
     pub(crate) name: Symbol,
@@ -52,7 +53,8 @@ impl NqpAttrName {
 
 /// Which of an attribute op's four forms a site is: the plain op, or its
 /// `_i` / `_n` / `_s` native variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum NqpAttrConv {
     Obj,
     Int,
@@ -116,7 +118,8 @@ impl NqpAttrConv {
 }
 
 /// What an untyped `OpCode::NqpAttrC` site does with its resolved name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum NqpAttrSiteKind {
     /// `getattr` / `getattr_{i,n,s}`: push the attribute.
     Get,
@@ -130,7 +133,8 @@ pub(crate) enum NqpAttrSiteKind {
 /// (ADR-0121 D3): everything the generic op re-derives from its operands on
 /// each call, settled when the site is compiled. The TRIR twin is
 /// `TrOp::GetAttrC` / `TrOp::BindAttrC`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NqpAttrSite {
     pub(crate) name: NqpAttrName,
     pub(crate) conv: NqpAttrConv,
@@ -205,7 +209,8 @@ impl NqpAttrSite {
 /// operand when that was a plain bareword (folded off the stack and
 /// remembered per registry write generation, see
 /// [`ClassOperandSite`](crate::trir::class_operand::ClassOperandSite)).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) struct NqpAttrCSite {
     pub(crate) site: NqpAttrSite,
     pub(crate) class: Option<crate::trir::class_operand::ClassOperandSite>,
