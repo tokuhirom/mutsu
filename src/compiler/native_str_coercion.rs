@@ -24,8 +24,8 @@ impl Compiler {
     /// Emit the `nqp::coerce_si` of the str on the stack.
     // Cost: O(1) at compile time.
     pub(super) fn emit_native_str_to_int(&mut self) {
-        let id = crate::runtime::nqp_op_ids::nqp_op_id("coerce_si")
-            .expect("coerce_si is an nqp op");
+        let id =
+            crate::runtime::nqp_op_ids::nqp_op_id("coerce_si").expect("coerce_si is an nqp op");
         self.code.emit(OpCode::NqpOp { id, arity: 1 });
     }
 }

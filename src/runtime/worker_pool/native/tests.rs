@@ -2,13 +2,7 @@
 
 use super::*;
 
-fn state(
-    queue: usize,
-    idle: usize,
-    live: usize,
-    starting: usize,
-    blocked: usize,
-) -> PoolState {
+fn state(queue: usize, idle: usize, live: usize, starting: usize, blocked: usize) -> PoolState {
     let mut q = VecDeque::new();
     for _ in 0..queue {
         q.push_back(Task {

@@ -340,7 +340,6 @@ mod native {
     }
 
     #[cfg(test)]
-    #[path = "worker_pool_native_tests.rs"]
     mod tests;
 }
 

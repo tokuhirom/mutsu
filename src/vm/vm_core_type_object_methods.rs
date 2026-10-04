@@ -43,17 +43,15 @@ impl Interpreter {
             return None;
         }
         match (class.as_str(), method) {
-            ("Kernel", "cpu-cores" | "free-memory" | "total-memory") => Some(self.native_kernel(
-                &crate::value::AttrMap::new(),
-                method,
-                Vec::new(),
-            )),
+            ("Kernel", "cpu-cores" | "free-memory" | "total-memory") => {
+                Some(self.native_kernel(&crate::value::AttrMap::new(), method, Vec::new()))
+            }
             ("Thread", "usage") => Some(Ok(Self::native_int_row(
                 &crate::runtime::thread_usage::thread_usage(),
             ))),
-            ("ThreadPoolScheduler", "usage") => Some(Ok(Self::native_int_row(
-                &[0; SCHEDULER_USAGE_COLUMNS],
-            ))),
+            ("ThreadPoolScheduler", "usage") => {
+                Some(Ok(Self::native_int_row(&[0; SCHEDULER_USAGE_COLUMNS])))
+            }
             _ => None,
         }
     }

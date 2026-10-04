@@ -19,6 +19,7 @@ genuine upstream implementation instead of reimplementing it natively.
 | Module          | Upstream path             | md5 of the imported file           |
 | --------------- | ------------------------- | ---------------------------------- |
 | `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |
+| `Telemetry`     | `lib/Telemetry.rakumod`   | `9ccb1decfc2e45e504b924589743a24b`  |
 | `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |
 | `NativeCall`    | `lib/NativeCall.rakumod`  | `4bd77651da44cd061a50a582457b278f`  |
 | `NativeCall::Types` | `lib/NativeCall/Types.rakumod` | `c9f3a7912199f91a89a27bbcd81e2f78` |
