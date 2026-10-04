@@ -323,7 +323,7 @@ impl Interpreter {
         // the existing package class. Keep the qualified name when that
         // package member exists; namespaced lexical types with no package
         // member continue through the env remap below.
-        if name.contains("::") {
+        if crate::qualified::is_qualified_str(name) {
             let registry = self.registry();
             if registry.classes.contains_key(name)
                 || registry.roles.contains_key(name)
@@ -412,7 +412,7 @@ impl Interpreter {
     /// active `A`. Only out-of-scope (suppressed) types are removed — an in-scope
     /// same-named class is a genuine redeclaration handled elsewhere.
     pub(crate) fn shadow_suppressed_type_with_package(&mut self, name: &str) {
-        if name.contains("::") || !self.suppressed_names.contains(name) {
+        if crate::qualified::is_qualified_str(name) || !self.suppressed_names.contains(name) {
             return;
         }
         self.registry_mut().classes.remove(name);
@@ -477,7 +477,7 @@ impl Interpreter {
     // Cost: O(1) expected, or O(t), t = registered type keys, for a name that
     // has lexically scoped (NUL-mangled) registrations.
     pub(crate) fn is_my_scoped_type_name(&self, fq_name: &str) -> bool {
-        if !fq_name.contains("::") {
+        if !crate::qualified::is_qualified_str(fq_name) {
             return false;
         }
         let registry = self.registry();
@@ -524,7 +524,10 @@ impl Interpreter {
         if fq_name == "X" || fq_name.starts_with("X::") {
             return true;
         }
-        let type_package = fq_name.rsplit_once("::").map(|(package, _)| package);
+        let type_package =
+            crate::qualified::split_qualified(crate::qualified::known_symbol(fq_name))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                .map(|(package, _)| package);
         let current_package = self.current_package();
         let method_class = self.method_class_stack_top_str();
         if let Some(type_package) = type_package
@@ -628,7 +631,7 @@ impl Interpreter {
     /// in 'M'" for `M::f()` — from *inside* the declaring package as well as
     /// from outside. Only `our sub f` is a package symbol.
     pub(crate) fn qualified_name_hidden_here(&self, fq_name: &str) -> bool {
-        fq_name.contains("::") && self.is_my_scoped_package_item(fq_name)
+        crate::qualified::is_qualified_str(fq_name) && self.is_my_scoped_package_item(fq_name)
     }
 
     pub(crate) fn is_name_suppressed(&self, name: &str) -> bool {
@@ -705,8 +708,10 @@ impl Interpreter {
         }
         // Check current package
         let current_pkg = &self.current_package();
-        if current_pkg != "GLOBAL" {
-            let qualified = format!("{}::{}", current_pkg, name);
+        if !crate::qualified::is_global_name(current_pkg) {
+            let qualified = crate::qualified::qualified_text(current_pkg, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -732,7 +737,9 @@ impl Interpreter {
         }
         // Check method class stack
         for class_name in self.method_class_stack_syms_rev() {
-            let qualified = format!("{}::{}", class_name, name);
+            let qualified = crate::qualified::qualified_text(class_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -745,7 +752,9 @@ impl Interpreter {
         // method came from may lend its lexical types.
         if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
             let role_name = role.resolve();
-            let qualified = format!("{}::{}", role_name, name);
+            let qualified = crate::qualified::qualified_text(&role_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }
@@ -772,11 +781,16 @@ impl Interpreter {
             // namespace prefix -- which is what real block nesting
             // guarantees.
             let mut scope = role_name.as_str();
-            while let Some((outer, _)) = scope.rsplit_once("::") {
+            while let Some((outer, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(scope))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 if !self.has_type_direct(outer) {
                     break;
                 }
-                let qualified = format!("{}::{}", outer, name);
+                let qualified = crate::qualified::qualified_text(outer, name)
+                    .as_str()
+                    .to_string();
                 if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                     return Some(key);
                 }
@@ -791,7 +805,9 @@ impl Interpreter {
         // leak the suppressed name into outer lexical scopes (where raku keeps it
         // undeclared).
         if let Some(class_name) = &self.constructing_class {
-            let qualified = format!("{}::{}", class_name, name);
+            let qualified = crate::qualified::qualified_text(class_name, name)
+                .as_str()
+                .to_string();
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);
             }

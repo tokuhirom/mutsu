@@ -297,7 +297,7 @@ impl Interpreter {
         // ever consulted.
         self.refresh_method_caches_for_generation();
         let private_rest = method.strip_prefix('!')?;
-        let split = private_rest.split_once("::");
+        let split = crate::qualified::split_first(crate::qualified::known_symbol(private_rest));
         let owner_class = split.map(|(o, _)| o);
         let pm_name = split.map(|(_, n)| n).unwrap_or(private_rest);
         let real = match owner_class {

@@ -121,12 +121,7 @@ impl Interpreter {
         // Include all user-defined operators (infix, prefix, postfix,
         // circumfix, postcircumfix) so the EVAL parser can recognize them.
         for key in self.registry().functions.keys() {
-            let key_s = key.resolve();
-            let name = if let Some(pos) = key_s.rfind("::") {
-                &key_s[pos + 2..]
-            } else {
-                key_s.as_str()
-            };
+            let name = crate::qualified::last_segment(*key).as_str();
             if name.starts_with("circumfix:")
                 || name.starts_with("postcircumfix:")
                 || name.starts_with("infix:")
@@ -160,11 +155,7 @@ impl Interpreter {
     pub(crate) fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
         let mut assoc = HashMap::new();
         for (key, value) in self.dispatch.operator_assoc.iter() {
-            let name = if let Some(pos) = key.rfind("::") {
-                &key[pos + 2..]
-            } else {
-                key.as_str()
-            };
+            let name = crate::qualified::last_segment(crate::qualified::known_symbol(key)).as_str();
             if name.starts_with("infix:<") {
                 assoc.insert(name.to_string(), value.clone());
             }
@@ -179,12 +170,7 @@ impl Interpreter {
     pub(crate) fn collect_eval_user_sub_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for key in self.registry().functions.keys() {
-            let key_s = key.resolve();
-            let short = if let Some(pos) = key_s.rfind("::") {
-                &key_s[pos + 2..]
-            } else {
-                key_s.as_str()
-            };
+            let short = crate::qualified::last_segment(*key).as_str();
             // A multi candidate is keyed `Pkg::name/arity…`, so the bare
             // routine name stops at the first `/`. Without this, an imported
             // multi (every `Test` assertion is one) reached the preseed as

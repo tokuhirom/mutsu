@@ -106,7 +106,7 @@ impl Interpreter {
             Some(tag) => tag,
             None => package.split_once("::EXPORT::")?.1,
         };
-        (!tag.is_empty() && !tag.contains("::")).then_some(tag)
+        (!tag.is_empty() && !crate::qualified::is_qualified_str(tag)).then_some(tag)
     }
 
     /// Publish a routine bound through an `OUR::` code stash entry.
@@ -193,9 +193,16 @@ impl Interpreter {
                     let def = self
                         .registry()
                         .functions
-                        .get(&Symbol::intern(&format!("{pkg}::{name}")))?
+                        .get(&Symbol::intern(
+                            crate::qualified::qualified_text(pkg, name).as_str(),
+                        ))?
                         .clone();
-                    Some(vec![(format!("{target_pkg}::{name}"), def)])
+                    Some(vec![(
+                        crate::qualified::qualified_text(&target_pkg, name)
+                            .as_str()
+                            .to_string(),
+                        def,
+                    )])
                 })
                 .unwrap_or_default()
         };
@@ -283,14 +290,15 @@ impl Interpreter {
         value: &Value,
     ) {
         // A nested name is a package path, not a symbol of THIS package.
-        if bare.is_empty() || bare.contains("::") {
+        if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
             return;
         }
-        let qualified = if package.is_empty() || package == "GLOBAL" {
-            format!("{sigil}{bare}")
-        } else {
-            format!("{sigil}{package}::{bare}")
-        };
+        let qualified =
+            if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
+                format!("{sigil}{bare}")
+            } else {
+                format!("{sigil}{package}::{bare}")
+            };
         // `our_vars` is the durable package store a qualified read consults
         // after the declaring block's env entry is gone; `env` serves the
         // reads that happen while it is still live.
@@ -323,22 +331,30 @@ impl Interpreter {
     /// exported-variable metadata and a durable module-qualified value.
     pub(crate) fn register_manual_export_var(&mut self, target: &str, value: &Value) {
         let Some((tag, name)) = (if let Some(rest) = target.strip_prefix("EXPORT::") {
-            rest.split_once("::")
+            crate::qualified::split_first(crate::qualified::known_symbol(rest))
         } else if let Some((_, rest)) = target.split_once("::EXPORT::") {
-            rest.split_once("::")
+            crate::qualified::split_first(crate::qualified::known_symbol(rest))
         } else {
             None
         }) else {
             return;
         };
-        if tag.is_empty() || name.is_empty() || tag.contains("::") || name.contains("::") {
+        if tag.is_empty()
+            || name.is_empty()
+            || crate::qualified::is_qualified_str(tag)
+            || crate::qualified::is_qualified_str(name)
+        {
             return;
         }
         let Some(module) = self.module.module_load_stack.last().cloned() else {
             return;
         };
-        self.env_mut()
-            .insert(format!("{module}::{name}"), value.clone());
+        self.env_mut().insert(
+            crate::qualified::qualified_text(&module, name)
+                .as_str()
+                .to_string(),
+            value.clone(),
+        );
         self.register_exported_var(module, name.to_string(), vec![tag.to_string()]);
     }
 
@@ -373,12 +389,21 @@ impl Interpreter {
         let entries: Vec<(String, Arc<FunctionDef>)> = if multi {
             self.multi_family_aliases(std::slice::from_ref(&current_pkg), resolved_name, &module)
         } else {
-            let source_single = format!("{current_pkg}::{resolved_name}");
+            let source_single = crate::qualified::qualified_text(&current_pkg, resolved_name)
+                .as_str()
+                .to_string();
             self.registry()
                 .functions
                 .get(&Symbol::intern(&source_single))
                 .cloned()
-                .map(|def| vec![(format!("{module}::{resolved_name}"), def)])
+                .map(|def| {
+                    vec![(
+                        crate::qualified::qualified_text(&module, resolved_name)
+                            .as_str()
+                            .to_string(),
+                        def,
+                    )]
+                })
                 .unwrap_or_default()
         };
         if entries.is_empty() {
@@ -602,7 +627,9 @@ impl Interpreter {
         }
         // Register EXPORT namespace aliases so that EXPORT::TAG::name and
         // Package::EXPORT::TAG::name resolve via normal function lookup.
-        let fq_key = format!("{}::{}", package, name);
+        let fq_key = crate::qualified::qualified_text(&package, &name)
+            .as_str()
+            .to_string();
         let fq_sym = crate::symbol::Symbol::intern(&fq_key);
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut writes below (read->write on the same lock deadlocks).
@@ -753,9 +780,8 @@ impl Interpreter {
     /// aliases until the candidates exist.
     pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
         let package = self.current_package();
-        let tags = if package == "GLOBAL" {
-            self.module
-                .module_load_stack
+        let tags = if crate::qualified::is_global_name(&package) {
+            self.module.module_load_stack
                 .last()
                 .and_then(|module| self.module.module_owned_exports.get(module))
                 .and_then(|exports| exports.get(name))
@@ -891,7 +917,9 @@ impl Interpreter {
         };
         let qualified = match sigil {
             Some(sigil) => format!("{sigil}{module}::{bare}"),
-            None => format!("{module}::{name}"),
+            None => crate::qualified::qualified_text(module, name)
+                .as_str()
+                .to_string(),
         };
         self.env
             .get(&qualified)
@@ -954,7 +982,11 @@ impl Interpreter {
             // but the qualified code value remains resolvable by name.
             .or_else(|| {
                 (sigil == Some('&'))
-                    .then(|| self.resolve_code_var(&format!("{module}::{bare}")))
+                    .then(|| {
+                        self.resolve_code_var(
+                            crate::qualified::qualified_text(module, bare).as_str(),
+                        )
+                    })
                     .filter(|value| !value.is_nil())
             })
             // A bare-file module's `my constant &name` lives in the
@@ -1270,10 +1302,20 @@ impl Interpreter {
             // An EXPORTED operator becomes lexically visible in the unit that
             // imported it -- and only there (#9944).
             self.record_infix_import_gate(&name);
-            let source_single = format!("{module}::{name}");
-            let source_prefix = format!("{module}::{name}/");
-            let target_single = format!("{target_pkg}::{name}");
-            let target_prefix = format!("{target_pkg}::{name}/");
+            let source_single = crate::qualified::qualified_text(module, &name)
+                .as_str()
+                .to_string();
+            let source_prefix = format!(
+                "{}/",
+                crate::qualified::qualified_text(module, &name).as_str()
+            );
+            let target_single = crate::qualified::qualified_text(target_pkg, &name)
+                .as_str()
+                .to_string();
+            let target_prefix = format!(
+                "{}/",
+                crate::qualified::qualified_text(target_pkg, &name).as_str()
+            );
             let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
             // An exported method is represented by synthetic arity-qualified
             // candidates.  A class may also contain a same-named plain sub;
@@ -1538,7 +1580,7 @@ impl Interpreter {
                 let term_spelling = crate::runtime::term_names::term_spelling(&target);
                 let is_term = term_spelling.is_some();
                 let is_enum_key = !is_term
-                    && !target.contains("::")
+                    && !crate::qualified::is_qualified_str(&target)
                     && !target.starts_with(['$', '@', '%', '&'])
                     && matches!(value.view(), ValueView::Enum { .. });
                 let env_target = if is_enum_key {
@@ -1546,7 +1588,7 @@ impl Interpreter {
                 } else {
                     target.clone()
                 };
-                if !target.contains("::") {
+                if !crate::qualified::is_qualified_str(&target) {
                     self.unsuppress_name(term_spelling.unwrap_or(&target));
                 }
                 // Slice F (env<->locals coherence): `import` writes the symbol
@@ -1560,7 +1602,7 @@ impl Interpreter {
                 // recording it made the importing frame pull `env[<key>]` over a
                 // same-named lexical's slot on the next frame reconcile — the
                 // half of #7914 that turned the caller's `my $s` into `Any`.
-                if !target.contains("::") && !is_enum_key && !is_term {
+                if !crate::qualified::is_qualified_str(&target) && !is_enum_key && !is_term {
                     let slot_name = match target.chars().next() {
                         Some('$' | '@' | '%') => target[1..].to_string(),
                         _ => target.clone(),
@@ -1569,7 +1611,9 @@ impl Interpreter {
                 }
                 // Part of the LOADING module's own lexical scope, whether or not
                 // it is new to `env` (see `module_imported_names`).
-                if !self.module.module_load_stack.is_empty() && !target.contains("::") {
+                if !self.module.module_load_stack.is_empty()
+                    && !crate::qualified::is_qualified_str(&target)
+                {
                     let previous = self.env.get(&env_target).cloned();
                     self.module.module_imported_names.push((
                         env_target.clone(),
@@ -1664,7 +1708,10 @@ impl Interpreter {
         self.module.suppress_exports = saved;
         self.module.module_load_stack.pop();
         if result.is_ok() {
-            let short_name = if let Some((_, short)) = module.rsplit_once("::") {
+            let short_name = if let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 short.to_string()
             } else {
                 module.to_string()
@@ -1674,7 +1721,11 @@ impl Interpreter {
                 if !class_snapshot.contains(class_name) {
                     crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(class_name.clone());
-                    if let Some((_, short)) = class_name.rsplit_once("::") {
+                    if let Some((_, short)) = crate::qualified::split_qualified(
+                        crate::qualified::known_symbol(class_name),
+                    )
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+                    {
                         crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                             .insert(short.to_string());
                     }
@@ -1700,10 +1751,7 @@ impl Interpreter {
                     continue;
                 }
                 let key_s = key.resolve();
-                let key_short = key_s
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(key_s.as_str());
+                let key_short = crate::qualified::last_segment(*key).as_str();
                 if !key_short
                     .chars()
                     .next()

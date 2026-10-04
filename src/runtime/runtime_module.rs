@@ -154,7 +154,7 @@ impl Interpreter {
     /// declaration may replace this alias, while another declaration after
     /// that replacement remains a genuine redeclaration.
     pub(crate) fn record_imported_routine_alias(&mut self, package: &str, name: &str) {
-        let alias = Symbol::intern(&format!("{package}::{name}"));
+        let alias = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         // Only the importing compunit's own scope owns the import: a module
         // loaded while the importer's block is open records its own `use`s on
         // that block's scope otherwise, and the block then shadows the module's
@@ -169,9 +169,9 @@ impl Interpreter {
     }
 
     pub(crate) fn imported_routine_alias(&self, package: &str, name: &str) -> bool {
-        self.module
-            .imported_routine_aliases
-            .contains(&Symbol::intern(&format!("{package}::{name}")))
+        self.module.imported_routine_aliases.contains(&Symbol::intern(
+            crate::qualified::qualified_text(package, name).as_str(),
+        ))
     }
 
     /// Whether `name` is an imported routine alias of any package a bare name
@@ -190,8 +190,9 @@ impl Interpreter {
     }
 
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
-        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases)
-            .remove(&Symbol::intern(&format!("{package}::{name}")));
+        std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).remove(&Symbol::intern(
+            crate::qualified::qualified_text(package, name).as_str(),
+        ));
     }
 
     pub(crate) fn record_imported_exported_proto(
@@ -255,7 +256,7 @@ impl Interpreter {
             .filter(|k| !before.contains(*k))
             .filter(|k| {
                 let s = k.resolve();
-                s.contains("::") && !s.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&s) && !s.starts_with("GLOBAL::")
             })
             .copied()
             .collect();
@@ -312,7 +313,7 @@ impl Interpreter {
             .filter(|key| {
                 class_snapshot.contains(*key)
                     || self.persistent_classes.contains(*key)
-                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
                     // A lexical `my class` is stored under its mangled,
                     // per-declaration name (ADR-0047 P1: `P\u{0}<decl-id>`),
                     // which no other scope can spell, so it is no import
@@ -438,7 +439,7 @@ impl Interpreter {
                         return false;
                     }
                 }
-                ks.contains("::") && !ks.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
             });
             // An imported proto/multi family has lexical shadowing semantics,
             // but its candidates share the importing package's flat registry
@@ -473,14 +474,14 @@ impl Interpreter {
             // re-import, only the `GLOBAL::` alias goes.
             self.registry_mut().proto_subs_retain(|key| {
                 proto_sub_snapshot.contains(key)
-                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                    || (crate::qualified::is_qualified_str(key) && !key.starts_with("GLOBAL::"))
             });
             self.registry_mut().proto_functions_mut().retain(|key, _| {
                 if proto_fn_snapshot.contains(key) {
                     return true;
                 }
                 let ks = key.resolve();
-                ks.contains("::") && !ks.starts_with("GLOBAL::")
+                crate::qualified::is_qualified_str(&ks) && !ks.starts_with("GLOBAL::")
             });
             self.registry_mut()
                 .proto_functions_mut()
@@ -650,7 +651,7 @@ impl Interpreter {
             // is directly `use`d at the top level, un-hide it and its related
             // classes from the package stash. This handles the case where the
             // module was first loaded transitively by a non-contributing module.
-            if self.module.module_load_stack.is_empty() && module.contains("::") {
+            if self.module.module_load_stack.is_empty() && crate::qualified::is_qualified_str(module) {
                 let is_contributor = {
                     let registry = self.registry();
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
@@ -828,7 +829,10 @@ impl Interpreter {
 
         self.module.module_load_stack.pop();
         if result.is_ok() {
-            let module_short = if let Some((_, short)) = module.rsplit_once("::") {
+            let module_short = if let Some((_, short)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 short
             } else {
                 module
@@ -838,10 +842,9 @@ impl Interpreter {
                 if class_snapshot.contains(class_name) {
                     continue;
                 }
-                let class_short = class_name
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(class_name.as_str());
+                let class_short =
+                    crate::qualified::last_segment(crate::qualified::known_symbol(class_name))
+                        .as_str();
                 if class_short != module_short {
                     crate::runtime::cow_table_mut(&mut self.module.need_hidden_classes)
                         .insert(class_name.clone());
@@ -869,10 +872,7 @@ impl Interpreter {
                     continue;
                 }
                 let key_s = key.resolve();
-                let key_short = key_s
-                    .rsplit_once("::")
-                    .map(|(_, short)| short)
-                    .unwrap_or(key_s.as_str());
+                let key_short = crate::qualified::last_segment(*key).as_str();
                 if !key_short
                     .chars()
                     .next()
@@ -899,7 +899,10 @@ impl Interpreter {
             //   (b) its dependency chain includes a `package X {}` declaration
             //       (tracked in `chain_declared_packages` which is scoped to this load).
             // If neither condition holds, new classes/roles are hidden from X's stash.
-            if let Some((namespace, _)) = module.rsplit_once("::") {
+            if let Some((namespace, _)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(module))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
                 let module_declares_own_class = {
                     let registry = self.registry();
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
@@ -999,7 +1002,9 @@ impl Interpreter {
                     if !func_keys_before.contains(&global_key) {
                         let removed = self.registry_mut().functions_mut().remove(&global_key);
                         if let Some(def) = removed {
-                            let qualified = Symbol::intern(&format!("{}::{}", module, name));
+                            let qualified = Symbol::intern(
+                                crate::qualified::qualified_text(module, name).as_str(),
+                            );
                             self.registry_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1024,7 +1029,9 @@ impl Interpreter {
                         let removed = self.registry_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
                             let suffix = mk.as_str().strip_prefix("GLOBAL::").unwrap().to_string();
-                            let qualified = Symbol::intern(&format!("{}::{}", module, suffix));
+                            let qualified = Symbol::intern(
+                                crate::qualified::qualified_text(module, &suffix).as_str(),
+                            );
                             self.registry_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1170,7 +1177,7 @@ impl Interpreter {
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
-                .filter(|k| k.as_str().contains("::"))
+                .filter(|k| crate::qualified::is_qualified_str(k.as_str()))
                 .copied()
                 .collect();
             crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
@@ -1193,7 +1200,7 @@ impl Interpreter {
                 .keys()
                 .filter(|k| {
                     !env_snapshot.contains(k)
-                        && (k.as_str().contains("::") || k.resolve() == module)
+                        && (crate::qualified::is_qualified_str(k.as_str()) || k.resolve() == module)
                 })
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();

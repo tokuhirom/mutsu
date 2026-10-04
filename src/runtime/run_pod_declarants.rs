@@ -221,12 +221,12 @@ impl Interpreter {
                         trait_args: Vec::new(),
                     });
                 }
-                let key = format!("{package}::{}", name.resolve());
-                Self::collect_pod_param_declarants(&key, param_defs, out);
+                let key = crate::qualified::qualified_text(package, name).as_str();
+                Self::collect_pod_param_declarants(key, param_defs, out);
                 Self::insert_pod_declarant(
                     out,
                     multi_counters,
-                    key,
+                    key.to_string(),
                     *multi,
                     Value::make_sub(
                         crate::symbol::Symbol::intern(package),
@@ -272,7 +272,9 @@ impl Interpreter {
                     name: *name,
                 };
                 out.insert(
-                    format!("{package}::{full_name}"),
+                    crate::qualified::qualified_text(package, &full_name)
+                        .as_str()
+                        .to_string(),
                     super::attribute_identity::attribute_meta_object(identity, attrs),
                 );
             }
@@ -301,7 +303,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for PodDeclarants<'_> {
             | Stmt::RoleDecl { name, .. }
             | Stmt::Package { name, .. } => {
                 let declared = name.resolve();
-                let nested = if declared.contains("::") || self.package == "GLOBAL" {
+                let nested = if crate::qualified::is_qualified_str(&declared)
+                    || crate::qualified::is_global_name(&self.package)
+                {
                     declared
                 } else {
                     crate::qualified::qualified(crate::symbol::Symbol::intern(&self.package), *name)

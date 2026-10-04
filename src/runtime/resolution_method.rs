@@ -125,7 +125,7 @@ impl Interpreter {
                     let resolved = constraint
                         .replace("::?CLASS", class_name)
                         .replace("::?ROLE", class_name);
-                    let is_type_capture = resolved.starts_with("::");
+                    let is_type_capture = crate::qualified::is_type_capture(&resolved);
                     if !is_type_capture && !self.type_matches_value(&resolved, inv) {
                         self.env = saved_env;
                         self.set_current_package(saved_package);

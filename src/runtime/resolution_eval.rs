@@ -603,7 +603,8 @@ impl Interpreter {
         let bare = name
             .strip_prefix('&')
             .or_else(|| {
-                name.rsplit_once("::")
+                crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
+                    .map(|(head, tail)| (head.as_str(), tail.as_str()))
                     .filter(|(head, _)| head.starts_with("__mutsu_callable_id::"))
                     .map(|(_, tail)| tail)
             })
