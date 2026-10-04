@@ -188,9 +188,9 @@ impl Interpreter {
                         // EXPORT package of every package lexically enclosing
                         // the declaration, not just the innermost one.
                         self.register_exported_multi_candidates(
-                            package.clone(),
-                            name.resolve(),
-                            export_tags.clone(),
+                            &package,
+                            &name.resolve(),
+                            &export_tags,
                             multi_keys,
                         );
                         for outer in &outer_packages {
@@ -203,7 +203,7 @@ impl Interpreter {
                         }
                     }
                     if multi && !self.module.suppress_exports {
-                        self.refresh_exported_multi_family(&name.resolve(), multi_keys);
+                        self.refresh_exported_multi_family(&name.resolve(), multi_keys, None);
                     }
                     for (alt_params, alt_param_defs) in &signature_alternates {
                         let alt_metadata = crate::opcode::compiled_routine_metadata(
@@ -244,7 +244,7 @@ impl Interpreter {
                                 multi_keys,
                             } = &alt_outcome
                         {
-                            self.refresh_exported_multi_family(&name.resolve(), multi_keys);
+                            self.refresh_exported_multi_family(&name.resolve(), multi_keys, None);
                         }
                     }
                 }

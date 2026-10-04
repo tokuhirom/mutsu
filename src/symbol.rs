@@ -59,6 +59,13 @@ impl PartialEq<str> for Symbol {
 struct SymbolTable {
     str_to_id: FxHashMap<&'static str, Symbol>,
     id_to_str: Vec<&'static str>,
+    /// The ids of the qualified symbols whose text holds a `/` (and a `::`),
+    /// in id order: every arity-qualified routine registry key (`Pkg::name/2`)
+    /// among them. Lets the routine-family index
+    /// (`qualified_tail_index::names_in_family`) catch up without visiting
+    /// every other symbol (#11761).
+    /// Each with the byte offset of its first `/`.
+    slash_ids: Vec<(u32, u32)>,
 }
 
 static GLOBAL_TABLE: OnceLock<RwLock<SymbolTable>> = OnceLock::new();
@@ -127,6 +134,7 @@ fn global_table() -> &'static RwLock<SymbolTable> {
         RwLock::new(SymbolTable {
             str_to_id: FxHashMap::default(),
             id_to_str: Vec::new(),
+            slash_ids: Vec::new(),
         })
     })
 }
@@ -743,6 +751,11 @@ impl Symbol {
         let sym = Symbol(id);
         let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
         table.id_to_str.push(leaked);
+        if let Some(slash) = leaked.find('/')
+            && crate::str_scan::has_double_colon(leaked)
+        {
+            table.slash_ids.push((id, slash as u32));
+        }
         table.str_to_id.insert(leaked, sym);
         // Prime the flags memo here, the one place an id is ever assigned, so
         // `Symbol::flags` is a pure read for every id that exists. `compute_flags`
@@ -993,6 +1006,26 @@ pub(crate) fn for_each_interned_since(
         f(Symbol(id as u32), text);
     }
     names.len()
+}
+
+/// The number of interned qualified symbols whose text holds a `/`.
+pub(crate) fn interned_slash_count() -> usize {
+    global_table().read().unwrap().slash_ids.len()
+}
+
+/// [`for_each_interned_since`] over only the qualified symbols whose text holds
+/// a `/`, each with the byte offset of its first `/`: `from` and the returned
+/// position count those symbols, not ids.
+// Cost: O(m), m = such symbols interned since position `from`.
+pub(crate) fn for_each_slash_interned_since(
+    from: usize,
+    mut f: impl FnMut(Symbol, &'static str, usize),
+) -> usize {
+    let table = global_table().read().unwrap();
+    for &(id, slash) in table.slash_ids.iter().skip(from) {
+        f(Symbol(id), table.id_to_str[id as usize], slash as usize);
+    }
+    table.slash_ids.len()
 }
 
 impl fmt::Debug for Symbol {

@@ -1733,10 +1733,11 @@ impl Interpreter {
                 .and_then(|exports| exports.get(name))
                 .cloned()
         {
+            let tags: Vec<String> = tags.into_iter().collect();
             self.register_exported_multi_candidates(
-                self.current_package().to_string(),
-                name.to_string(),
-                tags.into_iter().collect(),
+                &self.current_package(),
+                name,
+                &tags,
                 &installed_multi_keys,
             );
         }

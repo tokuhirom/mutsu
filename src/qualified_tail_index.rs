@@ -1,5 +1,6 @@
 //! Process-wide index from a qualified name's *member name* to every interned
-//! qualified name that ends in it (#9171).
+//! qualified name that ends in it (#9171), plus the companion package and
+//! routine-family indexes built the same way.
 //!
 //! A package's symbols are not stored in a per-package table: they live as
 //! flat qualified keys (`P::x`, `@P::a`, `&P::f`, `Outer::P::x`, `P::f/2`)
@@ -66,6 +67,32 @@ static TAIL_INDEX: RwLock<LazyIndex> = LazyIndex::new();
 /// package components, so `Outer::P::x` is found under `Outer`, `Outer::P`
 /// and `P` -- the same suffix rule `stash_member_tail` applies.
 static PACKAGE_INDEX: RwLock<LazyIndex> = LazyIndex::new();
+
+/// The routine-family index: a spelling `F` to every interned qualified name
+/// spelled `F/…` (#11761). A routine registry key is `F/<suffix>` for a multi
+/// candidate of the family `F` = `Pkg::name` (`Pkg::name/2`,
+/// `Pkg::name/1:Int`, `Pkg::name/2__m1`), so this lists a family's candidate
+/// keys without scanning the registry. Keyed at every `/` of the name, so an
+/// operator whose own name holds a `/` (`Pkg::infix:</>/2`) is found under
+/// its family exactly as a `starts_with("F/")` test would find it.
+///
+/// Nearly every family has one or two names, so instead of a `Vec` per
+/// spelling (an allocation per name folded in) the names form one chain per
+/// spelling through a shared node list.
+struct FamilyIndex {
+    /// Spelling -> 1 + the index in `nodes` of its most recent name.
+    heads: FxHashMap<&'static str, u32>,
+    /// A name and 1 + the index of the spelling's previous one (0: none).
+    nodes: Vec<(Symbol, u32)>,
+    /// Position in the symbol table's slash-name list folded in so far.
+    scanned: usize,
+}
+
+static FAMILY_INDEX: RwLock<FamilyIndex> = RwLock::new(FamilyIndex {
+    heads: FxHashMap::with_hasher(rustc_hash::FxBuildHasher),
+    nodes: Vec::new(),
+    scanned: 0,
+});
 
 /// `index.map[key]` after folding every symbol interned since the previous
 /// read into it with `fold`.
@@ -146,6 +173,72 @@ fn record_packages(map: &mut TailMap, sym: Symbol, body: &'static str) {
     }
 }
 
+impl FamilyIndex {
+    /// Record `sym` under every prefix of `text` that a `/` follows, the
+    /// first of them at byte `slash`, with a leading sigil dropped. Each
+    /// prefix is a different spelling, so no chain receives `sym` twice.
+    // Cost: O(n), n = bytes of `text` after `slash`.
+    fn record(&mut self, sym: Symbol, text: &'static str, slash: usize) {
+        let body = strip_sigil(text);
+        let skipped = text.len() - body.len();
+        let mut pos = slash - skipped.min(slash);
+        loop {
+            if pos > 0 && body.as_bytes()[pos] == b'/' {
+                let node = self.nodes.len() as u32 + 1;
+                let prev = self.heads.insert(&body[..pos], node).unwrap_or(0);
+                self.nodes.push((sym, prev));
+            }
+            match body[pos + 1..].find('/') {
+                Some(off) => pos += 1 + off,
+                None => break,
+            }
+        }
+    }
+
+    /// The names recorded under `family`, most recently interned first.
+    // Cost: O(k), k = names recorded under `family`.
+    fn names(&self, family: &str) -> Vec<Symbol> {
+        let mut names = Vec::new();
+        let mut node = self.heads.get(family).copied().unwrap_or(0);
+        while node != 0 {
+            let (sym, prev) = self.nodes[node as usize - 1];
+            names.push(sym);
+            node = prev;
+        }
+        names
+    }
+}
+
+/// Every interned qualified name spelled `family/…` (see [`FAMILY_INDEX`]):
+/// a superset of the registry keys of `family`'s multi candidates. Owned for
+/// the same reason as [`names_ending_in`].
+// Cost: O(k + m), k = interned names spelled `family/…`, m = symbols interned
+// since the previous call (amortized O(1) per symbol over the process).
+pub(crate) fn names_in_family(family: &str) -> Vec<Symbol> {
+    // `caught_up_lookup`, with the catch-up narrowed to the qualified symbols
+    // holding a `/`, which the symbol table lists apart: any other name is in
+    // no family, so it need not be visited at all.
+    {
+        let idx = FAMILY_INDEX.read().unwrap();
+        if idx.scanned == crate::symbol::interned_slash_count() {
+            return idx.names(family);
+        }
+    }
+    let mut idx = FAMILY_INDEX.write().unwrap();
+    let idx = &mut *idx;
+    // Most names hold one `/`: size for one spelling each up front, so the
+    // first catch-up (every routine key interned before it) does not grow
+    // the map through each power of two.
+    let incoming = crate::symbol::interned_slash_count().saturating_sub(idx.scanned);
+    idx.heads.reserve(incoming);
+    idx.nodes.reserve(incoming);
+    // Lock order: index -> symbol table read, as in `caught_up_lookup`.
+    idx.scanned = crate::symbol::for_each_slash_interned_since(idx.scanned, |sym, text, slash| {
+        idx.record(sym, text, slash);
+    });
+    idx.names(family)
+}
+
 /// Every interned qualified name with a member under the package spelled
 /// `package` (see [`PACKAGE_INDEX`]), in interning order. Owned for the same
 /// reason as [`names_ending_in`].
@@ -217,6 +310,22 @@ mod tests {
         // An unqualified spelling is never a member of anything.
         let bare = Symbol::intern("tail_late_m");
         assert!(!names_ending_in("tail_late_m").contains(&bare));
+    }
+
+    #[test]
+    fn family_index_lists_every_slash_prefix() {
+        let first = Symbol::intern("FamIdxP::famx/2");
+        let typed = Symbol::intern("FamIdxP::famx/1:Int");
+        let op = Symbol::intern("FamIdxP::infix:</>/2");
+        let found = names_in_family("FamIdxP::famx");
+        assert!(found.contains(&first) && found.contains(&typed));
+        assert_eq!(names_in_family("FamIdxP::infix:<"), vec![op]);
+        assert_eq!(names_in_family("FamIdxP::infix:</>"), vec![op]);
+        // A name interned after a read is found by the next one, once.
+        let late = Symbol::intern("FamIdxP::famx/3");
+        let found = names_in_family("FamIdxP::famx");
+        assert_eq!(found.iter().filter(|s| **s == late).count(), 1);
+        assert!(names_in_family("FamIdxP::fam").is_empty());
     }
 
     #[test]

@@ -299,7 +299,7 @@ impl Interpreter {
             }
             if preregistered {
                 if *multi && !self.module.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name, &[]);
+                    self.refresh_exported_multi_family(&resolved_name, &[], None);
                 }
                 return Ok(());
             }
@@ -409,9 +409,9 @@ impl Interpreter {
                 if *is_export && !self.module.suppress_exports {
                     let pkg = self.current_package();
                     self.register_exported_multi_candidates(
-                        pkg.clone(),
-                        resolved_name.clone(),
-                        export_tags.clone(),
+                        &pkg,
+                        &resolved_name,
+                        export_tags,
                         multi_keys,
                     );
                     // If a custom `is` trait mixed a role into this routine, the
@@ -456,7 +456,10 @@ impl Interpreter {
                     self.export_implicit_stash_proto(&resolved_name);
                 }
                 if *multi && !self.module.suppress_exports {
-                    self.refresh_exported_multi_family(&resolved_name, multi_keys);
+                    // The `is export` branch above already aliased this
+                    // candidate under its own tags in this package.
+                    let exported_with = is_export.then_some(export_tags.as_slice());
+                    self.refresh_exported_multi_family(&resolved_name, multi_keys, exported_with);
                 }
                 // mutsu#10050: `is export` routines nested in this body are
                 // exported at compile time, not when this routine runs.
@@ -496,7 +499,7 @@ impl Interpreter {
                             multi_keys,
                         } = &alt_outcome
                     {
-                        self.refresh_exported_multi_family(&resolved_name, multi_keys);
+                        self.refresh_exported_multi_family(&resolved_name, multi_keys, None);
                     }
                 }
             }

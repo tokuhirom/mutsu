@@ -5,7 +5,7 @@ use Test;
 # is declared (#11761); every candidate must still be importable, whatever
 # order the proto, the exported and the unexported candidates came in.
 
-plan 4;
+plan 6;
 
 subtest 'proto exported before its candidates', {
     plan 5;
@@ -39,4 +39,25 @@ subtest 'a tag only one candidate named', {
     plan 1;
     use ExportedMultiFamily :extra;
     is shape(3, 'z'), 'pair-shape 3 z', ':extra imports the family';
+}
+
+subtest 'a tag only the first candidate carries', {
+    plan 4;
+    {
+        use ExportedMultiFamily :early;
+        is tagfirst(1), 'tagfirst-int 1', ':early imports the tagged candidate';
+        is tagfirst('a'), 'tagfirst-str a', ':early imports the later candidate';
+    }
+    {
+        use ExportedMultiFamily;
+        is tagfirst(2), 'tagfirst-int 2', 'DEFAULT imports the tagged candidate';
+        is tagfirst('b'), 'tagfirst-str b', 'DEFAULT imports the later candidate';
+    }
+}
+
+subtest 'an operator whose name holds a slash', {
+    plan 2;
+    use ExportedMultiFamily;
+    is (1 +/+ 'x'), 'op-int-str 1 x', 'first candidate';
+    is ('y' +/+ 2), 'op-str-int y 2', 'second candidate';
 }

@@ -1050,6 +1050,7 @@ mod runtime_container;
 mod runtime_encoding;
 pub(crate) mod runtime_init;
 mod runtime_module;
+mod runtime_module_export_aliases;
 mod runtime_module_export_sub;
 mod runtime_module_exports;
 mod runtime_output;
