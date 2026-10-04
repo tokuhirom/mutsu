@@ -159,6 +159,15 @@ impl Interpreter {
             crate::runtime::nativecall::call_native_with_out_args(self, &spec, &call_args)?;
         // MoarVM answers a `void` function, and a NULL `char*`, with the
         // return type object itself (`Mu` for a routine with no `-->`).
+        // A pointer return is boxed as `$rettype` itself when that is a
+        // CPointer class or a mixin type (upstream's `Pointer`, `Pointer[T]`,
+        // `CArray[T]`); NULL is the type object.
+        if spec.ret == crate::runtime::nativecall::CType::Pointer && spec.ret_struct.is_none() {
+            let addr = crate::runtime::nativecall::value_c_address(&result);
+            if let Some(boxed) = self.native_object_of_type(&rettype, addr) {
+                return if addr == 0 { Ok(rettype) } else { boxed };
+            }
+        }
         Ok(match spec.ret {
             crate::runtime::nativecall::CType::Void => rettype,
             crate::runtime::nativecall::CType::Str if result.is_nil() => rettype,
@@ -253,9 +262,15 @@ impl Interpreter {
             return self.native_callable_from_signature(id, source);
         }
         let addr = self.carray_element_address(source);
-        // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects.
-        if let Some(result) = self.nativecast_mixin(target, addr) {
-            return result;
+        // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects; a
+        // NULL cast answers the type object, as MoarVM does.
+        if matches!(target.view(), ValueView::Mixin(..)) {
+            if addr == 0 {
+                return Ok(target.clone());
+            }
+            if let Some(result) = self.native_object_of_type(target, addr) {
+                return result;
+            }
         }
         let Some(target) = type_operand_name(target) else {
             return Err(RuntimeError::new(

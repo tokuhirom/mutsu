@@ -17,16 +17,14 @@
 //! [`value_c_address`](crate::runtime::nativecall::value_c_address) passes
 //! back to C) and the element encoding of the type's `.^array_type` under
 //! [`VIEW_ATTR`]. The `nqp::` element ops reach it through [`CArrayView`].
-//! MoarVM's unmanaged array has no length either: its `elems` is the highest
-//! index touched plus one, which [`ELEMS_ATTR`] tracks.
+//! It has no length: like MoarVM's, `nqp::elems` on it dies, and a negative
+//! index has no end to count from.
 
 use super::*;
 use crate::value::ElemKind;
 
 /// The element encoding of an unmanaged CArray: `width * 4 + kind`.
 const VIEW_ATTR: &str = "__mutsu_carray_view";
-/// How many elements of an unmanaged CArray have been touched.
-const ELEMS_ATTR: &str = "__mutsu_carray_view_elems";
 
 // Cost: O(1).
 fn kind_code(kind: ElemKind) -> i64 {
@@ -49,7 +47,6 @@ fn kind_of_code(code: i64) -> Option<ElemKind> {
 
 /// An unmanaged CArray: C memory at `addr`, `width`-byte `kind` elements.
 pub(crate) struct CArrayView {
-    attrs: crate::gc::Gc<crate::value::InstanceAttrs>,
     addr: usize,
     width: u8,
     kind: ElemKind,
@@ -59,12 +56,13 @@ impl CArrayView {
     /// The view `target` is, or `None` for any other value.
     // Cost: O(1).
     pub(crate) fn of(target: &Value) -> Option<Self> {
-        let target = match target.view() {
-            ValueView::Mixin(inner, _) => Value::clone(inner),
-            _ => target.clone(),
-        };
-        let ValueView::Instance { attributes, .. } = target.view() else {
-            return None;
+        let attributes = match target.view() {
+            ValueView::Instance { attributes, .. } => attributes,
+            ValueView::Mixin(inner, _) => match inner.view() {
+                ValueView::Instance { attributes, .. } => attributes,
+                _ => return None,
+            },
+            _ => return None,
         };
         let (code, addr) = {
             let map = attributes.as_map();
@@ -73,37 +71,15 @@ impl CArrayView {
             (code, addr)
         };
         Some(CArrayView {
-            attrs: attributes.clone(),
             addr: usize::try_from(addr).ok()?,
             width: u8::try_from(code / 4).ok()?,
             kind: kind_of_code(code % 4)?,
         })
     }
 
-    /// The elements touched so far (MoarVM's `elems` of an unmanaged array).
-    // Cost: O(1).
-    pub(crate) fn elems(&self) -> usize {
-        self.attrs
-            .as_map()
-            .get(ELEMS_ATTR)
-            .and_then(Value::as_int)
-            .and_then(|n| usize::try_from(n).ok())
-            .unwrap_or(0)
-    }
-
-    /// Record that element `idx` was touched.
-    // Cost: O(1).
-    fn touch(&self, idx: usize) {
-        if idx >= self.elems() {
-            self.attrs
-                .insert(ELEMS_ATTR.to_string(), Value::int(idx as i64 + 1));
-        }
-    }
-
     /// Element `idx`, read from the C memory.
     // Cost: O(1).
     pub(crate) fn elem_at(&self, idx: usize) -> Option<Value> {
-        self.touch(idx);
         // SAFETY: `nativecast` vouched that a C array of this element type
         // lives at `addr`; an index past its end is undefined behaviour in
         // Rakudo too (see the module docs).
@@ -113,58 +89,51 @@ impl CArrayView {
     /// Store `v` as element `idx`, in the C memory.
     // Cost: O(1).
     pub(crate) fn bind(&self, idx: usize, v: &Value) -> Option<()> {
-        self.touch(idx);
         // SAFETY: as in `elem_at`; the memory is the C array the cast named.
         unsafe { crate::value::value_buf::write_raw_elem(self.addr, idx, self.width, self.kind, v) }
     }
 }
 
 impl Interpreter {
-    /// `nativecast($type, $source)` for a mixin type object `ty`
-    /// (`Base.^mixin(R)`): an object of exactly that type over `addr` (see the
-    /// module docs). `None` when `ty` is not a mixin of a CPointer- or
-    /// CArray-REPR class, leaving the name-based cast in place. A NULL address
-    /// answers the type object, as MoarVM does.
-    // Cost: O(r), r = roles of the mixin.
-    pub(crate) fn nativecast_mixin(
+    /// The object of type `ty` that lives at C address `addr`, as MoarVM's
+    /// CPointer and CArray REPRs box one: an instance of a CPointer-REPR class
+    /// holding the address, or of a mixin of a CPointer- or CArray-REPR class
+    /// (upstream's `Pointer[T]` / `CArray[T]`, see the module docs) carrying
+    /// its roles. `None` when `ty` is none of those, leaving the caller's
+    /// name-based handling in place. NULL is the caller's to decide: a
+    /// `Pointer.new(0)` is a defined object, a NULL return is the type object.
+    // Cost: O(r), r = roles of a mixin `ty`; O(1) for a class.
+    pub(crate) fn native_object_of_type(
         &mut self,
         ty: &Value,
         addr: usize,
     ) -> Option<Result<Value, RuntimeError>> {
-        let ValueView::Mixin(inner, mixins) = ty.view() else {
-            return None;
+        let (class, mixins) = match ty.view() {
+            ValueView::Package(class) => (class, None),
+            ValueView::Mixin(inner, mixins) => match inner.view() {
+                ValueView::Package(class) => (class, Some(mixins)),
+                _ => return None,
+            },
+            _ => return None,
         };
-        let ValueView::Package(class) = inner.view() else {
-            return None;
-        };
-        let is_carray = self.is_carray_repr_class(class.as_str());
+        let is_carray = mixins.is_some() && self.is_carray_repr_class(class.as_str());
         if !is_carray && !self.registry().cpointer_classes.contains(class.as_str()) {
             return None;
         }
-        if addr == 0 {
-            return Some(Ok(ty.clone()));
-        }
-        Some(self.nativecast_mixin_instance(ty, class, mixins, is_carray, addr))
-    }
-
-    // Cost: O(r), r = roles of the mixin.
-    fn nativecast_mixin_instance(
-        &mut self,
-        ty: &Value,
-        class: Symbol,
-        mixins: &crate::value::MixinOverrides,
-        is_carray: bool,
-        addr: usize,
-    ) -> Result<Value, RuntimeError> {
         let instance = self.create_instance(class);
         if let ValueView::Instance { attributes, .. } = instance.view() {
             attributes.insert("address".to_string(), Value::int(addr as i64));
             if is_carray {
-                let elem = self.type_array_type(ty)?;
+                let elem = match self.type_array_type(ty) {
+                    Ok(elem) => elem,
+                    Err(e) => return Some(Err(e)),
+                };
                 let Some((width, kind)) = elem.and_then(|e| self.native_elem_encoding(&e)) else {
-                    return Err(RuntimeError::new(format!(
-                        "nativecast to {}: only a CArray of native numbers can view C memory",
-                        crate::value::type_name::value_type_name(ty)
+                    // TODO: a reference-element CArray (`CArray[Str]`,
+                    // `CArray[Pointer]`) needs `carray_ref`'s child table over
+                    // C-owned addresses; only native numbers view C memory yet.
+                    return Some(Err(RuntimeError::new(
+                        "nativecast: only a CArray of native numbers can view C memory",
                     )));
                 };
                 attributes.insert(
@@ -173,6 +142,9 @@ impl Interpreter {
                 );
             }
         }
-        self.compose_mixin_type_roles_unbuilt(instance, mixins)
+        Some(match mixins {
+            Some(mixins) => self.compose_mixin_type_roles_unbuilt(instance, mixins),
+            None => Ok(instance),
+        })
     }
 }
