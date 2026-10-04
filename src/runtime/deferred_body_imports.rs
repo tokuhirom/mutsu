@@ -7,7 +7,7 @@
 //!
 //! * the module load keys its type aliases by the *compunit* being loaded
 //!   (`unit_module_loading_stack`), which names the composing file — handled by
-//!   [`crate::runtime::Interpreter::import_target_package`];
+//!   [`ModuleState::import_target_package`](crate::runtime::module_state::ModuleState::import_target_package);
 //! * `module_scope_lexicals` / `module_imported_lexical_names` are folded in
 //!   once, when the importing compunit finishes loading. A role body's `use`
 //!   runs *after* its own compunit finished, so its names were never folded in

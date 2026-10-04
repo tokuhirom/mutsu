@@ -458,7 +458,7 @@ impl Interpreter {
     }
 
     /// Mark `name` as registered while loading a foreign compunit via runtime
-    /// `require` (see [`Self::require_loaded_type_names`]'s doc comment).
+    /// `require` (see [`ModuleState::require_loaded_type_names`](crate::runtime::module_state::ModuleState::require_loaded_type_names)'s doc comment).
     pub(crate) fn mark_require_loaded_type_name(&mut self, name: String) {
         crate::runtime::cow_table_mut(&mut self.module.require_loaded_type_names).insert(name);
     }

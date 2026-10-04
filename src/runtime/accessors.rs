@@ -298,7 +298,7 @@ impl Interpreter {
     ///
     /// Gated on `self.module.lexical_fatal_mode` first so the common (non-fatal)
     /// case pays only a single bool check, not a scan of every element. See
-    /// [`crate::runtime::Interpreter::lexical_fatal_mode`]'s doc comment for
+    /// [`ModuleState::lexical_fatal_mode`](crate::runtime::module_state::ModuleState::lexical_fatal_mode)'s doc comment for
     /// why this is the LEXICAL channel, not the fully dynamic `fatal_mode`
     /// (#9521): a Failure-in-composite/call-argument explosion is governed by
     /// whether `use fatal` is lexically active where the composite/call is
