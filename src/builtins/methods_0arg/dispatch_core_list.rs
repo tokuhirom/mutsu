@@ -1,6 +1,6 @@
 /// List/sequence operations: end, flat, sort, reverse, unique, repeated, floor,
 /// ceiling, round, truncate, narrow, sqrt
-use crate::value::value_buf::{buf_elems_or_empty, buf_len_or_zero, make_buf};
+use crate::value::value_buf::buf_len_or_zero;
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::is_infinite_range;
@@ -142,105 +142,8 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
-        // Cost: O(e), e = elements of the invocant (copied in reverse; a finite Range
-        // is expanded first).
-        "reverse" => Some(match target.view() {
-            ValueView::Array(items, kind) => {
-                // Multi-dim shaped arrays cannot be reversed
-                if kind == crate::value::ArrayKind::Shaped
-                    && let Some(shape) = crate::runtime::utils::shaped_array_shape(target)
-                    && shape.len() > 1
-                {
-                    return Some(Some(Err(
-                        crate::value::RuntimeError::illegal_on_fixed_dimension_array("reverse"),
-                    )));
-                }
-                let mut reversed = (**items).clone();
-                reversed.reverse();
-                // .reverse returns a Seq in Raku, not an Array
-                Some(Ok(Value::seq(reversed.into_items())))
-            }
-            ValueView::Range(a, b)
-            | ValueView::RangeExcl(a, b)
-            | ValueView::RangeExclStart(a, b)
-            | ValueView::RangeExclBoth(a, b) => {
-                if b == i64::MAX || a == i64::MIN {
-                    Some(Err(RuntimeError::cannot_lazy("reverse")))
-                } else {
-                    let mut reversed = crate::runtime::utils::value_to_list(target);
-                    reversed.reverse();
-                    Some(Ok(Value::seq(reversed)))
-                }
-            }
-            ValueView::GenericRange { end, .. } => {
-                // Check if the range is empty or infinite from the end side.
-                // For e.g. `1 .. -Inf`, the range is empty, reverse returns empty list.
-                let end_is_neg_inf = matches!(end.as_ref().view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_negative());
-                if end_is_neg_inf {
-                    // Empty range -- reverse is empty
-                    return Some(Some(Ok(Value::seq(Vec::new()))));
-                }
-                if super::is_infinite_range(target) {
-                    return Some(Some(Err(RuntimeError::cannot_lazy("reverse"))));
-                }
-                // For finite generic ranges, expand and reverse
-                let items = crate::runtime::utils::value_to_list(target);
-                // If value_to_list returned just the range itself, fall through
-                if items.len() == 1
-                    && matches!(
-                        items.first().map(Value::view),
-                        Some(ValueView::GenericRange { .. })
-                    )
-                {
-                    None
-                } else {
-                    let mut reversed = items;
-                    reversed.reverse();
-                    Some(Ok(Value::seq(reversed)))
-                }
-            }
-            // `Any.reverse` is `self.list.reverse`, so a non-Iterable is a
-            // one-element list and reverses to itself: `"abc".reverse` is
-            // `("abc",).Seq`, NOT `"cba"` (that is `.flip`). The `reverse(...)`
-            // *function* form already did this; the method form did not.
-            ValueView::Str(_)
-            | ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Bool(_)
-            | ValueView::Rat(..)
-            | ValueView::FatRat(..)
-            | ValueView::BigRat(..)
-            | ValueView::Complex(..)
-            | ValueView::Pair(..)
-            | ValueView::ValuePair(..) => Some(Ok(Value::seq(vec![target.clone()]))),
-            ValueView::Seq(items) => {
-                // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
-                // Seqs are deferred-materialized by the slow path before reaching
-                // here, so `items` already holds the pulled values.)
-                let mut reversed = items.to_vec();
-                reversed.reverse();
-                Some(Ok(Value::seq(reversed)))
-            }
-            ValueView::Slip(items) => {
-                // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
-                // Seqs are deferred-materialized by the slow path before reaching
-                // here, so `items` already holds the pulled values.)
-                let mut reversed = items.to_vec();
-                reversed.reverse();
-                Some(Ok(Value::seq(reversed)))
-            }
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                let mut bytes = buf_elems_or_empty(&attributes);
-                bytes.reverse();
-                Some(Ok(make_buf(class_name, bytes)))
-            }
-            _ => None,
-        }),
+        // Cost: O(e), e = elements passed to the shared List row handler.
+        "reverse" => Some(crate::builtins::method_table::list::reverse(target, &[])),
         // Cost: O(e) average when every element is an Int/BigInt/Str/Bool/Num (hash
         // buckets in `IdentityIndex`); O(e * u) otherwise, e = elements, u = distinct
         // elements of any other kind (Rat, Pair, object, list, ...), which the index

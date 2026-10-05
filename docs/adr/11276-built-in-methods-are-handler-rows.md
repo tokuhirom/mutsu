@@ -432,3 +432,16 @@ loop alternating `Int.succ`, `Int.pred` and `Str.succ`, fell from 1,035,535,695
 to 331,319,634 instructions (-68.0%). The input has no module load; each side
 was run twice and the second run recorded. The focused method-row test, the
 increment/decrement roast files and the numeric operator parity tests pass.
+
+### 9.3 List and Array reverse rows (2026-10-05)
+
+`List.reverse` and `Array.reverse` are zero-argument rows with one shared
+handler in `method_table/list.rs`, matching Rakudo's separate declarations.
+The native cascade calls that same handler for receivers without a List or
+Array dispatch shape. The focused test pins both owners and the reversed Seq
+result for each collection shape.
+
+Callgrind on profiling builds from the same `main`, with a 50,000-iteration
+loop calling both a List and an Array receiver each iteration, fell from
+1,835,310,992 to 617,706,226 instructions (-66.3%). Both binaries were run
+twice and the second run is recorded; the benchmark has no module load.

@@ -1,4 +1,5 @@
-//! `List`'s rows (`Array` inherits them through its MRO).
+//! Positional collection rows. List.reverse and Array.reverse share a
+//! handler because Rakudo declares the method on both types.
 
 use super::{Handler, MethodRow};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -15,6 +16,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "end",
         arity: 0,
         handler: Handler::Pure(end),
+    },
+    MethodRow {
+        owner: "List",
+        name: "reverse",
+        arity: 0,
+        handler: Handler::Narrow(reverse),
+    },
+    MethodRow {
+        owner: "Array",
+        name: "reverse",
+        arity: 0,
+        handler: Handler::Narrow(reverse),
     },
     MethodRow {
         owner: "List",
@@ -86,6 +99,100 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
 // Cost: O(1), an emptiness test.
 fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::truth(target.truthy()))
+}
+
+/// The one implementation used by the List row and the native cascade. The
+/// cascade still reaches it for receivers without a List or Array dispatch
+/// shape.
+// Cost: O(e), e = elements copied or reached while reversing the receiver.
+pub(crate) fn reverse(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Array(items, kind) => {
+            // Multi-dimensional shaped arrays cannot be reversed.
+            if kind == crate::value::ArrayKind::Shaped
+                && let Some(shape) = crate::runtime::utils::shaped_array_shape(target)
+                && shape.len() > 1
+            {
+                return Some(Err(RuntimeError::illegal_on_fixed_dimension_array(
+                    "reverse",
+                )));
+            }
+            let mut reversed = (**items).clone();
+            reversed.reverse();
+            // .reverse returns a Seq in Raku, not an Array.
+            Some(Ok(Value::seq(reversed.into_items())))
+        }
+        ValueView::Range(a, b)
+        | ValueView::RangeExcl(a, b)
+        | ValueView::RangeExclStart(a, b)
+        | ValueView::RangeExclBoth(a, b) => {
+            if b == i64::MAX || a == i64::MIN {
+                Some(Err(RuntimeError::cannot_lazy("reverse")))
+            } else {
+                let mut reversed = crate::runtime::utils::value_to_list(target);
+                reversed.reverse();
+                Some(Ok(Value::seq(reversed)))
+            }
+        }
+        ValueView::GenericRange { end, .. } => {
+            // For example, 1 .. -Inf is empty and reverses to an empty list.
+            let end_is_neg_inf = matches!(
+                end.as_ref().view(),
+                ValueView::Num(n) if n.is_infinite() && n.is_sign_negative()
+            );
+            if end_is_neg_inf {
+                return Some(Ok(Value::seq(Vec::new())));
+            }
+            if crate::builtins::methods_0arg::is_infinite_range(target) {
+                return Some(Err(RuntimeError::cannot_lazy("reverse")));
+            }
+            let mut items = crate::runtime::utils::value_to_list(target);
+            if items.len() == 1
+                && matches!(
+                    items.first().map(Value::view),
+                    Some(ValueView::GenericRange { .. })
+                )
+            {
+                None
+            } else {
+                items.reverse();
+                Some(Ok(Value::seq(items)))
+            }
+        }
+        // Any.reverse is self.list.reverse, so a non-Iterable is a one-element
+        // list. String character reversal is .flip.
+        ValueView::Str(_)
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Bool(_)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..)
+        | ValueView::BigRat(..)
+        | ValueView::Complex(..)
+        | ValueView::Pair(..)
+        | ValueView::ValuePair(..) => Some(Ok(Value::seq(vec![target.clone()]))),
+        ValueView::Seq(items) => {
+            let mut reversed = items.to_vec();
+            reversed.reverse();
+            Some(Ok(Value::seq(reversed)))
+        }
+        ValueView::Slip(items) => {
+            let mut reversed = items.to_vec();
+            reversed.reverse();
+            Some(Ok(Value::seq(reversed)))
+        }
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+            let mut bytes = crate::value::value_buf::buf_elems_or_empty(&attributes);
+            bytes.reverse();
+            Some(Ok(crate::value::value_buf::make_buf(class_name, bytes)))
+        }
+        _ => None,
+    }
 }
 
 /// `List.join($sep = "")` on a plain list or array, or `None` when an element
