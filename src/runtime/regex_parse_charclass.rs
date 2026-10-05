@@ -251,19 +251,16 @@ impl Interpreter {
                             items.push(ClassItem::Range(ch, end));
                             tally.separate();
                         } else {
-                            items.push(ClassItem::Char(ch));
-                            // `\n` also matches `\r\n` in Raku, so Rakudo keeps
-                            // it out of the plain enumeration.
                             if esc == 'n' {
                                 // `\n` in a class is CCLASS_NEWLINE, as it is
-                                // outside one (ADR-0118 §2.5).
-                                for nl in
-                                    ['\u{0B}', '\u{0C}', '\r', '\u{85}', '\u{2028}', '\u{2029}']
-                                {
-                                    items.push(ClassItem::Char(nl));
-                                }
+                                // outside one (ADR-0118 §2.5). Preserve its
+                                // meaning separately from raw LF values: on a
+                                // CRLF grapheme, `\n` matches the pair while
+                                // `\x[0A]` and ranges still name codepoints.
+                                items.push(ClassItem::Newline);
                                 tally.separate();
                             } else {
+                                items.push(ClassItem::Char(ch));
                                 tally.plain();
                             }
                         }

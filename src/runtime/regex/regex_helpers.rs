@@ -769,9 +769,11 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
 }
 
 fn strip_marks_char_class(class: &CharClass) -> CharClass {
+    let mut items: Vec<ClassItem> = class.items.iter().map(strip_marks_class_item).collect();
+    items.push(ClassItem::IgnoreMarkDerived);
     CharClass {
         negated: class.negated,
-        items: class.items.iter().map(strip_marks_class_item).collect(),
+        items,
     }
 }
 
