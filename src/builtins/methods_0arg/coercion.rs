@@ -6,6 +6,14 @@ use std::collections::HashMap;
 
 /// Type coercion and specialized 0-arg methods: is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    if matches!(method, "list" | "List" | "Array")
+        && matches!(
+            target.dispatch_shape(),
+            Some(crate::value::DispatchShape::List | crate::value::DispatchShape::Array)
+        )
+    {
+        return crate::builtins::method_table::positional::dispatch(target, method);
+    }
     match method {
         // `isNaN` on a plain `Int`, `Num`, `Rat`, `FatRat` or `Complex` is a
         // row in `builtins::method_table` (ADR-11276), answered before this

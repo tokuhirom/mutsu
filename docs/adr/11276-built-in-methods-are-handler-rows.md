@@ -565,3 +565,14 @@ worry with the existing stringified-search result. `Map.contains` and
 the warning names the concrete receiver type. The native one-argument cascade
 uses the same handlers, and `settle_native_warning` resumes them at the call
 site. The focused test pins both the warning text and the preserved result.
+### 9.13 Plain positional representation conversions (2026-10-05)
+
+`List.list`, `List.List` and `List.Array` are rows in
+`method_table/positional.rs`. `Array` reaches the same handlers through the
+`List` MRO. The rows admit only non-shaped, non-lazy positional values: plain
+List values share their backing storage, and `.Array` always creates a fresh
+real Array with itemized elements. Shaped and lazy arrays remain on the existing
+cascade because their conversions need dimensional defaults or lazy context.
+
+The focused method-row test covers both positional representations, fresh
+Array storage, itemization, and repeated conversions.
