@@ -1,8 +1,11 @@
 //! Positional collection rows. List.reverse and Array.reverse share a
-//! handler because Rakudo declares the method on both types.
+//! handler because Rakudo declares the method on both types; counted
+//! Any.head and Any.tail use the same handlers in the table and cascade.
 
 use super::{Handler, MethodRow};
+use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
+use num_traits::ToPrimitive;
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
@@ -28,6 +31,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "reverse",
         arity: 0,
         handler: Handler::Narrow(reverse),
+    },
+    MethodRow {
+        owner: "Any",
+        name: "head",
+        arity: 1,
+        handler: Handler::Narrow(head),
+    },
+    MethodRow {
+        owner: "Any",
+        name: "tail",
+        arity: 1,
+        handler: Handler::Narrow(tail),
     },
     MethodRow {
         owner: "List",
@@ -99,6 +114,112 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
 // Cost: O(1), an emptiness test.
 fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::truth(target.truthy()))
+}
+
+/// The counted `Any.head` implementation shared by its row and the native
+/// cascade. It decomposes the receiver's own elements, independent of the
+/// itemization it carries as an element of another container (ADR-0040
+/// slices 1-2).
+// Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
+// e = receiver elements materialized before selecting a window.
+pub(crate) fn head(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let [arg] = args else {
+        return None;
+    };
+    let n: i64 = match arg.view() {
+        ValueView::Int(i) => i,
+        ValueView::Rat(num, den) => {
+            if den == 0 {
+                0
+            } else {
+                num / den
+            }
+        }
+        ValueView::Num(f) => f as i64,
+        ValueView::BigInt(bi) => {
+            // For very large BigInts that don't fit in i64:
+            // negative => treat as negative (returns empty), positive => clamp to MAX
+            bi.to_i64()
+                .unwrap_or(if bi.sign() == num_bigint::Sign::Minus {
+                    -1
+                } else {
+                    i64::MAX
+                })
+        }
+        _ => return None,
+    };
+    if n <= 0 {
+        return Some(Ok(Value::seq(vec![])));
+    }
+    let n = n as usize;
+    match target.view() {
+        ValueView::Array(items, kind) => {
+            let count = n.min(items.len());
+            let values = if kind.is_immutable_list() {
+                items[..count].to_vec()
+            } else {
+                (0..count)
+                    .map(|i| {
+                        target
+                            .array_slot_ref(i, true)
+                            .unwrap_or_else(|| items[i].clone())
+                    })
+                    .collect()
+            };
+            Some(Ok(Value::seq(values)))
+        }
+        ValueView::Range(a, b) => {
+            let items: Vec<Value> = (a..=b).take(n).map(Value::int).collect();
+            Some(Ok(Value::seq(items)))
+        }
+        // An unbounded range of any element type: step `n` times.
+        _ if let Some(mut steps) = crate::runtime::unbounded_range::Steps::new(target) => {
+            Some(Ok(Value::seq(steps.take(n))))
+        }
+        _ => Some(Ok(Value::seq(runtime::with_receiver_items(
+            target,
+            |items| items[..n.min(items.len())].to_vec(),
+        )))),
+    }
+}
+
+/// The counted `Any.tail` implementation shared by its row and the native
+/// cascade, preserving mutable Array element cells.
+// Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
+// e = receiver elements materialized before selecting a window.
+pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let [arg] = args else {
+        return None;
+    };
+    if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") {
+        return None;
+    }
+    let n = match arg.view() {
+        ValueView::Int(i) if i > 0 => usize::try_from(i).unwrap_or(usize::MAX),
+        ValueView::Int(_) => return Some(Ok(Value::seq(Vec::new()))),
+        _ => return None,
+    };
+    match target.view() {
+        ValueView::Array(items, kind) => {
+            let start = items.len().saturating_sub(n);
+            let values = if kind.is_immutable_list() {
+                items[start..].to_vec()
+            } else {
+                (start..items.len())
+                    .map(|i| {
+                        target
+                            .array_slot_ref(i, true)
+                            .unwrap_or_else(|| items[i].clone())
+                    })
+                    .collect()
+            };
+            Some(Ok(Value::seq(values)))
+        }
+        _ => Some(Ok(Value::seq(runtime::with_receiver_items(
+            target,
+            |items| items[items.len().saturating_sub(n)..].to_vec(),
+        )))),
+    }
 }
 
 /// The one implementation used by the List row and the native cascade. The
