@@ -110,6 +110,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Pure(antipairs),
     },
+    MethodRow {
+        owner: "List",
+        name: "eager",
+        arity: 0,
+        handler: Handler::Narrow(eager),
+    },
 ];
 
 fn len(target: &Value) -> i64 {
@@ -183,6 +189,17 @@ pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, Runtim
         ),
         false,
     ))
+}
+
+// Cost: O(1), a plain positional value is already eager and is returned as-is.
+pub(crate) fn eager(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    match target.view() {
+        ValueView::Array(_, kind) if !kind.is_lazy() => Some(Ok(target.clone())),
+        _ => None,
+    }
 }
 
 // Cost: O(1), an emptiness test.

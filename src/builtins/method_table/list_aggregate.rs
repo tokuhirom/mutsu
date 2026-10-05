@@ -17,6 +17,10 @@ macro_rules! rows {
 }
 
 pub(super) static ANY_ROWS: &[MethodRow] = rows!["Any":
+    "min" => min,
+    "max" => max,
+    "minpairs" => minpairs,
+    "maxpairs" => maxpairs,
     "minmax" => minmax,
     "sum" => sum,
 ];
@@ -25,6 +29,153 @@ pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
     "permutations" => permutations,
     "combinations" => combinations,
 ];
+
+fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
+    let items = match target.view() {
+        ValueView::Array(items, _) => items.to_vec(),
+        ValueView::Str(_)
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(..)
+        | ValueView::FatRat(..)
+        | ValueView::BigRat(..)
+        | ValueView::Complex(..) => vec![target.clone()],
+        _ => return None,
+    };
+    if items.iter().all(plain_extrema_value) {
+        Some(items)
+    } else {
+        None
+    }
+}
+
+fn plain_extrema_value(value: &Value) -> bool {
+    matches!(
+        value.view(),
+        ValueView::Bool(_)
+            | ValueView::Str(_)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+    )
+}
+
+fn extrema(target: &Value, args: &[Value], want_max: bool) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    if let ValueView::Hash(map) = target.view() {
+        let mut best: Option<(Value, Value)> = None;
+        for (key, value) in map.iter() {
+            let typed_key = map.typed_key(key);
+            if best.as_ref().is_none_or(|(current, _)| {
+                let ordering = crate::runtime::compare_values(&typed_key, current);
+                (want_max && ordering > 0) || (!want_max && ordering < 0)
+            }) {
+                best = Some((typed_key, map.typed_pair(key, value.clone())));
+            }
+        }
+        return Some(Ok(best.map_or_else(
+            || {
+                if want_max {
+                    Value::num(f64::NEG_INFINITY)
+                } else {
+                    Value::num(f64::INFINITY)
+                }
+            },
+            |(_, pair)| pair,
+        )));
+    }
+    let items = plain_extrema_items(target)?;
+    let Some(mut best) = items.first().cloned() else {
+        return Some(Ok(if want_max {
+            Value::num(f64::NEG_INFINITY)
+        } else {
+            Value::num(f64::INFINITY)
+        }));
+    };
+    for item in items.iter().skip(1) {
+        let ordering = crate::runtime::compare_values(item, &best);
+        if (want_max && ordering > 0) || (!want_max && ordering < 0) {
+            best = item.clone();
+        }
+    }
+    Some(Ok(best))
+}
+
+// Cost: O(e), e = plain positional elements compared with the running extremum.
+pub(crate) fn min(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    extrema(target, args, false)
+}
+
+// Cost: O(e), e = plain positional elements compared with the running extremum.
+pub(crate) fn max(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    extrema(target, args, true)
+}
+
+fn extrema_pairs(
+    target: &Value,
+    args: &[Value],
+    want_max: bool,
+) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    if let ValueView::Hash(map) = target.view() {
+        let mut best: Option<Value> = None;
+        let mut result = Vec::new();
+        for (key, value) in map.iter() {
+            let pair = map.typed_pair(key, value.clone());
+            let ordering = best.as_ref().map_or(std::cmp::Ordering::Equal, |current| {
+                crate::runtime::compare_values(value, current).cmp(&0)
+            });
+            let replaces = best.is_none()
+                || (want_max && ordering == std::cmp::Ordering::Greater)
+                || (!want_max && ordering == std::cmp::Ordering::Less);
+            if replaces {
+                best = Some(value.clone());
+                result.clear();
+                result.push(pair);
+            } else if ordering == std::cmp::Ordering::Equal {
+                result.push(pair);
+            }
+        }
+        return Some(Ok(Value::seq(result)));
+    }
+    let items = plain_extrema_items(target)?;
+    if items.is_empty() {
+        return Some(Ok(Value::seq(Vec::new())));
+    }
+    let mut best = items[0].clone();
+    let mut result = vec![Value::value_pair(Value::int(0), best.clone())];
+    for (index, item) in items.iter().enumerate().skip(1) {
+        let ordering = crate::runtime::compare_values(item, &best);
+        let replaces = (want_max && ordering > 0) || (!want_max && ordering < 0);
+        if replaces {
+            best = item.clone();
+            result.clear();
+            result.push(Value::value_pair(Value::int(index as i64), item.clone()));
+        } else if ordering == 0 {
+            result.push(Value::value_pair(Value::int(index as i64), item.clone()));
+        }
+    }
+    Some(Ok(Value::seq(result)))
+}
+
+// Cost: O(e), e = plain positional elements compared with the running extremum.
+pub(crate) fn minpairs(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    extrema_pairs(target, args, false)
+}
+
+// Cost: O(e), e = plain positional elements compared with the running extremum.
+pub(crate) fn maxpairs(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    extrema_pairs(target, args, true)
+}
 
 /// The inclusive range from the minimum to maximum values in an Any receiver's list.
 // Cost: O(e), e = elements and their minimum/maximum candidates.

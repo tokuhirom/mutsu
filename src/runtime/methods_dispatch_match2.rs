@@ -290,9 +290,22 @@ impl Interpreter {
                 let block = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.nodemap_iterate(&block, &target))
             }
+            "max" | "min" if args.is_empty() => {
+                let result = if method == "max" {
+                    crate::builtins::method_table::list_aggregate::max(&target, &args)
+                } else {
+                    crate::builtins::method_table::list_aggregate::min(&target, &args)
+                };
+                result.or_else(|| Some(self.dispatch_min_max_method(target, method, args)))
+            }
             "max" | "min" => Some(self.dispatch_min_max_method(target, method, args)),
             "minpairs" | "maxpairs" if args.is_empty() => {
-                Some(self.dispatch_minmaxpairs(target, method))
+                let result = if method == "maxpairs" {
+                    crate::builtins::method_table::list_aggregate::maxpairs(&target, &args)
+                } else {
+                    crate::builtins::method_table::list_aggregate::minpairs(&target, &args)
+                };
+                result.or_else(|| Some(self.dispatch_minmaxpairs(target, method)))
             }
             "pop" => Some(self.dispatch_pop_method(target, args)),
             "sort" => Some(self.dispatch_sort_method(target, args)),
