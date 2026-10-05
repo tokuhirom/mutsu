@@ -474,3 +474,28 @@ Callgrind on profiling builds against `f643c43`, with 20,000 iterations
 calling `head(3)` and `tail(3)` on both a List and an Array each iteration,
 fell from 1,635,670,247 to 637,274,373 instructions (-61.04%). Each binary was
 run twice and the second run is recorded; the benchmark has no module load.
+
+### 9.6 Collection transformations (2026-10-05)
+
+`Any.flat`, `List.flat` and `Array.flat`, `Any.sort` and `List.sort`, and
+`Any.unique` and `Any.repeated` are rows in `method_table/list_transform.rs`.
+Each handler is also the implementation used by the native cascade for
+receivers the table cannot cover. `sort` keeps its interpreter path for a
+comparator argument or an Array whose elements need a user-dispatched
+stringifier; the pure row handles zero-argument reified Arrays, plain Hashes
+and simple scalars. Seq, Range, Set/Bag/Mix, Uni and itemized Array sorting
+keep their collection-specific path. `unique` decomposes a plain Hash into its
+Pair elements and declines collections whose identity keys require user
+`WHICH` dispatch. The test pins nested List flattening, itemized Array
+children, collection-specific sort fallbacks, Hash pairs, unique and repeated
+results, user `WHICH`, nonzero-arity fallback and repeated call sites. The
+focused method-row test and four relevant `S32-list` roast files pass.
+
+### 9.7 Per-slice measurement policy (2026-10-05)
+
+By user decision, do not run a local callgrind A/B or require a per-family
+performance number for the remaining migration slices. The first slice and
+multiple later family slices already measured the row lane's repeated dispatch
+gain. This supersedes §5's per-family measurement requirement for the rest of
+ADR-11276's migration; focused behavior checks and the ordinary pre-publication
+gate still apply. Standard CI benchmark reporting is unchanged.
