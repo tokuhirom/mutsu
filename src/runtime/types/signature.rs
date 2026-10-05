@@ -150,7 +150,8 @@ pub(in crate::runtime) fn indexed_varref_from_value(
 }
 
 /// Wrap an integer value to fit within a native integer type's range
-/// for function parameter binding.
+/// for function parameter binding. A declared native type uses the core type
+/// with the same REPR width and signedness, resolved through its `NativeDecl`.
 /// For full-width native types (int/int64/uint/uint64), out-of-range values
 /// cause an error (cannot unbox too-wide bigint into native integer).
 ///
@@ -159,6 +160,7 @@ pub(in crate::runtime) fn indexed_varref_from_value(
 /// coercion for a `int`-typed parameter (#8686 Phase 0) instead of
 /// re-deriving the Bool-unbox/range-check/wrap logic.
 pub(crate) fn wrap_native_int_for_binding(
+    interpreter: &Interpreter,
     constraint: &str,
     val: Value,
 ) -> Result<Value, crate::value::RuntimeError> {
@@ -167,9 +169,9 @@ pub(crate) fn wrap_native_int_for_binding(
     use num_traits::ToPrimitive;
 
     let (base, _) = strip_type_smiley(constraint);
-    if !native_types::is_native_int_type(base) {
+    let Some(native_type) = interpreter.native_int_binding_type(constraint) else {
         return Ok(val);
-    }
+    };
     // A native parameter binds the bare value, never an item: an anonymous
     // `my $ = 200` argument arrives itemized. (A container cell passes
     // through untouched below -- an `int $pos is rw` parameter binds it.)
@@ -190,29 +192,29 @@ pub(crate) fn wrap_native_int_for_binding(
         // always in range for the full-width types (the overflow errors below
         // are about `BigInt`s), and the narrower ones wrap.
         ValueView::Int(n) => {
-            return Ok(native_types::wrap_native_int_value(base, n).unwrap_or(val));
+            return Ok(native_types::wrap_native_int_value(native_type, n).unwrap_or(val));
         }
         ValueView::BigInt(n) => (**n).clone(),
         _ => return Ok(val),
     };
-    if native_types::is_in_native_range(base, &big_val) {
+    if native_types::is_in_native_range(native_type, &big_val) {
         return Ok(val);
     }
     // Full-width signed native types don't wrap — they should throw on overflow.
-    if matches!(base, "int" | "int64") {
+    if matches!(native_type, "int" | "int64") {
         return Err(crate::value::RuntimeError::new(format!(
             "Cannot unbox {} bit wide bigint into native integer",
             big_val.bits()
         )));
     }
     // Full-width unsigned types: positive overflow throws, negative values wrap.
-    if matches!(base, "uint" | "uint64") && big_val > NumBigInt::from(0u64) {
+    if matches!(native_type, "uint" | "uint64") && big_val > NumBigInt::from(0u64) {
         return Err(crate::value::RuntimeError::new(format!(
             "Cannot unbox {} bit wide bigint into native integer",
             big_val.bits()
         )));
     }
-    let wrapped = native_types::wrap_native_int(base, &big_val);
+    let wrapped = native_types::wrap_native_int(native_type, &big_val);
     Ok(wrapped
         .to_i64()
         .map(Value::int)

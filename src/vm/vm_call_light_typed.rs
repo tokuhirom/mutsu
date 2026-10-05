@@ -232,6 +232,7 @@ impl Interpreter {
                                 let pd = &cf.param_defs[i];
                                 bind_err =
                                     Some(match crate::runtime::types::wrap_native_int_for_binding(
+                                        self,
                                         tc,
                                         val.clone(),
                                     ) {
@@ -277,7 +278,8 @@ impl Interpreter {
                         {
                             // Under the parameter's own spelling, so a sized
                             // type wraps to its width (#9506).
-                            match crate::runtime::types::wrap_native_int_for_binding(tc, val) {
+                            match crate::runtime::types::wrap_native_int_for_binding(self, tc, val)
+                            {
                                 Ok(v) => v,
                                 Err(e) => {
                                     bind_err = Some(e);
