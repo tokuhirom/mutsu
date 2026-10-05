@@ -47,6 +47,7 @@ pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
 pub(crate) mod map;
 mod num;
+pub(crate) mod positional;
 mod rational;
 pub(crate) mod real;
 pub(crate) mod str;
@@ -100,6 +101,7 @@ static FAMILIES: &[&[MethodRow]] = &[
     list_transform::LIST_ROWS,
     list_transform::ARRAY_ROWS,
     map::ROWS,
+    positional::ROWS,
     str::ROWS,
     str::STR_TEXT_ROWS,
     str::COOL_TEXT_ROWS,
