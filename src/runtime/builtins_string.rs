@@ -464,6 +464,7 @@ impl Interpreter {
             return Ok(Vec::new());
         }
         let chars: Vec<char> = text.chars().collect();
+        let grapheme_index = crate::builtins::grapheme_index::GraphemeIndex::build(text);
         // One target for the whole walk. Each `MatchTarget` copies the subject
         // and its char vector, so building one per separator made a regex split
         // O(separators x subject) -- 11.9 s on 80 KB against rakudo's 0.26 s
@@ -479,6 +480,7 @@ impl Interpreter {
         let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
         let mut splits_done = 0;
         let mut pos = 0;
+        let mut byte_pos = 0;
         // Per splitter: `None` = not searched yet, `Some(None)` = no match at
         // or after the last search start (so none ever again), `Some(Some(m))`
         // = its first match at or after an earlier cursor, still valid while
@@ -506,7 +508,14 @@ impl Interpreter {
                     None => true,
                 };
                 if stale {
-                    next[idx] = Some(self.split_list_find(splitter, &target, &chars, pos));
+                    next[idx] = Some(self.split_list_find(
+                        splitter,
+                        &target,
+                        text,
+                        &grapheme_index,
+                        &chars,
+                        SplitCursor { char_pos: pos, byte_pos },
+                    ));
                 }
                 let Some(Some(m)) = &next[idx] else { continue };
                 let is_better = match best {
@@ -531,6 +540,7 @@ impl Interpreter {
                     CachedSplitMatch {
                         from,
                         to,
+                        byte_to,
                         matched,
                         caps,
                     },
@@ -550,9 +560,13 @@ impl Interpreter {
                         }),
                     ));
                     pos = to;
+                    byte_pos = byte_to;
                     if pos == from {
-                        // Zero-width match: advance by one
+                        // Zero-width match: advance by one codepoint.
                         pos += 1;
+                        if let Some(ch) = chars.get(from) {
+                            byte_pos += ch.len_utf8();
+                        }
                     }
                     splits_done += 1;
                 }
@@ -570,9 +584,16 @@ impl Interpreter {
 struct CachedSplitMatch {
     from: usize,
     to: usize,
+    byte_to: usize,
     matched: String,
     /// `Some` exactly when the splitter is a regex.
     caps: Option<RegexCaptures>,
+}
+
+/// Character and byte offsets at the same split cursor.
+struct SplitCursor {
+    char_pos: usize,
+    byte_pos: usize,
 }
 
 impl Interpreter {
@@ -583,32 +604,54 @@ impl Interpreter {
         &mut self,
         splitter: &Value,
         target: &MatchTarget,
+        text: &str,
+        grapheme_index: &crate::builtins::grapheme_index::GraphemeIndex,
         chars: &[char],
-        pos: usize,
+        cursor: SplitCursor,
     ) -> Option<CachedSplitMatch> {
         let caps = match splitter.view() {
-            ValueView::Regex(p) => self.regex_match_with_captures_from_target(&p, target, pos),
+            ValueView::Regex(p) => {
+                self.regex_match_with_captures_from_target(&p, target, cursor.char_pos)
+            }
             ValueView::RegexWithAdverbs(a) => {
-                self.regex_match_with_captures_from_target(&a.pattern, target, pos)
+                self.regex_match_with_captures_from_target(&a.pattern, target, cursor.char_pos)
             }
             _ => {
                 let sep = splitter.to_string_value();
-                if sep.is_empty() {
+                if sep.is_empty() || cursor.byte_pos > text.len() {
                     return None;
                 }
                 let sep_chars: Vec<char> = sep.chars().collect();
-                let from = crate::builtins::split::find_chars(chars, &sep_chars, pos)?;
+                let from_byte = crate::builtins::grapheme_index::find_graphemes(
+                    text,
+                    grapheme_index,
+                    cursor.byte_pos,
+                    &sep,
+                )?;
+                let from = cursor.char_pos + text[cursor.byte_pos..from_byte].chars().count();
                 return Some(CachedSplitMatch {
                     from,
                     to: from + sep_chars.len(),
+                    byte_to: from_byte + sep.len(),
                     matched: sep,
                     caps: None,
                 });
             }
         }?;
+        let byte_from = cursor.byte_pos
+            + chars[cursor.char_pos..caps.from]
+                .iter()
+                .map(|ch| ch.len_utf8())
+                .sum::<usize>();
+        let byte_to = byte_from
+            + chars[caps.from..caps.to]
+                .iter()
+                .map(|ch| ch.len_utf8())
+                .sum::<usize>();
         Some(CachedSplitMatch {
             from: caps.from,
             to: caps.to,
+            byte_to,
             matched: chars[caps.from..caps.to].iter().collect(),
             caps: Some(caps),
         })

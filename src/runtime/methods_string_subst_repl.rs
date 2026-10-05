@@ -1,5 +1,37 @@
-use super::methods_string::SubstCaseTransforms;
 use super::*;
+
+/// The `:samecase`/`:samemark`/`:samespace` substitution adverbs, applied to a
+/// computed replacement against the matched text (shared with the `s///`
+/// operator via `apply_subst_case_transforms`).
+#[derive(Clone, Copy, Default)]
+pub(super) struct SubstCaseTransforms {
+    pub samecase: bool,
+    pub samemark: bool,
+    pub sigspace: bool,
+    pub samespace: bool,
+}
+
+impl SubstCaseTransforms {
+    fn any(&self) -> bool {
+        // `:sigspace`/`:samespace` imply `:samemark` (see
+        // `apply_subst_case_transforms`), so a bare `:s` still needs the transform.
+        self.samecase || self.samemark || self.samespace || self.sigspace
+    }
+
+    pub(super) fn apply(&self, replacement: &str, matched: &str) -> String {
+        if !self.any() {
+            return replacement.to_string();
+        }
+        crate::vm::vm_string_regex_ops::apply_subst_case_transforms(
+            replacement,
+            matched,
+            self.samecase,
+            self.samemark,
+            self.sigspace,
+            self.samespace,
+        )
+    }
+}
 
 impl Interpreter {
     /// The leftmost, non-overlapping matches of `pattern` in `text` from char
