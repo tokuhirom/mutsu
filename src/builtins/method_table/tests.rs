@@ -99,6 +99,19 @@ fn lookup_walks_the_mro() {
     );
 }
 
+#[test]
+fn counted_head_tail_rows_resolve_for_every_plain_shape() {
+    for name in ["head", "tail"] {
+        for shape in SHAPES {
+            assert_eq!(
+                lookup(shape, Symbol::intern(name), 1).unwrap().owner,
+                "Any",
+                "Any.{name} should resolve for {shape:?}"
+            );
+        }
+    }
+}
+
 /// A big-component rational has the shape of the type its flag names.
 #[test]
 fn big_rationals_take_their_type_s_shape() {

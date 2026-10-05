@@ -459,3 +459,18 @@ Map that calls each view and reads its `.elems`, fell from 1,631,207,873 to
 second run is recorded. The baseline was built from `0f0ffdf`; the only
 intervening `main` commit (`e4ef467`) changed documentation, so its executable
 sources were identical.
+
+### 9.5 Counted `Any.head` and `Any.tail` (2026-10-05)
+
+The one-argument forms are rows owned by `Any` for every receiver shape the
+table covers. `method_table/list.rs` holds their handlers, and the native
+cascade calls those same handlers for shapes outside the table. `Handler::Narrow`
+keeps unsupported argument forms on the cascade path. `tail` returns an empty
+Seq for a non-positive `Int` count before unsigned slicing; the old native
+gate bypassed `tail`, so this guard is part of safely admitting its plain
+receiver shapes. Array results still carry writable element cells.
+
+Callgrind on profiling builds against `f643c43`, with 20,000 iterations
+calling `head(3)` and `tail(3)` on both a List and an Array each iteration,
+fell from 1,635,670,247 to 637,274,373 instructions (-61.04%). Each binary was
+run twice and the second run is recorded; the benchmark has no module load.
