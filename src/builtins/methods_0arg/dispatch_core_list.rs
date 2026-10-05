@@ -10,6 +10,12 @@ pub(super) fn dispatch(
     match method {
         // Cost: O(1) on a reified list/array, hash, set/bag/mix or buf (a length read).
         "end" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(Some(crate::builtins::method_table::any_collection::end(
+                    target,
+                    &[],
+                )));
+            }
             // A lazy (infinite-backed) array/list has no last index; raku throws
             // `X::Cannot::Lazy` (`Cannot .elems a lazy list`) rather than
             // returning the capped backing's last index.
@@ -57,7 +63,16 @@ pub(super) fn dispatch(
             &[],
         )),
         // Cost: O(e), e = elements passed to the shared List row handler.
-        "reverse" => Some(crate::builtins::method_table::list::reverse(target, &[])),
+        "reverse" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                Some(crate::builtins::method_table::any_collection::reverse(
+                    target,
+                    &[],
+                ))
+            } else {
+                Some(crate::builtins::method_table::list::reverse(target, &[]))
+            }
+        }
         // Cost: O(e) average for bucketed values, O(e * u) otherwise;
         // e = elements, u = distinct values of kinds that require equality scans.
         "unique" => Some(crate::builtins::method_table::list_transform::unique(

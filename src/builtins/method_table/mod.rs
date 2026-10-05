@@ -38,6 +38,7 @@
 //! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+pub(crate) mod any_collection;
 pub(crate) mod coerce;
 pub(crate) mod complex;
 mod int;
@@ -91,6 +92,7 @@ pub(crate) struct MethodRow {
 
 /// Every family's rows. A family module owns the rows of one declaring type.
 static FAMILIES: &[&[MethodRow]] = &[
+    any_collection::ROWS,
     list::ROWS,
     list_aggregate::ANY_ROWS,
     list_aggregate::LIST_ROWS,
