@@ -552,7 +552,7 @@ impl Interpreter {
                     .type_constraint
                     .as_deref()
                     .unwrap_or("int");
-                match crate::runtime::types::wrap_native_int_for_binding(tc, val) {
+                match crate::runtime::types::wrap_native_int_for_binding(self, tc, val) {
                     Ok(coerced) => self.stack[args_base + param_idx] = coerced,
                     Err(e) => {
                         native_coerce_err = Some(e);
@@ -618,7 +618,8 @@ impl Interpreter {
                 None if tc != "int" && crate::runtime::native_types::is_native_int_type(tc) => {
                     let pd = &cf.param_defs[param_idx];
                     let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
-                    match crate::runtime::types::wrap_native_int_for_binding(tc, val.clone()) {
+                    match crate::runtime::types::wrap_native_int_for_binding(self, tc, val.clone())
+                    {
                         // A type object: the binder's own "Cannot unbox" error.
                         Err(e) => e,
                         Ok(_) => self

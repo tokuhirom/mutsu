@@ -152,6 +152,23 @@ impl Interpreter {
     pub(crate) fn native_decl(&self, type_name: &str) -> Option<NativeDecl> {
         self.registry().native_decls.get(type_name).cloned()
     }
+
+    /// Resolve a parameter constraint to its core native integer layout, if
+    /// it names either a core native type or a compatible native declaration.
+    // Cost: O(n) average, n = chars in the constraint (the registry lookup hashes it).
+    pub(crate) fn native_int_binding_type<'a>(
+        &self,
+        constraint: &'a str,
+    ) -> Option<&'a str> {
+        let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
+        if crate::runtime::native_types::is_native_int_type(base) {
+            return Some(base);
+        }
+        self.registry()
+            .native_decls
+            .get(base)
+            .and_then(|decl| decl.core_native_name())
+    }
 }
 
 /// `.REPR` of a built-in native type object: `int*`/`uint*`/`byte`/

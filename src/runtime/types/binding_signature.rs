@@ -3423,7 +3423,7 @@ impl Interpreter {
                     }
                     // Wrap native integer values for sub parameter binding (overflow wrapping)
                     if let Some(constraint) = &pd.type_constraint {
-                        value = wrap_native_int_for_binding(constraint, value)?;
+                        value = wrap_native_int_for_binding(self, constraint, value)?;
                     }
                     // Untyped routine $ parameters default to Any, which
                     // rejects Junction (a direct subtype of Mu, not Any).
