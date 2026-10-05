@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 8;
 
 # A rule called without arguments binds its defaulted parameters.
 grammar G {
@@ -32,3 +32,19 @@ grammar T {
     }
 }
 ok T.parse("ok\n    ok\n        ok\n    ok\nok\n"), 'nested sub-test';
+
+# Named defaults take the same binding path as positional defaults when a
+# parameterized token is invoked as a bare subrule.
+grammar N {
+    token TOP { <n> }
+    token n(:$k = 'z') { $k }
+}
+ok N.parse('z'), 'named default bound for a bare subrule';
+nok N.parse('x'), 'bare subrule matches its named default';
+ok N.parse('z', :rule<n>), 'named default bound for a selected start rule';
+
+grammar E {
+    token TOP { <n(:k<y>)> }
+    token n(:$k = 'z') { $k }
+}
+ok E.parse('y'), 'explicit named subrule argument overrides the default';
