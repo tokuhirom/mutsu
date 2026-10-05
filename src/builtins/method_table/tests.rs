@@ -48,8 +48,8 @@ fn no_row_is_registered_twice() {
 }
 
 /// Every row is reachable from at least one shape, and answers a plain
-/// receiver of that shape with a value -- a row nothing can reach, or whose
-/// handler refuses the receivers it is reached for, buys nothing.
+/// receiver of every shape it resolves for. An error is still an answer: the
+/// receiver may fail the method's semantics (for example, summing Hash Pairs).
 #[test]
 fn every_row_is_reached_and_answers() {
     for row in rows() {
@@ -65,7 +65,7 @@ fn every_row_is_reached_and_answers() {
             let args = vec![Value::int(0); usize::from(row.arity)];
             let result = try_dispatch(&sample(shape), Symbol::intern(row.name), &args);
             assert!(
-                matches!(result, Some(Ok(_))),
+                result.is_some(),
                 "{}.{} on a {shape:?} did not answer",
                 row.owner,
                 row.name
@@ -214,4 +214,40 @@ fn count_rows_reach_their_subtypes() {
         assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
         assert_eq!(lookup(DispatchShape::Hash, sym, 0).unwrap().owner, "Map");
     }
+}
+
+#[test]
+fn aggregate_rows_resolve_to_the_rakudo_owners() {
+    for name in ["minmax", "sum"] {
+        let sym = Symbol::intern(name);
+        assert_eq!(
+            lookup(DispatchShape::List, sym, 0).unwrap().owner,
+            "Any",
+            "Any.{name} should resolve for List"
+        );
+        assert_eq!(
+            lookup(DispatchShape::Array, sym, 0).unwrap().owner,
+            "Any",
+            "Any.{name} should resolve for Array"
+        );
+        assert!(
+            lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
+            "Any.{name} should resolve for Hash"
+        );
+    }
+    for name in ["permutations", "combinations"] {
+        let sym = Symbol::intern(name);
+        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
+        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
+        assert!(lookup(DispatchShape::Hash, sym, 0).is_none());
+    }
+}
+
+#[test]
+fn hash_sum_rejects_its_pair_list() {
+    let result = try_dispatch(&sample(DispatchShape::Hash), Symbol::intern("sum"), &[]);
+    assert!(
+        matches!(result, Some(Err(_))),
+        "Hash.sum should reject Pairs"
+    );
 }

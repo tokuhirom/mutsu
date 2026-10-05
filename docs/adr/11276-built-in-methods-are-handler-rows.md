@@ -499,3 +499,17 @@ multiple later family slices already measured the row lane's repeated dispatch
 gain. This supersedes §5's per-family measurement requirement for the rest of
 ADR-11276's migration; focused behavior checks and the ordinary pre-publication
 gate still apply. Standard CI benchmark reporting is unchanged.
+
+### 9.8 List aggregate family (2026-10-05)
+
+Any now owns rows for minmax and sum; List owns permutations and combinations,
+which Array inherits through its MRO. The rows and native cascade call the same
+implementations. Any's aggregate rows cover all nine plain receiver shapes;
+Hash is viewed as its List of Pairs, so `Hash.minmax` compares those Pairs and
+`Hash.sum` reports the missing `Numeric(Pair)` candidate. Sum keeps its Junction
+handling, Raku numeric string grammar, numeric promotion and range behavior.
+The combinator methods keep their lazy Seq results and ordering.
+Squish remains on the interpreter path: its default comparison is ===/WHICH and
+can call a user method, which a Pure row cannot. The focused aggregate
+method-row test checks the Rakudo owners, scalar/Hash behavior and Seq/Range
+cascade paths; all files under roast/S32-list pass.
