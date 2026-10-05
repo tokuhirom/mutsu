@@ -339,11 +339,11 @@ impl Interpreter {
                         (c, plain)
                     })
                     .collect();
-                // An element with its own `Str`/`Stringy` orders through the
-                // dispatched `cmp`, as `.sort` does (see `sort_items_generic`).
+                // An element with its own `Str`/`Stringy`, or a Proxy whose
+                // `FETCH` supplies its value, orders through dispatched `cmp`.
                 if keyed
                     .iter()
-                    .any(|(_, v)| self.has_user_stringifier_operand(v))
+                    .any(|(_, v)| v.is_proxy_value() || self.has_user_stringifier_operand(v))
                 {
                     keyed.sort_by(|a, b| {
                         crate::runtime::methods_collection_ops::sort::dispatched_cmp_ordering(

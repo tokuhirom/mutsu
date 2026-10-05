@@ -12,13 +12,15 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
 
 /// Whether a default-order sort over `items` must leave the pure
 /// [`compare_values`] fast path: an object element may define its own
-/// `Str`/`Stringy`, which only the dispatched `infix:<cmp>` honours (see
-/// `sort_items_generic`). Pure layers decline and let the interpreter decide.
+/// `Str`/`Stringy`, or an element is a `Proxy` whose `FETCH` must run before
+/// comparison (see `sort_items_generic`). Pure layers decline and let the
+/// interpreter decide.
 // Cost: O(e), e = elements (one tag probe each).
 pub(crate) fn sort_needs_dispatched_cmp<'a>(items: impl IntoIterator<Item = &'a Value>) -> bool {
-    items
-        .into_iter()
-        .any(|v| matches!(v.deref_container().view(), ValueView::Instance { .. }))
+    items.into_iter().any(|v| {
+        let value = v.deref_container();
+        value.is_proxy_value() || matches!(value.view(), ValueView::Instance { .. })
+    })
 }
 
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {

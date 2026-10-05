@@ -380,6 +380,11 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 flatten_into(&mut counts, &mut original_keys, item, true)?;
             }
         }
+        ValueView::Slip(items) => {
+            for item in items.iter() {
+                flatten_into(&mut counts, &mut original_keys, item, true)?;
+            }
+        }
         ValueView::Array(items, _) => {
             for item in items.iter() {
                 flatten_into(&mut counts, &mut original_keys, item, false)?;

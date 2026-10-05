@@ -56,14 +56,15 @@ fn method_lvalue_assign_expr_with_intent(
     if method_name == "item" && method_args.is_empty() {
         return crate::parser::expr::precedence::assign_to_target_expr(target, value);
     }
-    // A Slip RHS (`self.x = |@v`) would flatten into this call's trailing
-    // arguments, keeping only its first element as the value; carry it as the
-    // one list it assigns instead.
+    // A Slip RHS is the value assigned to the accessor, not an interpolation
+    // into this generated helper call. Group it so the call compiler preserves
+    // the Slip itself; putting it in an ArrayLiteral would flatten it into a
+    // List before the target's `$`/`@`/`%` assignment semantics can apply.
     let value = match value {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Pipe,
             ..
-        } => Expr::ArrayLiteral(vec![value]),
+        } => Expr::Grouped(Box::new(value)),
         other => other,
     };
     let mut args = vec![
@@ -125,6 +126,13 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
     method_args: Vec<Expr>,
     value: Expr,
 ) -> Expr {
+    let value = match value {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Pipe,
+            ..
+        } => Expr::Grouped(Box::new(value)),
+        other => other,
+    };
     let name_expr = if modifier == Some('!') {
         Expr::Binary {
             left: Box::new(Expr::Literal(Value::str_from("!"))),

@@ -4986,13 +4986,20 @@ impl Compiler {
                 } else {
                     Expr::Var(var_name.clone())
                 };
+                let value = match value {
+                    Expr::Unary {
+                        op: TokenKind::Pipe,
+                        ..
+                    } => Expr::Grouped(Box::new(value.clone())),
+                    _ => value.clone(),
+                };
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
                         invocant,
                         Expr::Literal(Value::str(method_name.clone())),
                         Expr::ArrayLiteral(method_args.clone()),
-                        value.clone(),
+                        value,
                         Expr::Literal(Value::str(var_name.clone())),
                     ],
                 };

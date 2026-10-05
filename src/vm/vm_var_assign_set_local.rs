@@ -1270,6 +1270,46 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+                // This fast path returns before the declaration bookkeeping
+                // below. A same-named fresh `my $x = %source` can enter with
+                // the previous scope's captured cell already in its slot and
+                // env; treating that as the scalar's own holder writes the
+                // itemized share into the outer capture. Mirror the cell reset
+                // that the regular declaration path performs before storing.
+                if is_vardecl {
+                    let self_captured_decl = !code.self_capture_decl_locals.is_empty()
+                        && code
+                            .locals_sym
+                            .get(idx)
+                            .is_some_and(|sym| code.self_capture_decl_locals.contains(sym));
+                    if !self_captured_decl
+                        && let Some(sym) = code.locals_sym.get(idx).copied()
+                        && matches!(
+                            self.env().get_sym(sym).map(Value::view),
+                            Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
+                        )
+                    {
+                        if self
+                            .lexicals
+                            .our_scalar_cell_names
+                            .contains(&code.locals[idx])
+                        {
+                            self.env_mut().remove_sym(sym);
+                        } else {
+                            self.env_mut().insert_sym(sym, Value::NIL);
+                        }
+                    }
+                    let bound_by_sibling_lexical = self
+                        .local_bind_pairs
+                        .iter()
+                        .any(|&(source, _)| source == idx);
+                    if !self_captured_decl
+                        && !bound_by_sibling_lexical
+                        && matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
+                    {
+                        self.locals[idx] = Value::NIL;
+                    }
+                }
                 return self.array_share_assign(code, idx, raw_popped, src, is_constant);
             }
         }
