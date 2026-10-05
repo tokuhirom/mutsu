@@ -879,7 +879,7 @@ pub(crate) fn native_method_0arg_cascade(
             | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
             | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
             | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
-            | "msb" | "is-int" | "re" | "im" => {
+            | "msb" | "is-int" => {
                 let coerced = if let Ok(i) = s.parse::<i64>() {
                     Value::int(i)
                 } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
