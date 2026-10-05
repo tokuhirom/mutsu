@@ -461,8 +461,42 @@ impl Interpreter {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
         let mut i = 0usize;
+        // A token's `:my`/`:let` declaration introduces a match-time lexical.
+        // Keep both the declaration and later references to it out of this
+        // caller-scope interpolation pass, which runs before the pattern is
+        // parsed and matched.
+        let mut declared_my_vars = std::collections::HashSet::new();
         while i < chars.len() {
             let ch = chars[i];
+            if ch == ':' {
+                let rest: String = chars[i + 1..].iter().collect();
+                if rest.starts_with("my ")
+                    || rest.starts_with("our ")
+                    || rest.starts_with("constant ")
+                    || rest.starts_with("let ")
+                    || rest.starts_with("temp ")
+                {
+                    let decl_start = i;
+                    while i < chars.len() {
+                        let c = chars[i];
+                        out.push(c);
+                        i += 1;
+                        if c == ';' {
+                            break;
+                        }
+                    }
+                    if rest.starts_with("my ")
+                        || rest.starts_with("let ")
+                        || rest.starts_with("our ")
+                    {
+                        let decl: String = chars[decl_start..i].iter().collect();
+                        declared_my_vars.extend(
+                            crate::runtime::regex_parse_core::scalar_names_in_decl(&decl),
+                        );
+                    }
+                    continue;
+                }
+            }
             if ch == '{' {
                 // A code block is opaque to text interpolation. Its end is
                 // found quote-aware, so a brace inside a string literal — one
@@ -558,7 +592,9 @@ impl Interpreter {
                     None
                 };
                 if let Some((name, end)) = parsed {
-                    if let Some(value) = self
+                    if declared_my_vars.contains(&name) {
+                        out.extend(chars[start..end].iter());
+                    } else if let Some(value) = self
                         .env
                         .get(&name)
                         .cloned()
