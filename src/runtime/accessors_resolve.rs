@@ -35,6 +35,9 @@ impl Interpreter {
             .or(def.role_origin.as_deref())
             .unwrap_or(package_name);
         compiler.set_current_package(method_package.to_string());
+        if let Some((lexical_type_name, _)) = method_package.split_once('\u{0}') {
+            compiler.seed_lexical_type_name(lexical_type_name);
+        }
         compiler.current_distribution = distribution;
         // A method always carries an implicit `*%_` / `*@_` slurpy, so `%_` / `@_`
         // are valid lexicals throughout the body (including a nested signature-less

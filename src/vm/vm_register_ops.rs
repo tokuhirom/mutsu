@@ -456,7 +456,8 @@ impl Interpreter {
                 })
                 .collect()
         };
-        let captures = self.declared_method_capture_envs(code, method_codes, outer_lexical_slots);
+        let captures =
+            self.declared_method_capture_envs(code, class, method_codes, outer_lexical_slots);
         if captures.is_empty() {
             return;
         }
@@ -490,7 +491,7 @@ impl Interpreter {
         outer_lexical_slots: &[(Symbol, u32)],
         type_param_defs: &[crate::ast::ParamDef],
     ) {
-        if outer_lexical_slots.is_empty() {
+        if outer_lexical_slots.is_empty() && !role.contains('\u{0}') {
             return;
         }
         // A role's TYPE PARAMETERS are bound per composition, not captured:
@@ -541,7 +542,8 @@ impl Interpreter {
                 })
                 .collect()
         };
-        let captures = self.declared_method_capture_envs(code, method_codes, outer_lexical_slots);
+        let captures =
+            self.declared_method_capture_envs(code, role, method_codes, outer_lexical_slots);
         if captures.is_empty() {
             return;
         }
@@ -617,9 +619,22 @@ impl Interpreter {
     fn declared_method_capture_envs(
         &mut self,
         code: &CompiledCode,
+        owner: &str,
         method_codes: Vec<(std::sync::Arc<CompiledCode>, Vec<Symbol>)>,
         outer_lexical_slots: &[(Symbol, u32)],
     ) -> std::collections::HashMap<usize, std::cell::RefCell<Vec<Env>>> {
+        let lexical_type_aliases: Vec<Symbol> = owner
+            .split_once('\u{0}')
+            .map(|(qualified, _)| {
+                let qualified = Symbol::intern(qualified);
+                let short = crate::qualified::unqualified_part(qualified);
+                if short == qualified {
+                    vec![qualified]
+                } else {
+                    vec![qualified, short]
+                }
+            })
+            .unwrap_or_default();
         let mut captures: std::collections::HashMap<usize, Vec<Env>> =
             std::collections::HashMap::new();
         for (method_code, signature_reads) in method_codes {
@@ -634,7 +649,15 @@ impl Interpreter {
             // this class declaration, rather than guessing from every slot in
             // this chunk: a class static or later `$x` must not replace the
             // method's normal environment.
-            capture_syms.retain(|sym| outer_lexical_slots.iter().any(|(outer, _)| outer == sym));
+            let captured_type_aliases: Vec<Symbol> = lexical_type_aliases
+                .iter()
+                .copied()
+                .filter(|alias| capture_syms.contains(alias))
+                .collect();
+            capture_syms.retain(|sym| {
+                captured_type_aliases.contains(sym)
+                    || outer_lexical_slots.iter().any(|(outer, _)| outer == sym)
+            });
             if capture_syms.is_empty() {
                 continue;
             }
@@ -645,6 +668,7 @@ impl Interpreter {
             // reads/writes through the method then keep one container.
             let capture_slots: Vec<(Symbol, usize)> = capture_syms
                 .iter()
+                .filter(|sym| !captured_type_aliases.contains(sym))
                 .filter_map(|sym| {
                     outer_lexical_slots
                         .iter()
@@ -669,6 +693,10 @@ impl Interpreter {
                     env.insert_sym(*sym, value.clone());
                 }
             }
+            let owner_type = Value::package(Symbol::intern(owner));
+            for alias in &captured_type_aliases {
+                env.insert_sym(*alias, owner_type.clone());
+            }
             let declared_method_capture = Symbol::intern("__mutsu_declared_method_capture");
             env.insert_sym(declared_method_capture, Value::int(1));
             // `capture_syms` is already restricted to names that the method
@@ -677,6 +705,7 @@ impl Interpreter {
             // lowercase-only predicate would discard their captures.
             env.retain(|sym, _| {
                 *sym == declared_method_capture
+                    || captured_type_aliases.contains(sym)
                     || (capture_syms.contains(sym)
                         && sym.with_str(|name| {
                             crate::env::is_plain_user_lexical(name)
