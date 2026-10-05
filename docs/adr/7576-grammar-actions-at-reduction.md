@@ -40,14 +40,16 @@ dispatch and make the finished tree a mutation transport.
 
 ## Proposed decision
 
-Make the actual subrule reduction the single owner of ordinary grammar-action
-dispatch. When the regex VM returns a subrule result, it dispatches that
-result's action **once in the current interpreter** before the next matching
-step that could observe its effects. The action sees a lazy `Match` over the
+The proposed direction is to make the actual subrule reduction the single
+owner of ordinary grammar-action dispatch. The dispatch point must be an
+explicit logical reduction event that runs before the next matching step that
+could observe the action's effects. The action sees a lazy `Match` over the
 already reduced children. Its `make` result is associated with that capture
 identity, so `.made` and `.ast` on aliases and on later materialized views
 read the same result. The parent capture receives the completed child result;
-there is no post-parse recursive write-back of ordinary actions.
+there is no post-parse recursive write-back of ordinary actions. The prototype
+result below rejects a compiled VM frame return as that event; no authoritative
+dispatch point has been selected yet.
 
 Use a stable, parse-owned reduction record (or an equivalent representation)
 to connect the action result, the capture identity, and the VM's backtrack
@@ -72,6 +74,30 @@ existing compiled call/VM dispatch. Declarative LTM measurement, failure
 position probes, and parse/analysis-only entry points must never dispatch an
 action. Ordinary executable `.parse`/`.subparse` keeps the current trust
 boundary: it may run user code because the caller requested execution.
+
+## Prototype result (2026-10-05)
+
+The first implementation dispatched directly from `file_named_candidate` when a compiled subrule
+frame returned. A same-host, same-workload 60-row Callgrind comparison increased whole-process
+instructions from 3,460,449,887 on the baseline to 9,553,891,859 with the prototype (+176%). The
+prototype entered `dispatch_reduced_subrule` 69,867 times; the baseline's `call_method_with_values`
+had 4,258 calls across all callers. This rejects the prototype as an implementation, although it
+does not by itself identify which repeated matcher path causes the extra work.
+
+An initial table of `space` action counts from a Raku wrapper was not stable across the available
+binary builds, so it is omitted rather than used as semantic evidence. A GDB trace of the prototype's
+first `space` dispatch located it inside the positive lookahead for YAMLish's `<break>` rule. Raku
+also runs actions inside positive lookahead, so suppressing every lookahead action would be wrong.
+The remaining question is which repeated VM call or candidate enumeration causes the extra frame
+returns, and how that path compares with Rakudo's actual action sequence.
+
+Deduplicating by rule, call site and span is not a valid repair: an oracle probe with
+`regex d { a || a || ab }` and an action on `d` produces `a,a,ab`, so two distinct reductions have
+the same call site and span. The caller continuation also must see each path
+(`t/grammar/grammar-subrule-each-path-continuation.t`). The unresolved design problem is to identify
+the logical reduction event without collapsing those paths or dispatching internal matcher retries.
+Keep this ADR Proposed until a focused trace explains the repeated calls and action counts and order
+match Rakudo on both focused cases and the YAMLish workload.
 
 ## Semantics that the prototype must preserve
 
@@ -103,16 +129,17 @@ local gate and roast suite for the implementation.
 
 ## Implementation and measurement plan
 
-1. Instrument one 60-row YAMLish parse by phase: actual reductions, action
-   calls, post-parse walk, Match materializations, deep environment copies,
-   attribute-map clones, and allocator calls. Compare user-visible action
-   counts and order with Rakudo. Do not infer action semantics from mutsu's
-   current traversal.
-2. Prototype a reduction event at the regex VM's subrule-return boundary,
-   using one shared dispatch path for ordinary and `$*`-dependent actions.
+1. Trace the repeated frame returns from the prototype by rule, caller, and
+   call target, starting with the positive `<break>` lookahead. Compare a small
+   action-order probe and the YAMLish action sequence with Rakudo. The wrapper
+   count measurement above is not suitable for this comparison.
+2. Only after that trace, identify and represent the language-level reduction
+   event in the regex VM; a subrule frame return alone is insufficient (see the
+   prototype result above). Use one shared dispatch path for ordinary and `$*`-dependent actions.
    Keep capture identity stable through backtracking and lazy materialization.
-   Replace the replay/walk machinery only after its covered cases pass the
-   Rakudo oracle tests; do not leave two authoritative paths running actions.
+   Replace the replay/walk machinery only after action counts and order match
+   Rakudo on focused cases and the YAMLish workload; do not leave two
+   authoritative paths running actions.
 3. Re-profile the 60-row case and the larger input. Report warm Callgrind Ir
    and allocator calls, then the bench CI `@section` wall-clock ratio on a
    main commit. Also measure actionless grammar parsing to catch overhead
@@ -124,8 +151,9 @@ claim of a 6.57x gain: if removing the post-parse walk and duplicate action
 execution gives less than 2x on the YAMLish section, re-profile the remaining
 cost before expanding the mechanism. A 2x result is useful evidence but is
 insufficient to close #7576; the residual gap still needs a structural cause
-and a measured plan. If eager dispatch cannot preserve the semantics above,
-revise this ADR before implementing it as the authoritative path.
+and a measured plan. The frame-return prototype above failed the action-count
+and performance checks; do not make it authoritative without identifying a
+different reduction boundary and rerunning those checks.
 
 ## Alternatives considered
 
