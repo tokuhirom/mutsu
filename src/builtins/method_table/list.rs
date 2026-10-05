@@ -86,6 +86,30 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Pure(elems),
     },
+    MethodRow {
+        owner: "List",
+        name: "values",
+        arity: 0,
+        handler: Handler::Pure(values),
+    },
+    MethodRow {
+        owner: "List",
+        name: "kv",
+        arity: 0,
+        handler: Handler::Pure(kv),
+    },
+    MethodRow {
+        owner: "List",
+        name: "pairs",
+        arity: 0,
+        handler: Handler::Pure(pairs),
+    },
+    MethodRow {
+        owner: "List",
+        name: "antipairs",
+        arity: 0,
+        handler: Handler::Pure(antipairs),
+    },
 ];
 
 fn len(target: &Value) -> i64 {
@@ -111,6 +135,50 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
         crate::value::ListGen::positional(
             target.clone(),
             crate::value::PositionalMode::Keys,
+            false,
+        ),
+        false,
+    ))
+}
+
+// Cost: O(1); O(1) per value pulled.
+pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::seq_list_gen(
+        crate::value::ListGen::positional(
+            target.clone(),
+            crate::value::PositionalMode::Values,
+            false,
+        ),
+        false,
+    ))
+}
+
+// Cost: O(1); O(1) per key/value pulled.
+pub(crate) fn kv(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::seq_list_gen(
+        crate::value::ListGen::positional(target.clone(), crate::value::PositionalMode::Kv, false),
+        false,
+    ))
+}
+
+// Cost: O(1); O(1) per pair pulled.
+pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::seq_list_gen(
+        crate::value::ListGen::positional(
+            target.clone(),
+            crate::value::PositionalMode::Pairs,
+            false,
+        ),
+        false,
+    ))
+}
+
+// Cost: O(1); O(1) per antipair pulled.
+pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::seq_list_gen(
+        crate::value::ListGen::positional(
+            target.clone(),
+            crate::value::PositionalMode::Antipairs,
             false,
         ),
         false,

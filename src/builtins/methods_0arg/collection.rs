@@ -1,21 +1,13 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
-use crate::value::{ListGen, PositionalMode, RuntimeError, Value, ValueView};
+use crate::value::{ListGen, RuntimeError, Value, ValueView};
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
         .map(|(idx, value)| Value::value_pair(Value::int(idx as i64), value.clone()))
         .collect()
-}
-
-/// The lazy `.keys` / `.values` / `.kv` / `.pairs` / `.antipairs` Seq of an
-/// Array or List `target`: a counting iterator over its live length, which
-/// Rakudo's `Seq.new(Rakudo::Iterator.<...>)` versions of these methods are.
-// Cost: O(1).
-fn positional_view(target: &Value, mode: PositionalMode) -> Value {
-    Value::seq_list_gen(ListGen::positional(target.clone(), mode, false), false)
 }
 
 fn positional_keys(values: &[Value]) -> Vec<Value> {
@@ -342,7 +334,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // must yield the inner value, not the cell — otherwise a typed
                 // `my SomeRole @x = @a.values` element check sees the raw cell
                 // instead of the instance and rejects it.
-                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Values))),
+                ValueView::Array(..) => {
+                    Some(crate::builtins::method_table::list::values(target, &[]))
+                }
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
                 }
@@ -389,7 +383,7 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
-                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Kv))),
+                ValueView::Array(..) => Some(crate::builtins::method_table::list::kv(target, &[])),
                 ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
@@ -492,7 +486,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(vec![target.clone()])))
                 }
                 // Index => value pairs of the array's own elements, itemization-agnostic.
-                ValueView::Array(..) => Some(Ok(positional_view(target, PositionalMode::Pairs))),
+                ValueView::Array(..) => {
+                    Some(crate::builtins::method_table::list::pairs(target, &[]))
+                }
                 ValueView::Instance { class_name, .. }
                     if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
                 {
@@ -607,7 +603,7 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // Value => index pairs of the array's own elements, itemization-agnostic.
                 ValueView::Array(..) => {
-                    Some(Ok(positional_view(target, PositionalMode::Antipairs)))
+                    Some(crate::builtins::method_table::list::antipairs(target, &[]))
                 }
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => {
