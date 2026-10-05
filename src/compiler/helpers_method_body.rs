@@ -29,6 +29,8 @@ impl Compiler {
     pub(crate) fn compile_method_body(
         &mut self,
         package_name: &str,
+        lexical_type_name: Option<&str>,
+        lexical_type_short_name: Option<&str>,
         method_name: &str,
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
@@ -102,6 +104,12 @@ impl Compiler {
         // A `my class NAME` shadowing an outer `constant NAME` is what a bare
         // `NAME` in its own methods means too (#11517).
         method_compiler.lexical_type_shadows = self.lexical_type_shadows.clone();
+        if let Some(name) = lexical_type_name {
+            method_compiler.seed_lexical_type_name(name);
+        }
+        if let Some(name) = lexical_type_short_name {
+            method_compiler.seed_lexical_type_name(name);
+        }
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
         if let Some(frame) = &self.role_param_scope {
@@ -292,6 +300,13 @@ impl Compiler {
         let key = Symbol::intern(&key_str);
         self.compiled_functions.insert(key, cf);
         Some(key)
+    }
+
+    /// Make one source-facing spelling of a lexical type resolve through the
+    /// captured declaration environment in its methods.
+    // Cost: O(n), n = type-name length.
+    pub(crate) fn seed_lexical_type_name(&mut self, name: &str) {
+        self.lexical_type_shadows.insert(name.to_string());
     }
 
     /// Record `syms` as an extra free-variable contribution to THIS frame's

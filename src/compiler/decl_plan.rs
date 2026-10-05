@@ -251,6 +251,15 @@ impl Compiler {
         } else {
             None
         };
+        let lexical_type_name = (*is_lexical).then(|| name.resolve());
+        let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
+            (self.in_unit_package
+                && !name.starts_with("GLOBAL::")
+                && !custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+            .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
+        });
         let method_outer_lexical_slots = self.local_slots_by_name();
         // Class-body methods auto-detect a bare `@_` read the way
         // `class_body_method_decl` does (`apply_auto_positional_slurpy:
@@ -258,6 +267,8 @@ impl Compiler {
         let method_compiled_keys = self.compile_method_body_keys(
             body,
             package_name.as_deref(),
+            lexical_type_name.as_deref(),
+            lexical_type_short_name.as_deref(),
             *is_hidden,
             true,
             is_hoisted_shell,
@@ -487,10 +498,13 @@ impl Compiler {
     /// suppresses even that fallback — the shell is superseded by the real,
     /// source-position declaration, whose own pass records the identical set
     /// into the same (per-`CompiledCode`) vec.
+    #[allow(clippy::too_many_arguments)]
     fn compile_method_body_keys(
         &mut self,
         body: &[Stmt],
         package_name: Option<&str>,
+        lexical_type_name: Option<&str>,
+        lexical_type_short_name: Option<&str>,
         is_hidden: bool,
         apply_auto_positional_slurpy: bool,
         is_hoisted_shell: bool,
@@ -541,6 +555,8 @@ impl Compiler {
             let key = match (&package_name, name_expr) {
                 (Some(package_name), None) => self.compile_method_body(
                     package_name,
+                    lexical_type_name,
+                    lexical_type_short_name,
                     &name.resolve(),
                     param_defs,
                     body,
@@ -748,6 +764,18 @@ impl Compiler {
         } else {
             Some(self.qualified_role_decl_name(&name.resolve()))
         };
+        let lexical_type_name = custom_traits
+            .iter()
+            .any(|(trait_name, _)| trait_name == "__my_scoped")
+            .then(|| name.resolve());
+        let lexical_type_short_name = lexical_type_name.as_deref().and_then(|name| {
+            (self.in_unit_package
+                && !name.starts_with("GLOBAL::")
+                && !custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__source_compound_name"))
+            .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
+        });
         let role_param_scope: crate::compiler::lex_scope::ScopeFrame = type_param_defs
             .iter()
             .filter(|p| p.name.starts_with('&'))
@@ -760,6 +788,8 @@ impl Compiler {
         let method_compiled_keys = self.compile_method_body_keys(
             body,
             package_name.as_deref(),
+            lexical_type_name.as_deref(),
+            lexical_type_short_name.as_deref(),
             false,
             false,
             is_hoisted_shell,
