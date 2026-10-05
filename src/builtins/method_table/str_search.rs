@@ -18,7 +18,7 @@
 use super::{Handler, MethodRow};
 use crate::builtins::grapheme_index::{find_graphemes, with_str_index};
 use crate::builtins::str_prim::{self, Fold};
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// The rows one owner declares.
 macro_rules! search_rows {
@@ -82,13 +82,14 @@ pub(super) static COOL_SUBSTR_2: &[MethodRow] = &[MethodRow {
     handler: Handler::Narrow(substr),
 }];
 
-/// `Str.contains($needle)`.
+/// The one-needle `contains` candidate shared by Str, Cool and Map.
 // Cost: O(p + m), p = match position, m = chars of the needle (the invocant
 // is borrowed).
 pub(crate) fn contains(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(with_str_index(target, |text, idx| {
+    let result = Ok(with_str_index(target, |text, idx| {
         str_prim::contains(text, idx, 0, &args[0], Fold::Exact)
-    }))
+    }));
+    search_warning(target, "contains", result)
 }
 
 /// `Str.starts-with($needle)`.
@@ -113,29 +114,83 @@ fn affix(target: &Value, needle: &Value, is_prefix: bool) -> Result<Value, Runti
     )))
 }
 
-/// `Str.index($needle)`: the grapheme position of the first match, or `Nil`.
+/// The one-needle `index` candidate: the first grapheme position or `Nil`.
 // Cost: O(p + m) amortized, p = match position, m = chars of the needle; the
 // byte offset is converted through the cached grapheme index.
 pub(crate) fn index(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
     let needle = args[0].to_string_value();
-    Ok(with_str_index(target, |s, idx| {
+    let result = Ok(with_str_index(target, |s, idx| {
         match find_graphemes(s, idx, 0, &needle) {
             Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
             None => Value::NIL,
         }
-    }))
+    }));
+    search_warning(target, "index", result)
 }
 
-/// `Str.rindex($needle)`: the grapheme position of the last match, or `Nil`.
+/// The one-needle `rindex` candidate: the last grapheme position or `Nil`.
 // Cost: O(n - p + m) amortized, p = match position, m = chars of the needle.
 pub(crate) fn rindex(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
     let needle = args[0].to_string_value();
-    Ok(with_str_index(target, |s, idx| {
+    let result = Ok(with_str_index(target, |s, idx| {
         match str_prim::rindex(s, idx, idx.len(), &needle) {
             Some(g) => Value::int(g as i64),
             None => Value::NIL,
         }
-    }))
+    }));
+    search_warning(target, "rindex", result)
+}
+
+/// Add Rakudo's collection-search worry while preserving the ordinary
+/// stringified-search answer.
+// Cost: O(1), formatting one fixed-size warning and keeping the precomputed result.
+fn search_warning(
+    target: &Value,
+    method: &str,
+    result: Result<Value, RuntimeError>,
+) -> Result<Value, RuntimeError> {
+    let message = match target.dispatch_shape() {
+        Some(crate::value::DispatchShape::List) => {
+            let advice = match method {
+                "contains" => "did you mean '$item (elem) @list'?",
+                "index" => "did you mean '.first( ..., :k)'?",
+                "rindex" => "did you mean '.first( ..., :k, :end)'?",
+                _ => return result,
+            };
+            format!("Calling '.{method}' on a List, {advice}")
+        }
+        Some(crate::value::DispatchShape::Array) => {
+            let advice = match method {
+                "contains" => "did you mean '$item (elem) @list'?",
+                "index" => "did you mean '.first( ..., :k)'?",
+                "rindex" => "did you mean '.first( ..., :k, :end)'?",
+                _ => return result,
+            };
+            format!("Calling '.{method}' on a Array, {advice}")
+        }
+        _ if matches!(method, "contains" | "index") => {
+            let kind = match target.view() {
+                ValueView::Hash(_) => Some(if target.is_immutable_map() {
+                    "Map"
+                } else {
+                    "Hash"
+                }),
+                ValueView::Scalar(_) if target.is_immutable_map() => Some("Map"),
+                _ => None,
+            };
+            let Some(kind) = kind else {
+                return result;
+            };
+            format!(
+                "Applying '.{method}' to a {kind} will look at its .Str representation. Did\nyou mean '{kind}{{needle}}:exists'?"
+            )
+        }
+        _ => return result,
+    };
+    match result {
+        Ok(value) => Err(RuntimeError::warn_signal_with_resume(message, value)),
+        Err(error) => Err(error),
+    }
 }
 
 /// `Str.substr($start, $len?)` for a non-negative `Int` start inside the

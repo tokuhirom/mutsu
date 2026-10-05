@@ -48,6 +48,18 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "Map",
+        name: "contains",
+        arity: 1,
+        handler: Handler::Pure(crate::builtins::method_table::str_search::contains),
+    },
+    MethodRow {
+        owner: "Map",
+        name: "index",
+        arity: 1,
+        handler: Handler::Pure(crate::builtins::method_table::str_search::index),
+    },
+    MethodRow {
+        owner: "Map",
         name: "invert",
         arity: 0,
         handler: Handler::Narrow(invert),
