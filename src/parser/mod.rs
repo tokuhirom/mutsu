@@ -11,6 +11,7 @@ pub(crate) use expr::{
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
+pub(crate) use primary::decimal_literal_value;
 pub(crate) use primary::ident::TEST_CALLSITE_LINE_KEY;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};

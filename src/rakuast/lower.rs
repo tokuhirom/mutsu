@@ -3673,6 +3673,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         quoted,
                     })
                 }
+                // `2i` -> the Complex value the parser folds an imaginary
+                // literal to.
+                RakuAstClass::Postfix
+                    if leaf_str(postfix, "operator").is_ok_and(|op| op == "i")
+                        && let Expr::Literal(number) = &operand
+                        && let Some(im) = imaginary_part(number) =>
+                {
+                    Ok(Expr::Literal(Value::complex(0.0, im)))
+                }
                 // `$x++` / `$x--` -> Postfix(operator => "++").
                 RakuAstClass::Postfix => Ok(Expr::PostfixOp {
                     op: postfix_token(postfix)?,
@@ -3881,5 +3890,16 @@ pub(super) fn list_field<'a>(
             _ => Err(unsupported(node)),
         },
         None => Err(unsupported(node)),
+    }
+}
+
+/// The imaginary part an `Int` / `Rat` / `Num` literal denotes under the `i`
+/// postfix, as the parser computes it (an `f64`).
+// Cost: O(1).
+fn imaginary_part(number: &Value) -> Option<f64> {
+    match number.view() {
+        ValueView::Int(n) => Some(n as f64),
+        ValueView::Rat(..) | ValueView::Num(_) => Some(number.to_f64()),
+        _ => None,
     }
 }
