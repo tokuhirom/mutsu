@@ -2,45 +2,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 use crate::value::{ListGen, PositionalMode, RuntimeError, Value, ValueView};
-use num_bigint::BigInt as NumBigInt;
-
-/// If the value represents an integer (even as Num, Rat, Str, or BigInt), return as BigInt.
-fn value_as_bigint(v: &Value) -> Option<NumBigInt> {
-    match v.view() {
-        ValueView::Int(i) => Some(NumBigInt::from(i)),
-        ValueView::BigInt(n) => Some((**n).clone()),
-        ValueView::Num(f) => {
-            if f.is_finite() && f == f.trunc() && f.abs() < i64::MAX as f64 {
-                Some(NumBigInt::from(f as i64))
-            } else {
-                None
-            }
-        }
-        ValueView::Rat(n, d) => {
-            if d != 0 && n % d == 0 {
-                Some(NumBigInt::from(n / d))
-            } else {
-                None
-            }
-        }
-        ValueView::Str(s) => {
-            let trimmed = s.trim();
-            trimmed.parse::<i64>().ok().map(NumBigInt::from)
-        }
-        ValueView::Bool(b) => Some(NumBigInt::from(if b { 1 } else { 0 })),
-        _ => None,
-    }
-}
-
-fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
-    while b != 0 {
-        let t = b;
-        b = a % b;
-        a = t;
-    }
-    a
-}
-
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -226,7 +187,7 @@ pub(crate) fn permutations_seq(items: Vec<Value>) -> Value {
     Value::seq_list_gen(ListGen::permutations(items), false)
 }
 
-/// Collection-related 0-arg methods: keys, values, kv, pairs, total, minmax, squish
+/// Collection-related 0-arg methods: keys, values, kv, pairs, total and squish
 pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
         "hash" => {
@@ -778,243 +739,14 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 _ => None,
             }
         }
-        // Cost: O(e), e = elements of the invocant (Range elements contribute their
-        // two endpoints; one pass, two comparisons per candidate).
-        "minmax" => match target.view() {
-            ValueView::Array(items, ..) if !items.is_empty() => {
-                // Collect all candidates, extracting Range endpoints
-                let mut candidates = Vec::new();
-                for item in items.iter() {
-                    crate::runtime::builtins_collection::collect_minmax_candidates_pub(
-                        item,
-                        &mut candidates,
-                    );
-                }
-                if candidates.is_empty() {
-                    Some(Ok(Value::generic_range(
-                        Value::num(f64::INFINITY),
-                        Value::num(f64::NEG_INFINITY),
-                        false,
-                        false,
-                    )))
-                } else {
-                    let mut min = &candidates[0];
-                    let mut max = &candidates[0];
-                    for item in &candidates[1..] {
-                        if runtime::compare_values(item, min) < 0 {
-                            min = item;
-                        }
-                        if runtime::compare_values(item, max) > 0 {
-                            max = item;
-                        }
-                    }
-                    Some(Ok(
-                        crate::runtime::builtins_collection::make_inclusive_range_pub(
-                            min.clone(),
-                            max.clone(),
-                        ),
-                    ))
-                }
-            }
-            ValueView::Array(..) => {
-                // Empty array: return Inf..-Inf
-                Some(Ok(Value::generic_range(
-                    Value::num(f64::INFINITY),
-                    Value::num(f64::NEG_INFINITY),
-                    false,
-                    false,
-                )))
-            }
-            _ => None,
-        },
-        // Cost: O(e), e = elements of the invocant (one add each; BigInt growth adds
-        // the digit count of the running total).
-        "sum" => match target.view() {
-            ValueView::Array(items, ..) => {
-                // If any item is a Junction, fold with junction-aware addition
-                if items
-                    .iter()
-                    .any(|v| matches!(v.view(), ValueView::Junction { .. }))
-                {
-                    let result = items.iter().cloned().try_fold(
-                        Value::int(0),
-                        |acc, item| -> Result<Value, RuntimeError> {
-                            add_with_junction_threading(acc, item)
-                        },
-                    );
-                    return Some(result);
-                }
-                // Check for non-numeric strings first. Use the full Raku numeric
-                // grammar (via `.Numeric`), NOT a base-10 `parse::<f64>`, so radix
-                // literals and allomorphs a string can hold — `"0xff"` (255),
-                // `"0b1111"` (15), `"1/2"` — sum correctly instead of erroring.
-                for item in items.iter() {
-                    if let ValueView::Str(s) = item.view()
-                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_none()
-                    {
-                        let reason =
-                            "base-10 number must begin with valid digits or '.'".to_string();
-                        let msg = format!("Cannot convert string '{}' to number: {}", *s, reason);
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("source".to_string(), Value::str(s.to_string()));
-                        attrs.insert("reason".to_string(), Value::str(reason));
-                        attrs.insert("pos".to_string(), Value::int(0));
-                        attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::Str::Numeric"),
-                            attrs,
-                        );
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(ex));
-                        return Some(Err(err));
-                    }
-                }
-                // Fold with `+` so the result type promotes like Raku's reduction
-                // (Int+Rat -> Rat, allomorphs unwrap to their numeric value, etc.).
-                let result = items
-                    .iter()
-                    .cloned()
-                    .try_fold(Value::int(0), crate::builtins::arith_add);
-                Some(result)
-            }
-            // Integer ranges: use Gauss formula for O(1) sum
-            ValueView::Range(a, b) => {
-                if a > b {
-                    Some(Ok(Value::int(0)))
-                } else {
-                    let n = b - a + 1;
-                    // n * (a + b) / 2, but careful about overflow
-                    let sum = if (a + b) % 2 == 0 {
-                        ((a + b) / 2) * n
-                    } else {
-                        (a + b) * (n / 2)
-                    };
-                    Some(Ok(Value::int(sum)))
-                }
-            }
-            ValueView::RangeExcl(a, b) => {
-                // a ..^ b means a to b-1 inclusive
-                if a >= b {
-                    Some(Ok(Value::int(0)))
-                } else {
-                    let end = b - 1;
-                    let n = end - a + 1;
-                    let sum = if (a + end) % 2 == 0 {
-                        ((a + end) / 2) * n
-                    } else {
-                        (a + end) * (n / 2)
-                    };
-                    Some(Ok(Value::int(sum)))
-                }
-            }
-            ValueView::RangeExclStart(a, b) => {
-                // a ^.. b means a+1 to b inclusive
-                let start = a + 1;
-                if start > b {
-                    Some(Ok(Value::int(0)))
-                } else {
-                    let n = b - start + 1;
-                    let sum = if (start + b) % 2 == 0 {
-                        ((start + b) / 2) * n
-                    } else {
-                        (start + b) * (n / 2)
-                    };
-                    Some(Ok(Value::int(sum)))
-                }
-            }
-            ValueView::RangeExclBoth(a, b) => {
-                // a ^..^ b means a+1 to b-1 inclusive
-                let start = a + 1;
-                let end = b - 1;
-                if start > end {
-                    Some(Ok(Value::int(0)))
-                } else {
-                    let n = end - start + 1;
-                    let sum = if (start + end) % 2 == 0 {
-                        ((start + end) / 2) * n
-                    } else {
-                        (start + end) * (n / 2)
-                    };
-                    Some(Ok(Value::int(sum)))
-                }
-            }
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } => {
-                // Check if endpoints are integer-valued (using BigInt for arbitrary precision)
-                let start_bi = value_as_bigint(start);
-                let end_bi = value_as_bigint(end);
-
-                if let (Some(a), Some(b)) = (start_bi, end_bi) {
-                    // Integer-valued range: use Gauss formula with BigInt
-                    let one = NumBigInt::from(1);
-                    let two = NumBigInt::from(2);
-                    let zero = NumBigInt::from(0);
-                    let effective_start = if excl_start { &a + &one } else { a };
-                    let effective_end = if excl_end { &b - &one } else { b };
-                    if effective_start > effective_end {
-                        Some(Ok(Value::int(0)))
-                    } else {
-                        let n = &effective_end - &effective_start + &one;
-                        let s_plus = &effective_start + &effective_end;
-                        let sum = if &s_plus % &two == zero {
-                            (&s_plus / &two) * &n
-                        } else {
-                            &s_plus * (&n / &two)
-                        };
-                        // Try to fit in i64, otherwise return BigInt
-                        if let Ok(val) = i64::try_from(&sum) {
-                            Some(Ok(Value::int(val)))
-                        } else {
-                            Some(Ok(Value::bigint(sum)))
-                        }
-                    }
-                } else {
-                    // Non-integer range: convert to list and sum
-                    let items = runtime::value_to_list(target);
-                    let has_rat = items
-                        .iter()
-                        .any(|v| matches!(v.view(), ValueView::Rat(_, _)));
-                    if has_rat {
-                        let mut num: i64 = 0;
-                        let mut den: i64 = 1;
-                        for item in &items {
-                            let (in_num, in_den) = match item.view() {
-                                ValueView::Rat(n, d) => (n, d),
-                                ValueView::Int(n) => (n, 1),
-                                _ => (runtime::to_int(item), 1),
-                            };
-                            num = num * in_den + in_num * den;
-                            den *= in_den;
-                            let g = gcd_u64(num.unsigned_abs(), den.unsigned_abs()) as i64;
-                            if g > 1 {
-                                num /= g;
-                                den /= g;
-                            }
-                        }
-                        if den == 1 {
-                            Some(Ok(Value::int(num)))
-                        } else {
-                            Some(Ok(Value::rat_raw(num, den)))
-                        }
-                    } else {
-                        let total: i64 = items.iter().map(runtime::to_int).sum();
-                        Some(Ok(Value::int(total)))
-                    }
-                }
-            }
-            // Scalar .sum returns the numeric value of the invocant
-            ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::BigInt(_) => {
-                Some(Ok(target.clone()))
-            }
-            _ => None,
-        },
-        // Cost: O(e + t), e = elements of the invocant, t = total chars of their
-        // stringifications (each element is stringified to compare with the previous).
+        // These aggregate handlers are also the Any/List method-table rows.
+        // Cost: O(e), e = elements and their minimum/maximum candidates.
+        "minmax" => crate::builtins::method_table::list_aggregate::minmax(target, &[]),
+        // Cost: O(e), e = elements, plus the digit growth of the running total.
+        "sum" => crate::builtins::method_table::list_aggregate::sum(target, &[]),
+        // Squish needs WHICH identity, which can dispatch user methods, so it
+        // stays on its existing guarded interpreter route.
+        // Cost: O(e + t), e = elements, t = total chars stringified.
         "squish" => match target.view() {
             ValueView::Array(items, ..) => {
                 let mut result = Vec::new();
@@ -1030,60 +762,10 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
-        // Cost: O(e) per call, e = elements (the invocant is snapshotted), then
-        // O(e) per permutation pulled (`ListGen::Permutations`); e > 20 returns a
-        // count-only lazy list.
-        "permutations" => {
-            let items = if crate::runtime::utils::is_shaped_array(target) {
-                crate::runtime::utils::shaped_array_leaves(target)
-            } else {
-                target
-                    .as_list_items()
-                    .map(|items| items.to_vec())
-                    .unwrap_or_else(|| runtime::value_to_list(target))
-            };
-            if items.len() > 20 {
-                // For large lists, return a lazy list that knows its count (n!)
-                // without actually generating all permutations.
-                let factorial = crate::builtins::functions::factorial_bigint(items.len() as u64);
-                let ll = crate::value::LazyList {
-                    body: Vec::new(),
-                    env: crate::env::Env::new(),
-                    cache: std::sync::Mutex::new(None),
-                    generation_state: std::sync::Mutex::new(None),
-                    compiled_code: None,
-                    compiled_fns: None,
-                    elems_count: Some(Value::bigint_arc(factorial)),
-                    scan_spec: None,
-                    sequence_spec: None,
-                    coroutine: None,
-                    lazy_pipe: None,
-                    closure_seq: None,
-                    walk_pending: None,
-                    cat_pull: None,
-                    array_context: false,
-                    list_context: false,
-                    cached_no_sink: false,
-                    itemized: false,
-                };
-                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
-            }
-            Some(Ok(permutations_seq(items)))
-        }
-        // Cost: O(e) per call, e = elements (the invocant is snapshotted), then O(k)
-        // per combination of size k pulled (`ListGen::Combinations`).
-        "combinations" => {
-            let items = if crate::runtime::utils::is_shaped_array(target) {
-                crate::runtime::utils::shaped_array_leaves(target)
-            } else {
-                target
-                    .as_list_items()
-                    .map(|items| items.to_vec())
-                    .unwrap_or_else(|| runtime::value_to_list(target))
-            };
-            let n = items.len() as i64;
-            Some(Ok(combinations_seq(items, 0, n)))
-        }
+        // Cost: O(e) to snapshot the receiver, then O(e) per permutation pulled.
+        "permutations" => crate::builtins::method_table::list_aggregate::permutations(target, &[]),
+        // Cost: O(e) to snapshot the receiver, then O(k) per combination pulled.
+        "combinations" => crate::builtins::method_table::list_aggregate::combinations(target, &[]),
         // Cost: O(1) on an Array, a List or a Seq (a reified or unpulled Seq is
         // handed back as a List view over its own body); O(e) on any other
         // list-like, e = elements (copied into a fresh List).

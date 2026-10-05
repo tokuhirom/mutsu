@@ -78,13 +78,13 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
 /// `Mix` and their mutable forms) inherit from `Any`, which defines each as
 /// `self.list.METHOD`: on such a receiver the invocant IS its list of Pairs.
 /// (`Any.reverse`, `Any.unique`, `Any.squish`, `Any.eager`, `Any.Supply`,
-/// `Any.minmax` and `Any.produce` all go through `self.list`.)
+/// `Any.minmax`, `Any.sum` and `Any.produce` all go through `self.list`.)
 /// Methods that already have an arm of their own for these receivers (`keys`,
 /// `values`, `kv`, `pairs`, `sort`, `map`, `grep`, `first`, `tail`, ...) are
 /// deliberately not listed, and neither is `Seq`, whose single shared
 /// implementation (`builtins::seq_coerce::to_seq_structural`) has its own arm.
 const HASHLIKE_ANY_LIST_METHODS: &[&str] = &[
-    "reverse", "unique", "squish", "eager", "minmax", "produce", "Supply",
+    "reverse", "unique", "squish", "eager", "minmax", "sum", "produce", "Supply",
 ];
 
 /// For a `Hash`/`Map`/`Set`/`Bag`/`Mix` invocant of one of

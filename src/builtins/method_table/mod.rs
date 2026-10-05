@@ -42,6 +42,7 @@ pub(crate) mod coerce;
 pub(crate) mod complex;
 mod int;
 pub(crate) mod list;
+pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
 pub(crate) mod map;
 mod num;
@@ -91,6 +92,8 @@ pub(crate) struct MethodRow {
 /// Every family's rows. A family module owns the rows of one declaring type.
 static FAMILIES: &[&[MethodRow]] = &[
     list::ROWS,
+    list_aggregate::ANY_ROWS,
+    list_aggregate::LIST_ROWS,
     list_transform::ANY_ROWS,
     list_transform::LIST_ROWS,
     list_transform::ARRAY_ROWS,
