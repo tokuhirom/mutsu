@@ -364,12 +364,11 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::seq(leaves)));
             }
             match target.view() {
-                ValueView::Hash(map) => {
+                ValueView::Hash(_) => {
                     // Decontainerize `:=`-bound element cells (Phase 2): a bound
                     // hash element is a `ContainerRef`, and `.values` must yield
                     // the inner value, not the cell (else sort/compare leak).
-                    let values: Vec<Value> = map.values().map(|v| v.deref_container()).collect();
-                    Some(Ok(Value::seq(values)))
+                    Some(crate::builtins::method_table::map::values(target, &[]))
                 }
                 ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
                     Some(Ok(Value::seq(vec![value.clone()])))
@@ -420,20 +419,7 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::seq(kv)));
             }
             match target.view() {
-                ValueView::Hash(items) => {
-                    let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
-                    let mut kv = Vec::new();
-                    for (k, v) in items.iter() {
-                        if has_orig {
-                            kv.push(crate::runtime::utils::hash_typed_key(target, k));
-                        } else {
-                            kv.push(Value::hash_key_decode(k));
-                        }
-                        // Decontainerize element cells (see t/bind-hash-value-pairs.t).
-                        kv.push(v.deref_container());
-                    }
-                    Some(Ok(Value::seq(kv)))
-                }
+                ValueView::Hash(_) => Some(crate::builtins::method_table::map::kv(target, &[])),
                 ValueView::Pair(key, value) => {
                     Some(Ok(Value::seq(vec![Value::str(key.clone()), value.clone()])))
                 }
@@ -513,28 +499,7 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::seq(pairs)));
             }
             match target.view() {
-                ValueView::Hash(items) => {
-                    let has_orig = crate::runtime::utils::hash_uses_typed_keys(target);
-                    // Decontainerize element cells so the pair value matches a
-                    // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
-                    let pairs: Vec<Value> = if has_orig {
-                        items
-                            .iter()
-                            .map(|(k, v)| {
-                                let typed_k = crate::runtime::utils::hash_typed_key(target, k);
-                                Value::value_pair(typed_k, v.deref_container())
-                            })
-                            .collect()
-                    } else {
-                        items
-                            .iter()
-                            .map(|(k, v)| {
-                                Value::value_pair(Value::str(k.clone()), v.deref_container())
-                            })
-                            .collect()
-                    };
-                    Some(Ok(Value::seq(pairs)))
-                }
+                ValueView::Hash(_) => Some(crate::builtins::method_table::map::pairs(target, &[])),
                 ValueView::Set(s, _) => Some(Ok(Value::seq(
                     s.iter()
                         .map(|k| {
@@ -640,16 +605,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 return Some(Ok(Value::seq(pairs)));
             }
             match target.view() {
-                ValueView::Hash(items) => {
-                    let pairs: Vec<Value> = items
-                        .iter()
-                        .map(|(k, v)| {
-                            let orig_key = crate::runtime::utils::hash_typed_key(target, k);
-                            // Decontainerize element cells (see t/bind-hash-value-pairs.t).
-                            Value::value_pair(v.deref_container(), orig_key)
-                        })
-                        .collect();
-                    Some(Ok(Value::seq(pairs)))
+                ValueView::Hash(_) => {
+                    Some(crate::builtins::method_table::map::antipairs(target, &[]))
                 }
                 ValueView::Bag(items, _) => Some(Ok(Value::seq(
                     items
