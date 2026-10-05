@@ -24,6 +24,30 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "Map",
+        name: "values",
+        arity: 0,
+        handler: Handler::Pure(values),
+    },
+    MethodRow {
+        owner: "Map",
+        name: "kv",
+        arity: 0,
+        handler: Handler::Pure(kv),
+    },
+    MethodRow {
+        owner: "Map",
+        name: "pairs",
+        arity: 0,
+        handler: Handler::Pure(pairs),
+    },
+    MethodRow {
+        owner: "Map",
+        name: "antipairs",
+        arity: 0,
+        handler: Handler::Pure(antipairs),
+    },
+    MethodRow {
+        owner: "Map",
         name: "Numeric",
         arity: 0,
         handler: Handler::Pure(elems),
@@ -66,4 +90,75 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
         map.keys().map(|k| Value::hash_key_decode(k)).collect()
     };
     Ok(Value::seq(keys))
+}
+
+/// `Map.values`: the values, with any bound element containers dereferenced.
+// Cost: O(e), e = map entries copied into the Seq.
+pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let ValueView::Hash(map) = target.view() else {
+        return Err(RuntimeError::new("Map.values: receiver is not a Map"));
+    };
+    Ok(Value::seq(
+        map.values().map(Value::deref_container).collect(),
+    ))
+}
+
+/// `Map.kv`: the original typed keys where available, interleaved with values.
+// Cost: O(e), e = map entries copied into the Seq.
+pub(crate) fn kv(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let ValueView::Hash(map) = target.view() else {
+        return Err(RuntimeError::new("Map.kv: receiver is not a Map"));
+    };
+    let has_typed_keys = map.has_typed_keys();
+    let mut result = Vec::with_capacity(map.len() * 2);
+    for (key, value) in map.iter() {
+        result.push(if has_typed_keys {
+            crate::runtime::utils::hash_typed_key(target, key)
+        } else {
+            Value::hash_key_decode(key)
+        });
+        result.push(value.deref_container());
+    }
+    Ok(Value::seq(result))
+}
+
+/// `Map.pairs`: a Seq of key/value Pairs, preserving typed keys where present.
+// Cost: O(e), e = map entries copied into the Seq.
+pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let ValueView::Hash(map) = target.view() else {
+        return Err(RuntimeError::new("Map.pairs: receiver is not a Map"));
+    };
+    let has_typed_keys = map.has_typed_keys();
+    Ok(Value::seq(
+        map.iter()
+            .map(|(key, value)| {
+                Value::value_pair(
+                    if has_typed_keys {
+                        crate::runtime::utils::hash_typed_key(target, key)
+                    } else {
+                        Value::str(key.clone())
+                    },
+                    value.deref_container(),
+                )
+            })
+            .collect(),
+    ))
+}
+
+/// `Map.antipairs`: a Seq of value/key Pairs, preserving typed keys where present.
+// Cost: O(e), e = map entries copied into the Seq.
+pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let ValueView::Hash(map) = target.view() else {
+        return Err(RuntimeError::new("Map.antipairs: receiver is not a Map"));
+    };
+    Ok(Value::seq(
+        map.iter()
+            .map(|(key, value)| {
+                Value::value_pair(
+                    value.deref_container(),
+                    crate::runtime::utils::hash_typed_key(target, key),
+                )
+            })
+            .collect(),
+    ))
 }

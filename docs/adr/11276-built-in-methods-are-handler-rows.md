@@ -445,3 +445,17 @@ Callgrind on profiling builds from the same `main`, with a 50,000-iteration
 loop calling both a List and an Array receiver each iteration, fell from
 1,835,310,992 to 617,706,226 instructions (-66.3%). Both binaries were run
 twice and the second run is recorded; the benchmark has no module load.
+
+### 9.4 Map view methods (2026-10-05)
+
+`Map.values`, `kv`, `pairs` and `antipairs` are zero-argument rows owned by
+`Map`. `Hash` resolves the same rows through its MRO. Each cascade's `Hash`
+case calls the shared handler, which preserves dereferenced values and the
+original key objects of object hashes.
+
+Callgrind on profiling binaries, with a 20,000-iteration loop over a two-entry
+Map that calls each view and reads its `.elems`, fell from 1,631,207,873 to
+1,497,226,995 instructions (-8.21%). Both binaries were run twice and the
+second run is recorded. The baseline was built from `0f0ffdf`; the only
+intervening `main` commit (`e4ef467`) changed documentation, so its executable
+sources were identical.
