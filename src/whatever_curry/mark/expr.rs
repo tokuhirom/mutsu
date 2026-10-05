@@ -360,6 +360,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         | Expr::Subst { .. }
         | Expr::NonDestructiveSubst { .. }
         | Expr::Transliterate { .. }
+        | Expr::GivenPointyTopic
         | Expr::RoutineMagic
         | Expr::BlockMagic
         | Expr::ControlFlow { .. }

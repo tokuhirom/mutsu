@@ -179,10 +179,36 @@ fn p5_foreach_error() -> PError {
 /// A plain (aliasing) parameter uses `:=` so the compiler/VM writes the
 /// parameter's final value back to the topic source — `given @a -> @p { @p.push }`
 /// aliases `@a`, matching Raku. `is copy` uses `=` (a fresh copy) so nothing is
-/// written back. The compiler only treats a `:=`-to-`$_` head as a pointy alias.
+/// written back. The declaration reads its value through `Expr::GivenPointyTopic`,
+/// independently of dynamic `$_`.
 fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
-    let topic = Expr::Var("_".to_string());
+    let mut binding = pointy_topic_bind_inner(pd);
+    // A pointy `given`/`with` parameter reads the new topic exactly once, when
+    // its synthetic declaration initializes. After that binding, the block's
+    // `$_` continues to refer to the enclosing topic. Mark the declaration so
+    // the compiler emits the matching `ExitPointyTopic` immediately after it, inside
+    // any `BlockLocalScope` that wraps the body.
+    if pd.name != "_" {
+        if !matches!(binding, Stmt::SyntheticBlock(_)) {
+            binding = Stmt::SyntheticBlock(vec![binding]);
+        }
+        let Stmt::SyntheticBlock(stmts) = &mut binding else {
+            unreachable!()
+        };
+        if let Some(Stmt::VarDecl { custom_traits, .. }) = stmts
+            .iter_mut()
+            .rev()
+            .find(|stmt| matches!(stmt, Stmt::VarDecl { .. }))
+        {
+            custom_traits.push(("__restore_pointy_given_topic".to_string(), None));
+        }
+    }
+    binding
+}
+
+fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
     if let Some(sub_params) = &pd.sub_signature {
+        let topic = Expr::Var("_".to_string());
         // A destructuring parameter (`given $obj -> (:@list, |) { ... }`,
         // ASTQuery::Match) binds nothing under its own name: it unpacks the
         // topic into the sub-signature's lexicals. That unpack is the same
@@ -211,6 +237,7 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         crate::param_destructure::destructure_binds(target, sub_params, &mut stmts);
         return Stmt::SyntheticBlock(stmts);
     }
+    let topic = Expr::GivenPointyTopic;
     if pd.traits.iter().any(|t| t == "copy") {
         // `is copy` is a fresh, writable copy with no link to the source. Use a
         // plain assignment (not `:=`, so the compiler does not treat it as a
@@ -283,7 +310,7 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         // writeback semantics to lose, so a declaration is the exact form.
         Stmt::VarDecl {
             name: pd.name.clone(),
-            expr: topic,
+            expr: Expr::Var("_".to_string()),
             type_constraint: None,
             is_state: false,
             is_our: false,

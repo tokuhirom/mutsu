@@ -32,7 +32,8 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         | Expr::DeitemizeForBind(inner)
         | Expr::IndirectTypeLookup(inner)
         | Expr::IndirectTypeLookupTail { head: inner, .. } => v.visit_expr(inner),
-        Expr::Whatever
+        Expr::GivenPointyTopic
+        | Expr::Whatever
         | Expr::WhateverArg
         | Expr::HyperWhatever
         | Expr::RoutineMagic

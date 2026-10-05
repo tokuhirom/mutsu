@@ -1044,6 +1044,10 @@ impl Compiler {
                 });
                 // Detect `:=` bind context for scalar variables via MarkBind.
                 let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
+                let restore_pointy_given_topic = stmts.iter().any(|s| {
+                    matches!(s, Stmt::VarDecl { custom_traits, .. }
+                        if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                });
                 // A trailing `MarkSigilless` marks the bind target as a
                 // sigilless term, which changes how an immutable `List`
                 // element's mutability is settled (see
@@ -1107,6 +1111,9 @@ impl Compiler {
                         continue;
                     }
                     self.compile_stmt(s);
+                }
+                if restore_pointy_given_topic {
+                    self.code.emit(OpCode::ExitPointyTopic);
                 }
             }
             Stmt::MarkReadonly(name, kind) => {
@@ -3236,7 +3243,8 @@ impl Compiler {
                             Stmt::VarDecl { name, .. }
                                 if !name.starts_with('!')
                                     && !name.starts_with('.')
-                                    && !name.starts_with('&') =>
+                                    && !name.starts_with('&')
+                                    && name != "__subsig__" =>
                             {
                                 Some(name.clone())
                             }
@@ -3269,12 +3277,23 @@ impl Compiler {
                     }
                     self.emit_inlined_body_placeholder_binds(body, ArgSupply::Topic);
                 }
+                let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
+                    Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
+                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
+                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                    }),
+                    _ => false,
+                });
+                let has_pointy_topic_binding =
+                    pointy_param_name.is_some() || is_copy_topic || restore_outer_topic;
                 let pointy_param_idx =
                     pointy_param_name.map(|name| self.code.add_constant(Value::str(name)));
                 let given_idx = self.code.emit(OpCode::Given {
                     body_end: 0,
                     topic_readonly,
                     pointy_param_idx,
+                    restore_outer_topic,
+                    has_pointy_topic_binding,
                     tagged_source,
                 });
                 let block_local_idx = (!*is_statement_modifier
