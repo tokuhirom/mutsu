@@ -583,8 +583,9 @@ Array storage, itemization, and repeated conversions.
 rows for plain positional and scalar receivers. Hashes use the same rows with
 their typed-key/value ordering, while ranges, lazy values, user-comparison
 values and unsupported receivers decline to the interpreter cascade. `List`
-also owns an `eager` row; already-eager Lists and Arrays return themselves,
-while lazy and shaped values retain the existing interpreter path.
+also owns `eager`, `item`, `sink` and `is-lazy` rows; already-eager Lists and
+Arrays return themselves, itemization stays on the shared representation, and
+lazy or shaped values retain the existing interpreter path.
 
 The shared handlers preserve first-winner and all-ties behavior for extrema
 pairs. The focused collection aggregate test covers scalar, List, Array and

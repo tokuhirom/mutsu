@@ -1,6 +1,6 @@
 use Test;
 
-plan 34;
+plan 37;
 
 my @array = 1, 3, 2;
 my $list = (1, 3, 2).List;
@@ -42,3 +42,6 @@ is 7.min, 7, 'scalar min uses the Any extrema row';
 is 7.max, 7, 'scalar max uses the Any extrema row';
 is $list.eager, $list, 'List.eager returns an already eager List';
 is @array.eager, @array, 'Array.eager keeps an already eager Array';
+is @array.item.elems, 3, 'Array.item keeps the positional contents';
+is $list.sink, Nil, 'List.sink is a no-op for an eager List';
+is @array.is-lazy, False, 'Array.is-lazy uses the plain List row';

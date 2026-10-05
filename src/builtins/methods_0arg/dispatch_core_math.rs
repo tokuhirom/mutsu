@@ -606,64 +606,74 @@ pub(super) fn dispatch(
                 s.as_bytes(),
             ))))
         }
-        "sink" => Some(match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Failure" => {
-                // Sinking a *handled* Failure is a no-op; only an unhandled
-                // Failure throws its exception when sunk.
-                if target.is_failure_handled() {
-                    Some(Ok(Value::NIL))
-                } else if let Some(ex) = attributes.as_map().get("exception") {
-                    let mut err = RuntimeError::new(ex.to_string_value());
-                    err.exception = Some(Box::new(ex.clone()));
-                    Some(Err(err))
-                } else {
-                    Some(Ok(Value::NIL))
-                }
-            }
-            ValueView::Seq(body) => {
-                // If there's a deferred source and `.cache` was not requested,
-                // fall through to the runtime, which can actually pull it.
-                if body.has_deferred_source() && !body.is_cached() {
-                    return Some(None); // fall through to runtime
-                }
-                // No pull to run here (already reified/cache-requested/taken):
-                // `sink`'s pull closure is unreachable on this branch.
-                let _ = body.sink_explicit(|_| {
+        "sink" => {
+            crate::builtins::method_table::list::sink(target, &[])
+                .map(Some)
+                .or_else(|| {
+                    Some(match target.view() {
+                        ValueView::Instance {
+                            class_name,
+                            attributes,
+                            ..
+                        } if class_name == "Failure" => {
+                            // Sinking a *handled* Failure is a no-op; only an unhandled
+                            // Failure throws its exception when sunk.
+                            if target.is_failure_handled() {
+                                Some(Ok(Value::NIL))
+                            } else if let Some(ex) = attributes.as_map().get("exception") {
+                                let mut err = RuntimeError::new(ex.to_string_value());
+                                err.exception = Some(Box::new(ex.clone()));
+                                Some(Err(err))
+                            } else {
+                                Some(Ok(Value::NIL))
+                            }
+                        }
+                        ValueView::Seq(body) => {
+                            // If there's a deferred source and `.cache` was not requested,
+                            // fall through to the runtime, which can actually pull it.
+                            if body.has_deferred_source() && !body.is_cached() {
+                                return Some(None); // fall through to runtime
+                            }
+                            // No pull to run here (already reified/cache-requested/taken):
+                            // `sink`'s pull closure is unreachable on this branch.
+                            let _ = body.sink_explicit(|_| {
                     unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
                 });
-                Some(Ok(Value::NIL))
-            }
-            // The runtime owns LazyList forcing. In particular, a gather body
-            // may run compiled code and must run before `.sink` returns.
-            ValueView::LazyList(_) => None,
-            _ => Some(Ok(Value::NIL)),
-        }),
+                            Some(Ok(Value::NIL))
+                        }
+                        // The runtime owns LazyList forcing. In particular, a gather body
+                        // may run compiled code and must run before `.sink` returns.
+                        ValueView::LazyList(_) => None,
+                        _ => Some(Ok(Value::NIL)),
+                    })
+                })
+        }
         // Cost: O(1) -- flips a tag/flag over the shared payload, or boxes the
         // value in a `Scalar`; never copies the aggregate.
-        "item" => Some(match target.view() {
-            ValueView::LazyList(_) => None, // fall through to runtime to force
-            // `Value::item` is the one place that decides HOW a value records
-            // its `$` container, and this arm is the method form of it:
-            //
-            // - an Array/List flips its `ArrayKind` over the shared `Gc`;
-            // - a Hash sets its itemized flag over the SAME `HashData` `Gc`, so
-            //   it stays a plain `Hash` value that every consumer (and every
-            //   element store, `$h<k> = v` included) sees as the hash itself.
-            //   Wrapping it in a `Scalar` instead hid the hash from the
-            //   subscript-assign lanes, which then replaced the whole variable
-            //   with a fresh `{k => v}` -- `my $h = %hh.item; $h<a> = 1` lost
-            //   the write (#10601);
-            // - a Slip records the `$` as a flag too, NOT a `Scalar` wrapper,
-            //   because a `$`-held Slip still flattens (`(1, slip(5, 6).item,
-            //   2).elems` is 4);
-            // - any other aggregate is wrapped in a `Scalar` so it is a single
-            //   non-flattening element in list context.
-            _ => Some(Ok(target.clone().item())),
-        }),
+        "item" => crate::builtins::method_table::list::item(target, &[])
+            .map(Some)
+            .or_else(|| {
+                Some(match target.view() {
+                    ValueView::LazyList(_) => None, // fall through to runtime to force
+                    // `Value::item` is the one place that decides HOW a value records
+                    // its `$` container, and this arm is the method form of it:
+                    //
+                    // - an Array/List flips its `ArrayKind` over the shared `Gc`;
+                    // - a Hash sets its itemized flag over the SAME `HashData` `Gc`, so
+                    //   it stays a plain `Hash` value that every consumer (and every
+                    //   element store, `$h<k> = v` included) sees as the hash itself.
+                    //   Wrapping it in a `Scalar` instead hid the hash from the
+                    //   subscript-assign lanes, which then replaced the whole variable
+                    //   with a fresh `{k => v}` -- `my $h = %hh.item; $h<a> = 1` lost
+                    //   the write (#10601);
+                    // - a Slip records the `$` as a flag too, NOT a `Scalar` wrapper,
+                    //   because a `$`-held Slip still flattens (`(1, slip(5, 6).item,
+                    //   2).elems` is 4);
+                    // - any other aggregate is wrapped in a `Scalar` so it is a single
+                    //   non-flattening element in list context.
+                    _ => Some(Ok(target.clone().item())),
+                })
+            }),
         "race" | "hyper" => {
             if matches!(target.view(), ValueView::LazyList(_)) {
                 return Some(None);
