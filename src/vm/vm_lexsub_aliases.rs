@@ -213,8 +213,23 @@ impl Interpreter {
     /// The alias local `name` resolves through while the running routine is a
     /// routine-nested sub that declared one for it.
     #[inline]
+    fn active_loop_param_shadows(&self, name: &str) -> bool {
+        self.topic_state
+            .active_loop_param_names
+            .iter()
+            .any(|params| params.contains(name))
+    }
+
+    #[inline]
     fn lexsub_alias_sym(&self, name: &str) -> Option<Symbol> {
         if self.lexicals.lexsub_free_aliases.is_empty() {
+            return None;
+        }
+        // A pointy `for` parameter is an active lexical in the running
+        // candidate, even though the VM binds it by name rather than into a
+        // compiled local slot. Do not let a sibling multi candidate's
+        // free-variable alias bypass that shadowing binding.
+        if self.active_loop_param_shadows(name) {
             return None;
         }
         let frame = self.routine_stack().last()?;
@@ -244,6 +259,9 @@ impl Interpreter {
     /// `name` (the shared cell), or `None`.
     #[inline]
     pub(crate) fn lexsub_alias_slot(&self, name: &str) -> Option<&Value> {
+        if self.active_loop_param_shadows(name) {
+            return None;
+        }
         match self.lexsub_alias_sym(name) {
             Some(alias) => self.env().get_sym(alias),
             None => self.lexsub_latest_cell(name),
@@ -280,6 +298,9 @@ impl Interpreter {
 
     /// Mutable counterpart of [`Self::lexsub_alias_slot`].
     pub(crate) fn lexsub_alias_slot_mut(&mut self, name: &str) -> Option<&mut Value> {
+        if self.active_loop_param_shadows(name) {
+            return None;
+        }
         match self.lexsub_alias_sym(name) {
             Some(alias) => self.env_mut().get_mut_sym(alias),
             None => {
