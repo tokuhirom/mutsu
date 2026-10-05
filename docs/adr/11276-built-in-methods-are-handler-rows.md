@@ -524,3 +524,19 @@ handler for unshaped Pair collections; Set, Bag and Mix keep their specialized
 invert behavior, and invalid positional elements retain the existing type
 check path. The focused method-row test covers all three owners, Hash
 inheritance, typed keys and repeated Pair expansion.
+
+### 9.10 List positional views (2026-10-05)
+
+`List.values`, `kv`, `pairs` and `antipairs` are now rows owned by `List`, and
+`Array` reaches the same handlers through its MRO. The handlers use the existing
+lazy `ListGen::Positional` modes, so values remain decontainerized and positional
+keys remain live when the result is consumed. The cascade's Array/List cases call
+the same handlers; shaped arrays, Sets/Bags/Mixes and lazy or user-defined
+receivers retain their specialized paths.
+
+The focused method-row test covers List and Array results and repeated call sites.
+The relevant `roast/S32-list` view tests pass. `pairup` and `cache` were
+investigated but not moved: the current native owner catalog does not mark those
+methods as declared rows at their apparent owners, so adding them would violate
+the owner-consistency invariant. They remain on the existing cascade until their
+catalog status is resolved.
