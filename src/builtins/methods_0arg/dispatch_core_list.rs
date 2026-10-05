@@ -3,39 +3,6 @@
 use crate::value::value_buf::buf_len_or_zero;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::is_infinite_range;
-
-/// `unique` and `repeated` share one pass over the input, keeping the values
-/// already seen in a [`crate::runtime::IdentityIndex`] so the duplicate test does not rescan
-/// them all: both were O(n^2) here, which is why `(^160_000).unique` never
-/// finished. The three container shapes (Array, Seq, Slip) differ only in how
-/// the items are reached, so they iterate through one helper rather than three
-/// copies of the loop.
-fn unique_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
-    let mut seen = crate::runtime::IdentityIndex::new();
-    let mut result = Vec::new();
-    for item in items {
-        if !seen.contains(item) {
-            seen.insert(item.clone());
-            result.push(item.clone());
-        }
-    }
-    Value::seq(result)
-}
-
-fn repeated_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
-    let mut seen = crate::runtime::IdentityIndex::new();
-    let mut result = Vec::new();
-    for item in items {
-        if seen.contains(item) {
-            result.push(item.clone());
-        } else {
-            seen.insert(item.clone());
-        }
-    }
-    Value::seq(result)
-}
-
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -76,97 +43,32 @@ pub(super) fn dispatch(
                 _ => Some(Ok(Value::int(0))),
             })
         }
-        // Cost: O(1) per call on an Array or List (a lazy Seq, `ListGen::Flat`,
-        // that flattens one element per pull), a LazyList or an infinite Range;
-        // otherwise O(t), t = leaves reached through flattenable nesting.
-        "flat" => Some(match target.view() {
-            ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
-                let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                Some(Ok(Value::seq(leaves)))
-            }
-            _ if is_infinite_range(target) => Some(Ok(target.clone())),
-            ValueView::LazyList(_) => Some(Ok(target.clone())), // flat of a lazy list is still lazy
-            _ => {
-                // Single source of truth: delegate to `flat_val` (also used by
-                // the `flat()` function) with List context (flatten_arrays =
-                // true). A Seq/List of nested arrays then descends one level --
-                // e.g. `(@a xx 4).flat` flattens its element arrays to match
-                // raku -- while a top-level real Array still itemizes its `[..]`
-                // children. The old per-method `flatten_deep_value` passed
-                // `false` for Seq children and so left them un-flattened.
-                // De-itemize the top-level receiver first: `$(1,2,3).flat`
-                // un-itemizes to `(1,2,3)` and then flattens (Raku semantics);
-                // nested itemized items stay single (handled by `flat_val`).
-                let operand = crate::builtins::deitemize_flat_operand(target);
-                // An Array or List flattens lazily, one element per pull, through
-                // the same `flat_val`: a real Array's itemized elements stay
-                // single, a List's flatten in turn.
-                if let ValueView::Array(
-                    _,
-                    kind @ (crate::value::ArrayKind::Array | crate::value::ArrayKind::List),
-                ) = operand.view()
-                {
-                    let flatten_children = kind == crate::value::ArrayKind::List;
-                    return Some(Some(Ok(Value::seq_list_gen(
-                        crate::value::ListGen::flat(operand, flatten_children),
-                        false,
-                    ))));
-                }
-                let mut result = Vec::new();
-                crate::builtins::flat_val(&operand, &mut result, true);
-                Some(Ok(Value::seq(result)))
-            }
-        }),
-        // Cost: O(e log e) comparisons, e = elements of the invocant (copied, then
-        // sorted with `compare_values`).
-        "sort" => Some(match target.view() {
-            // An object element may stringify through a user `Str`, which
-            // only the interpreter's dispatched `cmp` can call.
-            ValueView::Array(items, _)
-                if crate::runtime::utils::sort_needs_dispatched_cmp(items.iter()) =>
-            {
-                None
-            }
-            ValueView::Array(items, kind) => {
-                let mut sorted = if kind == crate::value::ArrayKind::Shaped
-                    && items
-                        .iter()
-                        .any(|v| matches!(v.view(), ValueView::Array(..)))
-                {
-                    crate::runtime::utils::shaped_array_leaves(target)
-                } else {
-                    (**items).clone().into_items()
-                };
-                sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
-                Some(Ok(Value::seq(sorted)))
-            }
-            _ => None,
-        }),
+        // The collection transformations' shared handlers are also the
+        // method-table rows (ADR-11276).
+        // Cost: O(1) per call on supported reified inputs; otherwise O(t),
+        // t = leaves reached through flattenable nesting.
+        "flat" => Some(crate::builtins::method_table::list_transform::flat(
+            target,
+            &[],
+        )),
+        // Cost: O(e log e) comparisons and O(e) copied values; e = elements.
+        "sort" => Some(crate::builtins::method_table::list_transform::sort(
+            target,
+            &[],
+        )),
         // Cost: O(e), e = elements passed to the shared List row handler.
         "reverse" => Some(crate::builtins::method_table::list::reverse(target, &[])),
-        // Cost: O(e) average when every element is an Int/BigInt/Str/Bool/Num (hash
-        // buckets in `IdentityIndex`); O(e * u) otherwise, e = elements, u = distinct
-        // elements of any other kind (Rat, Pair, object, list, ...), which the index
-        // cannot bucket and so compares against every candidate. Rakudo: O(e) (keyed
-        // on `.WHICH`) -- see #9161.
-        "unique" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(unique_seq(items.iter()))),
-            ValueView::Seq(items) => Some(Ok(unique_seq(items.iter()))),
-            ValueView::Slip(items) => Some(Ok(unique_seq(items.iter()))),
-            ValueView::LazyList(_) => None,
-            // Supply.unique is handled by native_supply
-            ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
-            _ => Some(Ok(target.clone())),
-        }),
-        // Cost: same as `unique`: O(e) average for Int/BigInt/Str/Bool/Num elements,
-        // O(e * u) for any other kind. Rakudo: O(e) -- see #9161.
-        "repeated" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(repeated_seq(items.iter()))),
-            ValueView::Seq(items) => Some(Ok(repeated_seq(items.iter()))),
-            ValueView::Slip(items) => Some(Ok(repeated_seq(items.iter()))),
-            ValueView::LazyList(_) => None,
-            _ => Some(Ok(Value::seq(Vec::new()))),
-        }),
+        // Cost: O(e) average for bucketed values, O(e * u) otherwise;
+        // e = elements, u = distinct values of kinds that require equality scans.
+        "unique" => Some(crate::builtins::method_table::list_transform::unique(
+            target,
+            &[],
+        )),
+        // Cost: same as unique.
+        "repeated" => Some(crate::builtins::method_table::list_transform::repeated(
+            target,
+            &[],
+        )),
         // The numeric types' rows' implementations (ADR-11276,
         // `method_table::real`); the cascade still reaches them for receivers
         // the table has no shape for.
