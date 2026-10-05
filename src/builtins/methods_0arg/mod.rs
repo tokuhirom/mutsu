@@ -1193,7 +1193,8 @@ fn range_end_f64(v: &Value) -> f64 {
     }
 }
 
-fn is_infinite_range(value: &Value) -> bool {
+// Cost: O(1), a fixed number of endpoint type probes and comparisons.
+pub(crate) fn is_infinite_range(value: &Value) -> bool {
     match value.view() {
         ValueView::Range(start, end)
         | ValueView::RangeExcl(start, end)
