@@ -1304,6 +1304,12 @@ pub(crate) enum OpCode {
     /// value on as the topic. Usually bracketed by [`Self::SaveTopic`] /
     /// [`Self::RestoreTopic`].
     SetTopic,
+    /// Read the active pointy `given`/`with` topic for its synthetic parameter
+    /// declaration, independently of the enclosing `$_`. Stack: `[] → [topic]`.
+    ///
+    /// The compiler emits this only for that declaration; the matching topic is
+    /// held in the runtime's scoped `given_pointy_topic_values` stack.
+    GetGivenPointyTopic,
     /// Save the current `$_` onto the interpreter's topic save stack.
     /// Stack: `[] → []`.
     ///
@@ -3674,6 +3680,13 @@ pub(crate) enum OpCode {
         /// parser emits a synthetic bound declaration at the body head and the
         /// compiler records the declared name here. `None` for non-pointy `given`.
         pointy_param_idx: Option<u32>,
+        /// Whether the synthetic pointy declaration restores the enclosing
+        /// `$_` immediately after reading the given topic. `is copy` bindings
+        /// need this even though they do not use `pointy_param_idx` writeback.
+        restore_outer_topic: bool,
+        /// Whether the body contains a synthetic declaration that reads the
+        /// active topic through [`OpCode::GetGivenPointyTopic`].
+        has_pointy_topic_binding: bool,
         /// Whether the topic expression ends in a `TagContainerRef` naming
         /// the topic's source variable. Only then does this op take the
         /// container-ref register; otherwise it discards whatever an earlier

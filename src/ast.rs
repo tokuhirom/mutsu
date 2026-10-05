@@ -992,6 +992,8 @@ impl ContextKind {
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
+    /// The current pointy `given`/`with` topic used by its synthetic binding.
+    GivenPointyTopic,
     Literal(Value),
     /// A CORE term keyword (`True`, `False`, `Nil`, `Empty`, `Any`) parsed in a
     /// compunit that `use`d a module whose exports are computed by a run-time

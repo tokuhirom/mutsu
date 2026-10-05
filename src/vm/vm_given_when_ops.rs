@@ -3,12 +3,15 @@ use crate::meta_ns::MetaNs;
 use crate::opcode::WhenMatcherKind;
 
 impl Interpreter {
+    #[allow(clippy::too_many_arguments)] // Mirrors the Given opcode operands.
     pub(super) fn exec_given_op(
         &mut self,
         code: &CompiledCode,
         body_end: u32,
         topic_readonly: bool,
         pointy_param_idx: Option<u32>,
+        restore_outer_topic: bool,
+        has_pointy_topic_binding: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -143,6 +146,12 @@ impl Interpreter {
         } else {
             topic
         };
+        let given_pointy_topic_value_depth = self.topic_state.given_pointy_topic_values.len();
+        if has_pointy_topic_binding {
+            self.topic_state
+                .given_pointy_topic_values
+                .push(body_topic.clone().into_deref());
+        }
         self.env_mut().insert("_".to_string(), body_topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
@@ -170,7 +179,18 @@ impl Interpreter {
         // element writeback below would flush THAT (not the real topic) back to the
         // source. Drain any such leftover scopes here, restoring `$_` and
         // `topic_source_var` to the given's own topic before the writeback reads it.
+        // A named pointy parameter reads the new topic once, for its synthetic
+        // declaration, then leaves `$_` and its source at the enclosing values.
+        // The generated declaration closes this save immediately after binding;
+        // if binding exits early (for example, a type check fails), this restore
+        // closure owns it instead.
         let saved_pointy_depth = self.topic_state.topic_source_save_stack.len();
+        if restore_outer_topic {
+            self.topic_state.topic_source_save_stack.push((
+                saved_topic.clone().unwrap_or(Value::NIL),
+                saved_topic_source.clone(),
+            ));
+        }
         let restore = move |this: &mut Self, write_back: bool| {
             // Body execution (including any nested `BlockLocalScope`) has
             // finished, so both stacks are safe to pop — pushed above in
@@ -190,6 +210,9 @@ impl Interpreter {
                 this.env_mut().insert("_".to_string(), saved_topic);
                 this.topic_state.topic_source_var = saved_source;
             }
+            this.topic_state
+                .given_pointy_topic_values
+                .truncate(given_pointy_topic_value_depth);
             if mark_ro {
                 this.unmark_readonly("_");
             }

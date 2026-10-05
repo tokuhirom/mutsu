@@ -3062,6 +3062,17 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
+            OpCode::GetGivenPointyTopic => {
+                self.stack.push(
+                    self.topic_state
+                        .given_pointy_topic_values
+                        .last()
+                        .cloned()
+                        .unwrap_or(Value::NIL),
+                );
+                *ip += 1;
+            }
+            // Cost: O(1).
             OpCode::PushEnterResult => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.enter_result_stack.push(val);
@@ -3100,7 +3111,10 @@ impl Interpreter {
                 if let Some((saved_topic, saved_source)) =
                     self.topic_state.topic_source_save_stack.pop()
                 {
-                    self.env_mut().insert("_".to_string(), saved_topic);
+                    self.env_mut().insert("_".to_string(), saved_topic.clone());
+                    if let Some(slot) = self.find_local_slot(code, "_") {
+                        self.locals[slot] = saved_topic;
+                    }
                     self.topic_state.topic_source_var = saved_source;
                 }
                 *ip += 1;
@@ -5787,6 +5801,8 @@ impl Interpreter {
                 body_end,
                 topic_readonly,
                 pointy_param_idx,
+                restore_outer_topic,
+                has_pointy_topic_binding,
                 tagged_source,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5801,6 +5817,8 @@ impl Interpreter {
                     *body_end,
                     *topic_readonly,
                     *pointy_param_idx,
+                    *restore_outer_topic,
+                    *has_pointy_topic_binding,
                     ip,
                     compiled_fns,
                 )?;

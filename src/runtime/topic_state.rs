@@ -26,6 +26,10 @@ pub(crate) struct TopicState {
     pub(crate) regex_topic_pinned: u32,
     pub(crate) last_topic_value: Option<Value>,
     pub(crate) topic_save_stack: Vec<Value>,
+    /// Current values for active pointy `given`/`with` bindings. Kept separately
+    /// from `$_` so restoring the enclosing topic after the bind does not
+    /// retarget the parameter's alias to the enclosing topic.
+    pub(crate) given_pointy_topic_values: Vec<Value>,
     /// Saved `$_` + `topic_source_var` for a pointy-topic scope (`if COND -> $_`,
     /// `with COND -> $_`). The pointy binding introduces a FRESH lexical `$_`
     /// that shadows an enclosing `given`'s topic, so its writes must NOT flow

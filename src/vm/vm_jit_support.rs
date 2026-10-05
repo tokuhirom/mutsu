@@ -174,6 +174,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MarkShapedDeclContext
             | OpCode::StashVarDeclInit
             | OpCode::SetTopic
+            | OpCode::GetGivenPointyTopic
             | OpCode::SaveTopic
             | OpCode::RestoreTopic
             | OpCode::EnterPointyTopic

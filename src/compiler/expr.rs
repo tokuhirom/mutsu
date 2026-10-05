@@ -66,6 +66,9 @@ impl Compiler {
             return;
         }
         match expr {
+            Expr::GivenPointyTopic => {
+                self.code.emit(OpCode::GetGivenPointyTopic);
+            }
             Expr::Whatever => {
                 let idx = self.code.add_constant(Value::WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));

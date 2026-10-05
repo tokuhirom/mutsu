@@ -78,6 +78,7 @@ impl Interpreter {
         }
         visit_opt(visitor, &self.topic_state.last_topic_value);
         visit_slice(visitor, &self.topic_state.topic_save_stack);
+        visit_slice(visitor, &self.topic_state.given_pointy_topic_values);
         if let Some((_, path)) = &self.topic_state.element_source {
             for (v, _) in path {
                 visitor.visit_value(v);
