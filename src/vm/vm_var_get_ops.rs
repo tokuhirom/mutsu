@@ -100,12 +100,29 @@ impl Interpreter {
             .cloned()
     }
 
+    /// A sigilless binding owned by the active env tier, as opposed to a
+    /// same-named value inherited from the code that called this routine.
+    // Cost: O(1) expected (one binding lookup, two metadata probes).
+    fn active_sigilless_bareword(&self, name: Symbol) -> Option<Value> {
+        let value = self.env().overlay_get_sym(name)?;
+        let readonly = self
+            .env()
+            .overlay_get_sym(Self::sigilless_readonly_key_for_sym(name))
+            .is_some();
+        let alias = self
+            .env()
+            .overlay_get_sym(Self::sigilless_alias_key_for_sym(name))
+            .is_some();
+        (readonly || alias).then(|| value.clone())
+    }
+
     pub(crate) fn push_bare_word_value(
         &mut self,
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
+        let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
         let name_split = crate::qualified::split_qualified(name_sym);
         let name_is_qualified = name_split.is_some();
@@ -304,6 +321,14 @@ impl Interpreter {
             && name.ends_with('>')
         {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(name), false)
+        } else if !matches!(name, "Inf" | "NaN")
+            && !Self::is_pseudo_package_bare(name)
+            && let Some(value) = self.active_sigilless_bareword(name_sym)
+        {
+            // EVAL compiles barewords without the caller's local-slot map.
+            // Recover a sigilless binding from this frame's own env tier so a
+            // caller's term or the module-scope fallback cannot hide it.
+            value
         } else if let Some(qualified) = self.resolve_suppressed_type(name) {
             // Inside the parent class of the nested class the short name resolves
             // to the qualified name (e.g. Frog -> Forest::Frog) — and it wins over
@@ -371,16 +396,36 @@ impl Interpreter {
             self.poisoned_enum_alias_check(name)?;
             enum_val
         } else if let Some(v) = self
-            .term_value(name)
+            .env()
+            .overlay_get_sym(crate::runtime::term_names::term_key_sym(name_sym))
             .cloned()
-            // A same-named constant another module published bare (ADR-11136)
-            // and this routine's own compunit does not merge is not what the
-            // name means here: the running module's own declaration is.
-            .filter(|_| {
-                Symbol::lookup(name).is_none_or(|sym| self.bare_name_visible_here(sym))
-                    || self.running_module_bareword(name).is_none()
-            })
         {
+            // A term declared in this routine's live frame shadows the
+            // module's off-frame copy and any term inherited from its caller.
+            v
+        } else if let Some(v) = self.term_value(name).cloned().filter(|_| {
+            // `term_value` walks through the caller's env. If this
+            // routine has an off-frame lexical with the same spelling,
+            // resolve it from the routine's unit instead. Probe the exact
+            // lexical package first; the package-chain fallback handles
+            // nested package owners. Cache the result for the module arm
+            // below; local terms were handled by the current-tier probe above.
+            let term_key = crate::runtime::term_names::term_key_sym(name_sym);
+            let active_package_term = self
+                .routine_stack()
+                .last()
+                .and_then(|frame| frame.lexical_package)
+                .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
+                .and_then(|lexicals| {
+                    lexicals
+                        .get(term_key.as_str())
+                        .or_else(|| lexicals.get(name))
+                })
+                .cloned();
+            preferred_module_bareword =
+                active_package_term.or_else(|| self.running_module_bareword(name));
+            preferred_module_bareword.is_none()
+        }) {
             // A sigil-less constant live in this scope's `env` — declared here
             // or imported by a block-scoped `use` — shadows a same-named type
             // (#9963): `{ use CG; G }` is CG's `constant G`, not the file's
@@ -423,7 +468,10 @@ impl Interpreter {
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
             Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
-        } else if let Some(module_val) = self.running_module_bareword(name) {
+        } else if let Some(module_val) = preferred_module_bareword
+            .take()
+            .or_else(|| self.running_module_bareword(name))
+        {
             // A file-scope symbol of the running routine's OWN compunit —
             // an imported enum key or `constant`, or one the module declared
             // itself — beats whatever the scope that loaded the module left

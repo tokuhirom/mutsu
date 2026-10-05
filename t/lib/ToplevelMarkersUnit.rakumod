@@ -14,3 +14,14 @@ our sub bump-bad() { $counter = 'nope'; $counter }
 our sub version() { VERSION }
 our sub label() { LABEL }
 our sub eval-term() { use MONKEY-SEE-NO-EVAL; EVAL 'EVAL-ONLY' }
+our sub eval-label() { use MONKEY-SEE-NO-EVAL; EVAL 'LABEL' }
+our sub eval-constant-local() {
+    my constant LABEL = 'local-constant';
+    use MONKEY-SEE-NO-EVAL;
+    EVAL 'LABEL'
+}
+our sub eval-label-local() {
+    my \LABEL = 'local-label';
+    use MONKEY-SEE-NO-EVAL;
+    EVAL 'LABEL'
+}
