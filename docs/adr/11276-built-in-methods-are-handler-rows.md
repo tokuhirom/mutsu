@@ -555,3 +555,13 @@ user-defined receivers retain their existing specialized paths.
 The focused row test covers scalar and text receivers, concrete List/Map row
 precedence, and Range reverse fallback. The collection and numeric TAP suites
 (209 files, 3056 tests) and all 50 `roast/S32-list` files (1865 tests) pass.
+
+### 9.12 Collection search worries (#11760, 2026-10-05)
+
+`List` and `Array` calls to `contains`, `index` and `rindex` keep using the
+shared `Cool` search handlers and now return Rakudo's resumable "did you mean"
+worry with the existing stringified-search result. `Map.contains` and
+`Map.index` are rows owned by `Map`; `Hash` reaches them through its MRO, and
+the warning names the concrete receiver type. The native one-argument cascade
+uses the same handlers, and `settle_native_warning` resumes them at the call
+site. The focused test pins both the warning text and the preserved result.

@@ -520,8 +520,8 @@ pub(crate) fn native_method_1arg(
             if let ValueView::Regex(..) = arg.view() {
                 return None;
             }
-            // The `Str`/`Cool` row's handler (ADR-11276); it also covers a
-            // Junction needle, which the table itself never hands it.
+            // The shared `Str`/`Cool`/`Map` row handler (ADR-11276); it also
+            // covers a Junction needle, which the table itself never hands it.
             Some(crate::builtins::method_table::str_search::contains(
                 target,
                 std::slice::from_ref(arg),
@@ -633,7 +633,7 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            // The `Str`/`Cool` row's handler (ADR-11276).
+            // The shared `Str`/`Cool`/`Map` row handler (ADR-11276).
             Some(crate::builtins::method_table::str_search::index(
                 target,
                 std::slice::from_ref(arg),
