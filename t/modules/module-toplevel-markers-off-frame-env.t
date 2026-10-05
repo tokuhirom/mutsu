@@ -3,7 +3,7 @@ use lib 't/lib';
 use MONKEY-SEE-NO-EVAL;
 use Test;
 
-plan 17;
+plan 20;
 
 # A module body runs in the importer's env, so the companion markers its
 # file-scope declarations write -- `__mutsu_constant_var::` for a `constant`,
@@ -26,6 +26,12 @@ ok ToplevelMarkersUnit::matches('xabcx'), 'a unit module routine interpolates it
 nok ToplevelMarkersUnit::matches('xyz'), '... and the constant still matches literally';
 is ToplevelMarkersUnit::version(), 3, 'a typed unit constant reads back';
 is ToplevelMarkersUnit::label(), 'unit-label', 'a unit constant reads back';
+is ToplevelMarkersUnit::eval-label(), 'unit-label',
+    'EVAL inside the unit module prefers its own same-named constant';
+is ToplevelMarkersUnit::eval-label-local(), 'local-label',
+    'EVAL inside a unit routine still sees its local sigilless shadow';
+is ToplevelMarkersUnit::eval-constant-local(), 'local-constant',
+    'EVAL still sees a routine-local constant over the unit constant';
 is ToplevelMarkersUnit::eval-term(), 'unit-eval', 'EVAL inside the unit module sees its own constant as a term';
 is ToplevelMarkersUnit::bump(), 1, 'a typed unit `my` assigns from the module routine';
 throws-like { ToplevelMarkersUnit::bump-bad() }, X::TypeCheck::Assignment,
