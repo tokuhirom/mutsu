@@ -78,16 +78,10 @@
 # against warm, or it will read a 26% allocation "win" that is only a populated
 # cache.
 #
-# The recorded CI series measures the WARM state, and by construction rather than
-# by luck: bench.yml runs the wall-clock pass (scripts/bench-ci.sh, seven runs of
-# each benchmark in each lane) BEFORE this script, so the cache is thoroughly
-# populated by the time callgrind starts. The first recorded rows prove it --
-# `bench-json-fast` came back as 1,311,788, which is the warm local number to
-# within 0.008%, not the cold one. (An earlier version of this comment claimed the
-# opposite, that CI is "cold every time, consistently" because it builds fresh.
-# Consistent it is, but warm; and warm is the state worth recording, since it is
-# the one a steady-state run is in. If those two steps are ever reordered or the
-# wall-clock pass is dropped, this series steps once, for this reason.)
+# Every measurement explicitly warms its benchmark in both JIT modes before
+# callgrind starts. This is independent of workflow event and step ordering, so
+# push-triggered deterministic-only runs measure the same warm cache state as
+# local runs and workflow_dispatch.
 #
 # WHY THE SYMBOL SET BELOW, and why counting two layers would be wrong: the libc
 # entry points are counted, not Rust's `__rust_alloc*` shims. The shims are
@@ -249,6 +243,37 @@ if [ "${1:-}" = --self-test ]; then
     exit
 fi
 
+WARMUP_ONLY=0
+if [ "${1:-}" = --warmup ]; then
+    WARMUP_ONLY=1
+    shift
+fi
+
+# No arguments: the whole suite. Named files select a subset for local work and
+# for the warmup-only mode used by tests.
+if [ "$#" -gt 0 ]; then
+    benches=("$@")
+else
+    benches=(benchmarks/*.raku)
+fi
+
+# Tells benchmarks to use their callgrind-sized inputs and populates bytecode
+# precompilation caches separately for both JIT settings.
+export BENCH_DET=1
+warm() { # $1=bench-file
+    echo "bench-det: warming $1 (JIT off and on)" >&2
+    MUTSU_JIT=off timeout "$TIMEOUT" "$MUTSU" "$1" >/dev/null
+    MUTSU_JIT=on timeout "$TIMEOUT" "$MUTSU" "$1" >/dev/null
+}
+
+for bench in "${benches[@]}"; do
+    warm "$bench"
+done
+
+if [ "$WARMUP_ONLY" = 1 ]; then
+    exit
+fi
+
 # After --self-test, which is pure text processing and must work on a box with no
 # valgrind (it runs in the CI checks job, which installs none).
 if ! command -v valgrind >/dev/null 2>&1; then
@@ -257,12 +282,6 @@ if ! command -v valgrind >/dev/null 2>&1; then
 fi
 
 mkdir -p "$(dirname "$CG_OUT")"
-
-# Tells a benchmark it is running under callgrind (~90x native), so one sized
-# for the wall-clock series can shrink its input: benchmarks/bench-json-fast-spdx
-# decodes 100 records here instead of 727. The instruction series only has to
-# be comparable with itself across commits, never with the wall-clock series.
-export BENCH_DET=1
 
 measure() { # $1=bench-file; sets $ir and $allocs
     local raw
@@ -301,16 +320,6 @@ emit() { # $1=row-name $2=bench-file
         printf '%s\t%s\t%s\n' "$1" "$ir" "$allocs"
     fi
 }
-
-# No arguments: the whole suite, which is what CI runs. Named files instead when
-# investigating one benchmark by hand -- the allocation column is meant to be the
-# acceptance criterion for a slice, and re-measuring the whole suite to check one
-# file of it is four minutes for nothing.
-if [ "$#" -gt 0 ]; then
-    benches=("$@")
-else
-    benches=(benchmarks/*.raku)
-fi
 
 for bench in "${benches[@]}"; do
     name=$(basename "$bench" .raku)
