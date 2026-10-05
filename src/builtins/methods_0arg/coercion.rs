@@ -17,13 +17,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
-            ValueView::Int(i) => Some(Ok(Value::num(i as f64))),
-            ValueView::Num(f) => Some(Ok(Value::num(f))),
-            _ => Some(Ok(Value::num(0.0))),
+            _ => None,
         },
         "im" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::im(target, &[])),
-            _ => Some(Ok(Value::num(0.0))),
+            _ => None,
         },
         "conj" => match target.view() {
             ValueView::Complex(..) => {

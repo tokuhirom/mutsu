@@ -21,8 +21,10 @@ nok (0 + 0i).isNaN,          'isNaN: zero Complex is not NaN';
 is "6+8i".abs, 10,           '"6+8i".abs -> 10';
 is "3-4i".abs, 5,            '"3-4i".abs -> 5';
 is "1+2i".conj, 1 - 2i,      '"1+2i".conj -> 1-2i';
-is "6+8i".re, 6,             '"6+8i".re -> 6';
-is "6+8i".im, 8,             '"6+8i".im -> 8';
+throws-like { "6+8i".re }, X::Method::NotFound,
+    'a numeric string does not gain Complex.re by coercion';
+throws-like { "6+8i".im }, X::Method::NotFound,
+    'a numeric string does not gain Complex.im by coercion';
 
 # --- Str -> Complex coercion, function form ---
 is abs("6+8i"), 10,          'abs "6+8i" -> 10';
