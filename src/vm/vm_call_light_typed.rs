@@ -944,34 +944,4 @@ impl Interpreter {
             }
         }
     }
-
-    /// A return value that may *be* (or carry) a routine declared inside the
-    /// callee body — i.e. a `my sub` that escaped by being returned. When the
-    /// body declares an inner routine and returns one of these, its registry
-    /// entry must survive the call so it stays callable by name (e.g. `my &bar
-    /// := producer()` then `bar(...)`). Any other return value means the inner
-    /// routine did not escape via the return slot and can be cleaned up.
-    ///
-    /// A `Seq`/`LazyList` also counts: `gather r()` (`r` declared in the same
-    /// body) returns a lazy sequence whose generator has NOT run `r` yet at
-    /// return time — the actual call happens later, whenever the caller
-    /// iterates it (`.List`, `.first`, …), which is after this body's own
-    /// registry snapshot would otherwise already have been restored. Treating
-    /// every `Seq`/`LazyList` as escaping is conservative (it also covers one
-    /// that captures no declared routine at all, e.g. a `map` result), but
-    /// correctness comes first: restoring too early breaks the call outright
-    /// (`Unknown function`), while never restoring for a Seq-returning body
-    /// only re-leaks the same declaration the un-scoped method-dispatch path
-    /// leaked unconditionally before this check existed at all.
-    pub(super) fn return_value_escapes_routine(v: &Value) -> bool {
-        matches!(
-            v.view(),
-            ValueView::Sub(_)
-                | ValueView::WeakSub(_)
-                | ValueView::Routine { .. }
-                | ValueView::Mixin(..)
-                | ValueView::Seq(_)
-                | ValueView::LazyList(_)
-        )
-    }
 }
