@@ -61,8 +61,9 @@ impl SortCaller for VmSortCaller<'_> {
         crate::runtime::methods_collection_ops::sort::sort_keys_batched(self.0, callable, items)
     }
 
-    fn has_user_stringifier(&mut self, item: &Value) -> bool {
-        self.0.has_user_stringifier_operand(&item.deref_container())
+    fn needs_dispatched_cmp(&mut self, item: &Value) -> bool {
+        let item = item.deref_container();
+        item.is_proxy_value() || self.0.has_user_stringifier_operand(&item)
     }
 
     fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering {

@@ -46,6 +46,14 @@ impl Interpreter {
                     Ok(value) => value,
                     Err(err) => return Some(Err(err)),
                 };
+                // Every `ContainerRef` returned as an lvalue denotes a scalar
+                // slot: a lexical, an attribute, or an element of an Array or
+                // Hash. Its store therefore itemizes aggregate values just as
+                // the ordinary scalar assignment path does. Without this,
+                // `rw` methods could write a bare Slip into a scalar attribute,
+                // while `$attr = |$value` through its accessor stored an
+                // itemized Slip.
+                let value = Self::itemize_scalar_store_value(value);
                 *cell.lock().unwrap() = value.clone();
                 Some(Ok(value))
             }
@@ -450,12 +458,13 @@ impl Interpreter {
         let Some(class_name) = Self::lvalue_invocant_class_name(&target) else {
             return Ok(None);
         };
-        if self
-            .resolve_private_method_for_vm(&class_name, method, method_args)
-            .is_none()
-        {
+        let Some((_, method_def)) =
+            self.resolve_private_method_for_vm(&class_name, method, method_args)
+        else {
             return Ok(None);
-        }
+        };
+        let attr_sigil = Self::rw_method_attribute_target(&method_def.body)
+            .map(|(_, sigil)| sigil);
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
         // As in `try_rw_method_container_lvalue`: the pending argument-source
@@ -464,7 +473,19 @@ impl Interpreter {
         let result = self.call_method_with_values(target, method, method_args.to_vec());
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
-        self.assign_through_rw_result(result?, value.clone())
+        let result = result?;
+        // A bare `@!attr`/`%!attr` method exposes the aggregate container,
+        // whose STORE must flatten/coerce the assignment value in aggregate
+        // context. Its local may be represented by a ContainerRef, so deref it
+        // before `assign_through_rw_result` can mistake that store for a `$`
+        // scalar rebinding. This matters for an empty Slip too: CRDT's
+        // `G-Counter.copy` must leave an empty BagHash empty.
+        let result = if matches!(attr_sigil, Some('@' | '%')) {
+            result.deref_container()
+        } else {
+            result
+        };
+        self.assign_through_rw_result(result, value.clone())
             .map(Some)
     }
 

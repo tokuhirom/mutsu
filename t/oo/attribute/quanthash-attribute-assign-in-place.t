@@ -7,7 +7,7 @@ use Test;
 # the direct form built a plain Hash and died on an odd element count, and the
 # rw-method form died with "Cannot modify an immutable BagHash".
 
-plan 9;
+plan 11;
 
 class Counter {
     has %!values is BagHash;
@@ -15,6 +15,7 @@ class Counter {
     method !values is rw { %!values }
     method !seen is rw { %!seen }
     method add($k) { %!values{$k}++; self }
+    method total { %!values.values.sum }
     method values-raku { %!values.^name ~ ' ' ~ %!values.sort(*.key).map({ .key ~ '=' ~ .value }).join(',') }
     method set-direct(*@items) { %!values = @items; self }
     method set-pairs(@pairs) { %!values = @pairs; self }
@@ -31,6 +32,8 @@ my $copy = $c.copy;
 is $copy.values-raku, $c.values-raku, 'an rw method stores a slipped BagHash';
 $copy.add('c');
 isnt $copy.values-raku, $c.values-raku, 'the copy is its own container';
+is Counter.new.copy.total, 0, 'copying an empty BagHash through a private rw accessor keeps it empty';
+is (|BagHash.new).BagHash.elems, 0, 'coercing an empty Slip produces an empty BagHash';
 
 is Counter.new.set-direct(<x x y>).values-raku, 'BagHash x=2,y=1',
     'a direct attribute assignment coerces a list';

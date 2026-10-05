@@ -201,10 +201,10 @@ pub(crate) trait SortCaller {
     /// Extract every Schwartzian key in ONE batch, or `None` to fall back to a
     /// [`Self::call_callable`] per element. See [`sort_keys_batched`].
     fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>>;
-    /// Whether `item` is an object whose class defines its own `Str` /
-    /// `Stringy`, so the default order must dispatch `cmp` instead of using
-    /// the pure [`compare_values`].
-    fn has_user_stringifier(&mut self, item: &Value) -> bool;
+    /// Whether the default order must dispatch `cmp` instead of using the pure
+    /// [`compare_values`]: user stringifiers need method dispatch, and a Proxy
+    /// needs `FETCH` before its value can be compared.
+    fn needs_dispatched_cmp(&mut self, item: &Value) -> bool;
     /// The default order through the dispatched `infix:<cmp>`.
     fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering;
 }
@@ -294,8 +294,9 @@ impl SortCaller for InterpCaller<'_> {
         sort_keys_batched(self.0, callable, items)
     }
 
-    fn has_user_stringifier(&mut self, item: &Value) -> bool {
-        self.0.has_user_stringifier_operand(&item.deref_container())
+    fn needs_dispatched_cmp(&mut self, item: &Value) -> bool {
+        let item = item.deref_container();
+        item.is_proxy_value() || self.0.has_user_stringifier_operand(&item)
     }
 
     fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering {
@@ -310,10 +311,17 @@ pub(crate) fn dispatched_cmp_ordering(
     a: &Value,
     b: &Value,
 ) -> std::cmp::Ordering {
-    interp
-        .cmp_value(a.deref_container(), b.deref_container())
+    let left = a.deref_container();
+    let right = b.deref_container();
+    let left = interp.auto_fetch_proxy(&left);
+    let right = interp.auto_fetch_proxy(&right);
+    match (left, right) {
+        (Ok(left), Ok(right)) => interp
+            .cmp_value(left, right)
         .map(|r| sort_result_to_ordering(&r))
-        .unwrap_or(std::cmp::Ordering::Equal)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        _ => std::cmp::Ordering::Equal,
+    }
 }
 
 /// Stable merge sort that always calls the comparator with (left, right)
@@ -464,7 +472,7 @@ pub(crate) fn sort_items_generic(
         }
         // Default order: the pure `cmp`, unless an element stringifies
         // through its own `Str`/`Stringy`, which only a dispatched `cmp` sees.
-        None if items.iter().any(|v| caller.has_user_stringifier(v)) => {
+        None if items.iter().any(|v| caller.needs_dispatched_cmp(v)) => {
             merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                 caller.dispatched_cmp(a, b)
             });
@@ -541,7 +549,7 @@ pub(crate) fn sort_indices_generic(
             };
             perm.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
         }
-        None if items.iter().any(|v| caller.has_user_stringifier(v)) => {
+        None if items.iter().any(|v| caller.needs_dispatched_cmp(v)) => {
             perm.sort_by(|&i, &j| caller.dispatched_cmp(&items[i], &items[j]));
         }
         None => perm.sort_by(|&i, &j| compare_values(&items[i], &items[j]).cmp(&0)),

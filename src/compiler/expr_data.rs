@@ -106,6 +106,13 @@ impl Compiler {
             })
             && !attr_name.is_empty()
         {
+            let value = match expr {
+                Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    ..
+                } => Expr::Grouped(Box::new(expr.clone())),
+                _ => expr.clone(),
+            };
             // Use the ordinary call producer so accessor-ref markers, closure
             // escape tracking, and argument-source metadata stay identical to
             // the parser-lowered `$obj.attr = value` form.  Emitting the five
@@ -120,7 +127,7 @@ impl Compiler {
                     Expr::BareWord("self".to_string()),
                     Expr::Literal(Value::str(attr_name.to_string())),
                     Expr::ArrayLiteral(Vec::new()),
-                    expr.clone(),
+                    value,
                     Expr::Literal(Value::NIL),
                     Expr::Literal(Value::NIL),
                     Expr::Literal(Value::TRUE),

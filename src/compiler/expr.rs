@@ -191,6 +191,14 @@ impl Compiler {
                         quoted: false,
                         arg_sources_idx: None,
                     });
+                    let list_idx = self.code.add_constant(Value::str_from("list"));
+                    self.code.emit(OpCode::CallMethod {
+                        name_idx: list_idx,
+                        arity: 0,
+                        modifier_idx: None,
+                        quoted: false,
+                        arg_sources_idx: None,
+                    });
                     return;
                 }
                 // `@OUTER::a` names a lexical of an enclosing scope, exactly
