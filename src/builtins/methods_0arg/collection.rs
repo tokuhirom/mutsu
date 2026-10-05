@@ -261,6 +261,12 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // live length, `ListGen::Positional`), O(1) per key pulled; O(e) on any other
         // invocant, e = elements (or pairs), built eagerly.
         "keys" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(crate::builtins::method_table::any_collection::keys(
+                    target,
+                    &[],
+                ));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let keys: Vec<Value> = indexed
@@ -312,6 +318,12 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // per value pulled; O(e) on any other invocant, e = elements (or pairs),
         // copied eagerly.
         "values" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(crate::builtins::method_table::any_collection::values(
+                    target,
+                    &[],
+                ));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
                 return Some(Ok(Value::seq(leaves)));
@@ -360,6 +372,12 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // per key or value pulled; O(e) on any other invocant, e = elements (or
         // pairs), all built eagerly.
         "kv" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(crate::builtins::method_table::any_collection::kv(
+                    target,
+                    &[],
+                ));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let mut kv = Vec::with_capacity(indexed.len() * 2);
@@ -438,6 +456,12 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // per pair pulled; O(e) on any other invocant, e = elements (or pairs), one
         // Pair allocated per element eagerly.
         "pairs" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(crate::builtins::method_table::any_collection::pairs(
+                    target,
+                    &[],
+                ));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let pairs: Vec<Value> = indexed
@@ -546,6 +570,12 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // per pair pulled; O(e) on any other invocant, e = elements (or pairs), one
         // Pair allocated per element eagerly.
         "antipairs" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(crate::builtins::method_table::any_collection::antipairs(
+                    target,
+                    &[],
+                ));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
                 let pairs: Vec<Value> = indexed

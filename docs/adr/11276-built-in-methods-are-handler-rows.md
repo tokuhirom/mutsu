@@ -540,3 +540,18 @@ investigated but not moved: the current native owner catalog does not mark those
 methods as declared rows at their apparent owners, so adding them would violate
 the owner-consistency invariant. They remain on the existing cascade until their
 catalog status is resolved.
+
+### 9.11 Any scalar collection family (2026-10-05)
+
+`Any.elems`, `end`, `keys`, `values`, `kv`, `pairs`, `antipairs` and `reverse`
+are now rows in `method_table/any_collection.rs`. The handlers implement Any's
+one-element scalar semantics and are reached for the plain scalar dispatch
+shapes; List and Map rows remain more specific in the MRO. `Any.end` and
+`Any.reverse` also cover Hash where no more-specific row exists. The native
+cascade calls the same handlers for Bool and other scalar representations that
+do not have a dispatch shape, while Range, lazy Seq, Set/Bag/Mix, Pair and
+user-defined receivers retain their existing specialized paths.
+
+The focused row test covers scalar and text receivers, concrete List/Map row
+precedence, and Range reverse fallback. The collection and numeric TAP suites
+(209 files, 3056 tests) and all 50 `roast/S32-list` files (1865 tests) pass.

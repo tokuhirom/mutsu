@@ -94,7 +94,7 @@ fn lookup_walks_the_mro() {
     );
     assert_eq!(lookup(DispatchShape::List, elems, 0).unwrap().owner, "List");
     assert_eq!(lookup(DispatchShape::Hash, elems, 0).unwrap().owner, "Map");
-    assert!(lookup(DispatchShape::Str, elems, 0).is_none());
+    assert_eq!(lookup(DispatchShape::Str, elems, 0).unwrap().owner, "Any");
     let numerator = Symbol::intern("numerator");
     assert!(lookup(DispatchShape::Rat, numerator, 0).is_some());
     assert!(lookup(DispatchShape::Num, numerator, 0).is_none());

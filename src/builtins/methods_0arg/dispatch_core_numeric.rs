@@ -75,6 +75,12 @@ pub(super) fn dispatch(
         // Cost: O(1) on a reified list/array, hash or integer Range; a finite
         // LazyList is forced first (O(e), deferred to the runtime), as in Rakudo.
         "elems" => {
+            if crate::builtins::method_table::any_collection::scalar_like(target) {
+                return Some(Some(crate::builtins::method_table::any_collection::elems(
+                    target,
+                    &[],
+                )));
+            }
             if let ValueView::LazyList(list) = target.view() {
                 // Only a GENUINELY lazy list refuses `.elems`; everything else
                 // reifies and counts. A plain `gather {...}` Seq is not lazy
