@@ -1,7 +1,8 @@
 use super::super::*;
 use super::regex_casefold::casefold_eq;
 use super::regex_eval_class::{
-    class_matches_cluster_base, composite_item_matches, composite_probe_chars,
+    class_matches_cluster_base, class_matches_crlf, composite_item_matches,
+    composite_probe_chars,
 };
 use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, grapheme_end, is_grapheme_boundary, is_word_char, matches_named_builtin,
@@ -598,14 +599,11 @@ impl Interpreter {
             }
             RegexAtom::Any => true,
             RegexAtom::CharClass(class) => {
-                // \r\n is a single grapheme cluster in Raku that a class tests
-                // as `\n` — for a negated class too: `<-[\n]>` must not match
-                // it (PDF::Grammar's `<-literal-delimiter>+` stops at a CRLF),
-                // while `<-[\r]>` and `<-[a]>` do.
+                // \r\n is a single grapheme cluster in Raku. Only the logical
+                // newline class `\n` consumes it; raw characters and ranges
+                // cannot match one codepoint of the pair.
                 if c == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
-                    return self
-                        .regex_match_class_ignorecase(class, '\n', ignore_case)
-                        .then_some(pos + 2);
+                    return class_matches_crlf(class, ignore_case).then_some(pos + 2);
                 }
                 // In Raku, enumerated char classes like <[Dd]> match whole graphemes.
                 // If the grapheme has combining marks, exact Char/Range items should
@@ -695,8 +693,10 @@ impl Interpreter {
                 let chars_to_check: Vec<char> = composite_probe_chars(effective_c, ignore_case);
                 // A grapheme of several codepoints equals no enumerated
                 // character or range; the other items test its base (see
-                // `class_matches_cluster_base`).
-                let in_cluster = effective_c == c && grapheme_end(chars, pos) > pos + 1;
+                // `class_matches_cluster_base`). This includes CRLF, whose
+                // effective base is newline but whose raw codepoints are not
+                // available as independent class matches.
+                let in_cluster = grapheme_end(chars, pos) > pos + 1;
                 // `mut`: resolving a class item can dispatch a grammar token, which
                 // now takes `&mut self`, making this an `FnMut`.
                 let mut match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {

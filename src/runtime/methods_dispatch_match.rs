@@ -342,7 +342,7 @@ impl Interpreter {
             "subst" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
                 me.dispatch_subst(target, &args)
             })),
-            // Cost: see `dispatch_wordcase` (src/runtime/methods_string.rs).
+            // Cost: see `dispatch_wordcase` (src/runtime/methods_string_wordcase.rs).
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
                 if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")

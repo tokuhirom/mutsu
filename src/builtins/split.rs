@@ -128,8 +128,8 @@ pub(crate) struct SplitMatch {
 }
 
 /// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
-// Cost: O(n*m) worst, O(n + k) typical, n = chars of the invocant, m = chars
-// of the separator, k = pieces produced (naive char-window search).
+// Cost: O(n*m) worst, O(n + k) typical, n = bytes of the invocant, m = bytes
+// of the separator, k = pieces produced (grapheme-boundary-aware search).
 fn split_by_string(
     text: &str,
     sep: &str,
@@ -179,8 +179,7 @@ fn split_by_string(
         return result;
     }
 
-    let sep_chars: Vec<char> = sep.chars().collect();
-    let sep_len = sep_chars.len();
+    let index = crate::builtins::grapheme_index::GraphemeIndex::build(text);
     let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
     let mut splits_done = 0;
     let mut pos = 0;
@@ -189,40 +188,37 @@ fn split_by_string(
         if let Some(max) = max_splits
             && splits_done >= max
         {
-            let remaining: String = chars[pos..].iter().collect();
+            let remaining = text[pos..].to_string();
             result.push((remaining, None));
             return result;
         }
 
-        let mut found = None;
-        if pos + sep_len <= chars.len() {
-            for start in pos..=(chars.len() - sep_len) {
-                if chars[start..start + sep_len] == sep_chars[..] {
-                    found = Some(start);
-                    break;
-                }
-            }
-        }
-
-        match found {
+        match crate::builtins::grapheme_index::find_graphemes(text, &index, pos, sep) {
             Some(match_pos) => {
-                let segment: String = chars[pos..match_pos].iter().collect();
+                let match_end = match_pos + sep.len();
+                let from = index
+                    .grapheme_at_boundary(text, match_pos)
+                    .expect("grapheme search returns a boundary");
+                let to = index
+                    .grapheme_at_boundary(text, match_end)
+                    .expect("grapheme search returns a boundary");
+                let segment = text[pos..match_pos].to_string();
                 result.push((
                     segment,
                     Some(SplitMatch {
-                        from: match_pos,
-                        to: match_pos + sep_len,
+                        from,
+                        to,
                         matched: sep.to_string(),
                         splitter_index: 0,
                         is_regex: false,
                         match_obj: None,
                     }),
                 ));
-                pos = match_pos + sep_len;
+                pos = match_end;
                 splits_done += 1;
             }
             None => {
-                let remaining: String = chars[pos..].iter().collect();
+                let remaining = text[pos..].to_string();
                 result.push((remaining, None));
                 return result;
             }
@@ -235,10 +231,10 @@ fn split_by_string(
 /// At each cursor position the earliest occurrence of any splitter wins, the
 /// longest splitter on a tie. Each splitter's next occurrence is cached and
 /// only searched again once the cursor has moved past it, so every splitter
-/// scans each char of the invocant at most once over the whole call (a k-way
+/// scans the invocant at most once over the whole call (a k-way
 /// merge of the per-splitter find streams).
-// Cost: O(n*m + k), n = chars of the invocant, m = total chars of the
-// separators, k = pieces produced (naive char-window search per splitter).
+// Cost: O(n*m + k), n = bytes of the invocant, m = total bytes of the
+// separators, k = pieces produced (grapheme-boundary-aware search per splitter).
 pub(crate) fn split_by_strings(
     text: &str,
     splitters: &[String],
@@ -248,19 +244,18 @@ pub(crate) fn split_by_strings(
         return Vec::new();
     }
     let mut result = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
-
     if text.is_empty() {
         result.push((String::new(), None));
         return result;
     }
 
-    let splitter_chars: Vec<Vec<char>> = splitters.iter().map(|s| s.chars().collect()).collect();
+    let index = crate::builtins::grapheme_index::GraphemeIndex::build(text);
+    let splitter_lengths: Vec<usize> = splitters.iter().map(|s| s.chars().count()).collect();
     // Per splitter: `Some(Some(p))` = next occurrence starts at `p`,
     // `Some(None)` = no occurrence at or after the last search start (so none
     // ever again), `None` = not searched yet. A cached `p` stays valid while
     // `p >= pos`: it is the first occurrence at or after an earlier cursor.
-    let mut next: Vec<Option<Option<usize>>> = vec![None; splitter_chars.len()];
+    let mut next: Vec<Option<Option<usize>>> = vec![None; splitters.len()];
     let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
     let mut splits_done = 0;
     let mut pos = 0;
@@ -269,14 +264,14 @@ pub(crate) fn split_by_strings(
         if let Some(max) = max_splits
             && splits_done >= max
         {
-            let remaining: String = chars[pos..].iter().collect();
+            let remaining = text[pos..].to_string();
             result.push((remaining, None));
             return result;
         }
 
         let mut best: Option<(usize, usize, usize)> = None;
-        for (idx, sep_chars) in splitter_chars.iter().enumerate() {
-            let sep_len = sep_chars.len();
+        for (idx, sep) in splitters.iter().enumerate() {
+            let sep_len = splitter_lengths[idx];
             if sep_len == 0 {
                 continue;
             }
@@ -284,7 +279,7 @@ pub(crate) fn split_by_strings(
                 Some(Some(p)) if p >= pos => Some(p),
                 Some(None) => None,
                 _ => {
-                    let f = find_chars(&chars, sep_chars, pos);
+                    let f = crate::builtins::grapheme_index::find_graphemes(text, &index, pos, sep);
                     next[idx] = Some(f);
                     f
                 }
@@ -301,40 +296,37 @@ pub(crate) fn split_by_strings(
         }
 
         match best {
-            Some((match_pos, match_len, splitter_idx)) => {
-                let segment: String = chars[pos..match_pos].iter().collect();
-                let matched: String = chars[match_pos..match_pos + match_len].iter().collect();
+            Some((match_pos, _match_len, splitter_idx)) => {
+                let separator = &splitters[splitter_idx];
+                let match_end = match_pos + separator.len();
+                let from = index
+                    .grapheme_at_boundary(text, match_pos)
+                    .expect("grapheme search returns a boundary");
+                let to = index
+                    .grapheme_at_boundary(text, match_end)
+                    .expect("grapheme search returns a boundary");
+                let segment = text[pos..match_pos].to_string();
                 result.push((
                     segment,
                     Some(SplitMatch {
-                        from: match_pos,
-                        to: match_pos + match_len,
-                        matched,
+                        from,
+                        to,
+                        matched: separator.clone(),
                         splitter_index: splitter_idx,
                         is_regex: false,
                         match_obj: None,
                     }),
                 ));
-                pos = match_pos + match_len;
+                pos = match_end;
                 splits_done += 1;
             }
             None => {
-                let remaining: String = chars[pos..].iter().collect();
+                let remaining = text[pos..].to_string();
                 result.push((remaining, None));
                 return result;
             }
         }
     }
-}
-
-/// First start index `>= from` where `needle` occurs in `hay`.
-// Cost: O((n - from) * m), n = chars of `hay`, m = chars of `needle`.
-pub(crate) fn find_chars(hay: &[char], needle: &[char], from: usize) -> Option<usize> {
-    let m = needle.len();
-    if from + m > hay.len() {
-        return None;
-    }
-    (from..=hay.len() - m).find(|&start| hay[start..start + m] == *needle)
 }
 
 /// Create a separator value: the engine-built Match object for regex splits,

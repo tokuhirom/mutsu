@@ -1,62 +1,8 @@
 use super::*;
+use super::methods_string_subst_repl::SubstCaseTransforms;
 use crate::value::ValueView;
 
-/// The `:samecase`/`:samemark`/`:samespace` substitution adverbs, applied to a
-/// computed replacement against the matched text (shared with the `s///`
-/// operator via `apply_subst_case_transforms`).
-#[derive(Clone, Copy, Default)]
-pub(super) struct SubstCaseTransforms {
-    pub samecase: bool,
-    pub samemark: bool,
-    pub sigspace: bool,
-    pub samespace: bool,
-}
-
-impl SubstCaseTransforms {
-    fn any(&self) -> bool {
-        // `:sigspace`/`:samespace` imply `:samemark` (see
-        // `apply_subst_case_transforms`), so a bare `:s` still needs the transform.
-        self.samecase || self.samemark || self.samespace || self.sigspace
-    }
-
-    pub(super) fn apply(&self, replacement: &str, matched: &str) -> String {
-        if !self.any() {
-            return replacement.to_string();
-        }
-        crate::vm::vm_string_regex_ops::apply_subst_case_transforms(
-            replacement,
-            matched,
-            self.samecase,
-            self.samemark,
-            self.sigspace,
-            self.samespace,
-        )
-    }
-}
-
 impl Interpreter {
-    /// Validate an `:nth` index list for substitution: every index must be at
-    /// least 1 and the list must be monotonically increasing. Rakudo's lazy
-    /// match iterator cannot rewind, so a non-increasing list (e.g.
-    /// `:nth(2,4,1,6)`) or a zero/negative index throws.
-    fn validate_subst_nth_list(nth_list: &[i64]) -> Result<(), RuntimeError> {
-        let mut prev: i64 = 0;
-        for &n in nth_list {
-            if n < 1 {
-                return Err(RuntimeError::new(format!(
-                    "Attempt to retrieve before :1st match -- :nth({n})"
-                )));
-            }
-            if n < prev {
-                return Err(RuntimeError::new(format!(
-                    "Attempt to fetch match #{n} after #{prev}"
-                )));
-            }
-            prev = n;
-        }
-        Ok(())
-    }
-
     /// Expand a `:nth`/`:st`/`:nd`/`:rd`/`:th` adverb argument into a list of
     /// 1-based match indices. Accepts an Int, an Array of Ints, or any Range
     /// variant (`:nth(1..3)`).
@@ -101,7 +47,7 @@ impl Interpreter {
     /// Range flavour to the number of matches — the same resolution
     /// `.match(:nth(...))` already uses. A small bounded Range stays on the
     /// eager path, where its literal length also decides `result_is_list`.
-    fn is_deferred_nth_value(value: &Value) -> bool {
+    pub(super) fn is_deferred_nth_value(value: &Value) -> bool {
         if matches!(value.view(), ValueView::Whatever) || Self::is_whatever_code_value(value) {
             return true;
         }
@@ -111,7 +57,7 @@ impl Interpreter {
     /// The upper endpoint of a `:nth` Range too large to expand eagerly, or
     /// `None` when the value is not such a Range. Also the "this spec selects a
     /// whole span of matches, not one" signal `result_is_list` needs.
-    fn deferred_nth_range_end(value: &Value) -> Option<i64> {
+    pub(super) fn deferred_nth_range_end(value: &Value) -> Option<i64> {
         let hi = match value.view() {
             ValueView::Range(_, hi)
             | ValueView::RangeExcl(_, hi)
@@ -130,7 +76,11 @@ impl Interpreter {
     /// adverb (`:g`/`:x`/multi-`:nth`) `$/` is a (possibly empty) List of Match
     /// objects; otherwise it is the single first Match, or Nil when nothing
     /// matched.
-    fn subst_match_var(selected: &[RegexCaptures], text: &str, result_is_list: bool) -> Value {
+    pub(super) fn subst_match_var(
+        selected: &[RegexCaptures],
+        text: &str,
+        result_is_list: bool,
+    ) -> Value {
         let to_match = |c: &RegexCaptures| {
             Value::make_match_object_full(
                 c.from as i64,
@@ -148,69 +98,6 @@ impl Interpreter {
         } else {
             Value::NIL
         }
-    }
-
-    /// `.wordcase(:&filter = &tclc, :$where = True)`: title-case each word,
-    /// but only words that smart-match `:where`, transformed by `:filter`.
-    // Cost: O(n) plus one `:where` smartmatch and one `:filter` call per word,
-    // n = chars of the invocant.
-    pub(crate) fn dispatch_wordcase(
-        &mut self,
-        target: Value,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let text = target.to_string_value();
-        let mut filter: Option<Value> = None;
-        let mut where_matcher: Option<Value> = None;
-        for arg in args {
-            if let ValueView::Pair(key, value) = arg.view() {
-                match key.as_str() {
-                    "filter" => filter = Some(value.clone()),
-                    "where" => where_matcher = Some(value.clone()),
-                    _ => {}
-                }
-            }
-        }
-
-        let mut result = String::new();
-        for (segment, is_word) in crate::value::wordcase_segments(&text) {
-            if !is_word {
-                result.push_str(&segment);
-                continue;
-            }
-            let word = Value::str(segment.clone());
-            // `:where` selects which words are transformed (default: all).
-            let selected = match &where_matcher {
-                Some(m) => self.smart_match(&word, m),
-                None => true,
-            };
-            if !selected {
-                result.push_str(&segment);
-                continue;
-            }
-            // `:filter` transforms the selected word (default: tclc).
-            let transformed = match &filter {
-                Some(f) => self
-                    .call_sub_value(f.clone(), vec![word], false)?
-                    .to_string_value(),
-                None => crate::value::tclc_str(&segment),
-            };
-            result.push_str(&transformed);
-        }
-        // An allomorph (IntStr/RatStr/NumStr/ComplexStr) argument reads its
-        // Str part above (via `target.to_string_value()`), but the RESULT
-        // must also preserve the allomorph the way the 0-arg form does — see
-        // `allomorph_wordcase_result` for why rakudo's own reconstruction
-        // resets the numeric part to a type zero rather than the original
-        // number.
-        if let ValueView::Mixin(inner, mixins) = target.view()
-            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
-        {
-            return Ok(crate::value::types::allomorph_wordcase_result(
-                inner, result,
-            ));
-        }
-        Ok(Value::str(result))
     }
 
     // Cost: the slow path for `.subst` (closure replacement, `:nth`/`:x`/`:c`/`:p`,
@@ -564,147 +451,21 @@ impl Interpreter {
                     Ok(Value::str(text))
                 }
             }
-            // Cost: O(n + r) plus per-match replacement work, n = bytes of the invocant,
-            // r = matches: char offsets are counted with one running cursor, and a
-            // closure replacement's `$/` shares one MatchTarget. Without adverbs: O(n)
-            // (one `find`).
-            ValueView::Str(pat) => {
-                let has_adverbs = nth.is_some()
-                    || x_count.is_some()
-                    || pos_start.is_some()
-                    || continue_from.is_some();
-                if has_adverbs || global {
-                    let pat_str = pat.as_str();
-                    let mut str_matches: Vec<(usize, usize)> = Vec::new();
-                    let mut search_start = 0;
-                    while let Some(pos) = text[search_start..].find(pat_str) {
-                        let abs_pos = search_start + pos;
-                        str_matches.push((abs_pos, abs_pos + pat_str.len()));
-                        search_start = abs_pos + pat_str.len().max(1);
-                    }
-
-                    // Matches are ascending, so one running count converts every
-                    // byte offset to a char offset.
-                    let mut counted = (0usize, 0usize); // (byte, char)
-                    let mut char_of = |b: usize| {
-                        counted.1 += text[counted.0..b].chars().count();
-                        counted.0 = b;
-                        counted.1
-                    };
-                    let char_indices: Vec<(usize, usize)> = str_matches
-                        .iter()
-                        .map(|&(start, end)| (char_of(start), char_of(end)))
-                        .collect();
-
-                    let mut keep: Vec<usize> = (0..str_matches.len()).collect();
-
-                    if let Some(c) = continue_from {
-                        keep.retain(|&i| char_indices[i].0 >= c);
-                    }
-                    if let Some(p) = pos_start {
-                        keep.retain(|&i| char_indices[i].0 == p);
-                    }
-                    if !global && nth.is_none() && x_count.is_none() {
-                        keep.truncate(1);
-                    }
-                    // Resolve any deferred `:nth(*)` / `:nth(*-1)` / `:nth(2..*)`
-                    // now that the match count is known — the literal-pattern
-                    // branch used to ignore them entirely, silently substituting
-                    // nothing.
-                    if !nth_deferred.is_empty() {
-                        let total = keep.len();
-                        let mut extra: Vec<i64> = Vec::new();
-                        for spec in &nth_deferred {
-                            let resolved = self.resolve_nth_value_indices(spec, total)?;
-                            extra.extend(resolved.into_iter().map(|i| i as i64));
-                        }
-                        extra.sort_unstable();
-                        nth.get_or_insert_with(Vec::new).extend(extra);
-                    }
-                    if let Some(ref nth_list) = nth {
-                        Self::validate_subst_nth_list(nth_list)?;
-                        let total = keep.len();
-                        let mut selected: Vec<usize> = Vec::new();
-                        for &n in nth_list {
-                            if (n as usize) <= total {
-                                let chosen = keep[n as usize - 1];
-                                // `nth_list` is validated ascending: a repeat is adjacent.
-                                if selected.last() != Some(&chosen) {
-                                    selected.push(chosen);
-                                }
-                            }
-                        }
-                        keep = selected;
-                    }
-                    if let Some((lo, hi)) = resolve_x_count(&x_count) {
-                        let count = keep.len();
-                        if count < lo {
-                            return Ok(Value::str(text));
-                        }
-                        if count > hi {
-                            keep.truncate(hi);
-                        }
-                    }
-
-                    // A closure replacement sees each match as `$/`; every one of
-                    // them shares this subject instead of copying it per match.
-                    let target = is_closure.then(|| crate::runtime::MatchTarget::new(&text));
-                    let mut result = String::with_capacity(text.len());
-                    let mut last_end = 0;
-                    for &idx in &keep {
-                        let (start, end) = str_matches[idx];
-                        result.push_str(&text[last_end..start]);
-                        let matched_text = &text[start..end];
-                        let caps = target.as_ref().map(|target| {
-                            let mut caps = RegexCaptures {
-                                from: char_indices[idx].0,
-                                to: char_indices[idx].1,
-                                ..Default::default()
-                            };
-                            caps.set_target(Some(target.clone()));
-                            caps
-                        });
-                        let repl = self.eval_subst_replacement_cased(
-                            &replacement_val,
-                            is_closure,
-                            &replacement_str,
-                            matched_text,
-                            caps.as_ref(),
-                            Some(&text),
-                            transforms,
-                        )?;
-                        result.push_str(&repl);
-                        last_end = end;
-                    }
-                    result.push_str(&text[last_end..]);
-                    Ok(Value::str(result))
-                } else if let Some(bpos) = text.find(pat.as_str()) {
-                    // Single (first-match) replacement.
-                    let end = bpos + pat.as_str().len();
-                    let matched_text = &text[bpos..end];
-                    let caps = is_closure.then(|| RegexCaptures {
-                        from: text[..bpos].chars().count(),
-                        to: text[..end].chars().count(),
-                        ..Default::default()
-                    });
-                    let repl = self.eval_subst_replacement_cased(
-                        &replacement_val,
-                        is_closure,
-                        &replacement_str,
-                        matched_text,
-                        caps.as_ref(),
-                        Some(&text),
-                        transforms,
-                    )?;
-                    let mut result = String::with_capacity(text.len());
-                    result.push_str(&text[..bpos]);
-                    result.push_str(&repl);
-                    result.push_str(&text[end..]);
-                    Ok(Value::str(result))
-                } else {
-                    Ok(Value::str(text))
-                }
-            }
+            ValueView::Str(pat) => self.dispatch_subst_string_pattern(
+                &text,
+                pat.as_str(),
+                global,
+                &mut nth,
+                &nth_deferred,
+                &x_count,
+                pos_start,
+                continue_from,
+                &replacement_val,
+                is_closure,
+                &replacement_str,
+                transforms,
+                &resolve_x_count,
+            ),
             _ => {
                 let pat_str = pattern.to_string_value();
                 let repl = transforms.apply(&replacement_str, &pat_str);

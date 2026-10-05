@@ -452,6 +452,12 @@ pub(crate) struct CharClass {
 pub(crate) enum ClassItem {
     Range(char, char),
     Char(char),
+    /// `\n` as the logical newline class, distinct from the raw LF scalar
+    /// produced by `\x[0A]` or an explicit range endpoint.
+    Newline,
+    /// Metadata on a class derived for `:ignoremark`. The matcher keeps the
+    /// base codepoint of a CRLF grapheme for these classes, as Rakudo does.
+    IgnoreMarkDerived,
     /// A class entry that is one grapheme but several codepoints, such as
     /// `<[क्ष]>` or the `\c[LATIN CAPITAL LETTER A WITH HOOK ABOVE,HEBREW POINT
     /// HIRIQ]` spelling of the same thing.

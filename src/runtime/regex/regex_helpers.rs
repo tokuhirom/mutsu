@@ -769,9 +769,11 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
 }
 
 fn strip_marks_char_class(class: &CharClass) -> CharClass {
+    let mut items: Vec<ClassItem> = class.items.iter().map(strip_marks_class_item).collect();
+    items.push(ClassItem::IgnoreMarkDerived);
     CharClass {
         negated: class.negated,
-        items: class.items.iter().map(strip_marks_class_item).collect(),
+        items,
     }
 }
 
@@ -1105,7 +1107,7 @@ pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
     let mut end = pos + 1;
     let mut saw_linker = false;
     let mut saw_spacing_mark = false;
-    while end < chars.len() && is_combining_mark(chars[end]) {
+    while end < chars.len() && is_grapheme_extend(chars[end]) {
         saw_linker |= is_conjunct_linker(chars[end]);
         saw_spacing_mark |= is_spacing_mark(chars[end]);
         end += 1;
@@ -1190,12 +1192,12 @@ pub(super) fn is_grapheme_boundary(chars: &[char], pos: usize) -> bool {
     if chars[pos].is_ascii() && chars[pos - 1].is_ascii() {
         return true;
     }
-    // Find the start of the combining-mark run this position sits in or after.
+    // Find the start of the Extend run this position sits in or after.
     let mut run_start = pos;
-    while run_start > 0 && is_combining_mark(chars[run_start - 1]) {
+    while run_start > 0 && is_grapheme_extend(chars[run_start - 1]) {
         run_start -= 1;
     }
-    if is_combining_mark(chars[pos]) {
+    if is_grapheme_extend(chars[pos]) {
         // Only the first mark of a run can begin a cluster, and only when
         // nothing before it can be extended (GB4 — after a control, or at the
         // start of the string, a mark stands alone).
@@ -1207,6 +1209,24 @@ pub(super) fn is_grapheme_boundary(chars: &[char], pos: usize) -> bool {
     // A conjunct linker in the mark run just before `pos` can pull this
     // codepoint into the preceding cluster (GB9c, as in `grapheme_end`).
     grapheme_end(chars, run_start - 1) <= pos
+}
+
+/// Whether `c` extends the preceding grapheme. Most Extend characters are
+/// Unicode marks; the General_Category exceptions include U+FF9E/U+FF9F and
+/// emoji modifiers, so ask the Grapheme_Cluster_Break table for those too.
+fn is_grapheme_extend(c: char) -> bool {
+    if is_combining_mark(c) {
+        return true;
+    }
+    if matches!(
+        crate::builtins::unicode_gc::general_category(c),
+        crate::builtins::unicode_gc::GeneralCategory::Lm
+            | crate::builtins::unicode_gc::GeneralCategory::Sk
+            | crate::builtins::unicode_gc::GeneralCategory::Cf
+    ) {
+        return crate::builtins::uniprop::unicode_grapheme_cluster_break(c) == "Extend";
+    }
+    false
 }
 
 pub(super) fn merge_regex_captures(

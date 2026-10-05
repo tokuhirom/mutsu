@@ -23,10 +23,13 @@ impl Interpreter {
         let target = trans_regex_target(rules, &chars);
         let mut result = String::new();
         let mut i = 0;
+        let mut byte_pos = 0;
         let mut last_replacement: Option<String> = None;
 
         while i < chars.len() {
+            let (grapheme_end_byte, grapheme_len) = grapheme_at(text, byte_pos);
             let mut best_len = 0;
+            let mut best_end_byte = byte_pos;
             let mut best_replacement = String::new();
             let mut best_closure: Option<(Value, String)> = None;
             let mut best_captures: Option<Vec<String>> = None;
@@ -39,10 +42,12 @@ impl Interpreter {
                         to_chars,
                         cycle,
                     } => {
-                        if let Some(pos) = from_chars.iter().position(|&fc| fc == chars[i])
+                        if grapheme_len == 1
+                            && let Some(pos) = from_chars.iter().position(|&fc| fc == chars[i])
                             && 1 >= best_len
                         {
                             best_len = 1;
+                            best_end_byte = grapheme_end_byte;
                             best_replacement = if pos < to_chars.len() {
                                 to_chars[pos].to_string()
                             } else if delete || to_chars.is_empty() {
@@ -66,8 +71,13 @@ impl Interpreter {
                     TransRule::TokenMap { to_tokens, .. } => {
                         for (ti, token) in rule_tokens.iter().enumerate() {
                             let token_char_len = token.len();
-                            if token_char_len > best_len && chars[i..].starts_with(token) {
+                            if token_char_len > best_len
+                                && chars[i..].starts_with(token)
+                                && let Some(end_byte) =
+                                    grapheme_end_after_chars(text, byte_pos, token_char_len)
+                            {
                                 best_len = token_char_len;
+                                best_end_byte = end_byte;
                                 best_replacement = if ti < to_tokens.len() {
                                     to_tokens[ti].clone()
                                 } else if delete {
@@ -91,9 +101,12 @@ impl Interpreter {
                                 self.regex_match_with_captures_at_target(pattern, target, i)
                             && caps.from == i
                             && caps.to > i
+                            && let Some(end_byte) =
+                                grapheme_end_after_chars(text, byte_pos, caps.to - i)
                             && (caps.to - i) > best_len
                         {
                             best_len = caps.to - i;
+                            best_end_byte = end_byte;
                             best_replacement = replacement.clone();
                             best_closure = None;
                             found = true;
@@ -103,10 +116,12 @@ impl Interpreter {
                         from_chars,
                         closure,
                     } => {
-                        if let Some(_pos) = from_chars.iter().position(|&fc| fc == chars[i])
+                        if grapheme_len == 1
+                            && from_chars.iter().any(|&fc| fc == chars[i])
                             && 1 >= best_len
                         {
                             best_len = 1;
+                            best_end_byte = grapheme_end_byte;
                             let matched = chars[i].to_string();
                             best_closure = Some((closure.clone(), matched));
                             found = true;
@@ -118,9 +133,12 @@ impl Interpreter {
                                 self.regex_match_with_captures_at_target(pattern, target, i)
                             && caps.from == i
                             && caps.to > i
+                            && let Some(end_byte) =
+                                grapheme_end_after_chars(text, byte_pos, caps.to - i)
                             && (caps.to - i) > best_len
                         {
                             best_len = caps.to - i;
+                            best_end_byte = end_byte;
                             let matched: String = chars[i..caps.to].iter().collect();
                             best_captures = Some(
                                 caps.positional
@@ -135,8 +153,13 @@ impl Interpreter {
                     TransRule::TokenClosureMap { to_values, .. } => {
                         for (ti, token) in rule_tokens.iter().enumerate() {
                             let token_char_len = token.len();
-                            if token_char_len > best_len && chars[i..].starts_with(token) {
+                            if token_char_len > best_len
+                                && chars[i..].starts_with(token)
+                                && let Some(end_byte) =
+                                    grapheme_end_after_chars(text, byte_pos, token_char_len)
+                            {
                                 best_len = token_char_len;
+                                best_end_byte = end_byte;
                                 let matched: String = token.iter().collect();
                                 match to_values.get(ti) {
                                     Some(TokenReplacement::Closure(closure)) => {
@@ -176,10 +199,12 @@ impl Interpreter {
                     last_replacement = Some(replacement);
                 }
                 i += best_len;
+                byte_pos = best_end_byte;
             } else {
-                result.push(chars[i]);
+                result.push_str(&text[byte_pos..grapheme_end_byte]);
                 last_replacement = None;
-                i += 1;
+                i += grapheme_len;
+                byte_pos = grapheme_end_byte;
             }
         }
 
@@ -270,26 +295,36 @@ impl Interpreter {
         };
 
         let mut i = 0;
+        let mut byte_pos = 0;
         while i < chars.len() {
+            let (grapheme_end_byte, grapheme_len) = grapheme_at(text, byte_pos);
             let mut in_rule = false;
             let mut best_len = 0;
+            let mut best_end_byte = byte_pos;
             let mut best_original = String::new();
 
             for (rule, rule_tokens) in rules.iter().zip(&token_chars) {
                 match rule {
                     TransRule::CharMap { from_chars, .. } => {
-                        if from_chars.contains(&chars[i]) {
+                        if grapheme_len == 1 && from_chars.contains(&chars[i])
+                        {
                             in_rule = true;
                             best_len = 1;
+                            best_end_byte = grapheme_end_byte;
                             best_original = chars[i].to_string();
                         }
                     }
                     TransRule::TokenMap { .. } | TransRule::TokenClosureMap { .. } => {
                         for token in rule_tokens {
                             let tlen = token.len();
-                            if tlen > best_len && chars[i..].starts_with(token) {
+                            if tlen > best_len
+                                && chars[i..].starts_with(token)
+                                && let Some(end_byte) =
+                                    grapheme_end_after_chars(text, byte_pos, tlen)
+                            {
                                 in_rule = true;
                                 best_len = tlen;
+                                best_end_byte = end_byte;
                                 best_original = token.iter().collect();
                             }
                         }
@@ -300,16 +335,20 @@ impl Interpreter {
                                 self.regex_match_with_captures_at_target(pattern, target, i)
                             && caps.from == i
                             && caps.to > i
+                            && let Some(end_byte) =
+                                grapheme_end_after_chars(text, byte_pos, caps.to - i)
                         {
                             in_rule = true;
                             best_len = caps.to - i;
+                            best_end_byte = end_byte;
                             best_original = chars[i..caps.to].iter().collect();
                         }
                     }
                     TransRule::CharClosure { from_chars, .. } => {
-                        if from_chars.contains(&chars[i]) {
+                        if grapheme_len == 1 && from_chars.contains(&chars[i]) {
                             in_rule = true;
                             best_len = 1;
+                            best_end_byte = grapheme_end_byte;
                             best_original = chars[i].to_string();
                         }
                     }
@@ -319,15 +358,17 @@ impl Interpreter {
             if in_rule {
                 result.push_str(&best_original);
                 last_was_complement = false;
-                i += if best_len > 0 { best_len } else { 1 };
+                i += best_len.max(1);
+                byte_pos = best_end_byte;
             } else {
+                let unmatched = &text[byte_pos..grapheme_end_byte];
                 if delete {
-                    // Skip character.
+                    // Skip grapheme.
                 } else if squash {
                     if !last_was_complement {
                         if let Some(ref closure) = complement_closure {
                             let replacement =
-                                self.call_closure_for_trans(closure, &chars[i].to_string(), None)?;
+                            self.call_closure_for_trans(closure, unmatched, None)?;
                             result.push_str(&replacement);
                         } else {
                             result.push_str(&complement_replacement);
@@ -335,18 +376,48 @@ impl Interpreter {
                     }
                 } else if let Some(ref closure) = complement_closure {
                     let replacement =
-                        self.call_closure_for_trans(closure, &chars[i].to_string(), None)?;
+                        self.call_closure_for_trans(closure, unmatched, None)?;
                     result.push_str(&replacement);
                 } else {
                     result.push_str(&complement_replacement);
                 }
                 last_was_complement = true;
-                i += 1;
+                i += grapheme_len;
+                byte_pos = grapheme_end_byte;
             }
         }
 
         Ok(result)
     }
+}
+
+/// The byte and char length of the grapheme beginning at a known boundary.
+// Cost: O(g), g = chars in the grapheme.
+fn grapheme_at(text: &str, from_byte: usize) -> (usize, usize) {
+    let (start, grapheme) = crate::builtins::grapheme_index::Units::from(text, from_byte)
+        .next()
+        .expect("a loop position is before the end of the subject");
+    (start + grapheme.len(), grapheme.chars().count())
+}
+
+/// The byte offset after `char_count` codepoints, if that offset is a
+/// grapheme boundary.
+// Cost: O(g), g = chars traversed to reach the requested boundary.
+fn grapheme_end_after_chars(text: &str, from_byte: usize, char_count: usize) -> Option<usize> {
+    if char_count == 0 {
+        return Some(from_byte);
+    }
+    let mut consumed = 0;
+    for (start, grapheme) in crate::builtins::grapheme_index::Units::from(text, from_byte) {
+        consumed += grapheme.chars().count();
+        if consumed == char_count {
+            return Some(start + grapheme.len());
+        }
+        if consumed > char_count {
+            return None;
+        }
+    }
+    None
 }
 
 /// The token keys of every rule as char slices, one entry per rule (empty for a

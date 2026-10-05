@@ -52,6 +52,41 @@ pub(super) fn class_matches_ignorecase(class: &CharClass, c: char, ignore_case: 
     if class.negated { !matched } else { matched }
 }
 
+/// Match the logical newline class against the CRLF grapheme. Explicit
+/// `\n` uses [`ClassItem::Newline`]; raw characters and ranges still name
+/// individual codepoints and cannot match inside the pair.
+// Cost: O(k), k = class items; the temporary filtered class is O(k) space.
+pub(super) fn class_matches_crlf(class: &CharClass, ignore_case: bool) -> bool {
+    if class
+        .items
+        .iter()
+        .any(|item| matches!(item, ClassItem::IgnoreMarkDerived))
+    {
+        // `:ignoremark` matches classes against the grapheme's base codepoint
+        // (CR for CRLF), while `\n` remains a logical newline class.
+        return class_matches_ignorecase(class, '\r', ignore_case);
+    }
+    let logical_items = class
+        .items
+        .iter()
+        .filter(|item| {
+            !matches!(
+                item,
+                ClassItem::Char(_) | ClassItem::Range(..) | ClassItem::Grapheme(_)
+            )
+        })
+        .cloned()
+        .collect();
+    class_matches_ignorecase(
+        &CharClass {
+            negated: class.negated,
+            items: logical_items,
+        },
+        '\n',
+        ignore_case,
+    )
+}
+
 /// Whether a grapheme of several codepoints whose base is `c` is in `class`
 /// (no `Grapheme` entry matched it). An enumerated character or range names
 /// one codepoint, which such a cluster never equals, so only the class's
@@ -100,6 +135,13 @@ pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
                         break;
                     }
                 }
+                ClassItem::Newline => {
+                    if cclass::is_newline(c) {
+                        matched = true;
+                        break;
+                    }
+                }
+                ClassItem::IgnoreMarkDerived => {}
                 ClassItem::Digit => {
                     if cclass::is_digit(c) {
                         matched = true;

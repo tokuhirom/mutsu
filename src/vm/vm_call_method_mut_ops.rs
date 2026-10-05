@@ -1656,7 +1656,18 @@ impl Interpreter {
             let global = args.iter().any(
                 |a| matches!(a.view(), ValueView::Pair(k, v) if (k == "g" || k == "global") && v.truthy()),
             );
-            let match_result = self.dispatch_match_method(target.clone(), &match_args)?;
+            let literal_string_pattern = args
+                .iter()
+                .find(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+                .is_some_and(|arg| matches!(arg.deref_container().view(), ValueView::Str(_)));
+            let match_result = if literal_string_pattern {
+                // `dispatch_subst` already selected the grapheme-safe literal
+                // matches and published them in `$/`. Re-running them through
+                // the regex engine could accept a codepoint inside a grapheme.
+                self.env().get("/").cloned().unwrap_or(Value::NIL)
+            } else {
+                self.dispatch_match_method(target.clone(), &match_args)?
+            };
             // A single failed match yields the `Any` type object (matching `$/`
             // after a failed `s///`), where `.match` alone would yield `Nil`.
             let ret = if !global && match_result.is_nil() {
