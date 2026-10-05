@@ -33,6 +33,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Narrow(reverse),
     },
     MethodRow {
+        owner: "List",
+        name: "invert",
+        arity: 0,
+        handler: Handler::Narrow(invert),
+    },
+    MethodRow {
         owner: "Any",
         name: "head",
         arity: 1,
@@ -314,6 +320,16 @@ pub(crate) fn reverse(target: &Value, _args: &[Value]) -> Option<Result<Value, R
         }
         _ => None,
     }
+}
+
+/// The List and Array `.invert` implementation shared by the method row and
+/// the native cascade. Other collection kinds keep their specialized paths.
+// Cost: O(e + v), e = input elements, v = expanded values in Pair payloads.
+pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    crate::builtins::methods_0arg::collection::invert_value(target).map(Ok)
 }
 
 /// `List.join($sep = "")` on a plain list or array, or `None` when an element

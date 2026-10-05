@@ -48,6 +48,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "Map",
+        name: "invert",
+        arity: 0,
+        handler: Handler::Narrow(invert),
+    },
+    MethodRow {
+        owner: "Map",
         name: "Numeric",
         arity: 0,
         handler: Handler::Pure(elems),
@@ -161,4 +167,14 @@ pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, Runtim
             })
             .collect(),
     ))
+}
+
+/// Map's `.invert` shares the Pair-expansion implementation with List and
+/// Array; Hash reaches this row through the Map MRO.
+// Cost: O(e + v), e = map entries, v = expanded values in entry payloads.
+fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    crate::builtins::methods_0arg::collection::invert_value(target).map(Ok)
 }

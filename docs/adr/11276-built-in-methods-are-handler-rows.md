@@ -513,3 +513,14 @@ Squish remains on the interpreter path: its default comparison is ===/WHICH and
 can call a user method, which a Pure row cannot. The focused aggregate
 method-row test checks the Rakudo owners, scalar/Hash behavior and Seq/Range
 cascade paths; all files under roast/S32-list pass.
+
+### 9.9 Collection invert family (2026-10-05)
+
+`List.invert` and `Array.invert` are rows owned by their respective positional
+types, and `Map.invert` is inherited by `Hash`. All three rows call the
+existing Pair-expansion implementation, so list values in Pair payloads still
+fan out and object hashes retain their typed keys. The cascade uses the same
+handler for unshaped Pair collections; Set, Bag and Mix keep their specialized
+invert behavior, and invalid positional elements retain the existing type
+check path. The focused method-row test covers all three owners, Hash
+inheritance, typed keys and repeated Pair expansion.

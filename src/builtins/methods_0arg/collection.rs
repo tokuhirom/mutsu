@@ -99,7 +99,7 @@ fn extend_inverted_pairs_from_element(out: &mut Vec<Value>, item: &Value) -> boo
     }
 }
 
-fn invert_value(target: &Value) -> Option<Value> {
+pub(crate) fn invert_value(target: &Value) -> Option<Value> {
     let mut result = Vec::new();
     match target.view() {
         ValueView::Hash(items) => {
@@ -664,8 +664,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         // Cost: O(e + v), e = pairs of the invocant, v = values produced (a Positional
         // value fans out to one pair per element).
-        "invert" => match invert_value(target) {
-            Some(v) => Some(Ok(v)),
+        "invert" => match crate::builtins::method_table::list::invert(target, &[]) {
+            Some(result) => Some(result),
             None => {
                 if matches!(
                     target.view(),

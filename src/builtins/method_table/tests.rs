@@ -63,7 +63,14 @@ fn every_row_is_reached_and_answers() {
             }
             reached = true;
             let args = vec![Value::int(0); usize::from(row.arity)];
-            let result = try_dispatch(&sample(shape), Symbol::intern(row.name), &args);
+            let target = if row.name == "invert"
+                && matches!(shape, DispatchShape::List | DispatchShape::Array)
+            {
+                Value::array(vec![Value::value_pair(Value::str_from("a"), Value::int(1))])
+            } else {
+                sample(shape)
+            };
+            let result = try_dispatch(&target, Symbol::intern(row.name), &args);
             assert!(
                 result.is_some(),
                 "{}.{} on a {shape:?} did not answer",
