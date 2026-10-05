@@ -576,3 +576,19 @@ cascade because their conversions need dimensional defaults or lazy context.
 
 The focused method-row test covers both positional representations, fresh
 Array storage, itemization, and repeated conversions.
+
+### 9.14 Extrema and eager collection family (2026-10-05)
+
+`Any.min`, `max`, `minpairs` and `maxpairs` are now pure `Handler::Narrow`
+rows for plain positional and scalar receivers. Hashes use the same rows with
+their typed-key/value ordering, while ranges, lazy values, user-comparison
+values and unsupported receivers decline to the interpreter cascade. `List`
+also owns `eager`, `item`, `sink` and `is-lazy` rows; already-eager Lists and
+Arrays return themselves, itemization stays on the shared representation, and
+lazy or shaped values retain the existing interpreter path.
+
+The shared handlers preserve first-winner and all-ties behavior for extrema
+pairs. The focused collection aggregate test covers scalar, List, Array and
+Hash results, eager identity, empty and fallback behavior. The method-table
+unit suite verifies owner declarations and that every row answers its resolved
+plain shape.

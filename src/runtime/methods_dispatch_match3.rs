@@ -398,7 +398,10 @@ impl Interpreter {
                 }))
             }
             "toggle" => Some(self.dispatch_toggle(target, &args)),
-            "eager" if args.is_empty() => Some(self.dispatch_eager_method(target)),
+            "eager" if args.is_empty() => {
+                crate::builtins::method_table::list::eager(&target, &args)
+                    .or_else(|| Some(self.dispatch_eager_method(target)))
+            }
             "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),
             "first" if !args.is_empty() => Some(self.dispatch_first(target, &args)),
             "first" if args.is_empty() => {

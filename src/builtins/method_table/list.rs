@@ -110,6 +110,30 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 0,
         handler: Handler::Pure(antipairs),
     },
+    MethodRow {
+        owner: "List",
+        name: "eager",
+        arity: 0,
+        handler: Handler::Narrow(eager),
+    },
+    MethodRow {
+        owner: "List",
+        name: "item",
+        arity: 0,
+        handler: Handler::Narrow(item),
+    },
+    MethodRow {
+        owner: "List",
+        name: "sink",
+        arity: 0,
+        handler: Handler::Narrow(sink),
+    },
+    MethodRow {
+        owner: "List",
+        name: "is-lazy",
+        arity: 0,
+        handler: Handler::Narrow(is_lazy),
+    },
 ];
 
 fn len(target: &Value) -> i64 {
@@ -183,6 +207,50 @@ pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, Runtim
         ),
         false,
     ))
+}
+
+// Cost: O(1), a plain positional value is already eager and is returned as-is.
+pub(crate) fn eager(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    match target.view() {
+        ValueView::Array(_, kind) if !kind.is_lazy() => Some(Ok(target.clone())),
+        _ => None,
+    }
+}
+
+// Cost: O(1), itemization flips the shared positional representation tag.
+pub(crate) fn item(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    match target.view() {
+        ValueView::Array(_, kind) if !kind.is_lazy() => Some(Ok(target.clone().item())),
+        _ => None,
+    }
+}
+
+// Cost: O(1), an eager positional value has nothing to pull when sunk.
+pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    match target.view() {
+        ValueView::Array(_, kind) if !kind.is_lazy() => Some(Ok(Value::NIL)),
+        _ => None,
+    }
+}
+
+// Cost: O(1), a plain List/Array is not lazy.
+pub(crate) fn is_lazy(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    match target.view() {
+        ValueView::Array(_, kind) if !kind.is_lazy() => Some(Ok(Value::FALSE)),
+        _ => None,
+    }
 }
 
 // Cost: O(1), an emptiness test.
