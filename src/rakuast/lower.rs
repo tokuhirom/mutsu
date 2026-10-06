@@ -795,7 +795,7 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
 /// to *read* a class with inheritance, scope, a repr, or traits, so nothing
 /// lowered here can carry them either.
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
+    let head = package_head(node, crate::parser::next_anon_class_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let (parents, does_parents, parent_args, class_is_rw) = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
@@ -803,18 +803,18 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => None,
     };
     Ok(Stmt::ClassDecl {
-        name: crate::symbol::Symbol::intern(&name),
+        name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents,
         class_is_rw,
         is_hidden: false,
-        is_lexical: package_is_lexical(node)?,
+        is_lexical: head.is_lexical,
         hidden_parents: Vec::new(),
         does_parents,
         repr,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: Vec::new(),
+        custom_traits: head.custom_traits(),
         is_unit: false,
         implicit_grammar_parent: false,
         is_grammar: false,
@@ -827,35 +827,76 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// A package declaration's `scope`: `my` is lexical, `our` (the default,
-/// rendered as no field) is not; any other scope stays the boundary.
-fn package_is_lexical(node: &RakuAstNode) -> Result<bool, RuntimeError> {
-    match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => Ok(false),
-        Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "my" => Ok(true),
-            "our" => Ok(false),
+/// What a package declaration node (`class`, `grammar`, `role`) says about its
+/// own name and scope.
+pub(super) struct PackageHead {
+    /// The registry name: the source name, or, when the node has none
+    /// (`class { }`), a fresh internal one minted as the parser mints it.
+    pub name: String,
+    pub is_lexical: bool,
+    /// Written with the empty name (`class :: { }`): an `anon` scope over the
+    /// name `::`. The parser marks such a declaration, so lowering does too.
+    pub colons: bool,
+}
+
+impl PackageHead {
+    /// The `custom_traits` the head asks the declaration to carry.
+    pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
+        if self.colons {
+            vec![(crate::parser::ANON_COLONS_TRAIT.to_string(), None)]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+// Cost: O(k), k = length of the name.
+pub(super) fn package_head(
+    node: &RakuAstNode,
+    fresh: fn() -> String,
+) -> Result<PackageHead, RuntimeError> {
+    let scope = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        Some(_) => Some(leaf_str(node, "scope")?),
+        None => None,
+    };
+    match scope.as_deref() {
+        Some("anon") => match name_parts::name_shape(named_child(node, "name")?) {
+            Some(NameShape::Stash(stash)) if stash == "::" => Ok(PackageHead {
+                name: fresh(),
+                is_lexical: false,
+                colons: true,
+            }),
             _ => Err(unsupported(node)),
         },
+        None | Some("my" | "our") => Ok(PackageHead {
+            name: if node.fields.iter().any(|f| f.name == Some("name")) {
+                call_name_str(node)?
+            } else {
+                fresh()
+            },
+            is_lexical: scope.as_deref() == Some("my"),
+            colons: false,
+        }),
+        Some(_) => Err(unsupported(node)),
     }
 }
 
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
+    let head = package_head(node, crate::parser::next_anon_grammar_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
     Ok(Stmt::ClassDecl {
-        name: crate::symbol::Symbol::intern(&name),
+        name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
         parents: vec!["Grammar".to_string()],
         class_is_rw: false,
         is_hidden: false,
-        is_lexical: package_is_lexical(node)?,
+        is_lexical: head.is_lexical,
         hidden_parents: Vec::new(),
         does_parents: Vec::new(),
         repr: None,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: Vec::new(),
+        custom_traits: head.custom_traits(),
         is_unit: false,
         implicit_grammar_parent: true,
         is_grammar: true,
@@ -1840,6 +1881,15 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (name, expr) = lower_assign_parts(node)?;
+    // `$.x = v` writes through the attribute's rw accessor; the parser builds
+    // it as an assignment expression, as `Stmt::Assign` has no accessor path.
+    if name.starts_with('.') {
+        return Ok(Stmt::Expr(Expr::AssignExpr {
+            name,
+            expr: Box::new(expr),
+            is_bind: false,
+        }));
+    }
     Ok(Stmt::Assign {
         name,
         expr,
@@ -3123,6 +3173,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // `class { }` / `role { }` / `grammar { }` as a term: the parser carries
+        // a declaration in expression position as a `DoStmt`.
+        RakuAstClass::Class | RakuAstClass::Grammar | RakuAstClass::Role => {
+            let mut declaration = lower_stmt_inner(node)?;
+            // A class expression composes its `does` roles through statements
+            // at the front of its body; the statement form does not.
+            if let Stmt::ClassDecl {
+                body, does_parents, ..
+            } = &mut declaration
+            {
+                crate::parser::prepend_does_header(body, does_parents);
+            }
+            Ok(Expr::DoStmt(Box::new(declaration)))
+        }
         // A `Block` in expression position (e.g. the `{ … }` argument to `.map`) is
         // a bare-block closure value. (raku itself EVALs a `Block` node to a
         // Callable, so a hash-shaped `{a => 1}` also lands here as a block.)
@@ -3202,8 +3266,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `AnonSubParams` — which is exactly what the parser builds for
         // `-> { … }`, an arity-0 closure that (unlike a bare block) rejects
         // arguments. Keep a typed single parameter on `AnonSubParams`: Lambda
-        // has no field for its type constraint, so collapsing it would make a
-        // constructed `-> Int $x { … }` accept values that Rakudo rejects.
+        // has no field for its type constraint or type capture, so collapsing
+        // it would make a constructed `-> Int $x { … }` accept values that
+        // Rakudo rejects, and leave the `T` of `-> ::T { … }` unbound.
         RakuAstClass::PointyBlock => {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
@@ -3214,6 +3279,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 1 if param_defs.first().is_some_and(|param| {
                     !param.named
                         && param.type_constraint.is_none()
+                        && param.type_capture.is_none()
                         && param.default.is_none()
                         && !param.optional_marker
                         && param.traits.is_empty()
@@ -3566,6 +3632,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             })
         }
         RakuAstClass::ApplyInfix => {
+            if let Some(chain) = super::chain::lower_chain(node)? {
+                return Ok(chain);
+            }
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
             let op = infix_token(named_child(node, "infix")?)?;
@@ -3590,6 +3659,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(binary)
         }
         RakuAstClass::ApplyPrefix => {
+            if let Some(chain) = super::chain::lower_chain(node)? {
+                return Ok(chain);
+            }
             let operand = lower_expr(named_child(node, "operand")?)?;
             let op = prefix_token(named_child(node, "prefix")?)?;
             Ok(Expr::Unary {
@@ -3848,7 +3920,9 @@ fn postfix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Run
 
 /// The `TokenKind` for an `Infix`/`Prefix` operator node (its positional operator
 /// string), or an error for an operator the lowerer doesn't handle yet.
-fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+pub(super) fn infix_token(
+    node: &RakuAstNode,
+) -> Result<crate::token_kind::TokenKind, RuntimeError> {
     let name = positional_leaf(node)?;
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
@@ -3857,7 +3931,9 @@ fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Runti
 }
 
 /// Resolve a `Prefix` operator's positional spelling in prefix context.
-fn prefix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+pub(super) fn prefix_token(
+    node: &RakuAstNode,
+) -> Result<crate::token_kind::TokenKind, RuntimeError> {
     let name = positional_leaf(node)?;
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
