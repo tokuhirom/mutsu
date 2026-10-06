@@ -1268,7 +1268,13 @@ impl Interpreter {
                 Err(err) => Err(err),
             };
             self.module.import_target_package = saved_import_target;
-            self.declarator_docs = saved_declarator_docs;
+            // The importer's tables come back, but the module's named docs are
+            // kept under its unit: its declarations outlive the load, and so
+            // must their `.WHY` (#12037).
+            let module_declarator_docs =
+                std::mem::replace(&mut self.declarator_docs, saved_declarator_docs);
+            self.declarator_docs
+                .keep_loaded_unit(module_unit_for_loading_stack, module_declarator_docs);
             self.types.lexical_class_pending = saved_pending;
             self.types.lexical_class_pending_scopes = saved_pending_scopes;
             // Snapshot the env exactly as the module body left it, before any
