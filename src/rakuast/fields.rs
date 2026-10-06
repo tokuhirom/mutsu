@@ -392,6 +392,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         StatementLanguageVersion => "version",
         StatementPrefixReact | StatementPrefixSupply => "blorst",
         CircumfixHashComposer => "expression",
+        CircumfixArrayComposer | CircumfixParentheses => "semilist",
         ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
         ColonPairTrue | ColonPairFalse => "key",
         StatementModifierFor
