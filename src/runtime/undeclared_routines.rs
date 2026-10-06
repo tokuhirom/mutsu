@@ -421,6 +421,8 @@ impl Interpreter {
                 // A sigilless constant in scope: an `EVAL` of a bare term
                 // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
                 || self.term_binding(name).is_some()
+                // An enum key (`enum E <aa bb>; EVAL 'aa'`, #11818).
+                || self.enum_bare_value(name).is_some()
                 || self.registry().classes.contains_key(name)
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)
