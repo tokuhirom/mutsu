@@ -722,9 +722,7 @@ pub(crate) fn native_method_1arg(
                 ValueView::Int(i) => i,
                 ValueView::Num(f) => f as i64,
                 ValueView::Str(s) if s.trim().parse::<f64>().is_err() => {
-                    return Some(Err(
-                        crate::builtins::methods_0arg::str_numeric_error(&s),
-                    ));
+                    return Some(Err(crate::builtins::methods_0arg::str_numeric_error(&s)));
                 }
                 _ => return Some(Ok(Value::FALSE)),
             };

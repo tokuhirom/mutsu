@@ -1073,9 +1073,9 @@ pub use raku_repr::raku_value;
 /// Re-export complex_trig for external use.
 pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
+pub(crate) use dispatch_core_coerce::{complex_not_real_error, complex_not_real_exception};
 /// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
 pub(crate) use dispatch_core_coerce::{str_numeric_error, str_numeric_failure};
-pub(crate) use dispatch_core_coerce::{complex_not_real_error, complex_not_real_exception};
 
 /// Unicode case folding for `.fc` and `fc()`.
 pub(crate) fn unicode_foldcase(s: &str) -> String {
