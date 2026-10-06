@@ -117,28 +117,15 @@ impl Interpreter {
         let keys = self.fn_keys_for_base_sym(name, name_sym);
         // Debug-only staleness audit, placed HERE rather than inside
         // `fn_keys_for_base`: the resolver asks this negative gate exactly once
-        // per resolution but reaches the index several times, so auditing at
-        // the gate keeps the debug `prove t/` cost at the one full scan it
-        // already paid before the index existed, while checking strictly more
-        // (the whole key list, not just whether the base is present). A
+        // per resolution but reaches the index several times, and it checks the
+        // whole key list, not just whether the base is present. A
         // functions-map mutation that missed its `fn_resolve_gen` bump then
         // fails CI with a located panic instead of surfacing as a silent wrong
-        // "Unknown function" — or a silently missing multi candidate.
+        // "Unknown function" — or a silently missing multi candidate. The scan
+        // behind it is memoized per base name and re-runs only after the
+        // functions map or the index entry changed (`audit_fn_keys_base`).
         #[cfg(debug_assertions)]
-        {
-            let base = function_key_base_name(name);
-            let fresh = self.collect_fn_keys_for_base(base);
-            let mut a: Vec<&str> = fresh.iter().map(|k| k.as_str()).collect();
-            let mut b: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
-            a.sort_unstable();
-            b.sort_unstable();
-            assert_eq!(
-                a, b,
-                "stale fn_keys_by_base entry for {name:?} (base {base:?}): \
-                 a registry functions-map mutation missed its fn_resolve_gen \
-                 bump — see fn_keys_for_base in dispatch_resolve.rs"
-            );
-        }
+        self.audit_fn_keys_base(name, function_key_base_name(name), &keys);
         // A compunit-private top-level routine has been moved OUT of the
         // functions map (`runtime/unit_private_routines.rs`), so the key index
         // cannot see it; the gate must not veto a resolution that would find
