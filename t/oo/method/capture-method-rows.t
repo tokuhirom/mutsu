@@ -4,7 +4,7 @@ use Test;
 # handler rows owned by Capture, and every collection's `.Capture` is one row
 # per owner. Every answer below was checked against Rakudo.
 
-plan 5;
+plan 6;
 
 my $capture = \(1, 2, a => 3);
 
@@ -58,4 +58,22 @@ subtest 'Capture of the collections', {
     is %(a => 1, b => 2).Capture.raku, '\(:a(1), :b(2))', 'a Hash';
     is-deeply (class { method Str { 'foo' } } => 42,).Capture, \(:foo(42)),
         'a Pair key that is not a Str is named by its own .Str';
+}
+
+subtest 'Str joins the positional and the named part', {
+    plan 12;
+    my $one = \(1, "x y", :a(3));
+    is $one.Str, "1 x y a\t3", 'a positional part, then each named pair as key<TAB>value';
+    is "$one", "1 x y a\t3", 'interpolation is the same';
+    is ~$one, "1 x y a\t3", 'prefix ~ is the same';
+    is $one.Stringy, "1 x y a\t3", 'Stringy is the same';
+    is $one.gist, '\(1, "x y", :a(3))', 'gist stays the call shape';
+    is $one.raku, '\(1, "x y", :a(3))', 'raku stays the call shape';
+    is \().Str, '', 'an empty Capture';
+    is \(:a).Str, "a\tTrue", 'a named-only Capture is its pair';
+    is \(1, (2, 3)).Str, '1 2 3', 'a nested list is its own .Str';
+    is \(1, 2).Str, '1 2', 'a positional-only Capture';
+    is \(1, "x y", :a(3), :b(<p q>)).Str.words.sort.join(' '),
+        '1 3 a b p q x y', 'every positional and named part is present';
+    is (\(1, 2), \(:a(1))).gist, '(\(1, 2) \(:a(1)))', 'a Capture inside a list still gists as its call shape';
 }
