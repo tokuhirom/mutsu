@@ -102,7 +102,7 @@ impl Interpreter {
                 let resolved = enum_type.resolve();
                 // An anonymous enum (`enum <one two>`) has no type name: raku's
                 // `.WHAT` is the empty type object `()`.
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -114,7 +114,7 @@ impl Interpreter {
             ValueView::Nil => return Ok(Value::NIL),
             ValueView::Package(name) => {
                 let resolved = name.resolve();
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -144,7 +144,7 @@ impl Interpreter {
             ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -237,7 +237,7 @@ impl Interpreter {
             }
             ValueView::ContainerView(_) => "Scalar",
         };
-        let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
+        let visible_type_name = if crate::value::is_nameless_anon_type_name(type_name) {
             ""
         } else {
             type_name

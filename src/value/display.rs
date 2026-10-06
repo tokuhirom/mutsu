@@ -7,6 +7,16 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
 }
 
+// Cost: O(1) (a prefix/suffix test and a short digit parse).
+/// Whether `name` is an internal `__ANON_*__` marker of a type that Raku shows
+/// WITHOUT a name — an anonymous enum, whose type object is the empty `()`.
+/// An anonymous `class`/`grammar`/`role` marker is not: it is a named type
+/// whose name is `<anon|N>` (see [`anon_type_display_name`]), so `.WHAT`,
+/// `.gist` and `.^name` of it keep the marker and render that name.
+pub(crate) fn is_nameless_anon_type_name(name: &str) -> bool {
+    is_internal_anon_type_name(name) && anon_type_display_name(name).is_none()
+}
+
 /// An anonymous `class`/`grammar`/`role` is registered under an internal
 /// `__ANON_<KIND>_<N>__` name; Rakudo displays these as `<anon|N>` (the
 /// number is arbitrary, only distinct within a run). Returns the display
@@ -862,7 +872,7 @@ impl Value {
             }
             ValueView::Package(s) => {
                 let resolved = s.resolve();
-                if is_internal_anon_type_name(&resolved) {
+                if is_nameless_anon_type_name(&resolved) {
                     "()".to_string()
                 } else {
                     format!("({})", user_facing_type_name(&resolved))

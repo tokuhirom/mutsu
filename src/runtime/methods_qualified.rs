@@ -210,7 +210,7 @@ impl Interpreter {
                     // existing bare-class `.Str` fallback is silent, so match it).
                     "Str" | "Stringy" => Value::str(String::new()),
                     "gist" => {
-                        if crate::value::is_internal_anon_type_name(&n) {
+                        if crate::value::is_nameless_anon_type_name(&n) {
                             Value::str_from("()")
                         } else {
                             let short =

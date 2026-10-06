@@ -2701,7 +2701,7 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target.view() {
                 ValueView::Package(name) => {
-                    if crate::value::is_internal_anon_type_name(&name.resolve()) {
+                    if crate::value::is_nameless_anon_type_name(&name.resolve()) {
                         return Ok(Value::str_from("()"));
                     }
                     let resolved = name.resolve();
