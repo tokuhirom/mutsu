@@ -6,6 +6,38 @@ use crate::value::{RuntimeError, Value, ValueView};
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Map",
+        name: "list",
+        arity: 0,
+        handler: Handler::Narrow(list),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Map",
+        name: "List",
+        arity: 0,
+        handler: Handler::Narrow(list),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Map",
+        name: "hash",
+        arity: 0,
+        handler: Handler::Narrow(hash),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Hash",
+        name: "default",
+        arity: 0,
+        handler: Handler::Narrow(default),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Map",
         name: "elems",
         arity: 0,
         handler: Handler::Pure(elems),
@@ -213,4 +245,49 @@ fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>>
         return None;
     }
     crate::builtins::methods_0arg::collection::invert_value(target).map(Ok)
+}
+
+/// The pairs of a hash as `.list`, `.List` and `.Array` build them: each key
+/// as the object it was stored as, each value as it is stored (not
+/// decontainerized: `.pairs` is the decontainerizing view).
+// Cost: O(e), e = entries.
+pub(crate) fn list_pairs(map: &crate::value::HashData) -> Vec<Value> {
+    map.iter()
+        .map(|(k, v)| map.typed_pair(k, v.clone()))
+        .collect()
+}
+
+/// `Map.list` and `Map.List`: a Hash is its pairs (`%h.List` is `(:a(1),)`,
+/// not `({:a(1)},)`).
+// Cost: O(e), e = entries.
+pub(crate) fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Hash(map) => Some(Ok(Value::array(list_pairs(&map)))),
+        _ => None,
+    }
+}
+
+/// `Map.hash`: `.hash` on a hash IS that hash in Associative context,
+/// de-itemized, preserving the backing `HashData` and its type metadata.
+// Cost: O(1).
+pub(crate) fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Hash(_) => Some(Ok(target.clone().with_hash_itemized(false))),
+        _ => None,
+    }
+}
+
+/// `Hash.default`: the value a missing key reads as. A value-carried
+/// `is default(...)` takes priority over the type default, so it survives
+/// raw-parameter binding and list construction.
+// Cost: O(1).
+pub(crate) fn default(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Hash(h) => Some(Ok(h
+            .default
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| Value::package(crate::symbol::wk::any())))),
+        _ => None,
+    }
 }

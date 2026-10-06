@@ -1,7 +1,6 @@
 /// Math and miscellaneous methods: tclc, wordcase, succ, pred, log, log2, log10,
 /// exp, atan2, trig functions, Rat, FatRat, tree, encode, sink, item, race/hyper,
 /// NFC/NFD/NFKC/NFKD
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
 use num_traits::ToPrimitive;
@@ -627,45 +626,11 @@ pub(super) fn dispatch(
                     })
                 })
         }
-        // Cost: O(1) -- flips a tag/flag over the shared payload, or boxes the
-        // value in a `Scalar`; never copies the aggregate.
-        "item" => crate::builtins::method_table::list::item(target, &[])
-            .map(Some)
-            .or_else(|| {
-                Some(match target.view() {
-                    ValueView::LazyList(_) => None, // fall through to runtime to force
-                    // `Value::item` is the one place that decides HOW a value records
-                    // its `$` container, and this arm is the method form of it:
-                    //
-                    // - an Array/List flips its `ArrayKind` over the shared `Gc`;
-                    // - a Hash sets its itemized flag over the SAME `HashData` `Gc`, so
-                    //   it stays a plain `Hash` value that every consumer (and every
-                    //   element store, `$h<k> = v` included) sees as the hash itself.
-                    //   Wrapping it in a `Scalar` instead hid the hash from the
-                    //   subscript-assign lanes, which then replaced the whole variable
-                    //   with a fresh `{k => v}` -- `my $h = %hh.item; $h<a> = 1` lost
-                    //   the write (#10601);
-                    // - a Slip records the `$` as a flag too, NOT a `Scalar` wrapper,
-                    //   because a `$`-held Slip still flattens (`(1, slip(5, 6).item,
-                    //   2).elems` is 4);
-                    // - any other aggregate is wrapped in a `Scalar` so it is a single
-                    //   non-flattening element in list context.
-                    _ => Some(Ok(target.clone().item())),
-                })
-            }),
-        "race" | "hyper" => {
-            if matches!(target.view(), ValueView::LazyList(_)) {
-                return Some(None);
-            }
-            // Single-threaded: materialize and wrap in HyperSeq/RaceSeq
-            let items = runtime::value_to_list(target);
-            let result = if method == "hyper" {
-                Value::hyper_seq(items)
-            } else {
-                Value::race_seq(items)
-            };
-            Some(Some(Ok(result)))
-        }
+        // The `item` rows' implementation (`method_table::lazy`).
+        "item" => Some(crate::builtins::method_table::lazy::item(target, &[])),
+        // The `race`/`hyper` rows' implementation (`method_table::lazy`).
+        "race" => Some(crate::builtins::method_table::lazy::race(target, &[])),
+        "hyper" => Some(crate::builtins::method_table::lazy::hyper(target, &[])),
         // Cost: O(n), n = codepoints of the invocant.
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             let s = uni_or_str(target);

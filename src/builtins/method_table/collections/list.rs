@@ -9,6 +9,14 @@ use num_traits::ToPrimitive;
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
+        owner: "Array",
+        name: "default",
+        arity: 0,
+        handler: Handler::Narrow(default),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
         owner: "List",
         name: "elems",
         arity: 0,
@@ -576,4 +584,19 @@ pub(crate) fn join_items(items: &[Value], sep: &str) -> Option<Value> {
             .collect::<Vec<_>>()
             .join(sep),
     ))
+}
+
+/// `Array.default`: the value an unassigned element reads as. A
+/// value-carried `is default(...)` takes priority over the type default, so
+/// it survives raw-parameter binding and list construction.
+// Cost: O(1).
+pub(crate) fn default(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Array(a, _) => Some(Ok(a
+            .default
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| Value::package(crate::symbol::wk::any())))),
+        _ => None,
+    }
 }
