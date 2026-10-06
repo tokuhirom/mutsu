@@ -1,11 +1,12 @@
 use Test;
+use lib 't/lib';
 
 # A unit whose last statement is a `package` / `module` block is that package's
 # type object (`say EVAL('package P6 { 1 }')` is `(P6)`), the way a trailing
 # `class` already was; it answered Nil (#12086). Every expected answer is
 # Rakudo 2026.09's.
 
-plan 17;
+plan 19;
 
 is EVAL('package P6 { 1 }').raku, 'P6', 'a package';
 is EVAL('module M6 { 1 }').raku, 'M6', 'a module';
@@ -27,3 +28,10 @@ is EVAL('package P9 { }; 42'), 42, 'a package followed by an expression';
 is EVAL('package P12 { }; package P13 { }').raku, 'P13', 'two packages: the last one';
 is EVAL('package PV { our sub f { 3 } }; PV::f()'), 3, 'the package is declared and usable';
 is EVAL('package PW { 1 } # trailing comment').raku, 'PW', 'a trailing comment after the block';
+
+# A module file whose last statement is a package with a qualified name: the
+# tail value must not be a by-name lookup of a package the module is still
+# loading (t/lib/PackageTailQualified.rakumod).
+use PackageTailQualified;
+is $PackageTailQualified::Inner::answer, 42, 'a module that ends in a qualified package is loaded';
+is PackageTailQualified::Inner::hello(), 'helper!', 'and its routines run';
