@@ -918,6 +918,19 @@ impl Compiler {
         )
     }
 
+    /// Compile `stmt` as one whose value nobody reads -- a statement of a
+    /// `package` / `module` body, a `react` body or an `INIT` / `ENTER` phaser
+    /// body. A statement that nets a stack value (see
+    /// [`Self::stmt_nets_a_stack_value`]) is popped, or it parks at the frame's
+    /// stack base and wins over the real tail value of the enclosing unit
+    /// (`EVAL 'package P { enum E <A B> }; 42'` answered the enum's `Map`).
+    pub(super) fn compile_stmt_discarding_value(&mut self, stmt: &Stmt) {
+        self.compile_stmt(stmt);
+        if Self::stmt_nets_a_stack_value(stmt) {
+            self.code.emit(OpCode::Pop);
+        }
+    }
+
     /// Classify a `when` matcher by how it was *written*, which is what selects
     /// the falsy value a non-matching clause pushes — see [`WhenMatcherKind`]
     /// for the measured Rakudo table and why the runtime value cannot carry

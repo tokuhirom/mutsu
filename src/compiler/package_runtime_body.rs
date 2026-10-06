@@ -72,7 +72,7 @@ impl Compiler {
                 });
                 self.compile_stmt(&swallowed);
             } else {
-                self.compile_stmt(s);
+                self.compile_stmt_discarding_value(s);
             }
         }
         self.local_map.extend(shadowed);
