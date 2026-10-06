@@ -499,7 +499,10 @@ impl Interpreter {
         // A private method's `.name` is its bare name (`method !z` reports
         // `z`, verified against `raku`); the `!` is call syntax, not part of
         // the name.
-        attrs.insert("name".to_string(), Value::str(name.to_string()));
+        let reported_name = owner_class
+            .and_then(|owner| self.registry().method_candidate_rename(owner, name, candidate_idx))
+            .unwrap_or_else(|| name.to_string());
+        attrs.insert("name".to_string(), Value::str(reported_name));
         // Privacy is recorded separately, since the name no longer says it:
         // `CALL-ME` on a `.^private_method_table` entry re-dispatches as a
         // private call (`self!name`) only when this is set.

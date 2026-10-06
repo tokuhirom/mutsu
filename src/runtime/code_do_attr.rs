@@ -102,7 +102,15 @@ fn method_object_do_slot(obj: &Value, name: &str) -> Option<(String, String, usi
     let ValueView::Instance { attributes, .. } = obj.view() else {
         return None;
     };
-    let attrs = attributes.as_map();
+    method_instance_slot(&attributes.as_map())
+}
+
+/// The `(class, method, candidate)` slot recorded in a `Method` object's
+/// attributes, if it carries one.
+// Cost: O(1).
+pub(crate) fn method_instance_slot(
+    attrs: &crate::value::AttrMap,
+) -> Option<(String, String, usize)> {
     let cls = attrs.get("__mutsu_lookup_class")?.to_string_value();
     let meth = attrs.get("__mutsu_lookup_method")?.to_string_value();
     let ValueView::Int(idx) = attrs.get("__mutsu_lookup_candidate_idx")?.view() else {

@@ -187,6 +187,11 @@ pub(crate) struct Registry {
     /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
     /// whenever ANY method anywhere is wrapped).
     pub(crate) method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
+    /// `Method.set_name` renames: `(owner class, method name, candidate
+    /// index)` -> the name `.name` reports. The method table key (the dispatch
+    /// name) is unchanged, as in rakudo, where `set_name` only rewrites the
+    /// code object's `$!do` name.
+    pub(crate) method_renames: HashMap<(String, String, usize), String>,
     /// Method names that have ever had a wrapper pushed onto their multi
     /// DISPATCHER slot ([`DISPATCHER_WRAP_IDX`]). A conservative prefilter
     /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
@@ -949,6 +954,43 @@ impl Registry {
         chain.retain(|(h, _)| *h != handle);
         chain.insert(0, (handle, body));
         self.bump_method_generation();
+    }
+
+    /// `Method.set_name`: make candidate `candidate_idx` of `class_name::method_name`
+    /// report `new_name` from `.name`, for every later read of the method table.
+    // Cost: O(1) expected plus the key's string clones.
+    pub(crate) fn rename_method_candidate(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        new_name: &str,
+    ) {
+        self.method_renames.insert(
+            (class_name.to_string(), method_name.to_string(), candidate_idx),
+            new_name.to_string(),
+        );
+        self.bump_method_generation();
+    }
+
+    /// The `Method.set_name` rename of a candidate, if any.
+    // Cost: O(1) expected plus the key's string clones.
+    pub(crate) fn method_candidate_rename(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+    ) -> Option<String> {
+        if self.method_renames.is_empty() {
+            return None;
+        }
+        self.method_renames
+            .get(&(
+                class_name.to_string(),
+                method_name.to_string(),
+                candidate_idx,
+            ))
+            .cloned()
     }
 
     /// Pop the outermost wrapper off a method candidate's chain, returning it
