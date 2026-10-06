@@ -255,8 +255,8 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
     if let Some(cached) = STMT_MEMO.get(input) {
         // See `STMT_ANON_STATES_TLS`: the replayed statement's bare `$`s were
         // recorded into the scope of the parse that filled the memo.
-        if let Some(names) =
-            stmt_memo_key(input).and_then(|key| STMT_ANON_STATES_TLS.with(|m| m.borrow().get(&key).cloned()))
+        if let Some(names) = stmt_memo_key(input)
+            .and_then(|key| STMT_ANON_STATES_TLS.with(|m| m.borrow().get(&key).cloned()))
         {
             for name in &names {
                 simple::record_anon_state_name(name);
