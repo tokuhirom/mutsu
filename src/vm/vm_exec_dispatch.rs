@@ -2618,6 +2618,22 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // A `:=` of a block/mainline `my` lexical captured by an escaped
+                // `our` sub: reads resolve through the persisted binding cell
+                // (`escaping_our_read`), so seat the new binding in it (#12130).
+                if is_rebind
+                    && !val.is_container_ref()
+                    && let Some(cell_val) = self.escaping_our_write_cell(code, &name)
+                    && let Some(cell) = Self::binding_cell_of(&cell_val)
+                {
+                    let source_kind = bind_source
+                        .as_deref()
+                        .and_then(|source| self.readonly_kind(source));
+                    let scalar = !name.starts_with(['@', '%', '&']);
+                    Self::seat_in_binding_cell(val.clone(), cell, scalar, source_kind);
+                    *ip += 1;
+                    return Ok(());
+                }
                 if self.unit_scope_lexical_write(&name, Some(name_sym), &val) {
                     *ip += 1;
                     return Ok(());
