@@ -348,7 +348,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         // Every statement modifier exposes the condition/topic it was written
         // with as `.expression`, which mutsu stores as the node's single
         // positional field.
-        StatementModifierGiven
+        StatementModifierFor
+        | StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless
         | StatementModifierWith
@@ -393,7 +394,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         CircumfixHashComposer => "expression",
         ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
         ColonPairTrue | ColonPairFalse => "key",
-        StatementModifierGiven
+        StatementModifierFor
+        | StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless
         | StatementModifierWith
@@ -403,6 +405,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         StatementPrefixDo
         | StatementPrefixTry
         | StatementPrefixGather
+        | StatementPrefixOnce
         | StatementPrefixPhaserBegin
         | StatementPrefixPhaserCheck
         | StatementPrefixPhaserClose
