@@ -131,6 +131,51 @@ from materialization on, so nothing about cache validity changes. The ~32 reader
 `.compiled` go through one accessor, and verify mode materializes every slot before it
 compares.
 
+**The seam, refined by an inventory of the readers (2026-10-06).**
+
+Laziness does not go inside `CompiledFunction`. About 157 sites read `x.code.`, and
+`adapt_compiled_to_def`, the precomputes and `make_sub_for_routine` all touch it. The
+lazy unit is a whole body, behind an eager head:
+
+- **Codec.** Each `CompiledFns` entry is encoded as `key, head, body length, body`.
+  - The *head* carries what registration and fingerprint probes read: fingerprint,
+    package, source file (including `code.source_file`, which `source_file_sym`
+    falls back to), `code.source_line`, params and flags.
+  - The *body* carries `code`, `trir`, the derived parameter vectors and the nested
+    `compiled_fns`.
+  - Today an entry has no length prefix and `code` is encoded first, so skipping a
+    body means decoding it.
+  - A nested body is also stored in the enclosing table (`import_compiled_functions`
+    inserts the same `Arc` into both). The codec should encode it once and refer to
+    it by key.
+- **Slot.** A table value holds the head, the raw body bytes (an `Arc<[u8]>` range)
+  and the symbol table as `Arc<[Symbol]>`. It does not use `Rc`, because tables cross
+  threads (`vm_hyper_race_parallel`). The body sits in a `OnceLock`.
+  - A deferred decode must reinstall `DECODE_SYMBOLS` around itself, because serde
+    `ParamDef`s and `ParamCode` read that thread-local.
+  - Fingerprint probes read the head: `vm_call_resolve`, the light, named and fast
+    call caches, and `TrLink::current_in`. Call sites materialize the body.
+- **`FunctionDef.compiled`.** The per-module table is dropped after the load, so a
+  body survives only through `FunctionDef.compiled` (and `MethodDef.compiled_code`).
+  The handle there must be lazy too.
+  - Its first use runs `adapt_compiled_to_def` and `stamp_source_file`.
+  - Both are deferred together. Today `stamp_source_file` makes every nested body
+    unique on every registration, and `adapt` deep-clones each body before overwriting
+    the fields it just cloned (0.44M of its 1.06M on `use Test`).
+- **Registration needs three new eager facts** to stay off the body:
+  - the nested-export plan indices, which today come from a scan of every installed
+    sub's `code.sub_decl_plans` during a module load
+    (`register_nested_exported_subs`);
+  - `code.source_file`, for `lexsub_plan_owner`;
+  - the precompute inputs, unless the precomputes move to materialization time.
+- **Class and role methods.** These take `cf.code` into `MethodDef.compiled_code` at
+  class registration. They either get the same handle, or they materialize at that
+  boundary. The latter is acceptable, since few classes are declared per module.
+- **Readers that need every body.** Verify mode, roundtrip mode,
+  `inherit_frame_lexical_routines` (only for a split mainline) and the disassembly
+  dump force every slot before they run. JIT has no warm-up pass, and
+  `clone_for_thread` copies no table.
+
 ### 2.3 Registration stays executed code, and becomes cheap
 
 **Rejected: storing the registry delta of a load and replaying it.** The inventory shows
