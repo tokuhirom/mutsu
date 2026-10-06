@@ -168,7 +168,7 @@ impl Compiler {
                 continue;
             }
             let ty = pd.type_constraint.as_deref();
-            let native = ty.is_some_and(|t| crate::native_types::is_atomic_int_target_type(t));
+            let native = ty.is_some_and(crate::native_types::is_atomic_int_target_type);
             let passes_container = pd.traits.iter().any(|t| t == "rw" || t == "raw");
             if native || !passes_container {
                 self.record_scalar_decl_type(&pd.name, ty);
