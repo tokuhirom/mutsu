@@ -134,7 +134,14 @@ impl Interpreter {
         let spelled = name.resolve();
         match self.resolve_bare_type_name(&spelled) {
             Some(resolved) => self.has_role(&resolved).then(|| Symbol::intern(&resolved)),
-            None => self.has_role(&spelled).then_some(name),
+            None if self.has_role(&spelled) => Some(name),
+            // A module-level `my role R` called from one of the module's own
+            // subs is not bound in the sub's `env`; only its mangled storage
+            // key (`R\u{0}<decl-id>`) says it exists.
+            None => self
+                .unique_lexical_type_key(&spelled)
+                .filter(|key| self.has_role(key))
+                .map(|key| Symbol::intern(&key)),
         }
     }
 }
