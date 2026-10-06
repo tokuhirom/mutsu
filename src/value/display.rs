@@ -217,6 +217,30 @@ fn qualify_nativecall_type_name(base: &str) -> Option<String> {
     Some(format!("NativeCall::Types::{head}{rest}"))
 }
 
+/// The registry key a NativeCall type's QUALIFIED spelling denotes: the inverse
+/// of [`qualify_nativecall_type_name`], as a slice of `name`
+/// (`NativeCall::Types::CArray` -> `CArray`, `NativeCall::Types::Pointer:D` ->
+/// `Pointer:D`). `None` for any other name, for a NativeCall name followed by a
+/// further `::` segment, and for a name the program declared a type of its own
+/// under (`class void { }` is that class, not NativeCall's).
+///
+/// ADR-0056 keeps ONE registry key per NativeCall type, the bare one, and only
+/// qualifies it for a human. A type object built from the qualified spelling
+/// must therefore carry that same key, or `CArray === NativeCall::Types::CArray`,
+/// their `.WHICH`, `eqv` and object-hash keys compare two different names
+/// (#12031).
+// Cost: O(k), k = the fixed number of NativeCall type names (10).
+pub(crate) fn nativecall_registry_name(name: &str) -> Option<&str> {
+    let bare = name.strip_prefix("NativeCall::Types::")?;
+    let head_end = bare.find(['[', ':']).unwrap_or(bare.len());
+    let (head, rest) = bare.split_at(head_end);
+    if !(rest.is_empty() || rest.starts_with('[') || matches!(rest, ":D" | ":U" | ":_")) {
+        return None;
+    }
+    let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
+    (!user_declared_nativecall_name(slot)).then_some(bare)
+}
+
 /// Which entries of [`NATIVECALL_TYPE_NAMES`] the running program has declared
 /// a type of its own under, as a bitmask (bit `i` is `NATIVECALL_TYPE_NAMES[i]`).
 ///
