@@ -167,8 +167,9 @@ pub(crate) fn int_bounds(target: &Value, _args: &[Value]) -> Option<Result<Value
     )
 }
 
-/// `Range.rand`: a `Num` in the range, `Nil` for an empty one, and a failure
-/// for a range with a non-numeric end. An excluded end is never returned.
+/// `Range.rand`: a `Num` in the range, and a failure for a range whose
+/// endpoints are not ordered (`min >= max`, whatever the exclusions) or that has
+/// a non-numeric end. An excluded end is never returned.
 // Cost: O(1).
 pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // The next double above `from` / below `to`: the excluded ends.
@@ -176,12 +177,10 @@ pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     let below = |to: f64| f64::from_bits(to.to_bits().saturating_sub(1));
     let sample = |from: f64, to: f64| from + builtin_rand() * (to - from);
     let (from, to, excl_start, excl_end) = match target.view() {
-        ValueView::Range(start, end) => {
-            return Some(Ok(Value::num(sample(start as f64, end as f64))));
-        }
-        ValueView::RangeExcl(start, end) => (start as f64, end as f64, false, true),
-        ValueView::RangeExclStart(start, end) => (start as f64, end as f64, true, false),
-        ValueView::RangeExclBoth(start, end) => (start as f64, end as f64, true, true),
+        ValueView::Range(start, end) => (start, end, false, false),
+        ValueView::RangeExcl(start, end) => (start, end, false, true),
+        ValueView::RangeExclStart(start, end) => (start, end, true, false),
+        ValueView::RangeExclBoth(start, end) => (start, end, true, true),
         ValueView::GenericRange {
             start,
             end,
@@ -194,6 +193,9 @@ pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             ) else {
                 return Some(Ok(non_numeric_failure()));
             };
+            if from >= to {
+                return Some(Ok(invalid_endpoints_failure(start, end)));
+            }
             if excl_start {
                 from = above(from);
             }
@@ -208,8 +210,12 @@ pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         _ => return None,
     };
     if from >= to {
-        return Some(Ok(Value::NIL));
+        return Some(Ok(invalid_endpoints_failure(
+            &Value::int(from),
+            &Value::int(to),
+        )));
     }
+    let (from, to) = (from as f64, to as f64);
     let mut v = sample(from, to);
     if excl_start && v <= from {
         v = above(from);
@@ -218,6 +224,31 @@ pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         v = below(to);
     }
     Some(Ok(Value::num(v)))
+}
+
+/// The `X::Range::Rand::InvalidEndpoints` failure `Range.rand` answers for a
+/// range with `min >= max`.
+// Cost: O(1).
+fn invalid_endpoints_failure(min: &Value, max: &Value) -> Value {
+    let (smin, smax) = (min.to_str_context(), max.to_str_context());
+    let message = if crate::runtime::to_float_value(min) == crate::runtime::to_float_value(max) {
+        "Impossible to generate random numbers for a range where endpoints are equal".to_string()
+    } else {
+        format!(
+            "Impossible to get a random number from range containing no values.\n\
+             The sequence (...) operator supports descension between {smin} and {smax},\n\
+             but for a random number between {smin} and {smax}, ({smax}..{smin}).rand is\n\
+             likely to be functionally equivalent to what was meant by ({smin}..{smax}).rand"
+        )
+    };
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert("min".to_string(), min.clone());
+    ex_attrs.insert("max".to_string(), max.clone());
+    ex_attrs.insert("message".to_string(), Value::str(message));
+    let ex = Value::make_instance(Symbol::intern("X::Range::Rand::InvalidEndpoints"), ex_attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
 /// The failure `Range.rand` answers for a non-numeric end.
