@@ -87,6 +87,7 @@ impl Encode for CompiledCode {
             forced_free_var_syms,
             forced_free_var_writes,
             free_var_container_writes,
+            free_var_call_arg_syms,
             named_sub_captures,
             lexical_routines,
             amp_shadowed_calls,
@@ -229,6 +230,7 @@ impl Encode for CompiledCode {
         forced_free_var_syms.encode(encoder)?;
         forced_free_var_writes.encode(encoder)?;
         free_var_container_writes.encode(encoder)?;
+        free_var_call_arg_syms.encode(encoder)?;
         named_sub_captures.encode(encoder)?;
         lexical_routines.encode(encoder)?;
         amp_shadowed_calls.encode(encoder)?;
@@ -360,6 +362,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             forced_free_var_syms: Decode::decode(decoder)?,
             forced_free_var_writes: Decode::decode(decoder)?,
             free_var_container_writes: Decode::decode(decoder)?,
+            free_var_call_arg_syms: Decode::decode(decoder)?,
             named_sub_captures: Decode::decode(decoder)?,
             lexical_routines: Decode::decode(decoder)?,
             amp_shadowed_calls: Decode::decode(decoder)?,

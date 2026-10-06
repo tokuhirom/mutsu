@@ -127,6 +127,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         forced_free_var_syms,
         forced_free_var_writes,
         free_var_container_writes,
+        free_var_call_arg_syms,
         named_sub_captures,
         lexical_routines,
         amp_shadowed_calls,

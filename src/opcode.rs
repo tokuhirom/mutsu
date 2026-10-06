@@ -7130,6 +7130,21 @@ pub(crate) struct CompiledCode {
     /// drain (which keys on `free_var_writes`); it only feeds the gated cell
     /// boxing.
     pub(crate) free_var_container_writes: Vec<Symbol>,
+    /// Free plain-scalar names (`$`-sigil, a user lexical) that reach a call as a
+    /// positional argument anywhere in this code or a closure nested at any
+    /// depth. The call's parameter may be `is rw` / `is raw`, and then the
+    /// callee writes straight into the caller's variable: a write that no
+    /// name-write op shows, so `free_var_writes` never lists it.
+    ///
+    /// The creating frame reads this to treat such a capture, in a closure that
+    /// escapes, as a captured-and-mutated one (`compute_free_vars`): without a
+    /// shared cell the closure's `is rw` binding mints a cell of its own over a
+    /// by-value snapshot, which a spawned thread cannot publish back
+    /// (`start { bump($n) }` with `sub bump($p is rw)` lost every update, #12042).
+    /// Kept SEPARATE from `free_var_writes` for the reason
+    /// `rw_arg_env_sync_syms` is: the writeback gates key on that set, and a
+    /// call argument is only a *possible* write.
+    pub(crate) free_var_call_arg_syms: Vec<Symbol>,
     /// Write contributions of directly-nested *named subs* (declared in this
     /// scope), each a `(free_var_writes, needs_cell_named_sub_free)` pair copied
     /// from the sub's finalized `CompiledCode`. A named sub is always reachable
@@ -8199,6 +8214,7 @@ impl CompiledCode {
             forced_free_var_syms: Vec::new(),
             forced_free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
+            free_var_call_arg_syms: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
             amp_shadowed_calls: Vec::new(),
@@ -10202,6 +10218,10 @@ impl CompiledCode {
         // `op_arg_sources_idx`.
         let mut own_call_arg_sources: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        // The same, for names this code does NOT declare (captured scalars), here
+        // and in every closure nested in it. See `free_var_call_arg_syms`.
+        let mut free_call_arg_syms: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         // Bare names read via `$OUTER::` (order-preserving, de-duplicated).
         let mut outer_ref_names: Vec<String> = Vec::new();
         // Own locals captured by a closure created since the last store/decl
@@ -10334,10 +10354,17 @@ impl CompiledCode {
                     // `is raw` param rebinding a passed `&`-arg remains a known
                     // gap of this analysis.
                     if let Some(name) = name
-                        && own.contains(name.as_str())
                         && !name.starts_with('&')
                     {
-                        own_call_arg_sources.insert(Symbol::intern(&name));
+                        if own.contains(name.as_str()) {
+                            own_call_arg_sources.insert(Symbol::intern(&name));
+                        } else if crate::env::is_plain_user_lexical(&name)
+                            && !name.starts_with(['@', '%'])
+                        {
+                            // A captured scalar: the creating frame decides
+                            // whether it needs a cell (see below).
+                            free_call_arg_syms.insert(Symbol::intern(&name));
+                        }
                     }
                 }
             }
@@ -10608,6 +10635,14 @@ impl CompiledCode {
                     free_writes.insert(*sym);
                 }
             }
+            // A nested closure's call arguments that this code does not declare
+            // keep bubbling toward the frame that does. The ones it does declare
+            // are judged per closure in the escape loop below.
+            for sym in &nested.free_var_call_arg_syms {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free_call_arg_syms.insert(*sym);
+                }
+            }
             // A nested closure that mutates an outer container in place keeps that
             // container free here unless we own it (it stays a container-write
             // contribution either way — own ones are handled by the cell at decl).
@@ -10737,6 +10772,26 @@ impl CompiledCode {
                     // the escape analysis does not hold for it (#9493).
                     if (escapes || self_captured) && declared_at_emit {
                         needs_cell.insert(*sym);
+                    }
+                }
+                // An escaping closure that hands a captured scalar to a call: the
+                // parameter may be `is rw` / `is raw`, which writes straight into
+                // the caller's variable, and no name-write op shows it. So the
+                // capture counts as mutated, and must be a shared cell. Without
+                // one the closure's rw binding boxes a cell of its own over a
+                // by-value snapshot -- invisible to this frame, and to a sibling
+                // thread, which is where `start { bump($n) }` lost its updates
+                // (#12042). A closure that does not escape is run inside this
+                // frame's own call chain, whose writeback already reaches the
+                // slot, so it keeps the cheap by-value capture.
+                if escapes && nested.free_var_call_arg_syms.contains(sym) {
+                    if is_own {
+                        if declared_at_emit {
+                            captured_mutated.insert(*sym);
+                            needs_cell.insert(*sym);
+                        }
+                    } else {
+                        needs_cell_free.insert(*sym);
                     }
                 }
                 // An escaping child closure that captures-and-mutates a var which
@@ -10900,6 +10955,7 @@ impl CompiledCode {
             }
         }
         self.free_var_container_writes = sorted_by_name(free_container_writes);
+        self.free_var_call_arg_syms = sorted_by_name(free_call_arg_syms);
         self.captured_mutated_locals = sorted_by_name(captured_mutated);
         self.needs_cell_locals = sorted_by_name(needs_cell);
         self.needs_cell_regex = sorted_by_name(needs_cell_regex);
