@@ -479,7 +479,8 @@ pub(crate) fn native_method_1arg(
         // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
         // inner value, so the epsilon binds exactly where it does for that type.
         // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
-        "Rat" | "FatRat" if matches!(target.view(), ValueView::Mixin(inner, _)
+        "Rat" | "FatRat"
+            if matches!(target.view(), ValueView::Mixin(inner, _)
             if matches!(inner.view(), ValueView::Int(_) | ValueView::Rat(..) | ValueView::Num(_))) =>
         {
             let ValueView::Mixin(inner, _) = target.view() else {
