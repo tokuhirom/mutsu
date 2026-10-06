@@ -1156,6 +1156,12 @@ impl Interpreter {
             if native_types::is_native_int_type(base) {
                 return Value::int(0);
             }
+            // A parameterised constraint (`Positional[Int]`, `CArray[int32]`)
+            // keeps its type arguments, as `my Positional[Int] $x` does, so
+            // binding the unset parameter into a same-typed slot passes.
+            if base.contains('[') && !base.contains('(') {
+                return Value::package(Symbol::intern(base));
+            }
             return Value::package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
         // An unpassed untyped optional binds the parameter's implicit nominal
