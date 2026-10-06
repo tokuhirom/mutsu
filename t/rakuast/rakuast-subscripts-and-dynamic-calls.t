@@ -13,7 +13,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 51;
+plan 32;
 
 sub exprs($src) { ('my ($o, $n, $c); my @a; my %h; sub f(|) { }; ' ~ $src).AST.statements.skip(4).map(*.expression) }
 sub same($src, $expected, $desc) {
