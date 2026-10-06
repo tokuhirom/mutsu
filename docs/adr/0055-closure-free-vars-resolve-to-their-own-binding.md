@@ -4,7 +4,8 @@
   complement — implemented 2026-09-06, which closes §1.2(b) for plain scalars
   and retires the prerequisite §7.3 recorded; slice 1b's one carve-out, the
   parameter exclusion, was itself retired later the same day — §7.7; §7.9
-  closes the `@a.push({ ... })` escape-verdict gap; slices 2-5 not started.
+  closes the `@a.push({ ... })` escape-verdict gap; §7.10 counts a nested
+  closure's call arguments as possible writes; slices 2-5 not started.
   §7.6 records what the 2026-09-06 re-measurement corrected.)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
@@ -639,3 +640,51 @@ This correction covers the inlined-`for`/`ArrayPush` example. A genuine
 non-escaping intermediate closure, an `EVAL`-created closure and a CONTROL
 resume write remain in §7.4's cell-coverage prerequisite; Slice 2's merge flip
 still waits for them. See `news/2026-10/array-push-closure-escape-verdict.md`.
+
+### 7.10 A call argument inside a nested closure counts as a write (2026-10-06, #12042)
+
+The vouch's complement (§7.6) is only exhaustive if every write the closure can
+make is on one side of the dichotomy. A write through an `is rw` / `is raw`
+parameter is on neither: the call site only *reads* the argument by name.
+`compute_free_vars` already refused to vouch for an *own* local that reaches a
+call (`own_call_arg_sources`), but it never looked at the call arguments of a
+*nested* closure, so a scalar named only inside a `start { bump($n) }` block was
+vouched, stayed a by-value snapshot, and got no cell. The worker's rw binding
+(`rw_shared_cell_key`, `binding_signature.rs`) then boxed a cell of its own over
+its copy. That is invisible to the creator and to every sibling thread, so every
+update was lost (`await start { set-rw($v) }` printed the old value).
+
+The gap was hidden whenever the creating frame passed the same variable to a
+call itself, which put it in `own_call_arg_sources`; hence the loss looked
+shape-dependent. A debugger run showed nothing else was needed: with a cell in
+the slot and the env snapshot, the existing binder reuses it (`env.get` already
+holds a `ContainerRef`) and the writes land on one container.
+
+The fix is the same shape as the own-frame rule, one level down.
+`CompiledCode::free_var_call_arg_syms` collects the captured plain scalars
+(`is_plain_user_lexical`, not `@`/`%`/`&`) that appear in a call op's
+`arg_sources`, folds the nested closures' sets, and bubbles a name this code does
+not declare toward its owner. In the owner's per-closure loop, an **escaping**
+closure that passes a captured scalar to a call makes that scalar
+captured-and-mutated and `needs_cell`, i.e. the (B) trigger of
+`box_captured_lexicals`; when the owner is further up, it joins
+`needs_cell_free_vars` like an escaping free-var write.
+
+Two choices worth recording:
+
+- **It is a separate set, not `free_var_writes`.** A call argument is only a
+  *possible* write, and the runtime writeback gates key on `free_var_writes`; the
+  reasoning is the one `rw_arg_env_sync_syms` documents.
+- **Only escaping closures.** A closure that does not escape runs inside its
+  creating frame's call chain, whose writeback already reaches the slot, and
+  un-vouching it would hand its capture to the don't-overwrite merge (the §1.2(b)
+  hijack). Nearly every closure literal passed to a call is classed escaping
+  (§7.9), so this still covers `start`, `Thread.start`, `Promise.start` and `.then`.
+
+Out of scope, and unchanged: a *named sub* that forwards a captured scalar to an
+rw call (`sub worker { bump($n) }; start { worker() }`) has no closure to analyse
+and already worked, through the decl-site route (`needs_cell_named_sub`). One
+interplay with an earlier same-named atomic block still loses updates; it
+predates this change and is filed as #12075. See
+`news/2026-10/closure-call-argument-captures-get-a-cell.md`; pin:
+`t/concurrency/thread-lock/thread-rw-param-captured-scalar.t`.
