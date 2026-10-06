@@ -31,6 +31,16 @@ use crate::symbol::Symbol;
 /// top level, and the reverse index from a granted package to its modules.
 /// Every table is copy-on-write (`cow_table_mut`), so a thread clone shares
 /// them until one side writes.
+/// A bare name a module's top level declares into its GLOBAL merge
+/// ([`Interpreter::module_scope_name_candidates`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ScopeNameCandidate {
+    pub(crate) name: Symbol,
+    /// An `our` enum's key, which an existing enum value of that name also
+    /// answers to.
+    pub(crate) enum_key: bool,
+}
+
 #[derive(Default, Clone)]
 pub(crate) struct ModuleVisibility {
     /// The attributed names that are a module's own `unit` package (`unit
@@ -217,15 +227,15 @@ impl Interpreter {
 
     /// The package-scope names a package-less module declares at its own top
     /// level -- classes and grammars (not `my class`), roles, `package`/`module`
-    /// blocks, enums, subsets and `our` constants -- that nothing in scope
-    /// already answers to, so
-    /// attributing them to the module never hides a name the loading program
-    /// declared itself. Read before the module body runs.
-    // Cost: O(n) over the unit's top-level statements, plus one `env` probe
-    // and one type lookup per declared name.
-    pub(crate) fn module_scope_declared_names(&self, stmts: &[crate::ast::Stmt]) -> Vec<Symbol> {
+    /// blocks, enums, subsets and `our` constants -- in source order. This is
+    /// the AST half, recorded with a precompiled unit (ADR-12026 §2.1);
+    /// [`Self::unknown_scope_names`] keeps those nothing in scope already
+    /// answers to, so attributing them to the module never hides a name the
+    /// loading program declared itself. Both run before the module body.
+    // Cost: O(n) over the unit's top-level statements.
+    pub(crate) fn module_scope_name_candidates(stmts: &[crate::ast::Stmt]) -> Vec<ScopeNameCandidate> {
         use crate::ast::Stmt;
-        let mut names: Vec<Symbol> = Vec::new();
+        let mut names: Vec<ScopeNameCandidate> = Vec::new();
         for stmt in crate::ast::scope_members(stmts) {
             // An `our` enum's keys are bare package-scope names of the module
             // too (`enum Settings <SA SB>` -> `SA`), whatever the enum's own
@@ -241,13 +251,10 @@ impl Interpreter {
                     if key.is_empty() || crate::qualified::is_qualified_str(key) {
                         continue;
                     }
-                    let known = self.env.contains_key(key.as_str())
-                        || self.enum_bare_value(key).is_some()
-                        || self.has_type(key)
-                        || Self::is_builtin_type(key);
-                    if !known {
-                        names.push(Symbol::intern(key));
-                    }
+                    names.push(ScopeNameCandidate {
+                        name: Symbol::intern(key),
+                        enum_key: true,
+                    });
                 }
             }
             let name = match stmt {
@@ -289,14 +296,31 @@ impl Interpreter {
             if crate::qualified::is_qualified(name) {
                 continue;
             }
-            let known = name.with_str(|n| {
-                self.env.contains_key(n) || self.has_type(n) || Self::is_builtin_type(n)
+            names.push(ScopeNameCandidate {
+                name,
+                enum_key: false,
             });
-            if !known {
-                names.push(name);
-            }
         }
         names
+    }
+
+    /// The live half of [`Self::module_scope_name_candidates`]: the
+    /// candidates nothing in scope already answers to.
+    // Cost: O(k), k = candidates (one `env` probe and one type lookup each).
+    pub(crate) fn unknown_scope_names(&self, candidates: &[ScopeNameCandidate]) -> Vec<Symbol> {
+        candidates
+            .iter()
+            .filter(|c| {
+                c.name.with_str(|n| {
+                    let known = self.env.contains_key(n)
+                        || (c.enum_key && self.enum_bare_value(n).is_some())
+                        || self.has_type(n)
+                        || Self::is_builtin_type(n);
+                    !known
+                })
+            })
+            .map(|c| c.name)
+            .collect()
     }
 
     /// The package-less, non-exported `our sub`s a module declares at its own
@@ -335,8 +359,15 @@ impl Interpreter {
     /// conditional `use Foo:if(...)` is left to its in-position merge.
     // Cost: O(n), n = the unit's top-level statements.
     pub(crate) fn premerge_top_level_uses(&mut self, unit: Symbol, stmts: &[crate::ast::Stmt]) {
+        self.premerge_modules(unit, Self::top_level_use_modules(stmts));
+    }
+
+    /// The AST half of [`Self::premerge_top_level_uses`]: the modules the
+    /// unit's top level unconditionally `use`s or `need`s.
+    // Cost: O(n), n = the unit's top-level statements.
+    pub(crate) fn top_level_use_modules(stmts: &[crate::ast::Stmt]) -> Vec<Symbol> {
         use crate::ast::Stmt;
-        let modules: Vec<Symbol> = crate::ast::scope_members(stmts)
+        crate::ast::scope_members(stmts)
             .through_unit_package()
             .filter_map(|stmt| match stmt {
                 Stmt::Use {
@@ -347,7 +378,13 @@ impl Interpreter {
                 | Stmt::Need { module } => Some(Symbol::intern(module)),
                 _ => None,
             })
-            .collect();
+            .collect()
+    }
+
+    /// Record `modules` as merged into `unit` (the live half of
+    /// [`Self::premerge_top_level_uses`]).
+    // Cost: O(m), m = modules.
+    pub(crate) fn premerge_modules(&mut self, unit: Symbol, modules: Vec<Symbol>) {
         if modules.is_empty() {
             return;
         }

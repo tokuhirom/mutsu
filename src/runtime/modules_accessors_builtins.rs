@@ -50,6 +50,7 @@ mod control_inline;
 mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_bytecode;
+pub(crate) mod module_load_facts;
 mod module_reinstate;
 mod numeric_subclass_repr;
 mod proxy_store;
