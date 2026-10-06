@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn pragmas_and_test_are_not_preloaded() {
-        for name in ["v6", "lib", "strict", "MONKEY-TYPING", "NativeCall", "Test"] {
+        for name in ["v6", "lib", "strict", "MONKEY-TYPING", "Test"] {
             assert!(
                 preloadable_module(&use_stmt(name)).is_none(),
                 "{name} should not be preloaded"
@@ -254,6 +254,11 @@ mod tests {
         assert_eq!(
             preloadable_module(&use_stmt("JSON::Tiny")),
             Some("JSON::Tiny")
+        );
+        // NativeCall is the vendored upstream module now, an ordinary load.
+        assert_eq!(
+            preloadable_module(&use_stmt("NativeCall")),
+            Some("NativeCall")
         );
     }
 

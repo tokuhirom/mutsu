@@ -777,17 +777,6 @@ impl Interpreter {
             self.stack.push(failure);
             return Ok(());
         }
-        // An `is native(...)` method: the call belongs to NativeCall, not to the
-        // `{ * }` stub the declaration gives it. Both method-call opcodes need
-        // this — a class's methods are compiled to bytecode and dispatched
-        // without reaching the resolver, and `$obj.meth` on a variable compiles
-        // to the *mut* opcode.
-        if let Some(result) = loan_env!(self, try_native_method_on_receiver(&target, method, &args))
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "nativecall");
-            self.stack.push(result?);
-            return Ok(());
-        }
         // Mutating a lazy `@`-array (infinite source). raku rejects operations
         // that touch the (non-existent) end — push/pop/append — with
         // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/

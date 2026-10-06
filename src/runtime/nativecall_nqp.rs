@@ -269,16 +269,6 @@ impl Interpreter {
                 unsafe { crate::value::gc_contents_mut(&array) }.promote_native_storage(elem_type);
             }
         }
-        // `nativecast(:(num64 --> num64), $ptr)` — cast a raw C function pointer
-        // to a *signature*, yielding something callable. This is how a symbol
-        // looked up at runtime becomes a usable routine (`NativeLibs`'
-        // `Loader.symbol($name, :(num64 --> num64))`), so there is no `is native`
-        // declaration and no symbol name to bind — only the address.
-        if let ValueView::Instance { class_name, id, .. } = target.view()
-            && class_name.resolve() == "Signature"
-        {
-            return self.native_callable_from_signature(id, source);
-        }
         let addr = self.carray_element_address(source);
         // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects, and a
         // class declared `is repr('CArray')` boxes a CArray over the address

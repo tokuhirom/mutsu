@@ -46,16 +46,6 @@ pub(crate) fn is_parametric_builtin_type_name(name: &str) -> bool {
             | "Positional"
             | "Associative"
             | "Iterable"
-            // NativeCall's `Pointer[T]` — a pointer that remembers what it
-            // points at, so `.of` can report it and `.deref` can read it. It
-            // is spliced in as a genuine `class GLOBAL::Pointer` prelude
-            // (`run::NATIVECALL_POINTER_PRELUDE`), so it is collected into
-            // the compile-time pre-pass's `declared_classes` just like any
-            // user class -- this allowlist is what keeps that pre-pass from
-            // reading its own collection as "a non-parametric class named
-            // Pointer" and rejecting `Pointer[uint16]` as X::NotParametric
-            // (#9836).
-            | "Pointer"
     )
 }
 

@@ -888,16 +888,6 @@ impl Interpreter {
         } else {
             target
         };
-        // An `is native(...)` method: the call belongs to NativeCall, not to the
-        // `{ * }` stub the declaration gives it. Checked here rather than after
-        // ordinary resolution because a class's methods are compiled to bytecode
-        // and dispatched without reaching the resolver's native hook.
-        if let Some(result) = loan_env!(self, try_native_method_on_receiver(&target, method, &args))
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "nativecall");
-            self.stack.push(result?);
-            return Ok(());
-        }
         // `.hash` / `.Hash` on a bare positional list (`(Int, 1).hash`, and the
         // `%(...)` literal, which compiles to `MakeArray(...).hash`) builds a
         // plain Hash from the flattened elements. A bare type-object key

@@ -911,35 +911,21 @@ impl Interpreter {
         }
     }
 
-    /// The key a native method's descriptor is stored and looked up under.
-    pub(crate) fn native_method_key(class_name: &str, method: &str) -> String {
-        format!("{class_name}.{method}")
-    }
-
-    /// Follow a `constant` type alias to the type it names.
+    /// Follow a `constant` type alias to the core native type it names, for a
+    /// CStruct *field* laid out in C.
     ///
     /// A C binding routinely spells its platform types as constants:
-    /// `DBDish::mysql::Native` declares `constant my_bool = int8;` and returns
-    /// `my_bool` from most of the `MYSQL_STMT` surface. The constant holds the
+    /// `DBDish::mysql::Native` declares `constant my_bool = int8;` and a
+    /// `MYSQL_BIND` field is `has intptr $.length`. The constant holds the
     /// aliased *type object*, so read it back out of the environment and use
-    /// its name. Without this the signature type is unmappable and the whole
-    /// declaration silently skips native registration — the method then stays
-    /// the stub `{ * }` body and the call fails with "No such method".
+    /// its name. When the live env no longer holds the constant (the module was
+    /// loaded by a frame that has since returned -- a `require` inside a
+    /// method), the alias is looked up in `owner`'s module scope
+    /// (`module_scope_lexicals`, walked up the `::` chain). `owner` is the
+    /// declaration the alias was spelled in, e.g. the CStruct class whose field
+    /// is being laid out.
     ///
     /// Bounded: an alias chain longer than a few links is treated as no alias.
-    ///
-    /// A CStruct *field* is spelled the same way, so `cstruct_layout` follows
-    /// the alias too — `MYSQL_BIND` declares `has intptr $.length`.
-    pub(crate) fn resolve_native_type_alias(&self, name: &str) -> String {
-        self.resolve_native_type_alias_for_owner(name, "")
-    }
-
-    /// [`Self::resolve_native_type_alias`] with a fallback anchor: when the
-    /// live env no longer holds the constant (the module was loaded by a frame
-    /// that has since returned — a `require` inside a method), the alias is
-    /// looked up in `owner`'s module scope (`module_scope_lexicals`, walked up
-    /// the `::` chain). `owner` is the declaration the alias was spelled in,
-    /// e.g. the CStruct class whose field is being laid out.
     pub(crate) fn resolve_native_type_alias_for_owner(&self, name: &str, owner: &str) -> String {
         use crate::runtime::nativecall::CType;
         let mut current = name.to_string();

@@ -605,59 +605,6 @@ impl Interpreter {
                 }
             }
         }
-        // NativeCall: a sub declared `is native(...)` is dispatched through C
-        // FFI rather than running its (`{ * }`) Raku body. The registry is
-        // empty in the overwhelmingly common case, so this guard is free.
-        if !self.module.native_call_specs.is_empty() {
-            let name_str = Self::const_str(code, name_idx);
-            // A native descriptor is keyed by the sub's short name (and, when the
-            // declaring package is known at registration, its qualified name). A
-            // package-qualified callsite (`OpenSSL::EVP::EVP_aes_128_cbc`) may
-            // therefore need the short-name fallback — `unit module` subs are
-            // registered while `current_package` is still GLOBAL, so only the
-            // short name is present. `resolve_native_call_spec` also honors a
-            // same-scope plain-sub shadow of a bare-name native descriptor
-            // (Raku: a local declaration shadows a same-named
-            // imported/needed symbol).
-            let spec = self.resolve_native_call_spec(name_str);
-            if let Some(mut spec) = spec {
-                self.resolve_native_ret_struct(&mut spec);
-                let arity_usize = arity as usize;
-                if self.stack.len() < arity_usize {
-                    return Err(RuntimeError::new(format!(
-                        "NativeCall: '{}' called with too few arguments on the stack",
-                        spec.symbol
-                    )));
-                }
-                let start = self.stack.len() - arity_usize;
-                let mut args: Vec<Value> = self.stack.drain(start..).collect();
-                // Drop the synthetic callsite-line marker the compiler may append.
-                args.retain(|a| !Self::is_callsite_line_marker(a));
-                let (result, out_args) =
-                    crate::runtime::nativecall::call_native_with_out_args(self, &spec, &args)?;
-                // An `is rw` numeric out-parameter whose argument is a plain
-                // variable arrives as a `VarRef`; the marshalling layer cannot
-                // reach the caller's slot, so write it back here by name —
-                // `PQunescapeBytea($v, my size_t $elems)` must leave the
-                // written length in `$elems`.
-                if !out_args.is_empty() {
-                    let mut wrote = false;
-                    for (idx, val) in out_args {
-                        if let crate::value::ValueView::VarRef { name, .. } = args[idx].view() {
-                            let n = name.resolve().to_string();
-                            self.env_mut().insert(n.clone(), val);
-                            self.pending_rw_writeback_sources.push(n);
-                            wrote = true;
-                        }
-                    }
-                    if wrote {
-                        self.apply_pending_rw_writeback(code);
-                    }
-                }
-                self.stack.push(result);
-                return Ok(());
-            }
-        }
         // An empty-signature proto (`proto bar {*}`) gates the whole dispatch:
         // a call with positional arguments can never reach a candidate. Reject
         // it here, before the light-call caches would dispatch directly to a
@@ -3164,12 +3111,9 @@ impl Interpreter {
     /// honored them for builtin shadows, and the rw/raw caller writeback carries
     /// a compile-time caller slot (#4091). `is encoded(...)` (NativeCall
     /// marshalling) is allowed too (ADR-0019 C6e-3c): it is inert on both
-    /// dispatch arms — nothing reads the trait for marshalling, since actual
-    /// string encoding for a native call happens explicitly via `.encode(...)`
-    /// in the prelude, and the shared compiled binder
+    /// dispatch arms, since the shared compiled binder
     /// (`bind_function_args_values`) only branches on `rw`/`raw`/`copy`/
-    /// `invocant`. A genuine `is native(...)` sub never reaches this gate at
-    /// all — `native_call_specs` is checked by name before body dispatch.
+    /// `invocant`.
     ///
     /// Defaults ARE allowed (name-cache-safe: no same-named builtin to mis-bind,
     /// and a single candidate always resolves to this def). Bodies and
