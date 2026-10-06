@@ -372,10 +372,10 @@ impl FromIterator<(Symbol, std::sync::Arc<FunctionDef>)> for FunctionTable {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
-    fn def() -> std::sync::Arc<FunctionDef> {
+    pub(in crate::runtime) fn def() -> std::sync::Arc<FunctionDef> {
         std::sync::Arc::new(FunctionDef {
             is_cached: false,
             package: Symbol::intern("GLOBAL"),

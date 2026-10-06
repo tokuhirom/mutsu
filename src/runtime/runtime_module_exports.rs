@@ -1101,21 +1101,15 @@ impl Interpreter {
             // An EXPORTED operator becomes lexically visible in the unit that
             // imported it -- and only there (#9944).
             self.record_infix_import_gate(&name);
-            let source_single = crate::qualified::qualified_text(module, &name)
-                .as_str()
-                .to_string();
-            let source_prefix = format!(
-                "{}/",
-                crate::qualified::qualified_text(module, &name).as_str()
-            );
+            let source_single_sym = crate::qualified::qualified_text(module, &name);
+            let source_single = source_single_sym.as_str();
             let target_single = crate::qualified::qualified_text(target_pkg, &name)
                 .as_str()
                 .to_string();
-            let target_prefix = format!(
-                "{}/",
-                crate::qualified::qualified_text(target_pkg, &name).as_str()
-            );
-            let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
+            // Each family below is listed through `FunctionTable::family_keys`,
+            // not by scanning every registry key once per exported name
+            // (#11756).
+            let source_family = self.registry().functions.family_keys(source_single);
             // An exported method is represented by synthetic arity-qualified
             // candidates.  A class may also contain a same-named plain sub;
             // that plain sub occupies `source_single` but is not the method's
@@ -1125,58 +1119,54 @@ impl Interpreter {
             let exported_method_candidates = self
                 .registry()
                 .functions
-                .get(&Symbol::intern(&source_single))
+                .get(&source_single_sym)
                 .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
-                && self.registry().functions.iter().any(|(key, def)| {
-                    key.as_str().starts_with(&source_prefix)
-                        && def.declarator == crate::ast::RoutineDeclarator::Method
+                && source_family.iter().any(|key| {
+                    self.registry().functions.get(key).is_some_and(|def| {
+                        def.declarator == crate::ast::RoutineDeclarator::Method
+                    })
                 });
             let bare_file_multi = bare_file_module
-                && self
+                && !self
                     .registry()
                     .functions
-                    .keys()
-                    .any(|key| key.as_str().starts_with(&module_export_prefix));
+                    .family_keys(&format!("{module}::EXPORT::ALL::{name}"))
+                    .is_empty();
+            let global_single = format!("GLOBAL::{name}");
             let imported_proto = self
                 .registry()
                 .proto_functions
-                .contains_key(&Symbol::intern(&source_single))
+                .contains_key(&source_single_sym)
                 || (unit_global_subs.contains_key(&name)
                     && self
                         .registry()
                         .proto_functions
-                        .contains_key(&Symbol::intern(&format!("GLOBAL::{name}"))))
+                        .contains_key(&Symbol::intern(&global_single)))
                 || bare_file_multi;
             let global_family_present = bare_file_module
-                && self
+                && !self
                     .registry()
                     .functions
-                    .keys()
-                    .any(|key| key.as_str().starts_with(&format!("GLOBAL::{name}/")));
+                    .family_keys(&global_single)
+                    .is_empty();
             // A top-level package-block import such as Zef::CLI's exported
             // `proto MAIN` has no target family to hide: the module's own
             // promoted GLOBAL candidates are the family we are importing.
             // Shadow an imported proto in a lexical scope, or a preloaded
             // GLOBAL family for a bare-file module, but do not shadow a
             // package-qualified proto merely because the source has one.
-            let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter_map(|(k, v)| {
-                    let ks = k.resolve();
-                    if ks == source_single && !exported_method_candidates {
-                        Some((Symbol::intern(&target_single), v.clone()))
-                    } else if ks.starts_with(&source_prefix) {
-                        Some((
-                            Symbol::intern(&ks.replacen(&source_prefix, &target_prefix, 1)),
-                            v.clone(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
+            if !exported_method_candidates
+                && let Some(def) = self.registry().functions.get(&source_single_sym)
+            {
+                function_entries.push((Symbol::intern(&target_single), def.clone()));
+            }
+            self.rebase_family_entries(
+                source_single,
+                &source_family,
+                &target_single,
+                &mut function_entries,
+            );
             // A unit module's top-level multi candidates are registered under
             // GLOBAL::name/<arity>, while the unit-module export table records
             // the public name under the module. The ordinary exact-key lookup
@@ -1185,26 +1175,20 @@ impl Interpreter {
             // family when this is a unit export so every dispatch alternative
             // is imported.
             if function_entries.is_empty() && unit_global_subs.contains_key(&name) {
-                let global_single = format!("GLOBAL::{name}");
-                let global_prefix = format!("GLOBAL::{name}/");
-                function_entries = self
+                if let Some(def) = self
                     .registry()
                     .functions
-                    .iter()
-                    .filter_map(|(k, v)| {
-                        let ks = k.resolve();
-                        if ks == global_single {
-                            Some((Symbol::intern(&target_single), v.clone()))
-                        } else if ks.starts_with(&global_prefix) {
-                            Some((
-                                Symbol::intern(&ks.replacen(&global_prefix, &target_prefix, 1)),
-                                v.clone(),
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    .get(&Symbol::intern(&global_single))
+                {
+                    function_entries.push((Symbol::intern(&target_single), def.clone()));
+                }
+                let global_family = self.registry().functions.family_keys(&global_single);
+                self.rebase_family_entries(
+                    &global_single,
+                    &global_family,
+                    &target_single,
+                    &mut function_entries,
+                );
             }
             // Fallback for a re-import (`use Foo; use Foo :tag`) of a `unit
             // module Foo` sub: the sub is registered under `GLOBAL::name`, not
@@ -1226,22 +1210,13 @@ impl Interpreter {
                     {
                         function_entries.push((Symbol::intern(&target_single), def));
                     }
-                    let alias_prefix = format!("{alias}/");
-                    let candidates: Vec<(Symbol, Arc<FunctionDef>)> = self
-                        .registry()
-                        .functions
-                        .iter()
-                        .filter_map(|(key, def)| {
-                            let key = key.resolve();
-                            key.strip_prefix(&alias_prefix).map(|suffix| {
-                                (
-                                    Symbol::intern(&format!("{target_prefix}{suffix}")),
-                                    def.clone(),
-                                )
-                            })
-                        })
-                        .collect();
-                    function_entries.extend(candidates);
+                    let alias_family = self.registry().functions.family_keys(&alias);
+                    self.rebase_family_entries(
+                        &alias,
+                        &alias_family,
+                        &target_single,
+                        &mut function_entries,
+                    );
                     if !function_entries.is_empty() {
                         break;
                     }
@@ -1295,17 +1270,11 @@ impl Interpreter {
             // intern also made the import's cost vary from run to run.
             let global_proto_key = (unit_global_subs.contains_key(&name) || bare_file_module)
                 .then(|| Symbol::intern(&format!("GLOBAL::{name}")));
-            let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
-                .registry()
-                .proto_functions
-                .iter()
-                .filter_map(|(k, v)| {
-                    if *k == *source_single || global_proto_key == Some(*k) {
-                        Some((Symbol::intern(&target_single), v.clone()))
-                    } else {
-                        None
-                    }
-                })
+            let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = [Some(source_single_sym), global_proto_key]
+                .into_iter()
+                .flatten()
+                .filter_map(|k| self.registry().proto_functions.get(&k).cloned())
+                .map(|v| (Symbol::intern(&target_single), v))
                 .collect();
             for (k, v) in proto_entries {
                 self.registry_mut().proto_functions_mut().insert(k, v);
