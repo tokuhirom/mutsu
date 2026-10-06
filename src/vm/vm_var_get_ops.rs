@@ -141,8 +141,9 @@ impl Interpreter {
         // several same-named lexical types is the one in scope. Where such a
         // type exists the `env[name]` read is how the type is found, so the
         // name keeps the ordinary resolution.
-        // TODO: give lexical type bindings a key space of their own (#9962's
-        // "decide once"); the `$foo` read there is then no longer ambiguous.
+        // TODO: give lexical type bindings a key space of their own (#12109,
+        // #9962's "decide once"); the `$foo` read there is then no longer
+        // ambiguous.
         let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
