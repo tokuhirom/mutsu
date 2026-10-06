@@ -401,47 +401,6 @@ impl PartialEq for MixinOverrides {
 /// started as a single `signed: bool` — enough for `Buf`/`Blob`, whose element
 /// types are all integers — and became an enum for ADR-0015 P3, because a
 /// `CArray[num64]` shares this node and its elements are `Num`s.
-/// The receiver shapes the built-in method table keys on (issue #8888,
-/// ADR-11276).
-///
-/// A method call currently walks a gauntlet of receiver probes — the one in
-/// `vm_native_dispatch::try_native_method_raw`, then `native_method_0arg`'s
-/// prologue, then `dispatch_core`'s — before the family cascade that actually
-/// answers it. Every probe re-decodes the same receiver and re-compares the
-/// same method name, and for a *plain* value of one of these shapes none of
-/// them can ever claim a call the table has a row for. This enum is the
-/// decoded receiver half of the `(shape, method) -> row` lookup in
-/// `builtins::method_table`; each shape names the built-in type whose MRO the
-/// lookup walks.
-///
-/// Deliberately narrow: only the `Kind`s whose every value is an ordinary,
-/// non-lazy, non-itemized value of one built-in type. Everything the gauntlet
-/// exists for — `Instance`, `Package`, `Mixin`, `Scalar`, `Seq`, `LazyList`,
-/// `Proxy`, a lazy `Match`, a shaped or lazy array, an itemized hash —
-/// answers `None` and takes the ordinary path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum DispatchShape {
-    /// A plain `List` (itemized or not), never lazy.
-    List,
-    /// A plain `Array` (itemized or not), never shaped and never lazy.
-    Array,
-    /// A plain, non-itemized `Hash`.
-    Hash,
-    /// A `Str`.
-    Str,
-    /// A `Num` (an unboxed double, including `NaN` and the infinities).
-    Num,
-    /// An `Int`, inline, boxed or arbitrary-precision (not a `Bool`, an
-    /// enum value or an `Int` subclass instance).
-    Int,
-    /// A `Rat`, with machine-word or arbitrary-precision components.
-    Rat,
-    /// A `FatRat`, with machine-word or arbitrary-precision components.
-    FatRat,
-    /// A `Complex`.
-    Complex,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ElemKind {
     /// `uint8` … `uint64`, and every plain `Buf`/`Blob`/`utf8`/`utf16`.
@@ -582,6 +541,8 @@ mod bareword_site;
 pub(crate) mod buf_class_names;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
+mod dispatch_shape;
+pub(crate) use dispatch_shape::DispatchShape;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;
@@ -1166,6 +1127,7 @@ impl ContainerCell {
     /// Record the container's `is default(...)` value (see `default`).
     // Cost: O(1).
     pub fn set_default(&self, value: Value) {
+        CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         *self.default.lock().unwrap() = Some(value);
     }
 
@@ -1174,6 +1136,20 @@ impl ContainerCell {
     pub fn default_value(&self) -> Option<Value> {
         self.default.lock().unwrap().clone()
     }
+}
+
+/// Set once any cell has been given its own `of` constraint or `is default`
+/// ([`register_container_constraint`] and kin, [`ContainerCell::set_default`]),
+/// so an element assignment skips looking for such a cell under its target in
+/// the common program that never makes one.
+static CELL_METADATA_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a cell carrying its own constraint or default may exist anywhere.
+/// See [`CELL_METADATA_SEEN`].
+#[inline]
+pub fn cell_metadata_possible() -> bool {
+    CELL_METADATA_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Set once any [`ContainerCell::new_readonly`] cell has been created, so the
@@ -1252,6 +1228,7 @@ pub fn register_container_constraint(
     cell: &crate::gc::Gc<crate::value::ContainerCell>,
     type_name: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1266,6 +1243,7 @@ pub fn register_container_constraint_named(
     type_name: &str,
     name: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1281,6 +1259,7 @@ pub fn register_element_constraint(
     type_name: &str,
     owner: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),

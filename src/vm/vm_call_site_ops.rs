@@ -174,12 +174,13 @@ impl Interpreter {
         // receiver: answered by the row, past the full path's probes
         // (`vm_method_site_lane`).
         if let Some(answer) = self.try_method_site_lane(code, ip) {
+            // Debug builds re-run a pure row through the full path and
+            // compare; an interpreter row has effects and is not re-run.
             #[cfg(debug_assertions)]
-            {
+            if answer.pure {
                 let full = self.in_method_call(|vm| vm.exec_call_method_mut_site_inner(code, ip));
                 return self.check_method_site_lane(code, ip, answer, full);
             }
-            #[cfg(not(debug_assertions))]
             return self.finish_method_site_lane(code, ip, answer);
         }
         // A method call, for `resolve_onlystar` (#10746).

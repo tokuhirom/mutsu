@@ -55,16 +55,7 @@ impl Interpreter {
         let Some(ValueView::ContainerRef(cell)) = bound.map(Value::view) else {
             return None;
         };
-        if let Some(def) = cell.default_value() {
-            return Some(def);
-        }
-        Some(match crate::value::lookup_container_constraint(&cell) {
-            Some(tc) if tc != "Mu" && tc != "Nil" => {
-                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&tc));
-                Value::package(Symbol::intern(&nominal))
-            }
-            _ => Value::package(crate::symbol::wk::any()),
-        })
+        Some(self.cell_nil_reset_value(&cell))
     }
 
     /// `OpCode::SigillessAggregateStore`: when the sigilless name (local

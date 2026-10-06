@@ -1011,11 +1011,7 @@ impl Interpreter {
             // `.^name` path resolves that same node here before falling back
             // to the synthesized `Base+{Role,...}` name.
             ValueView::Mixin(inner, mixins) => {
-                let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-                match overrides.get("__mutsu_type_name__") {
-                    Some(renamed) => renamed.to_string_value(),
-                    None => crate::value::types::what_type_name(target),
-                }
+                self.mixin_instance_type_name(target, inner, mixins)?
             }
             // `p.class_name()` is the raw internal storage name, which for a
             // lexical Promise subclass (`my class Meows is Promise {}`)

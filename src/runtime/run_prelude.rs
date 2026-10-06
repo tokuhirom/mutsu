@@ -401,7 +401,12 @@ impl Interpreter {
         *stmts = combined;
     }
 
+    // Cost: O(n), n = bytes of `code`; one substring search when the
+    // directive is absent (the common case), a line scan only when present.
     pub(crate) fn source_has_no_precompilation(code: &str) -> bool {
+        if !code.contains("no precompilation") {
+            return false;
+        }
         code.lines().any(|line| {
             let trimmed = line.trim();
             trimmed == "no precompilation;"
@@ -413,6 +418,9 @@ impl Interpreter {
 
     fn direct_need_dependencies(source: &str) -> Vec<String> {
         let mut out = Vec::new();
+        if !source.contains("need ") {
+            return out;
+        }
         for line in source.lines() {
             let trimmed = line.trim_start();
             let Some(rest) = trimmed.strip_prefix("need ") else {

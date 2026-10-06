@@ -458,22 +458,15 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        "excludes-min" => Some(match target.view() {
-            ValueView::Range(..) => Some(Ok(Value::FALSE)),
-            ValueView::RangeExcl(..) => Some(Ok(Value::FALSE)),
-            ValueView::RangeExclStart(..) => Some(Ok(Value::TRUE)),
-            ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
-            ValueView::GenericRange { excl_start, .. } => Some(Ok(Value::truth(excl_start))),
-            _ => None,
-        }),
-        "excludes-max" => Some(match target.view() {
-            ValueView::Range(..) => Some(Ok(Value::FALSE)),
-            ValueView::RangeExcl(..) => Some(Ok(Value::TRUE)),
-            ValueView::RangeExclStart(..) => Some(Ok(Value::FALSE)),
-            ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
-            ValueView::GenericRange { excl_end, .. } => Some(Ok(Value::truth(excl_end))),
-            _ => None,
-        }),
+        // The `Range` rows' handlers (`method_table::range`).
+        "excludes-min" => Some(crate::builtins::method_table::range::excludes_min(
+            target,
+            &[],
+        )),
+        "excludes-max" => Some(crate::builtins::method_table::range::excludes_max(
+            target,
+            &[],
+        )),
         "bounds" => Some(match target.view() {
             ValueView::Range(a, b)
             | ValueView::RangeExcl(a, b)

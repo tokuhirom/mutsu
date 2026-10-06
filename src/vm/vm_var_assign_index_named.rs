@@ -1096,7 +1096,18 @@ impl Interpreter {
         // (raku: `@a[0] = Nil; @a[0]` is Any for a plain untyped element). An
         // `is default(Nil)` container genuinely stores Nil. A `:=` bind
         // replaces the container, so Nil stays Nil there.
-        let val = if val.is_nil() && !bind_mode {
+        //
+        // An element `:=`-bound to a variable that carries its own `of`
+        // constraint or `is default` is that variable's container (#11810): the
+        // cell, not the aggregate, decides the `Nil` reset and the type check.
+        let bound_cell = if bind_mode {
+            None
+        } else {
+            self.bound_element_cell_with_metadata(&var_name, &idx)
+        };
+        let val = if let Some(cell) = &bound_cell {
+            self.element_store_through_cell(cell, val)?
+        } else if val.is_nil() && !bind_mode {
             let container = self.get_env_with_main_alias(&var_name).unwrap_or_else(|| {
                 if is_positional {
                     Value::real_array(Vec::new())

@@ -498,16 +498,8 @@ pub(crate) fn sub_decl_body(
     }
     // When no explicit signature is given, collect placeholder variables
     // ($^a, $^b, &^c, etc.) from the body as implicit parameters.
-    let (params, param_defs) = if params.is_empty() && param_defs.is_empty() {
-        let placeholders = collect_placeholders_shallow(&body);
-        if placeholders.is_empty() {
-            (params, param_defs)
-        } else {
-            (placeholders, Vec::new())
-        }
-    } else {
-        (params, param_defs)
-    };
+    let (params, param_defs) =
+        crate::ast::implicit_placeholder_signature(params, param_defs, &body);
     // Merge return type: `-->` from inside params has priority, then `returns`/`of` traits.
     // Declaring the return type twice (e.g. `sub f(--> List) returns Str { }`) is
     // X::Redeclaration of the return type.

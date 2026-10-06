@@ -569,31 +569,12 @@ pub(crate) fn native_method_0arg_cascade(
     // Version introspection: `.parts` (list of Int/Str/Whatever parts),
     // `.plus` (trailing `+`), `.whatever` (any `*` part). Used by zef's
     // DependencySpecification version matching.
-    if let ValueView::Version { parts, plus, .. } = target.view() {
+    // The `Version` rows' handlers (ADR-11276, `method_table::scalars::version`).
+    if let ValueView::Version { .. } = target.view() {
         match method {
-            "parts" => {
-                let items: Vec<Value> = parts
-                    .iter()
-                    .map(|p| match p {
-                        crate::value::VersionPart::Num(n) => Value::int(*n),
-                        crate::value::VersionPart::Str(s) => Value::str_from(s.as_str()),
-                        crate::value::VersionPart::Whatever => Value::WHATEVER,
-                    })
-                    .collect();
-                return Some(Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    crate::value::ArrayKind::List,
-                )));
-            }
-            "plus" => {
-                return Some(Ok(if plus { Value::TRUE } else { Value::FALSE }));
-            }
-            "whatever" => {
-                let any_star = parts
-                    .iter()
-                    .any(|p| matches!(p, crate::value::VersionPart::Whatever));
-                return Some(Ok(if any_star { Value::TRUE } else { Value::FALSE }));
-            }
+            "parts" => return crate::builtins::method_table::version::parts(target, &[]),
+            "plus" => return crate::builtins::method_table::version::plus(target, &[]),
+            "whatever" => return crate::builtins::method_table::version::whatever(target, &[]),
             _ => {}
         }
     }

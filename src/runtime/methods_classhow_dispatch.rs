@@ -470,16 +470,12 @@ impl Interpreter {
                     // Same composition-keyed shared node as `set_name`
                     // (ADR-0060): a rename made via `.WHAT.^set_name(...)`
                     // or directly on the instance is visible here either way.
-                    let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-                    let name = match overrides.get("__mutsu_type_name__") {
-                        Some(renamed) => renamed.to_string_value(),
-                        // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports
-                        // its base type with a `+{Role,...}` suffix, e.g.
-                        // `Int+{Foo::Bar}`. `what_type_name` builds this from the
-                        // recorded role keys; `value_type_name` (a `&'static str`)
-                        // cannot.
-                        None => crate::value::what_type_name(&args[0]),
-                    };
+                    // A role-mixed value (`5 but Foo::Bar`, `$x does R`) not
+                    // renamed reports its base type with a `+{Role,...}` suffix,
+                    // e.g. `Int+{Foo::Bar}`: `what_type_name` builds this from
+                    // the recorded role keys; `value_type_name` (a
+                    // `&'static str`) cannot.
+                    let name = self.mixin_instance_type_name(&args[0], inner, mixins)?;
                     return Ok(Value::str(name));
                 }
                 if matches!(args[0].view(), ValueView::CustomType(_)) {

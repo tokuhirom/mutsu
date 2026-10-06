@@ -4,9 +4,10 @@
 Decision and rationale: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md
 
     scripts/dev run <name> -- <command...>   start a detached job, print its id
-    scripts/dev gate [--only a,b] [--fresh]  run branch/checks/fmt/lint/test/roast as one job
-        [--quick|--full] [--focus PATH...]   the quick profile (default in a remote
-                                             container) builds debug only: branch, checks, fmt,
+    scripts/dev gate [--only a,b] [--fresh]  run `cargo fmt --all`, then branch/checks/lint/test/
+        [--quick|--full] [--focus PATH...]   roast as one job (the formatter is applied, never
+                                             checked); the quick profile (default in a remote
+                                             container) builds debug only: branch, checks,
                                              default clippy, cargo test, and the t/ and
                                              roast files the change touches or --focus names
     scripts/dev wait <id> [--max SECONDS]    block until done, at most --max (540)
@@ -55,21 +56,26 @@ EXIT_LOST = 70
 EXIT_RUNNING = 75
 
 DEFAULT_WAIT_MAX = 540
-GATE_STAGES = ("branch", "checks", "fmt", "lint", "test", "roast")
+GATE_STAGES = ("branch", "checks", "lint", "test", "roast")
 STAGE_COMMANDS = {
     "branch": ["scripts/dev", "branch-check"],
     "checks": ["make", "-k", "checks"],
-    "fmt": ["cargo", "fmt", "--all", "--", "--check"],
     "lint": ["make", "lint"],
     "test": ["make", "test"],
     "roast": ["make", "roast"],
 }
+# Formatting is not a stage. `gate` applies the formatter to the working tree
+# before it takes the tree id (see `format_tree`), so the verdict describes the
+# formatted tree and a mis-formatted file costs a second of `rustfmt`, not a
+# failed gate and a rerun. CI's `cargo fmt --check` then always sees what the
+# gate saw, provided the formatter's changes are committed.
+FORMAT_COMMAND = ["cargo", "fmt", "--all"]
 # Stages whose failure makes the later ones pointless: a tree that fails a
 # static guard (`make checks`: t/ layout, ratchets, self-tests -- seconds, no
-# build), or does not format or lint, is not going to be published, and running an hour of suites
+# build), or does not lint, is not going to be published, and running an hour of suites
 # on it only delays the answer. `test` and `roast` both run regardless, so one
 # gate shows every red file.
-BLOCKING_STAGES = ("branch", "checks", "fmt", "lint", "clippy")
+BLOCKING_STAGES = ("branch", "checks", "lint", "clippy")
 
 # The quick profile, for the ~4-core remote container (ADR-0126, amendment 2026-10-02). The
 # full gate compiles the crate about seven times (four lint configurations,
@@ -79,7 +85,7 @@ BLOCKING_STAGES = ("branch", "checks", "fmt", "lint", "clippy")
 # debug test build -- and runs only the t/ and roast files the change touches
 # (or `--focus` names) on the debug binary that `cargo test` already left
 # behind. CI's full matrix stays the net for the rest.
-QUICK_STAGES = ("branch", "checks", "fmt", "clippy", "cargo-test", "t-focus", "roast-focus")
+QUICK_STAGES = ("branch", "checks", "clippy", "cargo-test", "t-focus", "roast-focus")
 STAGE_COMMANDS.update({
     "clippy": ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
     "cargo-test": ["bash", "-o", "pipefail", "-c",
@@ -171,6 +177,27 @@ def tree_id(root: str) -> str:
         out = subprocess.run(["git", "write-tree"], cwd=root, env=env, check=True,
                              capture_output=True, text=True)
         return out.stdout.strip()
+
+
+def format_tree(root: str, command: list[str] | None = None) -> tuple[str, list[str]]:
+    """Apply the formatter to the working tree and return `(tree id, files it
+    changed)`.
+
+    The files are read off the tree ids before and after (`git diff-tree` on
+    the two trees `tree_id` wrote), so no second `--check` pass is needed and an
+    unrelated dirty file is not mistaken for a formatting change. Raises
+    `RuntimeError` with rustfmt's own message when it cannot format -- a file
+    that does not parse, rustfmt missing -- because the tree then cannot pass
+    any later stage either."""
+    before = tree_id(root)
+    run = subprocess.run(command or FORMAT_COMMAND, cwd=root, capture_output=True, text=True)
+    if run.returncode != 0:
+        raise RuntimeError((run.stderr or run.stdout).strip() or f"exit {run.returncode}")
+    after = tree_id(root)
+    if after == before:
+        return after, []
+    changed = git_lines(root, "diff-tree", "-r", "--name-only", "--no-commit-id", before, after)
+    return after, sorted(changed or [])
 
 
 def head_commit(root: str) -> str:
@@ -622,6 +649,20 @@ def cmd_gate(root: str, args) -> int:
     if args.focus and not quick:
         print("dev gate: --focus applies to the quick profile only", file=sys.stderr)
         return EXIT_USAGE
+    # Format first, before the tree id is taken: the verdict then describes the
+    # formatted tree, and there is no `--check` stage that could fail on it.
+    try:
+        tree, formatted = format_tree(root)
+    except RuntimeError as err:
+        print(f"dev gate: `{' '.join(FORMAT_COMMAND)}` failed, so no later stage could pass "
+              f"either:\n{err}", file=sys.stderr)
+        return EXIT_FAILED
+    if formatted:
+        shown = ", ".join(formatted[:8]) + (f", ... ({len(formatted)} in all)"
+                                            if len(formatted) > 8 else "")
+        print(f"dev gate: `{' '.join(FORMAT_COMMAND)}` reformatted {len(formatted)} file(s): "
+              f"{shown}\ndev gate: commit them -- the gate verifies the working tree, and CI "
+              f"checks the pushed commit", file=sys.stderr)
     meta = {"kind": "gate", "profile": "quick" if quick else "full", "stages": stages}
     if quick:
         t_files, roast_files = focus_files(root, args.focus or [])
@@ -630,7 +671,6 @@ def cmd_gate(root: str, args) -> int:
         print(f"dev gate: quick profile (debug build; {len(t_files)} t/ and "
               f"{len(roast_files)} roast file(s) in focus; --full for the whole gate)",
               file=sys.stderr)
-    tree = tree_id(root)
     if not args.fresh:
         for job_id in reversed(list_jobs(root)):
             st = job_state(root, job_id)
@@ -831,6 +871,10 @@ def self_test(root: str) -> int:
           QUICK_STAGES[:2] == ("branch", "checks") and "clippy" in BLOCKING_STAGES)
     check("quick gate: every stage has a command",
           all(s in STAGE_COMMANDS or s in ("t-focus", "roast-focus") for s in QUICK_STAGES))
+    check("gate: formatting is applied up front, not a stage that can fail on a check",
+          "fmt" not in GATE_STAGES + QUICK_STAGES + BLOCKING_STAGES
+          and "fmt" not in STAGE_COMMANDS
+          and FORMAT_COMMAND == ["cargo", "fmt", "--all"])
     cmds = focus_commands(["t/a/x.t"], [])
     check("quick gate: focus runs prove on the debug binary",
           "MUTSU_BIN=target/debug/mutsu" in cmds["t-focus"] and cmds["t-focus"][-1] == "t/a/x.t")
@@ -840,6 +884,11 @@ def self_test(root: str) -> int:
     real_known = load_known_failures(root)
     check("ci/known-env-failures.toml parses and lists files",
           real_known and all("file" in e and "shape" in e for e in real_known))
+
+    if shutil.which("cargo") and subprocess.run(["cargo", "fmt", "--version"],
+                                                capture_output=True).returncode == 0:
+        check("format_tree: reformats, names the changed files, then leaves a clean tree alone",
+              format_tree_self_test())
 
     # Job lifecycle, in a throwaway git repository so no real job is disturbed.
     # The commands' own progress output is not part of the verdict.
@@ -904,6 +953,35 @@ def self_test(root: str) -> int:
         return 1
     print("dev self-test: ok")
     return 0
+
+
+def format_tree_self_test() -> bool:
+    """`format_tree` on a throwaway crate (rustfmt needs no build): an unformatted
+    file is rewritten and named, a second pass changes nothing, an untouched
+    dirty file is not reported, and a file that does not parse raises."""
+    with tempfile.TemporaryDirectory() as proj:
+        subprocess.run(["git", "init", "-q", proj], check=True)
+        os.makedirs(os.path.join(proj, "src"))
+        paths = {name: os.path.join(proj, name) for name in ("Cargo.toml", "src/lib.rs", "notes")}
+        for name, text in (("Cargo.toml", '[package]\nname = "fmtprobe"\nversion = "0.0.0"\n'
+                                          'edition = "2021"\n'),
+                           ("src/lib.rs", "pub fn  f( )->i32{1}\n"), ("notes", "a\n")):
+            with open(paths[name], "w", encoding="utf-8") as fh:
+                fh.write(text)
+        _, changed = format_tree(proj)
+        with open(paths["src/lib.rs"], encoding="utf-8") as fh:
+            formatted_source = fh.read()
+        ok = changed == ["src/lib.rs"] and formatted_source == "pub fn f() -> i32 {\n    1\n}\n"
+        with open(paths["notes"], "w", encoding="utf-8") as fh:
+            fh.write("b\n")
+        ok = ok and format_tree(proj)[1] == []
+        with open(paths["src/lib.rs"], "w", encoding="utf-8") as fh:
+            fh.write("pub fn (\n")
+        try:
+            format_tree(proj)
+            return False
+        except RuntimeError:
+            return ok
 
 
 # --- branch check ---------------------------------------------------------------

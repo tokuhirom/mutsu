@@ -247,7 +247,7 @@ the syntax it uses). The ecosystem sweep only measures, and nightly at that, so 
 *only* thing standing between your fix and a silent regression. Name it after the capability, and
 say in a comment which distribution it came from.
 
-Then the standard gate, before publishing: `cargo fmt --all`, then `scripts/dev gate` and
+Then the standard gate, before publishing: `scripts/dev gate` (it formats the tree itself) and
 `scripts/dev wait <id>`, and publish only on `verdict: pass` (AGENTS.md "Before publishing a
 PR"). Its verdict already classifies the remote container's environment-only failures; read a
 failed file's reason from the job's stage log in `tmp/jobs/<id>/` rather than re-running a suite.

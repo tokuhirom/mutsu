@@ -3929,11 +3929,29 @@ impl Interpreter {
             // line whose time is a native builtin is the user's own code being
             // slow, while one whose time is `method-dispatch` is mutsu's.
             let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
-            match cascade_args {
-                [] => crate::builtins::native_method_0arg(&target, method_sym),
-                [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
-                [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
-                _ => None,
+            // The built-in method table first (ADR-11276): a row that needs
+            // the interpreter (`Handler::Interp`) is reachable only from an
+            // entry that has one, and the pure rows the cascades ask for
+            // themselves are found here without walking them. `args`, not
+            // `cascade_args`: a row binds the named arguments it declares,
+            // and a call with any other takes the cascades with the
+            // stripped list as before. `bypass_native_fastpath` already
+            // covers an `augment` of the receiver's type.
+            if let Some(result) = crate::builtins::method_table::try_dispatch_in(
+                self,
+                |_| true,
+                &target,
+                method_sym,
+                &args,
+            ) {
+                Some(result)
+            } else {
+                match cascade_args {
+                    [] => crate::builtins::native_method_0arg(&target, method_sym),
+                    [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
+                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
+                    _ => None,
+                }
             }
         };
         if native_result.is_some() {
@@ -5053,7 +5071,10 @@ impl Interpreter {
                 let rendered =
                     self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());
-                let composed = crate::value::types::what_type_name(&target);
+                // The name `.^name` reports: a `.^set_name` on the type object
+                // this instance was built from (`Box[Int]`) wins over the
+                // synthesized `Box+{BoxOf[Int]}`.
+                let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
                 if composed != base
                     && let ValueView::Str(text) = rendered.view()
                     && let Some(tail) = text.strip_prefix(base.as_str())

@@ -39,6 +39,19 @@ pub(in crate::parser) fn mint_anon_state_name() -> String {
     name
 }
 
+/// Whether `rest`, the text after a bare `$`, starts a named placeholder
+/// (`$:foo`): the `:` directly followed by an identifier. That `$` is the
+/// twigil's sigil, not a bare-`$` anonymous state variable, so a statement
+/// parser that speculatively read it as an assignment target must not mint a
+/// state name for it (the name would stay recorded in the scope after the
+/// attempt failed and declare a variable nobody wrote).
+// Cost: O(1).
+pub(in crate::parser) fn starts_named_placeholder(rest: &str) -> bool {
+    rest.strip_prefix(':')
+        .and_then(|after| after.chars().next())
+        .is_some_and(is_raku_identifier_start)
+}
+
 /// Build a string concatenation expression: left ~ right
 fn concat_exprs(left: Expr, right: Expr) -> Expr {
     Expr::Binary {

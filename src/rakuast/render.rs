@@ -170,7 +170,8 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
     node.fields
         .iter()
         .filter(|field| {
-            !(node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
+            !(super::origin::is_origin(field)
+                || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
                     && field.name == Some("capturing"))
         })

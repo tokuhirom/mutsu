@@ -53,9 +53,11 @@
 //! and its answer must agree with the lane's (`check_method_site_lane`), so
 //! CI's `debug-tap` job checks every lane hit over the whole TAP suite. A probe
 //! added to the full path later that claims one of these calls fails there.
+//! A row that needs the interpreter (`Handler::Interp`) is the exception: its
+//! handler has effects, so it is answered once, by the lane, in every build.
 
 use super::*;
-use crate::builtins::method_table::{self, RowId};
+use crate::builtins::method_table::{self, Receiver, RowId};
 
 /// A lane answer: the row's result, the row it came from, and the number of
 /// arguments above the receiver on the stack.
@@ -63,6 +65,10 @@ pub(super) struct SiteLaneAnswer {
     result: Result<Value, RuntimeError>,
     row: RowId,
     arity: usize,
+    /// Whether the handler is pure, so the debug cross-check may re-run the
+    /// call through the full path. An interpreter row has effects and was
+    /// answered once, here.
+    pub(super) pure: bool,
 }
 
 impl Interpreter {
@@ -105,8 +111,8 @@ impl Interpreter {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
-        let shape = self.stack[base].dispatch_shape()?;
-        if !method_table::shape_has_row(shape, code.const_sym(name_idx)) {
+        let receiver = Receiver::of(&self.stack[base])?;
+        if !method_table::shape_has_row(receiver, code.const_sym(name_idx)) {
             return None;
         }
         let sites = code.constants.len();
@@ -115,7 +121,7 @@ impl Interpreter {
         let row = match code.method_sites.cached(sites, idx, generation) {
             // The memo is keyed by the method name, which sites calling it
             // with another arity share, so the arity is part of the payload.
-            Some(payload) if payload_matches(payload, shape, arity) => {
+            Some(payload) if payload_matches(payload, receiver, arity) => {
                 let row = payload_row(payload)?;
                 if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
                     return None;
@@ -124,7 +130,7 @@ impl Interpreter {
             }
             _ => {
                 let resolved =
-                    self.resolve_method_site_lane(code, name_idx, target_name_idx, shape, arity);
+                    self.resolve_method_site_lane(code, name_idx, target_name_idx, receiver, arity);
                 let row = match resolved {
                     Resolved::Row(row) => Some(row),
                     Resolved::Miss => None,
@@ -132,7 +138,7 @@ impl Interpreter {
                 };
                 if self.dispatch.native_base_bypass.is_none() {
                     code.method_sites
-                        .remember(sites, idx, generation, pack(shape, arity, row));
+                        .remember(sites, idx, generation, pack(receiver, arity, row));
                 }
                 row?
             }
@@ -140,16 +146,27 @@ impl Interpreter {
         // After the row is known: a call that misses (a remembered miss
         // above) never pays for the argument checks.
         if arity > 0
-            && (!method_table::plain_args(&self.stack[base + 1..])
+            && (!method_table::admits(row, &self.stack[base + 1..])
                 || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
         {
             return None;
         }
-        let (target, args) = self.stack[base..].split_first()?;
+        let pure = method_table::row(row).handler.is_pure();
+        let result = if pure {
+            let (target, args) = self.stack[base..].split_first()?;
+            method_table::invoke(row, target, args)?
+        } else {
+            // An interpreter row may call back into the VM, which owns the
+            // stack the receiver and arguments sit on: it gets copies.
+            let target = self.stack[base].clone();
+            let args = self.stack[base + 1..].to_vec();
+            self.in_method_call(|vm| method_table::invoke_in(row, vm, &target, &args))?
+        };
         Some(SiteLaneAnswer {
-            result: method_table::invoke(row, target, args)?,
+            result,
             row,
             arity,
+            pure,
         })
     }
 
@@ -162,7 +179,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         target_name_idx: u32,
-        shape: crate::value::DispatchShape,
+        receiver: Receiver,
         arity: usize,
     ) -> Resolved {
         // A property of this site's receiver, not of the method: the memo,
@@ -177,7 +194,7 @@ impl Interpreter {
             return Resolved::Miss;
         }
         let method_sym = code.const_sym(name_idx);
-        let Some(row) = method_table::resolve(shape, method_sym, arity) else {
+        let Some(row) = method_table::resolve(receiver, method_sym, arity) else {
             return Resolved::Miss;
         };
         let Some(base) = self.stack.len().checked_sub(arity + 1) else {
@@ -195,8 +212,8 @@ impl Interpreter {
     /// with no argument sources left pending, then the result in place of the
     /// receiver and its arguments.
     // Cost: O(1).
-    // Debug builds keep the full path's answer instead (see the module docs).
-    #[cfg_attr(debug_assertions, allow(dead_code))]
+    // Debug builds keep the full path's answer for a pure row instead (see
+    // the module docs).
     pub(super) fn finish_method_site_lane(
         &mut self,
         code: &CompiledCode,
@@ -211,11 +228,25 @@ impl Interpreter {
         if crate::vm::vm_stats::enabled() {
             self.record_method_site_lane_stats(answer.row);
         }
+        // The one way the lane runs user code: settling a warning runs a
+        // CONTROL handler inline.
+        let warned = matches!(&answer.result, Err(e) if e.is_warn());
         match self.settle_native_warning(answer.result) {
             Ok(value) => {
                 let base = self.stack.len() - answer.arity - 1;
                 self.stack.truncate(base);
                 self.stack.push(value);
+                if warned {
+                    // What the handler wrote to the caller's lexicals reaches
+                    // their slots the way the full path's post-call drains put
+                    // it there (`call_method_mut_site_around`); the entry guard
+                    // (no pending writeback) says nothing about what the
+                    // handler leaves behind. Without this, `$seen++` in
+                    // `CONTROL { when CX::Warn { $seen++; .resume } }` was lost
+                    // around a `@list.contains(...)` in release builds.
+                    self.apply_pending_rw_writeback(code);
+                    self.drain_pending_local_updates_after_call(code);
+                }
                 Ok(())
             }
             Err(e) => {
@@ -259,7 +290,18 @@ impl Interpreter {
             Ok(v) => format!("ok:{}", crate::runtime::gist_value(v)),
             Err(e) => format!("err:{}", e.message),
         };
-        let lane = render(answer.result.as_ref());
+        // A row may answer with a resumable warning (`List.contains`, `.index`)
+        // instead of a value: that is not an outcome yet, it settles at the
+        // raise site (`settle_native_warning`, which `finish_method_site_lane`
+        // and the full path both run). The full path has settled it by now, so
+        // compare the value the warning resumes with. A CONTROL handler may
+        // divert the settled call into an error; that is the handler's doing,
+        // not a dispatch difference, and there is nothing to compare it with.
+        let resumed = match &answer.result {
+            Err(e) if e.is_warn() => e.return_value.as_ref(),
+            _ => None,
+        };
+        let lane = resumed.map_or_else(|| render(answer.result.as_ref()), |v| render(Ok(v)));
         let full_rendered = match &full {
             Ok(()) => self
                 .stack
@@ -267,11 +309,12 @@ impl Interpreter {
                 .map_or_else(|| "<empty stack>".to_string(), |v| render(Ok(v))),
             Err(e) => render(Err(e)),
         };
-        debug_assert_eq!(
-            lane,
-            full_rendered,
+        let diverted_by_handler = resumed.is_some() && full.is_err();
+        debug_assert!(
+            diverted_by_handler || lane == full_rendered,
             "the method-table lane disagrees with the full CallMethodMut path for .{} \
-             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call",
+             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call\n  \
+             lane: {lane:?}\n  full: {full_rendered:?}",
             method_table::row(answer.row).name,
             method_table::row(answer.row).owner,
         );
@@ -317,17 +360,17 @@ enum Resolved {
 /// The row bits a memo payload holds for a remembered miss.
 const MISS_ROW_BITS: u16 = u16::MAX;
 
-/// The memo payload: the row (or a miss) for a receiver of `shape` called
-/// with `arity` arguments.
-fn pack(shape: crate::value::DispatchShape, arity: usize, row: Option<RowId>) -> u32 {
+/// The memo payload: the row (or a miss) for a `receiver` called with `arity`
+/// arguments.
+fn pack(receiver: Receiver, arity: usize, row: Option<RowId>) -> u32 {
     let row = row.map_or(MISS_ROW_BITS, RowId::to_bits);
     // `arity` is at most `MAX_LANE_ARITY`.
-    (u32::from(arity as u8) << 24) | (u32::from(shape as u8) << 16) | u32::from(row)
+    (u32::from(arity as u8) << 24) | (u32::from(receiver.to_bits()) << 16) | u32::from(row)
 }
 
-/// Whether a memo payload was filled for `shape` and `arity`.
-fn payload_matches(payload: u32, shape: crate::value::DispatchShape, arity: usize) -> bool {
-    payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(shape as u8)
+/// Whether a memo payload was filled for `receiver` and `arity`.
+fn payload_matches(payload: u32, receiver: Receiver, arity: usize) -> bool {
+    payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(receiver.to_bits())
 }
 
 /// The row a memo payload remembers, `None` for a remembered miss.

@@ -92,6 +92,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // carrier); `$<x>` likewise keeps its historical target.
     let var = if sigil == b'$'
         && var == "__ANON_STATE__"
+        && !crate::parser::primary::var::starts_named_placeholder(rest)
         && !matches!(
             rest.trim_start().as_bytes().first(),
             Some(b'.') | Some(b'[') | Some(b'{') | Some(b'<')

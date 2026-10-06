@@ -17,6 +17,7 @@ mod convert;
 mod core_term_names;
 mod core_type_names;
 mod decl_traits;
+mod declared_routines;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
@@ -26,6 +27,8 @@ mod lower;
 mod method_assign_decl;
 mod name_parts;
 mod named_param;
+mod origin;
+mod placeholder;
 mod proto;
 mod react;
 mod regex_char_class;
@@ -196,6 +199,7 @@ pub enum RakuAstClass {
     Blockoid,
     PointyBlock,
     VarDeclarationPlaceholderPositional,
+    VarDeclarationPlaceholderNamed,
     VarDeclarationPlaceholderSlurpyArray,
     VarDeclarationPlaceholderSlurpyHash,
     Signature,
@@ -485,6 +489,7 @@ impl RakuAstClass {
             VarDeclarationPlaceholderPositional => {
                 "RakuAST::VarDeclaration::Placeholder::Positional"
             }
+            VarDeclarationPlaceholderNamed => "RakuAST::VarDeclaration::Placeholder::Named",
             VarDeclarationPlaceholderSlurpyArray => {
                 "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
             }
@@ -712,6 +717,7 @@ impl RakuAstClass {
             | Block
             | PointyBlock
             | VarDeclarationPlaceholderPositional
+            | VarDeclarationPlaceholderNamed
             | VarDeclarationPlaceholderSlurpyArray
             | VarDeclarationPlaceholderSlurpyHash
             | CallName
@@ -941,6 +947,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Block"
         | "RakuAST::PointyBlock"
         | "RakuAST::VarDeclaration::Placeholder::Positional"
+        | "RakuAST::VarDeclaration::Placeholder::Named"
         | "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
         | "RakuAST::VarDeclaration::Placeholder::SlurpyHash"
         | "RakuAST::Call::Name"
@@ -1181,6 +1188,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Blockoid,
     RakuAstClass::PointyBlock,
     RakuAstClass::VarDeclarationPlaceholderPositional,
+    RakuAstClass::VarDeclarationPlaceholderNamed,
     RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
     RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
     RakuAstClass::Signature,
@@ -2780,6 +2788,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
+        ("RakuAST::VarDeclaration::Placeholder::Named", "new") => {
+            RakuAstClass::VarDeclarationPlaceholderNamed
+        }
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         ("RakuAST::Initializer::CallAssign", "new") => RakuAstClass::InitializerCallAssign,
         ("RakuAST::Initializer::Bind", "new") => RakuAstClass::InitializerBind,
@@ -3124,6 +3135,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Blockoid
             | RakuAstClass::CircumfixParentheses
             | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderNamed
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::Sub

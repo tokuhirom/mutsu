@@ -30,6 +30,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::shadowed_terms::scan(node);
+    super::declared_routines::scan(node);
     let mut stmts = lower_stmts(node)?;
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
@@ -50,7 +51,12 @@ pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError>
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
-                stmts.push(lower_stmt(child_node(&f.value)?)?);
+                let child = child_node(&f.value)?;
+                if let Some(line) = super::origin::line_of(child) {
+                    stmts.push(Stmt::SetLine(line));
+                }
+                let line = super::origin::line_of(child);
+                stmts.push(super::origin::with_line(line, || lower_stmt(child))?);
             }
             Ok(stmts)
         }
@@ -161,6 +167,13 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         with_kind: Some(kind),
     }
 }
+
+/// The calls `lower_stmt_inner` turns into statements of their own, which a
+/// routine of the same name declared in the unit takes back.
+///
+/// `return` / `last` / `next` / `redo` are left out: a user routine named like
+/// them does not work in the ordinary frontend either.
+const SHADOWABLE_STATEMENTS: [&str; 7] = ["say", "put", "print", "note", "die", "fail", "take"];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
@@ -334,6 +347,16 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
         RakuAstClass::CallName if call_name_stash(node).is_some() => {
+            Ok(Stmt::Expr(lower_expr(node)?))
+        }
+        // A routine the unit declares itself wins over the builtin of the same
+        // name (`sub take($x) { … }; take(5)`), as it does in the parser.
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
+            if call_name_str(node).is_ok_and(|n| {
+                SHADOWABLE_STATEMENTS.contains(&n.as_str())
+                    && super::declared_routines::is_declared(&n)
+            }) =>
+        {
             Ok(Stmt::Expr(lower_expr(node)?))
         }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => {
@@ -577,6 +600,9 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    // A sub with no signature of its own takes its placeholder variables.
+    let (params, param_defs) =
+        crate::ast::implicit_placeholder_signature(params, param_defs, &body);
     Ok(Stmt::SubDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -1854,6 +1880,31 @@ pub(super) fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> 
         Some(NameShape::Identifier(name)) => Ok(name),
         _ => Err(unsupported(node)),
     }
+}
+
+/// A named call `f(1, 2)` / `f` -> `Expr::Call`.
+///
+/// The parser stamps internal arguments onto a call so the callee can report
+/// the caller's line: a call-site marker on an argument-less call of a routine
+/// the unit declares, and the markers of a `Test` assertion and of `callframe`
+/// / `caller`. The node has no argument for them (rakudo's tree has none), so
+/// they are put back here, from the line the statement began on. Without the
+/// marker a zero-argument call of a user routine takes the plain `CallFunc`
+/// path, which the parser's own trees never reach.
+// Cost: O(n), n = size of the call's arguments.
+fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let name = call_name_str(node)?;
+    let mut args = arg_exprs(node)?;
+    if let Some(line) = super::origin::current_line() {
+        if args.is_empty() && super::declared_routines::is_declared(&name) {
+            args.push(crate::parser::callsite_line_arg(line));
+        }
+        crate::parser::stamp_call_site_markers(&name, line, &mut args);
+    }
+    Ok(Expr::Call {
+        name: crate::symbol::Symbol::intern(&name),
+        args,
+    })
 }
 
 /// The lowered positional arguments of a call node's `args` (`ArgList`) child, or
@@ -3419,21 +3470,22 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // back to the caret-prefixed lexical name used by the parser's
         // `make_anon_sub` path.
         RakuAstClass::VarDeclarationPlaceholderPositional => {
-            let name = positional_leaf(node)?;
-            let ValueView::Str(name) = name.view() else {
-                return Err(unsupported(node));
-            };
-            let Some(name) = name.strip_prefix('$') else {
-                return Err(unsupported(node));
-            };
-            if name.is_empty()
-                || !name
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-            {
+            let (sigil, name) = super::placeholder::spelling(node)?;
+            Ok(match sigil {
+                '$' => Expr::Var(format!("^{name}")),
+                '@' => Expr::ArrayVar(format!("^{name}")),
+                '%' => Expr::HashVar(format!("^{name}")),
+                '&' => Expr::CodeVar(format!("^{name}")),
+                _ => return Err(unsupported(node)),
+            })
+        }
+        // `$:foo`: a named placeholder, spelled `:foo` by the execution AST.
+        RakuAstClass::VarDeclarationPlaceholderNamed => {
+            let (sigil, name) = super::placeholder::spelling(node)?;
+            if sigil != '$' {
                 return Err(unsupported(node));
             }
-            Ok(Expr::Var(format!("^{name}")))
+            Ok(Expr::Var(format!(":{name}")))
         }
         // RakuAST's implicit flattened array placeholder (`@_`) lowers back
         // to the legacy array variable used by `make_anon_sub`.
@@ -3558,10 +3610,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::CallName if let Some(stash) = call_name_stash(node) => {
             Ok(Expr::PseudoStash(stash))
         }
-        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => Ok(Expr::Call {
-            name: crate::symbol::Symbol::intern(&call_name_str(node)?),
-            args: arg_exprs(node)?,
-        }),
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => lower_named_call(node),
         // A comma list `1, 2, 3` (or parenthesised `(1, 2, 3)`) -> ApplyListInfix
         // with a `,` infix. `andthen` / `orelse` / `notandthen` are list infixes
         // in raku too, but mutsu keeps them as ordinary left-nested `Binary`

@@ -58,21 +58,15 @@ impl Interpreter {
     /// Registry keys owned by the routine `name` in the current package. A
     /// plain (non-`multi`) declaration only ever owns the single key, so it
     /// costs one intern; a `multi` family additionally spans candidate keys
-    /// (`Pkg::name/2`, `Pkg::name/2:Int`, …) and pays a key scan.
+    /// (`Pkg::name/2`, `Pkg::name/2:Int`, …), listed through
+    /// `FunctionTable::family_keys`.
+    // Cost: O(k), k = interned names of the family (see `family_keys`).
     fn routine_registry_keys(&self, name: &str, multi: bool) -> Vec<Symbol> {
-        let single = self.current_package_qualified(name).to_string();
-        let single_sym = Symbol::intern(&single);
+        let single_sym = self.hoisted_decl_key(name);
         if !multi {
             return vec![single_sym];
         }
-        let multi_prefix = format!("{}/", single);
-        let mut keys: Vec<Symbol> = self
-            .registry()
-            .functions
-            .keys()
-            .filter(|k| **k != single_sym && k.as_str().starts_with(&multi_prefix))
-            .copied()
-            .collect();
+        let mut keys = self.registry().functions.family_keys(single_sym.as_str());
         keys.push(single_sym);
         keys
     }
