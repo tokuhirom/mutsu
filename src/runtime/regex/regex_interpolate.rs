@@ -790,7 +790,17 @@ impl Interpreter {
                     )));
                 };
                 if Self::value_is_round_trippable(&value) {
-                    rendered_args.push(Self::format_named_regex_arg_value(&value));
+                    let rendered = Self::format_named_regex_arg_value(&value);
+                    // `<::($name)>`: whether the name is written out or computed
+                    // decides if the call is filed under it, and a baked value
+                    // is a plain literal either way. Keep a computed name
+                    // computed (`"alpha".Str`) so baking it does not turn
+                    // `<::($n)>` into `<::("alpha")>`.
+                    if spec.lookup_name == "::" && !self.symbolic_name_is_constant(arg) {
+                        rendered_args.push(format!("{rendered}.Str"));
+                    } else {
+                        rendered_args.push(rendered);
+                    }
                 } else {
                     // Fallback: keep the raw expression so it is re-evaluated later.
                     rendered_args.push(arg.clone());
