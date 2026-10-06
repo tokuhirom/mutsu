@@ -692,6 +692,7 @@ impl Interpreter {
         }
         let mut container = cur.into_container_ref();
         self.register_container_cell_constraint_for_name(&container, name);
+        self.mark_fresh_cell_declared_untyped(&container, name);
         // A lexical this frame later rebinds (`$a := ...`) needs a binding
         // cell so the rebind reaches every sharer of the cell.
         if code.rebound_slots.contains(&(idx as u32)) {
