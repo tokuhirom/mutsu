@@ -1363,35 +1363,33 @@ impl Compiler {
                 {
                     self.mint_named_pair = true;
                 }
-                // `&g(@a[1] = v)`: assign first, then pass the element itself
-                // (see `index_assign_arg_element`).
-                let split = Self::assign_arg_element(arg);
-                let arg = match &split {
-                    Some(element) => {
-                        self.compile_expr(arg);
-                        self.code.emit(OpCode::Pop);
-                        element
-                    }
-                    None => arg,
-                };
-                self.compile_expr(arg);
-                self.maybe_promote_attr_arg_read(arg);
-                self.mark_arg_as_rw_container_candidate_callee(
-                    crate::opcode::RwArgCallee::CodeVar {
-                        name_idx: code_var_idx,
-                    },
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
-                self.mark_arg_index_as_container_candidate_callee(
-                    crate::opcode::RwArgCallee::CodeVar {
-                        name_idx: code_var_idx,
-                    },
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
+                // `&g(@a[1] = v)`: bind the element's container when the callee
+                // wants one, else pass the assignment's value (see
+                // `compile_gated_assigned_arg`).
+                if let Some(element) = Self::assign_arg_element(arg) {
+                    let callee = crate::opcode::RwArgCallee::CodeVar { name_idx: code_var_idx };
+                    self.compile_gated_assigned_arg(
+                        arg,
+                        callee.clone(),
+                        positional_indices[i],
+                        i as u32,
+                        |s| s.compile_expr(arg),
+                        |s| {
+                            s.compile_expr(&element);
+                            s.maybe_promote_attr_arg_read(&element);
+                            s.mark_call_on_arg(callee, positional_indices[i], i as u32, &element);
+                        },
+                    );
+                } else {
+                    self.compile_expr(arg);
+                    self.maybe_promote_attr_arg_read(arg);
+                    self.mark_call_on_arg(
+                        crate::opcode::RwArgCallee::CodeVar { name_idx: code_var_idx },
+                        positional_indices[i],
+                        i as u32,
+                        arg,
+                    );
+                }
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
@@ -1413,34 +1411,36 @@ impl Compiler {
                 {
                     self.mint_named_pair = true;
                 }
-                // `&g(@a[1] = v)`: assign first, then pass the element itself
-                // (see `index_assign_arg_element`).
-                let split = Self::assign_arg_element(arg);
-                let arg = match &split {
-                    Some(element) => {
-                        self.compile_expr(arg);
-                        self.code.emit(OpCode::Pop);
-                        element
-                    }
-                    None => arg,
-                };
-                self.compile_expr(arg);
-                self.maybe_promote_attr_arg_read(arg);
                 // ADR-0067's argument producer: the callee code object is the
                 // stack value `compile_expr(target)` just pushed, so the VM can
                 // read its real signature — no name is needed anywhere.
-                self.mark_arg_as_rw_container_candidate_callee(
-                    crate::opcode::RwArgCallee::Code,
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
-                self.mark_arg_index_as_container_candidate_callee(
-                    crate::opcode::RwArgCallee::Code,
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
+                // `&g(@a[1] = v)`: bind the element's container when the callee
+                // wants one, else pass the assignment's value (see
+                // `compile_gated_assigned_arg`).
+                if let Some(element) = Self::assign_arg_element(arg) {
+                    let callee = crate::opcode::RwArgCallee::Code;
+                    self.compile_gated_assigned_arg(
+                        arg,
+                        callee.clone(),
+                        positional_indices[i],
+                        i as u32,
+                        |s| s.compile_expr(arg),
+                        |s| {
+                            s.compile_expr(&element);
+                            s.maybe_promote_attr_arg_read(&element);
+                            s.mark_call_on_arg(callee, positional_indices[i], i as u32, &element);
+                        },
+                    );
+                } else {
+                    self.compile_expr(arg);
+                    self.maybe_promote_attr_arg_read(arg);
+                    self.mark_call_on_arg(
+                        crate::opcode::RwArgCallee::Code,
+                        positional_indices[i],
+                        i as u32,
+                        arg,
+                    );
+                }
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }

@@ -3,7 +3,7 @@ use Test;
 # From the Path::Map distribution: an indexed (or scalar) assignment passed as
 # a call argument yields the element's container, so an `is rw` parameter
 # binds the caller's storage.
-plan 8;
+plan 9;
 
 my %h;
 my $f = -> $v is rw { $v = $v ~ "!" };
@@ -39,3 +39,8 @@ my $s = sub (Int :$bar! where * > 43) { 1 };
 my $c = $s.signature.params[0].constraints;
 ok 99 ~~ $c, 'WhateverCode where constraint accepts a matching value';
 nok 10 ~~ $c, 'WhateverCode where constraint rejects a non-matching value';
+
+# A callee that does NOT bind a container gets the assignment's own value: a
+# native array's `@arr[0] = -1` is -1 (roast S09-typed-arrays/native-int.t).
+my @arr := array[uint8].new;
+is (@arr[0] = -1), -1, 'plain argument keeps the assignment value for a native array';

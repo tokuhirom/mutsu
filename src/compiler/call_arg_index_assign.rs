@@ -65,6 +65,74 @@ impl Compiler {
         }
     }
 
+    /// The two container-candidate producers of a `CallOn` argument: a plain
+    /// variable/accessor source and a subscript source.
+    // Cost: O(1).
+    pub(super) fn mark_call_on_arg(
+        &mut self,
+        callee: crate::opcode::RwArgCallee,
+        positional: Option<u32>,
+        stack_offset: u32,
+        arg: &Expr,
+    ) {
+        self.mark_arg_as_rw_container_candidate_callee(
+            callee.clone(),
+            positional,
+            stack_offset,
+            arg,
+        );
+        self.mark_arg_index_as_container_candidate_callee(callee, positional, stack_offset, arg);
+    }
+
+    /// Emit the two-way compile of an assigned-element argument (see
+    /// [`Self::index_assign_arg_element`]), decided at run time on the real
+    /// callee: when it binds this positional to the caller's container,
+    /// `split` runs (the assignment, then the element itself); every other
+    /// callee gets `ordinary`, the assignment expression's own value (a native
+    /// array's `@a[0] = -1` is `-1`, a user `ASSIGN-POS`'s result is its own).
+    ///
+    /// `stack_offset` is the number of argument values already above the
+    /// callee, which only a [`crate::opcode::RwArgCallee::Code`] gate reads. That
+    /// gate expects one more value on top, so a placeholder is pushed for it.
+    // Cost: O(1) plus the two compiled arms.
+    pub(super) fn compile_gated_assigned_arg(
+        &mut self,
+        arg: &Expr,
+        callee: crate::opcode::RwArgCallee,
+        positional: Option<u32>,
+        stack_offset: u32,
+        ordinary: impl FnOnce(&mut Self),
+        split: impl FnOnce(&mut Self),
+    ) {
+        let placeholder = matches!(callee, crate::opcode::RwArgCallee::Code);
+        if placeholder {
+            self.code.emit(OpCode::LoadNil);
+        }
+        self.code.emit(OpCode::RwArgCalleeBindsContainer(Box::new(
+            crate::opcode::RwArgCalleeMark {
+                positional: positional.unwrap_or(crate::opcode::RWARG_POSITIONAL_UNKNOWN),
+                stack_offset,
+                callee,
+            },
+        )));
+        // `JumpIfTrue` only peeks; negate and branch on the popping form.
+        self.code.emit(OpCode::Not);
+        let to_split = self.code.emit(OpCode::JumpIfFalse(0));
+        if placeholder {
+            self.code.emit(OpCode::Pop);
+        }
+        ordinary(self);
+        let to_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(to_split);
+        if placeholder {
+            self.code.emit(OpCode::Pop);
+        }
+        self.compile_expr(arg);
+        self.code.emit(OpCode::Pop);
+        split(self);
+        self.code.patch_jump(to_end);
+    }
+
     // Cost: O(d), d = expression depth.
     fn is_repeatable_subscript_part(expr: &Expr) -> bool {
         let mut check = RepeatableSubscript { repeatable: true };
