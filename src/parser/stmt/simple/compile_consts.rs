@@ -105,18 +105,7 @@ pub(crate) fn take_anon_state_decls() -> Vec<crate::ast::Stmt> {
     });
     names
         .into_iter()
-        .map(|name| crate::ast::Stmt::VarDecl {
-            name,
-            expr: crate::ast::Expr::Literal(crate::value::Value::NIL),
-            type_constraint: None,
-            is_state: true,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        })
+        .map(crate::ast::anon_state::implicit_decl)
         .collect()
 }
 

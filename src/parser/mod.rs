@@ -18,7 +18,7 @@ pub(crate) use primary::ident::{
 };
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
-pub(crate) use primary::var::is_pseudo_package;
+pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,
@@ -34,7 +34,7 @@ mod primary;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
-pub(crate) use expr::wrap_dot_assign;
+pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 /// The default the parser plants for a typed scalar attribute with no

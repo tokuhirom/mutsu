@@ -439,13 +439,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         let (r2, _) = ws(after_atomic)?;
         let (r2, rhs) = item_expr(r2, mode)?;
         return match unwrap_grouped_lvalue(expr) {
-            Expr::Var(name) => Ok((
-                r2,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::str(name)), rhs],
-                },
-            )),
+            Expr::Var(name) => Ok((r2, crate::ast::atomic_op::store_var(name, rhs))),
             target => crate::parser::stmt::assign::atomic_elem_store_call(&target, rhs)
                 .map(|store| (r2, store))
                 .ok_or_else(|| PError::expected_at("atomic assignment target", r)),

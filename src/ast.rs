@@ -2645,6 +2645,8 @@ pub(crate) enum AssignOp {
     MatchAssign,
 }
 
+pub(crate) mod anon_state;
+pub(crate) mod atomic_op;
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
@@ -2660,6 +2662,7 @@ pub(crate) mod signature_decl;
 pub(crate) mod stable_hash;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
+pub(crate) mod temporize;
 pub(crate) use signature_decl::{
     ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm, is_group_declaration,
 };

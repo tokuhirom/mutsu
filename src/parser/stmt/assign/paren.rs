@@ -373,13 +373,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     };
     if is_atomic {
         if let Expr::AssignExpr { name, expr, .. } = expr {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::str(name)), *expr],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::store_var(name, *expr)));
         }
         return Err(PError::expected("atomic assignment expression"));
     }
