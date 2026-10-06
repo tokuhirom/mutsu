@@ -97,10 +97,10 @@ impl Interpreter {
     /// opcodes (`IndexVarRef`, `IndexArgRef` toward a binding callee, ...).
     // Cost: O(1) (one tag probe; one element decode for a reference).
     pub(crate) fn decont_native_pos_ref_on_top(&mut self) -> Result<(), RuntimeError> {
-        if let Some(top) = self.stack.last()
-            && crate::runtime::native_pos_ref::is_native_pos_ref(top)
+        if let Some(reference) = self
+            .stack
+            .pop_if(|top| crate::runtime::native_pos_ref::is_native_pos_ref(top))
         {
-            let reference = self.stack.pop().unwrap();
             let value = loan_env!(self, auto_fetch_proxy(&reference))?;
             self.stack.push(value);
         }

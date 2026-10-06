@@ -19,7 +19,7 @@ impl Interpreter {
             ValueView::Package(_) | ValueView::CustomType(_) => true,
             // `constant OidArray = CArray[Oid]`: a parameterization is a mixin
             // type object.
-            ValueView::Mixin(..) => !crate::runtime::types::value_is_defined(&value),
+            ValueView::Mixin(..) => !crate::runtime::types::value_is_defined(value),
             _ => false,
         };
         is_type_object.then(|| value.clone())

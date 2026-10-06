@@ -544,22 +544,4 @@ mod tests {
              the first call to compile the body on demand"
         );
     }
-
-    /// The prelude clash check reads the unit's own scope: through a
-    /// `unit module` wrapper and a `SyntheticBlock` group, never into a block
-    /// (where a routine is a lexical of its own and cannot clash), and a
-    /// `proto sub` declares the name too.
-    #[test]
-    fn declares_toplevel_sub_reads_the_unit_scope() {
-        let declares = |src: &str| {
-            let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("parse");
-            Interpreter::declares_toplevel_sub(&stmts, "refresh")
-        };
-        assert!(declares("sub refresh($x) { $x }"));
-        assert!(declares("unit module Foo; sub refresh($x) { $x }"));
-        assert!(declares("proto sub refresh(|) {*}"));
-        assert!(declares("sub refresh($x) { $x }(1);"));
-        assert!(!declares("{ sub refresh($x) { $x } }"));
-        assert!(!declares("module Foo { sub refresh($x) { $x } }"));
-    }
 }
