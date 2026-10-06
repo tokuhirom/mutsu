@@ -245,11 +245,10 @@ impl Interpreter {
             .collect();
         for field in &layout.fields {
             if let Some((_, value)) = cell.iter().find(|(name, _)| *name == field.name) {
-                let value = value.deref_container();
                 // SAFETY: `base` is the start of a live, zeroed block of
                 // `layout.size` bytes laid out by `layout.fields`, so the field
                 // is in bounds.
-                unsafe { write_field(base, field, &value) };
+                unsafe { store_owned_field(&attributes, base, field, value) };
             }
         }
         attributes.insert(BODY_ATTR, owner);
@@ -280,12 +279,115 @@ impl Interpreter {
             };
             (base as usize, field)
         };
-        let value = value.deref_container();
         // SAFETY: the body is owned by this object (its `BODY_ATTR` block is
         // alive while `attributes` is) and the layout is the one it was
         // allocated with, so the field is in bounds.
-        unsafe { write_field(base, &field, &value) };
+        unsafe { store_owned_field(attributes, base, &field, value) };
     }
+}
+
+/// The hidden attribute keeping alive what the reference field `name` points
+/// at: the object bound to a `Pointer`/struct/`CArray` field, or the byte block
+/// holding a `Str` field's NUL-terminated copy.
+// Cost: O(n), n = chars of the field name.
+fn child_key(name: &str) -> Symbol {
+    Symbol::intern(&format!("__mutsu_cstruct_child_{name}"))
+}
+
+/// Record `child` as what field `name` points at (`Nil` to drop the old one).
+/// Does nothing when there is nothing to drop, so a struct without reference
+/// fields never grows a hidden attribute.
+// Cost: O(n), n = chars of the field name.
+fn retain_child(attributes: &crate::value::InstanceAttrs, name: &str, child: Value) {
+    let key = child_key(name);
+    if child.is_nil() && !attributes.contains_key(key) {
+        return;
+    }
+    attributes.insert(key, child);
+}
+
+/// Whether `value` is an object a pointer field can keep alive: anything that
+/// carries storage of its own, as opposed to a bare address or a type object.
+// Cost: O(1).
+fn is_retainable_object(value: &Value) -> bool {
+    matches!(
+        value.view(),
+        ValueView::Instance { .. } | ValueView::Array(..) | ValueView::Mixin(..)
+    )
+}
+
+/// Store `value` into `field` of the body at `base`, keeping whatever the field
+/// then points at alive for as long as `attributes` lives: a `Str` field points
+/// at a copy this object owns (the body would otherwise point into a string
+/// that is leaked, or freed under it), a pointer field retains the object it
+/// was given.
+///
+/// # Safety
+/// `base` must be the address of a live body laid out by the layout `field`
+/// came from.
+// Cost: O(n) for a `Str` field, n = bytes of the string; O(1) otherwise.
+pub(crate) unsafe fn store_owned_field(
+    attributes: &crate::value::InstanceAttrs,
+    base: usize,
+    field: &FieldLayout,
+    value: &Value,
+) {
+    let value = value.deref_container();
+    match field.ty {
+        FieldType::Str => {
+            let (addr, owner) = if crate::runtime::types::value_is_defined(&value) {
+                let text = value.to_string_value();
+                // A NUL in the middle truncates, as for every other `Str`
+                // NativeCall marshals.
+                let bytes = text.as_bytes();
+                let upto = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+                let mut copy = bytes[..upto].to_vec();
+                copy.push(0);
+                let block = value_buf::byte_block(copy);
+                (value_buf::byte_block_address(&block).unwrap_or(0), block)
+            } else {
+                (0, Value::NIL)
+            };
+            // SAFETY: the caller guarantees `base + offset` is inside the body.
+            unsafe {
+                ((base + field.offset) as *mut usize).write_unaligned(addr);
+            }
+            retain_child(attributes, &field.name, owner);
+        }
+        FieldType::Pointer => {
+            // SAFETY: as above.
+            unsafe { write_field(base, field, &value) };
+            let child = if is_retainable_object(&value) {
+                value
+            } else {
+                Value::NIL
+            };
+            retain_child(attributes, &field.name, child);
+        }
+        // SAFETY: as above.
+        _ => unsafe { write_field(base, field, &value) },
+    }
+}
+
+/// The object the pointer field `name` of `target` was last given, while the
+/// field still points at `address` (C may have rewritten it since). Gives a read
+/// of the field the object it was written as -- its identity and its type
+/// (`CArray[int32]`, a struct class) -- instead of a bare handle onto the
+/// address.
+// Cost: O(n), n = chars of the field name.
+pub(crate) fn retained_child(target: &Value, name: &str, address: usize) -> Option<Value> {
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let child = attributes.as_map().get(child_key(name))?.clone();
+    (!child.is_nil() && crate::runtime::nativecall::value_c_address(&child) == address)
+        .then_some(child)
+}
+
+/// Whether `attributes` belongs to an object that owns a native body.
+// Cost: O(1).
+pub(crate) fn owns_body(attributes: &crate::value::InstanceAttrs) -> bool {
+    attributes.contains_key(layout_key())
 }
 
 /// A zeroed block with room for `size` bytes at `align`: the owning byte block

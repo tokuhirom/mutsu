@@ -596,6 +596,13 @@ impl crate::runtime::Interpreter {
         }
         let declared = self.get_attr_type_constraint(&registered, name)?;
         let addr = crate::runtime::to_int(&raw) as usize;
+        // The object this pointer field was last given, if it still points at
+        // it: the field reads back as that object (ADR-11209).
+        if matches!(field.ty, FieldType::Pointer)
+            && let Some(child) = crate::runtime::cstruct_body::retained_child(target, name, addr)
+        {
+            return Some(child);
+        }
         // An inline `HAS T @.x[N] is CArray` member reads back as a `CArray[T]`
         // onto its own storage — that handle is what makes `$s.x[2]` reach the
         // bytes inside this struct.
@@ -681,7 +688,23 @@ impl crate::runtime::Interpreter {
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds —
         // the same trust `cstruct_field_value` documents for the read.
-        unsafe { write_field(address, field, value) };
+        match target.view() {
+            // An object that owns its body keeps what a reference field points
+            // at alive (ADR-11209).
+            ValueView::Instance { attributes, .. }
+                if crate::runtime::cstruct_body::owns_body(&attributes) =>
+            {
+                unsafe {
+                    crate::runtime::cstruct_body::store_owned_field(
+                        &attributes,
+                        address,
+                        field,
+                        value,
+                    )
+                };
+            }
+            _ => unsafe { write_field(address, field, value) },
+        }
         true
     }
 

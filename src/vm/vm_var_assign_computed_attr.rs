@@ -862,6 +862,9 @@ impl Interpreter {
             )
         {
             let cell = self.locals[idx].clone();
+            // A CStruct that owns a native body keeps what the field is bound
+            // to in C memory too (ADR-11209): `$!name := $n` in a method.
+            self.cstruct_store_through(&attributes, key, &cell);
             attributes.with_attr_mut(key, |slot| {
                 if !slot.same_binding(&cell) {
                     *slot = cell;

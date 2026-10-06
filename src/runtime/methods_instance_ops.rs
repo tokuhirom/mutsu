@@ -412,6 +412,9 @@ impl Interpreter {
         }
         let class_key = class_name.resolve();
         let display_name = crate::value::user_facing_type_name(&class_key);
+        // A CStruct's fields live in C memory (a body it owns, or the memory C
+        // handed back): read them out before rendering them.
+        self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
         let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
