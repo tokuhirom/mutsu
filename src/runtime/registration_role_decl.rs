@@ -95,8 +95,12 @@ impl Interpreter {
         name: &str,
         type_params: &[String],
     ) -> Option<Vec<String>> {
-        // Clean up stale punned class entry for this role name.
-        self.registry_mut().classes.remove(name);
+        // Clean up stale punned class entry for this role name. Asked first
+        // because the class table is shared copy-on-write: a removal of an
+        // absent name would still copy it.
+        if self.registry().classes.contains_key(name) {
+            self.registry_mut().classes.remove(name);
+        }
         // ADR-0019 F4c-8(e): explicit mutator calls, matching
         // `__MUTSU_UNREGISTER_CLASS__`'s own F4c-8(e) fix -- this
         // `classes.remove` called no sync at all, leaving permanently stale
@@ -105,7 +109,9 @@ impl Interpreter {
         self.registry_mut().clear_user_methods_for_owner(owner);
         self.registry_mut().sync_accessor_entries(owner);
         self.registry_mut().hidden_classes.remove(name);
-        self.registry_mut().class_composed_roles.remove(name);
+        if self.registry().class_composed_roles.contains_key(name) {
+            self.registry_mut().class_composed_roles.remove(name);
+        }
         // When registering a parametric variant of an existing non-parametric role
         // (forming a role group), save the non-parametric role's parents so we can
         // restore them after the parametric variant adds its own parents.
