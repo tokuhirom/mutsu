@@ -59,19 +59,20 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
         let (params, param_defs, body) = match lambda {
             Expr::Lambda {
                 param,
-                mut body,
+                body,
                 param_sigilless,
                 ..
             } => {
                 // A sigilless parameter (`-> \row`) is a term: the body spells it
-                // as a bare word. The pointy-block binder marks it so the
-                // compiler reads it from its slot (see `compile_lambda_body`);
-                // this statement keeps the body as is, so it carries the marker
-                // itself (#11898).
-                if param_sigilless && !param.is_empty() {
-                    body.insert(0, Stmt::MarkSigillessReadonly(param.clone()));
-                }
-                (vec![param], Vec::new(), body)
+                // as a bare word, so its signature is kept (it is empty for a
+                // plain `-> $x`) and the routine binder reads it from its slot
+                // like a `sub f(\row)` parameter (#11898).
+                let param_defs = if param_sigilless && !param.is_empty() {
+                    vec![crate::ast::ParamDef::sigilless_term(&param)]
+                } else {
+                    Vec::new()
+                };
+                (vec![param], param_defs, body)
             }
             Expr::AnonSubParams {
                 params,

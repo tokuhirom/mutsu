@@ -339,6 +339,37 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// The plain sigilless parameter `\name`: untyped, no default, no traits.
+    // Cost: O(|name|).
+    pub(crate) fn sigilless_term(name: &str) -> Self {
+        ParamDef {
+            type_capture: None,
+            name: name.to_string(),
+            default: None,
+            multi_invocant: false,
+            required: false,
+            named: false,
+            named_alias: false,
+            slurpy: false,
+            double_slurpy: false,
+            onearg: false,
+            sigilless: true,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+            shape_constraints: None,
+            block_param: false,
+            code: Default::default(),
+            trait_args: Vec::new(),
+        }
+    }
+
     /// The type constraint to register in the **assignment-time** lane when this
     /// parameter binds (`Interpreter::bind_param_type_constraint`).
     ///
