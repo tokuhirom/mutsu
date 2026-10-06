@@ -1301,7 +1301,10 @@ pub(super) fn try_collapse_alternation_to_charclass(
     }
     let mut merged_items: Vec<ClassItem> = Vec::new();
     for pat in alt_patterns {
-        if pat.anchor_start || pat.anchor_end {
+        // A branch's scoped matching modifiers are part of its semantics.
+        // Collapsing its literal into a shared character class would discard
+        // them (notably `:m`, whose subject is mark-stripped).
+        if pat.anchor_start || pat.anchor_end || pat.ignore_case || pat.ignore_mark {
             return None;
         }
         // Allow single-token patterns, or patterns where all extra tokens are
