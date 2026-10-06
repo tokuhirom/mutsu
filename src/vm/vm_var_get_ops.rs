@@ -265,12 +265,18 @@ impl Interpreter {
         }
         // A bareword with a type smiley whose base is a bound generic type
         // parameter (`T:D` inside a role method where `T` -> `Int`) resolves to
-        // the parameterized type with the smiley applied (`Int:D`). Plain
-        // built-in types like `Int:D` are NOT env-bound, so they fall through to
-        // the normal resolution below and are unaffected.
+        // the parameterized type with the smiley applied (`Int:D`). The same
+        // goes for a constant aliasing a type (`my constant CArray = NativeCall::
+        // Types::CArray`), which is stored under its term key rather than its
+        // name. Plain built-in types like `Int:D` are neither, so they fall
+        // through to the normal resolution below and are unaffected.
         if let (base, Some(smiley)) = crate::runtime::types::strip_type_smiley(name)
             && !base.is_empty()
-            && let Some(v) = self.env().get(base)
+            && let Some(v) = self
+                .env()
+                .get(base)
+                .cloned()
+                .or_else(|| self.term_binding(base))
             && let ValueView::Package(pkg) = v.view()
         {
             let resolved = format!("{}{}", pkg.resolve(), smiley);

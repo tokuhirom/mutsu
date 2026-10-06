@@ -241,6 +241,13 @@ fn set_holds_class(set: &rustc_hash::FxHashSet<String>, name: &str, base: &str) 
         })
 }
 
+/// Whether `type_name` spells `Pointer` or `Pointer[T]`, qualified or not.
+// Cost: O(n), n = chars in the spelling.
+fn is_pointer_spelling(type_name: &str) -> bool {
+    let short = short_base_name(type_name);
+    short == "Pointer" || short.starts_with("Pointer[")
+}
+
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
 /// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
 /// the parameter is returned exactly as written, since every consumer resolves
@@ -702,7 +709,9 @@ impl crate::runtime::Interpreter {
         // in Rakudo too, and reading a null field as a type object made
         // `$s.field.Int` empty instead of 0. A parameterised field keeps its
         // parameter, so `.of` / `.deref` work on the value that comes out.
-        if declared == "Pointer" || declared.starts_with("Pointer[") {
+        // The declared spelling may be qualified (`NativeCall::Types::Pointer`):
+        // a constant alias of the type, resolved against the declaring scope.
+        if is_pointer_spelling(&declared) {
             // Upstream NativeCall's own Pointer type, when it is loaded.
             if let Some(built) = self.native_pointer_of_declared(&declared, addr, true) {
                 return built.ok();
@@ -768,7 +777,7 @@ impl crate::runtime::Interpreter {
         if matches!(value.view(), ValueView::Int(_))
             && matches!(field.ty, FieldType::Pointer | FieldType::Embedded { .. })
             && let Some(declared) = self.get_attr_type_constraint(&registered, name)
-            && !(declared == "Pointer" || declared.starts_with("Pointer["))
+            && !is_pointer_spelling(&declared)
         {
             return Err(self.type_check_assignment_failure(
                 &format!("$!{name}"),
