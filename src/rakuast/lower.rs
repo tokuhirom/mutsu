@@ -1890,7 +1890,13 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
 /// (`$` sigil stripped to match the parser's naming; `@`/`%`/`&` kept) and the
 /// lowered right-hand side.
 fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError> {
-    let raw = variable_spelling(named_child(node, "left")?).map_err(|_| unsupported(node))?;
+    let left = named_child(node, "left")?;
+    // `($ = 1)`: an assignment to an anonymous scalar.
+    if super::anon_state::is_anonymous(left) {
+        let name = super::anon_state::assign_target(left)?;
+        return Ok((name, lower_expr(named_child(node, "right")?)?));
+    }
+    let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
         Some(bare) => bare.to_string(),
         None => raw,

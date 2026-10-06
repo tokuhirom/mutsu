@@ -9,7 +9,7 @@ use Test;
 # again, with the per-call spelling below a routine body, so the counters
 # behave as the parsed program's.
 
-plan 29;
+plan 31;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub body-exprs($src) { $src.AST.statements[0].expression.body.statement-list.statements.map(*.expression) }
@@ -63,3 +63,5 @@ same Q[my @r; for ^2 { @r.push: (^3).map({ ++$ }).join(",") }; @r.join("|")], '1
 same Q[sub h { (^2).map({ $++ }).join(",") }; h(); h()], '0,1', 'a block below a routine restarts per call';
 same Q[sub g { my @r; for ^3 { @r.push: $++ }; @r.join(",") }; g(); g()], '0,1,2', 'also in a loop below a routine';
 same Q[my $x = (state $ = 3); $x], 3, 'a state initializer as an expression';
+same Q[my $x = 5; $x += ($ = 3); $x], 8, 'an assignment expression to `$`';
+same Q[my $n = 0; for 1..3 { $n += ($ += 2) }; $n], 12, 'a compound assignment to `$` keeps its state';
