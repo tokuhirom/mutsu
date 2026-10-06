@@ -2,10 +2,9 @@
 //!
 //! An infix the parser cannot fold into a `TokenKind` operator -- a word or
 //! symbol the unit declares itself (`infix:<foo>`, `infix:<⊕>`), a flip-flop
-//! (`ff`), or a named core infix the parser chose to call (`minmax`) -- is an
-//! [`Expr::InfixFunc`] that calls the routine of that name at run time. (An
-//! operator rakudo's core declares stays an `Expr::Binary` even when the unit
-//! overloads it: the overload is a dispatch candidate of the native operator.)
+//! (`ff`), or a core operator the unit overloads (`infix:<~>`, except the
+//! arithmetic ones, see [`keeps_native_dispatch`]) -- is an
+//! [`Expr::InfixFunc`] that calls the routine of that name at run time.
 //! Measured against rakudo 2026.09 it is an ordinary application of an `Infix`:
 //!
 //! ```text
@@ -140,6 +139,34 @@ fn infix_name(infix: &RakuAstNode) -> Option<String> {
     }
 }
 
+/// The operators whose parser layer builds a `Binary` even when the unit
+/// declares `infix:<op>`: measured by declaring each core operator and
+/// reading `--dump-ast` back (`+ - * / % %% ** <=> div mod gcd lcm`, the
+/// integer bitwise `+& +| +^` and the string bitwise `~& ~| ~^`).
+// Cost: O(1).
+fn keeps_native_dispatch(name: &str) -> bool {
+    matches!(
+        name,
+        "+" | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "%%"
+            | "**"
+            | "<=>"
+            | "div"
+            | "mod"
+            | "gcd"
+            | "lcm"
+            | "+&"
+            | "+|"
+            | "+^"
+            | "~&"
+            | "~|"
+            | "~^"
+    )
+}
+
 /// Whether the unit declares the operator `name` (an `infix:<name>` routine).
 // Cost: O(1).
 fn is_declared(name: &str) -> bool {
@@ -159,13 +186,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if name == "," {
         return None;
     }
-    // The parser folds an operator rakudo's core declares (`+`, `mod`, `minmax`,
-    // `cmp`, ...) into a `Binary` even when the unit overloads it -- the
-    // overload is a dispatch candidate of the native operator. Only an operator
-    // of the unit's own, and a flip-flop (syntax, not a routine), is a call.
-    let own_operator =
-        is_declared(&name) && !crate::runtime::core_infix_names::rakudo_declares_infix(&name);
-    if !is_flip_flop(&name) && !own_operator {
+    // The arithmetic and bitwise layers of the parser keep a `Binary` when the
+    // unit overloads their operator (the overload is a dispatch candidate of the
+    // native operator, ADR-0071); every other layer rewrites an overloaded
+    // operator into an `InfixFunc` call. A flip-flop is syntax, not a routine.
+    let overloaded = is_declared(&name) && !keeps_native_dispatch(&name);
+    if !is_flip_flop(&name) && !overloaded {
         return None;
     }
     Some(fold(node, name))

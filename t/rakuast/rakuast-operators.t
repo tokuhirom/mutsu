@@ -21,7 +21,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 72;
+plan 75;
 
 sub exprs($src) {
     ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; sub infix:<foo>($x, $y) { }; '
@@ -135,3 +135,6 @@ same Q[my @r; for 1..6 { @r.push($_) if $_ == 2 ff $_ == 4 }; @r.join(",")], '2,
 same Q[sub f(*@a) { @a.join(",") }; my @x = 1, 2; f |@x], '1,2', 'a listop call with a slip';
 same Q[sub f(*@a) { @a.join(",") }; my @y = 3, 4; f 0, |@y], '0,3,4', 'a slip after another argument';
 same Q[class C { method bar($x) { "b$x" } }; my $o = C.new; bar $o: 5], 'b5', 'a listop call with an invocant';
+same Q[class P1 { }; multi sub infix:<~>(P1 $a, P1 $b) { "USER" }; P1.new ~ P1.new], 'USER', 'an overloaded string operator';
+same Q[class P2 { }; multi sub infix:<eq>(P2 $a, P2 $b) { "USER" }; P2.new eq P2.new], 'USER', 'an overloaded word operator';
+same Q[class P3 { }; multi sub infix:<*>(P3 $a, P3 $b) { "USER" }; (P3.new * P3.new) ~ "," ~ (2 * 3)], 'USER,6', 'an overloaded arithmetic operator keeps the core candidate';
