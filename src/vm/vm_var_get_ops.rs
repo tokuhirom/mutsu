@@ -765,9 +765,6 @@ impl Interpreter {
                 && !self.has_multi_function(name)
                 && !self.has_function(last_seg)
                 && !self.has_multi_function(last_seg)
-                // `NativeCall::Types::size_t` is a type with a lowercase name,
-                // not a sub call (#12031).
-                && crate::value::nativecall_registry_name(name).is_none()
                 // A lowercase last segment usually means a qualified sub call,
                 // but it can equally name a lowercase *package*: `my $foo::bar
                 // = 1` creates the package `foo`, and `OUR::foo` must resolve
@@ -793,13 +790,7 @@ impl Interpreter {
                 {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
                 } else {
-                    // A NativeCall type's qualified spelling denotes the type
-                    // its imported short name does, and that type object
-                    // carries the registry key (ADR-0056): `CArray ===
-                    // NativeCall::Types::CArray` (#12031).
-                    Value::package(Symbol::intern(
-                        crate::value::nativecall_registry_name(name).unwrap_or(name),
-                    ))
+                    Value::package(Symbol::intern(name))
                 }
             }
         } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {

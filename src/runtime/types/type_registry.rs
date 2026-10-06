@@ -793,16 +793,8 @@ impl Interpreter {
     /// `class Cursor { … }` is its own type (#11705). A `my`-scoped one is
     /// registered under a mangled key and reached through the `env` binding
     /// of its short name, so that binding counts as a declaration too.
-    ///
-    /// A NativeCall type's qualified spelling (`NativeCall::Types::CArray`) is
-    /// the same type as its imported short one, whose bare name is the registry
-    /// key (ADR-0056), so it resolves to that key (#12031).
-    // Cost: O(1) hash probes, plus O(k) for the NativeCall name table (k = 10)
-    // when `name` starts with `NativeCall::Types::`.
+    // Cost: O(1) hash probes.
     pub(crate) fn resolve_core_type_alias<'a>(&self, name: &'a str) -> &'a str {
-        if let Some(bare) = crate::value::nativecall_registry_name(name) {
-            return bare;
-        }
         match name {
             "Cursor"
                 if !self.has_type_direct(name)

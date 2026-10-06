@@ -109,9 +109,6 @@ impl Interpreter {
             ..
         } = stmt
         {
-            // See the class arm: `enum void <a b>` shadows NativeCall's `void`
-            // for display purposes.
-            crate::value::note_user_declared_type_name(&name.resolve());
             let result = loan_env!(
                 self,
                 register_enum_decl(
@@ -216,14 +213,6 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
-            // A user type whose name collides with a NativeCall builtin
-            // (`class void { }`) must report its OWN name, not
-            // `NativeCall::Types::void` (ADR-0056's qualification is name-keyed
-            // and has no interpreter context). The SOURCE-written name is what
-            // is passed: NativeCall's prelude spells its own types
-            // `class GLOBAL::void`, so it is excluded by construction. Covers
-            // `grammar`, which registers through this same op.
-            crate::value::note_user_declared_type_name(&resolved_name);
             let current_package_sym = self.current_package_sym();
             let current_package = current_package_sym.as_str();
             let resolved_sym = Symbol::intern(&resolved_name);
@@ -1147,9 +1136,6 @@ impl Interpreter {
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
-            // See the class arm: a `role void { }` shadows NativeCall's `void`
-            // for display purposes just as a class does.
-            crate::value::note_user_declared_type_name(&name_str);
             let name_sym = *name;
             let name_is_qualified = crate::qualified::is_qualified(name_sym);
             let current_package = self.current_package();
@@ -1464,9 +1450,6 @@ impl Interpreter {
         } = stmt
         {
             let resolved_name = name.resolve();
-            // See the class arm: `subset void of Int` shadows NativeCall's
-            // `void` for display purposes.
-            crate::value::note_user_declared_type_name(&resolved_name);
             let subset_package = self.current_package();
             loan_env!(
                 self,
