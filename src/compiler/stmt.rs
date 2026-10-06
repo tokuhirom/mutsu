@@ -1862,6 +1862,17 @@ impl Compiler {
                     Some(slot) => slot,
                     None => self.declare_local(name),
                 };
+                // What an integer atomic on this scalar needs to know about its
+                // declaration (#11834). A `:=` bind takes the bound container,
+                // so its type is whatever that container's is: leave it unrecorded
+                // for the run-time check to answer.
+                if !bind_vardecl
+                    && !custom_traits
+                        .iter()
+                        .any(|(trait_name, _)| trait_name == "__scalar_bind")
+                {
+                    self.record_scalar_decl_type(name, type_constraint.as_deref());
+                }
                 if !*is_state
                     && !*is_our
                     && !is_constant_decl

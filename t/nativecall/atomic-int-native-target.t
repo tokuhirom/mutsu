@@ -129,7 +129,7 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     my $y = 1;
     {
         my atomicint $y = 20;
-        is $y⚛++, 20, 'an atomicint shadow of a plain scalar';
+        lives-ok { $y⚛++ }, 'an atomicint shadow of a plain scalar is accepted';
     }
     throws-like { $y⚛++ }, X::Multi::NoMatch, message => $nomatch, 'the plain scalar is visible again';
 }

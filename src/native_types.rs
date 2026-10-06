@@ -43,6 +43,34 @@ pub(crate) fn is_native_int_type(name: &str) -> bool {
     NATIVE_INT_TYPES.contains(&name)
 }
 
+/// Whether a binding declared with the type `name` is a native-integer
+/// container the integer atomics (`⚛++`, `⚛+=`, `atomic-fetch-add`,
+/// `nqp::atomicinc_i`, ...) accept as their `atomicint $target is rw`.
+///
+/// That is the signed native family: `atomicint` is a 64-bit `int`, and the
+/// narrower `int8`/`int16`/`int32` (and the signed C-width aliases) reach the
+/// same candidate in Rakudo, which then refuses them at the VM level for not
+/// being of the machine's native size -- a message mutsu does not model, so
+/// they are accepted. An unsigned type (`uint`, `byte`, `size_t`, ...), a
+/// native `num`/`str` and every boxed type (`Int`, `Any`, a subset, no type at
+/// all) match no candidate: `my uint $u; $u⚛++` is a dispatch failure.
+// Cost: O(1).
+pub(crate) fn is_atomic_int_target_type(name: &str) -> bool {
+    matches!(
+        name,
+        "int"
+            | "atomicint"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "long"
+            | "longlong"
+            | "ssize_t"
+            | "bool"
+    )
+}
+
 /// The native integer types that are also spelled as a *coercion method* on
 /// `Cool` — `42.int8`, `"42".byte`. This is a strict subset of
 /// [`NATIVE_INT_TYPES`]: the C-width aliases `NativeCall::Types` exports

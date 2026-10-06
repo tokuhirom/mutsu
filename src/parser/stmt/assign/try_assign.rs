@@ -665,16 +665,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             Err(_) => expression(rest)?,
         };
         let name = format!("{}{}", prefix, var);
-        return Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![
-                    Expr::Literal(Value::str(name)),
-                    super::atomic_delta_expr(rhs, negate),
-                ],
-            },
-        ));
+        return Ok((rest, super::atomic_compound_call(name, rhs, negate)));
     }
     // Check simple chained assignment: $var = ...
     if (r2.starts_with('=') && !r2.starts_with("==") && !r2.starts_with("=>"))

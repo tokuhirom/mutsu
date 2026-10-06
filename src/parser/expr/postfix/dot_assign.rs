@@ -31,6 +31,34 @@ pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
     })
 }
 
+/// `call`, an integer-atomic operator's lowering, tagged with the operator as
+/// the program spelled it (`postfix:<⚛++>`). The compiler names that spelling
+/// when the target turns out not to be a native-integer container, as Rakudo's
+/// dispatch failure does, however the operator was lowered (#11834).
+pub(crate) fn spelled_atomic(display: &str, call: Expr) -> Expr {
+    Expr::Call {
+        name: Symbol::intern("__mutsu_atomic_spelled"),
+        args: vec![Expr::Literal(Value::str(display.to_string())), call],
+    }
+}
+
+/// The `__mutsu_atomic_*_var(name)` call an integer-atomic operator on the
+/// variable `name` lowers to, spelled as `display`.
+pub(crate) fn atomic_var_op(helper: &str, display: &str, name: String) -> Expr {
+    spelled_atomic(
+        display,
+        Expr::Call {
+            name: Symbol::intern(helper),
+            args: vec![Expr::Literal(Value::str(name))],
+        },
+    )
+}
+
+/// [`atomic_elem_update`] for an integer-atomic operator, spelled as `display`.
+pub(crate) fn atomic_elem_op(routine: &str, display: &str, expr: &Expr) -> Option<Expr> {
+    atomic_elem_update(routine, expr).map(|call| spelled_atomic(display, call))
+}
+
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
 /// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
 /// route an outer `.=` through a `do { … }`-block target back to its lvalue.

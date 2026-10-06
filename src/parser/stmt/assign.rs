@@ -63,6 +63,24 @@ pub(crate) fn strip_atomic_store_assign(rest: &str) -> Option<&str> {
     Some(after.strip_prefix('=').unwrap_or(after))
 }
 
+/// The `⚛+=` / `⚛-=` update of the variable `name` by `rhs`: the one
+/// `__mutsu_atomic_add_var` call, tagged with the operator as the program
+/// spelled it so a refused target is reported under that name (#11834).
+pub(crate) fn atomic_compound_call(name: String, rhs: Expr, negate: bool) -> Expr {
+    let display = if negate {
+        "infix:<⚛-=>"
+    } else {
+        "infix:<⚛+=>"
+    };
+    super::super::expr::spelled_atomic(
+        display,
+        Expr::Call {
+            name: Symbol::intern("__mutsu_atomic_add_var"),
+            args: vec![Expr::Literal(Value::str(name)), atomic_delta_expr(rhs, negate)],
+        },
+    )
+}
+
 /// Wrap an atomic compound assignment's right-hand side in unary minus when the
 /// operator was a subtract form. See [`strip_atomic_compound_assign`].
 pub(crate) fn atomic_delta_expr(rhs: Expr, negate: bool) -> Expr {

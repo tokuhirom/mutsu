@@ -109,16 +109,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![
-                    Expr::Literal(Value::str(name)),
-                    super::atomic_delta_expr(rhs, negate),
-                ],
-            },
-        ));
+        return Ok((rest, super::atomic_compound_call(name, rhs, negate)));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;

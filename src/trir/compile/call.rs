@@ -29,6 +29,20 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("call to {name} with a named or spread argument"));
             return None;
         }
+        // An atomic names its target variable, and works on the variable itself
+        // (a shared cell, an attribute, the name-keyed lane): a frame slot of
+        // this chunk is none of those, and a call by name sees only the value.
+        // The integer atomics also refuse a target that is not a native-integer
+        // container, which the VM's lowering decides (#11834). Leave the
+        // routine to the VM.
+        if name.starts_with("__mutsu_atomic_")
+            || name.starts_with("__mutsu_cas_")
+            || name.starts_with("atomic-")
+            || name == "cas"
+        {
+            self.note_decline(|| format!("the atomic {name} addresses its target by name"));
+            return None;
+        }
         // `$p.m(...) = v` on a read-only parameter: whether that is legal
         // depends on the method (`.substr-rw` needs the parameter's own
         // container and must die; an `is rw` accessor writes the object and

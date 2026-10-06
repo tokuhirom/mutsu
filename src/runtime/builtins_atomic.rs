@@ -31,7 +31,10 @@ impl Interpreter {
         let r = match name {
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(args),
+            "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(args),
+            // `cas($x, * + n)`: an add that, unlike `⚛+=`, takes any scalar.
+            "__mutsu_cas_add_var" => self.builtin_atomic_add_var(args),
             "__mutsu_atomic_fetch_add_var" => self.builtin_atomic_fetch_add_var(args),
             "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(args),
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(args),

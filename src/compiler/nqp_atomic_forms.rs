@@ -53,9 +53,18 @@ impl Compiler {
             }
             _ => return false,
         };
-        self.compile_expr(&Expr::Call {
-            name: crate::symbol::Symbol::intern(raku_form),
-            args: args.to_vec(),
+        // The Raku routine each op stands for takes any `$target is rw`, but
+        // the `_i` ops want a native integer container (MoarVM's own check), so
+        // the lowering carries the op's spelling and that requirement.
+        let spelling = super::atomic_target::AtomicSpelling {
+            display: name.to_string(),
+            int_only: name.ends_with("_i"),
+        };
+        self.with_atomic_spelling(spelling, |c| {
+            c.compile_expr(&Expr::Call {
+                name: crate::symbol::Symbol::intern(raku_form),
+                args: args.to_vec(),
+            });
         });
         true
     }

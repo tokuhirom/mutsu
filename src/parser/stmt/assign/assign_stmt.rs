@@ -578,13 +578,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(Expr::Call {
-            name: Symbol::intern("__mutsu_atomic_add_var"),
-            args: vec![
-                Expr::Literal(Value::str(name)),
-                super::atomic_delta_expr(rhs, negate),
-            ],
-        });
+        let stmt = Stmt::Expr(super::atomic_compound_call(name, rhs, negate));
         return parse_statement_modifier(rest, stmt);
     }
 
