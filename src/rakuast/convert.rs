@@ -857,19 +857,36 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     || *class_is_rw
                     || *is_hidden
                     || !hidden_parents.is_empty()
-                    || !does_parents.is_empty()
                     || repr.is_some()
                     || has_package_traits(custom_traits)
-                    || !*implicit_grammar_parent
-                    || parents != &["Grammar".to_string()]
                 {
-                    return Err(unsupported("grammar with inheritance / scope / traits"));
+                    return Err(unsupported(&format!(
+                        "grammar with scope / traits (hidden {hidden_parents:?}, rw {class_is_rw}, \
+                         traits {:?})",
+                        custom_traits
+                            .iter()
+                            .map(|(t, _)| t.as_str())
+                            .collect::<Vec<_>>()
+                    )));
                 }
                 let mut fields = package_header_fields(
                     *name,
                     package_scope(*is_lexical, *is_unit),
                     is_colons_package(custom_traits),
                 );
+                // The implicit `Grammar` parent is not a written trait.
+                let written: &[String] = if *implicit_grammar_parent {
+                    parents.get(1..).unwrap_or(&[])
+                } else {
+                    parents
+                };
+                let traits = class_traits(written, does_parents, parent_args, false, false, &[])?;
+                if !traits.is_empty() {
+                    fields.push(RakuAstField {
+                        name: Some("traits"),
+                        value: RakuAstFieldValue::List(traits),
+                    });
+                }
                 fields.push(node_field(
                     Some("body"),
                     block_node(&crate::parser::unhoist_nested_methods(body))?,
@@ -896,9 +913,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
             if name_expr.is_some() || has_package_traits(custom_traits) {
-                return Err(unsupported(
-                    "class with inheritance / scope / repr / traits",
-                ));
+                return Err(unsupported(&format!(
+                    "class with inheritance / scope / repr / traits ({}{})",
+                    if name_expr.is_some() {
+                        "computed name "
+                    } else {
+                        ""
+                    },
+                    custom_traits
+                        .iter()
+                        .map(|(t, _)| t.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
             }
             let mut fields = package_header_fields(
                 *name,
@@ -989,7 +1016,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || matches!(variant_form, EnumVariantForm::Computed)
                 || variants.is_empty()
             {
-                return Err(unsupported("enum with scope / traits / computed body"));
+                return Err(unsupported(&format!(
+                    "enum with scope / traits / computed body (base {base_type:?}, roles {roles:?}, form {variant_form:?}, {} variants)",
+                    variants.len()
+                )));
             }
             let term = match variant_form {
                 EnumVariantForm::Words => enum_quoted_string(variants, "words")?,
@@ -1692,14 +1722,22 @@ fn var_decl_statement(
     }
     let is_internal = |n: &str| {
         n == "__has_initializer"
+            // The parser's own mark of a declaration whose initializer reads
+            // the new binding; the lowering marks it again.
+            || n == "__init_sees_self"
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
     };
-    if custom_traits
+    let unrendered: Vec<&str> = custom_traits
         .iter()
-        .any(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
-    {
-        return Err(unsupported("declaration with traits"));
+        .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if !unrendered.is_empty() {
+        return Err(unsupported(&format!(
+            "declaration with traits ({})",
+            unrendered.join(", ")
+        )));
     }
     // build_type_node validates simple/definite and defers the rest. A
     // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a

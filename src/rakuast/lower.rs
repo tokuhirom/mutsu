@@ -42,6 +42,12 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     crate::whatever_curry::with_all_scopes(|| {
         crate::whatever_curry::mark::mark_program(&mut stmts)
     });
+    // The scope pass the parser runs after a unit: it marks each declaration
+    // whose initializer reads the binding it declares (`__init_sees_self`),
+    // and reports the compile-time errors of a redeclaration or of `my $x = $x`.
+    if let Some(diagnostic) = crate::parser::find_scope_diagnostic(&mut stmts) {
+        return Err(crate::parser::scope_diagnostic_error(diagnostic));
+    }
     Ok(stmts)
 }
 
@@ -1044,24 +1050,41 @@ pub(super) fn package_head(
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_grammar_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
+    let ClassTraits {
+        mut parents,
+        does_parents,
+        parent_args,
+        is_rw,
+        is_hidden,
+        hidden_parents,
+    } = class_traits(node)?;
+    if is_rw || is_hidden || !hidden_parents.is_empty() {
+        return Err(unsupported(node));
+    }
+    // With no written parent a grammar inherits `Grammar`, which the parser
+    // puts first in `parents`, before any composed role.
+    let implicit_grammar_parent = parents.iter().all(|p| does_parents.contains(p));
+    if implicit_grammar_parent {
+        parents.insert(0, "Grammar".to_string());
+    }
     Ok(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
-        parents: vec!["Grammar".to_string()],
+        parents,
         class_is_rw: false,
         is_hidden: false,
         is_lexical: head.is_lexical,
         hidden_parents: Vec::new(),
-        does_parents: Vec::new(),
+        does_parents,
         repr: None,
         body,
         language_version: crate::parser::current_language_version(),
         custom_traits: head.custom_traits(),
         is_unit: head.is_unit,
-        implicit_grammar_parent: true,
+        implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),
-        parent_args: Vec::new(),
+        parent_args,
         body_parents: Vec::new(),
     })
 }

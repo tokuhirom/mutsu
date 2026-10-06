@@ -36,6 +36,7 @@ mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
 pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
+pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 /// The default the parser plants for a typed scalar attribute with no
