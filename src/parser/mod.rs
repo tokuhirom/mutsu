@@ -26,6 +26,7 @@ pub(crate) use primary::{
 pub(crate) use stmt::class::{EXPORT_TYPE_MARKER, export_type_marker};
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
+pub(crate) use stmt::sub::op_prec_trait;
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;

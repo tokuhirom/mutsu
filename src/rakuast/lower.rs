@@ -672,6 +672,18 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A sub with no signature of its own takes its placeholder variables.
     let (params, param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
+    let associativity = is_traits
+        .assoc
+        .clone()
+        .or_else(|| is_traits.precedence.as_ref().map(|(kind, _)| kind.clone()));
+    // An operator sub that declares its precedence carries the record the
+    // parser derives from the traits.
+    custom_traits.extend(crate::parser::op_prec_trait(
+        &name,
+        multi,
+        associativity.as_ref(),
+        is_traits.precedence.as_ref(),
+    ));
     Ok(Stmt::SubDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -680,10 +692,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return_type,
         // `is tighter(&infix:<+>)` also names its kind as the associativity, as
         // the parser records it.
-        associativity: is_traits
-            .assoc
-            .clone()
-            .or_else(|| is_traits.precedence.as_ref().map(|(kind, _)| kind.clone())),
+        associativity,
         precedence_trait: is_traits.precedence.clone(),
         signature_alternates: Vec::new(),
         body,

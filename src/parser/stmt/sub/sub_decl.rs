@@ -200,6 +200,36 @@ fn declared_op_prec(name: &str, traits: &SubTraits) -> Option<crate::op_prec::Op
     Some(prec)
 }
 
+/// The `__prec` custom trait the parser gives the operator sub `name` declared
+/// with `associativity` (`is assoc<...>`) and `precedence_trait` (`is
+/// tighter(&op)`), or `None` when the declaration has none. The parser and the
+/// RakuAST lowering share this builder, so a lowered operator sub carries the
+/// marker the parsed one does; it also registers the operator's parse-time
+/// associativity and precedence, as parsing the declaration does.
+// Cost: O(|name| + |reference|) plus the operator-table lookups.
+pub(crate) fn op_prec_trait(
+    name: &str,
+    multi: bool,
+    associativity: Option<&String>,
+    precedence_trait: Option<&(String, String)>,
+) -> Option<(String, Option<Expr>)> {
+    let mut traits = SubTraits {
+        is_export: false,
+        export_tags: Vec::new(),
+        is_test_assertion: false,
+        is_rw: false,
+        is_raw: false,
+        return_type: None,
+        associativity: associativity.cloned(),
+        custom_traits: Vec::new(),
+        precedence_trait: precedence_trait.cloned(),
+        handles: Vec::new(),
+    };
+    let declared = register_parse_affecting_traits(name, &traits);
+    push_op_prec_trait(name, multi, declared, &mut traits);
+    traits.custom_traits.pop()
+}
+
 /// Hand a declared `Routine.prec` hash to the runtime as the `__prec` trait.
 /// A `multi` candidate with no trait of its own takes the one its operator
 /// already has in scope (from its `proto` or an earlier candidate), as the

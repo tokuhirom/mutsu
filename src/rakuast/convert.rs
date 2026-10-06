@@ -104,6 +104,10 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
 
+/// The custom trait the parser gives an operator sub that declares its
+/// precedence or associativity.
+const OP_PREC_TRAIT: &str = "__prec";
+
 /// The parser's `custom_traits` marker for a `my`-scoped declaration
 /// (`my role R { }`).
 pub(super) const MY_SCOPED: &str = "__my_scoped";
@@ -712,7 +716,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (*supersede, "`supersede` sub"),
                 (
                     custom_traits.iter().any(|(t, _)| {
-                        t.starts_with("__") && !is_return_spelling_marker(t) && t != OUR_SCOPED
+                        t.starts_with("__")
+                            && !is_return_spelling_marker(t)
+                            && t != OUR_SCOPED
+                            // The operator-precedence record the parser derives
+                            // from `is assoc` / `is tighter`; lowering rebuilds it.
+                            && t != OP_PREC_TRAIT
                             || crate::qualified::is_qualified_str(t)
                     }),
                     "sub with an internal or qualified trait",
