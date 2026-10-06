@@ -677,6 +677,74 @@ is `True`), [#11990](https://github.com/tokuhirom/mutsu/issues/11990) (`Version.
 `Whatever` for `*`) and [#11992](https://github.com/tokuhirom/mutsu/issues/11992) (`Int.Num` on a
 type object).
 
+### 9.16 Slice 3C: collections and quant hashes (2026-10-06)
+
+Branch `refactor/11276-3c-collections`. Owners: `Any`, `List`, `Array`, `Hash`, `Map`, `Range`,
+`Seq`, `Pair`, `Capture`, `Set`, `SetHash`, `Bag`, `BagHash`, `Mix`, `MixHash`, and the three
+small owners the report files under *collections* (`Junction`, `Nil`, `Iterable`). This is the
+first commit's inventory, taken with
+`scripts/method-rows-report.py --inventory collections,"quant hashes"`; later commits tick
+families off and the closing paragraph records what was deferred.
+
+**Inventory (unregistered recognition rows, 2026-10-06).** 544 rows over 116 distinct names:
+
+| owner | rows | Pure | Interp | Mut |
+|---|---:|---:|---:|---:|
+| Any | 43 | 20 | 23 | 0 |
+| List | 49 | 31 | 3 | 15 |
+| Array | 75 | 56 | 4 | 15 |
+| Hash | 43 | 39 | 2 | 2 |
+| Map | 19 | 19 | 0 | 0 |
+| Range | 40 | 40 | 0 | 0 |
+| Seq | 37 | 37 | 0 | 0 |
+| Pair | 38 | 38 | 0 | 0 |
+| Capture | 18 | 18 | 0 | 0 |
+| Junction, Nil, Iterable | 7 | 7 | 0 | 0 |
+| Set, SetHash | 53 | 53 | 0 | 0 |
+| Bag, BagHash | 62 | 59 | 1 | 2 |
+| Mix, MixHash | 60 | 59 | 1 | 0 |
+| **total** | **544** | **476** | **34** | **34** |
+
+The recognition table flags 34 rows `MUTATES_RECEIVER`. Twenty of them really write the
+receiver (`push`, `pop`, `shift`, `unshift`, `append`, `prepend`, `splice` and `rotate` on
+`List` and `Array`, `push` and `append` on `Hash`, `BagHash.add` and `remove`) and move in 3F
+with `Handler::Mut`. The other fourteen (`map`, `grep`, `reduce`, `produce`, `rotor`,
+`categorize` and `classify` on `List` and `Array`) call a closure and do not write the
+receiver: the flag is the 2026-08-10 planning estimate, so this slice re-classifies them as
+interpreter rows (family 9). That leaves 524 rows for 3C, cut by method name, not by owner (ADR
+§10.3 rule 3): one handler answers a name for every owner and shape that has it, and the
+cascade arms for that name go, or shrink to the other groups' receivers for a name several
+groups share (`gist`, `Str`, `Numeric`, ...).
+
+**Families (one commit each, with its focused test).** The by-name table is the checklist:
+
+1. *Identity and rendering*: `gist` (17 owners), `raku` (16), `Str` (15), `WHICH` (14), `clone`
+   (8), `perl`, `defined`, `Bool`, `not`, `so`, `self`, `item`, `sink`, `serial`, `Stringy`,
+   `WHERE`.
+2. *Coercions*: `list` (14), `Capture` (14), `hash` (12), `List` (12), `Array` (11), `Slip`,
+   `Supply`, `Pair`, `Numeric`, `Int`.
+3. *Size, keys and views*: `elems` (12), `end`, `keys`, `values`, `kv`, `pairs` (11 each),
+   `antipairs` (10), `invert`, `kxxv`, `total`, `of`, `default`, `name`, `dynamic`, `is-lazy`.
+4. *Subscripts and membership*: `AT-KEY`, `EXISTS-KEY` (10 each), `AT-POS`, `EXISTS-POS` (6),
+   `ACCEPTS` (8), `contains`, `index`.
+5. *Sampling*: `pick`, `roll` (14 each), `grab`, `grabpairs`, `pickpairs`.
+6. *Positional slicing and reduction*: `head`, `tail`, `batch`, `join`, `fmt`, `flat`, `reverse`,
+   `sort`, `unique`, `repeated`, `squish`, `cache`, `pairup`, `tree`, `chrs`, `min`, `max`,
+   `minmax`, `sum`, `permutations`, `combinations`.
+7. *Laziness markers*: `hyper`, `race`, `lazy`, `eager`, `iterator`.
+8. *Range specifics*: `bounds`, `in-range`, `infinite`, `int-bounds`, `is-int`, `rand`.
+9. *Interpreter rows* (`Handler::Interp`, the closure-calling and output methods on `Any`):
+   `map`, `grep`, `first`, `reduce`, `produce`, `classify`, `categorize`, `rotor`, `skip`,
+   `match`, `say`, `print`, `put`, `note`, `HOW`, `WHAT`, `WHY`, `categorize-list`,
+   `classify-list`.
+
+**What the slice has to decide.** The `Seq` shape (a method decides whether it consumes the
+`Seq`) is added with the first row `Seq` owns. The ancestor rows are audited, and the shape
+opened, for `Range`, `Pair`, `Capture` and the six quant hashes one shape at a time, when the
+family that first needs it lands. `Junction`, `Nil` and `Iterable` have no shape of their own
+(autothreading and `Nil` are guards; 3D adds the `Nil` shape), so their seven rows follow the
+family of their name and are registered with their owner.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

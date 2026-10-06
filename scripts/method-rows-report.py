@@ -16,6 +16,7 @@ this report shows zero arms for their owners (ADR §10.3 rule 6).
     scripts/method-rows-report.py --arms          # only the cascade arms (no build)
     scripts/method-rows-report.py --rows-from F   # reuse a saved dump instead of running cargo
     scripts/method-rows-report.py --dump-rows     # print the raw `ROW` lines and exit
+    scripts/method-rows-report.py --inventory collections,"quant hashes"   # a slice's inventory
 
 The row dump is the ignored unit test `method_table::tests::dump_rows`.
 """
@@ -163,12 +164,58 @@ def report_rows(args):
     print(f"remaining: {grand} of {len(table)} recognition rows")
 
 
+def arm_files_by_name():
+    """`name -> {cascade file}` over every quoted-name arm the layers still hold."""
+    files_of = collections.defaultdict(set)
+    for _layer, patterns in LAYERS:
+        for path in sorted({f for p in patterns for f in glob.glob(os.path.join(ROOT, p), recursive=True)}):
+            for arm in arms_in(path):
+                for name in arm:
+                    files_of[name].add(os.path.basename(path))
+    return files_of
+
+
+def report_inventory(args):
+    """A slice's first commit (ADR §10.4): every recognition row of its owners that has no registered row.
+
+    `--inventory` takes owner names or group names (see GROUPS), comma-separated. The rows are
+    printed per owner, then per method name, which is how a slice cuts its families: one handler
+    answers a name for every owner and shape that has it, and the cascade arms for that name go.
+    """
+    owners = []
+    for item in args.inventory.split(","):
+        owners += GROUPS[item].split() if item in GROUPS else [item]
+    registered, _raw = registered_rows(args)
+    have = {(owner, name) for owner, name, *_ in registered}
+    files_of = arm_files_by_name()
+    per_owner = collections.defaultdict(list)
+    per_name = collections.defaultdict(list)
+    for (owner, name), (arity_bits, flag_bits) in sorted(recognition_rows().items()):
+        if owner in owners and (owner, name) not in have:
+            kind = kind_of(arity_bits, flag_bits)
+            per_owner[owner].append((name, kind))
+            per_name[name].append((owner, kind))
+    print("== Inventory: unregistered rows per owner ==")
+    for owner in owners:
+        kinds = collections.Counter(kind for _name, kind in per_owner[owner])
+        print(f"{owner:10} {len(per_owner[owner]):4d}  " + " ".join(f"{k} {kinds[k]}" for k in sorted(kinds)))
+    print(f"total {sum(len(rows) for rows in per_owner.values())} rows, {len(per_name)} distinct names")
+    print("\n== Inventory: per method name (rows, kinds, owners; cascade files that hold an arm) ==")
+    for name, rows in sorted(per_name.items(), key=lambda item: (-len(item[1]), item[0])):
+        kinds = "".join(sorted({kind[0] for _owner, kind in rows}))
+        print(f"{name:16} {len(rows):3d} {kinds:3} {' '.join(o for o, _k in rows)}  [{','.join(sorted(files_of.get(name, [])))}]")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--arms", action="store_true", help="only the cascade arms (no build)")
     parser.add_argument("--rows-from", metavar="FILE", help="read the row dump from FILE instead of running cargo")
     parser.add_argument("--dump-rows", action="store_true", help="print the raw row dump and exit")
+    parser.add_argument("--inventory", metavar="OWNERS", help="a slice's inventory: the unregistered rows of these owners or groups")
     args = parser.parse_args()
+    if args.inventory:
+        report_inventory(args)
+        return
     if args.dump_rows:
         report_rows(args)
         return
