@@ -20,7 +20,12 @@ pub(super) fn generic_range_to_list(
 ) -> Vec<Value> {
     let next_numeric = |v: &Value| -> Option<Value> {
         match v.view() {
-            ValueView::Int(i) => Some(Value::int(i + 1)),
+            // `i64::MAX + 1` leaves the `Int` kind (a range may end at the
+            // largest Int): promote it, so the end test stops the walk.
+            ValueView::Int(i) => Some(match i.checked_add(1) {
+                Some(n) => Value::int(n),
+                None => Value::bigint(num_bigint::BigInt::from(i) + 1),
+            }),
             ValueView::BigInt(n) => Some(Value::bigint(n.as_ref() + 1)),
             ValueView::Num(f) => Some(Value::num(f + 1.0)),
             ValueView::Rat(n, d) => Some(crate::value::make_rat(n + d, d)),

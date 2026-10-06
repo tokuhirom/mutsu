@@ -372,7 +372,9 @@ impl Interpreter {
                 // Raku's behavior where `1..3 eqv 1..3` uses the integer Range
                 // type), otherwise use GenericRange for non-integer bounds.
                 Ok(match (lo.view(), hi.view()) {
-                    (ValueView::Int(l), ValueView::Int(h)) => Value::range(l, h),
+                    (ValueView::Int(l), ValueView::Int(h)) => {
+                        crate::builtins::arith::range::int_range(l, h, false, false)
+                    }
                     _ => Value::generic_range(lo, hi, false, false),
                 })
             }

@@ -133,7 +133,9 @@ impl Interpreter {
 
     pub(crate) fn make_inclusive_range_value(left: Value, right: Value) -> Value {
         match (left.view(), right.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
+            (ValueView::Int(a), ValueView::Int(b)) => {
+                crate::builtins::arith::range::int_range(a, b, false, false)
+            }
             (ValueView::Int(a), ValueView::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
                 Value::range(a, i64::MAX)
             }
