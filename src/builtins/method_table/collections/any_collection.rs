@@ -1,7 +1,7 @@
 //! Zero-argument `Any` collection methods shared by the row and cascade paths.
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{DispatchShape, RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
     MethodRow {
@@ -84,6 +84,16 @@ pub(crate) fn scalar_like(target: &Value) -> bool {
             | ValueView::FatRat(..)
             | ValueView::BigRat(..)
             | ValueView::Complex(..)
+    ) || matches!(
+        // `Date`, `DateTime`, `Instant` and `Duration` are neither `Positional`
+        // nor `Associative`: `Any`'s one-element semantics are theirs.
+        target.dispatch_shape(),
+        Some(
+            DispatchShape::Date
+                | DispatchShape::DateTime
+                | DispatchShape::Instant
+                | DispatchShape::Duration
+        )
     )
 }
 

@@ -1386,6 +1386,14 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Instant", "narrow", 1, 48),
     ("Instant", "raku", 1, 16),
     ("Instant", "tai", 1, 48),
+    // ADR-11276 slice 3D: `Real`'s methods Rakudo composes into `Instant` and
+    // `Duration`, which the table had no row for.
+    ("Instant", "Real", 1, 16),
+    ("Instant", "conj", 1, 48),
+    ("Instant", "to-nanos", 1, 48),
+    ("Duration", "Real", 1, 16),
+    ("Duration", "conj", 1, 48),
+    ("Duration", "to-nanos", 1, 48),
     ("Duration", "succ", 1, 48),
     ("Duration", "pred", 1, 48),
     ("Duration", "base", 6, 48),

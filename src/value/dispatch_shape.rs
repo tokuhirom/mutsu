@@ -85,17 +85,29 @@ pub(crate) enum DispatchShape {
     Mix,
     /// A `MixHash` (closed).
     MixHash,
-    /// A `Date`, the built-in class and not a subclass of it (closed).
+    /// A `Date`, the built-in class and not a subclass of it. Its MRO is
+    /// `Date`, `Any`, `Mu`; slice 3D audited those owners' rows for it and
+    /// opened the shape.
     Date,
-    /// A `DateTime`, the built-in class and not a subclass of it (closed).
+    /// A `DateTime`, the built-in class and not a subclass of it. Its MRO is
+    /// `DateTime`, `Any`, `Mu`; slice 3D audited those owners' rows for it and
+    /// opened the shape.
     DateTime,
+    /// An `Instant`, the built-in class and not a subclass of it. Its MRO is
+    /// `Instant`, `Cool`, `Any`, `Mu`; slice 3D audited those owners' rows for
+    /// it and opened the shape.
+    Instant,
+    /// A `Duration`, the built-in class and not a subclass of it. Its MRO is
+    /// `Duration`, `Cool`, `Any`, `Mu`; slice 3D audited those owners' rows for
+    /// it and opened the shape.
+    Duration,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 23] = [
+    pub(crate) const ALL: [DispatchShape; 25] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -119,6 +131,8 @@ impl DispatchShape {
         DispatchShape::MixHash,
         DispatchShape::Date,
         DispatchShape::DateTime,
+        DispatchShape::Instant,
+        DispatchShape::Duration,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -149,13 +163,16 @@ impl DispatchShape {
             DispatchShape::MixHash => "MixHash",
             DispatchShape::Date => "Date",
             DispatchShape::DateTime => "DateTime",
+            DispatchShape::Instant => "Instant",
+            DispatchShape::Duration => "Duration",
         }
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The
-    /// nine shapes the table started with inherit, and so does `Bool` (opened
-    /// by slice 3B); a shape added later is closed until the slice that owns
-    /// it has audited every ancestor row for it (see the module docs).
+    /// nine shapes the table started with inherit, and so do `Bool` (opened by
+    /// slice 3B) and `Date`, `DateTime`, `Instant` and `Duration` (opened by
+    /// slice 3D); a shape added later is closed until the slice that owns it
+    /// has audited every ancestor row for it (see the module docs).
     // Cost: O(1).
     pub(crate) const fn inherits(self) -> bool {
         matches!(
@@ -170,6 +187,10 @@ impl DispatchShape {
                 | DispatchShape::FatRat
                 | DispatchShape::Complex
                 | DispatchShape::Bool
+                | DispatchShape::Date
+                | DispatchShape::DateTime
+                | DispatchShape::Instant
+                | DispatchShape::Duration
         )
     }
 
@@ -194,12 +215,14 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 2] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 2]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 4] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 4]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
             (Symbol::intern("DateTime"), DispatchShape::DateTime),
+            (Symbol::intern("Instant"), DispatchShape::Instant),
+            (Symbol::intern("Duration"), DispatchShape::Duration),
         ]
     })
 }

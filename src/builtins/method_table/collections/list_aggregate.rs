@@ -44,6 +44,11 @@ pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[MethodRow {
 }];
 
 fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
+    // A `Date`, `DateTime`, `Instant` or `Duration` is one item and has no
+    // other to compare with.
+    if super::any_collection::scalar_like(target) {
+        return Some(vec![target.clone()]);
+    }
     let items = match target.view() {
         ValueView::Array(items, _) => items.to_vec(),
         ValueView::Bool(_)

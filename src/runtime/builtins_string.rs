@@ -159,6 +159,14 @@ impl Interpreter {
             // swallowed here the same way it always was.
             let arg_clone = actual_args[idx].clone();
             if let Ok(v) = self.call_method_with_values(arg_clone, method, vec![]) {
+                // `Real`'s `Numeric` is the object itself (`Duration`,
+                // `Instant`): the directive formats its `Bridge`, the number.
+                let v = if method == "Numeric" && matches!(v.view(), ValueView::Instance { .. }) {
+                    self.call_method_with_values(v.clone(), "Bridge", vec![])
+                        .unwrap_or(v)
+                } else {
+                    v
+                };
                 actual_args[idx] = v;
             }
         }

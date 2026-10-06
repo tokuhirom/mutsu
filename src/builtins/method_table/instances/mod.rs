@@ -25,6 +25,7 @@ use narrow_row;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod datetime;
+pub(crate) mod instant;
 pub(crate) mod temporal;
 
 /// Every family of this group.
@@ -35,4 +36,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     dateish::DATETIME_ROWS,
     date::ROWS,
     datetime::ROWS,
+    instant::INSTANT_ROWS,
+    instant::DURATION_ROWS,
+    instant::INSTANT_OWN_ROWS,
+    instant::DURATION_OWN_ROWS,
 ];
