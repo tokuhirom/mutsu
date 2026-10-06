@@ -6,7 +6,7 @@ use Test;
 # method table. Every SPEC variant shares them and keeps its own class in the
 # answer; a user subclass reaches the same rows through its owner.
 
-plan 55;
+plan 56;
 
 my $p = "foo/bar/baz.tar.gz".IO;
 
@@ -45,6 +45,8 @@ is $p.sibling("q").Str, "foo/bar/q", 'sibling';
 is $p.add("x").Str, "foo/bar/baz.tar.gz/x", 'add one child';
 is $p.add("x", "y").Str, "foo/bar/baz.tar.gz/x/y", 'add several children';
 is $p.add(<a b>).Str, "foo/bar/baz.tar.gz/a/b", 'add flattens a list of children';
+is $p.add(1, 2, 3, 4, 5, 6, 7, 8, 9).Str, "foo/bar/baz.tar.gz/1/2/3/4/5/6/7/8/9",
+    'add takes any number of children';
 is $p.child("c d").Str, "foo/bar/baz.tar.gz/c d", 'child keeps its name whole';
 is "/".IO.add("x").Str, "/x", 'adding to the root';
 is "/tmp/x".IO.sibling("y", :zzz).Str, "/tmp/y", 'an undeclared named is not an argument';

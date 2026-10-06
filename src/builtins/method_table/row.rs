@@ -75,6 +75,12 @@ impl RowFlags {
     /// cannot re-run the call through the cascades and compare: two runs
     /// differ by design. The handler is still pure.
     pub(crate) const RANDOM: RowFlags = RowFlags(1 << 2);
+    /// The method is slurpy (`*@parts`): the row's arity is the fewest
+    /// positional arguments it takes, and it binds any number above that. The
+    /// table answers it for every arity from its own up to the largest one a
+    /// call-site lookup carries (7); a longer call reaches it through the
+    /// owner lookup (`invoke_owner`).
+    pub(crate) const SLURPY: RowFlags = RowFlags(1 << 3);
 
     /// The flags of both.
     // Cost: O(1).
@@ -103,6 +109,19 @@ pub(crate) struct MethodRow {
     /// listed takes the cascades, which apply the implicit `*%_` of a
     /// method (`accepted_nameds`).
     pub(crate) named: &'static [&'static str],
+}
+
+impl MethodRow {
+    /// The arities the table registers the row at: its own, or for a slurpy
+    /// row every one from its own up to 7.
+    // Cost: O(1).
+    pub(crate) fn arities(&self) -> std::ops::RangeInclusive<u8> {
+        if self.flags.contains(RowFlags::SLURPY) {
+            self.arity..=7
+        } else {
+            self.arity..=self.arity
+        }
+    }
 }
 
 /// The named arguments of one call, split from its positional ones.

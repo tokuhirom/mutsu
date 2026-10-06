@@ -14,6 +14,7 @@ mod io_path_fs;
 mod io_path_lexical;
 mod io_path_misc;
 mod io_path_stat;
+mod io_spec;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -23,4 +24,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_path_content::ROWS,
     io_path_fs::ROWS,
     io_path_misc::ROWS,
+    io_spec::ROWS,
 ];

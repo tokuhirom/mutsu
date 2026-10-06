@@ -68,6 +68,18 @@ only	IO::Path	CHECKSUM	CWD	Numeric	SPEC	accessed	add	basename	changed	child	chmo
 declared	IO::Path::Parts	AT-KEY	AT-POS	Bag	BagHash	Mix	MixHash	Set	SetHash	basename	dirname	flat	hyper	item	iterator	keyof	lazy	lazy-if	new	of	race	raku	volume
 methods	IO::Path::Parts	AT-KEY	AT-POS	Bag	BagHash	Mix	MixHash	POPULATE	Set	SetHash	basename	dirname	flat	hyper	item	iterator	keyof	lazy	lazy-if	new	of	race	raku	volume
 only	IO::Path::Parts	AT-KEY	AT-POS	basename	dirname	flat	hyper	item	iterator	keyof	lazy	lazy-if	new	of	race	volume
+declared	IO::Spec::Cygwin	abs2rel	canonpath	catdir	catpath	is-absolute	join	rel2abs	split	splitpath	tmpdir
+methods	IO::Spec::Cygwin	POPULATE	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	select	split	splitdir	splitpath	tmpdir	updir
+only	IO::Spec::Cygwin	abs2rel	canonpath	catdir	catpath	is-absolute	join	rel2abs	split	splitpath	tmpdir
+declared	IO::Spec::QNX	canonpath
+methods	IO::Spec::QNX	POPULATE	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	select	split	splitdir	splitpath	tmpdir	updir
+only	IO::Spec::QNX	canonpath
+declared	IO::Spec::Unix	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	split	splitdir	splitpath	tmpdir	updir
+methods	IO::Spec::Unix	POPULATE	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	select	split	splitdir	splitpath	tmpdir	updir
+only	IO::Spec::Unix	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	split	splitdir	splitpath	tmpdir	updir
+declared	IO::Spec::Win32	basename	canonpath	catdir	catpath	devnull	dir-sep	is-absolute	join	path	rel2abs	rootdir	split	splitdir	splitpath	tmpdir
+methods	IO::Spec::Win32	POPULATE	abs2rel	basename	canonpath	catdir	catfile	catpath	curdir	curupdir	devnull	dir-sep	extension	is-absolute	join	path	rel2abs	rootdir	select	split	splitdir	splitpath	tmpdir	updir
+only	IO::Spec::Win32	basename	canonpath	catdir	catpath	devnull	dir-sep	is-absolute	join	path	rel2abs	rootdir	split	splitdir	splitpath	tmpdir
 declared	Instant	ACCEPTS	Bool	Bridge	Complex	DUMP	Date	DateTime	FatRat	Instant	Int	Num	Numeric	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	to-posix	truncate	unpolar
 methods	Instant	ACCEPTS	Bool	Bridge	Complex	DUMP	Date	DateTime	FatRat	Instant	Int	Num	Numeric	POPULATE	Rat	Real	Str	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atan2	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	exp	floor	from-posix	from-posix-nanos	gist	isNaN	log	log10	log2	narrow	new	polymod	pred	raku	rand	roots	round	sec	sech	sign	sin	sinh	sqrt	succ	tai	tan	tanh	to-nanos	to-posix	truncate	unpolar
 only	Instant	Bridge	Complex	Date	FatRat	Instant	Int	Num	Rat	abs	acos	acosec	acosech	acosh	acotan	acotanh	asec	asech	asin	asinh	atan	atanh	base	ceiling	cis	conj	cos	cosec	cosech	cosh	cotan	cotanh	floor	from-posix-nanos	isNaN	log10	log2	narrow	new	polymod	pred	rand	roots	sec	sech	sign	sin	sinh	succ	tai	tan	tanh	to-nanos	to-posix	truncate	unpolar
