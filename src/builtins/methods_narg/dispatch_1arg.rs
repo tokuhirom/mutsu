@@ -20,7 +20,7 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
 
 pub(crate) fn native_method_1arg(
     target: &Value,
@@ -255,110 +255,38 @@ pub(crate) fn native_method_1arg(
             // Instance args need the interpreter to call .Numeric, so return None
             allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
         }
-        // ACCEPTS for Set/Bag/Mix types: equality check
-        "ACCEPTS" if matches!(target.view(), ValueView::Set(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Set(set1, _), ValueView::Set(set2, _)) => {
-                    set1.len() == set2.len() && set1.iter().all(|k| set2.contains(k))
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
-        }
-        "ACCEPTS" if matches!(target.view(), ValueView::Bag(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Bag(bag1, _), ValueView::Bag(bag2, _)) => {
-                    bag1.len() == bag2.len() && bag1.iter().all(|(k, v)| bag2.get(k) == Some(v))
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
-        }
-        "ACCEPTS" if matches!(target.view(), ValueView::Mix(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Mix(mix1, _), ValueView::Mix(mix2, _)) => {
-                    mix1.len() == mix2.len()
-                        && mix1.iter().all(|(k, v)| {
-                            mix2.get(k)
-                                .copied()
-                                .is_some_and(|v2| (v - v2).abs() < f64::EPSILON)
-                        })
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
+        // ACCEPTS for Set/Bag/Mix types: equality check (the quant hashes'
+        // rows' implementation, `method_table::subscript`).
+        "ACCEPTS"
+            if matches!(
+                target.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            ) =>
+        {
+            crate::builtins::method_table::subscript::accepts_quant(
+                target,
+                std::slice::from_ref(arg),
+            )
         }
         // ACCEPTS for Pair: checks if the argument has the matching key->value
+        // (the `Pair` row's implementation, `method_table::subscript`).
         "ACCEPTS"
             if matches!(
                 target.view(),
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             ) =>
         {
-            let (pk, pv) = match target.view() {
-                ValueView::Pair(k, v) => (k.to_string(), v.clone()),
-                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
-                _ => unreachable!(),
-            };
-            // Set/Bag/Mix store elements under their `.WHICH` key, so membership
-            // lookups must key by the pair-key's `.WHICH`, not its raw string.
-            let elem_key = match target.view() {
-                ValueView::Pair(k, _) => crate::runtime::utils::str_elem_key(k),
-                ValueView::ValuePair(k, _) => crate::runtime::utils::value_which_key(k),
-                _ => unreachable!(),
-            };
-            let result = match arg.view() {
-                ValueView::Bag(data, _) => {
-                    let count = data
-                        .counts
-                        .get(&elem_key)
-                        .cloned()
-                        .unwrap_or_else(BigInt::zero);
-                    Value::from_bigint(count) == pv
-                }
-                ValueView::Mix(data, _) => {
-                    let w = data.weights.get(&elem_key).copied().unwrap_or(0.0);
-                    let mv = if w.fract() == 0.0 {
-                        Value::int(w as i64)
-                    } else {
-                        Value::num(w)
-                    };
-                    mv == pv
-                }
-                ValueView::Set(data, _) => {
-                    let in_set = data.elements.contains(&elem_key);
-                    Value::truth(in_set) == pv
-                }
-                ValueView::Hash(items) => {
-                    let hv = items.get(&pk).cloned().unwrap_or(Value::int(0));
-                    hv == pv
-                }
-                ValueView::Pair(ok, ov) => pk == ok.as_str() && *ov == pv,
-                ValueView::ValuePair(ok, ov) => {
-                    let tk = match target.view() {
-                        ValueView::Pair(k, _) => Value::str(k.to_string()),
-                        ValueView::ValuePair(k, _) => k.clone(),
-                        _ => unreachable!(),
-                    };
-                    tk == *ok && *ov == pv
-                }
-                ValueView::Instance { .. } | ValueView::Package(_) => return None,
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
+            crate::builtins::method_table::subscript::accepts_pair(
+                target,
+                std::slice::from_ref(arg),
+            )
         }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
-        "ACCEPTS" if target.is_range() => {
-            let arg = arg.descalarize();
-            let result = if arg.is_range() {
-                // Range ~~ Range: subset check — delegate to pure_smart_match
-                crate::vm::vm_smart_match::pure_smart_match(arg, target).unwrap_or(false)
-            } else {
-                // Value ~~ Range: containment check
-                runtime::Interpreter::value_in_range(arg, target)
-            };
-            Some(Ok(Value::truth(result)))
-        }
+        // (the `Range` row's implementation, `method_table::subscript`).
+        "ACCEPTS" if target.is_range() => crate::builtins::method_table::subscript::accepts_range(
+            target,
+            std::slice::from_ref(arg),
+        ),
         "Str" => {
             // Int.Str(:superscript) and Int.Str(:subscript)
             if let ValueView::Pair(key, val) = arg.view()
@@ -2206,31 +2134,15 @@ pub(crate) fn native_method_1arg(
             )))
         }
         "AT-KEY" => match target.view() {
-            ValueView::Hash(map) => {
-                // An object hash stores `.WHICH` keys (fall back to the plain
-                // string key for the ordinary Str-keyed hash).
-                let v = if map.key_type.is_some() {
-                    let which = crate::runtime::utils::value_which_key(arg);
-                    map.get(&which).cloned()
-                } else {
-                    None
-                };
-                let v = v.or_else(|| map.get(&arg.to_string_value()).cloned());
-                Some(Ok(v.unwrap_or(Value::NIL)))
-            }
-            ValueView::Set(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.elements.contains(&key))))
-            }
-            ValueView::Bag(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                let count = data.counts.get(&key).cloned().unwrap_or_else(BigInt::zero);
-                Some(Ok(Value::from_bigint(count)))
-            }
-            ValueView::Mix(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                let weight = data.weights.get(&key).copied().unwrap_or(0.0);
-                Some(Ok(crate::value::mix_weight_to_value(weight)))
+            // The associative rows' implementation (`method_table::subscript`).
+            ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+            | ValueView::Capture { .. } => {
+                crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
             }
             // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
             ValueView::Instance {
@@ -2244,19 +2156,6 @@ pub(crate) fn native_method_1arg(
                     .get(&key)
                     .cloned()
                     .unwrap_or(Value::NIL)))
-            }
-            // A `Pair` does `Associative` with a single entry.
-            ValueView::Pair(key, value) => Some(Ok(if *key == arg.to_string_value() {
-                value.clone()
-            } else {
-                Value::NIL
-            })),
-            ValueView::ValuePair(key, value) => {
-                Some(Ok(if key.to_string_value() == arg.to_string_value() {
-                    (*value).clone()
-                } else {
-                    Value::NIL
-                }))
             }
             ValueView::Nil => Some(Ok(Value::package(crate::symbol::wk::any()))),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
@@ -2277,30 +2176,17 @@ pub(crate) fn native_method_1arg(
             _ => None,
         },
         "EXISTS-KEY" => match target.view() {
-            ValueView::Hash(map) => {
-                // An object hash stores `.WHICH` keys (fall back to the plain
-                // string key for the ordinary Str-keyed hash).
-                let found = (map.key_type.is_some()
-                    && map.contains_key(&crate::runtime::utils::value_which_key(arg)))
-                    || map.contains_key(&arg.to_string_value());
-                Some(Ok(Value::truth(found)))
-            }
-            ValueView::Set(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.elements.contains(&key))))
-            }
-            ValueView::Bag(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.counts.contains_key(&key))))
-            }
-            ValueView::Mix(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.weights.contains_key(&key))))
-            }
-            ValueView::Pair(key, _) => Some(Ok(Value::truth(*key == arg.to_string_value()))),
-            ValueView::ValuePair(key, _) => Some(Ok(Value::truth(
-                key.to_string_value() == arg.to_string_value(),
-            ))),
+            // The associative rows' implementation (`method_table::subscript`).
+            ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+            | ValueView::Capture { .. } => crate::builtins::method_table::subscript::exists_key(
+                target,
+                std::slice::from_ref(arg),
+            ),
             ValueView::Nil => Some(Ok(Value::FALSE)),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
                 Some(Ok(Value::FALSE))

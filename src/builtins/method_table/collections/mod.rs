@@ -17,6 +17,7 @@ pub(crate) mod pair;
 pub(crate) mod positional;
 pub(crate) mod quanthash;
 pub(crate) mod range;
+pub(crate) mod subscript;
 mod truth;
 
 /// Every family of this group.
@@ -34,6 +35,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     positional::ROWS,
     pair::ROWS,
     quanthash::ROWS,
+    subscript::ROWS,
     range::ROWS,
     truth::ROWS,
 ];
