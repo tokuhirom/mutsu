@@ -589,7 +589,14 @@ impl Interpreter {
                     }
                 }
                 ValueView::Hash(map, ..) => {
-                    let key = Value::hash_key_encode(&resolved);
+                    let mut key = Value::hash_key_encode(&resolved);
+                    // An object hash files its entries by `.WHICH`.
+                    if !map.contains_key(&key) {
+                        let which = crate::runtime::utils::value_which_key(&resolved);
+                        if map.contains_key(&which) {
+                            key = which;
+                        }
+                    }
                     if !map.contains_key(&key) {
                         // Missing key: defer vivification with a deep-path
                         // `HashEntryRef` covering this and all remaining keys.
@@ -1026,8 +1033,13 @@ impl Interpreter {
         // A missing key reads as the `Any` type object (raku hash semantics),
         // and short-circuits any remaining dimensions.
         let read_key =
-            |this: &mut Self, key: &str, rest: &[Value]| -> Result<Value, RuntimeError> {
-                match map.get(key) {
+            |this: &mut Self, key: &Value, rest: &[Value]| -> Result<Value, RuntimeError> {
+                // An object hash (`%h{Str:D; ...}`) stores its first-dimension
+                // keys by `.WHICH`, so fall back to that spelling.
+                let found = map
+                    .get(key.to_string_value().as_str())
+                    .or_else(|| map.get(crate::runtime::utils::value_which_key(key).as_str()));
+                match found {
                     Some(v) => {
                         // Decontainerize a Scalar-wrapped nested value before recursing.
                         let inner = match v.view() {
@@ -1082,7 +1094,7 @@ impl Interpreter {
                 });
                 let mut out = Vec::with_capacity(keys.len());
                 for key in keys.iter() {
-                    let result = read_key(self, &key.to_string_value(), rest)?;
+                    let result = read_key(self, key, rest)?;
                     if has_more_multi && let ValueView::Array(items, ..) = result.view() {
                         out.extend(items.iter().cloned());
                     } else {
@@ -1092,7 +1104,7 @@ impl Interpreter {
                 Ok(Value::array(out))
             }
             // A single key.
-            _ => read_key(self, &dim.to_string_value(), rest),
+            _ => read_key(self, dim, rest),
         }
     }
 
@@ -1777,7 +1789,18 @@ impl Interpreter {
         key: &Value,
         is_leaf: bool,
     ) -> &'a mut Value {
-        let k = Value::hash_key_encode(key);
+        // An object hash (`%h{Str:D; ...}`) files its first-dimension entries
+        // by `.WHICH` and remembers the key object, as a one-dimension
+        // subscript does.
+        let k = if map.key_type.is_some() {
+            let k = crate::runtime::utils::value_which_key(key);
+            map.original_keys
+                .get_or_insert_with(ValueMap::default)
+                .insert(k.clone(), Self::object_hash_key_value(key));
+            k
+        } else {
+            Value::hash_key_encode(key)
+        };
         let entry = map
             .entry(k)
             .or_insert_with(|| Value::package(crate::symbol::wk::any()));

@@ -358,7 +358,11 @@ fn multidim_collect_leaves_inner(
 fn multidim_index_step(target: &Value, head: &Value) -> (Value, bool) {
     if let ValueView::Hash(map) = target.view() {
         let key = head.to_string_value();
-        return match map.get(&key) {
+        // An object hash keys its entries by `.WHICH`.
+        let found = map
+            .get(&key)
+            .or_else(|| map.get(crate::runtime::utils::value_which_key(head).as_str()));
+        return match found {
             Some(val) => (val.clone(), false),
             None => (Value::NIL, false),
         };

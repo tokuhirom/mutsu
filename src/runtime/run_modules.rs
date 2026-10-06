@@ -5,7 +5,8 @@ impl Interpreter {
     /// Resolve a module name to a file path by searching lib paths and standard locations.
     /// Returns (source_path, optional_dist_json) where optional_dist_json is Some for
     /// modules found in a CompUnit::Repository::Installation (inst# paths).
-    pub(super) fn resolve_module_path(
+    // Cost: O(l * e), l = lib paths, e = extension/probe candidates.
+    pub(crate) fn resolve_module_path(
         &self,
         module: &str,
     ) -> Option<(std::path::PathBuf, Option<String>)> {
