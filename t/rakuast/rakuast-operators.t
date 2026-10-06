@@ -12,6 +12,8 @@ use Test;
 # - `eager EXPR` is a `StatementPrefix::Eager` over a `Statement::Expression`;
 # - `1 ==> f() ==> g()` is one flat `ApplyListInfix` over `Feed("==>")`, the
 #   operands in written order (`f() <== g() <== 1` lists `f()` first);
+# - a call with a slipped argument (`foo |@a`) has an `ApplyPrefix` argument, and
+#   one with an invocant (`bar $o: 5`) is a method call;
 # - a declared operator (`$a foo $b`) is an `ApplyInfix` over `Infix("foo")`,
 #   nested to the left or right by its associativity, an `ApplyListInfix` for
 #   `is assoc<list>` chains and for `minmax`; `ff` has a `FlipFlop` infix.
@@ -19,7 +21,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 65;
+plan 72;
 
 sub exprs($src) {
     ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; sub infix:<foo>($x, $y) { }; '
@@ -75,6 +77,16 @@ sub same($src, $expected, $desc) {
     isa-ok exprs(Q[foo() <== $a])[0].operands[0], RakuAST::Call::Name, 'a leftwards feed lists the sink first';
 }
 
+# --- statement calls with a slip or an invocant
+{
+    my $c = exprs(Q[foo |@a])[0];
+    isa-ok $c, RakuAST::Call::Name, 'a listop call';
+    isa-ok $c.args.args[0], RakuAST::ApplyPrefix, 'with the slip as a prefix application';
+    my $m = exprs(Q[bar $a: 5])[0];
+    isa-ok $m, RakuAST::ApplyPostfix, 'an invocant call is a postfix application';
+    isa-ok $m.postfix, RakuAST::Call::Method, 'of a method call';
+}
+
 # --- declared and named infixes
 {
     my $f = exprs(Q[$a foo $b])[0];
@@ -120,3 +132,6 @@ same Q[sub infix:<pw>($a, $b) is assoc<right> { $a ** $b }; 2 pw 3 pw 2], 512, '
 same Q[sub infix:<sb>($a, $b) { $a - $b }; 10 sb 3 sb 2], 5, 'a left-associative operator';
 same Q[sub infix:<⊕>($a, $b) { $a + $b + 100 }; 1 ⊕ 2], 103, 'a symbolic operator';
 same Q[my @r; for 1..6 { @r.push($_) if $_ == 2 ff $_ == 4 }; @r.join(",")], '2,3,4', 'a flip-flop';
+same Q[sub f(*@a) { @a.join(",") }; my @x = 1, 2; f |@x], '1,2', 'a listop call with a slip';
+same Q[sub f(*@a) { @a.join(",") }; my @y = 3, 4; f 0, |@y], '0,3,4', 'a slip after another argument';
+same Q[class C { method bar($x) { "b$x" } }; my $o = C.new; bar $o: 5], 'b5', 'a listop call with an invocant';
