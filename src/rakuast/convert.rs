@@ -1476,13 +1476,12 @@ fn compound_assignment_infix(
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
 fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let Expr::MethodCall {
+    let Some(crate::ast::dotty_assign::DottyCall {
         name,
         args,
         modifier,
         quoted,
-        ..
-    } = call
+    }) = crate::ast::dotty_assign::method_call(call)
     else {
         return Err(unsupported("`.=` with a call that is not a method call"));
     };
@@ -1499,7 +1498,7 @@ fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeEr
             ),
             node_field(
                 Some("right"),
-                method_call_postfix(name.as_str(), args, *modifier, *quoted)?,
+                method_call_postfix(name, args, modifier, quoted)?,
             ),
         ],
     })
