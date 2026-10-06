@@ -19,7 +19,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 51;
+plan 65;
 
 sub exprs($src) {
     ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; sub infix:<foo>($x, $y) { }; '
