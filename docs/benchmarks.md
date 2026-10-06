@@ -32,6 +32,10 @@ the same job, and against Raku++ (`rakupp`) as a second reference.
 
 ### Section and warm series
 
+The deterministic instruction/allocation series warms each benchmark once in both JIT modes
+before callgrind, inside `scripts/bench-det.sh` itself. It therefore measures the same populated
+precompilation-cache state on push-triggered CI runs that skip the wall-clock benchmark job.
+
 When the operation a benchmark exists for is small next to either interpreter's startup and module
 loading, the whole-script ratio reads near 1 no matter how slow the operation is. Such a benchmark
 prints `bench-section-seconds: <s>` (its own in-process timing) and the bench CI records an extra

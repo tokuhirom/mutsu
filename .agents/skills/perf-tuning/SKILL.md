@@ -175,12 +175,9 @@ sample put eight of ten series within 0.01% — and `bench-json-fast` at 1,777,0
 **-26%**, purely from populating the module precompilation cache. Same trap, same benchmark, same
 cause as the 650M Ir in §0. So discard the first run in a local A/B here too.
 
-The recorded CI series measures the **warm** state, and by construction: `bench.yml` runs the
-wall-clock pass (seven runs of every benchmark in both lanes) before the callgrind pass, so the cache
-is populated long before the number is taken. The first recorded rows confirm it — `bench-json-fast`
-landed at 1,311,788, the warm local figure to within 0.008%. (This paragraph first said the opposite,
-that CI is "cold every time" because it builds fresh. It is consistent, but warm — and warm is the
-state worth recording.)
+The deterministic script warms each benchmark once in both JIT modes before callgrind. This is
+inside `scripts/bench-det.sh`, not dependent on `bench.yml` running the wall-clock pass first, so
+push-triggered deterministic-only runs and local runs measure the same populated cache state.
 
 Three limits, all of them real:
 
