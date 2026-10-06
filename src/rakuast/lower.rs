@@ -304,7 +304,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 step: None,
                 body: lower_block(named_child(node, "body")?)?,
                 repeat: true,
-                label: None,
+                label: node_label(node)?,
                 is_until,
             })
         }
@@ -493,6 +493,23 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             }
         }
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
+    }
+}
+
+/// The label of a loop node: the name in its `labels => (Label(name => "…"),)`
+/// field, which the converter writes first. An unlabelled loop has none.
+// Cost: O(l), l = labels of the node (one in practice).
+fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    let Some(field) = node.fields.iter().find(|f| f.name == Some("labels")) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::List(items) = &field.value else {
+        return Err(unsupported(node));
+    };
+    match items.first().and_then(rakuast_node_of) {
+        Some(label) if label.class == RakuAstClass::Label => leaf_str(label, "name").map(Some),
+        Some(_) => Err(unsupported(node)),
+        None => Ok(None),
     }
 }
 
@@ -703,7 +720,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         params,
         params_def,
         body,
-        label: None,
+        label: node_label(node)?,
         mode,
         rw_block,
         explicit_zero_params,
@@ -2052,7 +2069,7 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(Stmt::While {
         cond: negate_if(cond, is_until),
         body,
-        label: None,
+        label: node_label(node)?,
         is_statement_modifier: false,
         is_until,
     })
@@ -2094,7 +2111,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         step,
         body,
         repeat: false,
-        label: None,
+        label: node_label(node)?,
         is_until: false,
     })
 }

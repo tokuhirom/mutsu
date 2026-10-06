@@ -19,7 +19,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 57;
+plan 60;
 
 sub stmts($src) { $src.AST.statements }
 sub same($src, $expected, $desc) {
@@ -100,6 +100,9 @@ same Q[my $x = BEGIN { 7 }; $x], 7, 'a phaser expression';
 same Q[my $c = 0; my $f = sub { once { $c++ }; $c }; $f(); $f()], 1, '`once` runs once';
 same Q[my $n = 0; FOO: for 1, 2 { for 3, 4 { $n++; next FOO } }; $n], 2, 'a labelled next';
 same Q[my $n = 0; FOO: for 1, 2 { for 3, 4 { $n++; last FOO } }; $n], 1, 'a labelled last';
+same Q[my $n = 0; W: while $n < 5 { $n++; for 1, 2 { next W } }; $n], 5, 'a labelled while';
+same Q[my $n = 0; L: loop (my $i = 0; $i < 3; $i++) { for 1, 2 { $n++; next L } }; $n], 3, 'a labelled C-style loop';
+same Q[my $n = 0; R: repeat { $n++; for 1, 2 { last R } } while $n < 5; $n], 1, 'a labelled repeat';
 same Q[my @a = do for 1, 2 { $_ * 3 }; @a.join(",")], '3,6', '`do for`';
 same Q[my $x = do given 5 { $_ + 1 }; $x], 6, '`do given`';
 same Q[my $s = (given 5 { $_ * 2 }); $s], 10, 'a parenthesised given';
