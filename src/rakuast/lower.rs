@@ -118,7 +118,15 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         // split is not rebuilt here.
                         return Err(unsupported(modifier));
                     }
-                    // A bare block gives the loop its placeholders.
+                    // A bare block is the parser's block statement (not the closure
+                    // value a block with placeholders is elsewhere), and gives the
+                    // loop its placeholders.
+                    let inner = named_child(node, "expression")?;
+                    let statement = if inner.class == RakuAstClass::Block {
+                        Stmt::Block(lower_block(inner)?)
+                    } else {
+                        statement
+                    };
                     let (param, params) = crate::parser::for_modifier_loop_params(&statement);
                     return Ok(Stmt::For {
                         iterable: lower_expr(named_child_or_positional(modifier)?)?,

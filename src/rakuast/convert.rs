@@ -2641,6 +2641,28 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::DoStmt(stmt) if is_do_statement(stmt) => {
             let statement = convert_stmt(stmt)?
                 .ok_or_else(|| unsupported("empty `do` statement"))?;
+            // `hyper for` / `race for` / `lazy for` are expressions of their own:
+            // the loop, with no `do` prefix.
+            if matches!(
+                stmt.as_ref(),
+                Stmt::For {
+                    mode: ForMode::Hyper | ForMode::Race | ForMode::Lazy,
+                    ..
+                }
+            ) {
+                return statement
+                    .fields
+                    .iter()
+                    .find(|f| f.name == Some("expression"))
+                    .and_then(|f| match &f.value {
+                        RakuAstFieldValue::Node(value) => match value.view() {
+                            ValueView::RakuAst(node) => Some(node.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .ok_or_else(|| unsupported("hyper/race/lazy loop"));
+            }
             Ok(RakuAstNode {
                 class: RakuAstClass::StatementPrefixDo,
                 fields: vec![node_field(None, statement)],

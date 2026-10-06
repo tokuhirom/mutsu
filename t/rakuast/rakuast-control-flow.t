@@ -97,7 +97,7 @@ same Q[{ CONTROL { when CX::Warn { @*LOG.push("warned"); .resume } }; warn "boo"
 same Q[if 1 -> $v { $v + 1 } else { 0 }], 2, '`if EXPR -> $v`';
 same Q[if 0 -> $v { $v } elsif 5 -> $w { $w } else { 0 }], 5, 'and its `elsif`';
 same Q[my $x = BEGIN { 7 }; $x], 7, 'a phaser expression';
-same Q[my $c = 0; sub f1 { once { $c++ }; $c }; f1(); f1()], 1, '`once` runs once';
+same Q[my $c = 0; my $f = sub { once { $c++ }; $c }; $f(); $f()], 1, '`once` runs once';
 same Q[my $n = 0; FOO: for 1, 2 { for 3, 4 { $n++; next FOO } }; $n], 2, 'a labelled next';
 same Q[my $n = 0; FOO: for 1, 2 { for 3, 4 { $n++; last FOO } }; $n], 1, 'a labelled last';
 same Q[my @a = do for 1, 2 { $_ * 3 }; @a.join(",")], '3,6', '`do for`';
