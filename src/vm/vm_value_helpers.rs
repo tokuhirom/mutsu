@@ -348,8 +348,6 @@ impl Interpreter {
                 | "Supply"
                 | "Supplier"
                 | "Promise"
-                // NativeCall aggregate type (a contiguous C array).
-                | "CArray"
                 // The `PROCESS` pseudo-package names its own stash.
                 | "PROCESS"
         )
