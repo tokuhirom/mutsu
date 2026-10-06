@@ -343,10 +343,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 // Atomic-variable read: only possible once some `atomicint`/atomic
-                // storage has been registered. Skip the whole check (a `format!`
-                // plus two `var_type_constraint` lookups) on the hot read path when
-                // no atomics exist, which is the overwhelmingly common case.
-                if self.atomic_var_seen() {
+                // storage has been registered under this name. Skip the whole check
+                // (a `format!` plus two `var_type_constraint` lookups) on the hot
+                // read path otherwise, which is the overwhelmingly common case.
+                if Self::atomic_name_possible(name) {
                     let atomic_name = name.strip_prefix('$').unwrap_or(name);
                     let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
                     let is_atomic_int = loan_env!(self, var_type_constraint(name)).as_deref()
@@ -2729,7 +2729,7 @@ impl Interpreter {
                 // of the freshly-assigned one (roast S03-metaops/hyper.t #408).
                 if !is_bind_ctx
                     && !is_rebind
-                    && self.atomic_var_seen()
+                    && Self::atomic_name_possible(&name)
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&')
