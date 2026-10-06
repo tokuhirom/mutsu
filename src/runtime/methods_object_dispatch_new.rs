@@ -329,6 +329,7 @@ impl Interpreter {
         // `.new` allocates through the REPR (#11209): see
         // `install_carray_storage`.
         self.install_carray_storage(&target, &instance)?;
+        self.install_cstruct_storage(&instance);
         Ok(instance)
     }
 

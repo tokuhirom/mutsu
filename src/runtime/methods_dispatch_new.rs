@@ -394,6 +394,7 @@ impl Interpreter {
         // `is repr('CArray')` instance gets its element storage, typed by the
         // blessed type -- a mixin's roles included (#11209).
         self.install_carray_storage(target, &instance)?;
+        self.install_cstruct_storage(&instance);
         Ok(instance)
     }
 

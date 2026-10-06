@@ -639,7 +639,14 @@ impl Interpreter {
         {
             return None;
         }
-        self.build_native_default_instance(class_name, class_name.as_str(), args, &plan)
+        let result =
+            self.build_native_default_instance(class_name, class_name.as_str(), args, &plan);
+        // The REPR step of construction: an `is repr('CStruct')` object gets
+        // its native body (ADR-11209), as `dispatch_new` and `bless` give it.
+        if let Some(Ok(instance)) = &result {
+            self.install_cstruct_storage(instance);
+        }
+        result
     }
 
     /// True when a `.new(args)` on the type object `class_name` would find no

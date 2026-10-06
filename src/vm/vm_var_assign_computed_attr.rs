@@ -744,7 +744,10 @@ impl Interpreter {
             )
         {
             self.record_build_attr_write(&attributes, key);
-            attributes.store_through_container(key, val);
+            attributes.store_through_container(key, val.clone());
+            // An `is repr('CStruct')` object that owns a native body keeps the
+            // field in C memory too (ADR-11209).
+            self.cstruct_store_through(&attributes, key, &val);
             return;
         }
         // Class-level attribute fallback: see `read_class_level_attr_cell`'s

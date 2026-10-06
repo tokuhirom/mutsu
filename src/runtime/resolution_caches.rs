@@ -280,6 +280,9 @@ pub(crate) struct ResolutionCaches {
     /// `nqp::create` / `CREATE` answers per type, valid for one registry
     /// write generation (see `nqp_create.rs`).
     pub(crate) create_memo: nqp_create::CreateMemo,
+    /// A CStruct class's body layout, valid for one registry write generation
+    /// (see `cstruct_body.rs`).
+    pub(crate) cstruct_memo: cstruct_body::CstructMemo,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver
