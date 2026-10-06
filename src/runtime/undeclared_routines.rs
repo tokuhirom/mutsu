@@ -421,6 +421,10 @@ impl Interpreter {
                 // A sigilless constant in scope: an `EVAL` of a bare term
                 // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
                 || self.term_binding(name).is_some()
+                // An enum key (`enum E <aa bb>; EVAL 'aa'`, #11818) -- a
+                // module's own key only where that module is merged
+                // (ADR-11136), like its classes.
+                || (self.enum_bare_value(name).is_some() && !self.module_name_hidden_here(name))
                 || self.registry().classes.contains_key(name)
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)

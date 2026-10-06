@@ -227,6 +227,29 @@ impl Interpreter {
         use crate::ast::Stmt;
         let mut names: Vec<Symbol> = Vec::new();
         for stmt in crate::ast::scope_members(stmts) {
+            // An `our` enum's keys are bare package-scope names of the module
+            // too (`enum Settings <SA SB>` -> `SA`), whatever the enum's own
+            // spelling: `enum Pkg::LC <New Sto>` is qualified, its keys are
+            // not. A `my enum` stays lexical to the module.
+            if let Stmt::EnumDecl {
+                variants,
+                is_my: false,
+                ..
+            } = stmt
+            {
+                for (key, _) in variants {
+                    if key.is_empty() || crate::qualified::is_qualified_str(key) {
+                        continue;
+                    }
+                    let known = self.env.contains_key(key.as_str())
+                        || self.enum_bare_value(key).is_some()
+                        || self.has_type(key)
+                        || Self::is_builtin_type(key);
+                    if !known {
+                        names.push(Symbol::intern(key));
+                    }
+                }
+            }
             let name = match stmt {
                 // Only an `our` constant (the `constant` default) is part of the
                 // merge; a `my constant` is lexical to the module.

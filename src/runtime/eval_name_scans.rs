@@ -225,6 +225,10 @@ impl UndeclaredName<'_> {
             || interp.has_multi_function_unindexed(name)
             || interp.env().contains_key(name)
             || interp.env().contains_key(&format!("&{name}"))
+            // An enum key in the bare-name namespace: one the caller's scope
+            // declared (env), or a loaded module's top-level key visible from
+            // the running package (`module_toplevel.enum_keys`, #11818).
+            || interp.enum_bare_value(name).is_some()
             // An in-scope sigil-less constant (#9962).
             || interp.term_binding(name).is_some()
             // `our`-scoped constants/variables installed in the package
