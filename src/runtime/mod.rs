@@ -2,11 +2,14 @@ use crate::symbol::Symbol;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
+mod complex_real;
 mod package_keyed;
+mod tolerance;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying
 /// the name filter that lets a failed package-chain walk cost one hash probe
 /// instead of one per tier per candidate. See the module.
 pub(crate) use package_keyed::PackageKeyed;
+pub(crate) use tolerance::approx_eq_f64;
 /// The compunit / package-block lexical stores (`unit_lexicals`,
 /// `package_lexicals`): see [`PackageKeyed`].
 pub(crate) type PackageLexicals = PackageKeyed<Value>;
