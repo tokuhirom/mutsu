@@ -467,7 +467,7 @@ impl crate::runtime::Interpreter {
     /// `nativesizeof(MYSQL_BIND)` failed, which in turn killed the
     /// `LinearArray[MYSQL_BIND]` parameterisation that computes its stride from
     /// it. Signatures already follow these aliases
-    /// ([`Self::resolve_native_type_alias`]); fields now do too.
+    /// ([`Self::resolve_native_type_alias_for_owner`]); fields now do too.
     ///
     /// Only a name that is *not* already marshallable is followed, so a field
     /// typed with a real C type or with a class held by reference keeps its
