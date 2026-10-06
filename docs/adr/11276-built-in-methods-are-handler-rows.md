@@ -998,7 +998,11 @@ What the work taught, which the remaining families follow:
 - **`Version`'s rows** (7): `Str`, `gist`, `raku`, `WHICH` are the rendering names, `ACCEPTS`
   and `Version` coerce through the interpreter's smartmatch; the shape stays closed.
 
-Findings filed: see the PR body.
+Findings filed: [#12088](https://github.com/tokuhirom/mutsu/issues/12088) (`Cool` numeric methods
+on a `Range` or `Seq`), [#12089](https://github.com/tokuhirom/mutsu/issues/12089) (`Bool`'s
+Enumeration methods), [#12090](https://github.com/tokuhirom/mutsu/issues/12090) (`Int.exp($base)`
+and `0.asech`), [#12091](https://github.com/tokuhirom/mutsu/issues/12091) (the native integer
+coercions of a `List`).
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
