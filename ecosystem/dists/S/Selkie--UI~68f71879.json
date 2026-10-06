@@ -13,17 +13,26 @@
   "dist": "Selkie::UI",
   "files": [
     {
-      "cmp": "no_baseline",
-      "path": "t/01-button-textinput.rakutest",
-      "raku": {
-        "first_failure": "SWEEP-TIMEOUT",
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Undeclared name:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.11,
+        "secs": 23.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "die"
+      },
+      "path": "t/01-button-textinput.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 138.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     },
     {
@@ -33,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 36.41,
+        "secs": 24.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,7 +52,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 4.81,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 37.26,
+        "secs": 24.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,7 +75,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.29,
+        "secs": 3.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +88,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 39.85,
+        "secs": 26.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,7 +98,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.29,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +111,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 37.78,
+        "secs": 25.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +121,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.63,
+        "secs": 4.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +134,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 39.13,
+        "secs": 23.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -135,7 +144,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.82,
+        "secs": 3.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +157,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 37.1,
+        "secs": 24.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +167,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.11,
+        "secs": 3.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,10 +223,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-04",
+    "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b3478db4",
+    "mutsu_commit": "f9d81d62",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -230,11 +239,11 @@
   },
   "status": "red",
   "totals": {
-    "baseline_assertions": 50,
-    "baseline_files": 6,
+    "baseline_assertions": 71,
+    "baseline_files": 7,
     "mutsu_assertions": 3,
     "parity_files": 0,
-    "regressed_files": 6
+    "regressed_files": 7
   },
   "version": "0.0.4"
 }

@@ -15,8 +15,8 @@
         "first_failure": "Cannot locate native library 'onnx_native_shim': onnx_native_shim: cannot open shared object file: No such file or directory",
         "nok": 0,
         "ok": 0,
-        "plan": 5,
-        "secs": 1.85,
+        "plan": 6,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 2.39,
+        "secs": 4.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.67,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.73,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,10 +72,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-04",
+    "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b3478db4",
+    "mutsu_commit": "f9d81d62",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -84,7 +84,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/O/NN/ONNX_NATIVE/70959bfebc60c5c2094c5c5a609183dc87edbccf.tar.gz"
+    "url": "https://360.zef.pm/O/NN/ONNX_NATIVE/fa409144daf3e6a33a358eac156a391ecf5a9087.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -94,5 +94,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.2.0"
+  "version": "0.2.1"
 }

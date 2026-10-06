@@ -28,7 +28,7 @@
         "nok": 10,
         "ok": 1,
         "plan": 11,
-        "secs": 5.27,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 47.98,
+        "secs": 27.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 5.37,
+        "secs": 3.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -61,7 +61,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 7.06,
+        "secs": 6.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,12 +74,150 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 5.88,
+        "secs": 4.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
       "path": "t/03-address.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Organization: address, bom-ref, contact, name, url",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 3.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-organization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Property: name, value",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 3.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-property.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::EnergyCost: unit, value",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 4.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-energycost.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Analysis: detail, firstIssued, justification, lastUpdated, response, state",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 4.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-analysis.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Affects: ref, versions",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 4.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/08-affects.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Found extra keys in SBOM::Annotation: annotator, bom-ref, subjects, text, timestamp",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 4.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-annotation.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
@@ -93,149 +231,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Organization: address, bom-ref, contact, name, url",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 5.95,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/04-organization.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Property: name, value",
-        "nok": 0,
-        "ok": 0,
-        "plan": 4,
-        "secs": 6.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/05-property.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Found extra keys in SBOM::EnergyCost: unit, value",
-        "nok": 0,
-        "ok": 0,
-        "plan": 2,
-        "secs": 6.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/06-energycost.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Analysis: detail, firstIssued, justification, lastUpdated, response, state",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 5.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/07-analysis.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Affects: ref, versions",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 5.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/08-affects.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Annotation: annotator, bom-ref, subjects, text, timestamp",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 6.02,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-annotation.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
         "first_failure": "Found extra keys in SBOM::Licensing: altIds, expiration, lastRenewal, licenseTypes, licensee, licensor, purchaseOrder, purchaser",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 6.14,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -245,7 +245,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.44,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -258,7 +258,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 5.73,
+        "secs": 4.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -268,7 +268,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.15,
+        "secs": 3.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -281,7 +281,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 6.24,
+        "secs": 4.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -291,7 +291,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.15,
+        "secs": 3.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -304,7 +304,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 6.13,
+        "secs": 4.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -314,7 +314,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.15,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -327,7 +327,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 5.95,
+        "secs": 3.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -337,7 +337,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.31,
+        "secs": 3.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -350,7 +350,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 5.98,
+        "secs": 4.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -360,7 +360,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.76,
+        "secs": 3.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -373,7 +373,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 6.57,
+        "secs": 4.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -383,7 +383,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.3,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -396,7 +396,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 6.6,
+        "secs": 3.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -406,7 +406,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.27,
+        "secs": 2.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -419,7 +419,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 6.05,
+        "secs": 3.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -429,7 +429,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.82,
+        "secs": 2.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -442,7 +442,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 5.47,
+        "secs": 3.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -452,7 +452,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.43,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -465,7 +465,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 5.67,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -475,7 +475,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.27,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -488,7 +488,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 5.55,
+        "secs": 3.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -498,7 +498,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.84,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -511,7 +511,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 5.95,
+        "secs": 3.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -521,7 +521,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.84,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -534,7 +534,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 5.53,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -544,7 +544,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.54,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -557,7 +557,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 5.81,
+        "secs": 3.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -567,7 +567,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.02,
+        "secs": 2.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -580,7 +580,7 @@
         "nok": 6,
         "ok": 0,
         "plan": 6,
-        "secs": 4.61,
+        "secs": 3.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -590,7 +590,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.36,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -603,7 +603,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 45,
-        "secs": 5.19,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -613,7 +613,7 @@
         "nok": 0,
         "ok": 45,
         "plan": 45,
-        "secs": 28.61,
+        "secs": 17.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -622,11 +622,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Testing /home/runner/.cache/mutsu-ecosystem/run/ecosweep-by7cirj4/dist/SBOM-CycloneDX-0.0.18/t/invalid/invalid-bomformat-1.6.json",
+        "first_failure": "Testing /home/runner/.cache/mutsu-ecosystem/run/ecosweep-3hi6_y9w/dist/SBOM-CycloneDX-0.0.18/t/invalid/invalid-bomformat-1.6.json",
         "nok": 24,
         "ok": 0,
         "plan": 24,
-        "secs": 5.59,
+        "secs": 3.59,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -636,7 +636,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 3.91,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -698,10 +698,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-04",
+    "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b3478db4",
+    "mutsu_commit": "f9d81d62",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

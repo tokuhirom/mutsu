@@ -13,12 +13,13 @@
   "dist": "JobQueue",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 4.25,
+        "ok": 27,
+        "plan": 27,
+        "secs": 4.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,31 +27,32 @@
       "path": "t/01-queue.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 17.62,
+        "ok": 27,
+        "plan": 27,
+        "secs": 17.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method 'result' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 1.03,
+        "ok": 1,
+        "plan": 19,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/02-coordinator.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 6.96,
+        "ok": 19,
+        "plan": 19,
+        "secs": 8.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +64,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.71,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,29 +74,30 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.82,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method 'result' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 8,
+        "ok": 5,
         "plan": 8,
-        "secs": 1.11,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-injection.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.88,
+        "secs": 3.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,10 +115,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-04",
+    "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b3478db4",
+    "mutsu_commit": "f9d81d62",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -124,15 +127,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/J/OB/JOBQUEUE/7ddc5816bf1db6f0ccd69c417dd354229fa003f3.tar.gz"
+    "url": "https://360.zef.pm/J/OB/JOBQUEUE/5832e00a3e8075592f123c3ef724f63310efd40f.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 51,
-    "baseline_files": 4,
-    "mutsu_assertions": 51,
-    "parity_files": 4,
-    "regressed_files": 0
+    "baseline_assertions": 34,
+    "baseline_files": 3,
+    "mutsu_assertions": 13,
+    "parity_files": 1,
+    "regressed_files": 2
   },
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
