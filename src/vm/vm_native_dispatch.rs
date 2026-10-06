@@ -738,7 +738,14 @@ impl Interpreter {
                 .is_some_and(|dt| dt == "Map");
             if is_map {
                 if map.is_empty() {
-                    return Some(Ok(Value::str("Map.new".to_string())));
+                    // `.gist` keeps the empty argument list (`Map.new(())`);
+                    // `.raku` drops it (`Map.new`).
+                    let text = if method_name == "gist" {
+                        "Map.new(())"
+                    } else {
+                        "Map.new"
+                    };
+                    return Some(Ok(Value::str(text.to_string())));
                 }
                 let mut sorted_keys: Vec<&String> = map.keys().collect();
                 sorted_keys.sort();
@@ -777,7 +784,9 @@ impl Interpreter {
                             }
                         })
                         .collect();
-                    return Some(Ok(Value::str(format!("Map.new(({}))", parts.join(", ")))));
+                    return Some(Ok(Value::str(
+                        crate::builtins::methods_0arg::raku_repr::raku_map_new(&parts),
+                    )));
                 }
             }
         }
