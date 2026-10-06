@@ -563,7 +563,10 @@ impl Interpreter {
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
             || self.slot_has_sigilless_readonly_marker(code, idx)
-            || Self::atomic_var_seen_anywhere()
+            || code
+                .locals
+                .get(idx)
+                .is_none_or(|name| Self::atomic_name_possible(name))
             || self.slot_has_sigilless_meta(code, idx, desc)
             || self.module.lexical_fatal_mode
             || !self.threads.thread_decl_in_flight.is_empty()

@@ -211,12 +211,11 @@ pub(crate) fn kxxv(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
                 }
             }
         }
-        ValueView::Mix(items, _) => {
-            for (k, weight) in items.iter() {
-                for _ in 0..(weight.floor() as i64).max(0) {
-                    result.push(items.typed_key(k));
-                }
-            }
+        ValueView::Mix(_, mutable) => {
+            let owner = if mutable { "MixHash" } else { "Mix" };
+            return Some(Err(RuntimeError::new(format!(
+                ".kxxv is not supported on a {owner}"
+            ))));
         }
         _ => return None,
     }

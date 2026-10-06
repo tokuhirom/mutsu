@@ -703,15 +703,17 @@ impl crate::runtime::Interpreter {
                 addr,
             ));
         }
-        // A `Pointer`-typed field is a `Pointer` object even when it is NULL:
-        // unlike a CStruct handle (where a null return is a type object, so
-        // `.defined` behaves like Rakudo's), `Pointer.new(0)` is a defined value
-        // in Rakudo too, and reading a null field as a type object made
-        // `$s.field.Int` empty instead of 0. A parameterised field keeps its
-        // parameter, so `.of` / `.deref` work on the value that comes out.
-        // The declared spelling may be qualified (`NativeCall::Types::Pointer`):
-        // a constant alias of the type, resolved against the declaring scope.
+        // A NULL CStruct pointer field reads as its declared type object, as
+        // it does in Rakudo. This is distinct from `Pointer.new(0)`, which is
+        // a defined pointer value. A parameterised field keeps its parameter
+        // on non-NULL values, so `.of` / `.deref` work on the value that comes
+        // out. The declared spelling may be qualified
+        // (`NativeCall::Types::Pointer`): a constant alias of the type,
+        // resolved against the declaring scope.
         if is_pointer_spelling(&declared) {
+            if addr == 0 {
+                return self.constraint_type_value(&declared);
+            }
             // Upstream NativeCall's own Pointer type, when it is loaded.
             if let Some(built) = self.native_pointer_of_declared(&declared, addr, true) {
                 return built.ok();

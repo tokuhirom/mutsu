@@ -13,7 +13,8 @@ use std::borrow::Cow;
 
 /// The number `target` stands for in a `Cool` numeric method: the receiver
 /// itself when it is a number, the parsed value of a `Str`, the element count
-/// of a `List`, `Array`, `Seq` or `Hash`. A `Str` that is not numeric is the
+/// of a `List`, `Array`, `Seq` or `Hash`, the seconds of an `Instant` or
+/// `Duration`. A `Str` that is not numeric is the
 /// `Failure` the method answers.
 // Cost: O(n) for a Str, n = chars (the parse); O(1) otherwise.
 pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
@@ -22,6 +23,9 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
             Some(number) => Ok(Cow::Owned(number)),
             None => Err(crate::builtins::methods_0arg::str_numeric_failure(&s)),
         };
+    }
+    if let Some(seconds) = temporal_seconds(target) {
+        return Ok(Cow::Owned(seconds));
     }
     let count = match target.view() {
         ValueView::Hash(map) => Some(map.len()),
@@ -32,6 +36,30 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
         Some(count) => Cow::Owned(Value::int(count as i64)),
         None => Cow::Borrowed(target),
     })
+}
+
+/// The seconds of an `Instant` or `Duration`: both do `Real`, whose numeric
+/// methods are `self.Bridge.METHOD`. `None` for any other receiver.
+// Cost: O(a), a = attributes of the instance (one lookup in a copy of the map).
+pub(crate) fn temporal_seconds(target: &Value) -> Option<Value> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if class_name != "Instant" && class_name != "Duration" {
+        return None;
+    }
+    Some(
+        attributes
+            .as_map()
+            .get("value")
+            .cloned()
+            .unwrap_or_else(|| Value::int(0)),
+    )
 }
 
 /// The number a `Str` numifies to the way `.Numeric` does: an integer, a

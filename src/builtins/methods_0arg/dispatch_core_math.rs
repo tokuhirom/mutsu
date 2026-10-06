@@ -238,20 +238,11 @@ pub(super) fn dispatch(
                     Some(Ok(make_rat(0, 1)))
                 }
             }
-            // Duration/Instant store their seconds as a Real `value`; coerce that
-            // directly so the exact Rat is preserved (e.g. Duration.new(42).Rat).
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                match attributes.as_map().get("value") {
-                    Some(inner) => match dispatch(inner, "Rat") {
-                        Some(Some(r)) => Some(r),
-                        _ => Some(Ok(make_rat(0, 1))),
-                    },
-                    None => Some(Ok(make_rat(0, 1))),
-                }
+            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+            ValueView::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                None
             }
             ValueView::Instance { .. } => cool_instance_numeric(target).map(|n| {
                 if n.fract() == 0.0 && n.is_finite() {
@@ -361,6 +352,12 @@ pub(super) fn dispatch(
             }
             ValueView::Package(_) => Some(Ok(Value::fat_rat_raw(0, 1))),
             // IO::Path/Match/StrDistance numify via their Cool string/distance.
+            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+            ValueView::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                None
+            }
             ValueView::Instance { .. } if cool_instance_numeric(target).is_some() => {
                 let n = cool_instance_numeric(target).unwrap_or(0.0);
                 if n.fract() == 0.0 && n.is_finite() {

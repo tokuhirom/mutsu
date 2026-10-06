@@ -262,6 +262,7 @@ pub enum RakuAstClass {
     StatementGiven,
     StatementWhen,
     StatementDefault,
+    StatementModifierFor,
     StatementModifierGiven,
     StatementModifierIf,
     StatementModifierUnless,
@@ -348,6 +349,7 @@ pub enum RakuAstClass {
     TraitHides,
     /// `trusts B` in a class body.
     StatementTrusts,
+    StatementPrefixOnce,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
     StatementPrefixPhaserInit,
@@ -366,6 +368,7 @@ pub enum RakuAstClass {
     // `CATCH { ... }` — its own statement class, not a block phaser. Its body is
     // a topic block that additionally sets `exception => 1`.
     StatementCatch,
+    StatementControl,
     // `subset S of T where P` — raku files it under `RakuAST::Type::`, not
     // under the declaration classes.
     TypeSubset,
@@ -553,6 +556,7 @@ impl RakuAstClass {
             StatementGiven => "RakuAST::Statement::Given",
             StatementWhen => "RakuAST::Statement::When",
             StatementDefault => "RakuAST::Statement::Default",
+            StatementModifierFor => "RakuAST::StatementModifier::For",
             StatementModifierGiven => "RakuAST::StatementModifier::Given",
             StatementModifierIf => "RakuAST::StatementModifier::If",
             StatementModifierUnless => "RakuAST::StatementModifier::Unless",
@@ -601,6 +605,7 @@ impl RakuAstClass {
             TraitDoes => "RakuAST::Trait::Does",
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
+            StatementPrefixOnce => "RakuAST::StatementPrefix::Once",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
             StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
@@ -617,6 +622,7 @@ impl RakuAstClass {
             StatementPrefixPhaserQuit => "RakuAST::StatementPrefix::Phaser::Quit",
             StatementPrefixPhaserClose => "RakuAST::StatementPrefix::Phaser::Close",
             StatementCatch => "RakuAST::Statement::Catch",
+            StatementControl => "RakuAST::Statement::Control",
             TypeSubset => "RakuAST::Type::Subset",
             Module => "RakuAST::Module",
             Package => "RakuAST::Package",
@@ -1273,6 +1279,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementGiven,
     RakuAstClass::StatementWhen,
     RakuAstClass::StatementDefault,
+    RakuAstClass::StatementModifierFor,
     RakuAstClass::StatementModifierGiven,
     RakuAstClass::StatementModifierIf,
     RakuAstClass::StatementModifierUnless,
@@ -1321,6 +1328,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitDoes,
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,
+    RakuAstClass::StatementPrefixOnce,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,
     RakuAstClass::StatementPrefixPhaserInit,
@@ -1337,6 +1345,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixPhaserQuit,
     RakuAstClass::StatementPrefixPhaserClose,
     RakuAstClass::StatementCatch,
+    RakuAstClass::StatementControl,
     RakuAstClass::TypeSubset,
     RakuAstClass::Module,
     RakuAstClass::Package,
@@ -2872,6 +2881,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::StatementPrefix::Phaser::Begin", "new") => {
             RakuAstClass::StatementPrefixPhaserBegin
         }
+        ("RakuAST::StatementPrefix::Once", "new") => RakuAstClass::StatementPrefixOnce,
         ("RakuAST::StatementPrefix::React", "new") => RakuAstClass::StatementPrefixReact,
         ("RakuAST::StatementPrefix::Supply", "new") => RakuAstClass::StatementPrefixSupply,
         ("RakuAST::StatementPrefix::Phaser::Check", "new") => {

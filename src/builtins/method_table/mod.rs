@@ -62,20 +62,22 @@ pub(crate) use collections::{
     any_collection, capture, lazy, list, list_aggregate, list_transform, map, pair, positional,
     quanthash, range, subscript,
 };
-pub(crate) use instances::temporal;
+#[cfg(test)]
+pub(crate) use instances::instant::sample as instances_sample;
+pub(crate) use instances::{date, dateish, datetime, regex_match, temporal};
 pub(crate) use scalars::{
-    coerce, complex, complex_math, cool_real, math, real, real_misc, str, str_iter, str_search,
-    succ_pred, truth, uni, unicode, version,
+    coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str, str_iter,
+    str_search, succ_pred, truth, uni, unicode, version,
 };
 
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
-pub(crate) use dispatch::{admits, answer, invoke, invoke_in, try_dispatch_in};
+pub(crate) use dispatch::{admits, answer, invoke, invoke_in, invoke_owner, try_dispatch_in};
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]
 use table::all_rows;
 use table::table;
-pub(crate) use table::{Receiver, RowId, names_a_row, resolve, row, shape_has_row};
+pub(crate) use table::{Receiver, RowId, names_a_row, owner_row, resolve, row, shape_has_row};
 
 #[cfg(test)]
 mod tests;

@@ -1331,13 +1331,16 @@ fn marshal_carray_arg(
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags
     // the array with its element type).
-    let elem = ps
-        .elem
-        .or_else(|| carray_value_elem_type(raw))
-        .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = arr
         .with_array_inplace(|data, _| data.items().to_vec())
         .unwrap_or_default();
+    let elem = match ps.elem.or_else(|| carray_value_elem_type(raw)) {
+        Some(elem) => elem,
+        // An untyped `CArray.new` has neither elements nor an element type:
+        // its storage is empty, which C sees as NULL (as MoarVM's does).
+        None if list.is_empty() => return Ok((Type::pointer(), ArgOwner::Ptr(std::ptr::null()))),
+        None => return Err("CArray parameter is missing its element type".to_string().into()),
+    };
 
     if elem == CType::Str {
         let mut strings = Vec::with_capacity(list.len());

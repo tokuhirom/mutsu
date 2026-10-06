@@ -40,7 +40,7 @@ thread_local! {
 /// enclosing statement actually consuming the keyword clears it, in
 /// `clear_pending_extra_modifier`.
 pub(crate) fn pending_extra_modifier_error(at: &str) -> Option<PError> {
-    let key = crate::parser::memo::memo_key(at);
+    let key = crate::parser::memo::record_key(at);
     PENDING_EXTRA_MODIFIER.with(|p| match p.borrow().as_ref() {
         Some((k, e)) if *k == key => Some(e.clone()),
         _ => None,
@@ -50,7 +50,7 @@ pub(crate) fn pending_extra_modifier_error(at: &str) -> Option<PError> {
 /// Drop the deferred error once an enclosing statement has consumed the keyword
 /// it was recorded for.
 fn clear_pending_extra_modifier(at: &str) {
-    let key = crate::parser::memo::memo_key(at);
+    let key = crate::parser::memo::record_key(at);
     PENDING_EXTRA_MODIFIER.with(|p| {
         let mut slot = p.borrow_mut();
         if slot.as_ref().is_some_and(|(k, _)| *k == key) {
@@ -306,7 +306,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             let mut err =
                 PError::fatal_with_exception("Missing semicolon".to_string(), Box::new(ex));
             err.remaining_len = Some(rest.len());
-            let key = crate::parser::memo::memo_key(rest);
+            let key = crate::parser::memo::record_key(rest);
             PENDING_EXTRA_MODIFIER.with(|p| {
                 *p.borrow_mut() = Some((key, err));
             });
@@ -541,10 +541,8 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 // signature exactly as a `for LIST { ... }` body block does.
                 // Without this the loop stayed signature-less and `$^a`/`$^b` never
                 // got bound (`{ $^a ~ $^b } for (1,2),(3,4)` yielded `True/True`).
-                Stmt::Block(ref body) => {
-                    let (param, params) =
-                        crate::parser::stmt::control::placeholder_loop_params(body)
-                            .unwrap_or((None, Vec::new()));
+                Stmt::Block(_) => {
+                    let (param, params) = for_modifier_loop_params(&stmt);
                     (param, Box::new(None), params, Vec::new(), false, false, vec![stmt])
                 }
                 // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
@@ -930,4 +928,16 @@ fn starts_with_term_char(input: &str) -> bool {
                 | '\u{201D}'
                 | '\u{201E}'
         )
+}
+
+/// The loop signature `STMT for LIST` gives the statement `stmt` as its own:
+/// a bare block's placeholders (`{ $^a ~ $^b } for ...`), none for any other
+/// statement. The parser and the RakuAST converter / lowering share it.
+// Cost: O(n), n = size of the block.
+pub(crate) fn for_modifier_loop_params(stmt: &Stmt) -> (Option<String>, Vec<String>) {
+    match stmt {
+        Stmt::Block(body) => crate::parser::stmt::control::placeholder_loop_params(body)
+            .unwrap_or((None, Vec::new())),
+        _ => (None, Vec::new()),
+    }
 }

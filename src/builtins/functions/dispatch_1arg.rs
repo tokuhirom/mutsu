@@ -77,6 +77,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 | "sin"
                 | "cos"
                 | "tan"
+                | "asech"
+                | "acosech"
+                | "acotanh"
                 | "asin"
                 | "acos"
                 | "atan"
@@ -576,6 +579,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh" => {
             // Complex arguments use complex trig
             if let ValueView::Complex(re, im) = arg.view() {
+                if matches!(name, "asech" | "acosech" | "acotanh") && re == 0.0 && im == 0.0 {
+                    return Some(Ok(
+                        crate::builtins::math_prim::reciprocal_divide_by_zero_failure(),
+                    ));
+                }
                 let result = crate::builtins::methods_0arg::complex_trig(name, re, im);
                 return Some(Ok(Value::complex(result.0, result.1)));
             }
@@ -622,15 +630,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     }
                 }
                 "atanh" => crate::builtins::math_prim::atanh(x),
-                "asech" => {
-                    let y = 1.0 / x;
-                    (y + (y * y - 1.0).sqrt()).ln()
+                "asech" | "acosech" | "acotanh" => {
+                    return Some(Ok(
+                        crate::builtins::math_prim::inverse_hyperbolic_reciprocal(name, x),
+                    ));
                 }
-                "acosech" => {
-                    let y = 1.0 / x;
-                    (y + (y * y + 1.0).sqrt()).ln()
-                }
-                "acotanh" => (1.0 / x).atanh(),
                 _ => 0.0,
             };
             Some(Ok(Value::num(result)))

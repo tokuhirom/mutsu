@@ -44,6 +44,11 @@ pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[MethodRow {
 }];
 
 fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
+    // A `Date`, `DateTime`, `Instant` or `Duration` is one item and has no
+    // other to compare with.
+    if super::any_collection::scalar_like(target) {
+        return Some(vec![target.clone()]);
+    }
     let items = match target.view() {
         ValueView::Array(items, _) => items.to_vec(),
         ValueView::Bool(_)
@@ -139,6 +144,13 @@ fn extrema_pairs(
 ) -> Option<Result<Value, RuntimeError>> {
     if !args.is_empty() {
         return None;
+    }
+    if matches!(target.view(), ValueView::Bool(_)) {
+        let (key, value) = if want_max { ("True", 1) } else { ("False", 0) };
+        return Some(Ok(Value::array(vec![Value::pair(
+            key.to_string(),
+            Value::int(value),
+        )])));
     }
     if let ValueView::Hash(map) = target.view() {
         let mut best: Option<Value> = None;

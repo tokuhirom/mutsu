@@ -1009,6 +1009,235 @@ Enumeration methods), [#12090](https://github.com/tokuhirom/mutsu/issues/12090) 
 and `0.asech`), [#12091](https://github.com/tokuhirom/mutsu/issues/12091) (the native integer
 coercions of a `List`).
 
+### 9.18 Slice 3D: instance classes (2026-10-06)
+
+Branch `refactor/11276-3d-instance-classes`. Owners: `Date`, `DateTime`, `Instant`, `Duration` (the
+report's *time* group), `Match`, and the *objects* group (`Mu`, `Code`, `Backtrace`,
+`Backtrace::Frame`, `Exception`, `Failure`, `Signature`, `X::AdHoc`, `X::TypeCheck::Assignment`,
+`CX::Warn`, ...). This is the first commit's inventory, taken with
+`scripts/method-rows-report.py --inventory time,match,objects`; later commits tick families off and
+the closing paragraph records what was deferred.
+
+**Inventory (unregistered recognition rows, 2026-10-06; 676 rows registered).** 209 declared rows
+over 161 method names, plus 82 *inherited-only* rows (a pair Rakudo does not declare on the owner,
+so it is served by the ancestor's row once the receiver's shape inherits it). The plan's "346"
+counted the inherited-only rows and the 47 `RakuAST::*` rows, which the oracle snapshot
+(`rakudo_method_tables.txt`) does not list as owners, so they wait for the snapshot extension
+(§10.6).
+
+| owner | declared | Pure | Interp | inherited-only |
+|---|---:|---:|---:|---:|
+| Date | 29 | 25 | 4 | 1 |
+| DateTime | 41 | 33 | 8 | 0 |
+| Instant | 24 | 23 | 1 | 0 |
+| Duration | 20 | 19 | 1 | 0 |
+| Match | 24 | 24 | 0 | 48 |
+| Mu | 21 | 10 | 11 | 0 |
+| Code | 11 | 3 | 8 | 3 |
+| Backtrace | 11 | 11 | 0 | 2 |
+| Backtrace::Frame | 8 | 8 | 0 | 0 |
+| Exception | 6 | 6 | 0 | 2 |
+| Failure | 3 | 3 | 0 | 5 |
+| Signature | 6 | 2 | 4 | 2 |
+| X::AdHoc, X::TypeCheck::Assignment, CX::Warn, Supply | 5 | 5 | 0 | 17 |
+| **total** | **209** | **148** | **37** | **82** |
+
+**What landed (209 declared rows at the start, 92 left; 676 -> 821 rows registered).** Four
+families, one commit each with its focused test (`t/oo/method/date-method-rows.t`,
+`datetime-method-rows.t`, `instant-duration-method-rows.t`, `t/regex/match/match-method-rows.t`),
+each compared with Rakudo and checked against the roast directories of its owners and the unit
+suite (`cargo test --lib method_table native_method_row`):
+
+- [x] *Calendar rows of `Date` and `DateTime`* (`instances/dateish.rs`, 44 rows): `day-of-month`,
+  `day-of-week`, `day-of-year`, `daycount`, `days-in-month`, `days-in-year`, `is-leap-year`, `week`,
+  `week-number`, `week-year`, `weekday-of-month`, `formatter`, `yyyy-mm-dd` / `mm-dd-yyyy` /
+  `dd-mm-yyyy` / `mm-dd` / `yyyy-mm` with and without a separator. One handler per name, both
+  owners' rows pointing at it (Rakudo composes `Dateish` into both).
+- [x] *`Date`'s and `DateTime`'s own rows* (`instances/date.rs`, `datetime.rs`, 34 rows): `succ`,
+  `pred`, `first-date-in-month`, `last-date-in-month`, `second`, `timezone`, `offset*`,
+  `whole-second`, `hh-mm-ss`, `posix`, `utc`, `julian-date`, `modified-julian-date`, `day-fraction`,
+  the coercions (`Date`, `DateTime`, `Instant`, `Int`, `Numeric`, `Real`), `WHICH`, `raku`, `Str`,
+  `gist`. A value with a `:formatter` is rendered by running that Callable, which only the
+  interpreter can do: the `Str`/`gist` rows decline it and the interpreter's path answers.
+- [x] *`Instant` and `Duration`* (`instances/instant.rs`, 50 rows): two new instance-class shapes.
+  Both do `Real` and hold their seconds in one number, so a handler asks the question of that number
+  and wraps the answer only where the method keeps the type (`abs`, `succ`, `pred`): `Bool`,
+  `Bridge`, `Int`, `Num`, `Rat` and `FatRat` (with and without an epsilon), `Complex`, `Numeric`,
+  `Real`, `conj`, `Str`, `gist`, `raku`, `abs`, `narrow`, `isNaN`, `tai`, `succ`, `pred`, `to-nanos`,
+  `rand`, and `Instant`'s `to-posix`, `Date`, `DateTime`, `Instant`. Every cascade arm that matched
+  `class_name == "Instant" | "Duration"` is gone: only the built-in classes ever took them, and the
+  shapes only match those. (`Duration.Bool` is #11989, fixed meanwhile by #12014; its test is pinned
+  here too.)
+- [x] *`Match`* (`instances/regex_match.rs`, 17 rows): `from`, `to`, `pos`, `Str`, `Bool`, `orig`,
+  `target`, `made`, `ast`, `clone`, `prematch`, `postmatch`, `actions`, `caps`, `chunks`, `gist`,
+  `raku`. The shape covers a plain `Match`, lazy or eager; a grammar cursor (its class is the
+  grammar's own and may override any of these) and a subclass have none, and the cascade's `Match`
+  blocks keep answering them by calling the same handlers.
+
+Date, DateTime, Instant and Duration are **open** shapes (`DispatchShape::inherits`): the audit ran
+every registered `Any`, `Cool` and `Mu` row against each of them, 119 name/arity pairs, mutsu before
+and after the change and Rakudo (a probe script generated from the row dump, kept in `tmp/` only).
+Answers moved to Rakudo's: 27 for `Instant`, 22 for `Duration` (`Instant.sqrt` was "No such
+method", `Instant.Complex` was `0+0i`), 1 each for `Date` and `DateTime`; none regressed (a
+regression is an answer that matched Rakudo before and does not now). Six `Instant`/`Duration`
+answers changed without reaching Rakudo's (the last digit of a float, the spelling of an error, a
+`Seq` of roots), and 27 answers of methods Rakudo does not give a `Date` at all (`sin`, `cos`, ...;
+mutsu's generic numeric fallback answers them, as before) changed value because `Date.Numeric`
+is now the day count. `Match` stays **closed**: its list-like and
+string-delegating methods are the cascade's (a `Match` is a `Capture` and, through the Cool
+delegation of its `Str`, a `Cool`).
+
+What the work taught, which the remaining families follow:
+
+- **Opening a shape means every ancestor row answers it.** `every_row_is_reached_and_answers` fails
+  on the first row that declines, so `scalar_like` (the test `Any`'s one-element rows assert) now
+  includes the four instance classes, and `Any.min/max/minpairs/maxpairs/sort` accept them.
+  `numify`, the one place a `Cool` receiver becomes a number, reads the seconds of an `Instant` or
+  `Duration`; so do the native integer coercions (`int8` .. `uint64`, `byte`), which read their
+  receiver directly.
+- **The debug cross-check wants the cascade to decline, or to agree.** A cascade arm that answers a
+  shaped receiver with a placeholder (`Complex`, `Rat`, `FatRat` of an `Instance` is `0`) fails the
+  cross-check against a correct row. Where the row is the only implementation the cascade declines
+  for the receiver (a three-line arm each), and slice 5 deletes the declines with the cascades.
+- **`Numeric` of a `Real` object is the object.** `Date.Numeric` is the day count and
+  `DateTime.Numeric` an `Instant`, as in Rakudo, and `+$duration` stays a `Duration`. Four places read
+  `.Numeric` or `.Real` as a number and now take the seconds or the `Bridge` of an object they get
+  back: `==` (the bridge runs once more, so two `DateTime`s at different offsets compare by
+  instant, roast `S32-temporal/DateTime.t`), the argument coercion of a builtin function
+  (`abs($duration)`), `sprintf`'s float directives, and the slow path of `polymod` on an `Instant`
+  or `Duration`. Roast found the first two, the probe script the third, and the whole debug TAP run
+  (`t/vm/codegen/adr0051-catalog-ancestry-consumers.t`) the fourth.
+- **A shape for a lazy value needs a guard that never forces it.** `Value::view()` on a lazy
+  `Match` materializes it, so no `Match` handler reads its receiver through it unless it needs the
+  attribute map, and `value_type_name` (which the augment gate asks on every call) names a lazy
+  match's class from its capture node. A recognition row for a name the table lacked (`Date.mm-dd`,
+  `Instant.to-nanos`, ...) is added with its row, as in 3B.
+
+Behaviour changes toward Rakudo, each pinned in a focused test: `Date.Int/Numeric/Real` are the day
+count (they were the POSIX timestamp), `DateTime.Numeric/Real` the `Instant`; `DateTime.Int`,
+`Date.weekday`, `DateTime.weekday` and `Date.Instant` are no longer answered (Rakudo has none of
+them); `Date.mm-dd` and `yyyy-mm` exist; `DateTime.offset-in-minutes` is a `Rat`;
+`julian-date` and `modified-julian-date` count from the UTC instant; `Instant.Complex` and
+`Duration.Complex` carry the seconds; `Instant.narrow` narrows the seconds; and `Instant.sqrt`,
+`exp`, `log`, `floor`, `ceiling`, `round`, `truncate`, `sign`, `cis`, `conj`, `int8` .. `uint64` and
+`to-nanos` answer.
+
+**Deferred, with the reason (92 declared rows).**
+
+- **`Date`'s and `DateTime`'s interpreter rows** (`earlier`, `later`, `truncated-to`, `in-timezone`,
+  `local`, `clone`, `IO`, the formatter rendering of `Str`/`gist`; 10 rows). They read named
+  adverbs (`:2hours`, `:truncate-to`) that also arrive as positional `Pair`s, reblesse the result into
+  a subclass and keep the formatter. `Handler::Named` needs the unit names declared; one commit of its
+  own with the `Interp` rows. `posix(1)` and the separator argument of the orderings (a non-`Str`)
+  stay on the slow path for the same reason.
+- **`Instant`'s and `Duration`'s `base` and `polymod`** (4 rows): `base` carries the option machinery of
+  `native_base_with_options`, and `polymod` is an interpreter method.
+- **`Match`'s remaining rows** (`Int`, `Numeric`, `WHICH`, `not`, `replace-with`, ...; 7 rows) and the
+  48 inherited-only names: they delegate to the matched string through `Cool`/`Str`, so they follow
+  the opening of the `Match` shape, which needs `Capture`'s rows to answer a `Match` first.
+- **The objects group** (`Mu`, `Code`, `Signature`, `Exception`, `Failure`, `Nil`, `Backtrace`,
+  `Backtrace::Frame`, `X::AdHoc`, `CX::Warn`, `X::TypeCheck::Assignment`, `Supply`; 75 rows). `Failure`
+  must explode for every method it does not declare, `Nil` answers most methods with itself, and
+  `Code` carries its signature in a `Sub` value that has no shape: each is a guard of its own, and the
+  exception classes are mostly user subclasses (no shape). `Backtrace` and `Backtrace::Frame` are
+  the cheapest (class-name shapes, 19 pure rows over `backtrace_methods.rs`); they are claimable as
+  `refactor/11276-3d-backtrace`.
+- **`RakuAST::*`** (47 rows): the oracle snapshot lists none of these owners, so they wait for the
+  snapshot extension (§10.6).
+
+### 9.19 Slice 3E: I/O and concurrency (2026-10-06)
+
+Branch `refactor/11276-3e-io-concurrency`. Owners: `IO::Path` and `IO::Spec::*` (this slice), with
+`IO::Handle`, `IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
+`Supply`, the schedulers and `Lock` deferred (below). The inventory was taken with
+`scripts/method-rows-report.py --inventory IO::Path,IO::Handle,...`: 81 declared recognition rows over
+77 method names for the owners the oracle snapshot lists (44 on `IO::Path`, 37 on `IO::Handle`), and
+none for `IO::Spec::*`, `Promise`, `Channel`, `Lock` and the rest, which the snapshot did not list at
+all. The plan's "102 rows" counted `IO::Path` and `IO::Handle` together with the inherited-only
+names; most of what the cascades do for these classes is not in the builtins cascades but in
+`runtime/native_io/` and in a 560-line `IO::Spec` block of `call_method_with_values`, which the
+report's arm counts do not see.
+
+**What landed (821 -> 943 rows registered).** Two owner groups, each deleted whole:
+
+- [x] *`IO::Path`* (75 rows in `io_concurrency/io_path_*.rs`): the lexical methods (19 rows:
+  `Str`, `gist`, `IO`, `SPEC`, `basename`, `dirname`, `volume`, `cleanup`, `parts`, `parent`,
+  `sibling`, `add`, `extension`, `is-absolute`, `is-relative`, `succ`, `pred`), the cwd methods (6:
+  `absolute`, `relative`, `CWD`, `raku`), the 19 `stat` readers and file tests, the content rows (9:
+  `slurp`, `lines`, `words`, `comb`, `open`), the filesystem rows (17: `spurt`, `mkdir`, `rmdir`,
+  `unlink`, `chmod`, `chown`, `copy`, `rename`, `move`, `symlink`, `link`) and `child`, `resolve`,
+  `dir`, `watch`, `Numeric` (5). The shape `IoPath` covers `IO::Path` and its four SPEC variants
+  and is **closed**: a handler reads the receiver's class and `SPEC` attribute and hands the class
+  back, so `IO::Path::Win32.new('x').parent` is an `IO::Path::Win32`. The `try_io_path_*` name gates
+  and the six blocks that called them from `vm_call_method_compiled_{mut,interpret}.rs` are gone;
+  `native_io_path` is `invoke_owner` plus `Cool`'s `Real`/`Int`/`Rat`/`Num`/`FatRat`, which are
+  `Cool`'s rows and wait for the opening of the shape (3B remainder).
+- [x] *`IO::Spec::Unix`, `Win32`, `Cygwin`, `QNX`* (47 rows in `io_spec.rs`, the oracle snapshot now
+  lists the four owners): one handler per method reads the receiver's class (`SpecKind`), and every
+  class Rakudo says declares the method has a row for it. The bodies were the arms of the block in
+  `call_method_with_values`, moved verbatim into `runtime/native_io/io_spec_{paths,split}.rs`; the
+  block is replaced by an `invoke_owner` call for the receivers the table declined.
+
+**Mechanisms.**
+
+- **`RowFlags::SLURPY`.** A `*@parts` method has a minimum arity, and the table registers the row at
+  every arity from there to 7 (the call-site lookup's bound), so `IO::Path.add` is one row, not five.
+  A call with more arguments reaches the row through the owner lookup. `MethodRow::arities` is the
+  range.
+- **`invoke_owner(interp, owners, method, args, target)`.** A row is found by `(owner, method,
+  arity)` along a list of owners, for a receiver that has no shape: an instance of a user subclass of
+  `IO::Path` (the instance dispatch walks its MRO to `IO::Path` and `native_io_path` asks for that
+  owner), and a call the guard step declined (a named argument no row declares, an argument it does
+  not admit). The arguments are not admitted: this is the slow path, which accepted any argument
+  before the row existed. The target value is built only after the row is found.
+- **Type-object-only shapes, and `DispatchShape::reaches`.** `IoSpecUnix`, `IoSpecWin32`,
+  `IoSpecCygwin` and `IoSpecQnx` have no instances (`has_instances`): the cascades answer a name like
+  `join` for an instance by stringifying it, and nothing reads an `IO::Spec` instance. A closed shape
+  used to reach only its own type's rows; `reaches(owner)` names the ancestors it audited, which for
+  the `IO::Spec` family is `IO::Spec::Unix` (and never `Any` or `Mu`).
+- **Interpreter rows with named arguments.** An `IO::Path` row that needs the interpreter
+  (`Handler::Interp`) reads its named arguments through `Named::pairs`, because the interpreter's
+  primitives (`parse_io_flags_values`, `io_path_spurt`, ...) take one argument list with the `Pair`s
+  in it. Each primitive is now one `Interpreter` method, called by the row and by the sub form of
+  the same routine (`lines($path)`, `words($path)`).
+
+**What the work taught.**
+
+- **The cascades' by-name arms answer any receiver.** `IO::Spec::Unix.join()` with no argument is a
+  `List.join` of the type object in the cascades (`(IO::Spec::Unix)`), so a row for that arity fails
+  the debug cross-check. An `IO::Spec` row therefore takes the positionals Rakudo's signature
+  requires and any number more, and a call with fewer is no longer answered with a lenient guess.
+  A row that makes a new object on every call (`curupdir`) cannot be cross-checked either, and is an
+  interpreter row.
+- **A metadata list is a second dispatch.** `IO::Path`'s `native_methods` in `runtime_init.rs` listed
+  `starts-with`, because the lexical funnel had an arm for it; it is `Cool`'s method, and with the arm
+  gone the entry made the call fail. The entry is removed. The list goes with slice 5.
+- **`Mu.perl` is `self.raku`.** `IO::Path` had a `"raku" | "perl"` arm; `perl` is not a method
+  `IO::Path` declares, so `native_io_path` maps it to the `raku` row.
+
+Behaviour changes toward Rakudo, each pinned in a focused test (`t/io/io-path-lexical-rows.t`,
+`io-path-cwd-stat-rows.t`, `io-path-content-fs-rows.t`, `io-spec-method-rows.t`): an `IO::Spec`
+method called with fewer positionals than its signature requires fails instead of answering a guess;
+`IO::Path.starts-with` is `Cool`'s. Both are in the news entry. One regression is filed, not fixed:
+`Cool` string methods on a user *subclass* of `IO::Path` read the instance's rendering rather than
+the path ([#12149](https://github.com/tokuhirom/mutsu/issues/12149); `starts-with` joined `uc` and
+`chars` there).
+
+**Deferred, with the reason (37 declared `IO::Handle` rows, and the owners the snapshot lacks).**
+
+- **`IO::Handle`** (37 rows, `runtime/native_io/io_handle.rs` and four VM fast paths in
+  `vm_call_method_compiled_io.rs`). A handle's methods exist three times: the interpreter's
+  `native_io_handle`, the VM's per-method fast paths (File and UTF-8 only, each declining the rest to
+  the interpreter) and the user-subclass overlay that routes `print`/`say`/`get`/... through a user
+  `WRITE`/`READ`. One row per method means one implementation of those three, and the choice of
+  which to keep decides the shape of `Handler::Interp` for stateful receivers; it is a slice of its
+  own.
+- **`IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
+  `Supply`, the schedulers, `Lock`, `Semaphore`, `Thread`**: the oracle snapshot lists none of these
+  owners (it is generated from the owners the recognition table names), so each needs recognition
+  rows first; their methods live in `runtime/native_methods/*.rs`, one `match` per class, with
+  receivers that carry live OS state.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -476,6 +476,18 @@ pub(crate) fn native_method_1arg(
             let encoding = arg.to_string_value();
             crate::builtins::decode_buf_method(target, Some(&encoding))
         }
+        // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
+        // inner value, so the epsilon binds exactly where it does for that type.
+        // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
+        "Rat" | "FatRat"
+            if matches!(target.view(), ValueView::Mixin(inner, _)
+            if matches!(inner.view(), ValueView::Int(_) | ValueView::Rat(..) | ValueView::Num(_))) =>
+        {
+            let ValueView::Mixin(inner, _) = target.view() else {
+                return None;
+            };
+            native_method_1arg(inner, method_sym, arg)
+        }
         "Rat" => {
             // .Rat(epsilon) — use continued fraction algorithm with given epsilon.
             // Only an invocant that binds the epsilon type-checks it: an `Int`
@@ -497,6 +509,12 @@ pub(crate) fn native_method_1arg(
                 // `$*TOLERANCE`, which only the interpreter can read
                 // (`Interpreter::dispatch_complex_to_real`).
                 ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
+                }
                 ValueView::Str(s) => {
                     // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
                     // reading of whatever was passed is kept.
@@ -532,6 +550,12 @@ pub(crate) fn native_method_1arg(
                 },
                 // As for `Rat` above: the interpreter judges the imaginary part.
                 ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
+                }
                 _ => Value::fat_rat_raw(0, 1),
             };
             Some(Ok(result))

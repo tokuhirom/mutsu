@@ -859,12 +859,12 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
-        // No atomic variable has ever been registered, so no `__mutsu_atomic_*`
-        // key can exist: skip the `format!`, the env probe, and the `shared_vars`
-        // read lock. This runs on EVERY scalar assignment, so the guard belongs
-        // here rather than at the (three, easily-missed) call sites — one of
-        // which already had it.
-        if !Self::atomic_var_seen_anywhere() {
+        // No atomic variable has ever been registered under this name, so no
+        // `__mutsu_atomic_name::<name>` key can exist: skip the `format!`, the
+        // env probe, and the `shared_vars` read lock. This runs on EVERY scalar
+        // assignment, so the guard belongs here rather than at the (three,
+        // easily-missed) call sites — one of which already had it.
+        if !Self::atomic_name_possible(name) {
             return;
         }
         let name_key = MetaNs::AtomicName.owned_key_for_str(name);
@@ -903,9 +903,9 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
-        // Same guard as `reset_atomic_var_key`: nothing to clear before any
-        // atomic variable exists, and this runs on every declaration.
-        if !Self::atomic_var_seen_anywhere() {
+        // Same guard as `reset_atomic_var_key`: nothing to clear before this
+        // name was registered atomic, and this runs on every declaration.
+        if !Self::atomic_name_possible(name) {
             return;
         }
         let name_key = MetaNs::AtomicName.owned_key_for_str(name);

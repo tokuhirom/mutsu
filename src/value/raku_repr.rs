@@ -1412,6 +1412,14 @@ pub(crate) fn native_int_coerce_method(
             NumBigInt::from(n / d)
         }
         _ => {
+            // `Cool.int8` & co. are `self.Numeric.int8`: a List, Array or Hash
+            // numifies to its element count.
+            if let Some(count) = match target.view() {
+                ValueView::Hash(map) => Some(map.len()),
+                _ => target.as_list_items().map(<[Value]>::len),
+            } {
+                return native_int_coerce_method(&Value::int(count as i64), type_name);
+            }
             // Try to coerce through string -> parse
             let s = target.to_string_value();
             if let Ok(i) = s.parse::<i128>() {

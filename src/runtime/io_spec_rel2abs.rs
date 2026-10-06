@@ -4,7 +4,7 @@ impl Interpreter {
     /// Resolve a relative IO::Spec path against an absolute base. Both spec
     /// variants use the process cwd when their caller supplies a relative base.
     // Cost: O(p + b + c), p = path length, b = base length, c = cwd length.
-    pub(super) fn io_spec_rel2abs(
+    pub(crate) fn io_spec_make_absolute(
         path: &str,
         base: &str,
         cwd: &str,

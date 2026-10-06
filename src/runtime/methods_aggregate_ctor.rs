@@ -334,6 +334,18 @@ impl Interpreter {
                 }),
             };
             result = self.tag_container_metadata(result, info);
+        } else if base_class_name == "CArray" {
+            // An untyped `CArray.new` is a `CArray`, not a plain `Array`: it
+            // carries the class as its declared type like the reference-element
+            // spellings (`CArray[Str]`), so `~~ CArray`, a `CArray` parameter
+            // and `.^name` see it. It has no element type: elements are `Any`,
+            // as for an untyped `Array`.
+            let info = crate::runtime::ContainerTypeInfo {
+                value_type: "Any".to_string(),
+                key_type: None,
+                declared_type: Some(class_name.resolve()),
+            };
+            result = self.tag_container_metadata(result, info);
         }
         // ADR-0049 slice 2: decay a `Nil` argument to the constructed array's
         // own default (untyped -> `Any`, typed -> the tagged element type

@@ -121,12 +121,19 @@ pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
 /// value-type and optional key-type parts. A plain constraint (no `{...}`)
 /// returns `(constraint, None)`. The value type governs element type checks; the
 /// key type governs key constraints.
+/// A shaped hash `%h{Str:D; Int}` keys its first dimension by the object
+/// hash key type; the remaining dimensions subscript the nested hashes.
+// Cost: O(n), n = length of the key spec.
+pub(crate) fn first_key_dimension(spec: &str) -> &str {
+    spec.split(';').next().unwrap_or(spec).trim()
+}
+
 pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&str>) {
     if let Some(open) = constraint.find('{')
         && constraint.ends_with('}')
     {
         let value_type = constraint[..open].trim();
-        let key_type = constraint[open + 1..constraint.len() - 1].trim();
+        let key_type = first_key_dimension(&constraint[open + 1..constraint.len() - 1]);
         (value_type, Some(key_type))
     } else {
         (constraint, None)
@@ -1148,6 +1155,12 @@ impl Interpreter {
             let (base, _) = strip_type_smiley(constraint);
             if native_types::is_native_int_type(base) {
                 return Value::int(0);
+            }
+            // A parameterised constraint (`Positional[Int]`, `CArray[int32]`)
+            // keeps its type arguments, as `my Positional[Int] $x` does, so
+            // binding the unset parameter into a same-typed slot passes.
+            if base.contains('[') && !base.contains('(') {
+                return Value::package(Symbol::intern(base));
             }
             return Value::package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }

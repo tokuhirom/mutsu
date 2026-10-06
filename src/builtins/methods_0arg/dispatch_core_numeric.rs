@@ -178,50 +178,11 @@ pub(super) fn dispatch(
             ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
             _ => None,
         }),
-        // `abs` of a number is a row (`method_table::real`, `cool_real`); this arm
-        // keeps `Instant` and `Duration`, which have no table shape.
-        // `Real.abs` keeps the type (`Instant.abs` is an `Instant`,
-        // `Duration.abs` a `Duration`), because rakudo's is `self < 0 ?? -self !!
-        // self` on the value itself. They store their seconds as a Real `value`
-        // attribute, the same shape the `.Rat`/`.Int` arms coerce.
-        // Cost: O(1).
-        "abs" => match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                let inner = attributes.as_map().get("value")?.clone();
-                let abs_inner = match crate::builtins::method_table::real::abs_of(&inner) {
-                    Some(Ok(v)) => v,
-                    Some(Err(e)) => return Some(Some(Err(e))),
-                    None => return Some(None),
-                };
-                let mut attrs = attributes.as_map().clone();
-                attrs.insert("value".to_string(), abs_inner);
-                Some(Some(Ok(Value::make_instance(class_name, attrs))))
-            }
-            _ => Some(None),
-        },
-        // `rand` of a numeric receiver is a row (`method_table::real_misc`);
-        // this arm keeps the receivers with no table shape.
+        // `rand` of a numeric receiver is a row (`method_table::real_misc`), and
+        // `Range.rand` is the `Range` row's (`method_table::range`). A `Seq` has no
+        // table shape, and is `Cool`: it numifies to its element count.
         // Cost: O(1).
         "rand" => match target.view() {
-            // `Duration`/`Instant` `does Real`, whose `rand` is
-            // `self.Bridge.rand`: a `Num` below the stored seconds.
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                let inner = attributes.as_map().get("value")?.clone();
-                Some(Some(crate::builtins::method_table::real_misc::rand(
-                    &inner,
-                    &[],
-                )))
-            }
-            // `Range.rand` is the `Range` row's (`method_table::range`). A
-            // `Seq` is `Cool` and numifies to its element count.
             ValueView::Seq(_) => Some(Some(crate::builtins::method_table::real_misc::rand(
                 target,
                 &[],

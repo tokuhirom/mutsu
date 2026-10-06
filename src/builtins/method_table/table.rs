@@ -81,6 +81,12 @@ impl Receiver {
 /// the arities each method name has rows for.
 pub(super) struct Table {
     pub(super) rows: FxHashMap<(Receiver, Symbol, u8), RowId>,
+    /// `(owner, method, arity) -> row`, for a receiver the table has no shape
+    /// for (an instance of a user subclass) whose MRO names the owner.
+    owners: FxHashMap<(Symbol, Symbol, u8), RowId>,
+    /// `(owner, method) -> row` for a slurpy row, which answers any arity from
+    /// its own up.
+    slurpy: FxHashMap<(Symbol, Symbol), RowId>,
     /// Every row once, indexed by [`RowId`].
     pub(super) all: Vec<&'static MethodRow>,
     /// Per `Symbol` id, one bit per arity some row with that name takes (bit
@@ -154,11 +160,29 @@ fn build() -> Table {
     let all: Vec<&'static MethodRow> = all_rows().collect();
     let mut table = Table {
         rows: FxHashMap::default(),
+        owners: FxHashMap::default(),
+        slurpy: FxHashMap::default(),
         all,
         arities: Vec::new(),
         shapes: Vec::new(),
         type_shapes: Vec::new(),
     };
+    for (idx, row) in table.all.iter().enumerate() {
+        // A row past `u16::MAX` stays unreachable through the table.
+        if let Ok(id) = u16::try_from(idx) {
+            let owner = Symbol::intern(row.owner);
+            let name = Symbol::intern(row.name);
+            for arity in row.arities() {
+                table
+                    .owners
+                    .entry((owner, name, arity))
+                    .or_insert(RowId(id));
+            }
+            if row.flags.contains(RowFlags::SLURPY) {
+                table.slurpy.entry((owner, name)).or_insert(RowId(id));
+            }
+        }
+    }
     for shape in DispatchShape::ALL {
         let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape.type_name())
         else {
@@ -166,8 +190,8 @@ fn build() -> Table {
         };
         for owner in mro.iter() {
             // A closed shape (`DispatchShape::inherits`) reaches only the rows
-            // its own type owns.
-            if !shape.inherits() && owner.as_str() != shape.type_name() {
+            // its own type and the ancestors it names own.
+            if !shape.reaches(owner.as_str()) {
                 continue;
             }
             for idx in 0..table.all.len() {
@@ -190,20 +214,24 @@ impl Table {
     fn register(&mut self, shape: DispatchShape, row: &MethodRow, id: RowId) {
         let name = Symbol::intern(row.name);
         let slot = name.id() as usize;
-        self.rows
-            .entry((Receiver::instance(shape), name, row.arity))
-            .or_insert(id);
-        if self.arities.len() <= slot {
-            self.arities.resize(slot + 1, 0);
-        }
-        if row.arity < 8 {
-            self.arities[slot] |= 1 << row.arity;
+        for arity in row.arities() {
+            if shape.has_instances() {
+                self.rows
+                    .entry((Receiver::instance(shape), name, arity))
+                    .or_insert(id);
+            }
+            if self.arities.len() <= slot {
+                self.arities.resize(slot + 1, 0);
+            }
+            self.arities[slot] |= 1 << arity;
+            if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
+                self.rows
+                    .entry((Receiver::type_object(shape), name, arity))
+                    .or_insert(id);
+            }
         }
         set_bit(&mut self.shapes, slot, shape);
         if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
-            self.rows
-                .entry((Receiver::type_object(shape), name, row.arity))
-                .or_insert(id);
             set_bit(&mut self.type_shapes, slot, shape);
         }
     }
@@ -244,6 +272,22 @@ pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Optio
     }
     let arity = u8::try_from(arity).ok()?;
     table.rows.get(&(receiver, method, arity)).copied()
+}
+
+/// The row `owner` declares for `method` taking `arity` positional arguments,
+/// whatever the receiver is: the lookup of a receiver that has no shape. A
+/// slurpy row answers every arity from its own up, however long.
+// Cost: O(1), two hash lookups at most.
+pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<RowId> {
+    let table = table();
+    if let Some(&id) = u8::try_from(arity)
+        .ok()
+        .and_then(|arity| table.owners.get(&(owner, method, arity)))
+    {
+        return Some(id);
+    }
+    let id = *table.slurpy.get(&(owner, method))?;
+    (arity >= usize::from(row(id).arity)).then_some(id)
 }
 
 /// The row `id` names.

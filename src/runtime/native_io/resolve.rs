@@ -197,10 +197,12 @@ impl Interpreter {
         Ok((low, high))
     }
 
-    pub(crate) fn io_path_extension_parts_spec(
-        args: &[Value],
+    /// The `:parts` of `.extension`: how many dot-separated parts count, as an
+    /// exact number (one when the adverb is absent) or a range.
+    pub(crate) fn io_path_extension_parts_spec_of(
+        parts: Option<&Value>,
     ) -> Result<IoPathExtensionPartsSpec, RuntimeError> {
-        let Some(parts_val) = Self::named_value(args, "parts") else {
+        let Some(parts_val) = parts.cloned() else {
             return Ok(IoPathExtensionPartsSpec::Exact(1));
         };
 

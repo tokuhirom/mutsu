@@ -54,7 +54,7 @@ fn is_custom_name(name: &str) -> bool {
 }
 
 /// Whether a bare `is NAME` entry is a container type (`is SetHash`).
-fn is_container_type(name: &str) -> bool {
+pub(super) fn is_container_type(name: &str) -> bool {
     !name.starts_with("__")
         && super::name_parts::identifier_segments(name)
             .nth(1)

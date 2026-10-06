@@ -305,26 +305,27 @@ pub(crate) fn native_method_0arg_cascade(
         match method {
             // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
             // returns the shared subject Value; `.Str` copies the k matched chars).
-            "from" => return Some(Ok(Value::int(match_helpers::match_value_from(target)))),
-            "to" => return Some(Ok(Value::int(match_helpers::match_value_to(target)))),
-            "pos" => {
-                return Some(Ok(Value::int(match_helpers::match_visible_pos(
-                    target,
-                    target.match_pos().unwrap_or(0),
-                ))));
-            }
+            // The `Match` rows' handlers (`method_table::regex_match`), for the
+            // lazy matches the table has no shape for (a grammar cursor).
+            "from" => return Some(Ok(crate::builtins::method_table::regex_match::from(target))),
+            "to" => return Some(Ok(crate::builtins::method_table::regex_match::to(target))),
+            "pos" => return Some(Ok(crate::builtins::method_table::regex_match::pos(target))),
             "Str" => {
-                return Some(Ok(target
-                    .match_str_value()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
+                    target,
+                )));
             }
-            "Bool" => return Some(Ok(Value::truth(!target.match_is_failed()))),
+            "Bool" => {
+                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
+                    target,
+                )));
+            }
             "orig" | "target" => {
-                return Some(Ok(target
-                    .match_orig()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
             }
-            "ast" | "made" => return Some(Ok(target.match_ast().unwrap_or(Value::NIL))),
+            "ast" | "made" => {
+                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
+            }
             "Capture" | "clone" => return Some(Ok(target.clone())),
             // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
             // Cost: O(1).
@@ -1036,33 +1037,6 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-/// Format a numeric value for Instant/Duration .raku output.
-/// Always includes a decimal point (e.g. "42.0", "-400.2").
-fn format_temporal_num(f: f64) -> String {
-    if f.is_nan() {
-        return "NaN".to_string();
-    }
-    if f.is_infinite() {
-        return if f > 0.0 {
-            "Inf".to_string()
-        } else {
-            "-Inf".to_string()
-        };
-    }
-    // For values outside the safe i64 Rat range, emit scientific notation
-    // so that Str -> Num literal round-trips through the parser instead of
-    // overflowing the Rat literal parser.
-    if f.is_finite() && f.abs() >= 1e18 {
-        return format!("{:e}", f);
-    }
-    let s = format!("{}", f);
-    if s.contains('.') {
-        s
-    } else {
-        format!("{}.0", s)
-    }
-}
-
 use crate::builtins::backtrace_methods::{
     frame_is_routine as backtrace_frame_is_routine, frame_str as backtrace_frame_str,
 };
@@ -1158,146 +1132,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(Ok(v));
     }
 
-    // Instant.Instant returns self (identity coercion)
-    if method == "Instant" {
-        match target.view() {
-            ValueView::Instance { class_name, .. } if class_name == "Instant" => {
-                return Some(Ok(target.clone()));
-            }
-            ValueView::Package(name) if name == "Instant" => {
-                return Some(Ok(target.clone()));
-            }
-            _ => {}
-        }
-    }
-
-    // `Instant`/`Duration` do `Real`: `succ`/`pred` step by one second.
-    if matches!(method, "succ" | "pred")
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        && (class_name == "Instant" || class_name == "Duration")
-    {
-        return Some(temporal_dispatch::real_role_step(
-            class_name,
-            attributes.to_map(),
-            method == "succ",
-        ));
-    }
-
-    // Instant methods: to-posix, DateTime, Date, tai
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-    {
-        if class_name == "Instant" {
-            use crate::builtins::methods_0arg::temporal;
-            match method {
-                "to-posix" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                    let tai_int = tai.floor() as i64;
-                    let mut is_leap = false;
-                    for &(threshold, cumulative) in temporal::LEAP_SECONDS.iter().skip(1) {
-                        if tai_int == threshold + (cumulative - 1) {
-                            is_leap = true;
-                            break;
-                        }
-                    }
-                    let posix = temporal::instant_to_posix(tai);
-                    let posix_val = if posix == posix.floor() {
-                        Value::int(posix as i64)
-                    } else {
-                        Value::num(posix)
-                    };
-                    return Some(Ok(Value::array(vec![posix_val, Value::truth(is_leap)])));
-                }
-                "DateTime" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let (tai_int, tai_frac) = match val.view() {
-                        ValueView::Rat(n, d) if d != 0 => (n / d, (n % d) as f64 / d as f64),
-                        _ => {
-                            let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                            (f.floor() as i64, f - f.floor())
-                        }
-                    };
-                    let (y, m, d, h, mi, s) =
-                        temporal::instant_to_datetime_leap_aware_parts(tai_int, tai_frac, 0);
-                    return Some(Ok(temporal::make_datetime(y, m, d, h, mi, s, 0)));
-                }
-                "Date" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                    let posix = temporal::instant_to_posix(tai);
-                    let (y, m, d) = temporal::epoch_days_to_civil((posix / 86400.0).floor() as i64);
-                    return Some(Ok(temporal::make_date(y, m, d)));
-                }
-                "tai" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0))));
-                }
-                _ => {}
-            }
-        }
-        if class_name == "Duration" {
-            match method {
-                "narrow" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::num(0.0));
-                    // Rakudo's Duration always holds a Rat, and every
-                    // constructor here stores one (`arith::tai_rat`, #11273);
-                    // a Num can only come from a hand-built instance, which
-                    // narrows through the same Num -> Rat conversion `.Rat`
-                    // uses.
-                    let val = match val.view() {
-                        ValueView::Num(f) if f.is_finite() => {
-                            crate::builtins::arith::real_to_rat(&val)
-                        }
-                        _ => val.clone(),
-                    };
-                    match val.view() {
-                        ValueView::Num(f) => return Some(Ok(Value::num(f))),
-                        ValueView::Rat(n, d) if d != 0 && n % d == 0 => {
-                            return Some(Ok(Value::int(n / d)));
-                        }
-                        ValueView::Rat(n, d) => return Some(Ok(Value::rat_raw(n, d))),
-                        ValueView::Int(i) => return Some(Ok(Value::int(i))),
-                        _ => return Some(Ok(val.clone())),
-                    }
-                }
-                "tai" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::num(0.0))));
-                }
-                _ => {}
-            }
-        }
-    }
+    // `Instant` and `Duration` (`do Real`) answer from the rows of the method
+    // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
+    // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
     // Buf/Blob.Str throws X::Buf::AsStr — except `utf8`, whose `.Str`/`.Stringy`
     // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
@@ -1899,44 +1736,40 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let list_v = target.match_list();
         let named_v = target.match_named();
         match method {
+            // The `Match` rows' handlers (`method_table::regex_match`), for the
+            // matches the table has no shape for (a grammar cursor, an instance
+            // of a subclass).
             "from" => {
-                return Some(Ok(Value::int(match_helpers::match_value_from(target))));
+                return Some(Ok(crate::builtins::method_table::regex_match::from(target)));
             }
             "to" => {
-                return Some(Ok(Value::int(match_helpers::match_value_to(target))));
+                return Some(Ok(crate::builtins::method_table::regex_match::to(target)));
             }
             "pos" => {
-                return Some(Ok(Value::int(match_helpers::match_visible_pos(
-                    target,
-                    target.match_pos().unwrap_or(0),
-                ))));
+                return Some(Ok(crate::builtins::method_table::regex_match::pos(target)));
             }
             "gist" => {
-                // Full Match gist: corner-quoted text plus positional/named
-                // sub-captures, ordered by position and nested recursively.
-                let gist = crate::runtime::utils::match_gist(&(attributes).as_map(), 0);
-                return Some(Ok(Value::str(gist)));
+                return Some(Ok(crate::builtins::method_table::regex_match::gist(
+                    &(attributes).as_map(),
+                )));
             }
             "Str" => {
-                return Some(Ok(target
-                    .match_str_value()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
+                    target,
+                )));
             }
             "Bool" => {
-                // A failed `.subparse` Match is falsy; every other Match is truthy.
-                return Some(Ok(Value::truth(!target.match_is_failed())));
+                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
+                    target,
+                )));
             }
             "orig" | "target" => {
-                // `.target` is the original string the match ran against; for an
-                // ordinary Match it is identical to `.orig`.
-                return Some(Ok(target
-                    .match_orig()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
             }
             "raku" | "perl" => {
-                return Some(Ok(Value::str(match_helpers::match_raku_repr(
+                return Some(Ok(crate::builtins::method_table::regex_match::raku(
                     &(attributes).as_map(),
-                ))));
+                )));
             }
             "list" => {
                 return Some(Ok(target.match_list_view()));
@@ -2070,50 +1903,32 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::int(count as i64)));
             }
             "ast" | "made" => {
-                return Some(Ok(target.match_ast().unwrap_or(Value::NIL)));
+                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
             }
-            // Cost: O(p), p = chars of the prefix, for a lazy Match (sliced from its
-            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "prematch" => {
-                if let Some(pre) = target.match_side_text(true) {
-                    return Some(Ok(Value::str(pre)));
-                }
-                if let Some(orig_val) = target.match_orig() {
-                    let orig = orig_val.to_string_value();
-                    let from = target.match_from().unwrap_or(0).max(0) as usize;
-                    let chars: Vec<char> = orig.chars().collect();
-                    let pre: String = chars[..from.min(chars.len())].iter().collect();
-                    return Some(Ok(Value::str(pre)));
-                }
-                return Some(Ok(Value::str(String::new())));
+                return Some(Ok(crate::builtins::method_table::regex_match::prematch(
+                    target,
+                )));
             }
-            // Cost: O(s), s = chars of the suffix, for a lazy Match (sliced from its
-            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "postmatch" => {
-                if let Some(post) = target.match_side_text(false) {
-                    return Some(Ok(Value::str(post)));
-                }
-                if let Some(orig_val) = target.match_orig() {
-                    let orig = orig_val.to_string_value();
-                    let to = target.match_to().unwrap_or(0).max(0) as usize;
-                    let chars: Vec<char> = orig.chars().collect();
-                    let post: String = chars[to.min(chars.len())..].iter().collect();
-                    return Some(Ok(Value::str(post)));
-                }
-                return Some(Ok(Value::str(String::new())));
+                return Some(Ok(crate::builtins::method_table::regex_match::postmatch(
+                    target,
+                )));
             }
             "actions" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("actions")
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
+                return Some(Ok(crate::builtins::method_table::regex_match::actions(
+                    &(attributes).as_map(),
+                )));
             }
             "caps" => {
-                return Some(Ok(match_helpers::match_caps(&(attributes).as_map())));
+                return Some(Ok(crate::builtins::method_table::regex_match::caps(
+                    &(attributes).as_map(),
+                )));
             }
             "chunks" => {
-                return Some(Ok(match_helpers::match_chunks(&(attributes).as_map())));
+                return Some(Ok(crate::builtins::method_table::regex_match::chunks(
+                    &(attributes).as_map(),
+                )));
             }
             "Capture" => {
                 // Match.Capture returns self

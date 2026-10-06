@@ -579,6 +579,7 @@ impl CompiledAttrDecl {
             default_is_bind,
             default_is_seed,
             default_is_trait: _,
+            trait_order: _,
         } = stmt
         else {
             unreachable!("CompiledAttrDecl::from_stmt called on a non-HasDecl statement");

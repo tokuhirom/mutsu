@@ -203,10 +203,22 @@ impl Interpreter {
         // static, `local_read_plain` a `OnceLock` acquire and an indexed load,
         // so a program that has spoiled the latch pays only the load before
         // falling through to the chain below.
-        if crate::vm::vm_jit::local_read_unspoiled()
+        //
+        // The atomic-variable source of the latch is a per-NAME fact, so once an
+        // atomic exists somewhere the fast path is asked of this slot's name
+        // instead of being lost for the whole process
+        // (`Interpreter::atomic_name_possible`, #12120): a loop around one
+        // `my atomicint` reads every OTHER local at full speed.
+        let unspoiled = crate::vm::vm_jit::local_read_unspoiled();
+        if (unspoiled || crate::vm::vm_jit::local_read_unspoiled_by_any_name())
             && code.local_read_plain(idx)
             && let Some(val) = self.locals.get(idx)
             && val.is_plain_local_read()
+            && (unspoiled
+                || code
+                    .locals
+                    .get(idx)
+                    .is_some_and(|name| !Self::atomic_name_possible(name)))
         {
             // The latch is one counter shared by three sources, so a NEW spoiler
             // mechanism added without bumping it would silently break this path
@@ -216,8 +228,10 @@ impl Interpreter {
             // a debug-build assertion in the `debug-tap` suite run rather than
             // as a wrong answer in release.
             debug_assert!(
-                !self.atomic_var_seen(),
-                "GetLocal fast path taken with an atomic variable registered"
+                code.locals
+                    .get(idx)
+                    .is_none_or(|name| !Self::atomic_name_possible(name)),
+                "GetLocal fast path taken for a name registered as atomic"
             );
             debug_assert!(
                 !self.threads.sigilless_attrs_active,
@@ -265,8 +279,11 @@ impl Interpreter {
         }
         // Atomic-variable read: skip entirely (a `format!` plus two
         // `var_type_constraint` lookups) when no atomic storage has ever been
-        // registered — the common case on this hot local-read path.
-        if self.atomic_var_seen() {
+        // registered under this name — the common case on this hot local-read
+        // path, whatever other variables of the program are atomic. The
+        // interpreter's own flag stays the first half: a thread cloned before the
+        // atomic was registered reads its own same-spelled variable directly.
+        if self.atomic_var_seen() && Self::atomic_name_possible(name) {
             let atomic_name = name.strip_prefix('$').unwrap_or(name);
             let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
             // Only use the scalar atomic fast path for scalar ($) variables.

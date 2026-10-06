@@ -4,9 +4,8 @@ use crate::value::AttrMap;
 impl Interpreter {
     /// Join a `child`/`add` name onto a path lexically (no filesystem access),
     /// honoring the receiver's SPEC (Win32 vs POSIX separators). Raises
-    /// `X::IO::Null` for an embedded null byte. Shared by `try_io_path_lexical`
-    /// (the pure fast path) and `native_io_path`'s `child :secure` arm so the
-    /// join is implemented once.
+    /// `X::IO::Null` for an embedded null byte. Shared by the `IO::Path` rows
+    /// (`add`) and `io_path_child` so the join is implemented once.
     pub(crate) fn io_path_join_child(
         attributes: &AttrMap,
         p: &str,

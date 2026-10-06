@@ -16,7 +16,7 @@ pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
-pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
+pub(crate) use primary::ident::{anon_method_expr, anon_method_expr_declared, folded_invocant};
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
@@ -26,6 +26,8 @@ pub(crate) use primary::{
 pub(crate) use stmt::class::{EXPORT_TYPE_MARKER, export_type_marker};
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
+pub(crate) use stmt::modifier::for_modifier_loop_params;
+pub(crate) use stmt::sub::op_prec_trait;
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
@@ -731,10 +733,10 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
-    // Give this parse its own memo generation so entries keyed to `input` can
-    // never be confused with entries a nested parse stored for a since-dropped
-    // buffer at the same address (see `memo::MemoKey`).
-    let _memo_generation = memo::begin_parse_generation();
+    // Give this parse its own memo generation, over `input`, so entries keyed
+    // to `input` can never be confused with entries a nested parse stored for a
+    // since-dropped buffer at the same address (see `memo::MemoKey`).
+    let _memo_generation = memo::begin_buffer_generation(input);
     stmt::reset_user_subs();
     stmt::simple::register_preload_module_exports();
     apply_inherited_scopes();
@@ -947,7 +949,7 @@ pub(crate) fn parse_program_recovering(
     // buffer; the guard restores the enclosing parse's generation on return so
     // the entries this parse stored can never leak into the outer parse via
     // allocator address reuse (see `memo::MemoKey`).
-    let _memo_generation = memo::begin_parse_generation();
+    let _memo_generation = memo::begin_buffer_generation(input);
     // This is a best-effort nested sub-parse (module export scan / EVAL / pseudo
     // package). It must not leak the scanned source's `use vX` pragma into the
     // caller: `reset_user_subs` resets the language version to the 6.d default and

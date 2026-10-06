@@ -1106,7 +1106,12 @@ impl Interpreter {
                     // A declared type (e.g. an immutable `Map`) names the value
                     // directly, mirroring `.WHAT`.
                     if let Some(ref declared) = info.declared_type {
-                        return Ok(Value::str(declared.clone()));
+                        // A NativeCall type is reported package-qualified
+                        // (`NativeCall::Types::CArray[Str]`), as it is for an
+                        // instance of the same class.
+                        return Ok(Value::str(
+                            crate::value::user_facing_type_name(declared).into_owned(),
+                        ));
                     }
                     match target.view() {
                         ValueView::Hash(_) => {

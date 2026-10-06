@@ -5,7 +5,7 @@ use Test;
 # handler rows owned by Set, SetHash, Bag, BagHash, Mix and MixHash. Every
 # answer below was checked against Rakudo.
 
-plan 8;
+plan 9;
 
 my $set = set <a b c>;
 my $sethash = SetHash.new(<a b>);
@@ -76,6 +76,14 @@ subtest 'kxxv, invert and Numeric', {
     is $baghash.Numeric, 3, 'BagHash.Numeric';
     is $mix.Numeric, 4, 'Mix.Numeric';
     is $mixhash.Numeric, 2, 'MixHash.Numeric';
+}
+
+subtest 'Mix kxxv is unsupported', {
+    plan 2;
+    throws-like { $mix.kxxv }, X::AdHoc, :message('.kxxv is not supported on a Mix'),
+        'Mix.kxxv is not supported';
+    throws-like { $mixhash.kxxv }, X::AdHoc, :message('.kxxv is not supported on a MixHash'),
+        'MixHash.kxxv is not supported';
 }
 
 subtest 'total and elems', {

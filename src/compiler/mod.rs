@@ -4662,6 +4662,24 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        // A unit that ends in a `package` / `module` block is
+                        // that package's type object, as a trailing `class`
+                        // is. The object is the one this statement registers
+                        // (its qualified name, read before the statement can
+                        // move `current_package`), not a bareword lookup of the
+                        // name: a module still loading cannot look its own
+                        // qualified package up (`package Cro::HTTP::Router`,
+                        // `package EXPORT::DEFAULT`).
+                        Stmt::Package { name, .. } => {
+                            let qualified = self.qualify_package_name(&name.resolve());
+                            self.compile_stmt(stmt);
+                            let idx = self.code.add_constant(Value::package(
+                                crate::symbol::Symbol::intern(&qualified),
+                            ));
+                            self.code.emit(OpCode::LoadConst(idx));
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         _ => {}
                     }
                 }

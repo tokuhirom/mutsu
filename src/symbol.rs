@@ -216,6 +216,15 @@ pub(crate) mod flags {
     /// this name dispatches straight to the op table
     /// (`Interpreter::exec_nqp_call_op`).
     pub(crate) const NQP_OP: u16 = 1 << 3;
+    /// A native atomic helper (`__mutsu_atomic_*` / `__mutsu_cas_*`, the names in
+    /// [`super::NATIVE_ATOMIC_HELPER_NAMES`]): a compiler-emitted primitive in a
+    /// reserved namespace no user routine is declared in, so a call op carrying
+    /// this name dispatches straight to it (`Interpreter::exec_atomic_helper_call_op`).
+    pub(crate) const NATIVE_ATOMIC_HELPER: u16 = 1 << 12;
+    /// An atomic helper whose FIRST argument is the target binding, tagged with
+    /// the frame slot the call site reaches (`is_atomic_var_helper_name`): the
+    /// only argument of a call that keeps its `VarRef` wrapper.
+    pub(crate) const ATOMIC_TARGET_HELPER: u16 = 1 << 13;
     /// A *plain user lexical* env key. Mirrors
     /// `crate::env::is_plain_user_lexical`.
     pub(crate) const PLAIN_USER_LEXICAL: u16 = 1 << 4;
@@ -297,6 +306,43 @@ pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
 /// The `nqp::` prefix `flags::NQP_OP` marks.
 pub(crate) const NQP_OP_PREFIX: &str = "nqp::";
 
+/// The native atomic helpers `flags::NATIVE_ATOMIC_HELPER` marks: exactly the
+/// names `Interpreter::try_native_atomic_function` answers. A unit test beside
+/// it pins that every name here is one it answers, so the flag can only ever
+/// under-claim, which costs the shortcut and nothing else.
+pub(crate) const NATIVE_ATOMIC_HELPER_NAMES: [&str; 19] = [
+    "__mutsu_atomic_fetch_var",
+    "__mutsu_atomic_store_var",
+    "__mutsu_atomic_int_target",
+    "__mutsu_atomic_narrow_target",
+    "__mutsu_atomic_add_var",
+    "__mutsu_cas_add_var",
+    "__mutsu_atomic_fetch_add_var",
+    "__mutsu_atomic_post_inc_var",
+    "__mutsu_atomic_pre_inc_var",
+    "__mutsu_atomic_post_dec_var",
+    "__mutsu_atomic_pre_dec_var",
+    "__mutsu_cas_var",
+    "__mutsu_atomic_elem",
+    "__mutsu_cas_array_elem",
+    "__mutsu_cas_attr",
+    "__mutsu_cas_array_elem_code",
+    "__mutsu_cas_array_multidim_code",
+    "__mutsu_cas_array_multidim",
+    "__mutsu_cas_hash_elem",
+];
+
+/// Whether `name` is an atomic scalar helper that takes its target binding as
+/// the first argument (`__mutsu_atomic_*_var`, `__mutsu_cas_var`,
+/// `__mutsu_cas_add_var`). The compiler tags that argument with the frame slot
+/// the call site reaches (`Compiler::emit_atomic_target`), which is how a helper
+/// tells an inner `my atomicint $y` from the outer `$y` it shadows (#12006).
+// Cost: O(|name|).
+pub(crate) fn is_atomic_var_helper_name(name: &str) -> bool {
+    name.ends_with("_var")
+        && (name.starts_with("__mutsu_atomic_") || name.starts_with("__mutsu_cas_"))
+}
+
 /// The `__mutsu_callable_id::` prefix `flags::CALLABLE_ID_META` marks. Kept
 /// next to the flag so the two cannot drift.
 pub(crate) const CALLABLE_ID_META_PREFIX: &str = "__mutsu_callable_id::";
@@ -357,6 +403,14 @@ fn compute_flags(s: &str) -> u16 {
     }
     if s.starts_with(NQP_OP_PREFIX) {
         f |= flags::NQP_OP;
+    }
+    if s.starts_with("__mutsu_") {
+        if NATIVE_ATOMIC_HELPER_NAMES.contains(&s) {
+            f |= flags::NATIVE_ATOMIC_HELPER;
+        }
+        if is_atomic_var_helper_name(s) {
+            f |= flags::ATOMIC_TARGET_HELPER;
+        }
     }
     if s.starts_with(CALLABLE_ID_META_PREFIX) {
         f |= flags::CALLABLE_ID_META;

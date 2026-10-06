@@ -17,7 +17,9 @@
 //! gathered in the same traversal to keep them symmetric.
 
 use crate::ast::{CallArg, Expr, ParamDef, Stmt, UndeclaredRoutineCall};
-use crate::ast_visit::{NameKind, Visit, walk_call_arg, walk_param, walk_stmt, walk_stmts};
+use crate::ast_visit::{
+    NameKind, Visit, walk_call_arg, walk_expr, walk_param, walk_stmt, walk_stmts,
+};
 use crate::value::{RuntimeError, RuntimeErrorCode};
 use std::collections::HashSet;
 
@@ -171,6 +173,19 @@ impl<'ast> Visit<'ast> for Scan {
             }
             _ => walk_stmt(self, stmt),
         }
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        // A lowercase bareword in any expression position (`say bar`,
+        // `my $x = bar`) is the same "no-args routine reference" as the
+        // statement form above; rakudo rejects it at CHECK time too.
+        if let Expr::BareWord(name) = expr
+            && name != "self"
+            && !name.starts_with(|c: char| c.is_ascii_uppercase())
+        {
+            self.record_call(name);
+        }
+        walk_expr(self, expr);
     }
 
     fn visit_param(&mut self, param: &'ast ParamDef) {

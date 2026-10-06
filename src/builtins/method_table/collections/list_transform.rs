@@ -150,6 +150,10 @@ pub(crate) fn sort(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         | ValueView::BigRat(..)
         | ValueView::FatRat(..)
         | ValueView::Complex(..) => Some(Ok(Value::seq(vec![target.clone()]))),
+        // A `Date`, `DateTime`, `Instant` or `Duration` is one item too.
+        _ if super::any_collection::scalar_like(target) => {
+            Some(Ok(Value::seq(vec![target.clone()])))
+        }
         _ => None,
     }
 }
@@ -262,6 +266,7 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         ValueView::Pair(..) | ValueView::ValuePair(..) => {
             Some(Ok(Value::seq(vec![target.clone()])))
         }
+        ValueView::Bool(_) => Some(Ok(Value::seq(vec![target.clone()]))),
         ValueView::LazyList(_) => None,
         ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
         _ => Some(Ok(target.clone())),

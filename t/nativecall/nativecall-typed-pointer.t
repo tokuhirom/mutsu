@@ -11,7 +11,7 @@ use NativeCall;
 # so a struct with a single such field had no layout at all and every field
 # access on it failed. DBIish's `MYSQL_BIND` is exactly that shape.
 
-plan 14;
+plan 16;
 
 sub calloc(size_t, size_t --> Pointer) is native { * }
 sub free(Pointer) is native { * }
@@ -55,14 +55,17 @@ free($blk);
 
 # --- a Pointer[T] field is one pointer, and does not break the layout ---
 class WithTyped is repr('CStruct') {
+    has Pointer       $.raw;
     has Pointer[int8] $.err;
     has int32         $.n is rw;
 }
-is nativesizeof(WithTyped), 16,       'a Pointer[T] field is one pointer, padded';
+is nativesizeof(WithTyped), 24,       'Pointer and Pointer[T] fields have pointer layout';
 
 my $blk2 = calloc(1, 32);
 my $w = nativecast(WithTyped, $blk2);
 $w.n = 5;
 is $w.n, 5,                           'the struct still has a working layout';
-is $w.err.Int, 0,                     'and the Pointer[T] field reads as NULL';
+nok $w.raw.defined,                   'a NULL Pointer field reads as the type object';
+nok $w.err.defined,                   'a NULL Pointer[T] field reads as the type object';
+is $w.err.Int, 0,                     'the NULL Pointer[T] type object coerces to 0';
 free($blk2);
