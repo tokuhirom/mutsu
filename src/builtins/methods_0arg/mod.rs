@@ -789,14 +789,6 @@ pub(crate) fn native_method_0arg_cascade(
     // candidate. `bool` and the C-width aliases are not coercion methods at all
     // (see `is_native_int_coerce_method`).
     if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
-        // `Cool.int8` & co. are `self.Numeric.int8`: an aggregate numifies to
-        // its element count first.
-        if let Some(count) = cool_aggregate_elems(target) {
-            return Some(raku_repr::native_int_coerce_method(
-                &Value::int(count),
-                method,
-            ));
-        }
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
     // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
