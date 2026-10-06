@@ -1270,7 +1270,12 @@ impl Interpreter {
                         }
                         return items.iter().all(|v| self.type_matches_value(inner, v));
                     }
-                    return false;
+                    // `Positional[Int]` / `Associative[Int]` are builtin roles:
+                    // their type object is a `ParametricRole`, compared with the
+                    // constraint by the role-argument check further down.
+                    if !matches!(value.view(), ValueView::ParametricRole { .. }) {
+                        return false;
+                    }
                 }
                 "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     if let ValueView::Instance { class_name, .. } = value.view() {
@@ -1339,7 +1344,9 @@ impl Interpreter {
                             }
                         });
                     }
-                    return false;
+                    if !matches!(value.view(), ValueView::ParametricRole { .. }) {
+                        return false;
+                    }
                 }
                 "Callable" | "Code" | "Sub" | "Routine" | "Block" | "Method" => {
                     // Callable[ReturnType] — check if value is callable and has a matching return type
