@@ -9,6 +9,21 @@ mod io_concurrency;
 mod mutating;
 mod scalars;
 
+/// The type object of a shape that has no instances.
+fn type_sample(class: &str) -> Value {
+    Value::package(Symbol::intern(class))
+}
+
+/// How a call on `sample(shape)` reaches the table: as an instance, or for a
+/// shape with no instances, as its type object.
+fn receiver_of_sample(shape: DispatchShape) -> Receiver {
+    if shape.has_instances() {
+        Receiver::instance(shape)
+    } else {
+        Receiver::type_object(shape)
+    }
+}
+
 fn sample(shape: DispatchShape) -> Value {
     match shape {
         DispatchShape::List => Value::array(vec![Value::int(1), Value::int(2)]),
@@ -61,6 +76,15 @@ fn sample(shape: DispatchShape) -> Value {
             &Default::default(),
             crate::value::regex_caps::MatchTarget::new("xxxab"),
         ),
+        DispatchShape::IoSpecUnix => type_sample("IO::Spec::Unix"),
+        DispatchShape::IoSpecWin32 => type_sample("IO::Spec::Win32"),
+        DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
+        DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
+        DispatchShape::IoPath => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("path".to_string(), Value::str_from("foo/bar"));
+            Value::make_instance(Symbol::intern("IO::Path"), attributes)
+        }
     }
 }
 
@@ -82,7 +106,11 @@ fn rows() -> impl Iterator<Item = &'static MethodRow> {
 #[test]
 fn samples_have_their_shape() {
     for shape in DispatchShape::ALL {
-        assert_eq!(sample(shape).dispatch_shape(), Some(shape));
+        if shape.has_instances() {
+            assert_eq!(sample(shape).dispatch_shape(), Some(shape));
+        } else {
+            assert_eq!(sample(shape).type_object_shape(), Some(shape));
+        }
     }
 }
 
@@ -107,7 +135,11 @@ fn every_row_is_reached_and_answers() {
     for row in rows() {
         let mut reached = false;
         for shape in DispatchShape::ALL {
-            let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
+            let Some(found) = table::lookup(
+                receiver_of_sample(shape),
+                Symbol::intern(row.name),
+                row.arity,
+            ) else {
                 continue;
             };
             if !std::ptr::eq(found, row) {
@@ -221,13 +253,10 @@ fn a_new_shape_reaches_only_its_own_rows() {
             let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
                 continue;
             };
-            if !shape.inherits() {
-                assert_eq!(
-                    found.owner,
-                    shape.type_name(),
-                    "{shape:?} reached a row its type does not own"
-                );
-            }
+            assert!(
+                shape.reaches(found.owner),
+                "{shape:?} reached a row its type does not own"
+            );
         }
     }
 }

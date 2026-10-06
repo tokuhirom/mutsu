@@ -2,31 +2,13 @@ use super::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    /// File *content reads* on an `IO::Path` (`slurp`/`lines`/`words`): resolve
-    /// the path against the VM-owned cwd, then either read the entire file and
-    /// decode it (`slurp`) or open a private read handle whose deferred Seq
-    /// reads records on demand (`lines`/`words`, see
-    /// [`Self::io_path_lines_or_words`]). The VM dispatches them natively
-    /// (ledger §D) via the single impl `native_io_path` also delegates to.
-    /// `comb` and `open`/`spurt` return `None` and stay in `native_io_path`.
-    pub(crate) fn try_io_path_content_read(
+    /// `IO::Path.slurp`: resolve the path against the cwd, then read the entire
+    /// file and decode it (a `Buf[uint8]` with `:bin`; text decoded with
+    /// `:enc`, utf-8 by default).
+    // Cost: O(b), b = the file's size in bytes.
+    pub(crate) fn io_path_slurp(
         &mut self,
         attributes: &AttrMap,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "slurp" | "lines" | "words") {
-            return None;
-        }
-        Some(self.io_path_content_read(attributes, method, args))
-    }
-
-    /// The fallible body of [`Self::try_io_path_content_read`] (the gate returns
-    /// `Option` so it cannot use `?`).
-    fn io_path_content_read(
-        &mut self,
-        attributes: &AttrMap,
-        method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let p = attributes
@@ -34,16 +16,46 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
-        match method {
-            "slurp" => {
-                let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(args);
-                self.slurp_file(&path_buf, bin, enc.as_deref())
-            }
-            "lines" | "words" => {
-                self.io_path_lines_or_words(&path_buf, &p, method == "words", args)
-            }
-            _ => unreachable!("io_path_content_read called with non-content method"),
-        }
+        let (_, _, _, bin, _, _, _, _, enc, _, _) = self.parse_io_flags_values(args);
+        self.slurp_file(&path_buf, bin, enc.as_deref())
+    }
+
+    /// `IO::Path.lines`: the deferred Seq of the file's lines, see
+    /// [`Self::io_path_lines_or_words`].
+    // Cost: O(1) (an open(2)) without a limit; O(bytes up to the limit-th
+    // record) with one.
+    pub(crate) fn io_path_lines(
+        &mut self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.io_path_records(attributes, false, args)
+    }
+
+    /// `IO::Path.words`: the deferred Seq of the file's words, see
+    /// [`Self::io_path_lines_or_words`].
+    // Cost: O(1) (an open(2)) without a limit; O(bytes up to the limit-th
+    // record) with one.
+    pub(crate) fn io_path_words(
+        &mut self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        self.io_path_records(attributes, true, args)
+    }
+
+    fn io_path_records(
+        &mut self,
+        attributes: &AttrMap,
+        words: bool,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        self.io_path_lines_or_words(&path_buf, &p, words, args)
     }
 
     /// Read the whole file at `path_buf` (already resolved against the cwd):
@@ -151,26 +163,20 @@ impl Interpreter {
         Ok(Value::seq(parts))
     }
 
-    /// Open a file handle for an `IO::Path` (`open`): allocate an `io_handles`
-    /// entry and return the `IO::Handle`. This is the one IO::Path FS method that
-    /// mutates VM-owned `io_handles` state (`&mut self`) — but the VM *owns* that
-    /// table (a shared `Arc<RwLock>`), so it dispatches `open` natively (ledger §D
-    /// ③) via the single shared `open_file_handle` the interpreter also uses, with
-    /// the same `:r`/`:w`/`:a`/`:rw`/`:bin`/`:enc`/`:create`/`:exclusive` flag
-    /// handling and the same Failure-on-error shaping. Path resolution
-    /// (`resolve_io_path_buf`) and flag parsing (`parse_io_flags_values`) are
-    /// `&self` reads returning owned values, so there is no borrow conflict with
-    /// the subsequent `&mut self` `open_file_handle`. Returns `None` for any other
-    /// method.
-    pub(crate) fn try_io_path_open(
+    /// `IO::Path.open`: allocate an `io_handles` entry and return the
+    /// `IO::Handle`, with the `:r`/`:w`/`:a`/`:rw`/`:bin`/`:enc`/`:create`/
+    /// `:exclusive` flag handling of the `open` sub (the single
+    /// `open_file_handle`). Path resolution (`resolve_io_path_buf`) and flag
+    /// parsing (`parse_io_flags_values`) are `&self` reads returning owned
+    /// values, so there is no borrow conflict with the subsequent `&mut self`
+    /// `open_file_handle`. Like the `open` sub, it returns a `Failure` (wrapping
+    /// the exception) on error rather than throwing.
+    // Cost: O(p) plus one open(2), p = chars of the path.
+    pub(crate) fn io_path_open(
         &mut self,
         attributes: &AttrMap,
-        method: &str,
         args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if method != "open" {
-            return None;
-        }
+    ) -> Result<Value, RuntimeError> {
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
@@ -189,7 +195,7 @@ impl Interpreter {
             create,
             exclusive,
         ) = self.parse_io_flags_values(args);
-        Some(
+        Ok(
             match self.open_file_handle(
                 &path_buf,
                 read,
@@ -205,32 +211,23 @@ impl Interpreter {
                 exclusive,
                 Some(std::path::Path::new(&p)),
             ) {
-                Ok(handle) => Ok(handle),
-                // Like the `open` sub, `IO::Path.open` returns a Failure (wrapping
-                // the exception) on error rather than throwing.
-                Err(err) => Ok(super::fs_errors::open_error_failure(err)),
+                Ok(handle) => handle,
+                Err(err) => super::fs_errors::open_error_failure(err),
             },
         )
     }
 
     /// `IO::Path.comb`: read the whole file, then comb the content. The matcher
     /// dispatch (`dispatch_comb_with_args`) is `&mut self` because a regex/closure
-    /// matcher runs the match engine — but it reads no `io_handles`, so the VM
-    /// dispatches `comb` natively (ledger §D): the single impl `native_io_path`
-    /// also delegates to. **Also fixes a pre-existing bug**: the no-matcher form
-    /// (`$path.IO.comb` with no positional) used to return an empty Seq here (the
-    /// old arm mapped `dispatch_comb_with_args`'s `None` to empty); it now splits
-    /// the content into graphemes, matching `Str.comb` and Rakudo. Returns `None`
-    /// for any other method.
-    pub(crate) fn try_io_path_comb(
+    /// matcher runs the match engine, but it reads no `io_handles`. The
+    /// no-matcher form splits the content into graphemes, as `Str.comb` and
+    /// Rakudo do.
+    // Cost: O(b), b = the file's size in bytes, plus the matcher's own cost.
+    pub(crate) fn io_path_comb(
         &mut self,
         attributes: &AttrMap,
-        method: &str,
         args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if method != "comb" {
-            return None;
-        }
+    ) -> Result<Value, RuntimeError> {
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
@@ -239,10 +236,10 @@ impl Interpreter {
         let content = match fs::read_to_string(&path_buf) {
             Ok(c) => super::utils::decode_text_content(c),
             Err(err) => {
-                return Some(Err(RuntimeError::new(format!(
+                return Err(RuntimeError::new(format!(
                     "Failed to read '{}': {}",
                     p, err
-                ))));
+                )));
             }
         };
         // Filter out :close (irrelevant for IO::Path) before delegating.
@@ -254,5 +251,6 @@ impl Interpreter {
         // No matcher combs into graphemes inside `dispatch_comb_with_args`
         // (same as `Str.comb` with no args / Rakudo).
         self.dispatch_comb_with_args(Value::str(content), &comb_args)
+            .unwrap_or_else(|| Ok(Value::seq(Vec::new())))
     }
 }

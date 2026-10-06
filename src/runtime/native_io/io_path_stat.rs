@@ -2,142 +2,186 @@ use super::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    /// `.absolute` / `.relative` on an `IO::Path`: like [`try_io_path_lexical`](crate::runtime::Interpreter::try_io_path_lexical),
-    /// these derive a string from the path, but additionally depend on the
-    /// **cwd** (`$*CWD` / the instance `cwd` attribute / the process cwd) — read
-    /// through `&self` (`resolve_path`/`get_cwd_path`/`apply_chroot`), which are
-    /// purely lexical (no filesystem access). The VM owns env/cwd, so this is a
-    /// native dispatch; the single shared impl that `native_io_path` delegates to.
-    /// Returns `None` for any other method (`.resolve` canonicalizes against the
-    /// real filesystem and stays in `native_io_path`).
-    pub(crate) fn try_io_path_cwd_method(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "absolute" | "relative") {
-            return None;
-        }
+    /// The pieces `.absolute` and `.relative` read of an `IO::Path`: its path,
+    /// its own `cwd` attribute, the path resolved against the cwd (the
+    /// instance's, `$*CWD`, or the process's, with any chroot applied) and the
+    /// current working directory. Purely lexical, no filesystem access.
+    fn io_path_cwd_frame(&self, attributes: &AttrMap) -> (String, Option<String>, PathBuf, PathBuf) {
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
-        let path_buf = if Path::new(&p).is_absolute() {
-            self.resolve_path(&p)
-        } else if let Some(cwd) = &instance_cwd {
-            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
-        } else {
-            self.resolve_path(&p)
-        };
-        let cwd_path = self.get_cwd_path();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        (p, instance_cwd, path_buf, self.get_cwd_path())
+    }
+
+    /// `IO::Path.absolute`: the path made absolute against `$base` (the
+    /// instance's `CWD` by default, which is `$*CWD` unless it was given one),
+    /// as the receiver's SPEC writes it. Depends on the cwd, which the
+    /// interpreter owns, and not on the filesystem.
+    // Cost: O(p), p = chars of the path.
+    pub(crate) fn io_path_absolute(
+        &self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (p, instance_cwd, path_buf, cwd_path) = self.io_path_cwd_frame(attributes);
         let original = Path::new(&p);
-        Some(match method {
-            "absolute" => {
-                if Self::is_win32_spec(attributes) {
-                    let base = Self::positional_value(args, 0)
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let abs = if Self::io_path_is_absolute_win32(&p) {
-                        p.clone()
-                    } else {
-                        let sep = '\\';
-                        if base.ends_with('\\') || base.ends_with('/') {
-                            format!("{}{}", base, p)
-                        } else {
-                            format!("{}{}{}", base, sep, p)
-                        }
-                    };
-                    let cleaned = Self::canonpath_win32(&abs, false);
-                    Ok(Value::str(cleaned))
-                } else if Self::is_cygwin_spec(attributes) {
-                    let base = Self::positional_value(args, 0)
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let pn = p.replace('\\', "/");
-                    let abs = if Self::io_path_is_absolute_win32(&pn) {
-                        pn
-                    } else {
-                        let bn = base.replace('\\', "/");
-                        if bn.ends_with('/') {
-                            format!("{}{}", bn, pn)
-                        } else {
-                            format!("{}/{}", bn, pn)
-                        }
-                    };
-                    Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
+        if Self::is_win32_spec(attributes) {
+            let base = Self::positional_value(args, 0)
+                .map(|v| v.to_string_value())
+                .or_else(|| instance_cwd.clone())
+                .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+            let abs = if Self::io_path_is_absolute_win32(&p) {
+                p.clone()
+            } else {
+                let sep = '\\';
+                if base.ends_with('\\') || base.ends_with('/') {
+                    format!("{}{}", base, p)
                 } else {
-                    let base = Self::positional_value(args, 0).map(|v| v.to_string_value());
-                    if let Some(base) = base {
-                        if original.is_absolute() {
-                            Ok(Value::str(p.clone()))
-                        } else {
-                            let joined = PathBuf::from(&base).join(&p);
-                            Ok(Value::str(Self::stringify_path(&joined)))
-                        }
-                    } else {
-                        let absolute = Self::stringify_path(&path_buf);
-                        Ok(Value::str(absolute))
-                    }
+                    format!("{}{}{}", base, sep, p)
                 }
-            }
-            "relative" => {
-                if Self::is_win32_spec(attributes) {
-                    let base = Self::positional_value(args, 0)
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let norm_p = p.replace('/', "\\");
-                    let norm_base = base.replace('/', "\\");
-                    let rel = norm_p
-                        .strip_prefix(&norm_base)
-                        .and_then(|r| r.strip_prefix('\\'))
-                        .unwrap_or(&norm_p);
-                    Ok(Value::str(rel.to_string()))
-                } else if Self::is_cygwin_spec(attributes) {
-                    let base = Self::positional_value(args, 0)
-                        .map(|v| v.to_string_value())
-                        .or_else(|| instance_cwd.clone())
-                        .unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                    let norm_p = p.replace('\\', "/");
-                    let norm_base = base.replace('\\', "/");
-                    let rel = norm_p
-                        .strip_prefix(&norm_base)
-                        .and_then(|r| r.strip_prefix('/'))
-                        .unwrap_or(&norm_p);
-                    Ok(Value::str(rel.to_string()))
+            };
+            let cleaned = Self::canonpath_win32(&abs, false);
+            Ok(Value::str(cleaned))
+        } else if Self::is_cygwin_spec(attributes) {
+            let base = Self::positional_value(args, 0)
+                .map(|v| v.to_string_value())
+                .or_else(|| instance_cwd.clone())
+                .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+            let pn = p.replace('\\', "/");
+            let abs = if Self::io_path_is_absolute_win32(&pn) {
+                pn
+            } else {
+                let bn = base.replace('\\', "/");
+                if bn.ends_with('/') {
+                    format!("{}{}", bn, pn)
                 } else {
-                    // Compute a path relative to `base` (default `$*CWD`),
-                    // matching raku's `$*SPEC.abs2rel`: make both the receiver
-                    // and the base absolute, drop the common leading prefix, and
-                    // prepend a `..` for each remaining base component. A plain
-                    // `strip_prefix` only works when the base is a literal
-                    // ancestor of the path — for a sibling/relative base it must
-                    // walk up with `..` (raku returns e.g. `../A/x`), and the old
-                    // fall-through to the absolute path corrupted zef's extract
-                    // paths (it uses `$archive.relative($tmp)` to build `-C`).
-                    // `.relative`'s default base is `$*CWD` (`cwd_path`), NOT the
-                    // receiver's own `.CWD` attribute — unlike `.absolute`, which
-                    // defaults to `$.CWD`. So `.resolve` (which stamps `:CWD("/")`)
-                    // followed by no-arg `.relative` still relativizes against the
-                    // process cwd: `"foo/bar".IO.resolve.relative` is `foo/bar`, and
-                    // `IO::Path.new("b/c", :CWD("/a")).relative` is `../../..a/b/c`
-                    // relative to `$*CWD`, not `b/c`. The receiver's `.CWD` is only
-                    // used to make the *target* path absolute (`path_buf`, above).
-                    let base_buf =
-                        match Self::positional_value(args, 0).map(|v| v.to_string_value()) {
-                            Some(base) => self.resolve_path(&base),
-                            None => cwd_path.clone(),
-                        };
-                    let rel = Self::lexical_abs2rel(&path_buf, &base_buf);
-                    Ok(Value::str(rel))
+                    format!("{}/{}", bn, pn)
                 }
+            };
+            Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
+        } else {
+            let base = Self::positional_value(args, 0).map(|v| v.to_string_value());
+            if let Some(base) = base {
+                if original.is_absolute() {
+                    Ok(Value::str(p.clone()))
+                } else {
+                    let joined = PathBuf::from(&base).join(&p);
+                    Ok(Value::str(Self::stringify_path(&joined)))
+                }
+            } else {
+                let absolute = Self::stringify_path(&path_buf);
+                Ok(Value::str(absolute))
             }
-            _ => unreachable!(),
-        })
+        }
+    }
+
+    /// `IO::Path.relative`: the path relative to `$base` (`$*CWD` by default),
+    /// as the receiver's SPEC writes it. Depends on the cwd, which the
+    /// interpreter owns, and not on the filesystem.
+    // Cost: O(p + b), p = chars of the path, b = chars of the base.
+    pub(crate) fn io_path_relative(
+        &self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (p, instance_cwd, path_buf, cwd_path) = self.io_path_cwd_frame(attributes);
+        if Self::is_win32_spec(attributes) {
+            let base = Self::positional_value(args, 0)
+                .map(|v| v.to_string_value())
+                .or_else(|| instance_cwd.clone())
+                .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+            let norm_p = p.replace('/', "\\");
+            let norm_base = base.replace('/', "\\");
+            let rel = norm_p
+                .strip_prefix(&norm_base)
+                .and_then(|r| r.strip_prefix('\\'))
+                .unwrap_or(&norm_p);
+            Ok(Value::str(rel.to_string()))
+        } else if Self::is_cygwin_spec(attributes) {
+            let base = Self::positional_value(args, 0)
+                .map(|v| v.to_string_value())
+                .or_else(|| instance_cwd.clone())
+                .unwrap_or_else(|| Self::stringify_path(&cwd_path));
+            let norm_p = p.replace('\\', "/");
+            let norm_base = base.replace('\\', "/");
+            let rel = norm_p
+                .strip_prefix(&norm_base)
+                .and_then(|r| r.strip_prefix('/'))
+                .unwrap_or(&norm_p);
+            Ok(Value::str(rel.to_string()))
+        } else {
+            // Compute a path relative to `base` (default `$*CWD`),
+            // matching raku's `$*SPEC.abs2rel`: make both the receiver
+            // and the base absolute, drop the common leading prefix, and
+            // prepend a `..` for each remaining base component. A plain
+            // `strip_prefix` only works when the base is a literal
+            // ancestor of the path — for a sibling/relative base it must
+            // walk up with `..` (raku returns e.g. `../A/x`), and the old
+            // fall-through to the absolute path corrupted zef's extract
+            // paths (it uses `$archive.relative($tmp)` to build `-C`).
+            // `.relative`'s default base is `$*CWD` (`cwd_path`), NOT the
+            // receiver's own `.CWD` attribute — unlike `.absolute`, which
+            // defaults to `$.CWD`. So `.resolve` (which stamps `:CWD("/")`)
+            // followed by no-arg `.relative` still relativizes against the
+            // process cwd: `"foo/bar".IO.resolve.relative` is `foo/bar`, and
+            // `IO::Path.new("b/c", :CWD("/a")).relative` is `../../..a/b/c`
+            // relative to `$*CWD`, not `b/c`. The receiver's `.CWD` is only
+            // used to make the *target* path absolute (`path_buf`, above).
+            let base_buf = match Self::positional_value(args, 0).map(|v| v.to_string_value()) {
+                Some(base) => self.resolve_path(&base),
+                None => cwd_path.clone(),
+            };
+            let rel = Self::lexical_abs2rel(&path_buf, &base_buf);
+            Ok(Value::str(rel))
+        }
+    }
+
+    /// `IO::Path.CWD`: the directory the path was made relative to, the
+    /// instance's own `cwd` attribute or else the current working directory.
+    // Cost: O(1).
+    pub(crate) fn io_path_cwd_of(&self, attributes: &AttrMap) -> String {
+        attributes
+            .get("cwd")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(|| Self::stringify_path(&self.get_cwd_path()))
+    }
+
+    /// `IO::Path.raku`: the `.new` call that rebuilds the path, with its `:CWD`.
+    /// A plain `IO::Path` renders its `:SPEC` explicitly (`IO::Spec::Unix` on
+    /// POSIX); a SPEC-variant subclass (`IO::Path::Win32`) omits it, as its
+    /// class already implies the spec, matching Rakudo. The instance's actual
+    /// class names the call, not one derived from the `SPEC` attribute, so
+    /// `is-deeply $p.raku.EVAL, $p` round-trips (the class is part of an
+    /// instance's equality).
+    // Cost: O(p), p = chars of the path.
+    pub(crate) fn io_path_raku(&self, class_name: &str, attributes: &AttrMap) -> String {
+        let escape = |s: &str| {
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\t', "\\t")
+                .replace('\r', "\\r")
+                .replace('\0', "\\0")
+        };
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let spec = if class_name == "IO::Path" {
+            ":SPEC(IO::Spec::Unix), "
+        } else {
+            ""
+        };
+        format!(
+            "{}.new(\"{}\", {}:CWD(\"{}\"))",
+            class_name,
+            escape(&p),
+            spec,
+            escape(&self.io_path_cwd_of(attributes))
+        )
     }
 
     /// Lexically compute the path of `target` relative to `base`, the core of
@@ -181,58 +225,29 @@ impl Interpreter {
         }
     }
 
-    /// Filesystem `stat`-only predicates / accessors on an `IO::Path`
-    /// (`e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z` file tests and the
-    /// `mode`/`s`/`created`/`modified`/`accessed`/`changed` stat readers). They
-    /// resolve the receiver's path against the cwd (`&self`, VM-owned env) and
-    /// then read the filesystem via `stat` only — no `io_handles` allocation, no
-    /// `emit_output`, no encoding/content read. So the VM can dispatch them
-    /// natively (ledger §D): the single shared impl that `native_io_path`
-    /// delegates to. Returns `None` for any other method (content reads
-    /// `slurp`/`lines`/handle-opening `open`/`spurt`, which need flags/encoding/
-    /// `io_handles` and stay in `native_io_path`).
-    /// Cost: O(p) plus one filesystem query, p = path length.
-    pub(crate) fn try_io_path_fs_stat(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(
-            method,
-            "e" | "f"
-                | "d"
-                | "l"
-                | "r"
-                | "w"
-                | "x"
-                | "rw"
-                | "rwx"
-                | "z"
-                | "mode"
-                | "inode"
-                | "dev"
-                | "devtype"
-                | "s"
-                | "created"
-                | "modified"
-                | "accessed"
-                | "changed"
-        ) {
-            return None;
-        }
+    /// The answer of one `stat`-only `IO::Path` method: the `e`/`f`/`d`/`l`/
+    /// `r`/`w`/`x`/`rw`/`rwx`/`z` file tests and the `mode`/`inode`/`dev`/
+    /// `devtype`/`s`/`created`/`modified`/`accessed`/`changed` readers, named by
+    /// `kind` (the method's own name; the `-e $path` file-test operators share
+    /// [`io_file_test`]). The receiver's path is
+    /// resolved against the cwd and the filesystem is read via `stat` only: no
+    /// `io_handles` allocation, no output, no content read. A missing path is a
+    /// `Failure`, as in Rakudo.
+    // Cost: O(p) plus one filesystem query, p = path length.
+    pub(crate) fn io_path_stat(&self, attributes: &AttrMap, kind: &str) -> Result<Value, RuntimeError> {
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let path_buf = self.resolve_io_path_buf(attributes, &p);
-        Some(Self::io_path_stat_result(&path_buf, method))
+        Self::io_path_stat_result(&path_buf, kind)
     }
 
     /// Resolve an `IO::Path`'s `path` attribute to an absolute filesystem
     /// `PathBuf` against the VM-owned cwd (`$*CWD` / the instance `cwd` attribute /
     /// the process cwd), applying any chroot. Purely lexical (no filesystem
     /// access) — shared by the `&self` native IO::Path methods
-    /// (`try_io_path_fs_stat` / `try_io_path_content_read`) and `native_io_path`.
+    /// (`io_path_stat` / `io_path_content_read`) and `native_io_path`.
     pub(crate) fn resolve_io_path_buf(&self, attributes: &AttrMap, p: &str) -> PathBuf {
         let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
         if Path::new(p).is_absolute() {
@@ -244,7 +259,7 @@ impl Interpreter {
         }
     }
 
-    /// Pure `stat`-based result for the [`Self::try_io_path_fs_stat`] methods given an
+    /// Pure `stat`-based result for the [`Self::io_path_stat`] methods given an
     /// already-resolved `path_buf`, which also names the path in a Failure's
     /// message. Factored out so both the VM-native path and `native_io_path`
     /// run the exact same filesystem queries and Failure shaping.

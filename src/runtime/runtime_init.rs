@@ -858,7 +858,6 @@ impl Interpreter {
                     "spurt",
                     "unlink",
                     "symlink",
-                    "starts-with",
                     "watch",
                     "succ",
                     "pred",

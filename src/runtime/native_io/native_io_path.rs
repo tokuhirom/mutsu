@@ -18,6 +18,153 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// `IO::Path.Numeric`: IO::Path is Cool, so it coerces the *basename* to a
+    /// number (raku-doc Type/IO/Path: method Numeric), failing with an
+    /// X::Str::Numeric Failure (a soft fail, what `fails-like` expects) when the
+    /// basename is not numerical.
+    // Cost: O(p), p = chars of the path.
+    pub(crate) fn io_path_numeric(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let (_, _, bname) = Self::io_path_parts_spec(&p, attributes);
+        let bname_val = Value::str(bname.clone());
+        if crate::runtime::str_numeric::parse_raku_str_to_numeric(&bname).is_some() {
+            // Coerce the basename to its natural numeric (so "3.5" -> Rat,
+            // "1+1i" -> Complex): going straight to `Str.Num` would choke on a
+            // complex-valued basename like "3+0i".
+            self.call_method_with_values(bname_val, "Numeric", vec![])
+        } else {
+            let err = crate::runtime::utils::check_str_numeric(&bname_val)
+                .err()
+                .unwrap_or_else(|| {
+                    crate::runtime::utils::str_numeric_error(&bname, 0, "malformed number")
+                });
+            Ok(self.fail_error_to_failure_value(&err))
+        }
+    }
+
+    /// `IO::Path.child($name, :secure)`: the path of `$name` inside the
+    /// directory. With `:secure` it verifies that the resulting path is a real
+    /// child of the (completely resolved) parent: it fails with X::IO::Resolve
+    /// when the parent or the child path cannot be completely resolved, and
+    /// with X::IO::NotAChild when the resolved child escapes the parent
+    /// directory. Path-deriving methods round-trip the receiver's class
+    /// (`IO::Path::Win32.child` stays an `IO::Path::Win32`).
+    // Cost: O(p + n), p = chars of the path, n = chars of the name, plus the
+    // filesystem walk of `:secure`.
+    pub(crate) fn io_path_child(
+        &mut self,
+        attributes: &AttrMap,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        let cwd_path = self.get_cwd_path();
+        let original = Path::new(&p);
+        let child_name = Self::positional_value(args, 0)
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let joined = Self::io_path_join_child(attributes, &p, &child_name)?;
+        let mut new_attrs = attributes.clone();
+        new_attrs.insert("path".to_string(), Value::str(joined.clone()));
+        let child = Value::make_instance(class_name, new_attrs);
+        if Self::named_bool(args, "secure") {
+            let parent_abs = if original.is_absolute() {
+                path_buf.clone()
+            } else if let Some(cwd) = &instance_cwd {
+                PathBuf::from(cwd).join(original)
+            } else {
+                cwd_path.join(original)
+            };
+            let child_path = Path::new(&joined);
+            let child_abs = if child_path.is_absolute() {
+                child_path.to_path_buf()
+            } else if let Some(cwd) = &instance_cwd {
+                PathBuf::from(cwd).join(child_path)
+            } else {
+                cwd_path.join(child_path)
+            };
+            let res_parent = Self::resolve_io_path(&parent_abs, true, &p);
+            let res_child = Self::resolve_io_path(&child_abs, true, &joined);
+            match (res_parent, res_child) {
+                (Err(_), _) | (_, Err(_)) => {
+                    return Ok(self.make_io_failure("X::IO::Resolve", &p));
+                }
+                (Ok(rp), Ok(rc)) => {
+                    let sep = Self::io_path_sep(attributes);
+                    let prefix = format!("{}{}", rp, sep);
+                    if !rc.starts_with(&prefix) || rc == rp {
+                        return Ok(self.make_io_failure("X::IO::NotAChild", &joined));
+                    }
+                }
+            }
+        }
+        Ok(child)
+    }
+
+    /// `IO::Path.resolve(:completely)`: the path with its symlinks and `..`
+    /// resolved against the filesystem. `.resolve(:completely)` fails (returns
+    /// a Failure) rather than throwing when the path cannot be fully resolved.
+    // Cost: O(p) plus one filesystem query per path segment, p = path length.
+    pub(crate) fn io_path_resolve(
+        &mut self,
+        attributes: &AttrMap,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let path_buf = self.resolve_io_path_buf(attributes, &p);
+        let completely = Self::named_bool(args, "completely");
+        let resolved = match Self::resolve_io_path(&path_buf, completely, &p) {
+            Ok(r) => r,
+            Err(_) => return Ok(self.make_io_failure("X::IO::Resolve", &p)),
+        };
+        // A resolved path is absolute, so its CWD becomes the volume root
+        // (the SPEC's dir separator on POSIX).
+        let mut new_attrs = attributes.clone();
+        new_attrs.insert("path".to_string(), Value::str(resolved));
+        let sep = Self::io_path_sep(attributes).to_string();
+        new_attrs.insert("cwd".to_string(), Value::str(sep));
+        Ok(Value::make_instance(class_name, new_attrs))
+    }
+
+    /// `IO::Path.dir(:test)`: the entries of the directory. `sub dir` and this
+    /// method are one body (`dir_listing`).
+    // Cost: O(n), n = directory entries (plus the `test` smartmatch per entry).
+    pub(crate) fn io_path_dir(
+        &mut self,
+        attributes: &AttrMap,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
+        let test_opt = args.iter().find_map(|arg| match arg.view() {
+            ValueView::Pair(key, value) if key == "test" => Some(value.clone()),
+            _ => None,
+        });
+        self.dir_listing(Some(p), instance_cwd, test_opt, class_name)
+    }
+
+    /// The native methods of an `IO::Path` instance whose class has no shape in
+    /// the method table (a user subclass, reached by its MRO). Every method
+    /// `IO::Path` declares is a row of the table and is answered through its
+    /// owner; what is left here is `Cool`'s numeric coercions, which take the
+    /// path's basename as a number.
+    // Cost: O(1) to find the row, plus the handler's own cost.
     pub(crate) fn native_io_path(
         &mut self,
         attributes: &AttrMap,
@@ -25,243 +172,33 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // Pure lexical path methods (`.parent`/`.add`/`.basename`/`.sibling`/…)
-        // are handled by the single shared `try_io_path_lexical` (the same impl
-        // the bytecode VM dispatches natively). Only the filesystem / cwd-relative
-        // forms below need `&self`.
-        if let Some(result) = Self::try_io_path_lexical(class_name, attributes, method, &args) {
+        // `Mu.perl` is `self.raku`, so the row of `raku` answers it.
+        let row_method = if method == "perl" { "raku" } else { method };
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &["IO::Path"],
+            row_method,
+            &args,
+            || Value::make_instance_without_destroy(Symbol::intern(class_name), attributes.clone()),
+        ) {
             return result;
         }
-        // `.absolute` / `.relative` derive a string from the path + cwd (lexical,
-        // no filesystem) — handled by the shared `try_io_path_cwd_method` the VM
-        // also dispatches natively.
-        if let Some(result) = self.try_io_path_cwd_method(attributes, method, &args) {
-            return result;
-        }
-        // Filesystem `stat`-only predicates / accessors (`e`/`f`/`d`/…/`s`/
-        // `modified`) — `stat` reads only, no `io_handles`, shared with the VM's
-        // native dispatch via `try_io_path_fs_stat`.
-        if let Some(result) = self.try_io_path_fs_stat(attributes, method) {
-            return result;
-        }
-        // Whole-file content reads (`slurp`/`lines`/`words`) — read the file,
-        // split/decode the bytes; no `io_handles`, shared with the VM's native
-        // dispatch via `try_io_path_content_read`.
-        if let Some(result) = self.try_io_path_content_read(attributes, method, &args) {
-            return result;
-        }
-        // Single-path filesystem mutations (`spurt`/`mkdir`/`rmdir`/`unlink`/
-        // `chmod`) — one-shot syscall, no `io_handles`, shared with the VM's
-        // native dispatch via `try_io_path_fs_mutate`.
-        if let Some(result) = self.try_io_path_fs_mutate(attributes, class_name, method, &args) {
-            return result;
-        }
-        // `open` allocates an `io_handles` entry and returns an `IO::Handle`. The
-        // VM owns `io_handles`, so it dispatches `open` natively via the shared
-        // `try_io_path_open` (ledger §D ③).
-        if let Some(result) = self.try_io_path_open(attributes, method, &args) {
-            return result;
-        }
-        // Two-path FS ops (`copy`/`rename`/`move`/`symlink`/`link`) — resolve both
-        // paths against the VM-owned cwd, one-shot syscall, no `io_handles`, shared
-        // with the VM's native dispatch via `try_io_path_two_path_op`.
-        if let Some(result) = self.try_io_path_two_path_op(attributes, method, &args) {
-            return result;
-        }
-        // `comb` reads the whole file then combs the content (matcher dispatch is
-        // `&mut self` but touches no `io_handles`) — shared with the VM's native
-        // dispatch via `try_io_path_comb`.
-        if let Some(result) = self.try_io_path_comb(attributes, method, &args) {
-            return result;
-        }
-        // `watch` starts a filesystem watcher and returns its live Supply —
-        // shared with the VM's native dispatch via `try_io_path_watch`.
-        if let Some(result) = self.try_io_path_watch(attributes, method) {
-            return result;
-        }
-        // The concrete class of the receiver (`IO::Path` or a SPEC-variant
-        // subclass `IO::Path::Unix`/`::Win32`/`::Cygwin`/`::QNX`). Path-deriving
-        // methods (`.child :secure`, ...) must round-trip this class so e.g.
-        // `IO::Path::Win32.new("x").parent(0)` stays an `IO::Path::Win32`
-        // (Rakudo preserves the subclass; `is-deeply`/`eqv` compares it).
-        let io_path_class = Symbol::intern(class_name);
-        let p = attributes
-            .get("path")
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
-        let path_buf = if Path::new(&p).is_absolute() {
-            self.resolve_path(&p)
-        } else if let Some(cwd) = &instance_cwd {
-            self.apply_chroot(PathBuf::from(cwd).join(Path::new(&p)))
-        } else {
-            self.resolve_path(&p)
-        };
-        let cwd_path = self.get_cwd_path();
-        let original = Path::new(&p);
         match method {
-            "raku" | "perl" => {
-                let escape = |s: &str| {
-                    s.replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n")
-                        .replace('\t', "\\t")
-                        .replace('\r', "\\r")
-                        .replace('\0', "\\0")
-                };
-                let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                // Use the instance's actual class (not a name derived from the
-                // `SPEC` attribute): a plain `IO::Path` whose `$*SPEC` happens to
-                // be `IO::Spec::Unix` is still class `IO::Path`, and rendering it
-                // as `IO::Path::Unix.new(...)` would EVAL into a *different*
-                // class than the original, breaking `is-deeply $p.raku.EVAL, $p`
-                // (class_name is part of Instance equality). An explicitly
-                // subclassed instance (`IO::Path::Win32.new(...)`) already has
-                // that name as its `class_name`, so this is a no-op for it.
-                // A plain `IO::Path` renders its `:SPEC` explicitly
-                // (`IO::Spec::Unix` on POSIX); a SPEC-variant subclass
-                // (`IO::Path::Win32`) omits it — the subclass already implies
-                // its spec, matching Rakudo's `.raku`.
-                let spec = if class_name == "IO::Path" {
-                    ":SPEC(IO::Spec::Unix), "
+            // `Cool`'s `.Real`/`.Int`/`.Rat`/`.Num`/`.FatRat` fall out of
+            // `.Numeric`: coerce to the natural numeric first, then to the
+            // requested type. A basename that is not numerical is a `Failure`.
+            // TODO: these are `Cool`'s rows (ADR-11276 3B remainder); move them
+            // there when `IoPath` is opened to the `Cool` rows.
+            "Real" | "Int" | "Rat" | "Num" | "FatRat" => {
+                let numeric = self.io_path_numeric(attributes)?;
+                let failed = matches!(numeric.view(), ValueView::Instance { class_name, .. }
+                    if class_name == "Failure");
+                if failed || method == "Real" {
+                    Ok(numeric)
                 } else {
-                    ""
-                };
-                Ok(Value::str(format!(
-                    "{}.new(\"{}\", {}:CWD(\"{}\"))",
-                    class_name,
-                    escape(&p),
-                    spec,
-                    escape(&cwd)
-                )))
-            }
-            "CWD" => {
-                let cwd = instance_cwd.unwrap_or_else(|| Self::stringify_path(&cwd_path));
-                Ok(Value::str(cwd))
-            }
-            // IO::Path is Cool: `.Numeric`/`.Int`/`.Rat`/`.Num`/`.FatRat`/`.Real`
-            // coerce the *basename* to a number, failing with an X::Str::Numeric
-            // Failure (a soft fail, what `fails-like` expects) when the basename
-            // is not numerical (raku-doc Type/IO/Path: method Numeric / method Int).
-            "Numeric" | "Real" | "Int" | "Rat" | "Num" | "FatRat" => {
-                let (_, _, bname) = Self::io_path_parts_spec(&p, attributes);
-                let bname_val = Value::str(bname.clone());
-                if crate::runtime::str_numeric::parse_raku_str_to_numeric(&bname).is_some() {
-                    // Per the spec, IO::Path's `.Int`/`.Rat`/`.Num`/`.FatRat` fall
-                    // out of `.Numeric` (Cool): coerce the basename to its natural
-                    // numeric first (so "3.5" -> Rat, "1+1i" -> Complex), then to
-                    // the requested type. Going straight to `Str.Num` would choke on
-                    // a complex-valued basename like "3+0i".
-                    let numeric = self.call_method_with_values(bname_val, "Numeric", vec![])?;
-                    match method {
-                        "Numeric" | "Real" => Ok(numeric),
-                        _ => self.call_method_with_values(numeric, method, args),
-                    }
-                } else {
-                    // Non-numerical basename: fail with an X::Str::Numeric Failure
-                    // (a soft fail, what `fails-like` expects), not a thrown error.
-                    let err = crate::runtime::utils::check_str_numeric(&bname_val)
-                        .err()
-                        .unwrap_or_else(|| {
-                            crate::runtime::utils::str_numeric_error(&bname, 0, "malformed number")
-                        });
-                    Ok(self.fail_error_to_failure_value(&err))
+                    self.call_method_with_values(numeric, method, args)
                 }
             }
-            // `.child($name, :secure)` resolves the path against the filesystem.
-            // (Plain `.child`/`.add` are pure lexical joins handled by
-            // `try_io_path_lexical` before this match.)
-            "child" => {
-                let child_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let joined = Self::io_path_join_child(attributes, &p, &child_name)?;
-                let mut new_attrs = attributes.clone();
-                new_attrs.insert("path".to_string(), Value::str(joined.clone()));
-                let child = Value::make_instance(io_path_class, new_attrs);
-                // `.child($name, :secure)` verifies that the resulting path is a
-                // real child of the (completely resolved) parent. It fails with
-                // X::IO::Resolve when the parent or the child path cannot be
-                // completely resolved, and with X::IO::NotAChild when the
-                // resolved child escapes the parent directory.
-                if Self::named_bool(&args, "secure") {
-                    let parent_abs = if original.is_absolute() {
-                        path_buf.clone()
-                    } else if let Some(cwd) = &instance_cwd {
-                        PathBuf::from(cwd).join(original)
-                    } else {
-                        cwd_path.join(original)
-                    };
-                    let child_path = Path::new(&joined);
-                    let child_abs = if child_path.is_absolute() {
-                        child_path.to_path_buf()
-                    } else if let Some(cwd) = &instance_cwd {
-                        PathBuf::from(cwd).join(child_path)
-                    } else {
-                        cwd_path.join(child_path)
-                    };
-                    let res_parent = Self::resolve_io_path(&parent_abs, true, &p);
-                    let res_child = Self::resolve_io_path(&child_abs, true, &joined);
-                    match (res_parent, res_child) {
-                        (Err(_), _) | (_, Err(_)) => {
-                            return Ok(self.make_io_failure("X::IO::Resolve", &p));
-                        }
-                        (Ok(rp), Ok(rc)) => {
-                            let sep = Self::io_path_sep(attributes);
-                            let prefix = format!("{}{}", rp, sep);
-                            if !rc.starts_with(&prefix) || rc == rp {
-                                return Ok(self.make_io_failure("X::IO::NotAChild", &joined));
-                            }
-                        }
-                    }
-                }
-                Ok(child)
-            }
-            "resolve" => {
-                let completely = Self::named_bool(&args, "completely");
-                let resolved = match Self::resolve_io_path(&path_buf, completely, &p) {
-                    Ok(r) => r,
-                    // `.resolve(:completely)` fails (returns a Failure) rather
-                    // than throwing when the path cannot be fully resolved.
-                    Err(_) => return Ok(self.make_io_failure("X::IO::Resolve", &p)),
-                };
-                // A resolved path is absolute, so its CWD becomes the volume root
-                // (the SPEC's dir separator on POSIX).
-                let mut new_attrs = attributes.clone();
-                new_attrs.insert("path".to_string(), Value::str(resolved));
-                let sep = Self::io_path_sep(attributes).to_string();
-                new_attrs.insert("cwd".to_string(), Value::str(sep));
-                Ok(Value::make_instance(io_path_class, new_attrs))
-            }
-            // `e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z`/`mode`/`s`/`created`/
-            // `modified`/`accessed`/`changed` (stat-only) are handled above by the
-            // shared `try_io_path_fs_stat`, which the VM also dispatches natively.
-            // `lines`/`words` (whole-file content reads) are handled above by the
-            // shared `try_io_path_content_read`, which the VM also dispatches
-            // natively. `comb` is handled above by the shared `try_io_path_comb`,
-            // which the VM also dispatches natively.
-            // `slurp` (whole-file content read) is handled above by the shared
-            // `try_io_path_content_read`, which the VM also dispatches natively.
-            // `open` (allocates an `io_handles` entry) is handled above by the
-            // shared `try_io_path_open`, which the VM also dispatches natively.
-            // `copy`/`rename`/`move` (two-path FS ops) are handled above by the
-            // shared `try_io_path_two_path_op`, which the VM also dispatches natively.
-            // `chmod`/`mkdir`/`rmdir` (single-path FS mutations) are handled above
-            // by the shared `try_io_path_fs_mutate`, which the VM also dispatches
-            // natively.
-            // `sub dir` and this method are one body (`dir_listing`).
-            "dir" => {
-                let test_opt = args.iter().find_map(|arg| match arg.view() {
-                    ValueView::Pair(key, value) if key == "test" => Some(value.clone()),
-                    _ => None,
-                });
-                self.dir_listing(Some(p.clone()), instance_cwd, test_opt, io_path_class)
-            }
-            // `spurt`/`unlink` (single-path FS mutations) are handled above by the
-            // shared `try_io_path_fs_mutate`, which the VM also dispatches natively.
-            // `symlink`/`link` (two-path FS ops) are handled above by the shared
-            // `try_io_path_two_path_op`, which the VM also dispatches natively.
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Path",
                 method
