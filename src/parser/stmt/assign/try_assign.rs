@@ -691,13 +691,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         let name = format!("{}{}", prefix, var);
         if is_atomic {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::str(name)), rhs],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
         }
         let name = format!("{}{}", prefix, var);
         return Ok((

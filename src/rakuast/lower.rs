@@ -3211,6 +3211,10 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
+    if let Some(call) = super::atomic_op::lower(node) {
+        return call;
+    }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),

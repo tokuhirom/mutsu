@@ -212,13 +212,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(rest) = input.strip_prefix('⚛') {
         let (rest, expr) = postfix_expr(rest)?;
         if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_fetch_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::fetch_var(name)));
         }
         if let Some(call) = atomic_elem_update("atomic-fetch", &expr) {
             return Ok((rest, call));

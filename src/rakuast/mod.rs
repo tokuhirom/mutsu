@@ -11,6 +11,7 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod anon_state;
+mod atomic_op;
 mod attribute;
 mod bareword;
 mod chain;

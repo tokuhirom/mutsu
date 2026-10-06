@@ -2047,6 +2047,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(stub) = stub_node(name.as_str(), args) {
                 return stub;
             }
+            if let Some(atomic) = super::atomic_op::convert(name.as_str(), args) {
+                return atomic;
+            }
             if is_desugar_marker(name.as_str()) {
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), args)
                     .or_else(|| call_lvalue_parts(name.as_str(), args))
