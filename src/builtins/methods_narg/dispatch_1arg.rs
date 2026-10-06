@@ -22,16 +22,53 @@ use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive};
 
-/// The epsilon `.Rat(eps)` / `.FatRat(eps)` was given: a `Num`, a `Rat` or an
-/// `Int`, else the default `1e-6`.
+/// Whether `arg` is a `Real`, the type of the `Real $epsilon` parameter of
+/// `.Rat(eps)` / `.FatRat(eps)`: a number, a `Bool`, an enum value, an allomorph
+/// (`<0.01>`), or an object that carries a numeric payload (`Duration`,
+/// `Instant`). A `Str`, `Nil`, a type object, a `Complex` and every container
+/// are not.
 // Cost: O(1).
-fn rat_epsilon_arg(arg: &Value) -> f64 {
+fn is_real_epsilon(arg: &Value) -> bool {
     match arg.view() {
-        ValueView::Num(f) => f,
-        ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-        ValueView::Int(i) => i as f64,
-        _ => 1e-6,
+        ValueView::Num(_)
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Rat(..)
+        | ValueView::BigRat(..)
+        | ValueView::FatRat(..)
+        | ValueView::Bool(_)
+        | ValueView::Enum { .. } => true,
+        ValueView::Mixin(inner, _) => is_real_epsilon(inner),
+        ValueView::Scalar(inner) => is_real_epsilon(inner),
+        ValueView::Instance { .. } => {
+            !arg.is_match_instance() && crate::runtime::to_float_value(arg).is_some()
+        }
+        _ => false,
     }
+}
+
+/// The epsilon `.Rat(eps)` / `.FatRat(eps)` was bound to. Rakudo's parameter is
+/// `Real $epsilon`, so anything else (a `Str`, `Nil`, a type object, a
+/// `Complex`) fails the bind with `X::TypeCheck::Binding::Parameter`, as
+/// `Num.Rat('0.01')` does there (#12043). `param` is the parameter's name as
+/// Rakudo reports it: the `Num` candidates name theirs `epsilon` (`Rat`) and
+/// `$epsilon` (`FatRat`), the `Rat` candidates leave it anonymous (`<anon>`).
+/// A `Real` numifies; a non-finite one has no usable value and keeps the
+/// default `1e-6`.
+// Cost: O(1).
+fn rat_epsilon_arg(arg: &Value, param: &str) -> Result<f64, RuntimeError> {
+    if !is_real_epsilon(arg) {
+        return Err(runtime::utils::typecheck_binding_parameter_with_hint(
+            param,
+            "Real",
+            arg,
+            &runtime::utils::value_short_repr(arg),
+            None,
+        ));
+    }
+    Ok(crate::runtime::to_float_value(arg)
+        .filter(|f| f.is_finite())
+        .unwrap_or(1e-6))
 }
 
 /// `f.Rat(epsilon)`: the simplest rational within `epsilon` of `f` (a continued
@@ -525,19 +562,31 @@ pub(crate) fn native_method_1arg(
             crate::builtins::decode_buf_method(target, Some(&encoding))
         }
         "Rat" => {
-            // .Rat(epsilon) — use continued fraction algorithm with given epsilon
-            let epsilon = rat_epsilon_arg(arg);
+            // .Rat(epsilon) — use continued fraction algorithm with given epsilon.
+            // Only an invocant that binds the epsilon type-checks it: an `Int`
+            // (already rational) never does, so `7.Rat('0.01')` is `7.0`.
             let result = match target.view() {
-                ValueView::Rat(_, _) => target.clone(),
+                ValueView::Rat(_, _) => {
+                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
+                        return Some(Err(e));
+                    }
+                    target.clone()
+                }
                 ValueView::Int(i) => Value::rat_raw(i, 1),
-                ValueView::Num(f) => num_rat_with_epsilon(f, epsilon),
+                ValueView::Num(f) => match rat_epsilon_arg(arg, "epsilon") {
+                    Ok(epsilon) => num_rat_with_epsilon(f, epsilon),
+                    Err(e) => return Some(Err(e)),
+                },
                 ValueView::FatRat(n, d) => Value::rat_raw(n, d),
                 // Whether the imaginary part is negligible is judged against
                 // `$*TOLERANCE`, which only the interpreter can read
                 // (`Interpreter::dispatch_complex_to_real`).
                 ValueView::Complex(..) => return None,
                 ValueView::Str(s) => {
+                    // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
+                    // reading of whatever was passed is kept.
                     if let Ok(f) = s.parse::<f64>() {
+                        let epsilon = rat_epsilon_arg(arg, "epsilon").unwrap_or(1e-6);
                         crate::builtins::num_to_rat_with_epsilon(f, epsilon)
                     } else {
                         Value::rat_raw(0, 1)
@@ -553,10 +602,18 @@ pub(crate) fn native_method_1arg(
             let result = match target.view() {
                 ValueView::FatRat(_, _) => target.clone(),
                 ValueView::Int(i) => Value::fat_rat_raw(i, 1),
-                ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
-                ValueView::Num(f) => match num_rat_with_epsilon(f, rat_epsilon_arg(arg)).view() {
-                    ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
-                    _ => Value::fat_rat_raw(0, 1),
+                ValueView::Rat(n, d) => {
+                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
+                        return Some(Err(e));
+                    }
+                    Value::fat_rat_raw(n, d)
+                }
+                ValueView::Num(f) => match rat_epsilon_arg(arg, "$epsilon") {
+                    Ok(epsilon) => match num_rat_with_epsilon(f, epsilon).view() {
+                        ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
+                        _ => Value::fat_rat_raw(0, 1),
+                    },
+                    Err(e) => return Some(Err(e)),
                 },
                 // As for `Rat` above: the interpreter judges the imaginary part.
                 ValueView::Complex(..) => return None,
