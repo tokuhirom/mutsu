@@ -945,7 +945,7 @@ impl Interpreter {
     }
 
     /// `.WHY` from the docs a loaded module kept (see
-    /// [`DeclaratorDocs::loaded_units`]), cached under the module's unit so
+    /// `DeclaratorDocs::loaded_units`), cached under the module's unit so
     /// that every `.WHY` on one declaration is the same object.
     // Cost: O(u * k + |doc|), u = loaded units consulted, k = keys.
     fn loaded_module_why(
