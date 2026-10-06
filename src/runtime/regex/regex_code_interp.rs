@@ -21,15 +21,30 @@ use super::super::*;
 pub(in crate::runtime) fn code_interp_close(chars: &[char], open: usize) -> Option<usize> {
     let mut depth = 0usize;
     let mut quote: Option<char> = None;
+    // The last non-whitespace code character outside a string. This lets the
+    // scanner distinguish a nested `rx/ ... /` term from a division slash.
+    let mut prev_sig = '(';
     let mut i = open;
     while i < chars.len() {
         let c = chars[i];
+        if quote.is_none()
+            && c == 'r'
+            && crate::regex_code_nested::slash_opens_regex_after(prev_sig)
+            && chars.get(i + 1) == Some(&'x')
+            && chars.get(i + 2) == Some(&'/')
+            && let Some(len) = crate::regex_code_nested::nested_regex_literal_len(&chars[i + 3..])
+        {
+            i += 3 + len;
+            prev_sig = '/';
+            continue;
+        }
         match quote {
             Some(q) => {
                 if c == '\\' {
                     i += 1;
                 } else if c == q {
                     quote = None;
+                    prev_sig = q;
                 }
             }
             None => match c {
@@ -43,6 +58,9 @@ pub(in crate::runtime) fn code_interp_close(chars: &[char], open: usize) -> Opti
                 }
                 _ => {}
             },
+        }
+        if quote.is_none() && !c.is_whitespace() && !matches!(c, '\'' | '"') {
+            prev_sig = c;
         }
         i += 1;
     }
