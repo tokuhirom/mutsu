@@ -2725,9 +2725,18 @@ impl Interpreter {
             let source_in_enclosing_decl_scope = !self.lexicals.nested_capture_owners.is_empty()
                 && !source_in_same_scope
                 && self.env().contains_key(&resolved_source);
+            // A file-scope lexical of the running routine's own compunit (a
+            // module routine reading its module's `my`) is an outer variable
+            // too, but no frame env vouches for it: it lives only in the
+            // compunit's lexical store (#11797).
+            let source_in_unit_store = !source_in_same_scope
+                && !is_percall_pseudo_var
+                && !synthetic_index_source
+                && self.unit_lexical_slot(&resolved_source, None).is_some();
             let source_in_outer_frame = !is_percall_pseudo_var
                 && !synthetic_index_source
                 && (source_in_enclosing_decl_scope
+                    || source_in_unit_store
                     || self
                         .call_frames
                         .iter()
