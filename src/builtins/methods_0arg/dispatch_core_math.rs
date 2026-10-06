@@ -2,6 +2,7 @@
 /// exp, atan2, trig functions, Rat, FatRat, tree, encode, sink, item, race/hyper,
 /// NFC/NFD/NFKC/NFKD
 use crate::symbol::Symbol;
+use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
 use num_traits::ToPrimitive;
 
@@ -384,6 +385,8 @@ pub(super) fn dispatch(
                     crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
                 ))
             }
+            // `"1+2i".Rat` is `Complex.Rat`: the runtime tests the imaginary part.
+            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
             // Cost: O(d^2), d = digits (parsed twice: the guard above and `str_to_rat`).
             ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
             // A Complex is Real when its imaginary part is `≅ 0`; the runtime
@@ -496,6 +499,8 @@ pub(super) fn dispatch(
                     crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
                 ))
             }
+            // As `.Rat`: coerced as the `Complex` it numifies to.
+            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
             ValueView::Str(s) => {
                 let rat = str_to_rat(&s);
                 match rat.view() {
