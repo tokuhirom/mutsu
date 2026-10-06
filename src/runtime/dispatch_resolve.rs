@@ -125,7 +125,7 @@ impl Interpreter {
         // behind it is memoized per base name and re-runs only after the
         // functions map or the index entry changed (`audit_fn_keys_base`).
         #[cfg(debug_assertions)]
-        self.audit_fn_keys_base(name, function_key_base_name(name), &keys);
+        self.audit_fn_keys_base(name, name_sym, &keys);
         // A compunit-private top-level routine has been moved OUT of the
         // functions map (`runtime/unit_private_routines.rs`), so the key index
         // cannot see it; the gate must not veto a resolution that would find

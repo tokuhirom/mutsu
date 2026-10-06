@@ -78,8 +78,22 @@ impl Interpreter {
     // since the last audit of `base`; otherwise O(r), r = registered functions.
     // Debug builds only.
     #[cfg(debug_assertions)]
-    pub(crate) fn audit_fn_keys_base(&mut self, name: &str, base: &str, keys: &Arc<[Symbol]>) {
-        let base_sym = Symbol::intern(base);
+    pub(crate) fn audit_fn_keys_base(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        keys: &Arc<[Symbol]>,
+    ) {
+        // The caller's symbol is the base's when the name is its own base (the
+        // ordinary unqualified case, as in `fn_keys_for_base_sym`): interning
+        // here would be one more intern per call, which
+        // `tests/named_call_intern_budget.rs` budgets.
+        let base = function_key_base_name(name);
+        let base_sym = if base.len() == name.len() {
+            name_sym
+        } else {
+            Symbol::intern(base)
+        };
         // The version is read BEFORE the scan: a write racing in between
         // leaves a memo under the older version, which just audits again.
         let version = self.registry().functions_version();
