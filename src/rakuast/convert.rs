@@ -104,6 +104,10 @@ pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static 
 /// The parser's `custom_traits` marker for an `our sub`.
 pub(super) const OUR_SCOPED: &str = "__our_scoped";
 
+/// The custom trait the parser gives an operator sub that declares its
+/// precedence or associativity.
+const OP_PREC_TRAIT: &str = "__prec";
+
 /// The parser's `custom_traits` marker for a `my`-scoped declaration
 /// (`my role R { }`).
 pub(super) const MY_SCOPED: &str = "__my_scoped";
@@ -698,10 +702,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let deferred = [
                 (name_expr.is_some(), "sub with a computed name"),
                 (
-                    associativity.is_some() || precedence_trait.is_some(),
-                    "sub with an `is assoc` / precedence trait",
-                ),
-                (
                     !signature_alternates.is_empty(),
                     "sub with alternate signatures",
                 ),
@@ -716,8 +716,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (*supersede, "`supersede` sub"),
                 (
                     custom_traits.iter().any(|(t, _)| {
-                        t.starts_with("__") && !is_return_spelling_marker(t) && t != OUR_SCOPED
-                            || t.starts_with("DEPRECATED")
+                        t.starts_with("__")
+                            && !is_return_spelling_marker(t)
+                            && t != OUR_SCOPED
+                            // The operator-precedence record the parser derives
+                            // from `is assoc` / `is tighter`; lowering rebuilds it.
+                            && t != OP_PREC_TRAIT
                             || crate::qualified::is_qualified_str(t)
                     }),
                     "sub with an internal or qualified trait",
@@ -742,7 +746,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 export_tags: export_tags.clone(),
-            };
+                ..Default::default()
+            }
+            .with_precedence(associativity.as_ref(), precedence_trait.as_ref())?;
             routine_traits::add_flags(&mut node, *multi, false, &flags)?;
             routine_traits::add_custom(&mut node, custom_traits, !flags.nodes().is_empty())?;
             if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
@@ -790,21 +796,25 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // "not inherited" flag, not because the source said `my` — so for a
             // submethod that flag carries no RakuAST shape of its own.
             let declared_my = *is_my && !*is_submethod;
-            if name_expr.is_some()
-                || *is_export != !export_tags.is_empty()
-                || *is_our
-                || declared_my
-                || *our_variable_form
-                || *is_default_candidate
-                || deprecated_message.is_some()
-                || !handles.is_empty()
-                || custom_traits
-                    .iter()
-                    .any(|(t, _)| !is_return_spelling_marker(t))
-            {
-                return Err(unsupported(
-                    "method with traits / private / multi / delegation",
-                ));
+            let deferred = [
+                (name_expr.is_some(), "method with a computed name"),
+                (
+                    *is_export != !export_tags.is_empty(),
+                    "method with a bare `is export`",
+                ),
+                (*is_our && *is_submethod, "`our` submethod"),
+                (*our_variable_form, "`our &m = method` form"),
+                (!handles.is_empty(), "method with `handles`"),
+                (
+                    custom_traits.iter().any(|(t, _)| {
+                        t.starts_with("__") && !is_return_spelling_marker(t)
+                            || crate::qualified::is_qualified_str(t)
+                    }),
+                    "method with an internal or qualified trait",
+                ),
+            ];
+            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
+                return Err(unsupported(what));
             }
             if return_type.is_none() && spelling != ReturnSpelling::Arrow {
                 // A `__return_via_*` marker without a return type would be a
@@ -822,16 +832,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
-            routine_traits::add_flags(
-                &mut node,
-                *multi,
-                *is_private,
-                &routine_traits::IsTraits {
-                    is_rw: *is_rw,
-                    is_raw: *is_raw,
-                    export_tags: export_tags.clone(),
-                },
+            let flags = routine_traits::IsTraits {
+                is_rw: *is_rw,
+                is_raw: *is_raw,
+                export_tags: export_tags.clone(),
+                ..Default::default()
+            };
+            routine_traits::add_flags(&mut node, *multi, *is_private, &flags)?;
+            let custom = routine_traits::method_custom_traits(
+                custom_traits,
+                *is_default_candidate,
+                deprecated_message.as_deref(),
             )?;
+            routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
+            // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
+            let scope = if *is_our {
+                Some("our")
+            } else if declared_my {
+                Some("my")
+            } else {
+                None
+            };
+            if let Some(scope) = scope {
+                node.fields
+                    .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
+            }
             Ok(Some(statement_expression(node)))
         }
         Stmt::ClassDecl {
@@ -1258,18 +1283,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             default_is_seed,
             default_is_trait,
             handles_terms,
+            trait_order,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
             // `scope => "has"` and a `twigil` (`.` public accessor / `!`
-            // private). An explicit `= EXPR` default is both the implicit
-            // `Trait::WillBuild` and the `initializer`; a typed attribute
-            // (`has Int $.z`) carries an *implicit* `BareWord(<TypeName>)`
-            // default that is no default at all. `is rw` / `is readonly` /
-            // `is required`, `is default(…)` and `is built` are `Trait::Is`
-            // (`rakuast::attribute`); a `:D` / `:U` smiley is the type's
-            // `Type::Definedness`. Other traits, `where`, aliases and
-            // `my`/`our` attributes are deferred.
+            // private; none for the alias `has $x`). `our $.x` has the `our`
+            // scope, `my $.x` none (the default). An explicit `= EXPR` default
+            // is both the implicit `Trait::WillBuild` and the `initializer`; a
+            // typed attribute (`has Int $.z`) carries an *implicit*
+            // `BareWord(<TypeName>)` default that is no default at all. The
+            // written traits come in written order (`rakuast::attribute`); a
+            // `:D` / `:U` smiley is the type's `Type::Definedness`; a `where`
+            // is the last field.
             let explicit_default = default
                 .as_ref()
                 .filter(|_| !*default_is_seed && !*default_is_trait);
@@ -1278,33 +1304,22 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
                 _ => return Err(unsupported("attribute with a `:_` smiley")),
             };
-            let deferred = [
-                (
-                    !handles.is_empty() && handles_terms.is_empty(),
+            if !handles.is_empty() && handles_terms.is_empty() {
+                return Err(unsupported(
                     "attribute with a `handles` spelling not kept as a term",
-                ),
-                (
-                    matches!(is_required, Some(Some(_))),
-                    "attribute with an `is required` reason",
-                ),
-                (
-                    where_constraint.is_some(),
-                    "attribute with a `where` constraint",
-                ),
-                (*is_alias, "attribute alias"),
-                (*is_our || *is_my, "`my` / `our` attribute"),
-                (is_type.is_some(), "attribute with an `is TYPE` trait"),
-                (
-                    deprecated_message.is_some(),
-                    "attribute with `is DEPRECATED`",
-                ),
-                (!unknown_traits.is_empty(), "attribute with a custom trait"),
-            ];
-            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
-                return Err(unsupported(what));
+                ));
             }
             let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
-            let twigil = if *is_public { "." } else { "!" };
+            let twigil = match (*is_alias, *is_public) {
+                (true, _) => None,
+                (false, true) => Some("."),
+                (false, false) => Some("!"),
+            };
+            let scope = match (*is_our, *is_my) {
+                (true, _) => Some("our"),
+                (false, true) => None,
+                (false, false) => Some("has"),
+            };
             let full_name = if *sigil == '$' {
                 name.resolve()
             } else {
@@ -1313,23 +1328,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let mut decl = var_declaration(
                 &full_name,
                 explicit_default.map(Initializer::Assign),
-                Some("has"),
+                scope,
                 type_name,
-                Some(twigil),
+                twigil,
                 explicit_default,
             )?;
             attribute::add_traits(
                 &mut decl,
-                attribute::AttributeTraits {
+                &attribute::AttributeTraits {
+                    order: trait_order.clone(),
                     is_rw: *is_rw,
                     is_readonly: *is_readonly,
-                    is_required: is_required.is_some(),
+                    is_required: is_required.clone(),
                     is_default: is_default.clone(),
                     is_built: *is_built,
+                    deprecated_message: deprecated_message.clone(),
+                    is_type: is_type.clone(),
+                    unknown_traits: unknown_traits.clone(),
                     handles_terms: handles_terms.clone(),
                     handles: handles.clone(),
                 },
             )?;
+            if let Some(constraint) = where_constraint {
+                decl.fields
+                    .push(node_field(Some("where"), convert_expr(constraint)?));
+            }
             Ok(Some(statement_expression(decl)))
         }
         // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the
@@ -1739,11 +1762,7 @@ fn var_decl_statement(
         custom_traits,
         where_constraint,
     } = parts;
-    // `where` constraints, parameterised/definite/coercion types, and real
-    // `is`/`does` traits carry richer shape, deferred.
-    if where_constraint {
-        return Err(unsupported("where-constrained declaration"));
-    }
+    // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
     // mutsu marks it with a `__constant` pseudo-trait (plus a
     // `__constant_sigil` recording the declared sigil) and sets
@@ -1835,6 +1854,11 @@ fn var_decl_statement(
         traits.push(decl_traits::dynamic_trait());
     }
     decl_traits::insert(&mut decl, traits);
+    // `where` is the declaration's last field, after the initializer.
+    if let Some(constraint) = where_constraint {
+        decl.fields
+            .push(node_field(Some("where"), convert_expr(constraint)?));
+    }
     Ok(Some(statement_expression(decl)))
 }
 
@@ -1849,7 +1873,8 @@ struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
-    where_constraint: bool,
+    /// The declaration's `where` expression.
+    where_constraint: Option<&'a Expr>,
 }
 
 fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
@@ -1875,7 +1900,7 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
-        where_constraint: where_constraint.is_some(),
+        where_constraint: where_constraint.as_deref(),
     })
 }
 
@@ -3009,21 +3034,33 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_block,
             ..
         } => {
-            if *is_rw {
-                return Err(unsupported("`is rw` block"));
-            }
-            if *is_raw {
-                return Err(unsupported("`is raw` block"));
-            }
             if *is_block {
+                if *is_rw {
+                    return Err(unsupported("`is rw` block"));
+                }
+                if *is_raw {
+                    return Err(unsupported("`is raw` block"));
+                }
                 // A bare `{ ... }` block.
                 block_node(body)
             } else {
-                // An anonymous, parameter-less `sub { ... }`.
-                Ok(RakuAstNode {
+                // An anonymous, parameter-less `sub { ... }`, with the `is rw`
+                // / `is raw` it was written with.
+                let mut node = RakuAstNode {
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
-                })
+                };
+                routine_traits::add_flags(
+                    &mut node,
+                    false,
+                    false,
+                    &routine_traits::IsTraits {
+                        is_rw: *is_rw,
+                        is_raw: *is_raw,
+                        ..Default::default()
+                    },
+                )?;
+                Ok(node)
             }
         }
         Expr::Lambda {
@@ -3046,6 +3083,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             param_defs,
             body,
             is_rw,
+            is_raw,
             is_whatever_code,
             return_type,
             declarator,
@@ -3054,7 +3092,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_whatever_code {
                 return Err(unsupported("Whatever-code closure (compound assignment)"));
             }
-            if *is_rw {
+            if (*is_rw || *is_raw) && !declarator.is_routine() {
                 return Err(unsupported("`is rw` pointy block"));
             }
             // A bare placeholder block is a Block whose body contains
@@ -3076,10 +3114,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // whose parameters carry the implicit
                 // `type => Type::Setting(Any)` that every sub/method signature
                 // has, where a pointy block's do not.
-                if let Some(class) = method_literal_class(*declarator) {
-                    return method_literal_node(class, param_defs, body, return_type.as_deref());
-                }
-                return anon_routine_node(param_defs, body, return_type.as_deref());
+                let mut node = match method_literal_class(*declarator) {
+                    Some(class) => {
+                        method_literal_node(class, param_defs, body, return_type.as_deref())?
+                    }
+                    None => anon_routine_node(param_defs, body, return_type.as_deref())?,
+                };
+                routine_traits::add_flags(
+                    &mut node,
+                    false,
+                    false,
+                    &routine_traits::IsTraits {
+                        is_rw: *is_rw,
+                        is_raw: *is_raw,
+                        ..Default::default()
+                    },
+                )?;
+                return Ok(node);
             }
             pointy_block(param_defs, body, return_type.as_deref())
         }
@@ -3908,9 +3959,11 @@ fn method_literal_class(declarator: crate::ast::RoutineDeclarator) -> Option<Rak
 
 /// `method ($a) { … }` -> a nameless `Method` (or `Submethod`) over the
 /// written parameters. The parser prepends a synthetic receiver
-/// (`parser::anon_method_expr`); only that exact receiver drops out. A
-/// declared invocant (`method (Foo:D: $a)`, `method ($self: )`) is folded
-/// into it with a type or a body alias, so it stays the boundary.
+/// (`parser::anon_method_expr`); it drops out unless the invocant was declared
+/// (`method (Foo:D: $a)`, `method ($self: )`): the parser then folds the
+/// declaration into the receiver's type and a `my $self := self` binding in the
+/// body, which come back as rakudo's leading `invocant` parameter
+/// (`parser::folded_invocant`).
 // Cost: O(n), n = size of the literal.
 fn method_literal_node(
     class: RakuAstClass,
@@ -3921,22 +3974,99 @@ fn method_literal_node(
     let [receiver, rest @ ..] = param_defs else {
         return Err(unsupported("method literal without a receiver"));
     };
-    if !crate::parser::is_synthetic_invocant(receiver) || binds_invocant_alias(body) {
-        return Err(unsupported("method literal with a declared invocant"));
-    }
-    let mut node = anon_routine_node(rest, body, returns)?;
+    let Some(folded) = crate::parser::folded_invocant(receiver, body) else {
+        return Err(unsupported("method literal with an unrecognized receiver"));
+    };
+    let mut node = anon_routine_node(rest, folded.body, returns)?;
     node.class = class;
+    if folded.type_constraint.is_some() || folded.alias.is_some() {
+        let invocant = declared_invocant_parameter(folded.type_constraint, folded.alias.as_ref())?;
+        add_leading_parameter(&mut node, invocant);
+    }
     Ok(node)
 }
 
-/// Whether a method literal's body opens with the `my $x := self` alias the
-/// parser writes for a declared invocant name.
-fn binds_invocant_alias(body: &[Stmt]) -> bool {
-    let stmt = match body.iter().find(|s| !matches!(s, Stmt::SetLine(_))) {
-        Some(Stmt::SyntheticBlock(inner)) => inner.first(),
-        other => other,
+/// `Parameter(type, invocant => True[, target], optional => False)`: the
+/// invocant a method literal declared (measured on rakudo 2026.09). Without a
+/// written type it is the `Any` of every routine parameter; without a name it
+/// has no target (`method (Mu:D:)`).
+// Cost: O(1).
+fn declared_invocant_parameter(
+    type_constraint: Option<&str>,
+    alias: Option<&(String, bool)>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let type_node = match type_constraint {
+        Some(t) => build_type_node(t)?,
+        None => type_setting_any(),
     };
-    matches!(stmt, Some(Stmt::VarDecl { expr: Expr::BareWord(n), .. }) if n == "self")
+    let mut fields = vec![
+        node_field(Some("type"), type_node),
+        RakuAstField {
+            name: Some("invocant"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        },
+    ];
+    if let Some((name, sigilless)) = alias {
+        let target = if *sigilless {
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetTerm,
+                fields: vec![node_field(None, name_from_identifier(name))],
+            }
+        } else {
+            // The parser names the anonymous `$:` invocant like any anonymous
+            // scalar parameter.
+            let spelled = if name == ANONYMOUS_SCALAR_PARAM {
+                "$".to_string()
+            } else {
+                format!("${name}")
+            };
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetVar,
+                fields: vec![leaf_field(Some("name"), Value::str(spelled))],
+            }
+        };
+        fields.push(node_field(Some("target"), target));
+    }
+    fields.push(RakuAstField {
+        name: Some("optional"),
+        value: RakuAstFieldValue::Node(Value::truth(false)),
+    });
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    })
+}
+
+/// `parameter` first among the parameters of `node`'s signature, creating the
+/// signature when the routine had none.
+// Cost: O(f), f = fields of `node`.
+fn add_leading_parameter(node: &mut RakuAstNode, parameter: RakuAstNode) {
+    let parameter = Value::rakuast(Box::new(parameter));
+    if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("signature"))
+        && let RakuAstFieldValue::Node(signature) = &field.value
+        && let ValueView::RakuAst(signature) = signature.view()
+    {
+        let mut signature = signature.clone();
+        if let Some(parameters) = signature
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("parameters"))
+            && let RakuAstFieldValue::List(items) = &mut parameters.value
+        {
+            items.insert(0, parameter);
+        }
+        *field = node_field(Some("signature"), signature);
+        return;
+    }
+    let signature = RakuAstNode {
+        class: RakuAstClass::Signature,
+        fields: vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(vec![parameter]),
+        }],
+    };
+    node.fields
+        .insert(0, node_field(Some("signature"), signature));
 }
 
 /// A single-parameter pointy block (`-> $x { }`). mutsu's `Lambda` node strips
@@ -3979,7 +4109,8 @@ fn pointy_block_from_lambda(
 /// no `scope`, and `my constant Y = 7` emits `scope => "my"`.
 ///
 /// A sigilled constant (`constant @a = 1, 2`) keeps its sigil in `name`. A
-/// typed one carries shape this does not model yet, so it stays a boundary.
+/// typed one (`our Mu constant X = 1`) has the `type` between `scope` and
+/// `name`.
 fn constant_declaration(
     name: &str,
     expr: &Expr,
@@ -3987,9 +4118,6 @@ fn constant_declaration(
     type_constraint: &Option<String>,
     is_our: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if type_constraint.is_some() {
-        return Err(unsupported("typed constant"));
-    }
     // `__constant_sigil` carries the declared sigil; only the sigilless form
     // (a plain `constant X`) maps onto the measured node shape.
     let sigil = custom_traits.iter().find_map(|(n, arg)| {
@@ -4023,6 +4151,9 @@ fn constant_declaration(
     // does. mutsu records the default as `is_our`.
     if !is_our {
         fields.push(leaf_field(Some("scope"), Value::str_from("my")));
+    }
+    if let Some(type_name) = type_constraint {
+        fields.push(node_field(Some("type"), build_type_node(type_name)?));
     }
     fields.push(leaf_field(Some("name"), Value::str(name)));
     fields.push(node_field(
@@ -4292,20 +4423,23 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         .map(String::as_str)
         .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
         .collect();
-    let refusal = if pd.onearg && !pd.sigilless {
-        Some("single-argument slurpy parameter with a sigil")
-    } else if pd.literal_value.is_some() {
-        Some("literal-value parameter")
-    } else if !pd.trait_args.is_empty() || !user_traits.iter().all(|t| is_parameter_is_trait(t)) {
-        Some("parameter with a custom trait")
+    let refusal = if pd.literal_value.is_some()
+        && (pd.named
+            || pd.slurpy
+            || pd.onearg
+            || pd.default.is_some()
+            || pd.where_constraint.is_some()
+            || !user_traits.is_empty())
+    {
+        Some("literal-value parameter with more than a value")
+    } else if user_traits.iter().any(|t| !is_parameter_trait_name(t)) {
+        Some("parameter with a trait the converter does not render")
     } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
         || (implicit_invocant && !pd.is_invocant)
     {
         Some("invocant marker without an invocant")
-    } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless) {
+    } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy) {
         Some("non-scalar invocant parameter")
-    } else if pd.optional_marker && pd.default.is_some() {
-        Some("defaulted parameter with a `?` marker")
     } else if pd.shape_constraints.is_some() {
         Some("shaped array parameter")
     } else if pd.code_signature.is_some() {
@@ -4320,6 +4454,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     if let Some(node) = anonymous_destructuring(pd, type_setting)? {
         return Ok(node);
+    }
+    if let Some(value) = &pd.literal_value {
+        return literal_parameter(pd, value);
     }
     // Capture parameters also use the internal `sub_signature` slot, but
     // RakuAST represents those with fields other than `sub-signature`. A named
@@ -4408,11 +4545,56 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         name => split_sigil(name),
     };
     let mut node = if pd.slurpy || pd.double_slurpy {
-        // A typed or where-constrained slurpy carries richer shape; defer.
-        if pd.type_constraint.is_some() || pd.where_constraint.is_some() {
+        // A typed slurpy is an error in rakudo (`Int *@a`); `where` follows the
+        // slurpy marker.
+        if pd.type_constraint.is_some() {
             return Err(unsupported("typed slurpy parameter"));
         }
-        slurpy_parameter(sigil, desigil, pd.double_slurpy)?
+        let mut node = slurpy_parameter(
+            sigil,
+            desigil,
+            if pd.double_slurpy {
+                RakuAstClass::ParameterSlurpyUnflattened
+            } else {
+                RakuAstClass::ParameterSlurpyFlattened
+            },
+        )?;
+        if let Some(w) = pd.where_constraint.as_deref() {
+            node.fields
+                .push(node_field(Some("where"), convert_expr(w)?));
+        }
+        node
+    } else if pd.onearg {
+        // `+@a` is a target and the marker; `+$a` / `+%a` are the plain
+        // parameter with the marker after it (measured on rakudo 2026.09).
+        if pd.type_constraint.is_some() {
+            return Err(unsupported("typed single-argument slurpy parameter"));
+        }
+        let marker = RakuAstClass::ParameterSlurpySingleArgument;
+        let mut node = if sigil == "@" {
+            slurpy_parameter(sigil, desigil, marker)?
+        } else {
+            let mut node = simple_parameter(
+                sigil,
+                desigil,
+                None,
+                None,
+                type_setting,
+                pd.where_constraint.as_deref(),
+            )?;
+            node.fields.push(leaf_field(
+                Some("slurpy"),
+                super::slurpy_marker_value(marker),
+            ));
+            node
+        };
+        if sigil == "@"
+            && let Some(w) = pd.where_constraint.as_deref()
+        {
+            node.fields
+                .push(node_field(Some("where"), convert_expr(w)?));
+        }
+        node
     } else if pd.named {
         super::named_param::named_parameter(pd, type_setting)?
     } else {
@@ -4458,11 +4640,23 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         );
     }
     // `$x?`: rakudo's `optional => True`, where a plain positional has False.
+    // A defaulted `$x? = 3` has both, the flag first.
     if pd.optional_marker {
+        let mut found = false;
         for field in &mut node.fields {
             if field.name == Some("optional") {
                 field.value = RakuAstFieldValue::Node(Value::truth(true));
+                found = true;
             }
+        }
+        if !found && let Some(at) = node.fields.iter().position(|f| f.name == Some("default")) {
+            node.fields.insert(
+                at,
+                RakuAstField {
+                    name: Some("optional"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                },
+            );
         }
     }
     if let Some(sub_params) = super::named_param::destructuring_sub_signature(pd) {
@@ -4477,12 +4671,19 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         let traits = user_traits
             .iter()
             .map(|t| {
-                Value::rakuast(Box::new(RakuAstNode {
+                let mut fields = vec![node_field(Some("name"), name_from_identifier(t))];
+                if let Some((_, argument)) = pd.trait_args.iter().find(|(name, _)| name == t) {
+                    fields.push(node_field(
+                        Some("argument"),
+                        parameter_trait_argument(argument)?,
+                    ));
+                }
+                Ok(Value::rakuast(Box::new(RakuAstNode {
                     class: RakuAstClass::TraitIs,
-                    fields: vec![node_field(Some("name"), name_from_identifier(t))],
-                }))
+                    fields,
+                })))
             })
-            .collect();
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
         node.fields.push(RakuAstField {
             name: Some("traits"),
             value: RakuAstFieldValue::List(traits),
@@ -4598,6 +4799,71 @@ fn is_parameter_is_trait(name: &str) -> bool {
     matches!(name, "copy" | "rw" | "raw" | "readonly")
 }
 
+/// Whether `name` is a trait the converter renders on a parameter: a builtin
+/// one, or a plain user-level name (`is marked`, `is option<!>`); the parser's
+/// internal markers (`__...`) and qualified names are not.
+fn is_parameter_trait_name(name: &str) -> bool {
+    is_parameter_is_trait(name)
+        || (!name.starts_with("__")
+            && !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-'))
+}
+
+/// The `(ARGS)` argument of a custom parameter trait, a list as one comma list.
+fn parameter_trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match argument {
+        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
+            super::attribute::paren_argument(inner)
+        }
+        other => super::attribute::paren_argument(other),
+    }
+}
+
+/// `sub f(1)` / `sub f("a")`: a `Parameter` with no target, the literal's type
+/// and the literal as its `value` (measured on rakudo 2026.09). The parser
+/// names it `__literal__`, gives it the literal's type unless one was written,
+/// and keeps the value.
+// Cost: O(1).
+fn literal_parameter(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, RuntimeError> {
+    if pd.name != LITERAL_PARAM
+        || !matches!(
+            value.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::Str(_)
+        )
+    {
+        return Err(unsupported("literal-value parameter of another kind"));
+    }
+    // A sub's literal parameter carries its type (written or inferred); a pointy
+    // block's does not, and rakudo infers it from the value.
+    let inferred = match value.view() {
+        ValueView::Int(_) | ValueView::BigInt(_) => "Int",
+        ValueView::Num(_) => "Num",
+        ValueView::Rat(..) => "Rat",
+        _ => "Str",
+    };
+    let type_name = pd.type_constraint.as_deref().unwrap_or(inferred);
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields: vec![
+            node_field(Some("type"), build_type_node(type_name)?),
+            RakuAstField {
+                name: Some("optional"),
+                value: RakuAstFieldValue::Node(Value::truth(false)),
+            },
+            leaf_field(Some("value"), value.clone()),
+        ],
+    })
+}
+
+/// The parser's name for a literal-value parameter.
+pub(super) const LITERAL_PARAM: &str = "__literal__";
+
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
 /// richer capture spellings need more internal metadata and remain deferred.
@@ -4626,7 +4892,11 @@ pub(super) fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
 /// RakuAST::Parameter::Slurpy::{Flattened,Unflattened})`. A slurpy carries no
 /// `type`/`optional` field, and the marker is a type object rather than a node
 /// (see `slurpy_marker_value`).
-fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstNode, RuntimeError> {
+fn slurpy_parameter(
+    sigil: &str,
+    desigil: &str,
+    marker: RakuAstClass,
+) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
         class: RakuAstClass::ParameterTargetVar,
         fields: vec![leaf_field(
@@ -4636,11 +4906,7 @@ fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstN
     };
     // The marker is the `RakuAST::Parameter::Slurpy::*` TYPE OBJECT, as it is in
     // rakudo -- see `slurpy_marker_value`.
-    let slurpy = super::slurpy_marker_value(if double {
-        RakuAstClass::ParameterSlurpyUnflattened
-    } else {
-        RakuAstClass::ParameterSlurpyFlattened
-    });
+    let slurpy = super::slurpy_marker_value(marker);
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields: vec![

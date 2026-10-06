@@ -87,21 +87,6 @@ pub(crate) enum ParamTrait {
 }
 
 impl SignatureVar {
-    /// A plain element: a sigilled positional variable with no type, default,
-    /// constraint or trait of its own -- the shape every element of
-    /// `my ($a, @b, %c)` has.
-    pub(crate) fn is_plain(&self) -> bool {
-        !self.is_slurpy
-            && !self.is_optional
-            && !self.is_named
-            && self.default.is_none()
-            && self.per_var_type_constraint.is_none()
-            && self.where_constraint.is_none()
-            && !self.sigilless
-            && self.literal_value.is_none()
-            && self.param_trait.is_none()
-    }
-
     /// A plain element named by its full spelling (`$a`, `@b`).
     pub(crate) fn plain(spelling: &str) -> Self {
         let name = spelling.strip_prefix('$').unwrap_or(spelling).to_string();

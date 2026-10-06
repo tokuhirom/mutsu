@@ -11,6 +11,7 @@ use super::helpers::{
 };
 use super::method_decl_body;
 use super::parse_decl_type_constraint;
+use crate::ast::attr_trait::AttrTrait;
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -104,6 +105,7 @@ fn has_decl_list(
             default_is_bind: false,
             default_is_seed,
             default_is_trait: false,
+            trait_order: Vec::new(),
         });
         let (r, _) = ws(rest)?;
         rest = r;
@@ -123,16 +125,26 @@ fn has_decl_list(
             if let Some(r) = keyword("rw", r) {
                 // Apply `is rw` to all attributes in the list
                 for stmt in &mut stmts {
-                    if let Stmt::HasDecl { is_rw, .. } = stmt {
+                    if let Stmt::HasDecl {
+                        is_rw, trait_order, ..
+                    } = stmt
+                    {
                         *is_rw = true;
+                        trait_order.push(AttrTrait::Rw);
                     }
                 }
                 rest = r;
             } else if let Some(r) = keyword("readonly", r) {
                 // Apply `is readonly` to all attributes in the list
                 for stmt in &mut stmts {
-                    if let Stmt::HasDecl { is_readonly, .. } = stmt {
+                    if let Stmt::HasDecl {
+                        is_readonly,
+                        trait_order,
+                        ..
+                    } = stmt
+                    {
                         *is_readonly = true;
+                        trait_order.push(AttrTrait::Readonly);
                     }
                 }
                 rest = r;
@@ -151,12 +163,14 @@ fn has_decl_list(
                             default,
                             is_default,
                             default_is_trait,
+                            trait_order,
                             ..
                         } = stmt
                         {
                             *default = Some(default_expr.clone());
                             *is_default = Some(default_expr.clone());
                             *default_is_trait = true;
+                            trait_order.push(AttrTrait::Default);
                         }
                     }
                     let (r2, _) = ws(inner)?;
@@ -538,6 +552,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<bool> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
+    // The kinds of the traits in the order they were written (`ast::attr_trait`).
+    let mut trait_order: Vec<AttrTrait> = Vec::new();
     let mut handles = Vec::new();
     // The written term of each `handles` clause; `None` once a clause's
     // spelling is not one the term rebuilds the specs from.
@@ -550,6 +566,22 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("is", rest) {
             let (r, _) = ws1(r)?;
             let (r, trait_name) = ident(r)?;
+            // `is default` without its argument is a no-op, and so is no trait.
+            let is_container_type = (sigil == b'@' || sigil == b'%')
+                && trait_name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase());
+            trait_order.extend(match trait_name.as_str() {
+                "rw" => Some(AttrTrait::Rw),
+                "readonly" => Some(AttrTrait::Readonly),
+                "default" => ws(r)?.0.starts_with('(').then_some(AttrTrait::Default),
+                "required" => Some(AttrTrait::Required),
+                "DEPRECATED" => Some(AttrTrait::Deprecated),
+                "built" => Some(AttrTrait::Built),
+                _ if is_container_type => Some(AttrTrait::Type),
+                _ => Some(AttrTrait::Custom),
+            });
             if trait_name == "rw" {
                 is_rw = true;
             } else if trait_name == "readonly" {
@@ -717,12 +749,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     continue;
                 }
                 is_built = Some(true);
-            } else if (sigil == b'@' || sigil == b'%')
-                && trait_name
-                    .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_uppercase())
-            {
+            } else if is_container_type {
                 // Uppercase-starting trait name: `is Buf`, `is BagHash`,
                 // `is Array[Int]`, `is G::A`, etc. This is a container type trait
                 // for `@`/`%` attributes only — gated on sigil so a `$`/`&`
@@ -861,6 +888,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("will", rest) {
             let Ok((r, _)) = ws1(r) else { break };
             let Ok((r, trait_name)) = ident(r) else { break };
+            trait_order.push(AttrTrait::Custom);
             // A `will` trait's block is a positional Callable argument to
             // `trait_mod:<will>`, followed by the named trait marker. For
             // example, `will lazy { ... }` dispatches as
@@ -890,6 +918,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("does", rest) {
             let Ok((r, _)) = ws1(r) else { break };
             let Ok((r, role_name)) = ident(r) else { break };
+            trait_order.push(AttrTrait::Custom);
             unknown_traits.push(("does".to_string(), role_name.to_string(), None));
             let (r, _) = ws(r)?;
             rest = r;
@@ -902,6 +931,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         while let Some(r) = keyword("handles", rest) {
             let (r, _) = ws(r)?;
             let before = handles.len();
+            trait_order.push(AttrTrait::Handles);
             parse_handle_specs(r, &mut handles, &mut rest)?;
             handles_terms = handles_terms.and_then(|mut terms| {
                 let term = super::handles::handles_clause_term(r, rest, &handles[before..])?;
@@ -1328,6 +1358,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         default_is_bind: false,
         default_is_seed,
         default_is_trait,
+        trait_order,
     };
     // Splice `has $!g //= EXPR;` into `has $!g; $!g //= EXPR;` (#8441 gap 2)
     // — the declared variable's own read expression, matching exactly how

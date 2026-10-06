@@ -41,20 +41,101 @@ pub(crate) fn make_anon_method(
     anon_method_expr(Vec::new(), None, body, declarator)
 }
 
-/// Whether `pd` is the synthetic receiver [`invocant_param_def`] builds, with
-/// no type, constraint or name of the source's own.
-// Cost: O(t), t = traits of `pd`.
-pub(crate) fn is_synthetic_invocant(pd: &crate::ast::ParamDef) -> bool {
-    pd.is_invocant
-        && pd.name == "self"
-        && pd.traits.len() == 1
-        && pd.traits[0] == crate::ast::IMPLICIT_INVOCANT_TRAIT
-        && pd.type_constraint.is_none()
-        && pd.where_constraint.is_none()
-        && pd.default.is_none()
-        && pd.type_capture.is_none()
-        && pd.sub_signature.is_none()
-        && pd.code_signature.is_none()
+/// What the parser's fold of a method literal's declared invocant left in
+/// the receiver and the body: its type, the name it bound the receiver to
+/// (`(name, sigilless)`) and the body without that binding.
+pub(crate) struct FoldedInvocant<'a> {
+    pub(crate) type_constraint: Option<&'a str>,
+    pub(crate) alias: Option<(String, bool)>,
+    pub(crate) body: &'a [crate::ast::Stmt],
+}
+
+/// The declared invocant of a method literal (`method (Foo:D $x: ...)`), read
+/// back out of its receiver `receiver` and `body`: the inverse of the fold
+/// `parse_anon_method_with_params` does, through [`anon_method_expr_declared`].
+/// `None` for a receiver that is not the parser's synthetic one.
+// Cost: O(1) (the body is borrowed).
+pub(crate) fn folded_invocant<'a>(
+    receiver: &'a crate::ast::ParamDef,
+    body: &'a [crate::ast::Stmt],
+) -> Option<FoldedInvocant<'a>> {
+    use crate::ast::Stmt;
+    if !receiver.is_invocant
+        || receiver.name != "self"
+        || receiver.traits.len() != 1
+        || receiver.traits[0] != crate::ast::IMPLICIT_INVOCANT_TRAIT
+        || receiver.where_constraint.is_some()
+        || receiver.default.is_some()
+        || receiver.type_capture.is_some()
+        || receiver.sub_signature.is_some()
+        || receiver.code_signature.is_some()
+    {
+        return None;
+    }
+    let is_self = |e: &Expr| matches!(e, Expr::BareWord(n) if n == "self");
+    let (alias, body) = match body.first() {
+        Some(Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint: None,
+            custom_traits,
+            ..
+        }) if is_self(expr)
+            && custom_traits.len() == 1
+            && custom_traits[0].0 == "__scalar_bind" =>
+        {
+            let name = if name == crate::env::LEX_SELF {
+                "self".to_string()
+            } else {
+                name.clone()
+            };
+            (Some((name, false)), &body[1..])
+        }
+        Some(Stmt::SyntheticBlock(inner)) => match inner.as_slice() {
+            [
+                Stmt::VarDecl {
+                    name,
+                    expr,
+                    type_constraint: None,
+                    custom_traits,
+                    ..
+                },
+                Stmt::MarkSigillessReadonly(marked),
+            ] if is_self(expr) && custom_traits.is_empty() && name == marked => {
+                (Some((name.clone(), true)), &body[1..])
+            }
+            _ => (None, body),
+        },
+        _ => (None, body),
+    };
+    Some(FoldedInvocant {
+        type_constraint: receiver.type_constraint.as_deref(),
+        alias,
+        body,
+    })
+}
+
+/// A method literal whose invocant was declared: the type that moved onto the
+/// receiver, and the name the receiver is bound to in the body. The parser's
+/// own fold and the RakuAST lowering share this builder.
+pub(crate) fn anon_method_expr_declared(
+    type_constraint: Option<String>,
+    alias: Option<(String, bool)>,
+    rest: Vec<crate::ast::ParamDef>,
+    return_type: Option<String>,
+    body: Vec<crate::ast::Stmt>,
+    declarator: crate::ast::RoutineDeclarator,
+) -> Expr {
+    let mut expr = anon_method_expr(rest, return_type, body, declarator);
+    if let Expr::AnonSubParams { param_defs, .. } = &mut expr
+        && let Some(receiver) = param_defs.first_mut()
+    {
+        receiver.type_constraint = type_constraint;
+    }
+    match alias {
+        Some(alias) => bind_invocant_aliases(expr, &[alias]),
+        None => expr,
+    }
 }
 
 /// A method literal (`method ($a) { … }`) over its written parameters `rest`:
@@ -145,7 +226,7 @@ pub(crate) fn parse_anon_method_with_params(
 /// the local slot. Without it `SELF` compiled to a bare-word lookup, which
 /// only found the binding when the dual env store happened to be synced, so
 /// the invocant read as `(Any)` in a program that loaded no module.
-fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> Expr {
+pub(crate) fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> Expr {
     if aliases.is_empty() {
         return expr;
     }

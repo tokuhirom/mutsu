@@ -672,14 +672,28 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // A sub with no signature of its own takes its placeholder variables.
     let (params, param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
+    let associativity = is_traits
+        .assoc
+        .clone()
+        .or_else(|| is_traits.precedence.as_ref().map(|(kind, _)| kind.clone()));
+    // An operator sub that declares its precedence carries the record the
+    // parser derives from the traits.
+    custom_traits.extend(crate::parser::op_prec_trait(
+        &name,
+        multi,
+        associativity.as_ref(),
+        is_traits.precedence.as_ref(),
+    ));
     Ok(Stmt::SubDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
         params,
         param_defs,
         return_type,
-        associativity: None,
-        precedence_trait: None,
+        // `is tighter(&infix:<+>)` also names its kind as the associativity, as
+        // the parser records it.
+        associativity,
+        precedence_trait: is_traits.precedence.clone(),
         signature_alternates: Vec::new(),
         body,
         multi,
@@ -903,10 +917,14 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(unsupported(node));
     }
     let expr = lower_expr(named_child_or_positional(init)?)?;
+    let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
+        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        None => None,
+    };
     Ok(Stmt::VarDecl {
         name,
         expr,
-        type_constraint: None,
+        type_constraint,
         is_state: false,
         is_our,
         is_dynamic: false,
@@ -1423,12 +1441,29 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
-    let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    // A method's custom traits are not covered yet (the converter declines
-    // them), so a hand-built one is not invented here either.
-    if super::routine_traits::has_generic_traits(&custom_traits) {
+    let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
+    // The parser keeps a method's `is default` and `is DEPRECATED` in fields of
+    // their own, not among its custom traits.
+    let is_default_candidate = custom_traits
+        .iter()
+        .any(|(t, a)| t == "default" && a.is_none());
+    let deprecated_message = custom_traits
+        .iter()
+        .find_map(|(t, _)| super::routine_traits::deprecated_message(t).map(str::to_string));
+    custom_traits
+        .retain(|(t, _)| t != "default" && super::routine_traits::deprecated_message(t).is_none());
+    if is_traits.assoc.is_some() || is_traits.precedence.is_some() {
         return Err(unsupported(node));
     }
+    // `scope => "my"` / `"our"`; a plain method has none.
+    let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
+            ("our", RakuAstClass::Method) => (true, false),
+            ("my", RakuAstClass::Method) => (false, true),
+            _ => return Err(unsupported(node)),
+        },
+    };
     let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
@@ -1440,15 +1475,15 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: is_traits.is_rw,
         is_raw: is_traits.is_raw,
         is_private: bool_field(node, "private")?,
-        is_our: false,
-        is_my: false,
+        is_our,
+        is_my,
         // raku names the declarator with the class, so `submethod` comes back
         // from `node.class` rather than from a field.
         is_submethod: node.class == RakuAstClass::Submethod,
         our_variable_form: false,
         return_type,
-        is_default_candidate: false,
-        deprecated_message: None,
+        is_default_candidate,
+        deprecated_message,
         handles: Vec::new(),
         custom_traits,
         is_export: !is_traits.export_tags.is_empty(),
@@ -1524,7 +1559,10 @@ pub(super) fn routine_return_type(
 
 /// The parser's type-constraint spelling of a type node (`Int`, `Str:D`,
 /// `Int()`, `Array[Int]`) -- see `type_lower`.
-fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn simple_type_name(
+    node: &RakuAstNode,
+    type_node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
     super::type_lower::type_constraint(node, type_node)
 }
 
@@ -1635,6 +1673,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             }
             _ => return Err(unsupported(owner)),
         }
+    } else if parameter.fields.iter().any(|f| f.name == Some("value")) {
+        // `sub f(1)`: a literal-value parameter, which the parser names so.
+        super::convert::LITERAL_PARAM.to_string()
     } else if invocant {
         // `Foo:D:` / `::?CLASS:U:`: the parser names a synthesized invocant
         // `self`.
@@ -1731,8 +1772,26 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 ValueView::Str(name) => name.to_string(),
                 _ => return Err(unsupported(owner)),
             };
-            if !matches!(name.as_str(), "copy" | "rw" | "raw" | "readonly") {
+            let argument = match named_child(t, "argument") {
+                Ok(argument) => Some(super::attribute::lower_paren_argument(owner, argument)?),
+                Err(_) if t.fields.len() == 1 => None,
+                Err(_) => return Err(unsupported(owner)),
+            };
+            let builtin = matches!(name.as_str(), "copy" | "rw" | "raw" | "readonly");
+            // A builtin trait takes no argument; any other plain name is a
+            // trait of the program's own, kept with its argument.
+            if builtin && argument.is_some()
+                || !builtin
+                    && (name.starts_with("__")
+                        || name.is_empty()
+                        || !name
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'))
+            {
                 return Err(unsupported(owner));
+            }
+            if let Some(argument) = argument {
+                def.trait_args.push((name.clone(), argument));
             }
             def.traits.push(name);
         }
@@ -1757,6 +1816,8 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 def.slurpy = true;
                 def.onearg = true;
             }
+            // `+@a` / `+$a` / `+%a`: the parser marks only `onearg`.
+            Some(RakuAstClass::ParameterSlurpySingleArgument) => def.onearg = true,
             Some(RakuAstClass::ParameterSlurpyCapture) if def.sigilless => def.slurpy = true,
             _ => return Err(unsupported(owner)),
         }
@@ -1809,6 +1870,24 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     {
         let sub_signature = child_node(&sub_signature.value)?;
         def.sub_signature = Some(lower_signature_parameters(sub_signature, owner)?);
+    }
+    // A literal-value parameter keeps its value, and is not required (the
+    // parser's `make_param` default).
+    if let Some(value) = parameter.fields.iter().find(|f| f.name == Some("value")) {
+        let RakuAstFieldValue::Node(value) = &value.value else {
+            return Err(unsupported(owner));
+        };
+        if matches!(value.view(), ValueView::RakuAst(_)) || has_target {
+            return Err(unsupported(owner));
+        }
+        def.literal_value = Some(value.clone());
+        def.required = false;
+        // A pointy block's literal parameter keeps no type of its own (the
+        // parser leaves it to the value); a routine's has the inferred one.
+        if owner.class == RakuAstClass::PointyBlock {
+            def.type_constraint = None;
+            def.block_param = true;
+        }
     }
     match names {
         Some(names) => super::named_param::wrap_aliases(def, &names, owner),
@@ -1916,12 +1995,30 @@ pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError
 /// parser, so a signature naming one stays the boundary.
 // Cost: O(n), n = size of the node.
 fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    let (_, param_defs) = signature_positional_params(node)?;
+    let (_, mut param_defs) = signature_positional_params(node)?;
+    // A leading `invocant` parameter is the declared invocant, which the parser
+    // folds into the receiver (`parser::anon_method_expr_declared`).
+    let declared = if param_defs.first().is_some_and(|p| p.is_invocant) {
+        let first = param_defs.remove(0);
+        let implicit = first
+            .traits
+            .iter()
+            .any(|t| t == crate::ast::IMPLICIT_INVOCANT_TRAIT);
+        let alias = (!implicit).then(|| (first.name.clone(), first.sigilless));
+        Some((first.type_constraint, alias))
+    } else {
+        None
+    };
     if param_defs.iter().any(|p| p.is_invocant) {
         return Err(unsupported(node));
     }
-    let (return_type, custom_traits) = routine_return_type(node, None)?;
-    if !custom_traits.is_empty() {
+    let mut flags = super::routine_traits::IsTraits::default();
+    let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
+    if !custom_traits.is_empty()
+        || !flags.export_tags.is_empty()
+        || flags.assoc.is_some()
+        || flags.precedence.is_some()
+    {
         return Err(unsupported(node));
     }
     let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
@@ -1930,12 +2027,22 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     } else {
         crate::ast::RoutineDeclarator::Method
     };
-    Ok(crate::parser::anon_method_expr(
-        param_defs,
-        return_type,
-        body,
-        declarator,
-    ))
+    let mut literal = match declared {
+        Some((type_constraint, alias)) => crate::parser::anon_method_expr_declared(
+            type_constraint,
+            alias,
+            param_defs,
+            return_type,
+            body,
+            declarator,
+        ),
+        None => crate::parser::anon_method_expr(param_defs, return_type, body, declarator),
+    };
+    if let Expr::AnonSubParams { is_rw, is_raw, .. } = &mut literal {
+        *is_rw = flags.is_rw;
+        *is_raw = flags.is_raw;
+    }
+    Ok(literal)
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
@@ -2243,7 +2350,11 @@ fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
     // the only scope that lowers (the converter renders no other).
-    if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
+    // `our $.x` / `my $.x` (a public or private class-level attribute) is one
+    // too, by its twigil.
+    if matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
+        || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"))
+    {
         return lower_attribute(node);
     }
     // The remaining scopes the converter renders are `our` and `state`; `my` is
@@ -2316,6 +2427,14 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             false,
         ),
     };
+    // `my Int $x where * > 0`: the `where` field, the declaration's last.
+    let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
+        None => None,
+        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+    };
+    if where_constraint.is_some() && (is_binding || call_assign.is_some()) {
+        return Err(unsupported(node));
+    }
     // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
     let shape_dims = super::keyed_hash::lower_dimensions(node, &sigil)?;
     if shape_dims.is_some() && (is_binding || call_assign.is_some()) {
@@ -2388,13 +2507,14 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits,
-        where_constraint: None,
+        where_constraint,
     })
 }
 
 /// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The converter renders
 /// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
-/// `twigil` (`.` public / `!` private); its `Trait::Is` flags are read by
+/// `twigil` (`.` public / `!` private, none for the alias `has $x`); `our $.x`
+/// has the `our` scope and `my $.x` none. Its traits are read by
 /// `rakuast::attribute`, and an `Initializer::Assign` is the default (the
 /// implicit `WillBuild` beside it carries the same expression).
 fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -2409,15 +2529,34 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             Some(lower_expr(named_child_or_positional(init)?)?)
         }
     };
+    let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
+        None => None,
+        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+    };
     let sigil = leaf_str(node, "sigil")?;
     let mut chars = sigil.chars();
     let (Some(sigil_char), None) = (chars.next(), chars.next()) else {
         return Err(unsupported(node));
     };
-    let is_public = match leaf_str(node, "twigil")?.as_str() {
-        "." => true,
-        "!" => false,
-        _ => return Err(unsupported(node)),
+    // The scope: `has` is the per-instance attribute; `our` and the default
+    // `my` are class-level ones (the parser makes those `is rw`).
+    let (is_our, is_my, is_has) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, true, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "has" => (false, false, true),
+            "our" => (true, false, false),
+            _ => return Err(unsupported(node)),
+        },
+    };
+    let (is_public, is_alias) = match node.fields.iter().find(|f| f.name == Some("twigil")) {
+        // `has $x`, the alias of a private attribute.
+        None if is_has => (false, true),
+        None => return Err(unsupported(node)),
+        Some(_) => match leaf_str(node, "twigil")?.as_str() {
+            "." => (true, false),
+            "!" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
     };
     let desigil = match positional_leaf(named_child(node, "desigilname")?)?.view() {
         ValueView::Str(s) => s.to_string(),
@@ -2460,27 +2599,28 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 .as_deref()
                 .map(crate::parser::auto_default_expr_for_type)
         }),
-        handles: traits.handles.clone(),
-        handles_terms: traits.handles_terms.clone(),
-        is_rw: traits.is_rw,
+        handles: traits.handles,
+        handles_terms: traits.handles_terms,
+        is_rw: traits.is_rw || !is_has,
         is_readonly: traits.is_readonly,
         type_constraint,
         type_smiley,
-        is_required: traits.is_required.then_some(None),
+        is_required: traits.is_required,
         sigil: sigil_char,
-        where_constraint: None,
-        is_alias: false,
+        where_constraint,
+        is_alias,
         is_embedded: false,
-        is_our: false,
-        is_my: false,
+        is_our,
+        is_my,
         is_default: traits.is_default,
-        is_type: None,
-        deprecated_message: None,
+        is_type: traits.is_type,
+        deprecated_message: traits.deprecated_message,
         is_built: traits.is_built,
-        unknown_traits: Vec::new(),
+        unknown_traits: traits.unknown_traits,
         // RakuAST models an attribute's initializer as an assignment; rakudo
         // has no `:=` attribute-declaration node to lower from.
         default_is_bind: false,
+        trait_order: traits.order,
     })
 }
 
@@ -3531,8 +3671,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
-            let (return_type, custom_traits) = routine_return_type(node, None)?;
-            if !custom_traits.is_empty() {
+            let mut flags = super::routine_traits::IsTraits::default();
+            let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
+            if !custom_traits.is_empty()
+                || !flags.export_tags.is_empty()
+                || flags.assoc.is_some()
+                || flags.precedence.is_some()
+            {
                 // Only the `-->` spelling survives an anonymous sub's internal
                 // node (it keeps no `custom_traits`), so a `returns`/`of` trait
                 // would be silently dropped. Refuse instead.
@@ -3543,8 +3688,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if params.is_empty() && return_type.is_none() {
                 return Ok(Expr::AnonSub {
                     body,
-                    is_rw: false,
-                    is_raw: false,
+                    is_rw: flags.is_rw,
+                    is_raw: flags.is_raw,
                     is_block: false,
                     doc: Default::default(),
                 });
@@ -3554,8 +3699,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 param_defs,
                 return_type,
                 body,
-                is_rw: false,
-                is_raw: false,
+                is_rw: flags.is_rw,
+                is_raw: flags.is_raw,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
@@ -3582,6 +3727,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         && param.type_constraint.is_none()
                         && param.type_capture.is_none()
                         && param.default.is_none()
+                        && param.literal_value.is_none()
                         && !param.optional_marker
                         && param.traits.is_empty()
                         && param.sub_signature.is_none()

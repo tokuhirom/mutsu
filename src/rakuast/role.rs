@@ -40,13 +40,23 @@ pub(super) struct RoleDecl<'a> {
 // Cost: O(n), n = size of the role's body.
 pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.custom_traits.iter().any(|(t, _)| t == MY_SCOPED);
-    if role
+    // The parser's own markers are not traits; any other plain name is a
+    // trait of the program's own (`is array_type(T)`), rendered by name.
+    let user_traits: Vec<(String, Option<crate::ast::Expr>)> = role
         .custom_traits
         .iter()
-        .any(|(t, _)| t != MY_SCOPED && t != crate::parser::ANON_COLONS_TRAIT)
+        .filter(|(t, _)| t != MY_SCOPED && t != crate::parser::ANON_COLONS_TRAIT)
+        .cloned()
+        .collect();
+    // Rakudo drops `is repr<...>` from a role's traits, so it cannot come back.
+    if user_traits
+        .iter()
+        .any(|(t, _)| !super::decl_traits::is_class_trait(t) || t == "repr")
         || role.is_export != !role.export_tags.is_empty()
     {
-        return Err(unsupported("role with custom traits"));
+        return Err(unsupported(
+            "role with a trait the converter does not render",
+        ));
     }
     // The fallback parameter parser (defaults such as `::T = my role { }`)
     // names its parameters differently from the signature it records.
@@ -93,8 +103,10 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     }
     // Rakudo lists the traits in source order, which the parser does not keep
     // between the parent clauses, `is export` and `is rw`.
-    let kinds =
-        usize::from(!traits.is_empty()) + usize::from(role.is_export) + usize::from(role.is_rw);
+    let kinds = usize::from(!traits.is_empty())
+        + usize::from(role.is_export)
+        + usize::from(role.is_rw)
+        + usize::from(!user_traits.is_empty());
     if kinds > 1 {
         return Err(unsupported(
             "role traits whose source order is not recorded",
@@ -104,6 +116,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         is_rw: role.is_rw,
         is_raw: false,
         export_tags: role.export_tags.to_vec(),
+        ..Default::default()
     };
     traits.extend(
         flags
@@ -111,6 +124,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .into_iter()
             .map(|t| Value::rakuast(Box::new(t))),
     );
+    traits.extend(super::decl_traits::class_custom_traits(&user_traits)?);
     let mut fields = package_header_fields(
         role.name,
         is_lexical.then_some("my"),
@@ -190,6 +204,10 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 RakuAstClass::TraitIs => {
                     if let Ok(type_node) = named_child(t, "type") {
                         header.push(parent_clause(node, type_node, true)?);
+                        continue;
+                    }
+                    if let Some(entry) = super::routine_traits::lower_custom(node, t)? {
+                        custom_traits.push(entry);
                         continue;
                     }
                     if !flags.read(t)? || flags.is_raw {

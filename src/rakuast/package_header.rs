@@ -17,7 +17,7 @@ use crate::ast::Expr;
 use crate::ast::package_header::Header;
 use crate::value::{RuntimeError, Value, ValueView};
 
-fn words_value(text: &str) -> RakuAstNode {
+pub(super) fn words_value(text: &str) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::QuotedString,
         fields: vec![
