@@ -794,12 +794,16 @@ pub(crate) fn native_method_0arg_cascade(
     // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
     // subscript, and the table is asked first; the cascade reaches a `Uni` only
     // when called without it (the debug cross-check), and then calls the rows'
-    // handlers. `.comb` and `.perl` (the deprecated alias of `.raku`) have no
-    // row.
+    // handlers. `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`)
+    // have no row.
     if let ValueView::Uni(u) = target.view() {
         use crate::builtins::method_table::uni;
         match method {
-            "elems" | "codes" | "Int" | "Numeric" => return Some(uni::elems(target, &[])),
+            // `chars` is no `Uni` method in current Rakudo, but roast pins it as the
+            // codepoint count (`S15-string-types/NF-types.t`: `NFC.chars`).
+            "chars" | "elems" | "codes" | "Int" | "Numeric" => {
+                return Some(uni::elems(target, &[]));
+            }
             "Str" => return Some(uni::str(target, &[])),
             "list" => return Some(uni::list(target, &[])),
             "gist" => return Some(uni::gist(target, &[])),

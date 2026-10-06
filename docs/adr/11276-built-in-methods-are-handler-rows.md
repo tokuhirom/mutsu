@@ -963,6 +963,11 @@ What the work taught, which the remaining families follow:
   answers `Int.roots`, `Int.expmod`, `Int.is-prime` and `Int.chr` for the recognition tests'
   type-object probe; a `TYPE_OBJECT_OK` row cannot replace it, because type objects of `Cool`,
   `Any` and user classes are not shapes.
+- **Roast outranks the oracle where they disagree.** The first CI run failed
+  `S15-string-types/NF-types.t` and `NFK-types.t`: `NFC.chars` is the codepoint count there, and the
+  `Uni` block's `chars` arm (which current Rakudo does not have) was deleted with the others. It is
+  back, calling `uni::elems`; the probe script and the local roast runs covered `S15-unicode-information`
+  but not `S15-string-types`, so run every roast directory of an owner, not the nearest one.
 - **`Uni` stays closed.** Rakudo's `Uni` is `Any` and `Mu`, not `Cool`, and the `Any` rows assert
   `scalar_like`; opening it means teaching those handlers a codepoint array, which is the
   collections' business (3C's deferred "opening the closed shapes"), so it reaches only the rows
