@@ -1362,7 +1362,7 @@ impl Interpreter {
             new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
         }
         let single_key = self.current_package_qualified(name).to_string();
-        let multi_prefix = format!("{}::{}/", self.current_package(), name);
+        let multi_family = format!("{}::{}", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
         let has_single = self.registry().functions.contains_key(&single_key_sym);
         // `method foo is export` installs a synthetic, arity-qualified
@@ -1371,10 +1371,14 @@ impl Interpreter {
         // same-named plain `sub foo(...)` in the class body.  Do not let that
         // export bridge trigger the ordinary sub-vs-multi redeclaration rule;
         // real multi candidates remain part of the check.
-        let has_multi = self.registry().functions.iter().any(|(k, def)| {
-            k.as_str().starts_with(&multi_prefix)
-                && def.declarator != crate::ast::RoutineDeclarator::Method
-        });
+        let has_multi = {
+            let functions = &self.registry().functions;
+            functions.family_keys(&multi_family).iter().any(|k| {
+                functions
+                    .get(k)
+                    .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
+            })
+        };
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
             && (in_routine_called_by_eval(&self.routine_stack, name)
@@ -1510,9 +1514,9 @@ impl Interpreter {
             && self
                 .registry()
                 .functions
-                .keys()
-                .filter(|k| k.as_str().starts_with(&multi_prefix))
-                .all(|k| is_outer_routine_key(*k));
+                .family_keys(&multi_family)
+                .into_iter()
+                .all(is_outer_routine_key);
         if multi {
             if has_single
                 && !has_proto

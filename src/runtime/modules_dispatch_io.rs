@@ -27,6 +27,7 @@ mod eval_var_scan;
 mod exception_message;
 pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;
+mod function_table_family;
 mod gc_roots;
 mod gen_cache;
 mod handle;

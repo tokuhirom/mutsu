@@ -221,6 +221,11 @@ impl Interpreter {
 
     fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
         let trimmed = line.trim_start();
+        // Nearly every source line is not a directive: reject it before
+        // building a whitespace splitter.
+        if !trimmed.starts_with('=') {
+            return None;
+        }
         let token = trimmed.split_whitespace().next()?;
         let directive = token.strip_prefix('=')?;
         let first = directive.as_bytes().first().copied()?;
