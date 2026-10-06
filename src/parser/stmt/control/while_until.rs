@@ -39,20 +39,22 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     // `while COND -> @t`: the condition's truthiness is the value's own (a
     // Failure is false, an empty list is false), so test it through a scalar
-    // temporary and bind the aggregate parameter to that value afterwards.
+    // temporary and assign the aggregate parameter from that value afterwards.
     // Assigning the value into `@t` would make a Failure a one-element array,
-    // which is always true.
+    // which is always true. The temporary is spelled like a source name (no
+    // `__` marker prefix) so the RakuAST round-trip converts the loop like any
+    // other pointy `while`.
     let aggregate_tmp = param_binding
         .as_deref()
         .filter(|p| p.starts_with('@') || p.starts_with('%'))
-        .map(|_| "__mutsu_while_cond".to_string());
+        .map(|_| "mutsu-while-cond".to_string());
     if let (Some(param), Some(tmp)) = (&param_binding, &aggregate_tmp) {
         body.insert(
             0,
             Stmt::Assign {
                 name: param.clone(),
                 expr: Expr::Var(tmp.clone()),
-                op: AssignOp::Bind,
+                op: AssignOp::Assign,
                 target_is_sigilless: false,
             },
         );
@@ -67,7 +69,7 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::AssignExpr {
                 name: aggregate_tmp.clone().unwrap_or_else(|| param.clone()),
                 expr: Box::new(cond),
-                is_bind: false,
+                is_bind: aggregate_tmp.is_some(),
             }
         } else {
             cond
