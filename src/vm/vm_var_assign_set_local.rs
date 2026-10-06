@@ -2827,6 +2827,19 @@ impl Interpreter {
                             }),
                     },
                 };
+                // A source that holds a binding cell (`binding_cell_of`, #9237)
+                // is bound through to its container: the new name aliases the
+                // container, not the source's binding, so a later rebind of the
+                // source (`$src := ...` re-seats the binding cell's content)
+                // leaves it alone (#11797). The source itself keeps the binding
+                // cell wherever it is recorded below.
+                let source_binding_cell = Self::binding_cell_of(&Value::container_ref(cell.clone()))
+                    .map(|_| Value::container_ref(cell.clone()));
+                let cell = match Self::innermost_container(Value::container_ref(cell.clone())).view()
+                {
+                    ValueView::ContainerRef(inner) => inner.clone(),
+                    _ => cell,
+                };
                 // A bound `@`/`%` variable adopts the *source* container's
                 // declared element/key type, not its own (`my Int %a; my Cool
                 // %b := %a` ⇒ `%b.of` is `Int`). Propagate the inner container's
@@ -2845,14 +2858,17 @@ impl Interpreter {
                     self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
                 }
                 let container = Value::container_ref(cell);
+                // What the SOURCE's own stores hold: its binding cell when it
+                // has one, else the shared container.
+                let source_container = source_binding_cell.unwrap_or_else(|| container.clone());
                 self.locals[idx] = container.clone();
                 if let Some(source_idx) =
                     Self::bind_source_local_slot(code, bind_source_slot, &effective_source)
                 {
-                    self.locals[source_idx] = container.clone();
+                    self.locals[source_idx] = source_container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
-                self.set_env_with_main_alias(&effective_source, container.clone());
+                self.set_env_with_main_alias(&effective_source, source_container.clone());
                 // Propagate the shared cell into saved call frames so the
                 // binding survives method returns (env restore) without
                 // reverting to a stale value (same as the scalar path below).
@@ -2861,7 +2877,7 @@ impl Interpreter {
                 self.propagate_bind_to_ancestor_frames(
                     &effective_source,
                     effective_source_is_own_lexical,
-                    &container,
+                    &source_container,
                 );
                 self.set_env_with_main_alias(name, container.clone());
                 self.flush_local_to_env(code, idx);
