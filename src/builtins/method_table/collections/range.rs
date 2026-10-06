@@ -2,6 +2,8 @@
 //! slice 3C moves the rest of its methods).
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::rng::builtin_rand;
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
@@ -15,11 +17,30 @@ macro_rules! row {
             named: &[],
         }
     };
+    ($name:literal, $arity:literal, $handler:ident, $flags:expr) => {
+        MethodRow {
+            owner: "Range",
+            name: $name,
+            arity: $arity,
+            handler: Handler::Narrow($handler),
+            flags: $flags,
+            named: &[],
+        }
+    };
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
     row!("excludes-min", excludes_min),
     row!("excludes-max", excludes_max),
+    row!("bounds", bounds),
+    row!("is-int", is_int),
+    row!("infinite", infinite),
+    row!("int-bounds", int_bounds),
+    row!("rand", rand),
+    // `in-range($got)` and `in-range($got, $what)`: the argument is any value
+    // the range can be compared with, so any plain argument is admitted.
+    row!("in-range", 1, in_range_value, RowFlags::ANY_ARGS),
+    row!("in-range", 2, in_range_what, RowFlags::ANY_ARGS),
 ];
 
 /// `Range.excludes-min`: whether the lower endpoint is excluded (`^..`).
@@ -42,4 +63,223 @@ pub(crate) fn excludes_max(target: &Value, _args: &[Value]) -> Option<Result<Val
         ValueView::GenericRange { excl_end, .. } => Some(Ok(Value::truth(excl_end))),
         _ => None,
     }
+}
+
+/// `Range.bounds`: the two endpoints as they were written, an open end
+/// (`*`, `Inf`) answered as an infinity.
+// Cost: O(1).
+pub(crate) fn bounds(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Range(a, b)
+        | ValueView::RangeExcl(a, b)
+        | ValueView::RangeExclStart(a, b)
+        | ValueView::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
+            if a == i64::MIN {
+                Value::num(f64::NEG_INFINITY)
+            } else {
+                Value::int(a)
+            },
+            if b == i64::MAX {
+                Value::num(f64::INFINITY)
+            } else {
+                Value::int(b)
+            },
+        ]))),
+        ValueView::GenericRange { start, end, .. } => {
+            let s = match start.as_ref().view() {
+                ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
+                _ => start.as_ref().clone(),
+            };
+            let e = match end.as_ref().view() {
+                ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
+                _ => end.as_ref().clone(),
+            };
+            Some(Ok(Value::array(vec![s, e])))
+        }
+        _ => None,
+    }
+}
+
+/// `Range.is-int`: whether both endpoints are genuine integers. An open end
+/// (`*`, `Inf`) is not one; the rule is the one `int-bounds` and `minmax`
+/// use.
+// Cost: O(1).
+pub(crate) fn is_int(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::range_bounds_int::range_is_int(target).map(|is_int| Ok(Value::truth(is_int)))
+}
+
+/// `Range.infinite`: whether either end is open.
+// Cost: O(1).
+pub(crate) fn infinite(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => Some(Ok(Value::truth(
+            crate::builtins::methods_0arg::is_infinite_range(target),
+        ))),
+        _ => None,
+    }
+}
+
+/// `Range.int-bounds`, the zero-argument candidate: the `(from, to)` List, or
+/// a failure when the range has no integer bounds (an infinite or `Whatever`
+/// end, a `Str` range, a fractional lower bound). The two-argument
+/// `int-bounds($from is rw, $to is rw --> Bool)` candidate needs the caller's
+/// containers, so the VM serves it (`vm/vm_range_int_bounds.rs`), not a row.
+// Cost: O(1) for an `Int` range, O(d) for big endpoints, d = digits.
+pub(crate) fn int_bounds(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !target.is_range() {
+        return None;
+    }
+    Some(
+        match crate::builtins::range_bounds_int::range_int_bounds(target) {
+            Some((from, to)) => Ok(Value::array(vec![from, to])),
+            None => Err(RuntimeError::new("Cannot determine integer bounds")),
+        },
+    )
+}
+
+/// `Range.rand`: a `Num` in the range, `Nil` for an empty one, and a failure
+/// for a range with a non-numeric end. An excluded end is never returned.
+// Cost: O(1).
+pub(crate) fn rand(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    // The next double above `from` / below `to`: the excluded ends.
+    let above = |from: f64| f64::from_bits(from.to_bits().saturating_add(1));
+    let below = |to: f64| f64::from_bits(to.to_bits().saturating_sub(1));
+    let sample = |from: f64, to: f64| from + builtin_rand() * (to - from);
+    let (from, to, excl_start, excl_end) = match target.view() {
+        ValueView::Range(start, end) => {
+            return Some(Ok(Value::num(sample(start as f64, end as f64))));
+        }
+        ValueView::RangeExcl(start, end) => (start as f64, end as f64, false, true),
+        ValueView::RangeExclStart(start, end) => (start as f64, end as f64, true, false),
+        ValueView::RangeExclBoth(start, end) => (start as f64, end as f64, true, true),
+        ValueView::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let (Some(mut from), Some(mut to)) = (
+                crate::runtime::to_float_value(start),
+                crate::runtime::to_float_value(end),
+            ) else {
+                return Some(Ok(non_numeric_failure()));
+            };
+            if excl_start {
+                from = above(from);
+            }
+            if excl_end {
+                to = below(to);
+            }
+            if !from.is_finite() || !to.is_finite() || from > to {
+                return Some(Ok(Value::NIL));
+            }
+            return Some(Ok(Value::num(sample(from, to))));
+        }
+        _ => return None,
+    };
+    if from >= to {
+        return Some(Ok(Value::NIL));
+    }
+    let mut v = sample(from, to);
+    if excl_start && v <= from {
+        v = above(from);
+    }
+    if excl_end && v >= to {
+        v = below(to);
+    }
+    Some(Ok(Value::num(v)))
+}
+
+/// The failure `Range.rand` answers for a non-numeric end.
+// Cost: O(1).
+fn non_numeric_failure() -> Value {
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str("Cannot get a random value from a non-numeric Range".to_string()),
+    );
+    let ex = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), ex);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
+/// `Range.in-range($got)`.
+// Cost: O(1) for numeric ends; O(n) for a string range, n = chars of the
+// endpoints and the value.
+pub(crate) fn in_range_value(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    in_range(target, &args[0], "Value")
+}
+
+/// `Range.in-range($got, $what)`: `$what` names the checked thing in the
+/// out-of-range error.
+// Cost: O(1) for numeric ends; O(n) for a string range, n = chars of the
+// endpoints, the value and the label.
+pub(crate) fn in_range_what(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    in_range(target, &args[0], &args[1].to_string_value())
+}
+
+/// `value` is in `target`, or an `X::OutOfRange` that says `what` was not.
+// Cost: see [`in_range_what`].
+fn in_range(target: &Value, value: &Value, what: &str) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::arith::range::range_bounds(target)?;
+    if range_contains_value(target, value) {
+        return Some(Ok(Value::TRUE));
+    }
+    use crate::builtins::methods_0arg::raku_repr::raku_value;
+    let msg = format!(
+        "{} out of range. Is: {}, should be in {}",
+        what,
+        raku_value(value),
+        raku_value(target)
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("got".to_string(), value.clone());
+    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    Some(Err(err))
+}
+
+/// Whether `val` lies within `range`, honoring the range's exclusivity and
+/// Whatever endpoints. Mirrors `Interpreter::value_in_range` for the numeric
+/// and string-endpoint cases used by `.in-range`.
+// Cost: O(1) for numeric ends; O(n) for a string range, n = chars of the
+// endpoints and the value.
+fn range_contains_value(range: &Value, val: &Value) -> bool {
+    let Some((start, end, excl_start, excl_end)) =
+        crate::builtins::arith::range::range_bounds(range)
+    else {
+        return false;
+    };
+    let start_whatever = matches!(start.view(), ValueView::Whatever | ValueView::HyperWhatever);
+    let end_whatever = matches!(end.view(), ValueView::Whatever | ValueView::HyperWhatever);
+    let string_range =
+        matches!(start.view(), ValueView::Str(_)) || matches!(end.view(), ValueView::Str(_));
+    if string_range {
+        let v = val.to_string_value();
+        let smin = start.to_string_value();
+        let smax = end.to_string_value();
+        let min_ok = start_whatever || if excl_start { v > smin } else { v >= smin };
+        let max_ok = end_whatever || if excl_end { v < smax } else { v <= smax };
+        return min_ok && max_ok;
+    }
+    let v = val.to_f64();
+    let min_ok = start_whatever || {
+        let vmin = start.to_f64();
+        if excl_start { v > vmin } else { v >= vmin }
+    };
+    let max_ok = end_whatever || {
+        let vmax = end.to_f64();
+        if excl_end { v < vmax } else { v <= vmax }
+    };
+    min_ok && max_ok
 }

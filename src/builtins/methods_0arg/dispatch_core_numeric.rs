@@ -2,7 +2,6 @@ use super::{int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_fa
 use crate::builtins::rng::builtin_rand;
 /// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -266,105 +265,7 @@ pub(super) fn dispatch(
                     let inner = attributes.as_map().get("value")?.clone();
                     return dispatch(&inner, "rand");
                 }
-                ValueView::Range(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExcl(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate the excluded endpoint
-                    let v = if v >= to {
-                        f64::from_bits(to.to_bits().saturating_sub(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExclStart(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate the excluded endpoint
-                    let v = if v <= from {
-                        f64::from_bits(from.to_bits().saturating_add(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExclBoth(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate either excluded endpoint
-                    let v = if v <= from {
-                        f64::from_bits(from.to_bits().saturating_add(1))
-                    } else {
-                        v
-                    };
-                    let v = if v >= to {
-                        f64::from_bits(to.to_bits().saturating_sub(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::GenericRange {
-                    start,
-                    end,
-                    excl_start,
-                    excl_end,
-                } => {
-                    let make_rand_failure = || -> Value {
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str(
-                                "Cannot get a random value from a non-numeric Range".to_string(),
-                            ),
-                        );
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::AdHoc"),
-                            ex_attrs,
-                        );
-                        let mut failure_attrs = std::collections::HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        Value::make_instance(
-                            crate::symbol::Symbol::intern("Failure"),
-                            failure_attrs,
-                        )
-                    };
-                    let Some(mut from) = runtime::to_float_value(start) else {
-                        return Some(Some(Ok(make_rand_failure())));
-                    };
-                    let Some(mut to) = runtime::to_float_value(end) else {
-                        return Some(Some(Ok(make_rand_failure())));
-                    };
-                    if excl_start {
-                        from = f64::from_bits(from.to_bits().saturating_add(1));
-                    }
-                    if excl_end {
-                        to = f64::from_bits(to.to_bits().saturating_sub(1));
-                    }
-                    if !from.is_finite() || !to.is_finite() || from > to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::num(v))));
-                }
+                // `Range.rand` is the `Range` row's (`method_table::range`).
                 // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
                 ValueView::Array(items, ..) => items.len() as f64,
                 ValueView::Seq(items) => items.len() as f64,

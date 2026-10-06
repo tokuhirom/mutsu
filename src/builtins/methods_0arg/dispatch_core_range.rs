@@ -5,7 +5,7 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key};
+use super::{sample_weighted_bag_key, sample_weighted_mix_key};
 
 /// Efficiently sample one random element from a Range without enumerating all elements.
 /// Uses raw u64 entropy for full bit coverage on large ranges.
@@ -458,68 +458,6 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        // The `Range` rows' handlers (`method_table::range`).
-        "excludes-min" => Some(crate::builtins::method_table::range::excludes_min(
-            target,
-            &[],
-        )),
-        "excludes-max" => Some(crate::builtins::method_table::range::excludes_max(
-            target,
-            &[],
-        )),
-        "bounds" => Some(match target.view() {
-            ValueView::Range(a, b)
-            | ValueView::RangeExcl(a, b)
-            | ValueView::RangeExclStart(a, b)
-            | ValueView::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
-                if a == i64::MIN {
-                    Value::num(f64::NEG_INFINITY)
-                } else {
-                    Value::int(a)
-                },
-                if b == i64::MAX {
-                    Value::num(f64::INFINITY)
-                } else {
-                    Value::int(b)
-                },
-            ]))),
-            ValueView::GenericRange { start, end, .. } => {
-                let s = match start.as_ref().view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
-                    _ => start.as_ref().clone(),
-                };
-                let e = match end.as_ref().view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
-                    _ => end.as_ref().clone(),
-                };
-                Some(Ok(Value::array(vec![s, e])))
-            }
-            _ => None,
-        }),
-        "is-int" => Some(match target.view() {
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
-            ValueView::GenericRange { start, end, .. } => {
-                let s_int = matches!(
-                    start.as_ref().view(),
-                    ValueView::Int(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Whatever
-                        | ValueView::HyperWhatever
-                );
-                let e_int = matches!(
-                    end.as_ref().view(),
-                    ValueView::Int(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Whatever
-                        | ValueView::HyperWhatever
-                );
-                Some(Ok(Value::truth(s_int && e_int)))
-            }
-            _ => None,
-        }),
         // `Range.minmax` folds an excluded end into the returned bound, but only
         // when the range is `is-int` — an excluded *non-integer* end (`1.1..^5.2`,
         // `'a'..^'z'`, `1..^Inf`) has no nameable concrete bound, and raku fails
@@ -533,14 +471,6 @@ pub(super) fn dispatch(
                 None => None,
             },
         ),
-        "infinite" => Some(match target.view() {
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => Some(Ok(Value::truth(is_infinite_range(target)))),
-            _ => None,
-        }),
         // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,

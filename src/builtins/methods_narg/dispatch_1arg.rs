@@ -841,8 +841,6 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
-        // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-        "in-range" => in_range(target, arg, "Value"),
         // Cost: see `native_split_method`.
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -2414,64 +2412,4 @@ fn range_elem_count(range: &Value) -> Option<usize> {
         return None;
     }
     Some(crate::runtime::value_to_list(range).len())
-}
-
-/// Return True for a contained value, otherwise throw X::OutOfRange.
-// Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-pub(super) fn in_range(
-    target: &Value,
-    value: &Value,
-    what: &str,
-) -> Option<Result<Value, RuntimeError>> {
-    crate::builtins::arith::range::range_bounds(target)?;
-    if range_contains_value(target, value) {
-        return Some(Ok(Value::TRUE));
-    }
-    use crate::builtins::methods_0arg::raku_repr::raku_value;
-    let msg = format!(
-        "{} out of range. Is: {}, should be in {}",
-        what,
-        raku_value(value),
-        raku_value(target)
-    );
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    attrs.insert("got".to_string(), value.clone());
-    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-    let mut err = RuntimeError::new(msg);
-    err.exception = Some(Box::new(ex));
-    Some(Err(err))
-}
-
-/// Whether `val` lies within `range`, honoring the range's exclusivity and
-/// Whatever endpoints. Mirrors `Interpreter::value_in_range` for the numeric
-/// and string-endpoint cases used by `.in-range`.
-pub(super) fn range_contains_value(range: &Value, val: &Value) -> bool {
-    let Some((start, end, excl_start, excl_end)) =
-        crate::builtins::arith::range::range_bounds(range)
-    else {
-        return false;
-    };
-    let start_whatever = matches!(start.view(), ValueView::Whatever | ValueView::HyperWhatever);
-    let end_whatever = matches!(end.view(), ValueView::Whatever | ValueView::HyperWhatever);
-    let string_range =
-        matches!(start.view(), ValueView::Str(_)) || matches!(end.view(), ValueView::Str(_));
-    if string_range {
-        let v = val.to_string_value();
-        let smin = start.to_string_value();
-        let smax = end.to_string_value();
-        let min_ok = start_whatever || if excl_start { v > smin } else { v >= smin };
-        let max_ok = end_whatever || if excl_end { v < smax } else { v <= smax };
-        return min_ok && max_ok;
-    }
-    let v = val.to_f64();
-    let min_ok = start_whatever || {
-        let vmin = start.to_f64();
-        if excl_start { v > vmin } else { v >= vmin }
-    };
-    let max_ok = end_whatever || {
-        let vmax = end.to_f64();
-        if excl_end { v < vmax } else { v <= vmax }
-    };
-    min_ok && max_ok
 }

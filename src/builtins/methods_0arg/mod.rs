@@ -2393,37 +2393,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             return Some(Ok(Value::generic_range(min_val, max_val, false, false)));
         }
     }
-    // .int-bounds on Range values
-    // Note: i64 Range variants use i64::MIN/MAX as a sentinel for -Inf/Inf
-    // (e.g. `1..Inf`, `1..*`, `-Inf..1`). An Inf endpoint has no integer bound,
-    // so `.int-bounds` must throw — matching raku, where both `(1..*).int-bounds`
-    // and `(1..Inf).int-bounds` fail with "Cannot determine integer bounds".
-    // GenericRange handles true Inf/NaN endpoints below.
-    if method == "int-bounds"
-        && matches!(
-            target.view(),
-            ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. }
-        )
-    {
-        // The zero-argument candidate: raku returns the `(from, to)` List and
-        // fails with `Cannot determine integer bounds` when the range has none
-        // (an infinite / `Whatever` end, a `Str` range, or a fractional lower
-        // bound). The two-argument `int-bounds($from is rw, $to is rw --> Bool)`
-        // candidate needs the caller's containers, so it is served by the VM
-        // (`vm/vm_range_int_bounds.rs`), not by this pure arity cascade.
-        return Some(
-            match crate::builtins::range_bounds_int::range_int_bounds(target) {
-                Some((from, to)) => Ok(Value::array(vec![from, to])),
-                None => Err(crate::value::RuntimeError::new(
-                    "Cannot determine integer bounds",
-                )),
-            },
-        );
-    }
     // Kernel type object methods
     // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
     // Cost: O(1), reads the process-cached uname(2) result.
