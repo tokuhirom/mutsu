@@ -1201,6 +1201,16 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `("DateTime")` raku-verified as 1, was 0 in mutsu).
     ("Date", "Date", 1, 48),
     ("Date", "DateTime", 1, 16),
+    // ADR-11276 slice 3D: methods Rakudo declares on `Date`/`DateTime` that
+    // the table had no row for (`mm-dd`/`yyyy-mm` take an optional separator).
+    ("Date", "mm-dd", 3, 48),
+    ("Date", "yyyy-mm", 3, 48),
+    ("Date", "first-date-in-month", 1, 48),
+    ("Date", "last-date-in-month", 1, 48),
+    ("Date", "Real", 1, 16),
+    ("DateTime", "mm-dd", 3, 48),
+    ("DateTime", "yyyy-mm", 3, 48),
+    ("DateTime", "Real", 1, 16),
     ("DateTime", "Str", 3, 16),
     ("DateTime", "raku", 1, 16),
     ("DateTime", "gist", 1, 16),

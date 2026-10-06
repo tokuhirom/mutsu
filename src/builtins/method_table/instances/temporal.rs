@@ -1,5 +1,6 @@
 //! `Date`'s and `DateTime`'s component rows (ADR-11276 §10, slice 3A proof
-//! rows for the two instance-class shapes; slice 3D moves the rest).
+//! rows for the two instance-class shapes; slice 3D moves the rest: see
+//! `dateish.rs`, `date.rs` and `datetime.rs`).
 //!
 //! The functions take the instance's attributes, which is what the native
 //! cascade's `date_method_0arg` / `datetime_method_0arg` hold for a *subclass*
@@ -9,35 +10,22 @@ use super::{Handler, MethodRow, RowFlags};
 use crate::value::temporal_core::{date_attrs, datetime_attrs};
 use crate::value::{AttrMap, RuntimeError, Value, ValueView};
 
-macro_rules! rows {
-    ($owner:literal: $($name:literal => $handler:ident),* $(,)?) => {
-        &[$(MethodRow {
-            owner: $owner,
-            name: $name,
-            arity: 0,
-            handler: Handler::Narrow($handler),
-            flags: RowFlags::NONE,
-            named: &[],
-        }),*]
-    };
-}
-
-pub(super) static DATE_ROWS: &[MethodRow] = rows!["Date":
-    "year" => date_year_row,
-    "month" => date_month_row,
-    "day" => date_day_row,
+pub(super) static DATE_ROWS: &[MethodRow] = &[
+    super::narrow_row!("Date", "year", 0, date_year_row),
+    super::narrow_row!("Date", "month", 0, date_month_row),
+    super::narrow_row!("Date", "day", 0, date_day_row),
 ];
 
-pub(super) static DATETIME_ROWS: &[MethodRow] = rows!["DateTime":
-    "year" => datetime_year_row,
-    "month" => datetime_month_row,
-    "day" => datetime_day_row,
-    "hour" => datetime_hour_row,
-    "minute" => datetime_minute_row,
+pub(super) static DATETIME_ROWS: &[MethodRow] = &[
+    super::narrow_row!("DateTime", "year", 0, datetime_year_row),
+    super::narrow_row!("DateTime", "month", 0, datetime_month_row),
+    super::narrow_row!("DateTime", "day", 0, datetime_day_row),
+    super::narrow_row!("DateTime", "hour", 0, datetime_hour_row),
+    super::narrow_row!("DateTime", "minute", 0, datetime_minute_row),
 ];
 
 /// Run `f` on the attributes of an `Instance` receiver.
-fn with_attrs(
+pub(super) fn with_attrs(
     target: &Value,
     f: impl FnOnce(&AttrMap) -> Value,
 ) -> Option<Result<Value, RuntimeError>> {
@@ -45,6 +33,14 @@ fn with_attrs(
         ValueView::Instance { attributes, .. } => Some(Ok(f(&attributes.as_map()))),
         _ => None,
     }
+}
+
+/// The separator argument of a `Dateish` ordering. The guard hands a row plain
+/// scalars only, and the cascade this replaces read any of them as the
+/// separator's text, so a row does the same.
+// Cost: O(n), n = chars of the argument's string form (one copy).
+pub(super) fn sep_arg(arg: &Value) -> String {
+    arg.to_string_value()
 }
 
 /// `Date.year`.

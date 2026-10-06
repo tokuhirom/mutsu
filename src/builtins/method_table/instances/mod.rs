@@ -6,7 +6,33 @@
 
 use super::{Handler, MethodRow, RowFlags};
 
+/// A [`Handler::Narrow`] row of `owner` for `name` with `arity` positional
+/// arguments, flagged nothing.
+macro_rules! narrow_row {
+    ($owner:literal, $name:literal, $arity:literal, $handler:ident) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: $arity,
+            handler: Handler::Narrow($handler),
+            flags: RowFlags::NONE,
+            named: &[],
+        }
+    };
+}
+use narrow_row;
+
+pub(crate) mod date;
+pub(crate) mod dateish;
+pub(crate) mod datetime;
 pub(crate) mod temporal;
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[temporal::DATE_ROWS, temporal::DATETIME_ROWS];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[
+    temporal::DATE_ROWS,
+    temporal::DATETIME_ROWS,
+    dateish::DATE_ROWS,
+    dateish::DATETIME_ROWS,
+    date::ROWS,
+    datetime::ROWS,
+];
