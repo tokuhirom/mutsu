@@ -3,6 +3,13 @@ use super::regex_parse_charclass_alts::CharClassAltTally;
 use super::*;
 use unicode_normalization::UnicodeNormalization;
 
+thread_local! {
+    /// `pkg::name` keys of the tokens [`Interpreter::token_class_fold`] is
+    /// currently folding, to cut self-referential class folds.
+    static FOLDING_TOKENS: std::cell::RefCell<std::collections::HashSet<String>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
 /// Result of statically folding a grammar token referenced in an enumerated
 /// char class (see `token_class_fold`).
 enum TokenClassFold {
@@ -837,6 +844,14 @@ impl Interpreter {
         if candidates.is_empty() {
             return None;
         }
+        // A token whose own pattern names itself inside a class (`regex name
+        // { <-x +name> }`) would re-enter this fold without end; decline the
+        // inner attempt so the symbolic path handles it.
+        let key = format!("{pkg}::{name}");
+        let entered = FOLDING_TOKENS.with(|f| f.borrow_mut().insert(key.clone()));
+        if !entered {
+            return None;
+        }
         // A failed sub-parse may set PENDING_REGEX_ERROR; a fold attempt must
         // never surface an error the symbolic fallback path wouldn't.
         let saved_err = PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take());
@@ -858,6 +873,7 @@ impl Interpreter {
             Some(TokenClassFold::Inline(parsed))
         })();
         PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = saved_err);
+        FOLDING_TOKENS.with(|f| f.borrow_mut().remove(&key));
         result
     }
 
