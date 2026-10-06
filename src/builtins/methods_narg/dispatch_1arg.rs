@@ -585,6 +585,14 @@ pub(crate) fn native_method_1arg(
             }
             Some(Ok(Value::str(result)))
         }
+        // A Capture's positional part: the `Capture` row's implementation
+        // (`method_table::capture`).
+        "AT-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
+            crate::builtins::method_table::capture::at_pos(target, std::slice::from_ref(arg))
+        }
+        "EXISTS-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
+            crate::builtins::method_table::capture::exists_pos(target, std::slice::from_ref(arg))
+        }
         "AT-POS" => {
             // A Str or Rat index is coerced to Int, as Rakudo's `AT-POS(Any)`
             // candidate does (`.AT-POS("1")` reads element 1). A Str that is not

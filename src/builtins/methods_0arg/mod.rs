@@ -979,7 +979,7 @@ pub(crate) fn native_method_0arg_cascade(
     }
     // Capture methods
     if let ValueView::Capture { positional, named } = target.view()
-        && let result @ Some(_) = dispatch_capture(positional, named, method)
+        && let result @ Some(_) = dispatch_capture(target, positional, named, method)
     {
         return result;
     }
@@ -996,81 +996,25 @@ pub(crate) fn native_method_0arg_cascade(
 }
 
 fn dispatch_capture(
+    target: &Value,
     positional: &[Value],
     named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
+    // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
+    // part (indexed 0..n) with the named part (raku Capture semantics).
+    // These are the `Capture` rows' implementations (`method_table::capture`).
+    use crate::builtins::method_table::capture;
     match method {
-        "hash" | "Hash" => {
-            let mut map = ValueMap::default();
-            for (k, v) in named {
-                map.insert(k.clone(), v.clone());
-            }
-            // Capture.hash returns an immutable Map, not a mutable Hash — and
-            // a Map's values are not element containers (raku:
-            // `\(:x<1 2>).hash<x>.VAR.^name` is `List`).
-            let mut data = crate::value::HashData::new(map);
-            data.declared_type = Some("Map".to_string());
-            data.bare_values = true;
-            Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
-        }
-        "list" => Some(Ok(Value::array(positional.to_vec()))),
-        "elems" => Some(Ok(Value::int(positional.len() as i64))),
-        "Numeric" | "Int" => Some(Ok(Value::int(positional.len() as i64))),
+        "hash" | "Hash" => capture::hash(target, &[]),
+        "list" => capture::list(target, &[]),
+        "elems" | "Numeric" | "Int" => capture::elems(target, &[]),
         "is-lazy" => Some(Ok(Value::FALSE)),
-        // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
-        // part (indexed 0..n) with the named part (raku Capture semantics).
-        "keys" => {
-            let mut keys: Vec<Value> = (0..positional.len() as i64).map(Value::int).collect();
-            keys.extend(named.keys().map(|k| Value::str(k.clone())));
-            Some(Ok(Value::seq(keys)))
-        }
-        "values" => {
-            let mut vals = positional.to_vec();
-            vals.extend(named.values().cloned());
-            Some(Ok(Value::seq(vals)))
-        }
-        "kv" => {
-            let mut kv = Vec::with_capacity(positional.len() * 2 + named.len() * 2);
-            for (idx, v) in positional.iter().enumerate() {
-                kv.push(Value::int(idx as i64));
-                kv.push(v.clone());
-            }
-            for (k, v) in named.iter() {
-                kv.push(Value::str(k.clone()));
-                kv.push(v.clone());
-            }
-            Some(Ok(Value::seq(kv)))
-        }
-        "pairs" => {
-            let mut pairs: Vec<Value> = positional
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| Value::value_pair(Value::int(idx as i64), v.clone()))
-                .collect();
-            // ADR-0021 I2/P3: `.pairs`' output is data, not a call site — the
-            // named lane's entries default positional like the positional
-            // lane above, even though they came from a named argument.
-            pairs.extend(
-                named
-                    .iter()
-                    .map(|(k, v)| Value::value_pair(Value::str(k.clone()), v.clone())),
-            );
-            Some(Ok(Value::seq(pairs)))
-        }
-        "antipairs" => {
-            let mut pairs: Vec<Value> = positional
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| Value::value_pair(v.clone(), Value::int(idx as i64)))
-                .collect();
-            pairs.extend(
-                named
-                    .iter()
-                    .map(|(k, v)| Value::value_pair(v.clone(), Value::str(k.clone()))),
-            );
-            Some(Ok(Value::seq(pairs)))
-        }
+        "keys" => capture::keys(target, &[]),
+        "values" => capture::values(target, &[]),
+        "kv" => capture::kv(target, &[]),
+        "pairs" => capture::pairs(target, &[]),
+        "antipairs" => capture::antipairs(target, &[]),
         "raku" | "perl" => {
             let mut parts = Vec::new();
             for v in positional {

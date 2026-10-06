@@ -943,7 +943,20 @@ fn items_to_capture_value(items: &[Value]) -> Value {
 }
 
 /// Convert a value to a Capture.
-fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
+/// Whether `.Capture` on this List/Array/Seq/Slip must name a `Pair` whose key
+/// is not a `Str` through that key's own `.Str` (a custom class's `method
+/// Str`): the pure [`value_to_capture`] cannot, so the interpreter answers.
+// Cost: O(e), e = elements of the receiver.
+pub(crate) fn capture_needs_str_key(target: &Value) -> bool {
+    matches!(
+        target.view(),
+        ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+    ) && crate::runtime::utils::value_to_list(target).iter().any(
+        |item| matches!(item.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
+    )
+}
+
+pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
     match target.view() {
         // A Capture is already a Capture
         ValueView::Capture { .. } => Ok(target.clone()),

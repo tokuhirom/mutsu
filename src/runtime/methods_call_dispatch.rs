@@ -5111,17 +5111,9 @@ impl Interpreter {
                 self.call_method_with_values(target.clone(), "Seq", vec![])
                     .and_then(|seq| self.list_to_capture(&seq)),
             ),
-            ValueView::Array(..) | ValueView::Seq(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
-            }
-            ValueView::Slip(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+                crate::builtins::methods_0arg::coercion::capture_needs_str_key(target)
+                    .then(|| self.list_to_capture(target))
             }
             // `Mu.Capture` on a user-declared object: the named arguments are
             // the object's PUBLIC attributes, and each one is read through its
