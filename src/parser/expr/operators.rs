@@ -939,7 +939,7 @@ mod tests {
         for op in all {
             assert_eq!(
                 crate::chain_compare::is_chain_op(&op.token_kind()),
-                !super::precedence::is_structural_comparison_op(op),
+                !crate::parser::expr::precedence::is_structural_comparison_op(op),
                 "{:?}: chain op and structural op must be complements",
                 op
             );
