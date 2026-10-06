@@ -96,7 +96,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     }
 }
 
-fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
@@ -3256,6 +3256,9 @@ fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
 }
 
 pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
+    if let Some(extension) = super::regex_extension::lower(node) {
+        return extension;
+    }
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
             ValueView::Str(text) => Ok(RegexNode::Literal(text.to_string())),

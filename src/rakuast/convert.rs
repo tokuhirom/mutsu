@@ -48,6 +48,22 @@ pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError
     statement_list_inner(stmts)
 }
 
+/// The statements of `stmts`, each as its node.
+// Cost: O(n), n = size of the statements.
+pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, RuntimeError> {
+    Ok(statement_list_inner(stmts)?
+        .fields
+        .into_iter()
+        .filter_map(|field| match field.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::RakuAst(node) => Some(node.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect())
+}
+
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
@@ -3832,6 +3848,7 @@ pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// whitespace information by the time matching begins.
 pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     let (class, fields) = match node {
+        RegexNode::Extension(extension) => return super::regex_extension::convert(extension),
         RegexNode::Literal(text) => (
             RakuAstClass::RegexLiteral,
             vec![leaf_field(None, Value::str(text.clone()))],

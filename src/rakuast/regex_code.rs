@@ -10,7 +10,7 @@
 //! spelling in a hidden `source` field, the way a statement keeps its line
 //! (`origin`) and a named capture its sigil (`array`), and `lower` puts it back.
 //! A hand-built node has none, so its block lowers to an empty spelling as it
-//! always did.
+//! always did. A regex statement (`:my $x = 1;`) is kept the same way.
 //!
 //! The field is part of the model but not of the constructor form: Rakudo's
 //! `.raku` shows no source text either.
@@ -39,6 +39,7 @@ pub(super) fn is_source(node: &RakuAstNode, field: &RakuAstField) -> bool {
             RakuAstClass::RegexBlock
                 | RakuAstClass::RegexAssertionPredicateBlock
                 | RakuAstClass::RegexAssertionInterpolatedBlock
+                | RakuAstClass::RegexStatement
         )
 }
 

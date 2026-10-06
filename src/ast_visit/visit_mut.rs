@@ -246,6 +246,14 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => {}
+        RegexNode::Extension(extension) => {
+            for child in extension.children_mut() {
+                v.visit_regex_node_mut(child);
+            }
+            if let Some((_, body)) = extension.code_mut() {
+                v.visit_stmts_mut(body);
+            }
+        }
     }
 }
 

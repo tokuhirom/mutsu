@@ -386,6 +386,15 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
         | RegexNode::CharClass(_)
         | RegexNode::CharClassAssertion(_)
         | RegexNode::InternalModifier { .. } => {}
+        RegexNode::Extension(extension) => {
+            for child in extension.children() {
+                v.visit_regex_node(child);
+            }
+            if let Some((code, body)) = extension.code() {
+                v.visit_name(code, NameKind::Source);
+                walk_stmts(v, body);
+            }
+        }
     }
 }
 

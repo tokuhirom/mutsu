@@ -44,6 +44,7 @@ mod react;
 mod regex_char_class;
 mod regex_code;
 mod regex_enumeration;
+mod regex_extension;
 mod regex_quantifier;
 mod render;
 mod role;
@@ -204,6 +205,11 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    RegexAssertionRecurse,
+    RegexBackReferencePositional,
+    RegexBackReferenceNamed,
+    RegexStatement,
+    RegexNested,
     VarPositionalCapture,
     ColonPairNumber,
     Transliteration,
@@ -529,6 +535,11 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            RegexAssertionRecurse => "RakuAST::Regex::Assertion::Recurse",
+            RegexBackReferencePositional => "RakuAST::Regex::BackReference::Positional",
+            RegexBackReferenceNamed => "RakuAST::Regex::BackReference::Named",
+            RegexStatement => "RakuAST::Regex::Statement",
+            RegexNested => "RakuAST::Regex::Nested",
             VarPositionalCapture => "RakuAST::Var::PositionalCapture",
             ColonPairNumber => "RakuAST::ColonPair::Number",
             Transliteration => "RakuAST::Transliteration",
@@ -705,6 +716,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexMatchFrom
                 | RakuAstClass::RegexAssertionPass
                 | RakuAstClass::RegexAssertionFail
+                | RakuAstClass::RegexAssertionRecurse
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
                 | RakuAstClass::RegexQuantifierRange
@@ -850,10 +862,16 @@ impl RakuAstClass {
                 "RakuAST::Termish",
                 "RakuAST::Expression",
             ],
-            RegexMatchFrom | RegexMatchTo => {
+            RegexMatchFrom | RegexMatchTo | RegexNested | RegexStatement => {
                 &["RakuAST::Regex::Atom", "RakuAST::Regex::Term", "RakuAST::Regex"]
             }
-            RegexAssertionPass | RegexAssertionFail => &[
+            RegexBackReferenceNamed | RegexBackReferencePositional => &[
+                "RakuAST::Regex::BackReference",
+                "RakuAST::Regex::Atom",
+                "RakuAST::Regex::Term",
+                "RakuAST::Regex",
+            ],
+            RegexAssertionPass | RegexAssertionFail | RegexAssertionRecurse => &[
                 "RakuAST::Regex::Assertion",
                 "RakuAST::Regex::Atom",
                 "RakuAST::Regex::Term",
@@ -1079,7 +1097,21 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::Assertion::InterpolatedBlock"
         | "RakuAST::Regex::Interpolation"
         | "RakuAST::Regex::WithWhitespace"
+        | "RakuAST::Regex::Nested"
+        | "RakuAST::Regex::Statement"
         | "RakuAST::Regex::Block" => &[
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
+        "RakuAST::Regex::BackReference::Named" | "RakuAST::Regex::BackReference::Positional" => &[
+            "RakuAST::Regex::BackReference",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+        ],
+        "RakuAST::Regex::Assertion::Recurse" => &[
+            "RakuAST::Regex::Assertion",
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
@@ -1285,6 +1317,11 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::RegexAssertionRecurse,
+    RakuAstClass::RegexBackReferencePositional,
+    RakuAstClass::RegexBackReferenceNamed,
+    RakuAstClass::RegexStatement,
+    RakuAstClass::RegexNested,
     RakuAstClass::VarPositionalCapture,
     RakuAstClass::ColonPairNumber,
     RakuAstClass::Transliteration,
@@ -2806,6 +2843,11 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexMatchFrom
                     | RakuAstClass::RegexAssertionPass
                     | RakuAstClass::RegexAssertionFail
+                    | RakuAstClass::RegexAssertionRecurse
+                    | RakuAstClass::RegexNested
+                    | RakuAstClass::RegexStatement
+                    | RakuAstClass::RegexBackReferenceNamed
+                    | RakuAstClass::RegexBackReferencePositional
                     | RakuAstClass::RegexMatchTo
                     | RakuAstClass::RegexCharClass(_)
                     | RakuAstClass::RegexAssertionCharClass
@@ -2914,6 +2956,13 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Regex::Assertion::Recurse", "new") => RakuAstClass::RegexAssertionRecurse,
+        ("RakuAST::Regex::BackReference::Positional", "new") => {
+            RakuAstClass::RegexBackReferencePositional
+        }
+        ("RakuAST::Regex::BackReference::Named", "new") => RakuAstClass::RegexBackReferenceNamed,
+        ("RakuAST::Regex::Statement", "new") => RakuAstClass::RegexStatement,
+        ("RakuAST::Regex::Nested", "new") => RakuAstClass::RegexNested,
         ("RakuAST::Var::PositionalCapture", "new") => RakuAstClass::VarPositionalCapture,
         ("RakuAST::ColonPair::Number", "new") => RakuAstClass::ColonPairNumber,
         ("RakuAST::Transliteration", "new") => RakuAstClass::Transliteration,
@@ -3082,6 +3131,9 @@ fn named_arg(args: &[Value], name: &str) -> Option<Value> {
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
 /// returns the positional children of a `StatementList`/`SemiList` as a `List`.
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
+    if let Some(child) = regex_extension::nested_accessor(node, method) {
+        return Some(child);
+    }
     for f in &node.fields {
         if f.name == Some(method) {
             return Some(field_to_value(&f.value));
@@ -3280,6 +3332,11 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::RegexAssertionRecurse
+            | RakuAstClass::RegexBackReferencePositional
+            | RakuAstClass::RegexBackReferenceNamed
+            | RakuAstClass::RegexStatement
+            | RakuAstClass::RegexNested
             | RakuAstClass::VarPositionalCapture
             | RakuAstClass::ColonPairNumber
             | RakuAstClass::Transliteration
