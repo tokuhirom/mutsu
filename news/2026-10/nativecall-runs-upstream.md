@@ -83,6 +83,13 @@ through `.cstr` where there is one, and `nqp::unbox_s` reads it), `nativecall-ty
 (`CArray[Str].REPR` is `CArray`) and `nativecall-pointer-param-and-carray-allocate.t`
 (`CArray[Str].allocate` dies in Rakudo 2026.09, so the reference-element case uses `Pointer`).
 
+Under the RakuAST frontend (`MUTSU_RAKUAST=1`) a definiteness smiley now follows any name that
+resolves, not only a builtin type: `constant X = Int; X:D` and NativeCall's
+`my constant CArray is export` are a `Type::Definedness`, as in Rakudo. `CArray` was only
+convertible before because it was hard-wired as a core type name. A plain `Str.AST` of a source
+that `use`s a bundled module still cannot see that module's exports
+([#12185](https://github.com/tokuhirom/mutsu/issues/12185)).
+
 Still open: [#12144](https://github.com/tokuhirom/mutsu/issues/12144), a pre-existing flake in
 `t/nativecall/nativecall-mvp.t` (an `is native('m', v6)` trait argument occasionally evaluates to
 the previous routine's `('c', v6)`; the pre-switch binary reproduces it), and the

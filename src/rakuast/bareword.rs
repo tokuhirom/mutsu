@@ -276,9 +276,18 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         Some(DeclaredKind::Routine) => return Some(call_name(name)),
         None => {}
     }
-    // `Str:D` / `Int:U` used as a term: a definite type over the type.
+    // `Str:D` / `Int:U` used as a term: a definite type over the type. A base
+    // that resolves as a term (`constant X = Int; X:D`, or NativeCall's
+    // `my constant CArray is export`) takes the smiley the same way: rakudo
+    // renders it `Type::Definedness(base-type => Type::Simple(X))` too
+    // (measured on 2026.09), since a smiley can only follow a type name.
     if let Some(base) = name.strip_suffix(":D").or_else(|| name.strip_suffix(":U"))
-        && convert(base).is_some_and(|node| node.class == RakuAstClass::TypeSimple)
+        && convert(base).is_some_and(|node| {
+            matches!(
+                node.class,
+                RakuAstClass::TypeSimple | RakuAstClass::TermName
+            )
+        })
     {
         return super::convert::build_type_node(name).ok();
     }

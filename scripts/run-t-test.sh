@@ -44,38 +44,5 @@ per_file_timeout_scale() {
 test_file="$1"
 file_timeout=$((MUTSU_T_TIMEOUT * $(per_file_timeout_scale "$test_file")))
 
-# TEMP-DIAG (#12165): four NativeCall tests exit 1 with no output on CI only
-# (a few ms, no TAP plan, identical on a re-run, not reproducible locally). When
-# a file fails WITHOUT having printed a plan, leave a report in
-# $MUTSU_CRASH_DIR -- `report-crash-reports.sh` prints those into the job log --
-# with what the process saw and a second run of the same file with its stderr
-# kept. Remove this block once the cause is found.
-out=$(mktemp)
-scripts/flaky-retry.sh "$test_file" \
-  timeout "$file_timeout" "$MUTSU_BIN" "$test_file" 2>&1 | tee "$out"
-rc=${PIPESTATUS[0]}
-if [ "$rc" -ne 0 ] && ! grep -q '^1\.\.' "$out" && [ -n "${MUTSU_CRASH_DIR:-}" ]; then
-  mkdir -p "$MUTSU_CRASH_DIR"
-  {
-    echo "argv: DIAG plan-less failure of $test_file"
-    echo "rc=$rc pwd=$(pwd) bin=$MUTSU_BIN user=$(id -un) uid=$(id -u)"
-    ls -la "$MUTSU_BIN" 2>&1
-    "$MUTSU_BIN" --version 2>&1 | head -3
-    echo "--- output of the failed run:"
-    cat "$out"
-    echo "--- the same file again, stderr kept (timeout ${file_timeout}s):"
-    timeout "$file_timeout" "$MUTSU_BIN" "$test_file" 2>&1 | head -40
-    echo "second run rc=${PIPESTATUS[0]}"
-    echo "--- cache dirs:"
-    ls -ld "$HOME" "$HOME/.cache" "$HOME/.cache/mutsu" "$HOME/.cache/mutsu/precomp" 2>&1
-    ls "$HOME/.cache/mutsu/precomp" 2>&1 | wc -l
-    echo "--- env:"
-    env | grep -E '^(MUTSU|HOME|PATH|LANG|LC_|TMPDIR|RUST|XDG)' | sort
-    echo "--- limits:"
-    ulimit -a 2>&1
-    echo "--- disk:"
-    df -h . /tmp "$HOME" 2>&1
-  } > "$MUTSU_CRASH_DIR/diag-$$.txt" 2>&1
-fi
-rm -f "$out"
-exit "$rc"
+exec scripts/flaky-retry.sh "$test_file" \
+  timeout "$file_timeout" "$MUTSU_BIN" "$test_file"

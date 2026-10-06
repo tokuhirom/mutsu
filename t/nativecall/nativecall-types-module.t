@@ -28,7 +28,11 @@ isa-ok NativeCall::Types::CArray[int32].new, NativeCall::Types::CArray[int32],
 isa-ok NativeCall::Types::Pointer.new(0), NativeCall::Types::Pointer,
     'Pointer is usable after loading NativeCall::Types';
 
-throws-like { EVAL 'Pointer' }, X::Undeclared::Symbols,
+# A type constraint is the spelling that is also unambiguous under the RakuAST
+# frontend (a bare undeclared name is its conversion boundary there).
+throws-like { EVAL 'my Pointer $p' }, X::Comp::Group,
+    message => /"Type 'Pointer' is not declared"/,
     'the short name Pointer is not exported by NativeCall::Types';
-throws-like { EVAL 'CArray' }, X::Undeclared::Symbols,
+throws-like { EVAL 'my CArray $p' }, X::Comp::Group,
+    message => /"Type 'CArray' is not declared"/,
     'nor is CArray';
