@@ -369,6 +369,7 @@ mod vm_var_assign_nil_decay;
 mod vm_var_assign_ops;
 mod vm_var_assign_package_stash;
 mod vm_var_assign_post_incdec;
+mod vm_decl_lane;
 mod vm_var_assign_set_local;
 mod vm_var_assign_typed;
 mod vm_var_bind_container;

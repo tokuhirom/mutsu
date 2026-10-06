@@ -127,7 +127,43 @@ impl Interpreter {
         // For scalar variables, if the current value is Nil, set it to the type object.
         // Exception: if the constraint is "Nil", keep the value as Nil
         // (the Nil type object is Nil itself, not the Package "Nil").
-        if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
+        // A declaration whose slot is its variable's only home (`SetVarDynamic`
+        // took the env-free lane for it) seeds the slot and nothing else: no env
+        // entry exists to seed or to take back at scope exit.
+        let env_free_slot = (!hoisted && !name.starts_with('@') && !name.starts_with('%'))
+            .then(|| {
+                let previous = (*ip).checked_sub(1)?;
+                match code.ops.get(previous)? {
+                    OpCode::SetVarDynamic {
+                        name_idx: preceding_name,
+                        dynamic,
+                        local_slot: Some(slot),
+                        type_follows: true,
+                        bind_declaration,
+                        ..
+                    } if *preceding_name == name_idx => self.env_free_decl_slot(
+                        code,
+                        name,
+                        *dynamic,
+                        *bind_declaration,
+                        Some(*slot),
+                    ),
+                    _ => None,
+                }
+            })
+            .flatten();
+        if let Some(slot) = env_free_slot
+            && constraint != "Nil"
+        {
+            let init_val = match Self::native_nil_seed_value(&constraint) {
+                Some(native) => native,
+                None => {
+                    let base = self.var_type_constraint_sym(name_sym);
+                    self.typed_scalar_nil_seed_value_with_base(&constraint, base)
+                }
+            };
+            self.locals[slot] = init_val;
+        } else if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
             // On the hoist an EXISTING binding is the enclosing scope's, and
             // seeding it would overwrite the outer variable's value for good
             // (the block-exit restore only puts the metadata back). Seed only a
@@ -165,8 +201,13 @@ impl Interpreter {
             if is_nil || is_dead_seed {
                 // The declaration's own symbol: the by-name forms re-interned
                 // `name` three times per execution (#12151).
-                let base = self.var_type_constraint_sym(name_sym);
-                let init_val = self.typed_scalar_nil_seed_value_with_base(&constraint, base);
+                let init_val = match Self::native_nil_seed_value(&constraint) {
+                    Some(native) => native,
+                    None => {
+                        let base = self.var_type_constraint_sym(name_sym);
+                        self.typed_scalar_nil_seed_value_with_base(&constraint, base)
+                    }
+                };
                 self.set_env_with_main_alias_sym(name, Some(name_sym), init_val.clone());
                 // A declaration's SetVarDynamic directly precedes this op.
                 // Its slot is authoritative when an inner `my` shadows an
@@ -326,8 +367,29 @@ impl Interpreter {
     /// constraints for Nil→type-object conversion (a `= Nil` parameter default
     /// must stay Nil), so the stored value itself must carry the type object.
     pub(crate) fn typed_scalar_nil_seed_value(&mut self, name: &str, constraint: &str) -> Value {
+        if let Some(native) = Self::native_nil_seed_value(constraint) {
+            return native;
+        }
         let base = loan_env!(self, var_type_constraint(name));
         self.typed_scalar_nil_seed_value_with_base(constraint, base)
+    }
+
+    /// The zero/empty default of a native scalar constraint (`int` -> 0,
+    /// `num` -> 0e0, `str` -> ""), which needs neither the registered base
+    /// name nor a registry probe — so a caller that has to FETCH that base
+    /// (an env read plus a `String` copy) asks this first and skips it
+    /// (#12151).
+    // Cost: O(1).
+    pub(crate) fn native_nil_seed_value(constraint: &str) -> Option<Value> {
+        if crate::runtime::native_types::is_native_int_type(constraint) {
+            Some(Value::int(0))
+        } else if matches!(constraint, "num" | "num32" | "num64") {
+            Some(Value::num(0.0))
+        } else if constraint == "str" {
+            Some(Value::str(String::new()))
+        } else {
+            None
+        }
     }
 
     /// [`Self::typed_scalar_nil_seed_value`] with the declared constraint
@@ -340,12 +402,8 @@ impl Interpreter {
         constraint: &str,
         base: Option<String>,
     ) -> Value {
-        if crate::runtime::native_types::is_native_int_type(constraint) {
-            Value::int(0)
-        } else if matches!(constraint, "num" | "num32" | "num64") {
-            Value::num(0.0)
-        } else if constraint == "str" {
-            Value::str(String::new())
+        if let Some(native) = Self::native_nil_seed_value(constraint) {
+            native
         } else {
             // A parameterized role constraint (`my Cup of EggNog $mug` /
             // `my Cup[EggNog] $mug`) resolves to the ParametricRole type
