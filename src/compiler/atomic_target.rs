@@ -30,6 +30,11 @@
 //! declared, spelling[, operand])`, which answers its operand, so it slots in
 //! between pushing the target name and the helper call without disturbing the
 //! stack. The one check lives in `runtime/builtins_atomic_target.rs`.
+//!
+//! The helper itself finds its binding from the same lexical knowledge: the
+//! target it is handed is the name tagged with the frame slot the call site
+//! reaches ([`Compiler::emit_atomic_target`]), because a name alone cannot tell
+//! an inner `my atomicint $y` from the outer `$y` it shadows (#12006).
 
 use super::*;
 
