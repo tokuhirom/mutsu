@@ -10,7 +10,7 @@ my $v123 = v1.2.3;
 is-deeply $v123.parts, (1, 2, 3), 'v-literal .parts';
 is-deeply Version.new("6.d").parts, (6, "d"), 'string part';
 is-deeply Version.new("1.2+").parts, (1, 2), '.parts excludes the + suffix';
-is Version.new("2021.10.*").parts.raku, '(2021, 10, *)', 'Whatever part';
+is Version.new("2021.10.*").parts.raku, '(2021, 10, "*")', 'a * part is the Str "*"';
 
 ok Version.new("1.2+").plus, '.plus True with + suffix';
 nok Version.new("1.2").plus, '.plus False without suffix';
