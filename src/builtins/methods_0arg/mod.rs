@@ -872,41 +872,9 @@ fn dispatch_capture(
         "kv" => capture::kv(target, &[]),
         "pairs" => capture::pairs(target, &[]),
         "antipairs" => capture::antipairs(target, &[]),
-        "raku" | "perl" => {
-            let mut parts = Vec::new();
-            for v in positional {
-                match v.view() {
-                    ValueView::Pair(k, val) => {
-                        parts.push(format!(
-                            "{} => {}",
-                            raku_repr::raku_value(&Value::str(k.clone())),
-                            raku_repr::raku_value(val)
-                        ));
-                    }
-                    ValueView::ValuePair(k, val) => {
-                        parts.push(format!(
-                            "{} => {}",
-                            raku_repr::raku_value(k),
-                            raku_repr::raku_value(val)
-                        ));
-                    }
-                    _ => parts.push(raku_repr::raku_value(v)),
-                }
-            }
-            let mut named_keys: Vec<&String> = named.keys().collect();
-            named_keys.sort();
-            for k in named_keys {
-                let v = &named[k];
-                if let ValueView::Bool(true) = v.view() {
-                    parts.push(format!(":{}", k));
-                } else if let ValueView::Bool(false) = v.view() {
-                    parts.push(format!(":!{}", k));
-                } else {
-                    parts.push(format!(":{}({})", k, raku_repr::raku_value(v)));
-                }
-            }
-            Some(Ok(Value::str(format!("\\({})", parts.join(", ")))))
-        }
+        "raku" | "perl" => Some(Ok(Value::str(crate::value::capture_text::capture_raku(
+            positional, named,
+        )))),
         "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
             positional, named,
         )))),

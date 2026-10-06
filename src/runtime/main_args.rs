@@ -566,7 +566,9 @@ impl Interpreter {
                 .find(|pd| Self::param_all_names(pd).iter().any(|n| n == name))
                 .map(|pd| self.coerce_cli_arg(value, pd))
                 .unwrap_or_else(|| value.clone());
-            args.push(Value::pair(name.clone(), coerced));
+            // Rakudo takes these values from a hash, so a Boolean is a
+            // container and a captured `|c` shows `:foo(Bool::True)`, not `:foo`.
+            args.push(Value::pair(name.clone(), coerced.itemize_for_hash_element()));
         }
         // rakudo's `RUN-MAIN` SINKS whatever `MAIN` returns
         // (`roast/S06-other/main.t`'s "MAIN return value is sunk"), so a `MAIN`
