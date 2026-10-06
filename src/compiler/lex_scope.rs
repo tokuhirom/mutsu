@@ -15,10 +15,85 @@
 //! so one implementation answers both spellings and they cannot drift.
 
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 
 /// One compiled scope's declarations: name -> the slot recorded for it (`None`
 /// unless a shadow-slot build recorded one). Mirrors `Compiler::local_scopes`.
-pub(crate) type ScopeFrame = HashMap<String, Option<u32>>;
+///
+/// A frame dereferences to that name -> slot map, and also remembers the
+/// declared type of each plain scalar the scope declares
+/// ([`ScopeFrame::record_scalar_type`]). Keeping the type in the frame, rather
+/// than in a table parallel to the chain, is what keeps it in step with the
+/// scope: the frame is popped, parked (`pending_scope_frame`) and handed to a
+/// nested compiler as one value, so a type can never outlive, or be attributed
+/// to, a scope it was not declared in.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ScopeFrame {
+    slots: HashMap<String, Option<u32>>,
+    /// The declared type of each plain `my`/`state`/`our` scalar this scope
+    /// declares (`None` when it is untyped). Compile-time only: it is not part
+    /// of a baked [`LexScopeChain`]'s encoding.
+    scalar_types: HashMap<String, Option<String>>,
+}
+
+impl ScopeFrame {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Record that this scope declares the plain scalar `name` with the declared
+    /// type `ty` (`None` for an untyped one).
+    // Cost: O(|name| + |ty|).
+    pub(crate) fn record_scalar_type(&mut self, name: &str, ty: Option<&str>) {
+        self.scalar_types
+            .insert(name.to_string(), ty.map(str::to_string));
+    }
+
+    /// The declared type recorded for the scalar `name`: `None` when this scope
+    /// recorded nothing for it, `Some(None)` for an untyped declaration.
+    // Cost: O(|name|).
+    pub(crate) fn scalar_type(&self, name: &str) -> Option<Option<&str>> {
+        self.scalar_types.get(name).map(Option::as_deref)
+    }
+}
+
+impl Deref for ScopeFrame {
+    type Target = HashMap<String, Option<u32>>;
+    fn deref(&self) -> &Self::Target {
+        &self.slots
+    }
+}
+
+impl DerefMut for ScopeFrame {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.slots
+    }
+}
+
+impl FromIterator<(String, Option<u32>)> for ScopeFrame {
+    fn from_iter<I: IntoIterator<Item = (String, Option<u32>)>>(iter: I) -> Self {
+        Self {
+            slots: iter.into_iter().collect(),
+            scalar_types: HashMap::new(),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a ScopeFrame {
+    type Item = (&'a String, &'a Option<u32>);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, Option<u32>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.slots.iter()
+    }
+}
+
+impl IntoIterator for ScopeFrame {
+    type Item = (String, Option<u32>);
+    type IntoIter = std::collections::hash_map::IntoIter<String, Option<u32>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.slots.into_iter()
+    }
+}
 
 /// What an `OUTER::` / `OUTERS::` lookup of one name resolves to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

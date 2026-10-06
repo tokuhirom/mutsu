@@ -31,6 +31,21 @@ pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
     })
 }
 
+/// An integer-atomic operator applied to a variable or an array/hash element:
+/// the call of Rakudo's own routine for it (`postfix:<⚛++>($x)`,
+/// `prefix:<--⚛>(@a[0])`), else `None`.
+///
+/// The operator keeps its real routine name, so a refused target is reported
+/// under the spelling the program used, and the AST stays an ordinary call that
+/// round-trips through RakuAST (an internal `__mutsu_*` marker would not,
+/// #11834). The compiler lowers it onto the one atomic implementation.
+pub(crate) fn atomic_operator_call(operator: &str, expr: &Expr) -> Option<Expr> {
+    (atomic_var_name(expr).is_some() || is_atomic_elem_target(expr)).then(|| Expr::Call {
+        name: Symbol::intern(operator),
+        args: vec![expr.clone()],
+    })
+}
+
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
 /// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
 /// route an outer `.=` through a `do { … }`-block target back to its lvalue.

@@ -1074,6 +1074,7 @@ mod declaration_plan_tests {
 mod adverb_interp;
 mod amp_scope;
 mod atomic_elem_forms;
+mod atomic_target;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
@@ -1200,7 +1201,7 @@ pub(crate) struct Compiler {
     /// coherence, and must be done as one campaign with §1.5 (remove name-based
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
-    local_scopes: Vec<HashMap<String, Option<u32>>>,
+    local_scopes: Vec<lex_scope::ScopeFrame>,
     /// The `local_scopes` depths (frame index + 1) of the frames that hold a
     /// `use`/`import`/`no` statement of their own, ascending. Each such block
     /// runs inside a run-time `ImportScope`, which is where its imports are
@@ -1218,7 +1219,7 @@ pub(crate) struct Compiler {
     /// signature in the block's own scope), so they are parked here instead of
     /// getting a frame of their own, which would add a spurious level to every
     /// `OUTER::`/`CALLER::` resolved in the body.
-    pending_scope_frame: Option<HashMap<String, Option<u32>>>,
+    pending_scope_frame: Option<lex_scope::ScopeFrame>,
     /// Slots of multi-param `for` loop parameters whose names had no slot
     /// before their loop and were removed from `local_map` when it ended, so
     /// the name resolves by name again after the loop. Reused by
@@ -1286,6 +1287,10 @@ pub(crate) struct Compiler {
     hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// How the atomic routine being compiled was spelled at its call site, and
+    /// whether it is an integer-only `nqp::` op. Set around the lowering of the
+    /// call by `with_atomic_spelling`; read by `atomic_target.rs`.
+    atomic_spelling: Option<atomic_target::AtomicSpelling>,
     /// Names of `@`/`$` variables whose CURRENT declaration provably denotes a
     /// value with no container behind its own items — a `:=` bind of an `@`
     /// name to an immutable Positional (`my @a := (1,2,3)`), or a `$` name
@@ -1920,7 +1925,7 @@ impl Compiler {
             variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
-            local_scopes: vec![HashMap::new()],
+            local_scopes: vec![lex_scope::ScopeFrame::new()],
             import_scope_levels: Vec::new(),
             scope_routine_decls: Vec::new(),
             pending_scope_frame: None,
@@ -1934,6 +1939,7 @@ impl Compiler {
             hoisted_sub_plans: Vec::new(),
             hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
+            atomic_spelling: None,
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
