@@ -339,8 +339,11 @@ fn stmt_ident(stmt: &Stmt) -> Option<(SiteIdent, bool)> {
         // `class Foo:ver<1> { }` and similar come back as their metadata
         // setters followed by the declaration itself.
         Stmt::SyntheticBlock(stmts) => {
-            return crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
-                .and_then(stmt_ident);
+            // Metadata may be an ordinary expression after the declaration
+            // (for example the export marker on `class C is export`). Find
+            // the declaration inside the wrapper instead of asking which
+            // child supplies the block's value.
+            return stmts.iter().rev().find_map(stmt_ident);
         }
         _ => return None,
     };
