@@ -1150,6 +1150,20 @@ impl Interpreter {
         {
             return None;
         }
+        // `self.Map::new(|c)` from a subclass's own `method new`: the core
+        // type's constructor, not a virtual `.new` (which re-enters the
+        // subclass). Only a core owner -- a user class takes the path below.
+        if actual_method == "new"
+            && let ValueView::Package(pkg) = target.view()
+            && qualifier != pkg.as_str()
+            && !self.has_class(qualifier)
+            // TODO: other core owners (`Pair`, `List`) once their subclasses
+            // have a representation; `Date`/`DateTime` keep their own path.
+            && matches!(qualifier, "Map" | "Hash")
+            && self.class_mro(pkg.as_str()).iter().any(|c| c.as_str() == qualifier)
+        {
+            return Some(self.dispatch_native_new(target.clone(), args));
+        }
         // A qualified call on a *type object* (`Foo.Bar::baz`) dispatches to the
         // method defined in the qualifier class `Bar` — NOT the most-derived
         // override on `Foo` — provided `Bar` is `Foo` or an ancestor/role of it.

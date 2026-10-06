@@ -30,7 +30,7 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
 // Cost: O(m), m = the MRO's length.
 pub(crate) fn default_new_accepts_positionals(class_mro: &[Symbol]) -> bool {
     class_mro.iter().any(|n| {
-        *n == "Array" || *n == "List" || *n == "Int" || *n == "Num" || *n == "Rat" || *n == "Hash"
+        *n == "Array" || *n == "List" || *n == "Int" || *n == "Num" || *n == "Rat" || *n == "Hash" || *n == "Map"
     })
 }
 
@@ -325,7 +325,27 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let instance = self.dispatch_new_unallocated(target.clone(), args)?;
+        self.dispatch_new_ex(target, args, false)
+    }
+
+    /// The core type's own constructor on `target`, never a user `new` of the
+    /// class: what `Map.^lookup('new')(VM, |c)` and `self.Pair::new(|c)` mean
+    /// from inside `VM`'s own `method new` (virtual dispatch re-enters it).
+    pub(super) fn dispatch_native_new(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        self.dispatch_new_ex(target, args, true)
+    }
+
+    fn dispatch_new_ex(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+        skip_user_new: bool,
+    ) -> Result<Value, RuntimeError> {
+        let instance = self.dispatch_new_unallocated(target.clone(), args, skip_user_new)?;
         // `.new` allocates through the REPR (#11209): see
         // `install_carray_storage`.
         self.install_carray_storage(&target, &instance)?;
@@ -338,6 +358,7 @@ impl Interpreter {
         &mut self,
         target: Value,
         args: Vec<Value>,
+        skip_user_new: bool,
     ) -> Result<Value, RuntimeError> {
         // A role with defaulted type parameters materialises to its default
         // parameterisation before constructing — but not while it is already
@@ -1830,7 +1851,8 @@ impl Interpreter {
                 // pure forwarder `proto method new($) {*}` with no candidates
                 // surfaces X::Multi::NoMatch. Route through the proto runner
                 // instead of falling back to the default constructor.
-                if !self.has_user_method(class_key, "new")
+                if !skip_user_new
+                    && !self.has_user_method(class_key, "new")
                     && let Some((owner, proto)) =
                         self.lookup_proto_method(&class_name.resolve(), "new")
                 {
@@ -1859,7 +1881,7 @@ impl Interpreter {
                     );
                 }
                 // Check for user-defined .new method first
-                if self.has_user_method(class_key, "new") {
+                if !skip_user_new && self.has_user_method(class_key, "new") {
                     // ADR-0019 F6: VM-level direct-dispatch path first (see
                     // `try_dispatch_compiled_method_direct`'s doc comment).
                     // `target` is `Package(class_name)` here (see the
