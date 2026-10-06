@@ -3966,25 +3966,36 @@ fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
             }
             (RakuAstClass::RegexAssertionCallable, fields)
         }
-        RegexNode::CodeAssertion { body, negated, .. } => {
+        RegexNode::CodeAssertion {
+            body,
+            negated,
+            code,
+        } => {
             let mut fields = Vec::new();
             if *negated {
                 fields.push(leaf_field(Some("negated"), Value::truth(true)));
             }
             fields.push(node_field(Some("block"), block_node(body)?));
+            fields.push(super::regex_code::source_field(code));
             (RakuAstClass::RegexAssertionPredicateBlock, fields)
         }
-        RegexNode::CodeBlock { body, .. } => (
+        RegexNode::CodeBlock { body, code } => (
             RakuAstClass::RegexBlock,
-            vec![node_field(None, block_node(body)?)],
+            vec![
+                node_field(None, block_node(body)?),
+                super::regex_code::source_field(code),
+            ],
         ),
         RegexNode::InterpolatedBlock {
-            body, sequential, ..
+            body,
+            sequential,
+            code,
         } => (
             RakuAstClass::RegexAssertionInterpolatedBlock,
             vec![
                 node_field(Some("block"), block_node(body)?),
                 leaf_field(Some("sequential"), Value::truth(*sequential)),
+                super::regex_code::source_field(code),
             ],
         ),
         RegexNode::NamedLookaround {

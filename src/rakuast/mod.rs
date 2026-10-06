@@ -41,6 +41,7 @@ mod placeholder;
 mod proto;
 mod react;
 mod regex_char_class;
+mod regex_code;
 mod regex_enumeration;
 mod regex_quantifier;
 mod render;

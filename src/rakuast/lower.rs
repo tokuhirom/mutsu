@@ -3452,16 +3452,16 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             })
         }
         RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             negated: bool_field(node, "negated")?,
             body: lower_block(named_child(node, "block")?)?,
         }),
         RakuAstClass::RegexBlock => Ok(RegexNode::CodeBlock {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             body: lower_block(named_child_or_positional(node)?)?,
         }),
         RakuAstClass::RegexAssertionInterpolatedBlock => Ok(RegexNode::InterpolatedBlock {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             body: lower_block(named_child(node, "block")?)?,
             sequential: bool_field(node, "sequential")?,
         }),
