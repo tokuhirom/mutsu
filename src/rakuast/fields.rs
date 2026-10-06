@@ -231,6 +231,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("desigilname", Absent::Required),
             ("traits", Absent::EmptyList),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+            // Rakudo answers `my` for a declaration with no scope, an empty
+            // string for no twigil and an undefined expression for no `where`.
+            ("twigil", Absent::Str("")),
+            ("where", EXPRESSION),
+            ("scope", Absent::Str("my")),
         ],
         VarDeclarationAnonymous => &[
             ("type", Absent::TypeObject("RakuAST::Type")),
