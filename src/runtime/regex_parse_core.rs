@@ -1756,7 +1756,10 @@ impl Interpreter {
         // to the whole interpolated value instead of just its last spliced
         // char — see `try_consume_quantifier`'s doc comment.
         let mut interp_span_start: Option<usize> = None;
+        let mut prev_was_ws = false;
         'atoms: while let Some(c) = chars.next() {
+            let was_ws = std::mem::replace(&mut prev_was_ws, c.is_whitespace());
+            let prev_was_ws = was_ws;
             if c == Self::NON_DECLARATIVE_INTERP_MARK {
                 in_non_declarative_interp = !in_non_declarative_interp;
                 if in_non_declarative_interp {
@@ -2445,6 +2448,37 @@ impl Interpreter {
                             continue 'atoms;
                         }
                     }
+                }
+                if matches!(c, '*' | '+' | '?') {
+                // A zero-width anchor (`^^`, `$$`, `$`) followed by whitespace and
+                // then a quantifier takes it (`^^ ** 2 a`), as in rakudo; only an
+                // adjacent quantifier (`^^+`) is NonQuantifiable.
+                if prev_was_ws
+                    && matches!(
+                        tokens.last().map(|t| (&t.atom, &t.quant)),
+                        Some((
+                            RegexAtom::StartOfLine
+                                | RegexAtom::EndOfLine
+                                | RegexAtom::EndOfString,
+                            RegexQuant::One
+                        ))
+                    )
+                {
+                    let rest: String = std::iter::once(c).chain(chars.clone()).collect();
+                    let mut probe = rest.chars().peekable();
+                    if let Some((quant, frugal)) = try_consume_quantifier(&mut probe) {
+                        let consumed = rest.chars().count() - probe.count() - 1;
+                        for _ in 0..consumed {
+                            chars.next();
+                        }
+                        if let Some(last) = tokens.last_mut() {
+                            last.quant = quant;
+                            last.frugal = frugal;
+                        }
+                        continue 'atoms;
+                    }
+                }
+
                 }
                 // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching
                 // atom position usually has nothing valid to quantify — any quantifier
