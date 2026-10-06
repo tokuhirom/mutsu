@@ -1,7 +1,6 @@
 //! Split out of native_supply_methods.rs. See that file for the shared
 //! helpers and the `QuitOutcome` enum.
 use super::native_methods::*;
-use super::native_supply_methods::QuitOutcome;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -198,59 +197,7 @@ impl Interpreter {
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
-                    close_supplier_channel_taps(supplier_id, Some(reason.clone()));
-                    for (dsid, emitted) in flush_supplier_line_taps(supplier_id) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    for (dsid, emitted) in flush_supplier_words_taps(supplier_id) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    let (_, _, quit_reason) = supplier_snapshot(supplier_id);
-                    if let Some(reason) = quit_reason {
-                        // Run any `whenever` QUIT phasers first. If one handles
-                        // the exception, the supply completes with done and the
-                        // downstream quit handler is suppressed.
-                        let mut handled = false;
-                        let mut via_done = false;
-                        for qcb in take_supplier_whenever_quit_callbacks(supplier_id) {
-                            match self.run_whenever_quit_phaser(qcb, reason.clone()) {
-                                QuitOutcome::HandledViaDone => {
-                                    handled = true;
-                                    via_done = true;
-                                }
-                                QuitOutcome::Handled => handled = true,
-                                QuitOutcome::Unhandled => {}
-                            }
-                        }
-                        if handled {
-                            // When the QUIT called `done`, the emitter completion
-                            // already fired the downstream done — just drop the
-                            // pending done callbacks so it does not fire twice.
-                            if via_done {
-                                let _ = take_supplier_done_callbacks(supplier_id);
-                            } else {
-                                for done_cb in take_supplier_done_callbacks(supplier_id) {
-                                    let _ = self.invoke_done_callback(done_cb);
-                                }
-                            }
-                        } else {
-                            // ADR-0031: the tap's `quit =>` handler for a
-                            // whenever-subscribed source lives on the
-                            // enclosing supply block's emitter, not on this
-                            // source's own `supplier_id` — reach it via the
-                            // serialize-group link the b1 whenever branch
-                            // records. A direct `.tap(quit => ...)` (no
-                            // `whenever` involved) has no group and is
-                            // covered by the direct drain as before.
-                            for quit_cb in take_supplier_quit_callbacks_via_group(supplier_id) {
-                                self.call_supply_quit_handler(quit_cb, reason.clone())?;
-                            }
-                            let _ = take_supplier_done_callbacks(supplier_id);
-                        }
-                    } else {
-                        let _ = take_supplier_done_callbacks(supplier_id);
-                    }
-                    close_all_supplier_taps(supplier_id);
+                    self.propagate_supplier_quit(supplier_id, reason.clone())?;
                     Self::reset_supplier_after_quit(
                         supplier_id,
                         attributes.contains_key("preserving"),
@@ -474,51 +421,7 @@ impl Interpreter {
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
                     let sid = supplier_id as u64;
-                    close_supplier_channel_taps(sid, Some(reason.clone()));
-                    for (dsid, emitted) in flush_supplier_line_taps(sid) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    for (dsid, emitted) in flush_supplier_words_taps(sid) {
-                        self.handle_supply_forward(dsid, emitted)?;
-                    }
-                    // Run any `whenever` QUIT phasers first. If one handles the
-                    // exception (a when/default matched, or it called done), the
-                    // supply completes with done and the downstream quit handler
-                    // is suppressed.
-                    let mut handled = false;
-                    let mut via_done = false;
-                    for qcb in take_supplier_whenever_quit_callbacks(sid) {
-                        match self.run_whenever_quit_phaser(qcb, reason.clone()) {
-                            QuitOutcome::HandledViaDone => {
-                                handled = true;
-                                via_done = true;
-                            }
-                            QuitOutcome::Handled => handled = true,
-                            QuitOutcome::Unhandled => {}
-                        }
-                    }
-                    if handled {
-                        // When the QUIT called `done`, the emitter completion
-                        // already fired the downstream done — just drop the
-                        // pending done callbacks so it does not fire twice.
-                        if via_done {
-                            let _ = take_supplier_done_callbacks(sid);
-                        } else {
-                            for done_cb in take_supplier_done_callbacks(sid) {
-                                let _ = self.invoke_done_callback(done_cb);
-                            }
-                        }
-                    } else {
-                        // ADR-0031: see the matching comment in the immutable
-                        // "quit" arm above — reach a whenever-subscribed
-                        // source's enclosing supply block via the
-                        // serialize-group link.
-                        for quit_cb in take_supplier_quit_callbacks_via_group(sid) {
-                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
-                        }
-                        let _ = take_supplier_done_callbacks(sid);
-                    }
-                    close_all_supplier_taps(sid);
+                    self.propagate_supplier_quit(sid, reason.clone())?;
                     Self::reset_supplier_after_quit(sid, attrs.contains_key("preserving"));
                 }
                 attrs.insert("done".to_string(), Value::FALSE);
