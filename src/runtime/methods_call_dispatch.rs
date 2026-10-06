@@ -5053,7 +5053,10 @@ impl Interpreter {
                 let rendered =
                     self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());
-                let composed = crate::value::types::what_type_name(&target);
+                // The name `.^name` reports: a `.^set_name` on the type object
+                // this instance was built from (`Box[Int]`) wins over the
+                // synthesized `Box+{BoxOf[Int]}`.
+                let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
                 if composed != base
                     && let ValueView::Str(text) = rendered.view()
                     && let Some(tail) = text.strip_prefix(base.as_str())
