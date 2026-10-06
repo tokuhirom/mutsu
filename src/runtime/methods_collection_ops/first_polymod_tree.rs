@@ -190,14 +190,14 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // A live (Supplier-backed) source has emitted nothing yet when
         // `.first` is called, so its `values` snapshot is empty. Build the
-        // pipeline rakudo does instead (`self.grep(|c).head`): a live grep
-        // stage, then a head(1) stage that emits the first match and is done.
-        // TODO: `:end` (`.grep(|c).tail`) still snapshots, because a live
-        // `.tail` has no pipeline stage yet -- see #11839.
-        if !has_end
-            && !attributes.contains_key("shared_on_demand")
+        // pipeline rakudo does instead (`self.grep(|c).head`, or
+        // `self.grep(|c).tail` for `:end`): a live grep stage, then a head(1)
+        // stage that emits the first match and is done -- or a tail(1) stage
+        // that emits the last one when the source is done (#11839).
+        if !attributes.contains_key("shared_on_demand")
             && crate::runtime::native_methods::supplier_id_from_attrs(attributes).is_some()
         {
+            let stage = if has_end { "tail" } else { "head" };
             let grepped = match func {
                 Some(matcher) => self.make_live_transform_supply(
                     attributes,
@@ -208,9 +208,9 @@ impl Interpreter {
             };
             return match grepped.as_ref().map(Value::view) {
                 Some(ValueView::Instance { attributes, .. }) => {
-                    self.native_supply(&attributes.as_map(), "head", Vec::new())
+                    self.native_supply(&attributes.as_map(), stage, Vec::new())
                 }
-                _ => self.native_supply(attributes, "head", Vec::new()),
+                _ => self.native_supply(attributes, stage, Vec::new()),
             };
         }
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
