@@ -269,6 +269,23 @@ impl Interpreter {
         attributes.insert(address_key(), Value::int(base as i64));
     }
 
+    /// Whether `value` is a defined object of a struct, union or C++ struct class
+    /// that has no C storage: it never got a body (no field NativeCall can lay
+    /// out), and no C pointer handed it back. Passing one to C would be passing
+    /// NULL.
+    // Cost: O(n), n = chars of the class name (a registry probe).
+    pub(crate) fn is_bodyless_struct(&self, value: &Value) -> bool {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+        else {
+            return false;
+        };
+        !attributes.contains_key(address_key()) && self.cstruct_class_name(class_name.as_str()).is_some()
+    }
+
     /// Write-through: the cell attribute `key` of `attributes` was just stored
     /// with `value`; when the object owns a native body, store the field's bytes
     /// there too. A no-op for every ordinary object (one probe of the map).
@@ -407,6 +424,12 @@ pub(crate) fn retained_child(target: &Value, name: &str, address: usize) -> Opti
     let child = attributes.as_map().get(child_key(name))?.clone();
     (!child.is_nil() && crate::runtime::nativecall::value_c_address(&child) == address)
         .then_some(child)
+}
+
+/// Whether the attribute map `map` belongs to an object that owns a native body.
+// Cost: O(1).
+pub(crate) fn map_owns_body(map: &crate::value::AttrMap) -> bool {
+    map.contains_key(layout_key())
 }
 
 /// Whether `attributes` belongs to an object that owns a native body.

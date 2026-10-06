@@ -1,6 +1,6 @@
 # ADR-11209: A Raku-allocated `is repr('CStruct')` object owns a native body; C memory is the truth
 
-- **Status**: Proposed (2026-10-06)
+- **Status**: Proposed (2026-10-06); implemented on the branch that carries it, awaiting the maintainer's acceptance
 - **Date**: 2026-10-06
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11209](https://github.com/tokuhirom/mutsu/issues/11209)
@@ -61,11 +61,13 @@ is the object's state.**
    A C library that keeps the pointer past the object's life reads freed memory, as in Rakudo.
 
 4. **Writes go through to C memory.** `$!x = v` inside a method stores in the attribute cell as
-   before and, when the instance owns a body, also writes the field's bytes (`write_field`). The
-   cell stays a *cache*: method entry already re-reads the fields from C
-   (`seed_cstruct_fields_for_method`), accessors read C directly. The test that an instance owns a
-   body is one extra probe of the attribute map the write already resolved, so ordinary classes
-   pay nothing measurable.
+   before and, when the instance owns a body, also writes the field's bytes (`write_field`); so do
+   `$!x := $y` and an `is rw` accessor assignment. The cell stays a *cache*: method entry already
+   re-reads the fields from C (`seed_cstruct_fields_for_method`), accessors read C directly, and
+   `.gist` / `.raku` refresh it before rendering. The test that an instance owns a body is one
+   extra probe of the attribute map the write already resolved, so ordinary classes pay nothing
+   measurable. (The per-site attribute cache cannot serve such an instance: the hidden attributes
+   below are undeclared ones, which the cache already refuses.)
 
 5. **A reference-typed field keeps its child alive.** A field holding a pointer to another
    Raku-allocated object (a nested CStruct, a `CArray[T]`) records that object in a hidden
@@ -73,15 +75,21 @@ is the object's state.**
    only while the field still holds its address (C may have rewritten it) and builds a handle
    from the address otherwise. A `Str` field points at a NUL-terminated copy the parent owns.
 
-6. **The layout is memoised per registry generation** (`caches`, the `create_memo` pattern), since
-   allocation and every field write need it and computing it walks the class's attributes. Only
+6. **The layout is memoised per registry generation** (`caches`, the `create_memo` pattern) for
+   allocation, and each object carries the layout it was built with (encoded as plain values in a
+   hidden attribute) for its field writes, which run under `&self` and so cannot compute one. Only
    a successful layout is recorded.
 
-7. **A class whose layout cannot be computed** (a field NativeCall cannot marshal) keeps today's
-   ordinary instance. Rakudo rejects such a class at compose time; reproducing that is separate.
+7. **A class whose layout cannot be computed** (no fields, or a field NativeCall cannot marshal)
+   keeps an ordinary instance with no body. Rakudo rejects such a class at compose time; mutsu
+   does not, so passing one to a native routine is **refused with a catchable error** instead of
+   reaching the callee as NULL (a memory-safety hole, #11753).
 
-`CUnion` and `CPPStruct` use the same mechanism with their own size rule (a union is its largest
-member; offsets are all 0); they are slices 3 of this ADR, not a different design.
+8. **`CUnion` and `CPPStruct` use the same mechanism.** A union's members all start at offset 0
+   and its size is its largest member (a member the constructor never set must not overwrite one
+   it did); `CPPStruct` is laid out as a CStruct and reports its own REPR. This replaces the
+   integer-only byte-overlay constructor `CUnion` had, which could not hold a float, take a later
+   write or reach C.
 
 ## 3. Options considered
 
@@ -113,12 +121,14 @@ member; offsets are all 0); they are slices 3 of this ADR, not a different desig
 - `$obj.clone` of a CStruct (Rakudo: "cloning a CStruct is NYI") keeps aliasing the same body.
 - Out of scope: a reference-element view over C memory (`nativecast(CArray[Pointer], ...)`), the
   MOP's `bindattr_*`/`getattr_*` on a body-owning instance (they touch the cell only), and
-  `.CREATE` called as a method (`nqp::create` is covered).
+  `.CREATE` called as a method (`nqp::create` is covered). A NULL `Pointer` field reading as a
+  defined `Pointer` (Rakudo: the type object) is an existing divergence, filed as #12106.
 
 ## 5. Implementation status
 
 | Slice | State |
 | --- | --- |
-| 1. allocation, migration, REPR, field read/write, write-through, `HAS` | In progress |
-| 2. children of reference fields | Not started |
-| 3. `CUnion` / `CPPStruct` storage and `nativesizeof` | Not started |
+| 1. allocation, migration, REPR, field read/write, write-through, `HAS` | Done (`src/runtime/cstruct_body.rs`) |
+| 2. children of reference fields | Done (hidden `__mutsu_cstruct_child_<field>` attributes) |
+| 3. `CUnion` / `CPPStruct` storage and `nativesizeof` | Done (`cstruct_class_name` covers unions; the byte-overlay constructor is gone) |
+| bodyless struct argument refused | Done (`nativecall.rs`, #11753) |

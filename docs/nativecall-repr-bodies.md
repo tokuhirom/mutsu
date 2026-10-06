@@ -59,7 +59,7 @@ synthesised on demand.
 | --- | --- | --- |
 | `VMArray` | `{u64 elems; u64 start; u64 ssize; void* any}` | a `Buf`/`Blob`, and a native-typed `array[T]`, with element storage |
 | `CArray` | `{void* storage; void** child; i32 managed; i32 allocated; i32 elems}` | a `nativecast`ed `CArray` handle, and a native-backed `CArray[T]` |
-| `CStruct` | `{void* cstruct; void** child_objs}` | a `nativecast`ed CStruct/CUnion handle |
+| `CStruct` | `{void* cstruct; void** child_objs}` | a `nativecast`ed CStruct/CUnion handle, and a CStruct/CPPStruct/CUnion built in Raku (it owns a zeroed block, [ADR-11209](adr/11209-cstruct-new-allocates-native-storage.md)) |
 
 `start` is **always 0**: mutsu's element storage never has an unused prefix, so
 `realstart == any` and the module's `+$!start` branch is unreachable.
@@ -139,7 +139,9 @@ Everything else answers `P6opaque`, on purpose (ADR-0015 §5, open question 5):
 each honest answer is a promise that a body exists behind it, and that is not a
 promise to make idly. In particular:
 
-- a **CStruct constructed in Raku** (`Rec.new`) has no C storage yet;
+- a **struct class with no layout NativeCall can compute** (no fields, or a field
+  it cannot marshal): it has no storage to own, so it answers `P6opaque` and is
+  refused when passed to C;
 - a **`CArray[T]` whose element type is a reference**: `CArray[Str]`,
   `CArray[Pointer]`, a nested `CArray[CArray[…]]`, a CStruct element. Their
   elements are addresses of other objects, so reading one back means materialising

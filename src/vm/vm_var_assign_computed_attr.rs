@@ -734,20 +734,30 @@ impl Interpreter {
         // The key is resolved under the read guard, which is released before
         // the store takes the write lock.
         if let Some(self_val) = self_val
-            && let Some((attributes, key)) = self.with_self_attr(
+            && let Some((attributes, key, owns_body)) = self.with_self_attr(
                 &self_val,
                 site,
                 bare,
                 is_private,
                 sigil,
-                |attributes, _, key| (attributes.clone(), key),
+                |attributes, map, key| {
+                    (
+                        attributes.clone(),
+                        key,
+                        crate::runtime::cstruct_body::map_owns_body(map),
+                    )
+                },
             )
         {
             self.record_build_attr_write(&attributes, key);
-            attributes.store_through_container(key, val.clone());
-            // An `is repr('CStruct')` object that owns a native body keeps the
-            // field in C memory too (ADR-11209).
-            self.cstruct_store_through(&attributes, key, &val);
+            if owns_body {
+                // An `is repr('CStruct')` object that owns a native body keeps
+                // the field in C memory too (ADR-11209).
+                attributes.store_through_container(key, val.clone());
+                self.cstruct_store_through(&attributes, key, &val);
+            } else {
+                attributes.store_through_container(key, val);
+            }
             return;
         }
         // Class-level attribute fallback: see `read_class_level_attr_cell`'s

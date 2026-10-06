@@ -12,10 +12,10 @@
 //! attributes using the platform's C alignment rules, and reads a field out of
 //! the pointed-to memory.
 //!
-//! Reads and writes go through a pointer that C gave us. A `HAS`-declared
-//! member is laid out **by value** — its own bytes live inside the enclosing
-//! struct — which is what NativeCall's `HAS` scope means; allocating a struct
-//! from Raku (`MyStruct.new`) remains follow-up work.
+//! Reads and writes go through a pointer: one C gave us, or the address of the
+//! native body a struct built in Raku owns (`runtime::cstruct_body`, ADR-11209).
+//! A `HAS`-declared member is laid out **by value** — its own bytes live inside
+//! the enclosing struct — which is what NativeCall's `HAS` scope means.
 
 /// The C type of one CStruct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -811,10 +811,11 @@ impl crate::runtime::Interpreter {
     /// P2, `value::value_buf_repr`). This is the answer `NativeHelpers::Blob`'s
     /// `pointer-to` needs.
     ///
-    /// A CStruct *constructed in Raku* deliberately does not qualify: it has no
-    /// C storage yet, so it keeps `P6opaque` and `BODY_OF` keeps refusing it
-    /// loudly instead of quietly reading a NULL body. Giving it real storage is
-    /// ADR-0015's P3.
+    /// A CStruct *constructed in Raku* qualifies as soon as it owns its native
+    /// body (`runtime::cstruct_body`, ADR-11209), because it then carries an
+    /// `address` like a handle C returned. One that has no body (no layout
+    /// NativeCall can compute) keeps `P6opaque`, so `BODY_OF` refuses it loudly
+    /// instead of quietly reading a NULL body.
     pub(crate) fn try_native_handle_repr_where(
         &mut self,
         target: &crate::value::Value,

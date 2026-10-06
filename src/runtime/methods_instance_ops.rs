@@ -3078,14 +3078,15 @@ impl Interpreter {
                     }
                 }
                 // Type objects only. An *instance* reaches here when it has no C
-                // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`
-                // pins that it must keep under-reporting `P6opaque`: answering
-                // the honest name without a body would make `BODY_OF`
-                // dereference whatever `.WHERE` returned. A live handle already
-                // answers `CStruct` through `try_native_handle_repr_where`.
+                // storage (a struct with no layout NativeCall can compute), and
+                // it must keep under-reporting `P6opaque`: answering the honest
+                // name without a body would make `BODY_OF` dereference whatever
+                // `.WHERE` returned. A live handle, and a struct that owns its
+                // body (ADR-11209), already answer `CStruct` through
+                // `try_native_handle_repr_where`.
                 // A `NativeCall`- or `CStr`-REPR instance (upstream's `Callsite`
-                // and `CStr`) is its body whole, so unlike a Raku-built CStruct
-                // it has no body for `.REPR` to under-report.
+                // and `CStr`) is its body whole, so it has no body for `.REPR` to
+                // under-report.
                 let class = match target.view() {
                     ValueView::Package(name) => Some(name.resolve()),
                     ValueView::Instance { class_name, .. }

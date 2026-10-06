@@ -7,7 +7,7 @@ use NativeCall;
 # ordinary instance with no C storage: it reported `P6opaque`, could not be
 # cast, and reached C as NULL (a SIGSEGV through `memcpy`).
 
-plan 34;
+plan 35;
 
 class Rec is repr<CStruct> {
     has int32 $.a;
@@ -44,6 +44,11 @@ my $u = Rec.new;
 is-deeply ($u.a, $u.d, $u.c, $u.dflt), (0, 0e0, 0, 7), 'an empty .new is zero but for defaults';
 memcpy($u, $t, nativesizeof(Rec));
 is-deeply ($u.a, $u.d, $u.c, $u.dflt), (40, 2.5e0, 3, 7), 'memcpy between two Raku-built structs copies the fields';
+
+# The repro from #11753: a struct built with .new, handed to a native routine
+# that reads it.
+sub memchr(Rec, int32, size_t --> Pointer) is native('c', v6) { * }
+ok memchr($t, 40, 4).defined, 'a Raku-built struct is readable by a native routine (#11753)';
 
 # C writes are seen, even when Raku had set the field before.
 class Timeval is repr<CStruct> { has int64 $.sec; has int64 $.usec }
