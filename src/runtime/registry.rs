@@ -206,7 +206,7 @@ pub(crate) struct Registry {
     /// short-lived `registry()` guards and clone the minimal projection they need
     /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
     /// `ClassDef`.
-    pub(crate) classes: CowTable<HashMap<String, ClassDef>>,
+    pub(crate) classes: CowTable<HashMap<String, CowTable<ClassDef>>>,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
@@ -2055,7 +2055,7 @@ mod tests {
         };
         registry
             .classes
-            .insert("Str".to_string(), ClassDef::default());
+            .insert("Str".to_string(), ClassDef::default().into());
         registry.set_user_methods(Symbol::intern("Str"), Symbol::intern("chars"), vec![method]);
         assert!(registry.method_generation > seeded_generation);
 

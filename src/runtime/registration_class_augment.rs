@@ -1385,7 +1385,7 @@ impl Interpreter {
         };
         self.registry_mut()
             .classes
-            .insert(role_name.to_string(), punned_class);
+            .insert(role_name.to_string(), punned_class.into());
         for (attr, ty) in attribute_is_types {
             self.registry_mut()
                 .class_attribute_is_types

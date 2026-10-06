@@ -67,6 +67,14 @@ impl<T: IntoIterator + Clone> IntoIterator for CowTable<T> {
     }
 }
 
+impl<T: Clone> CowTable<T> {
+    /// The value itself: moved out when this is its only holder, else copied.
+    // Cost: O(1), or O(n) when shared (the copy).
+    pub(crate) fn into_value(self) -> T {
+        Arc::unwrap_or_clone(self.0)
+    }
+}
+
 impl<T> From<T> for CowTable<T> {
     fn from(table: T) -> Self {
         CowTable(Arc::new(table))
