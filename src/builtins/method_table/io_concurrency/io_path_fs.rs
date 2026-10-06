@@ -23,6 +23,14 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `spurt` with no content writes an empty file, as it always did.
+    row!(
+        "spurt",
+        0,
+        spurt_row,
+        RowFlags::NONE,
+        &["append", "createonly", "enc"]
+    ),
     row!(
         "spurt",
         1,
