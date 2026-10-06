@@ -2039,6 +2039,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Path", "unlink", 8, 60),
     ("IO::Path", "chown", 8, 60),
     ("IO::Path", "volume", 8, 60),
+    ("IO::Path", "is-absolute", 8, 60),
+    ("IO::Path", "is-relative", 8, 60),
     ("IO::Path", "watch", 8, 60),
     ("IO::Path", "words", 3, 57),
     ("IO::Path", "CWD", 8, 60),

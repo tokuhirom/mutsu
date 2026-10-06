@@ -108,13 +108,18 @@ pub(crate) enum DispatchShape {
     /// can, so a lazy `Match` is not materialized by a call that does not need
     /// its structure.
     Match,
+    /// An `IO::Path` or one of its SPEC variants (`IO::Path::Unix`, `Win32`,
+    /// `Cygwin`, `QNX`), the built-in classes and not a user subclass of them
+    /// (closed). The variants share the rows of `IO::Path`: a handler reads the
+    /// instance's class name and `SPEC` attribute.
+    IoPath,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 26] = [
+    pub(crate) const ALL: [DispatchShape; 27] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -141,6 +146,7 @@ impl DispatchShape {
         DispatchShape::Instant,
         DispatchShape::Duration,
         DispatchShape::Match,
+        DispatchShape::IoPath,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -174,6 +180,7 @@ impl DispatchShape {
             DispatchShape::Instant => "Instant",
             DispatchShape::Duration => "Duration",
             DispatchShape::Match => "Match",
+            DispatchShape::IoPath => "IO::Path",
         }
     }
 
@@ -224,8 +231,8 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 5] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 5]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 10] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 10]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
@@ -233,6 +240,11 @@ fn instance_shapes() -> &'static [(Symbol, DispatchShape); 5] {
             (Symbol::intern("Instant"), DispatchShape::Instant),
             (Symbol::intern("Duration"), DispatchShape::Duration),
             (Symbol::intern("Match"), DispatchShape::Match),
+            (Symbol::intern("IO::Path"), DispatchShape::IoPath),
+            (Symbol::intern("IO::Path::Unix"), DispatchShape::IoPath),
+            (Symbol::intern("IO::Path::Win32"), DispatchShape::IoPath),
+            (Symbol::intern("IO::Path::Cygwin"), DispatchShape::IoPath),
+            (Symbol::intern("IO::Path::QNX"), DispatchShape::IoPath),
         ]
     })
 }

@@ -294,19 +294,6 @@ impl Interpreter {
             if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
                 return result;
             }
-            // Interpreter-native pure-lexical `IO::Path` methods (`.parent`/`.add`/
-            // `.basename`/`.sibling`/`.parts`/`.extension`/…): derive a new
-            // path/string/bool purely from the receiver's attributes, with no
-            // filesystem / cwd / env dependency (ledger §D). Single impl shared with
-            // the interpreter's `native_io_path`. Filesystem / cwd-relative forms and
-            // `child :secure` return `None` and fall through to the native fork below.
-            if Self::is_io_path_lexical_class(class)
-                && let ValueView::Instance { attributes, .. } = target.view()
-                && let Some(result) =
-                    Self::try_io_path_lexical(class, &attributes.as_map(), method, &args)
-            {
-                return result;
-            }
             // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
             // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
             if Self::is_io_path_lexical_class(class)

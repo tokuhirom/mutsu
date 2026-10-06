@@ -61,6 +61,11 @@ fn sample(shape: DispatchShape) -> Value {
             &Default::default(),
             crate::value::regex_caps::MatchTarget::new("xxxab"),
         ),
+        DispatchShape::IoPath => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("path".to_string(), Value::str_from("foo/bar"));
+            Value::make_instance(Symbol::intern("IO::Path"), attributes)
+        }
     }
 }
 

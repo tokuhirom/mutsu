@@ -7,5 +7,7 @@
 
 use super::MethodRow;
 
+pub(crate) mod io_path_lexical;
+
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[io_path_lexical::ROWS];

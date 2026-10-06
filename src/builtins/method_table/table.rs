@@ -81,6 +81,9 @@ impl Receiver {
 /// the arities each method name has rows for.
 pub(super) struct Table {
     pub(super) rows: FxHashMap<(Receiver, Symbol, u8), RowId>,
+    /// `(owner, method, arity) -> row`, for a receiver the table has no shape
+    /// for (an instance of a user subclass) whose MRO names the owner.
+    owners: FxHashMap<(Symbol, Symbol, u8), RowId>,
     /// Every row once, indexed by [`RowId`].
     pub(super) all: Vec<&'static MethodRow>,
     /// Per `Symbol` id, one bit per arity some row with that name takes (bit
@@ -154,11 +157,25 @@ fn build() -> Table {
     let all: Vec<&'static MethodRow> = all_rows().collect();
     let mut table = Table {
         rows: FxHashMap::default(),
+        owners: FxHashMap::default(),
         all,
         arities: Vec::new(),
         shapes: Vec::new(),
         type_shapes: Vec::new(),
     };
+    for (idx, row) in table.all.iter().enumerate() {
+        // A row past `u16::MAX` stays unreachable through the table.
+        if let Ok(id) = u16::try_from(idx) {
+            table
+                .owners
+                .entry((
+                    Symbol::intern(row.owner),
+                    Symbol::intern(row.name),
+                    row.arity,
+                ))
+                .or_insert(RowId(id));
+        }
+    }
     for shape in DispatchShape::ALL {
         let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape.type_name())
         else {
@@ -244,6 +261,17 @@ pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Optio
     }
     let arity = u8::try_from(arity).ok()?;
     table.rows.get(&(receiver, method, arity)).copied()
+}
+
+/// The row `owner` declares for `method` taking `arity` positional arguments,
+/// whatever the receiver is: the lookup of a receiver that has no shape.
+// Cost: O(1), two hash lookups at most.
+pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<RowId> {
+    let table = table();
+    if !table.has_name(method, arity) {
+        return None;
+    }
+    table.owners.get(&(owner, method, u8::try_from(arity).ok()?)).copied()
 }
 
 /// The row `id` names.

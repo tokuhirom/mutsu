@@ -63,6 +63,38 @@ pub(crate) fn invoke_in(
     call(row(id), Some(interp), target, args, Named::NONE).map(|(result, _)| result)
 }
 
+/// Answer `method` from the row `owner` declares for it, for a receiver the
+/// table has no shape for: an instance of a user subclass of a built-in class,
+/// which the instance dispatch reaches by walking its MRO to the owner. `target`
+/// is built only once a row exists, so a method without one pays a bit test.
+///
+/// The arguments are not admitted: this is the slow path, which accepted any
+/// argument before the row existed, and a named argument the row does not
+/// declare was stripped by the caller (ADR-0070). `None` when `owner` has no
+/// row for the call, or a narrowing row does not bind the arguments.
+// Cost: O(1) to find the row, plus O(a) to split a arguments, plus the
+// handler's own cost.
+pub(crate) fn invoke_owner(
+    owner: Symbol,
+    method: &str,
+    args: &[Value],
+    target: impl FnOnce() -> Value,
+) -> Option<Result<Value, RuntimeError>> {
+    let method = Symbol::intern(method);
+    let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
+    let id = super::owner_row(owner, method, args.len() - named_count)?;
+    let row = row(id);
+    let target = target();
+    if named_count == 0 {
+        return call(row, None, &target, args, Named::NONE).map(|(result, _)| result);
+    }
+    let (named, positional): (Vec<Value>, Vec<Value>) = args
+        .iter()
+        .cloned()
+        .partition(|arg| arg.is_string_pair_value());
+    call(row, None, &target, &positional, Named::new(&named)).map(|(result, _)| result)
+}
+
 /// Whether `arg` is a plain scalar a row may be handed by default: a `Str`
 /// or a number.
 // Cost: O(1), a tag probe.

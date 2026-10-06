@@ -72,12 +72,12 @@ pub(crate) use scalars::{
 
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
-pub(crate) use dispatch::{admits, answer, invoke, invoke_in, try_dispatch_in};
+pub(crate) use dispatch::{admits, answer, invoke, invoke_in, invoke_owner, try_dispatch_in};
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]
 use table::all_rows;
 use table::table;
-pub(crate) use table::{Receiver, RowId, names_a_row, resolve, row, shape_has_row};
+pub(crate) use table::{Receiver, RowId, names_a_row, owner_row, resolve, row, shape_has_row};
 
 #[cfg(test)]
 mod tests;

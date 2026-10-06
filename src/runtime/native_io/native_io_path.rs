@@ -25,11 +25,17 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // Pure lexical path methods (`.parent`/`.add`/`.basename`/`.sibling`/…)
-        // are handled by the single shared `try_io_path_lexical` (the same impl
-        // the bytecode VM dispatches natively). Only the filesystem / cwd-relative
+        // The methods that derive a path from the receiver's attributes alone
+        // (`.parent`/`.add`/`.basename`/`.sibling`/...) are rows of the method
+        // table; a receiver with no shape (an instance of a user subclass)
+        // reaches them here by its owner. Only the filesystem / cwd-relative
         // forms below need `&self`.
-        if let Some(result) = Self::try_io_path_lexical(class_name, attributes, method, &args) {
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            Symbol::intern("IO::Path"),
+            method,
+            &args,
+            || Value::make_instance_without_destroy(Symbol::intern(class_name), attributes.clone()),
+        ) {
             return result;
         }
         // `.absolute` / `.relative` derive a string from the path + cwd (lexical,
@@ -169,8 +175,7 @@ impl Interpreter {
                 }
             }
             // `.child($name, :secure)` resolves the path against the filesystem.
-            // (Plain `.child`/`.add` are pure lexical joins handled by
-            // `try_io_path_lexical` before this match.)
+            // (`.add` is a pure lexical join, a row of the method table.)
             "child" => {
                 let child_name = args
                     .first()
