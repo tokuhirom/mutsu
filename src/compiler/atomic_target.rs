@@ -55,22 +55,17 @@ pub(super) struct AtomicSpelling {
     pub(super) int_only: bool,
 }
 
-/// The integer atomic helpers the parser lowers an operator to, with the
-/// operator's own spelling for a refusal that arrives without one.
-const INT_ATOMIC_HELPERS: &[(&str, &str, bool)] = &[
-    ("__mutsu_atomic_post_inc_var", "postfix:<⚛++>", false),
-    ("__mutsu_atomic_pre_inc_var", "prefix:<++⚛>", false),
-    ("__mutsu_atomic_post_dec_var", "postfix:<⚛-->", false),
-    ("__mutsu_atomic_pre_dec_var", "prefix:<--⚛>", false),
-    ("__mutsu_atomic_add_var", "infix:<⚛+=>", true),
-    ("__mutsu_atomic_fetch_add_var", "atomic-fetch-add", true),
-];
-
-/// The integer atomic *routines* (as opposed to the operators the parser
-/// lowers itself) and the helper each is an application of:
-/// `(routine, helper, takes an operand, negates it)`. Subtraction is the add
-/// helper with the operand negated.
+/// The integer atomic routines and operators (an operator is a call of its
+/// Rakudo routine, `postfix:<⚛++>($x)`) and the helper each is an application
+/// of: `(routine, helper, takes an operand, negates it)`. Subtraction is the
+/// add helper with the operand negated.
 const INT_ATOMIC_ROUTINES: &[(&str, &str, bool, bool)] = &[
+    ("postfix:<⚛++>", "__mutsu_atomic_post_inc_var", false, false),
+    ("prefix:<++⚛>", "__mutsu_atomic_pre_inc_var", false, false),
+    ("postfix:<⚛-->", "__mutsu_atomic_post_dec_var", false, false),
+    ("prefix:<--⚛>", "__mutsu_atomic_pre_dec_var", false, false),
+    ("infix:<⚛+=>", "__mutsu_atomic_add_var", true, false),
+    ("infix:<⚛-=>", "__mutsu_atomic_add_var", true, true),
     (
         "atomic-fetch-inc",
         "__mutsu_atomic_post_inc_var",
@@ -119,15 +114,6 @@ impl Compiler {
             .iter()
             .find(|(routine, ..)| *routine == name)
             .map(|(_, helper, has_operand, negate)| (*helper, *has_operand, *negate))
-    }
-
-    /// Whether `name` is the helper of an integer atomic that checks its target
-    /// -- and whether it takes an operand.
-    pub(super) fn int_atomic_helper(name: &str) -> Option<(&'static str, bool)> {
-        INT_ATOMIC_HELPERS
-            .iter()
-            .find(|(helper, _, _)| *helper == name)
-            .map(|(_, display, has_operand)| (*display, *has_operand))
     }
 
     /// Record that the current scope declares the plain scalar `name` with the

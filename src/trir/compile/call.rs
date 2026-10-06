@@ -38,6 +38,7 @@ impl TrirCompiler<'_> {
         if name.starts_with("__mutsu_atomic_")
             || name.starts_with("__mutsu_cas_")
             || name.starts_with("atomic-")
+            || name.contains('⚛')
             || name == "cas"
         {
             self.note_decline(|| format!("the atomic {name} addresses its target by name"));

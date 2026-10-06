@@ -20,7 +20,7 @@ pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 
 pub(crate) use call_method::{ParsedBracketIndex, parse_bracket_indices_inner};
 pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
-pub(crate) use dot_assign::{dot_assign_to_name, parse_trailing_call_adverbs, spelled_atomic};
+pub(crate) use dot_assign::{dot_assign_to_name, parse_trailing_call_adverbs};
 pub(in crate::parser) use helpers::is_angle_subscript_key_char;
 pub(in crate::parser) use helpers::is_conservative_angle_key_char;
 pub(in crate::parser) use helpers::is_subscript_expr;

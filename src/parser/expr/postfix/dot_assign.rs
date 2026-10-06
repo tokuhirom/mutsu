@@ -31,32 +31,19 @@ pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
     })
 }
 
-/// `call`, an integer-atomic operator's lowering, tagged with the operator as
-/// the program spelled it (`postfix:<⚛++>`). The compiler names that spelling
-/// when the target turns out not to be a native-integer container, as Rakudo's
-/// dispatch failure does, however the operator was lowered (#11834).
-pub(crate) fn spelled_atomic(display: &str, call: Expr) -> Expr {
-    Expr::Call {
-        name: Symbol::intern("__mutsu_atomic_spelled"),
-        args: vec![Expr::Literal(Value::str(display.to_string())), call],
-    }
-}
-
-/// The `__mutsu_atomic_*_var(name)` call an integer-atomic operator on the
-/// variable `name` lowers to, spelled as `display`.
-pub(crate) fn atomic_var_op(helper: &str, display: &str, name: String) -> Expr {
-    spelled_atomic(
-        display,
-        Expr::Call {
-            name: Symbol::intern(helper),
-            args: vec![Expr::Literal(Value::str(name))],
-        },
-    )
-}
-
-/// [`atomic_elem_update`] for an integer-atomic operator, spelled as `display`.
-pub(crate) fn atomic_elem_op(routine: &str, display: &str, expr: &Expr) -> Option<Expr> {
-    atomic_elem_update(routine, expr).map(|call| spelled_atomic(display, call))
+/// An integer-atomic operator applied to a variable or an array/hash element:
+/// the call of Rakudo's own routine for it (`postfix:<⚛++>($x)`,
+/// `prefix:<--⚛>(@a[0])`), else `None`.
+///
+/// The operator keeps its real routine name, so a refused target is reported
+/// under the spelling the program used, and the AST stays an ordinary call that
+/// round-trips through RakuAST (an internal `__mutsu_*` marker would not,
+/// #11834). The compiler lowers it onto the one atomic implementation.
+pub(crate) fn atomic_operator_call(operator: &str, expr: &Expr) -> Option<Expr> {
+    (atomic_var_name(expr).is_some() || is_atomic_elem_target(expr)).then(|| Expr::Call {
+        name: Symbol::intern(operator),
+        args: vec![expr.clone()],
+    })
 }
 
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an

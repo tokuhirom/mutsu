@@ -65,11 +65,15 @@ known not to be native.**
    a scalar by a recorded type -- the name-keyed one or its cell's constraint. A cell
    *without* a constraint answers nothing: cells are made at ~35 sites and not all copy the
    declaring variable's type, so `my atomicint $x; my $y := $x; $y⚛++` reaches one and must run.
-6. **The operator's spelling is carried.** The parser tags each integer-atomic operator's
-   lowering with the spelling the program used (`__mutsu_atomic_spelled`), so a refusal names
-   `postfix:<⚛++>` rather than the helper it lowered to; the `nqp::` `_i` forms are marked
-   integer-only, which is what makes `nqp::atomicload_i($plain)` refuse while
-   `nqp::atomicload($plain)` stays legal.
+6. **The operator's spelling is its routine name.** The parser lowers each integer-atomic
+   operator to a call of Rakudo's own routine for it (`postfix:<⚛++>($x)`,
+   `prefix:<--⚛>(@a[0])`, `infix:<⚛+=>($x, $n)`), so a refusal names the operator as the program
+   wrote it, and the AST stays an ordinary call that round-trips through RakuAST. (An internal
+   `__mutsu_*` marker would not: the RakuAST converter refuses every `__`-prefixed desugaring
+   marker, which took `t/concurrency/thread-lock/atomic-element-targets.t` out of the
+   `ci/rakuast-frontend-passing.txt` ratchet in the first version of this change.) The
+   `nqp::` `_i` forms are marked integer-only by the compiler while it lowers them, which is what
+   makes `nqp::atomicload_i($plain)` refuse while `nqp::atomicload($plain)` stays legal.
 7. **`cas` is not an integer atomic.** `cas($x, * + n)` lowered to `__mutsu_atomic_add_var`; it
    now lowers to an unchecked `__mutsu_cas_add_var` alias.
 8. **TRIR declines a routine that calls an atomic.** An atomic addresses its target by name

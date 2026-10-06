@@ -23,6 +23,11 @@ impl Compiler {
             ("atomic-fetch-inc", 1) => ("fetch-add", Some(1), false),
             ("atomic-inc-fetch", 1) => ("add-fetch", Some(1), false),
             ("atomic-fetch-dec", 1) => ("fetch-add", Some(-1), false),
+            // The operators, as calls of their own routines (`@a[0]⚛++`).
+            ("postfix:<⚛++>", 1) => ("fetch-add", Some(1), false),
+            ("prefix:<++⚛>", 1) => ("add-fetch", Some(1), false),
+            ("postfix:<⚛-->", 1) => ("fetch-add", Some(-1), false),
+            ("prefix:<--⚛>", 1) => ("add-fetch", Some(-1), false),
             ("atomic-dec-fetch", 1) => ("add-fetch", Some(-1), false),
             ("atomic-fetch-add", 2) => ("fetch-add", None, false),
             ("atomic-add-fetch", 2) => ("add-fetch", None, false),

@@ -12,7 +12,7 @@ use super::call_method::{
     parse_quoted_method_name,
 };
 use super::dot_assign::{
-    atomic_elem_op, atomic_elem_update, atomic_var_name, atomic_var_op, parse_dot_assign,
+    atomic_elem_update, atomic_operator_call, atomic_var_name, parse_dot_assign,
 };
 use super::helpers::{
     colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
@@ -185,13 +185,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(rest) = input.strip_prefix("++⚛") {
         let (rest, expr) = postfix_expr(rest)?;
-        if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                atomic_var_op("__mutsu_atomic_pre_inc_var", "prefix:<++⚛>", name),
-            ));
-        }
-        if let Some(call) = atomic_elem_op("atomic-inc-fetch", "prefix:<++⚛>", &expr) {
+        if let Some(call) = atomic_operator_call("prefix:<++⚛>", &expr) {
             return Ok((rest, call));
         }
         return Ok((
@@ -204,13 +198,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(rest) = input.strip_prefix("--⚛") {
         let (rest, expr) = postfix_expr(rest)?;
-        if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                atomic_var_op("__mutsu_atomic_pre_dec_var", "prefix:<--⚛>", name),
-            ));
-        }
-        if let Some(call) = atomic_elem_op("atomic-dec-fetch", "prefix:<--⚛>", &expr) {
+        if let Some(call) = atomic_operator_call("prefix:<--⚛>", &expr) {
             return Ok((rest, call));
         }
         return Ok((
@@ -3385,10 +3373,7 @@ fn postfix_expr_loop_from(
         // Atomic postfix updates: $x⚛++ / $x⚛--
         if let Some(after_atomic) = rest.strip_prefix("⚛++") {
             rest = after_atomic;
-            if let Some(name) = atomic_var_name(&expr) {
-                expr = atomic_var_op("__mutsu_atomic_post_inc_var", "postfix:<⚛++>", name);
-            } else if let Some(call) = atomic_elem_op("atomic-fetch-inc", "postfix:<⚛++>", &expr)
-            {
+            if let Some(call) = atomic_operator_call("postfix:<⚛++>", &expr) {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {
@@ -3400,10 +3385,7 @@ fn postfix_expr_loop_from(
         }
         if let Some(after_atomic) = rest.strip_prefix("⚛--") {
             rest = after_atomic;
-            if let Some(name) = atomic_var_name(&expr) {
-                expr = atomic_var_op("__mutsu_atomic_post_dec_var", "postfix:<⚛-->", name);
-            } else if let Some(call) = atomic_elem_op("atomic-fetch-dec", "postfix:<⚛-->", &expr)
-            {
+            if let Some(call) = atomic_operator_call("postfix:<⚛-->", &expr) {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {

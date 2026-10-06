@@ -507,32 +507,6 @@ impl Compiler {
                 self.note_atomic_env_sync_target(&vn, true);
             }
         });
-        // The spelling an operator was written with (`$x⚛++` is
-        // `postfix:<⚛++>`): see `atomic_target.rs`.
-        if name == "__mutsu_atomic_spelled"
-            && args.len() == 2
-            && let Expr::Literal(lit) = &args[0]
-            && let crate::value::ValueView::Str(display) = lit.view()
-        {
-            let spelling = super::atomic_target::AtomicSpelling {
-                display: String::clone(&display),
-                int_only: false,
-            };
-            self.with_atomic_spelling(spelling, |c| c.compile_expr(&args[1]));
-            return;
-        }
-        // An operator the parser lowered to an integer-atomic helper: its target
-        // must be a native-integer container (#11834).
-        if let Some((display, has_operand)) = name.with_str(Self::int_atomic_helper)
-            && args.len() == 1 + usize::from(has_operand)
-            && let Some(Expr::Literal(lit)) = args.first()
-            && let crate::value::ValueView::Str(vn) = lit.view()
-        {
-            let vn = String::clone(&vn);
-            let helper = name.resolve();
-            self.compile_int_atomic_var_call(&helper, &vn, display, args.get(1), false);
-            return;
-        }
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
         // We compile this as: declare the state var, then unconditionally assign the RHS.
