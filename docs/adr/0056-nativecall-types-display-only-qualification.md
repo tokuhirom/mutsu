@@ -253,3 +253,23 @@ parametrized `.new` is a separate, deeper feature.
   end state ADR-0047 names and defers as its own "successor decision"), that would be the
   natural point to revisit whether NativeCall's types should become Strategy 2's real
   qualified registry key instead — tracked as a possible successor ADR, not scheduled here.
+
+## Amendment (2026-10-06): the qualified spelling resolves to the registry key (#12031)
+
+The Decision stands: ONE registry key per type, the bare one, qualified for a human only.
+What the Consequences section assumed — "there is only ever one registry key, so `Pointer`
+and `NativeCall::Types::Pointer` are not distinct Package values" — was not true of the
+qualified *spelling*. A bareword `NativeCall::Types::CArray` reached the package-qualified
+term fallback of `push_bare_word_value` and pushed `Package("NativeCall::Types::CArray")`:
+a second name, with its own `.WHICH` id. `CArray === NativeCall::Types::CArray`, `eqv`, a
+`%h{Any}` lookup and `CArray ~~ NativeCall::Types::CArray` all compared two names, and
+`NativeCall::Types::CArray[int32].new` could not resolve at all.
+
+The fix keeps the Decision and makes its premise hold. `nativecall_registry_name`
+(`src/value/display.rs`, the inverse of `qualify_nativecall_type_name`) maps a qualified
+spelling back to the bare key, honoring a program-declared type of the same name exactly as
+the display helper does. It is applied where a spelling becomes a type object —
+`push_bare_word_value`'s qualified-term fallback and `resolve_core_type_alias` — and
+nowhere in an identity or dispatch comparison, so "Not touched" above still holds:
+`types_isa.rs`, the `===` implementation and the ~15 exact-match sites keep reading the bare
+key. Display is unchanged (`NativeCall::Types::CArray.^name` is still qualified).

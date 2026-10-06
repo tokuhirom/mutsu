@@ -712,6 +712,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
     }
 }
 
+pub(crate) use display::nativecall_registry_name;
 pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
