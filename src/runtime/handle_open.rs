@@ -61,12 +61,6 @@ impl IoHandleState {
         }
     }
 
-    /// Whether this handle is an `$*ARGFILES` / `IO::ArgFiles` handle, whose
-    /// `.eof` needs the `@*ARGS` file list (see `eof_argfiles`).
-    pub(crate) fn is_argfiles(&self) -> bool {
-        matches!(self.target, IoHandleTarget::ArgFiles)
-    }
-
     /// `.eof` for an `$*ARGFILES` / `IO::ArgFiles` handle, which walks a list of
     /// files (falling back to stdin when the list is empty).
     ///

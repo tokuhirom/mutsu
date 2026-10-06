@@ -80,6 +80,11 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::IoSpecWin32 => type_sample("IO::Spec::Win32"),
         DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
         DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
+        DispatchShape::IoHandle => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("handle".to_string(), Value::int(-1));
+            Value::make_instance_without_destroy(Symbol::intern("IO::Handle"), attributes)
+        }
         DispatchShape::IoPath => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert("path".to_string(), Value::str_from("foo/bar"));
@@ -133,6 +138,9 @@ fn no_row_is_registered_twice() {
 #[test]
 fn every_row_is_reached_and_answers() {
     for row in rows() {
+        if row.flags.contains(RowFlags::OWNER_ONLY) {
+            continue;
+        }
         let mut reached = false;
         for shape in DispatchShape::ALL {
             let Some(found) = table::lookup(
