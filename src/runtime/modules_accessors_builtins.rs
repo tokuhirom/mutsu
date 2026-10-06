@@ -8,6 +8,7 @@ mod accessors_stash_keyed;
 mod accessors_stash_package;
 mod accessors_state;
 mod any_cool_method_gate;
+mod io_path_subclass;
 mod attr_build_defaults;
 mod builtins;
 mod builtins_accessor_elem_in_place;
