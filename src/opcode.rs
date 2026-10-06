@@ -1378,6 +1378,18 @@ pub(crate) enum OpCode {
     /// `X::Undeclared::Symbols`; any other name nothing claims degrades to
     /// the name itself as a `Str` (the old bareword-string fallback).
     GetBareWord(u32),
+    /// [`Self::GetBareWord`] for a bare word that spells a `$`-scalar of the
+    /// SAME scope (`my $bar = 3; say bar`). Stack: `[] → [value]`.
+    ///
+    /// `$bar` and the term `bar` are different symbols in Raku, but mutsu keeps
+    /// the scalar sigil-stripped under the bare key `bar` in `env`, where a
+    /// sigilless binding (`my \bar`, `-> \bar`) lives too. The compiler knows
+    /// which of the two the local is, so it says so here: the resolver is the
+    /// `GetBareWord` one with the `env[name]` read left out — that entry is the
+    /// scalar, not a term — and a name nothing else claims is an undeclared
+    /// routine (`X::Undeclared::Symbols`, rakudo's "Undeclared routine") rather
+    /// than the bareword-string fallback.
+    GetBareWordOverScalar(u32),
     /// Push a CORE term keyword's value (`True`, `False`, `Nil`, `Empty`,
     /// `Any`), preferring a binding of the same name that a module's run-time
     /// `sub EXPORT` hook installed into the importing scope (#9047).
@@ -8490,7 +8502,7 @@ impl CompiledCode {
 
     fn collect_bareword_names(&self, names: &mut std::collections::HashSet<Symbol>) {
         for op in &self.ops {
-            if let OpCode::GetBareWord(idx) = op
+            if let OpCode::GetBareWord(idx) | OpCode::GetBareWordOverScalar(idx) = op
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(*idx as usize).map(Value::view)
             {

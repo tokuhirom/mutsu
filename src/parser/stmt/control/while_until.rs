@@ -6,16 +6,17 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, (param_binding, destructure_params)) = if rest.starts_with("->") {
+    let (rest, (param_binding, destructure_params, sigilless_param)) = if rest.starts_with("->") {
         let (rest, (param, param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single while pointy parameter", rest));
         }
+        let sigilless_param = param_def.as_ref().is_some_and(|def| def.sigilless);
         let destructure_params = param_def.and_then(|def| def.sub_signature);
-        (rest, (param, destructure_params))
+        (rest, (param, destructure_params, sigilless_param))
     } else {
-        (rest, (None::<String>, None))
+        (rest, (None::<String>, None, false))
     };
     let (rest, _) = ws(rest)?;
     let (rest, mut body) = block(rest)?;
@@ -59,6 +60,10 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         );
     }
+    // `while COND -> \r`: `r` is a term bound afresh to each iteration's value,
+    // not a scalar the loop assigns, so the value goes through a scalar
+    // temporary and the body opens with `my \r = $tmp` (#11898).
+    let sigilless_tmp = sigilless_loop_tmp(&param_binding, sigilless_param, &mut body);
     let (hoisted_decl, cond) = if param_binding.is_none() {
         split_loop_cond_decl(cond)
     } else {
@@ -67,7 +72,10 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let while_stmt = Stmt::While {
         cond: if let Some(ref param) = param_binding {
             Expr::AssignExpr {
-                name: aggregate_tmp.clone().unwrap_or_else(|| param.clone()),
+                name: aggregate_tmp
+                    .clone()
+                    .or_else(|| sigilless_tmp.clone())
+                    .unwrap_or_else(|| param.clone()),
                 expr: Box::new(cond),
                 is_bind: aggregate_tmp.is_some(),
             }
@@ -83,11 +91,18 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((rest, Stmt::Block(vec![decl, while_stmt])));
     }
     if let Some(param) = param_binding {
+        // The temporary replaces the parameter's own declaration for a
+        // sigilless parameter: the body declares that, per iteration.
+        let declared = if sigilless_tmp.is_some() {
+            vec![sigilless_tmp.clone().unwrap_or_default()]
+        } else {
+            std::iter::once(param).chain(aggregate_tmp).collect()
+        };
         Ok((
             rest,
             Stmt::Block(
-                std::iter::once(param)
-                    .chain(aggregate_tmp)
+                declared
+                    .into_iter()
                     .map(|name| Stmt::VarDecl {
                         name,
                         expr: Expr::Literal(crate::value::Value::NIL),
@@ -115,16 +130,17 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, (param_binding, destructure_params)) = if rest.starts_with("->") {
+    let (rest, (param_binding, destructure_params, sigilless_param)) = if rest.starts_with("->") {
         let (rest, (param, param_def, params, _params_def, _rw_block, _explicit_zero)) =
             parse_for_params(rest)?;
         if !params.is_empty() {
             return Err(PError::expected_at("single until pointy parameter", rest));
         }
+        let sigilless_param = param_def.as_ref().is_some_and(|def| def.sigilless);
         let destructure_params = param_def.and_then(|def| def.sub_signature);
-        (rest, (param, destructure_params))
+        (rest, (param, destructure_params, sigilless_param))
     } else {
-        (rest, (None::<String>, None))
+        (rest, (None::<String>, None, false))
     };
     let (rest, _) = ws(rest)?;
     let (rest, mut body) = block(rest)?;
@@ -146,6 +162,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Err(err);
     }
+    let sigilless_tmp = sigilless_loop_tmp(&param_binding, sigilless_param, &mut body);
     let (hoisted_decl, cond) = if param_binding.is_none() {
         split_loop_cond_decl(cond)
     } else {
@@ -153,7 +170,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let cond_expr = if let Some(ref param) = param_binding {
         Expr::AssignExpr {
-            name: param.clone(),
+            name: sigilless_tmp.clone().unwrap_or_else(|| param.clone()),
             expr: Box::new(cond),
             is_bind: false,
         }
@@ -178,7 +195,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
             rest,
             Stmt::Block(vec![
                 Stmt::VarDecl {
-                    name: param,
+                    name: sigilless_tmp.unwrap_or(param),
                     expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state: false,
@@ -195,4 +212,20 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         Ok((rest, while_stmt))
     }
+}
+
+/// The name of the scalar temporary a `while`/`until COND -> \r` loop assigns
+/// its condition to, when the parameter is sigilless; the body then starts
+/// with the per-iteration binding `my \r = $tmp`. `None` for any other
+/// parameter, which the loop assigns directly.
+// Cost: O(b), b = statements of the loop body (one insertion at its head).
+fn sigilless_loop_tmp(
+    param_binding: &Option<String>,
+    sigilless: bool,
+    body: &mut Vec<Stmt>,
+) -> Option<String> {
+    let param = param_binding.as_ref().filter(|_| sigilless)?;
+    let tmp = "mutsu-while-cond".to_string();
+    body.insert(0, simple_pointy_bind(param, &Expr::Var(tmp.clone()), true));
+    Some(tmp)
 }

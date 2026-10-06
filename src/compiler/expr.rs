@@ -396,8 +396,10 @@ impl Compiler {
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the
                         // same name should resolve as a type/package, not the variable.
+                        // The op says so: the runtime cannot tell the scalar's `env`
+                        // entry from a sigilless binding's by the shared key (#11898).
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::GetBareWord(name_idx));
+                        self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                     }
                 } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING

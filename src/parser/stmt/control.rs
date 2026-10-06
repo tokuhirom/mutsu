@@ -353,6 +353,13 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         {
             stmts.push(Stmt::MarkReadonly(pd.name.clone(), ReadonlyKind::Alias));
         }
+        // A sigilless parameter (`given $x -> \ex`) is a term: the body spells
+        // it as a bare word, so — as for `with`/`if` (`simple_pointy_bind`) —
+        // the declaration carries the marker that tells the compiler the name
+        // reads from its slot and is not a `$`-scalar (#11898).
+        if pd.sigilless {
+            stmts.push(Stmt::MarkSigillessReadonly(pd.name.clone()));
+        }
         Stmt::SyntheticBlock(stmts)
     }
 }
