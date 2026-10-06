@@ -69,7 +69,14 @@ impl Interpreter {
         name: Symbol,
         invocant: &Value,
     ) -> Option<Symbol> {
-        if !self.has_class(owner.as_str()) {
+        // A core type owner (`Map.^lookup('raku')($subclass-instance)`) has no
+        // registry class; it binds the same way for an instance of a subclass.
+        // A type object stays by-name (`Map::new` on one re-enters `new`).
+        let core_owner = !self.has_class(owner.as_str());
+        if core_owner
+            && !(matches!(invocant.view(), ValueView::Instance { .. })
+                && self.is_builtin_type_method(owner.as_str(), name.as_str()))
+        {
             return None;
         }
         let inst_class = match invocant.view() {
