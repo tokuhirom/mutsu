@@ -1829,7 +1829,7 @@ impl Interpreter {
         // this bare name (see `set_env_with_main_alias_fresh_binding`).
         if !fresh_binding
             && !matches!(value.view(), ValueView::ContainerRef(_))
-            && let Some(cell_val) = self.env().get(name).cloned()
+            && let Some(cell_val) = self.env().get_for(name, name_sym).cloned()
             && let ValueView::ContainerRef(arc) = cell_val.view()
         {
             Self::cell_store_preserving_container_identity(name, &arc, &value);

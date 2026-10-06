@@ -3801,9 +3801,9 @@ impl Interpreter {
                 !code.local_slots_of(name_sym).is_empty() && !code.is_state_name(name);
             if is_body_local
                 && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
-                && !saved.contains_key(name)
+                && !saved.contains_key(&name_sym)
             {
-                saved.insert(name.to_string(), None);
+                saved.insert(name_sym, None);
             }
         }
         if !self.topic_state.loop_cond_active
@@ -3841,9 +3841,9 @@ impl Interpreter {
             });
             if has_coherent_slot
                 && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
-                && !saved.contains_key(name)
+                && !saved.contains_key(&name_sym)
             {
-                saved.insert(name.to_string(), Some(prev));
+                saved.insert(name_sym, Some(prev));
             }
         }
         // Pre-initialize the variable in the env with a default value so that

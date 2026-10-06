@@ -163,8 +163,11 @@ impl Interpreter {
                         if p != crate::symbol::wk::any() && !self.type_name_is_known(&p.resolve())
                 );
             if is_nil || is_dead_seed {
-                let init_val = self.typed_scalar_nil_seed_value(name, &constraint);
-                self.set_env_with_main_alias(name, init_val.clone());
+                // The declaration's own symbol: the by-name forms re-interned
+                // `name` three times per execution (#12151).
+                let base = self.var_type_constraint_sym(name_sym);
+                let init_val = self.typed_scalar_nil_seed_value_with_base(&constraint, base);
+                self.set_env_with_main_alias_sym(name, Some(name_sym), init_val.clone());
                 // A declaration's SetVarDynamic directly precedes this op.
                 // Its slot is authoritative when an inner `my` shadows an
                 // outer variable with the same name: a by-name lookup would
@@ -303,13 +306,13 @@ impl Interpreter {
                 .topic_state
                 .loop_local_saved_env
                 .last()
-                .is_some_and(|scope| scope.contains_key(key.as_str()))
+                .is_some_and(|scope| scope.contains_key(&key))
             {
                 continue;
             }
             let prev = self.env().get_sym(key).cloned();
             if let Some(scope) = self.topic_state.loop_local_saved_env.last_mut() {
-                scope.insert(key.as_str().to_string(), prev);
+                scope.insert(key, prev);
             }
         }
     }

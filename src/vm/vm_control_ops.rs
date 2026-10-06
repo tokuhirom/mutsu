@@ -205,7 +205,8 @@ impl Interpreter {
         self.topic_state.active_loop_param_names.pop();
         self.topic_state.active_loop_rw_param_names.pop();
         if let Some(saved) = self.topic_state.loop_local_saved_env.pop() {
-            for (name, val) in saved {
+            for (name_sym, val) in saved {
+                let name = name_sym.as_str();
                 // A `None` entry is a body-local `my` that shadowed NOTHING: the
                 // name did not exist before the loop, so the block's exit must
                 // take it away again rather than leave the last iteration's value
@@ -214,13 +215,15 @@ impl Interpreter {
                 // slot, which the next entry to the block re-initialises), so the
                 // slot pass below is skipped too.
                 let Some(val) = val else {
-                    self.env_mut().remove(&name);
+                    self.env_mut().remove_sym(name_sym);
                     continue;
                 };
                 // `Some` means the name shadowed an existing outer binding
                 // (recorded in exec_set_local_op), so restoring the captured value
                 // re-exposes the outer `$x` clobbered by the loop body's `my $x`.
-                self.env_mut().insert(name.clone(), val.clone());
+                // The key existed when it was saved, so `note_env_key` has
+                // already latched it.
+                self.env_mut().insert_sym(name_sym, val.clone());
                 // Restore the local slot too: loop bodies mark every local
                 // `needs_env_sync`, so the shadowing `my` wrote the outer var's
                 // shared slot. `GetLocal`'s fast path returns a non-Nil slot value
@@ -228,7 +231,7 @@ impl Interpreter {
                 // the stale last-iteration value. Mirror the restored value into
                 // every slot carrying this name.
                 for (idx, slot_name) in code.locals.iter().enumerate() {
-                    if slot_name == &name && idx < self.locals.len() {
+                    if slot_name == name && idx < self.locals.len() {
                         self.locals[idx] = val.clone();
                     }
                 }
