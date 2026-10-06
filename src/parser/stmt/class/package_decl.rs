@@ -514,18 +514,18 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     // `unit module A::B::C is export;` publishes the short name `C` (the
     // package itself), as rakudo does for a qualified declarator name.
-    if let Some(tags) = export_tags
-        && name.contains("::")
-    {
-        return Ok((
-            rest,
-            Stmt::SyntheticBlock(vec![
-                package,
-                super::class_decl::export_type_stmt(&name, &tags),
-            ]),
-        ));
-    }
-    Ok((rest, package))
+    let export_tags = export_tags.filter(|_| name.contains("::"));
+    Ok((
+        rest,
+        crate::ast::package_header::wrap(
+            package,
+            &name,
+            crate::ast::package_header::Header {
+                adverbs: Vec::new(),
+                export_tags,
+            },
+        ),
+    ))
 }
 
 /// Consume a package declarator's bareword traits (`is export`, `is rw`, a

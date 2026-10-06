@@ -157,29 +157,18 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
     }
 }
 
-/// Emit a runtime call that records a `is export`-ed type (class/grammar) so a
-/// later `use`/`import` of the enclosing module can import it by its bare name.
-pub(crate) fn export_type_stmt(type_name: &str, tags: &[String]) -> Stmt {
-    let mut args = vec![Expr::Literal(Value::str(type_name.to_string()))];
-    for tag in tags {
-        args.push(Expr::Literal(Value::str(tag.clone())));
-    }
-    Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__MUTSU_EXPORT_TYPE__"),
-        args,
-    })
-}
-
 /// The `__mutsu_export_type` marker a lexical `my class ... is export` carries
 /// in its `custom_traits`; the argument lists the export tags so a consumer
 /// that cannot see an export statement (a role body) can still publish it.
+pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
+
 pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
     let tags = tags
         .iter()
         .map(|t| Expr::Literal(Value::str(t.clone())))
         .collect();
     (
-        "__mutsu_export_type".to_string(),
+        EXPORT_TYPE_MARKER.to_string(),
         Some(Expr::ArrayLiteral(tags)),
     )
 }
@@ -729,31 +718,31 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             custom_traits.push(export_type_marker(&export_tags));
         }
     }
-    let mut stmts = Vec::new();
-    for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
-            stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
-        }
-    }
-    if is_export && !is_lexical {
-        // Register the export AFTER the class is declared so its type object is
-        // in scope when `import`/`use` copies it into the caller's namespace.
-        // Only for a package-scoped class: a `my class ... is export` is lexical
-        // and would be trapped inside this synthetic `Stmt::Block` scope (breaking
-        // its visibility to the rest of the module). A bare-file module's
-        // top-level `my class` is already importable by its bare name through the
-        // global registry, so it keeps the pre-existing path here.
-        stmts.push(class_stmt);
-        stmts.push(export_type_stmt(&name, &export_tags));
-        return Ok((rest, Stmt::SyntheticBlock(stmts)));
-    }
-    if stmts.is_empty() {
-        return Ok((rest, class_stmt));
-    }
-    // Non-lexical: the class body's `my sub`s and `my` variables belong to the
-    // class's own scope, which a lexical `Block` would end right here.
-    stmts.push(class_stmt);
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    let adverbs = traits
+        .into_iter()
+        .filter(|(trait_name, _)| matches!(trait_name.as_str(), "ver" | "auth" | "api"))
+        .collect();
+    // Register the export AFTER the class is declared so its type object is
+    // in scope when `import`/`use` copies it into the caller's namespace.
+    // Only for a package-scoped class: a `my class ... is export` is lexical
+    // and would be trapped inside this synthetic block's scope (breaking its
+    // visibility to the rest of the module). A bare-file module's top-level
+    // `my class` is already importable by its bare name through the global
+    // registry, so it keeps the pre-existing path here. A non-lexical class
+    // with only adverbs is still wrapped: its body's `my sub`s and `my`
+    // variables belong to the class's own scope, which a lexical `Block`
+    // would end right here.
+    Ok((
+        rest,
+        crate::ast::package_header::wrap(
+            class_stmt,
+            &name,
+            crate::ast::package_header::Header {
+                adverbs,
+                export_tags: (is_export && !is_lexical).then_some(export_tags),
+            },
+        ),
+    ))
 }
 
 /// Parse `also is <trait>;` statement.

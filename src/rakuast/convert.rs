@@ -53,10 +53,21 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
     let mut line = None;
-    for stmt in stmts {
+    for (at, stmt) in stmts.iter().enumerate() {
         if let Stmt::SetLine(n) = stmt {
             line = Some(*n);
             continue;
+        }
+        // `unit module M;` / `unit package P;`: rakudo holds the rest of the
+        // unit in the declaration's body; the parser leaves it beside it.
+        if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
+            if let Some(mut node) = convert_stmt(&unit)? {
+                if let Some(n) = line.take() {
+                    node.fields.push(origin::field(n));
+                }
+                fields.push(node_field(None, node));
+            }
+            break;
         }
         // The `state` declaration the parser puts at the top of a block for
         // each bare `$` it contains: rakudo's node is the `$` itself.
@@ -76,14 +87,17 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// The leading `scope => "my"` of a lexical package declaration (`my class`),
-/// measured on rakudo 2026.09; a package's default scope is `our`, which
-/// renders no field.
-pub(super) fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
-    if is_lexical {
-        vec![leaf_field(Some("scope"), Value::str_from("my"))]
+/// The `scope` a package declaration is written with: `my` for a lexical one,
+/// `unit` for `unit class` / `unit module`; `our` is the default and renders
+/// none.
+// Cost: O(1).
+pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static str> {
+    if is_unit {
+        Some("unit")
+    } else if is_lexical {
+        Some("my")
     } else {
-        Vec::new()
+        None
     }
 }
 
@@ -300,6 +314,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let modified =
                 crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
             convert_stmt(&modified)
+        }
+        // A package-like declaration with `:ver<..>` adverbs or `is export`.
+        Stmt::SyntheticBlock(_) if crate::ast::package_header::unwrap(stmt).is_some() => {
+            let (declaration, header) =
+                crate::ast::package_header::unwrap(stmt).expect("just checked");
+            let statement = convert_stmt(declaration)?
+                .ok_or_else(|| unsupported("a declaration with a header"))?;
+            let expression = expression_of(&statement)
+                .ok_or_else(|| unsupported("a declaration with a header"))?;
+            Ok(Some(statement_expression(super::package_header::apply(
+                &expression,
+                &header,
+            )?)))
         }
         // `temp` / `let` over a variable, an element or a declaration.
         Stmt::Let { .. } => match super::temporize::convert(stmt) {
@@ -830,48 +857,94 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     || *class_is_rw
                     || *is_hidden
                     || !hidden_parents.is_empty()
-                    || !does_parents.is_empty()
                     || repr.is_some()
                     || has_package_traits(custom_traits)
-                    || *is_unit
-                    || !*implicit_grammar_parent
-                    || parents != &["Grammar".to_string()]
                 {
-                    return Err(unsupported("grammar with inheritance / scope / traits"));
+                    return Err(unsupported(&format!(
+                        "grammar with scope / traits (hidden {hidden_parents:?}, rw {class_is_rw}, \
+                         traits {:?})",
+                        custom_traits
+                            .iter()
+                            .map(|(t, _)| t.as_str())
+                            .collect::<Vec<_>>()
+                    )));
                 }
-                let mut fields =
-                    package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
+                let mut fields = package_header_fields(
+                    *name,
+                    package_scope(*is_lexical, *is_unit),
+                    is_colons_package(custom_traits),
+                );
+                // The implicit `Grammar` parent is not a written trait.
+                let written: &[String] = if *implicit_grammar_parent {
+                    parents.get(1..).unwrap_or(&[])
+                } else {
+                    parents
+                };
+                let traits = class_traits(written, does_parents, parent_args, false, false, &[])?;
+                if !traits.is_empty() {
+                    fields.push(RakuAstField {
+                        name: Some("traits"),
+                        value: RakuAstFieldValue::List(traits),
+                    });
+                }
                 fields.push(node_field(
                     Some("body"),
                     block_node(&crate::parser::unhoist_nested_methods(body))?,
                 ));
-                return Ok(Some(statement_expression(RakuAstNode {
+                let grammar = RakuAstNode {
                     class: RakuAstClass::Grammar,
                     fields,
-                })));
+                };
+                let grammar = match super::package_header::lexical_export_tags(custom_traits) {
+                    Some(tags) => super::package_header::apply(
+                        &grammar,
+                        &crate::ast::package_header::Header {
+                            adverbs: Vec::new(),
+                            export_tags: Some(tags),
+                        },
+                    )?,
+                    None => grammar,
+                };
+                return Ok(Some(statement_expression(grammar)));
             }
             // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
             // Inheritance and `rw` are `traits`, the repr is its own leaf field.
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            if name_expr.is_some()
-                || *is_hidden
-                || !hidden_parents.is_empty()
-                || has_package_traits(custom_traits)
-                || *is_unit
-            {
-                return Err(unsupported(
-                    "class with inheritance / scope / repr / traits",
-                ));
+            if name_expr.is_some() || has_package_traits(custom_traits) {
+                return Err(unsupported(&format!(
+                    "class with inheritance / scope / repr / traits ({}{})",
+                    if name_expr.is_some() {
+                        "computed name "
+                    } else {
+                        ""
+                    },
+                    custom_traits
+                        .iter()
+                        .map(|(t, _)| t.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
             }
-            let mut fields =
-                package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
+            let mut fields = package_header_fields(
+                *name,
+                package_scope(*is_lexical, *is_unit),
+                is_colons_package(custom_traits),
+            );
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
-            let traits = class_traits(parents, does_parents, parent_args, *class_is_rw)?;
+            let mut traits = class_traits(
+                parents,
+                does_parents,
+                parent_args,
+                *class_is_rw,
+                *is_hidden,
+                hidden_parents,
+            )?;
+            traits.extend(decl_traits::class_custom_traits(custom_traits)?);
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -883,6 +956,57 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 block_node(&crate::parser::unhoist_nested_methods(
                     without_composed_header(body, does_parents),
                 ))?,
+            ));
+            let class = RakuAstNode {
+                class: RakuAstClass::Class,
+                fields,
+            };
+            // A lexical `my class ... is export` keeps its tags in a marker.
+            let class = match super::package_header::lexical_export_tags(custom_traits) {
+                Some(tags) => super::package_header::apply(
+                    &class,
+                    &crate::ast::package_header::Header {
+                        adverbs: Vec::new(),
+                        export_tags: Some(tags),
+                    },
+                )?,
+                None => class,
+            };
+            Ok(Some(statement_expression(class)))
+        }
+        // `trusts B;` in a class body is a `Statement::Trusts` of its own, not an
+        // expression statement.
+        Stmt::TrustsDecl { name } => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementTrusts,
+            fields: vec![node_field(Some("type"), build_type_node(&name.resolve())?)],
+        })),
+        // `augment class C { ... }` is a `Class` with `scope => "augment"`.
+        Stmt::AugmentClass {
+            name,
+            body,
+            does_roles,
+            is_role: false,
+        } => {
+            let mut fields = vec![
+                leaf_field(Some("scope"), Value::str_from("augment")),
+                node_field(Some("name"), name_from_identifier(&name.resolve())),
+            ];
+            if !does_roles.is_empty() {
+                let mut traits = Vec::new();
+                for role in does_roles {
+                    traits.push(Value::rakuast(Box::new(RakuAstNode {
+                        class: RakuAstClass::TraitDoes,
+                        fields: vec![node_field(None, build_type_node(&role.resolve())?)],
+                    })));
+                }
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(traits),
+                });
+            }
+            fields.push(node_field(
+                Some("body"),
+                block_node(&crate::parser::unhoist_nested_methods(body))?,
             ));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
@@ -904,15 +1028,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             roles,
             ..
         } => {
-            if *is_export
-                || !export_tags.is_empty()
-                || *is_my
-                || base_type.is_some()
-                || !roles.is_empty()
+            if base_type.is_some()
                 || matches!(variant_form, EnumVariantForm::Computed)
                 || variants.is_empty()
             {
-                return Err(unsupported("enum with scope / traits / computed body"));
+                return Err(unsupported(&format!(
+                    "enum with scope / traits / computed body (base {base_type:?}, roles {roles:?}, form {variant_form:?}, {} variants)",
+                    variants.len()
+                )));
             }
             let term = match variant_form {
                 EnumVariantForm::Words => enum_quoted_string(variants, "words")?,
@@ -920,12 +1043,35 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 EnumVariantForm::PairList => enum_pair_list(variants)?,
                 EnumVariantForm::Computed => unreachable!("checked above"),
             };
+            // Field order matches raku: scope, name, traits, term.
+            let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
+                .into_iter()
+                .collect();
+            fields.push(node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            ));
+            let mut traits = Vec::new();
+            for role in roles {
+                traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitDoes,
+                    fields: vec![node_field(None, build_type_node(role)?)],
+                })));
+            }
+            traits.extend(super::package_header::export_trait_value(
+                *is_export || !export_tags.is_empty(),
+                export_tags,
+            ));
+            if !traits.is_empty() {
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(traits),
+                });
+            }
+            fields.push(node_field(Some("term"), term));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::TypeEnum,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(Some("term"), term),
-                ],
+                fields,
             })))
         }
         // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`.
@@ -942,9 +1088,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             is_my,
         } => {
-            if *is_unit || *is_my {
-                return Err(unsupported("unit / my package declaration"));
-            }
             let class = match kind {
                 crate::ast::PackageKind::Module => RakuAstClass::Module,
                 crate::ast::PackageKind::Package => RakuAstClass::Package,
@@ -952,16 +1095,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     return Err(unsupported("grammar declaration"));
                 }
             };
-            Ok(Some(statement_expression(RakuAstNode {
-                class,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(
-                        Some("body"),
-                        block_node(&crate::parser::unhoist_nested_methods(body))?,
-                    ),
-                ],
-            })))
+            let mut fields: Vec<RakuAstField> = package_scope(*is_my, *is_unit)
+                .map(|scope| leaf_field(Some("scope"), Value::str_from(scope)))
+                .into_iter()
+                .collect();
+            fields.push(node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            ));
+            fields.push(node_field(
+                Some("body"),
+                block_node(&crate::parser::unhoist_nested_methods(body))?,
+            ));
+            Ok(Some(statement_expression(RakuAstNode { class, fields })))
         }
         // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
         // type is a `Trait::Of` in the `traits` list (raku models it exactly as
@@ -981,24 +1127,34 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_my,
             ..
         } => {
-            if *is_export || !export_tags.is_empty() || *is_my {
-                return Err(unsupported("subset with export / my scope"));
-            }
-            let mut fields = vec![node_field(
+            let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
+                .into_iter()
+                .collect();
+            fields.push(node_field(
                 Some("name"),
                 name_from_identifier(&name.resolve()),
-            )];
+            ));
             // Field order matches raku: name, where, traits.
             if let Some(pred) = predicate {
                 fields.push(node_field(Some("where"), convert_expr(pred)?));
             }
+            // `is export` comes before the `of` base type in the traits.
+            let mut traits: Vec<Value> = super::package_header::export_trait_value(
+                *is_export || !export_tags.is_empty(),
+                export_tags,
+            )
+            .into_iter()
+            .collect();
             if *base_is_explicit {
+                traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitOf,
+                    fields: vec![node_field(None, build_type_node(base)?)],
+                })));
+            }
+            if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
-                    value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
-                        class: RakuAstClass::TraitOf,
-                        fields: vec![node_field(None, build_type_node(base)?)],
-                    }))]),
+                    value: RakuAstFieldValue::List(traits),
                 });
             }
             Ok(Some(statement_expression(RakuAstNode {
@@ -1026,7 +1182,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 is_export: *is_export,
                 export_tags,
-                has_traits: !custom_traits.is_empty() || !trait_args.is_empty(),
+                has_traits: custom_traits.iter().any(|t| !is_return_spelling_marker(t))
+                    || !trait_args.is_empty(),
+                spelling: return_type_spelling(
+                    &custom_traits
+                        .iter()
+                        .map(|t| (t.clone(), None))
+                        .collect::<Vec<_>>(),
+                )?,
                 is_method: *is_method,
                 is_our: *is_our,
             },
@@ -1590,14 +1753,23 @@ fn var_decl_statement(
     }
     let is_internal = |n: &str| {
         n == "__has_initializer"
+            // The parser's own mark of a declaration whose initializer reads
+            // the new binding; the lowering marks it again.
+            || n == "__init_sees_self"
+            || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
     };
-    if custom_traits
+    let unrendered: Vec<&str> = custom_traits
         .iter()
-        .any(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
-    {
-        return Err(unsupported("declaration with traits"));
+        .filter(|(n, arg)| !is_internal(n) && !decl_traits::is_rendered(n, arg))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if !unrendered.is_empty() {
+        return Err(unsupported(&format!(
+            "declaration with traits ({})",
+            unrendered.join(", ")
+        )));
     }
     // build_type_node validates simple/definite and defers the rest. A
     // key-typed hash (`my Int %h{Str}`) splits into its value `type` and a
@@ -1614,8 +1786,21 @@ fn var_decl_statement(
     } else {
         None
     };
+    // A shaped array (`my @a[2;3] = ...`): the parser's `Array.new(shape =>
+    // ..., data => ...)` initializer is the node's `shape` and its initializer.
+    let shaped = if name.starts_with('@') && !is_binding {
+        crate::ast::shaped_decl::split(expr)
+    } else {
+        None
+    };
+    let expr = match &shaped {
+        Some((_, Some(data))) => data,
+        _ => expr,
+    };
     let init = if is_binding {
         Some(Initializer::Bind(expr))
+    } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
+        None
     } else {
         custom_traits
             .iter()
@@ -1636,6 +1821,9 @@ fn var_decl_statement(
     let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
     if let Some((_, key)) = keyed {
         super::keyed_hash::insert_shape(&mut decl, key)?;
+    }
+    if let Some((dims, _)) = &shaped {
+        super::keyed_hash::insert_dimensions(&mut decl, dims)?;
     }
     let mut traits = decl_traits::convert(custom_traits)?;
     if is_dynamic && !twigil_dynamic {
@@ -1925,7 +2113,7 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 // Cost: O(k), k = length of the name.
 pub(super) fn package_header_fields(
     name: crate::symbol::Symbol,
-    is_lexical: bool,
+    scope: Option<&'static str>,
     colons: bool,
 ) -> Vec<RakuAstField> {
     if colons {
@@ -1933,7 +2121,10 @@ pub(super) fn package_header_fields(
         fields.extend(name_parts::stash_name("").map(|n| node_field(Some("name"), n)));
         return fields;
     }
-    let mut fields = lexical_scope_field(is_lexical);
+    let mut fields: Vec<RakuAstField> = scope
+        .map(|scope| leaf_field(Some("scope"), Value::str_from(scope)))
+        .into_iter()
+        .collect();
     let name = name.resolve();
     if !crate::value::is_internal_anon_type_name(&name) {
         fields.push(node_field(Some("name"), name_from_identifier(&name)));
@@ -1942,11 +2133,29 @@ pub(super) fn package_header_fields(
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
-/// parser's empty-name marker, which the node expresses itself.
+/// parser's empty-name marker and its lexical `is export` marker, which the
+/// node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
+    custom_traits.iter().any(|(t, _)| {
+        t != crate::parser::ANON_COLONS_TRAIT
+            && t != crate::parser::EXPORT_TYPE_MARKER
+            && !decl_traits::is_class_trait(t)
+    })
+}
+
+/// The `expression` of a `Statement::Expression` node.
+fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
+    statement
+        .fields
         .iter()
-        .any(|(t, _)| t != crate::parser::ANON_COLONS_TRAIT)
+        .find(|f| f.name == Some("expression"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::RakuAst(node) => Some(node.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
 }
 
 /// Whether a package declaration was written with the empty name `::`.
@@ -3877,21 +4086,32 @@ fn class_traits(
     does_parents: &[String],
     parent_args: &[(String, Vec<Expr>)],
     is_rw: bool,
+    is_hidden: bool,
+    hidden_parents: &[String],
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut traits = Vec::new();
     for parent in parents {
         // A `does R` role is recorded in BOTH lists (`parents` is the general
         // composed-type list the dispatcher reads), so skip the ones that are
-        // really role composition or they would render twice.
-        if does_parents.iter().any(|r| r == parent) {
+        // really role composition or they would render twice; a parent it
+        // `hides` is in both too, and renders as a `Trait::Hides`.
+        if does_parents.iter().any(|r| r == parent) || hidden_parents.iter().any(|h| h == parent) {
             continue;
         }
+        // `is NAME` names a parent only when NAME is a type; the parser keeps
+        // any other name (a `trait_mod:<is>` of the program's own) in
+        // `parents` too, and rakudo renders it by name.
+        let is_parent_type = parent_args.iter().any(|(p, _)| p == parent)
+            || super::bareword::names_type(parent)
+            || parent.contains(['[', ':']);
+        let field = if is_parent_type {
+            node_field(Some("type"), parent_type_node(parent, parent_args)?)
+        } else {
+            node_field(Some("name"), name_from_identifier(parent))
+        };
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
-            fields: vec![node_field(
-                Some("type"),
-                parent_type_node(parent, parent_args)?,
-            )],
+            fields: vec![field],
         })));
     }
     for role in does_parents {
@@ -3904,6 +4124,18 @@ fn class_traits(
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
             fields: vec![node_field(Some("name"), name_from_identifier("rw"))],
+        })));
+    }
+    if is_hidden {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitIs,
+            fields: vec![node_field(Some("name"), name_from_identifier("hidden"))],
+        })));
+    }
+    for hidden in hidden_parents {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitHides,
+            fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
         })));
     }
     Ok(traits)
@@ -5353,4 +5585,40 @@ fn is_injected_named_arg(arg: &Expr) -> bool {
         },
         _ => false,
     }
+}
+
+/// `unit module M;` / `unit package P;` followed by `rest`: the same
+/// declaration with `rest` as its body (inside its header wrapper, if it has
+/// one). `None` for any other statement.
+// Cost: O(n), n = size of `rest` (it is cloned).
+fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
+    let (declaration, header) = match crate::ast::package_header::unwrap(stmt) {
+        Some((declaration, header)) => (declaration, header),
+        None => (stmt, crate::ast::package_header::Header::default()),
+    };
+    let Stmt::Package {
+        name,
+        kind,
+        is_unit: true,
+        is_my,
+        body,
+    } = declaration
+    else {
+        return None;
+    };
+    if !body.is_empty() {
+        return None;
+    }
+    let package = Stmt::Package {
+        name: *name,
+        body: rest.to_vec(),
+        kind: *kind,
+        is_unit: true,
+        is_my: *is_my,
+    };
+    Some(crate::ast::package_header::wrap(
+        package,
+        &name.resolve(),
+        header,
+    ))
 }

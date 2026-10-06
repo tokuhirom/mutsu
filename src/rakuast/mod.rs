@@ -31,6 +31,7 @@ mod method_assign_decl;
 mod name_parts;
 mod named_param;
 mod origin;
+mod package_header;
 mod placeholder;
 mod proto;
 mod react;
@@ -343,6 +344,10 @@ pub enum RakuAstClass {
     /// `handles TERM` on an attribute.
     TraitHandles,
     TraitDoes,
+    /// `class A hides B`.
+    TraitHides,
+    /// `trusts B` in a class body.
+    StatementTrusts,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
     StatementPrefixPhaserInit,
@@ -594,6 +599,8 @@ impl RakuAstClass {
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
             TraitDoes => "RakuAST::Trait::Does",
+            TraitHides => "RakuAST::Trait::Hides",
+            StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
             StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
@@ -861,6 +868,7 @@ impl RakuAstClass {
             Pragma
             | StatementUse
             | StatementNeed
+            | StatementTrusts
             | StatementImport
             | StatementLanguageVersion
             | StatementAlso
@@ -1311,6 +1319,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
     RakuAstClass::TraitDoes,
+    RakuAstClass::TraitHides,
+    RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,
     RakuAstClass::StatementPrefixPhaserInit,
@@ -2820,6 +2830,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Trait::Does", "new") => RakuAstClass::TraitDoes,
+        ("RakuAST::Trait::Hides", "new") => RakuAstClass::TraitHides,
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,

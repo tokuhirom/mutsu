@@ -42,6 +42,12 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     crate::whatever_curry::with_all_scopes(|| {
         crate::whatever_curry::mark::mark_program(&mut stmts)
     });
+    // The scope pass the parser runs after a unit: it marks each declaration
+    // whose initializer reads the binding it declares (`__init_sees_self`),
+    // and reports the compile-time errors of a redeclaration or of `my $x = $x`.
+    if let Some(diagnostic) = crate::parser::find_scope_diagnostic(&mut stmts) {
+        return Err(crate::parser::scope_diagnostic_error(diagnostic));
+    }
     Ok(stmts)
 }
 
@@ -74,7 +80,12 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
                     stmts.push(Stmt::SetLine(line));
                 }
                 let line = super::origin::line_of(child);
-                stmts.push(super::origin::with_line(line, || lower_stmt(child))?);
+                let mut stmt = super::origin::with_line(line, || lower_stmt(child))?;
+                // The body of a `unit module` is the rest of the unit, which
+                // the parser leaves beside the declaration.
+                let rest = take_unit_package_body(&mut stmt);
+                stmts.push(stmt);
+                stmts.extend(rest);
             }
             Ok(stmts)
         }
@@ -281,15 +292,36 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserLast
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
-        RakuAstClass::Class => lower_class(node),
-        RakuAstClass::Grammar => lower_grammar(node),
+        RakuAstClass::StatementTrusts => Ok(Stmt::TrustsDecl {
+            name: crate::symbol::Symbol::intern(&simple_type_name(
+                node,
+                named_child(node, "type")?,
+            )?),
+        }),
+        // `augment class C { ... }`.
+        RakuAstClass::Class if leaf_str(node, "scope").is_ok_and(|s| s == "augment") => {
+            let (node, roles) = take_does_roles(node)?;
+            Ok(Stmt::AugmentClass {
+                name: crate::symbol::Symbol::intern(&call_name_str(&node)?),
+                body: lower_package_body(lower_block(named_child(&node, "body")?)?),
+                does_roles: roles
+                    .iter()
+                    .map(|role| crate::symbol::Symbol::intern(role))
+                    .collect(),
+                is_role: false,
+            })
+        }
+        RakuAstClass::Class => super::package_header::lower_with_header(node, lower_class),
+        RakuAstClass::Grammar => super::package_header::lower_with_header(node, lower_grammar),
         RakuAstClass::RegexDeclaration
         | RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
         RakuAstClass::Role => super::role::lower(node),
         RakuAstClass::Method if super::proto::is_proto(node) => super::proto::lower(node),
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
-        RakuAstClass::Module | RakuAstClass::Package => lower_package(node),
+        RakuAstClass::Module | RakuAstClass::Package => {
+            super::package_header::lower_with_header(node, lower_package)
+        }
         RakuAstClass::TypeEnum => lower_enum(node),
         RakuAstClass::TypeSubset => lower_subset(node),
         // `CATCH { … }` — the `exception`/topic flags on its body block are
@@ -666,11 +698,29 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// (which mutsu records in BOTH `parents` and `does_parents`), and
 /// `Trait::Is(name => "rw")` is the `rw` flag.
 #[allow(clippy::type_complexity)]
-fn class_traits(
-    node: &RakuAstNode,
-) -> Result<(Vec<String>, Vec<String>, Vec<(String, Vec<Expr>)>, bool), RuntimeError> {
+/// What a class declaration's `traits` say.
+struct ClassTraits {
+    parents: Vec<String>,
+    does_parents: Vec<String>,
+    parent_args: Vec<(String, Vec<Expr>)>,
+    is_rw: bool,
+    is_hidden: bool,
+    hidden_parents: Vec<String>,
+    /// `is NAME` / `is NAME(ARGS)`: a trait of the program's own.
+    custom_traits: Vec<(String, Option<Expr>)>,
+}
+
+fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
     let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), Vec::new(), Vec::new(), false));
+        return Ok(ClassTraits {
+            parents: Vec::new(),
+            does_parents: Vec::new(),
+            parent_args: Vec::new(),
+            is_rw: false,
+            is_hidden: false,
+            hidden_parents: Vec::new(),
+            custom_traits: Vec::new(),
+        });
     };
     let RakuAstFieldValue::List(items) = &f.value else {
         return Err(unsupported(node));
@@ -679,6 +729,9 @@ fn class_traits(
     let mut does_parents = Vec::new();
     let mut parent_args = Vec::new();
     let mut is_rw = false;
+    let mut is_hidden = false;
+    let mut hidden_parents = Vec::new();
+    let mut custom_traits = Vec::new();
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(unsupported(node));
@@ -694,11 +747,41 @@ fn class_traits(
                 } else if let Ok(name_node) = named_child(t, "name") {
                     match positional_leaf(name_node)?.view() {
                         ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
+                        ValueView::Str(s) if s.as_str() == "hidden" => is_hidden = true,
+                        // `is NAME` with no argument: the parser lists it with
+                        // the parents, whatever NAME is.
+                        ValueView::Str(s)
+                            if super::decl_traits::is_class_trait(&s)
+                                && named_child(t, "argument").is_err() =>
+                        {
+                            parents.push(s.to_string());
+                        }
+                        ValueView::Str(s) if super::decl_traits::is_class_trait(&s) => {
+                            let argument = match named_child(t, "argument") {
+                                Ok(argument) => {
+                                    let value =
+                                        super::attribute::lower_paren_argument(t, argument)?;
+                                    // A list `(a, b)` is the parser's grouped array literal.
+                                    Some(match value {
+                                        Expr::ArrayLiteral(_) => Expr::Grouped(Box::new(value)),
+                                        other => other,
+                                    })
+                                }
+                                Err(_) => None,
+                            };
+                            custom_traits.push((s.to_string(), argument));
+                        }
                         _ => return Err(unsupported(node)),
                     }
                 } else {
                     return Err(unsupported(node));
                 }
+            }
+            // `hides B`: B is a parent the class hides, and one it inherits.
+            RakuAstClass::TraitHides => {
+                let hidden = simple_type_name(node, named_child_or_positional(t)?)?;
+                parents.push(hidden.clone());
+                hidden_parents.push(hidden);
             }
             RakuAstClass::TraitDoes => {
                 let type_node = named_child_or_positional(t)?;
@@ -714,7 +797,15 @@ fn class_traits(
             _ => return Err(unsupported(node)),
         }
     }
-    Ok((parents, does_parents, parent_args, is_rw))
+    Ok(ClassTraits {
+        parents,
+        does_parents,
+        parent_args,
+        is_rw,
+        is_hidden,
+        hidden_parents,
+        custom_traits,
+    })
 }
 
 /// `constant X = 5` -> a `Stmt::VarDecl` carrying mutsu's `__constant` marker
@@ -893,7 +984,15 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_class_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
-    let (parents, does_parents, parent_args, class_is_rw) = class_traits(node)?;
+    let ClassTraits {
+        parents,
+        does_parents,
+        parent_args,
+        is_rw: class_is_rw,
+        is_hidden,
+        hidden_parents,
+        custom_traits: written_traits,
+    } = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
@@ -903,15 +1002,19 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name_expr: None,
         parents,
         class_is_rw,
-        is_hidden: false,
+        is_hidden,
         is_lexical: head.is_lexical,
-        hidden_parents: Vec::new(),
+        hidden_parents,
         does_parents,
         repr,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: head.custom_traits(),
-        is_unit: false,
+        custom_traits: {
+            let mut custom = head.custom_traits();
+            custom.extend(written_traits);
+            custom
+        },
+        is_unit: head.is_unit,
         implicit_grammar_parent: false,
         is_grammar: false,
         // Lowering is the parser's counterpart, so the declaration gets its
@@ -930,6 +1033,8 @@ pub(super) struct PackageHead {
     /// (`class { }`), a fresh internal one minted as the parser mints it.
     pub name: String,
     pub is_lexical: bool,
+    /// Written `unit class A;`: the rest of the file is its body.
+    pub is_unit: bool,
     /// Written with the empty name (`class :: { }`): an `anon` scope over the
     /// name `::`. The parser marks such a declaration, so lowering does too.
     pub colons: bool,
@@ -960,17 +1065,19 @@ pub(super) fn package_head(
             Some(NameShape::Stash(stash)) if stash == "::" => Ok(PackageHead {
                 name: fresh(),
                 is_lexical: false,
+                is_unit: false,
                 colons: true,
             }),
             _ => Err(unsupported(node)),
         },
-        None | Some("my" | "our") => Ok(PackageHead {
+        None | Some("my" | "our" | "unit") => Ok(PackageHead {
             name: if node.fields.iter().any(|f| f.name == Some("name")) {
                 call_name_str(node)?
             } else {
                 fresh()
             },
             is_lexical: scope.as_deref() == Some("my"),
+            is_unit: scope.as_deref() == Some("unit"),
             colons: false,
         }),
         Some(_) => Err(unsupported(node)),
@@ -980,24 +1087,42 @@ pub(super) fn package_head(
 fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_grammar_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
+    let ClassTraits {
+        mut parents,
+        does_parents,
+        parent_args,
+        is_rw,
+        is_hidden,
+        hidden_parents,
+        custom_traits: written_traits,
+    } = class_traits(node)?;
+    if is_rw || is_hidden || !hidden_parents.is_empty() || !written_traits.is_empty() {
+        return Err(unsupported(node));
+    }
+    // With no written parent a grammar inherits `Grammar`, which the parser
+    // puts first in `parents`, before any composed role.
+    let implicit_grammar_parent = parents.iter().all(|p| does_parents.contains(p));
+    if implicit_grammar_parent {
+        parents.insert(0, "Grammar".to_string());
+    }
     Ok(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&head.name),
         name_expr: None,
-        parents: vec!["Grammar".to_string()],
+        parents,
         class_is_rw: false,
         is_hidden: false,
         is_lexical: head.is_lexical,
         hidden_parents: Vec::new(),
-        does_parents: Vec::new(),
+        does_parents,
         repr: None,
         body,
         language_version: crate::parser::current_language_version(),
         custom_traits: head.custom_traits(),
-        is_unit: false,
-        implicit_grammar_parent: true,
+        is_unit: head.is_unit,
+        implicit_grammar_parent,
         is_grammar: true,
         decl_id: crate::ast::next_class_decl_id(),
-        parent_args: Vec::new(),
+        parent_args,
         body_parents: Vec::new(),
     })
 }
@@ -1096,12 +1221,19 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::Package => crate::ast::PackageKind::Package,
         _ => return Err(unsupported(node)),
     };
+    let scope = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        Some(_) => leaf_str(node, "scope")?,
+        None => "our".to_string(),
+    };
+    if !matches!(scope.as_str(), "our" | "my" | "unit") {
+        return Err(unsupported(node));
+    }
     Ok(Stmt::Package {
         name: crate::symbol::Symbol::intern(&call_name_str(node)?),
         body: lower_package_body(lower_block(named_child(node, "body")?)?),
         kind,
-        is_unit: false,
-        is_my: false,
+        is_unit: scope == "unit",
+        is_my: scope == "my",
     })
 }
 
@@ -1109,6 +1241,10 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// The source form is recovered from the term node because the internal AST
 /// stores only normalized variants for execution.
 fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let (node, is_my, is_export, export_tags) =
+        super::package_header::strip_scope_and_export(node)?;
+    let (node, roles) = take_does_roles(&node)?;
+    let node = &node;
     let name = call_name_str(node)?;
     let term = named_child(node, "term")?;
     let (variants, variant_form) = match term.class {
@@ -1120,11 +1256,11 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name: crate::symbol::Symbol::intern(&name),
         variants,
         variant_form,
-        is_export: false,
-        export_tags: Vec::new(),
-        is_my: false,
+        is_export,
+        export_tags,
+        is_my,
         base_type: None,
-        roles: Vec::new(),
+        roles,
         language_version: crate::parser::current_language_version(),
     })
 }
@@ -1232,6 +1368,9 @@ fn lower_enum_pair_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, Runti
 /// no `of` carries no `traits` field at all and takes the implied `Any`. Any
 /// other trait is a shape the converter never produced.
 fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let (node, is_my, is_export, export_tags) =
+        super::package_header::strip_scope_and_export(node)?;
+    let node = &node;
     let name = call_name_str(node)?;
     let predicate = match node.fields.iter().find(|f| f.name == Some("where")) {
         Some(f) => Some(lower_expr(child_node(&f.value)?)?),
@@ -1261,9 +1400,9 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         base_is_explicit,
         predicate,
         version: crate::parser::current_language_version(),
-        is_export: false,
-        export_tags: Vec::new(),
-        is_my: false,
+        is_export,
+        export_tags,
+        is_my,
         decl_id: crate::ast::next_class_decl_id(),
     })
 }
@@ -2176,6 +2315,19 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             },
             false,
         ),
+    };
+    // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
+    let shape_dims = super::keyed_hash::lower_dimensions(node, &sigil)?;
+    if shape_dims.is_some() && (is_binding || call_assign.is_some()) {
+        return Err(unsupported(node));
+    }
+    let expr = match shape_dims {
+        Some(dims) if has_initializer => {
+            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
+            crate::ast::shaped_decl::new_with_data_expr(dims, expr)
+        }
+        Some(dims) => crate::ast::shaped_decl::new_expr(dims),
+        None => expr,
     };
     if has_initializer {
         custom_traits.push(("__has_initializer".to_string(), None));
@@ -4182,4 +4334,46 @@ fn imaginary_part(number: &Value) -> Option<f64> {
         ValueView::Rat(..) | ValueView::Num(_) => Some(number.to_f64()),
         _ => None,
     }
+}
+
+/// The body of the `unit module` / `unit package` `stmt` is (or wraps), taken
+/// out of it: the parser keeps that body beside the declaration, not in it.
+// Cost: O(p), p = statements in the wrapper.
+fn take_unit_package_body(stmt: &mut Stmt) -> Vec<Stmt> {
+    match crate::ast::package_header::declaration_mut(stmt) {
+        Some(Stmt::Package {
+            is_unit: true,
+            body,
+            ..
+        }) => std::mem::take(body),
+        _ => Vec::new(),
+    }
+}
+
+/// The roles a declaration's `traits` compose (`Trait::Does`), and the node
+/// without them. Any other trait stays the boundary.
+// Cost: O(t), t = traits of the node.
+fn take_does_roles(node: &RakuAstNode) -> Result<(RakuAstNode, Vec<String>), RuntimeError> {
+    let mut stripped = node.clone();
+    let mut roles = Vec::new();
+    if let Some(field) = stripped
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("traits"))
+    {
+        let RakuAstFieldValue::List(items) = &field.value else {
+            return Err(unsupported(node));
+        };
+        for item in items {
+            let ValueView::RakuAst(t) = item.view() else {
+                return Err(unsupported(node));
+            };
+            if t.class != RakuAstClass::TraitDoes {
+                return Err(unsupported(node));
+            }
+            roles.push(simple_type_name(node, named_child_or_positional(t)?)?);
+        }
+        stripped.fields.retain(|f| f.name != Some("traits"));
+    }
+    Ok((stripped, roles))
 }

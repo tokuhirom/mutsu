@@ -93,7 +93,7 @@ impl IsTraits {
     }
 }
 
-fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode {
+pub(super) fn trait_is(name: &str, argument: Option<RakuAstNode>) -> RakuAstNode {
     let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
     if let Some(argument) = argument {
         fields.push(node_field(Some("argument"), argument));
@@ -112,7 +112,7 @@ fn colon_pair_true(tag: &str) -> Value {
 }
 
 /// `(:a)` / `(:a, :b)` for `is export`'s tags; `None` for the bare form.
-fn export_argument(tags: &[String]) -> Option<RakuAstNode> {
+pub(super) fn export_argument(tags: &[String]) -> Option<RakuAstNode> {
     let expression = match tags {
         [only] if only == DEFAULT_TAG => return None,
         [only] => match colon_pair_true(only).view() {
