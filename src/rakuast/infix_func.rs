@@ -157,9 +157,11 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if name == "," {
         return None;
     }
-    let known = crate::compiler::helpers_ops::op_name_to_token_kind(&name).is_some();
-    // A built-in operator stays an `Expr::Binary` unless the unit overloads it.
-    if known && !is_declared(&name) {
+    // A word the parser folds into a `Binary` over an `Ident` token (`mod`,
+    // `minmax`, `cmp`) compiles to the same named-infix call as an
+    // `InfixFunc`, so only the operators with a dispatch of their own need the
+    // node: a flip-flop, and anything the unit declares itself.
+    if !is_flip_flop(&name) && !is_declared(&name) {
         return None;
     }
     Some(fold(node, name))
