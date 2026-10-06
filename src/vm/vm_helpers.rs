@@ -169,7 +169,7 @@ impl Interpreter {
             .next()
             .is_some_and(|c| c.is_alphabetic() || c == '_')
             && !name.starts_with(['@', '%', '&'])
-            && !name.contains("::");
+            && !crate::qualified::is_qualified_str(name);
         if plain
             && crate::value::lookup_container_constraint(&cell).is_none()
             && self.declared_scalar_type(name).is_none()
