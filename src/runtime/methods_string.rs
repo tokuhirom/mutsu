@@ -76,18 +76,32 @@ impl Interpreter {
     /// adverb (`:g`/`:x`/multi-`:nth`) `$/` is a (possibly empty) List of Match
     /// objects; otherwise it is the single first Match, or Nil when nothing
     /// matched.
+    ///
+    /// A capture that carries no subject of its own (the literal `.subst` path
+    /// publishes bare spans) shares one built here from `text`. Building it
+    /// converts the whole subject, so one per capture made a `:g` over `r`
+    /// matches O(n * r) -- the quadratic #9143 removed from the scans and the
+    /// nightly `t/regex/subst/subst-slow-path-linear.t` caught coming back.
+    // Cost: O(n + r), n = chars of `text`, r = captures; the fallback subject is
+    // built at most once.
     pub(super) fn subst_match_var(
         selected: &[RegexCaptures],
         text: &str,
         result_is_list: bool,
     ) -> Value {
+        let fallback = std::cell::OnceCell::new();
         let to_match = |c: &RegexCaptures| {
+            let target = c.target().cloned().unwrap_or_else(|| {
+                fallback
+                    .get_or_init(|| crate::runtime::MatchTarget::new(text))
+                    .clone()
+            });
             Value::make_match_object_full(
                 c.from as i64,
                 c.to as i64,
                 &c.positional,
                 &c.named,
-                c.target_or_new(text),
+                target,
             )
             .with_match_cursor_pos(c.narrowed_pos())
         };

@@ -27,11 +27,24 @@ $operator ~~ s:g/ \d+ /#/;
 say @fields.elems ~ " " ~ $substituted.chars ~ " " ~ $operator.chars;
 "#;
 
-#[test]
-fn repeated_scanning_of_one_subject_materializes_it_once_per_call() {
+/// The literal-needle `.subst` slow path (closure replacement, `:x(*)`): 500
+/// matches per call over one subject. It publishes `$/` through bare-span
+/// captures that carry no subject, so each of them used to build its own
+/// (`methods_string.rs:subst_match_var`) -- two per match, 3003 here.
+const LITERAL_SUBST_PROGRAM: &str = r#"
+my $text = ("w," x 500);
+my $closure = $text.subst(",", { ";" }, :g);
+my $pointy = $text.subst(",", -> $m { ";" }, :g);
+my $limited = $text.subst(",", { ";" }, :x(*));
+say $closure.chars ~ " " ~ $pointy.chars ~ " " ~ $limited.chars;
+"#;
+
+/// Run `program` with `MUTSU_VM_STATS=1`; returns its stdout and the
+/// `match_targets` counter the stats dump printed.
+fn run_counting_match_targets(program: &str) -> (String, u64) {
     let out = Command::new(env!("CARGO_BIN_EXE_mutsu"))
         .arg("-e")
-        .arg(PROGRAM)
+        .arg(program)
         .env("MUTSU_VM_STATS", "1")
         .output()
         .expect("failed to spawn mutsu");
@@ -40,12 +53,7 @@ fn repeated_scanning_of_one_subject_materializes_it_once_per_call() {
         "run failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(
-        stdout.trim(),
-        "501 2500 2500",
-        "the three operations no longer agree with each other"
-    );
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
 
     let stderr = String::from_utf8_lossy(&out.stderr);
     let stats_line = stderr
@@ -57,13 +65,37 @@ fn repeated_scanning_of_one_subject_materializes_it_once_per_call() {
         .find_map(|w| w.strip_prefix("match_targets="))
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("missing match_targets= in: {stats_line}"));
+    (stdout, targets)
+}
+
+#[test]
+fn repeated_scanning_of_one_subject_materializes_it_once_per_call() {
+    let (stdout, targets) = run_counting_match_targets(PROGRAM);
+    assert_eq!(
+        stdout, "501 2500 2500",
+        "the three operations no longer agree with each other"
+    );
     // Three scanning operations, so three targets is the expected shape; the
     // ceiling leaves room for an unrelated incidental match elsewhere in the
     // program without admitting anything per-match.
     assert!(
         targets <= 16,
         "match_targets={targets} over 1500 matches — a repeated-scan path is \
-         building one whole-subject MatchTarget per match again (#8247); \
-         stats line: {stats_line}"
+         building one whole-subject MatchTarget per match again (#8247)"
+    );
+}
+
+#[test]
+fn literal_subst_slow_path_publishes_one_subject_for_every_match() {
+    let (stdout, targets) = run_counting_match_targets(LITERAL_SUBST_PROGRAM);
+    assert_eq!(
+        stdout, "1000 1000 1000",
+        "the three literal substitutions no longer agree with each other"
+    );
+    assert!(
+        targets <= 16,
+        "match_targets={targets} over 1500 literal-subst matches — `$/` is \
+         being published with one whole-subject MatchTarget per match (#8247, \
+         t/regex/subst/subst-slow-path-linear.t)"
     );
 }

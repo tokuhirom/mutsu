@@ -259,7 +259,18 @@ impl Interpreter {
             Ok(v) => format!("ok:{}", crate::runtime::gist_value(v)),
             Err(e) => format!("err:{}", e.message),
         };
-        let lane = render(answer.result.as_ref());
+        // A row may answer with a resumable warning (`List.contains`, `.index`)
+        // instead of a value: that is not an outcome yet, it settles at the
+        // raise site (`settle_native_warning`, which `finish_method_site_lane`
+        // and the full path both run). The full path has settled it by now, so
+        // compare the value the warning resumes with. A CONTROL handler may
+        // divert the settled call into an error; that is the handler's doing,
+        // not a dispatch difference, and there is nothing to compare it with.
+        let resumed = match &answer.result {
+            Err(e) if e.is_warn() => e.return_value.as_ref(),
+            _ => None,
+        };
+        let lane = resumed.map_or_else(|| render(answer.result.as_ref()), |v| render(Ok(v)));
         let full_rendered = match &full {
             Ok(()) => self
                 .stack
@@ -267,11 +278,12 @@ impl Interpreter {
                 .map_or_else(|| "<empty stack>".to_string(), |v| render(Ok(v))),
             Err(e) => render(Err(e)),
         };
-        debug_assert_eq!(
-            lane,
-            full_rendered,
+        let diverted_by_handler = resumed.is_some() && full.is_err();
+        debug_assert!(
+            diverted_by_handler || lane == full_rendered,
             "the method-table lane disagrees with the full CallMethodMut path for .{} \
-             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call",
+             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call\n  \
+             lane: {lane:?}\n  full: {full_rendered:?}",
             method_table::row(answer.row).name,
             method_table::row(answer.row).owner,
         );
