@@ -104,6 +104,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         is_rw: role.is_rw,
         is_raw: false,
         export_tags: role.export_tags.to_vec(),
+        ..Default::default()
     };
     traits.extend(
         flags

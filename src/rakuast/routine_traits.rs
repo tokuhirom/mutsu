@@ -13,6 +13,13 @@
 //! ApplyListInfix(",", ColonPair::True("a"), ColonPair::True("b")))))`; a single
 //! tag is the bare `ColonPair::True`, and a bare `is export` has no argument.
 //!
+//! `sub infix:<+++>($a, $b) is assoc<left>` carries its associativity as
+//! `Trait::Is(name => assoc, argument => QuotedString(<words val>, "left"))` and
+//! `is tighter(&infix:<+>)` (also `looser`, `equiv`) a parenthesised
+//! `Var::Lexical("&infix:<+>")`. The parser keeps the first in `associativity`
+//! and the second in `precedence_trait` (also copying its kind into
+//! `associativity`), so a routine with both is refused: their order is not kept.
+//!
 //! `multiness` and `private` precede `name`; a trait sits in `traits` before
 //! `body`. The parser keeps these traits as flags beside the return-type trait,
 //! not in source order, so a routine carrying more than one of them is refused
@@ -29,7 +36,10 @@
 //! the circumfix. An angle argument `<x>` reads the same as `('x')` and
 //! comes back in that spelling; a multi-word `<a b>`, an internal `__` marker,
 //! a qualified name and the traits the parser folds into other fields stay
-//! refused.
+//! refused. `is DEPRECATED` / `is DEPRECATED("message")` is a `Trait::Is` too:
+//! the parser keeps it as the custom trait `DEPRECATED` / `DEPRECATED:message`,
+//! and a method's `is default` and `is DEPRECATED` as fields of their own, which
+//! [`method_custom_traits`] puts back among the custom traits.
 
 use super::convert::{
     leaf_field, name_from_identifier, node_field, statement_expression, unsupported,
@@ -49,6 +59,11 @@ pub(super) struct IsTraits {
     pub(super) is_raw: bool,
     /// `is export`'s tags; empty when not exported.
     pub(super) export_tags: Vec<String>,
+    /// `is assoc<left>`'s value.
+    pub(super) assoc: Option<String>,
+    /// `is tighter(&infix:<+>)`'s kind (`tighter` / `looser` / `equiv`) and
+    /// reference operator.
+    pub(super) precedence: Option<(String, String)>,
 }
 
 impl IsTraits {
@@ -62,6 +77,18 @@ impl IsTraits {
         };
         let argument = named_child(t, "argument").ok();
         match (name.as_str(), argument) {
+            ("assoc", Some(argument)) if t.fields.len() == 2 => {
+                let Some(value) = assoc_value(argument)? else {
+                    return Ok(false);
+                };
+                self.assoc = Some(value);
+            }
+            (kind @ ("tighter" | "looser" | "equiv"), Some(argument)) if t.fields.len() == 2 => {
+                let Some(reference) = precedence_reference(argument)? else {
+                    return Ok(false);
+                };
+                self.precedence = Some((kind.to_string(), reference));
+            }
             ("rw", None) if t.fields.len() == 1 => self.is_rw = true,
             ("raw", None) if t.fields.len() == 1 => self.is_raw = true,
             ("export", None) if t.fields.len() == 1 => {
@@ -89,7 +116,120 @@ impl IsTraits {
         if !self.export_tags.is_empty() {
             nodes.push(trait_is("export", export_argument(&self.export_tags)));
         }
+        if let Some(value) = &self.assoc {
+            nodes.push(trait_is("assoc", Some(super::package_header::words_value(value))));
+        }
+        if let Some((kind, reference)) = &self.precedence {
+            let variable = RakuAstNode {
+                class: RakuAstClass::VarLexical,
+                fields: vec![leaf_field(None, Value::str(reference.clone()))],
+            };
+            nodes.push(trait_is(kind, Some(paren_around(variable))));
+        }
         nodes
+    }
+
+    /// The traits a `SubDecl` records in `associativity` and `precedence_trait`.
+    /// A precedence trait also copies its kind into `associativity`, so the two
+    /// fields name two traits only when they disagree, whose order is not kept.
+    // Cost: O(|reference|).
+    pub(super) fn with_precedence(
+        mut self,
+        associativity: Option<&String>,
+        precedence_trait: Option<&(String, String)>,
+    ) -> Result<Self, RuntimeError> {
+        match (associativity, precedence_trait) {
+            (None, None) => {}
+            (Some(assoc), None) if !is_precedence_kind(assoc) => self.assoc = Some(assoc.clone()),
+            (Some(kind), Some(precedence)) if *kind == precedence.0 => {
+                self.precedence = Some(precedence.clone());
+            }
+            (None, Some(precedence)) => self.precedence = Some(precedence.clone()),
+            (Some(kind), None) if is_precedence_kind(kind) => {}
+            _ => {
+                return Err(unsupported(
+                    "routine with `is assoc` and a precedence trait (their source order is not kept)",
+                ));
+            }
+        }
+        if let Some((_, reference)) = &self.precedence
+            && !is_operator_reference(reference)
+        {
+            return Err(unsupported("precedence trait with a reference that is not `&category:<op>`"));
+        }
+        Ok(self)
+    }
+}
+
+fn is_precedence_kind(name: &str) -> bool {
+    matches!(name, "looser" | "tighter" | "equiv")
+}
+
+/// Whether `reference` is the `&infix:<+>` spelling of an operator sub.
+fn is_operator_reference(reference: &str) -> bool {
+    reference.strip_prefix('&').is_some_and(|rest| {
+        rest.split_once(":<")
+            .is_some_and(|(category, op)| {
+                !category.is_empty()
+                    && category.chars().all(|c| c.is_ascii_alphabetic())
+                    && op.ends_with('>')
+                    && !op[..op.len() - 1].is_empty()
+                    && !op[..op.len() - 1].contains(['<', '>', ' '])
+            })
+    })
+}
+
+/// `(NODE)` as a trait argument, for a node already converted.
+fn paren_around(node: RakuAstNode) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::CircumfixParentheses,
+        fields: vec![node_field(
+            None,
+            RakuAstNode {
+                class: RakuAstClass::SemiList,
+                fields: vec![node_field(None, statement_expression(node))],
+            },
+        )],
+    }
+}
+
+/// The word of an `is assoc<word>` argument (`QuotedString(<words val>)`).
+fn assoc_value(argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    if argument.class != RakuAstClass::QuotedString {
+        return Ok(None);
+    }
+    let [segment] = super::lower::list_field(argument, "segments")? else {
+        return Ok(None);
+    };
+    let ValueView::RakuAst(segment) = segment.view() else {
+        return Ok(None);
+    };
+    match positional_leaf(segment)?.view() {
+        ValueView::Str(word) if !word.is_empty() && !word.contains(char::is_whitespace) => {
+            Ok(Some(word.to_string()))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// The `&infix:<+>` of an `is tighter(&infix:<+>)` argument.
+fn precedence_reference(argument: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    if argument.class != RakuAstClass::CircumfixParentheses {
+        return Ok(None);
+    }
+    let statement = named_child_or_positional(named_child_or_positional(argument)?)?;
+    if statement.class != RakuAstClass::StatementExpression {
+        return Ok(None);
+    }
+    let variable = named_child(statement, "expression")?;
+    if variable.class != RakuAstClass::VarLexical {
+        return Ok(None);
+    }
+    match positional_leaf(variable)?.view() {
+        ValueView::Str(reference) if is_operator_reference(&reference) => {
+            Ok(Some(reference.to_string()))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -261,10 +401,55 @@ fn is_generic_trait_name(name: &str) -> bool {
         ))
 }
 
+/// The message of a `DEPRECATED` / `DEPRECATED:message` custom trait: empty for
+/// the bare trait. `None` for any other trait.
+// Cost: O(|name|).
+pub(super) fn deprecated_message(name: &str) -> Option<&str> {
+    if name == "DEPRECATED" {
+        return Some("");
+    }
+    name.strip_prefix("DEPRECATED:")
+}
+
+/// Whether the converter renders the custom trait `name` as a `Trait::Is`.
+fn is_renderable_trait_name(name: &str) -> bool {
+    is_generic_trait_name(name) || deprecated_message(name).is_some()
+}
+
 /// Whether `custom_traits` holds a trait that renders as a plain `Trait::Is`.
 // Cost: O(t), t = custom traits.
 pub(super) fn has_generic_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(t, _)| is_generic_trait_name(t))
+    custom_traits.iter().any(|(t, _)| is_renderable_trait_name(t))
+}
+
+/// A method's custom traits with its `is default` and `is DEPRECATED`, which
+/// the parser keeps in fields of their own, put back: those traits carry no
+/// order among the custom ones, so they are accepted only alone.
+// Cost: O(t), t = custom traits.
+pub(super) fn method_custom_traits(
+    custom_traits: &[(String, Option<Expr>)],
+    is_default: bool,
+    deprecated: Option<&str>,
+) -> Result<Vec<(String, Option<Expr>)>, RuntimeError> {
+    let mut all = custom_traits.to_vec();
+    let extras = usize::from(is_default) + usize::from(deprecated.is_some());
+    if extras > 0 && (extras > 1 || has_generic_traits(custom_traits)) {
+        return Err(unsupported(
+            "method with several traits (their source order is not kept)",
+        ));
+    }
+    if is_default {
+        all.push(("default".to_string(), None));
+    }
+    if let Some(message) = deprecated {
+        let name = if message.is_empty() {
+            "DEPRECATED".to_string()
+        } else {
+            format!("DEPRECATED:{message}")
+        };
+        all.push((name, None));
+    }
+    Ok(all)
 }
 
 /// The parser's argument of a custom trait, as the `(…)` circumfix rakudo
@@ -307,17 +492,28 @@ pub(super) fn add_custom(
             seen_return = true;
             continue;
         }
-        if !is_generic_trait_name(name) {
+        if !is_renderable_trait_name(name) {
             continue;
         }
-        let argument = match argument {
-            None => None,
-            Some(argument) => Some(
-                custom_argument(argument)?
-                    .ok_or_else(|| unsupported("trait with an angle-word list argument"))?,
-            ),
+        let item = if let Some(message) = deprecated_message(name) {
+            let argument = if message.is_empty() {
+                None
+            } else {
+                Some(super::attribute::paren_argument(&Expr::Literal(Value::str(
+                    message.to_string(),
+                )))?)
+            };
+            Value::rakuast(Box::new(trait_is("DEPRECATED", argument)))
+        } else {
+            let argument = match argument {
+                None => None,
+                Some(argument) => Some(
+                    custom_argument(argument)?
+                        .ok_or_else(|| unsupported("trait with an angle-word list argument"))?,
+                ),
+            };
+            Value::rakuast(Box::new(trait_is(name, argument)))
         };
-        let item = Value::rakuast(Box::new(trait_is(name, argument)));
         if seen_return {
             after.push(item)
         } else {
@@ -360,6 +556,22 @@ pub(super) fn lower_custom(
     let ValueView::Str(name) = name.view() else {
         return Ok(None);
     };
+    if name.as_str() == "DEPRECATED" {
+        // `DEPRECATED` / `DEPRECATED:message`, as the parser keeps it.
+        return match named_child(t, "argument") {
+            Err(_) if t.fields.len() == 1 => Ok(Some(("DEPRECATED".to_string(), None))),
+            Ok(argument) => match super::attribute::lower_paren_argument(owner, argument)? {
+                Expr::Literal(v) => match v.as_str() {
+                    Some(message) if !message.is_empty() => {
+                        Ok(Some((format!("DEPRECATED:{message}"), None)))
+                    }
+                    _ => Ok(None),
+                },
+                _ => Ok(None),
+            },
+            Err(_) => Ok(None),
+        };
+    }
     if !is_generic_trait_name(&name) {
         return Ok(None);
     }

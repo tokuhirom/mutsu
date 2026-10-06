@@ -678,8 +678,13 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         params,
         param_defs,
         return_type,
-        associativity: None,
-        precedence_trait: None,
+        // `is tighter(&infix:<+>)` also names its kind as the associativity, as
+        // the parser records it.
+        associativity: is_traits
+            .assoc
+            .clone()
+            .or_else(|| is_traits.precedence.as_ref().map(|(kind, _)| kind.clone())),
+        precedence_trait: is_traits.precedence.clone(),
         signature_alternates: Vec::new(),
         body,
         multi,
@@ -1423,12 +1428,28 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = super::routine_traits::IsTraits::default();
-    let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    // A method's custom traits are not covered yet (the converter declines
-    // them), so a hand-built one is not invented here either.
-    if super::routine_traits::has_generic_traits(&custom_traits) {
+    let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
+    // The parser keeps a method's `is default` and `is DEPRECATED` in fields of
+    // their own, not among its custom traits.
+    let is_default_candidate = custom_traits.iter().any(|(t, a)| t == "default" && a.is_none());
+    let deprecated_message = custom_traits
+        .iter()
+        .find_map(|(t, _)| super::routine_traits::deprecated_message(t).map(str::to_string));
+    custom_traits.retain(|(t, _)| {
+        t != "default" && super::routine_traits::deprecated_message(t).is_none()
+    });
+    if is_traits.assoc.is_some() || is_traits.precedence.is_some() {
         return Err(unsupported(node));
     }
+    // `scope => "my"` / `"our"`; a plain method has none.
+    let (is_our, is_my) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match (leaf_str(node, "scope")?.as_str(), node.class) {
+            ("our", RakuAstClass::Method) => (true, false),
+            ("my", RakuAstClass::Method) => (false, true),
+            _ => return Err(unsupported(node)),
+        },
+    };
     let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
@@ -1440,15 +1461,15 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: is_traits.is_rw,
         is_raw: is_traits.is_raw,
         is_private: bool_field(node, "private")?,
-        is_our: false,
-        is_my: false,
+        is_our,
+        is_my,
         // raku names the declarator with the class, so `submethod` comes back
         // from `node.class` rather than from a field.
         is_submethod: node.class == RakuAstClass::Submethod,
         our_variable_form: false,
         return_type,
-        is_default_candidate: false,
-        deprecated_message: None,
+        is_default_candidate,
+        deprecated_message,
         handles: Vec::new(),
         custom_traits,
         is_export: !is_traits.export_tags.is_empty(),

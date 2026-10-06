@@ -698,10 +698,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let deferred = [
                 (name_expr.is_some(), "sub with a computed name"),
                 (
-                    associativity.is_some() || precedence_trait.is_some(),
-                    "sub with an `is assoc` / precedence trait",
-                ),
-                (
                     !signature_alternates.is_empty(),
                     "sub with alternate signatures",
                 ),
@@ -717,7 +713,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (
                     custom_traits.iter().any(|(t, _)| {
                         t.starts_with("__") && !is_return_spelling_marker(t) && t != OUR_SCOPED
-                            || t.starts_with("DEPRECATED")
                             || crate::qualified::is_qualified_str(t)
                     }),
                     "sub with an internal or qualified trait",
@@ -742,7 +737,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 export_tags: export_tags.clone(),
-            };
+                ..Default::default()
+            }
+            .with_precedence(associativity.as_ref(), precedence_trait.as_ref())?;
             routine_traits::add_flags(&mut node, *multi, false, &flags)?;
             routine_traits::add_custom(&mut node, custom_traits, !flags.nodes().is_empty())?;
             if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
@@ -796,17 +793,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     *is_export != !export_tags.is_empty(),
                     "method with a bare `is export`",
                 ),
-                (*is_our, "`our` method"),
-                (declared_my, "`my` method"),
+                (*is_our && *is_submethod, "`our` submethod"),
                 (*our_variable_form, "`our &m = method` form"),
-                (*is_default_candidate, "method with `is default`"),
-                (deprecated_message.is_some(), "method with `is DEPRECATED`"),
                 (!handles.is_empty(), "method with `handles`"),
                 (
-                    custom_traits
-                        .iter()
-                        .any(|(t, _)| !is_return_spelling_marker(t)),
-                    "method with a custom trait",
+                    custom_traits.iter().any(|(t, _)| {
+                        t.starts_with("__") && !is_return_spelling_marker(t)
+                            || crate::qualified::is_qualified_str(t)
+                    }),
+                    "method with an internal or qualified trait",
                 ),
             ];
             if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
@@ -828,16 +823,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
-            routine_traits::add_flags(
-                &mut node,
-                *multi,
-                *is_private,
-                &routine_traits::IsTraits {
-                    is_rw: *is_rw,
-                    is_raw: *is_raw,
-                    export_tags: export_tags.clone(),
-                },
+            let flags = routine_traits::IsTraits {
+                is_rw: *is_rw,
+                is_raw: *is_raw,
+                export_tags: export_tags.clone(),
+                ..Default::default()
+            };
+            routine_traits::add_flags(&mut node, *multi, *is_private, &flags)?;
+            let custom = routine_traits::method_custom_traits(
+                custom_traits,
+                *is_default_candidate,
+                deprecated_message.as_deref(),
             )?;
+            routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
+            // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
+            let scope = if *is_our {
+                Some("our")
+            } else if declared_my {
+                Some("my")
+            } else {
+                None
+            };
+            if let Some(scope) = scope {
+                node.fields
+                    .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
+            }
             Ok(Some(statement_expression(node)))
         }
         Stmt::ClassDecl {
