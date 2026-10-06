@@ -817,22 +817,28 @@ impl Compiler {
     /// assignment/bind, the call statement is that bind: its value is wanted
     /// by the bound variable, so the statement must not sink (consume) it.
     fn stmt_is_pointy_bind_call(expr: &Expr) -> bool {
-        // The tail is a plain assignment/bind, also behind a trailing
+        // The tail is a plain assignment/bind, also behind one trailing
         // statement modifier (`$seq := $seq.reverse if $r`).
         fn tail_binds_or_assigns(stmts: &[Stmt]) -> bool {
-            crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers).is_some_and(|s| {
-                match s {
-                    Stmt::Assign { .. } => true,
-                    Stmt::Expr(e) => Compiler::stmt_value_is_assignment(e),
-                    Stmt::If {
-                        then_branch,
-                        else_branch,
-                        is_statement_modifier: true,
-                        ..
-                    } => else_branch.is_empty() && tail_binds_or_assigns(then_branch),
-                    _ => false,
-                }
-            })
+            fn tail(stmts: &[Stmt]) -> Option<&Stmt> {
+                crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
+            }
+            let mut stmt = tail(stmts);
+            if let Some(Stmt::If {
+                then_branch,
+                else_branch,
+                is_statement_modifier: true,
+                ..
+            }) = stmt
+                && else_branch.is_empty()
+            {
+                stmt = tail(then_branch);
+            }
+            match stmt {
+                Some(Stmt::Assign { .. }) => true,
+                Some(Stmt::Expr(e)) => Compiler::stmt_value_is_assignment(e),
+                _ => false,
+            }
         }
         matches!(
             expr,
