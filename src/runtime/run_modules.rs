@@ -1455,7 +1455,7 @@ impl Interpreter {
                 // cell (`vm_our_package_vars`), and a unit-lexical alias would
                 // outrank a routine's own `my $x` captured by a closure.
                 for name in &facts.unit_our_var_names {
-                    self.env.remove(&name);
+                    self.env.remove(name);
                 }
                 for name in &package_scope_names {
                     self.env.remove(name);
