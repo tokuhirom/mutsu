@@ -206,40 +206,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 items.mark_cache_requested();
                 Some(Ok(Value::slip(items.to_vec())))
             }
-            ValueView::Array(items, kind) => {
-                // `.Slip` materializes array holes with the container's
-                // `is default(...)` value (Rakudo semantics: the .List keeps
-                // holes as Nil, while .Slip uses the default). The default is
-                // embedded in `ArrayData`, so this pure coercion can read it.
-                let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(i, v)| {
-                            if items.hole_at(i) {
-                                def.clone()
-                            } else {
-                                v.clone()
-                            }
-                        })
-                        .collect()
-                } else {
-                    // No custom default: holes read as `Any`. A deleted slot
-                    // stores literal `Nil`, which must still surface as `Any`.
-                    // An immutable List has no containers to default, so its
-                    // `Nil` elements survive (`(Nil,).Slip` is `slip(Nil,)`).
-                    items
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Nil if kind.is_real_array() => {
-                                Value::package(crate::symbol::wk::any())
-                            }
-                            _ => v.clone(),
-                        })
-                        .collect()
-                };
-                Some(Ok(Value::slip_arc(std::sync::Arc::new(vec))))
-            }
+            // The `Slip` rows' implementation (`method_table::positional`).
+            ValueView::Array(..) => crate::builtins::method_table::positional::slip(target, &[]),
             // `.Slip` on a Slip is the identity, but it hands out the VALUE
             // rather than the container: `my $x = slip(5, 6); $x.Slip.raku` is
             // `slip(5, 6)`, so the `$` itemization is dropped.
@@ -453,14 +421,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // list holding the whole Hash — which is how `Cro::HTTP::Client`'s
             // `self!set-headers($request, $value.List)` saw a Hash where a Pair
             // was required and rejected every `headers => %h`.
-            ValueView::Hash(map) => Some(Ok(Value::array(
-                map.iter()
-                    .map(|(k, v)| map.typed_pair(k, v.clone()))
-                    .collect::<Vec<_>>(),
-            ))),
-            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(Ok(Value::array(
-                crate::runtime::utils::value_to_list(target),
-            ))),
+            ValueView::Hash(_) => crate::builtins::method_table::map::list(target, &[]),
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                crate::builtins::method_table::quanthash::list(target, &[])
+            }
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         // `.Seq` on an explicitly `.lazy`-marked list likewise keeps it lazy
@@ -560,17 +524,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             };
             match target.view() {
-                // An unbounded range of any element type stays lazy: a lazy
-                // List for `.list`, a lazy Array for `.Array` (Rakudo:
-                // `(1..*).list.^name` is `List`, `(1.5..*).Array.is-lazy`).
-                // Cost: O(1).
-                _ if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) => {
-                    let ll = if want_array {
-                        ll.with_array_context()
-                    } else {
-                        ll.with_list_context()
-                    };
-                    Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))))
+                // A Range's elements: the `Range.list` row's implementation
+                // (`method_table::range`).
+                _ if target.is_range() => {
+                    crate::builtins::method_table::range::listify(target, want_array)
                 }
                 ValueView::Instance {
                     class_name,
@@ -614,39 +571,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Some(ValueView::Array(items, ..)) => items.to_vec(),
                         _ => Vec::new(),
                     };
-                    Some(Ok(wrap(items)))
-                }
-                ValueView::Range(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        // Infinite range → convert to lazy array (supports indexing + .Capture throws)
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a..=b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExcl(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a..b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExclStart(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a + 1..=b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExclBoth(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a + 1..b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::GenericRange { .. } => {
-                    let items = crate::runtime::utils::value_to_list(target);
                     Some(Ok(wrap(items)))
                 }
                 ValueView::Instance {
@@ -733,13 +657,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                 }
                 ValueView::Channel(_) => None, // fall through to runtime for drain
-                ValueView::Hash(map) => {
-                    let pairs: Vec<Value> = map
-                        .iter()
-                        .map(|(k, v)| map.typed_pair(k, v.clone()))
-                        .collect();
-                    Some(Ok(wrap(pairs)))
-                }
+                ValueView::Hash(map) => Some(Ok(wrap(
+                    crate::builtins::method_table::map::list_pairs(&map),
+                ))),
                 ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => {
                     Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
                 }
@@ -943,7 +863,20 @@ fn items_to_capture_value(items: &[Value]) -> Value {
 }
 
 /// Convert a value to a Capture.
-fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
+/// Whether `.Capture` on this List/Array/Seq/Slip must name a `Pair` whose key
+/// is not a `Str` through that key's own `.Str` (a custom class's `method
+/// Str`): the pure [`value_to_capture`] cannot, so the interpreter answers.
+// Cost: O(e), e = elements of the receiver.
+pub(crate) fn capture_needs_str_key(target: &Value) -> bool {
+    matches!(
+        target.view(),
+        ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
+    ) && crate::runtime::utils::value_to_list(target).iter().any(
+        |item| matches!(item.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
+    )
+}
+
+pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
     match target.view() {
         // A Capture is already a Capture
         ValueView::Capture { .. } => Ok(target.clone()),

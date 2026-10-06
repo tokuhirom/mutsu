@@ -776,7 +776,7 @@ impl Interpreter {
                         wildcard_handles: Vec::new(),
                         alias_attributes: HashSet::new(),
                         class_level_attrs: ValueMap::default(),
-                    },
+                    }.into(),
                 );
             }
             // IO::Spec::* types: create an IO::Spec instance with the spec name

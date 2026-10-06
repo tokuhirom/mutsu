@@ -712,11 +712,11 @@ pub(crate) fn current_time_secs_f64() -> f64 {
     }
 }
 
-pub(crate) use display::is_internal_anon_type_name;
 pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
+pub(crate) use display::{is_internal_anon_type_name, is_nameless_anon_type_name};
 pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name,
 };
@@ -995,6 +995,14 @@ pub struct ContainerCell {
     /// through every alias of the container -- an `is rw` / `is raw` / `\x`
     /// parameter included (#11196). Set once, by the first site that names it.
     name: std::sync::OnceLock<crate::symbol::Symbol>,
+    /// Set by the site that created this cell from a variable's own slot, once
+    /// it had looked at the variable's declaration and found it untyped: the
+    /// container is a plain boxed Scalar, never a native-integer one (#12007).
+    /// Unset means *unknown*, not *native* -- a cell made anywhere else, or
+    /// from an alias, says nothing, because "no `of`-type" is what an untyped
+    /// variable's cell and a native variable's cell both look like. Only the
+    /// integer atomics read it ([`ContainerCell::is_declared_untyped`]).
+    declared_untyped: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1038,7 +1046,24 @@ impl ContainerCell {
             readonly: std::sync::atomic::AtomicU8::new(0),
             default: Mutex::new(None),
             name: std::sync::OnceLock::new(),
+            declared_untyped: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Record that this cell was made from a variable declared without a type
+    /// (see `declared_untyped`). Deliberately not [`CELL_METADATA_SEEN`]: it
+    /// is not an `of` constraint and no store path consults it.
+    // Cost: O(1).
+    pub fn mark_declared_untyped(&self) {
+        self.declared_untyped
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether the site that made this cell saw its variable declared untyped.
+    // Cost: O(1).
+    pub fn is_declared_untyped(&self) -> bool {
+        self.declared_untyped
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Record the declared name of the variable this cell is the container of,

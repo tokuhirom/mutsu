@@ -14,7 +14,7 @@ use super::ident::{
     is_pseudo_package, parse_ident_with_hyphens, parse_qualified_ident_with_hyphens,
 };
 use super::perl5::detect_perl5_sigil_var;
-use super::scalar::scalar_var;
+use super::scalar::{scalar_var, starts_named_placeholder};
 use super::self_call::contextualized_self_call;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -231,6 +231,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || starts_named_placeholder(input)
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
@@ -430,6 +431,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || starts_named_placeholder(input)
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
@@ -802,6 +804,8 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
         (stripped, "!")
     } else if let Some(stripped) = input.strip_prefix('^') {
         (stripped, "^")
+    } else if starts_named_placeholder(input) {
+        (&input[1..], ":")
     } else if let Some(stripped) = input.strip_prefix('*') {
         (stripped, "*")
     } else {

@@ -1539,7 +1539,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "require" => {
             return parse_require_expr(input, rest);
         }
-        "last" => {
+        "last" if !crate::parser::stmt::simple::is_user_declared_sub("last") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
@@ -1557,7 +1557,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "next" => {
+        "next" if !crate::parser::stmt::simple::is_user_declared_sub("next") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
@@ -1575,7 +1575,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "redo" => {
+        "redo" if !crate::parser::stmt::simple::is_user_declared_sub("redo") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }

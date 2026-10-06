@@ -533,6 +533,32 @@ impl Interpreter {
                     best_idx = i;
                 }
             }
+            // Optional-positional count (rakudo): once the types tie, a candidate
+            // whose positionals are all required is narrower than one that can
+            // omit some (`(Str:D $a)` beats `(Str:D $a, Int $b = 5)` for
+            // `m("x")`). Mirrors the sub dispatch's
+            // `candidate_optional_positional_count`, which likewise skips
+            // candidates that declare named parameters.
+            let optional_positionals = |def: &MethodDef| -> usize {
+                if has_explicit_named(def) {
+                    return 0;
+                }
+                def.param_defs
+                    .iter()
+                    .filter(|p| !p.is_invocant && !p.named && !p.slurpy && !p.double_slurpy)
+                    .filter(|p| p.optional_marker || p.default.is_some())
+                    .count()
+            };
+            if let Some(min_opt) = narrowed
+                .iter()
+                .map(|&i| optional_positionals(&all_matches[i].1))
+                .min()
+            {
+                narrowed.retain(|&i| optional_positionals(&all_matches[i].1) == min_opt);
+                if let Some(&i) = narrowed.first() {
+                    best_idx = i;
+                }
+            }
             // Named parameters never make a dispatch ambiguous (rakudo): tied
             // candidates that all declare explicit named params resolve by
             // declaration order (`(Any :$file!)` vs `(Str :$file!)` picks the

@@ -122,9 +122,7 @@ impl Interpreter {
         let ValueView::ContainerRef(cell) = value.view() else {
             return;
         };
-        let constraint = self
-            .var_type_constraint(name)
-            .or_else(|| self.var_type_constraint(name.trim_start_matches('$')));
+        let constraint = self.declared_scalar_type(name);
         if let Some(constraint) = constraint {
             let display = if name.starts_with(['$', '@', '%', '&']) {
                 name.to_string()
@@ -134,6 +132,50 @@ impl Interpreter {
             crate::value::register_container_constraint_named(&cell, &constraint, &display);
         }
         self.register_container_cell_default_for_name(&cell, name);
+    }
+
+    /// The `of`-type recorded for the scalar `name`, spelled bare or with its
+    /// sigil.
+    // Cost: O(1) expected (at most two env probes, none in a program that
+    // declares no typed lexical).
+    fn declared_scalar_type(&self, name: &str) -> Option<String> {
+        self.var_type_constraint(name)
+            .or_else(|| self.var_type_constraint(name.trim_start_matches('$')))
+    }
+
+    /// Say on `value`'s cell that it was made from the untyped scalar `name`,
+    /// so an integer atomic reaching the container through any alias (an
+    /// `is rw` parameter, a `:=` bind) can tell a plain Scalar from a native
+    /// one whose type was never copied onto it (#12007).
+    ///
+    /// Only for a cell this very site created from `name`'s own slot, in the
+    /// frame that declares it. Marking a cell that was merely *reached* by
+    /// `name` -- a sibling closure's capture, a relayed `is rw` parameter, an
+    /// alias -- would brand a native variable's container plain whenever the
+    /// alias's own name carries no type, which refuses a correct program. A
+    /// cell with an `of`-type is left alone: that type already answers, and a
+    /// native one must never be marked.
+    // Cost: O(1) expected (see `declared_scalar_type`).
+    pub(crate) fn mark_fresh_cell_declared_untyped(&self, value: &Value, name: &str) {
+        let ValueView::ContainerRef(cell) = value.view() else {
+            return;
+        };
+        // `@`/`%`/`&` are no scalar containers, and a twigil names an
+        // attribute (its class declares the type) or a dynamic / `our`
+        // variable the atomics classify by another route.
+        let plain = name
+            .trim_start_matches('$')
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && !name.starts_with(['@', '%', '&'])
+            && !crate::qualified::is_qualified_str(name);
+        if plain
+            && crate::value::lookup_container_constraint(&cell).is_none()
+            && self.declared_scalar_type(name).is_none()
+        {
+            cell.mark_declared_untyped();
+        }
     }
 
     /// The `is default(...)` of the container `slot` aliases, when `slot`

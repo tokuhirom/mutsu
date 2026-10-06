@@ -5,7 +5,7 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::{is_infinite_range, sample_weighted_bag_key, sample_weighted_mix_key};
+use super::{sample_weighted_bag_key, sample_weighted_mix_key};
 
 /// Efficiently sample one random element from a Range without enumerating all elements.
 /// Uses raw u64 entropy for full bit coverage on large ranges.
@@ -379,33 +379,8 @@ pub(super) fn dispatch(
                     }
                 })
                 .unwrap_or(Value::num(f64::INFINITY)))),
-            ValueView::Range(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExcl(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExclStart(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExclBoth(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::GenericRange { start, .. } => {
-                let s = start.as_ref();
-                Some(Ok(match s.view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
-                    _ => s.clone(),
-                }))
-            }
+            // The `Range.min` row's implementation (`method_table::range`).
+            _ if target.is_range() => crate::builtins::method_table::range::min(target, &[]),
             ValueView::Hash(_) => None,
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
@@ -431,25 +406,8 @@ pub(super) fn dispatch(
                     }
                 })
                 .unwrap_or(Value::num(f64::NEG_INFINITY)))),
-            ValueView::Range(_, b) => Some(Ok(if b == i64::MAX {
-                Value::num(f64::INFINITY)
-            } else {
-                Value::int(b)
-            })),
-            ValueView::RangeExcl(_, b)
-            | ValueView::RangeExclStart(_, b)
-            | ValueView::RangeExclBoth(_, b) => Some(Ok(if b == i64::MAX {
-                Value::num(f64::INFINITY)
-            } else {
-                Value::int(b)
-            })),
-            ValueView::GenericRange { end, .. } => {
-                let e = end.as_ref();
-                Some(Ok(match e.view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
-                    _ => e.clone(),
-                }))
-            }
+            // The `Range.max` row's implementation (`method_table::range`).
+            _ if target.is_range() => crate::builtins::method_table::range::max(target, &[]),
             ValueView::Hash(_) => None,
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
@@ -458,89 +416,8 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        // The `Range` rows' handlers (`method_table::range`).
-        "excludes-min" => Some(crate::builtins::method_table::range::excludes_min(
-            target,
-            &[],
-        )),
-        "excludes-max" => Some(crate::builtins::method_table::range::excludes_max(
-            target,
-            &[],
-        )),
-        "bounds" => Some(match target.view() {
-            ValueView::Range(a, b)
-            | ValueView::RangeExcl(a, b)
-            | ValueView::RangeExclStart(a, b)
-            | ValueView::RangeExclBoth(a, b) => Some(Ok(Value::array(vec![
-                if a == i64::MIN {
-                    Value::num(f64::NEG_INFINITY)
-                } else {
-                    Value::int(a)
-                },
-                if b == i64::MAX {
-                    Value::num(f64::INFINITY)
-                } else {
-                    Value::int(b)
-                },
-            ]))),
-            ValueView::GenericRange { start, end, .. } => {
-                let s = match start.as_ref().view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
-                    _ => start.as_ref().clone(),
-                };
-                let e = match end.as_ref().view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
-                    _ => end.as_ref().clone(),
-                };
-                Some(Ok(Value::array(vec![s, e])))
-            }
-            _ => None,
-        }),
-        "is-int" => Some(match target.view() {
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..) => Some(Ok(Value::TRUE)),
-            ValueView::GenericRange { start, end, .. } => {
-                let s_int = matches!(
-                    start.as_ref().view(),
-                    ValueView::Int(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Whatever
-                        | ValueView::HyperWhatever
-                );
-                let e_int = matches!(
-                    end.as_ref().view(),
-                    ValueView::Int(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Whatever
-                        | ValueView::HyperWhatever
-                );
-                Some(Ok(Value::truth(s_int && e_int)))
-            }
-            _ => None,
-        }),
-        // `Range.minmax` folds an excluded end into the returned bound, but only
-        // when the range is `is-int` — an excluded *non-integer* end (`1.1..^5.2`,
-        // `'a'..^'z'`, `1..^Inf`) has no nameable concrete bound, and raku fails
-        // with `X::AdHoc: Cannot return minmax on Range with excluded ends`.
-        "minmax" => Some(
-            match crate::builtins::range_bounds_int::range_minmax(target) {
-                Some(Ok((min_val, max_val))) => Some(Ok(Value::array(vec![min_val, max_val]))),
-                Some(Err(())) => Some(Err(RuntimeError::new(
-                    "Cannot return minmax on Range with excluded ends",
-                ))),
-                None => None,
-            },
-        ),
-        "infinite" => Some(match target.view() {
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => Some(Ok(Value::truth(is_infinite_range(target)))),
-            _ => None,
-        }),
+        // The `Range.minmax` row's implementation (`method_table::range`).
+        "minmax" => Some(crate::builtins::method_table::range::minmax(target, &[])),
         // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,
@@ -609,9 +486,6 @@ pub(super) fn dispatch(
                     None
                 }
             }
-            ValueView::Bag(_, _) => Some(Ok(Value::package(Symbol::intern("UInt")))),
-            ValueView::Set(_, _) => Some(Ok(Value::package(Symbol::intern("Bool")))),
-            ValueView::Mix(_, _) => Some(Ok(Value::package(Symbol::intern("Real")))),
             _ => None,
         }),
         "keyof" => Some(match target.view() {

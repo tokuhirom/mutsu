@@ -27,6 +27,7 @@ mod registration_role_same_name;
 pub(crate) mod registration_sub;
 mod registration_subset;
 mod registry;
+pub(crate) mod registry_cow_table;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
 mod repl_compiler_prelude;

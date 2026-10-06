@@ -1481,7 +1481,12 @@ impl Interpreter {
                     let cell = if value.is_container_ref() {
                         value
                     } else {
-                        value.into_container_ref()
+                        let cell = value.into_container_ref();
+                        // The unit's own `my $x`, boxed from the env that
+                        // declared it: an `is rw` argument of a module routine
+                        // learns here that it is untyped (#12007).
+                        self.mark_fresh_cell_declared_untyped(&cell, name);
+                        cell
                     };
                     self.unit_lexicals_cow_mut()
                         .entry(unit.to_string())

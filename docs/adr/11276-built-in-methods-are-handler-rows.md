@@ -677,6 +677,174 @@ is `True`), [#11990](https://github.com/tokuhirom/mutsu/issues/11990) (`Version.
 `Whatever` for `*`) and [#11992](https://github.com/tokuhirom/mutsu/issues/11992) (`Int.Num` on a
 type object).
 
+### 9.16 Slice 3C: collections and quant hashes (2026-10-06)
+
+Branch `refactor/11276-3c-collections`. Owners: `Any`, `List`, `Array`, `Hash`, `Map`, `Range`,
+`Seq`, `Pair`, `Capture`, `Set`, `SetHash`, `Bag`, `BagHash`, `Mix`, `MixHash`, and the three
+small owners the report files under *collections* (`Junction`, `Nil`, `Iterable`). This is the
+first commit's inventory, taken with
+`scripts/method-rows-report.py --inventory collections,"quant hashes"`; later commits tick
+families off and the closing paragraph records what was deferred.
+
+**Inventory (unregistered recognition rows, 2026-10-06).** 544 recognition rows over 116
+method names, of which only **354 can be registered**: a row's owner must be the type Rakudo
+declares the method on (`rows_are_declared_by_rakudo` enforces it against
+`rakudo_method_tables.txt`). The other 190 (`Array.keys`, `Hash.Str`, `Any.say`, ...) are
+*inherited-only*: Rakudo declares the method on an ancestor, so the call is served by the
+ancestor's row once the receiver's shape inherits it, and the recognition row simply
+disappears with the table in slice 5. `--inventory` prints both counts.
+
+| owner | declared | Pure | Interp | Mut | inherited-only |
+|---|---:|---:|---:|---:|---:|
+| Any | 21 | 7 | 14 | 0 | 22 |
+| List | 25 | 18 | 0 | 7 | 24 |
+| Array | 19 | 11 | 0 | 8 | 56 |
+| Hash | 13 | 9 | 2 | 2 | 30 |
+| Map | 19 | 19 | 0 | 0 | 0 |
+| Range | 32 | 32 | 0 | 0 | 8 |
+| Seq | 26 | 26 | 0 | 0 | 11 |
+| Pair | 17 | 17 | 0 | 0 | 21 |
+| Capture | 18 | 18 | 0 | 0 | 0 |
+| Junction, Nil, Iterable | 4 | 4 | 0 | 0 | 3 |
+| Set, SetHash | 48 | 48 | 0 | 0 | 5 |
+| Bag, BagHash | 57 | 54 | 1 | 2 | 5 |
+| Mix, MixHash | 55 | 54 | 1 | 0 | 5 |
+| **total** | **354** | **317** | **18** | **19** | **190** |
+
+The recognition table flags 34 rows `MUTATES_RECEIVER`; 19 of them are declared rows. The
+rows that really write the receiver (`push`, `pop`, `shift`, `unshift`, `append`, `prepend`,
+`splice` and `rotate` on `List` and `Array`, `push` and `append` on `Hash`, `BagHash.add` and
+`remove`) move in 3F with `Handler::Mut`. The others (`map`, `grep`, `reduce`, `produce`,
+`rotor`, `categorize` and `classify` on `List` and `Array`) call a closure and do not write the
+receiver: the flag is the 2026-08-10 planning estimate, and each is inherited from `Any`'s
+interpreter row anyway. That leaves **335 declared rows for 3C** (317 Pure, 18 Interp), cut by
+method name, not by owner (ADR §10.3 rule 3): one handler answers a name for every owner and
+shape that has it, and the cascade arms for that name go, or shrink to the other groups'
+receivers for a name several groups share (`gist`, `Str`, `Numeric`, ...). `Any.say`, `put`,
+`print`, `note`, `HOW`, `WHAT`, `WHY`, `defined`, `not`, `so` and `self` are declared on `Mu`
+and belong to 3D.
+
+**Families (one commit each, with its focused test).** The by-name table is the checklist:
+
+1. *Identity and rendering*: `gist` (17 owners), `raku` (16), `Str` (15), `WHICH` (14), `clone`
+   (8), `perl`, `defined`, `Bool`, `not`, `so`, `self`, `item`, `sink`, `serial`, `Stringy`,
+   `WHERE`.
+2. *Coercions*: `list` (14), `Capture` (14), `hash` (12), `List` (12), `Array` (11), `Slip`,
+   `Supply`, `Pair`, `Numeric`, `Int`.
+3. *Size, keys and views*: `elems` (12), `end`, `keys`, `values`, `kv`, `pairs` (11 each),
+   `antipairs` (10), `invert`, `kxxv`, `total`, `of`, `default`, `name`, `dynamic`, `is-lazy`.
+4. *Subscripts and membership*: `AT-KEY`, `EXISTS-KEY` (10 each), `AT-POS`, `EXISTS-POS` (6),
+   `ACCEPTS` (8), `contains`, `index`.
+5. *Sampling*: `pick`, `roll` (14 each), `grab`, `grabpairs`, `pickpairs`.
+6. *Positional slicing and reduction*: `head`, `tail`, `batch`, `join`, `fmt`, `flat`, `reverse`,
+   `sort`, `unique`, `repeated`, `squish`, `cache`, `pairup`, `tree`, `chrs`, `min`, `max`,
+   `minmax`, `sum`, `permutations`, `combinations`.
+7. *Laziness markers*: `hyper`, `race`, `lazy`, `eager`, `iterator`.
+8. *Range specifics*: `bounds`, `in-range`, `infinite`, `int-bounds`, `is-int`, `rand`.
+9. *Interpreter rows* (`Handler::Interp`, the closure-calling methods `Any` declares):
+   `map`, `grep`, `first`, `reduce`, `produce`, `classify`, `categorize`, `rotor`, `skip`,
+   `match`, `iterator`, `eager`, `splice`, `squish`, `categorize-list`, `classify-list`.
+
+**What landed (354 declared rows at the start, 180 left).** Eight family commits, each with its focused
+test, each checked against Rakudo and against the roast directories of its owners:
+
+- [x] Range's own methods (`bounds`, `is-int`, `infinite`, `int-bounds`, `rand`, `in-range`): arms
+  deleted (no catch-all answers a Range). `is-int` now shares `range_is_int` with `int-bounds` and
+  `minmax`, which moves it toward Rakudo (`1..*`, `1..Inf`, `*..5` are not Int ranges; a big-Int
+  end and a Bool end are).
+- [x] The quant hashes' views and sizes (`collections/quanthash.rs`): `keys`, `values`, `kv`,
+  `pairs`, `antipairs`, `total`, `elems`, `default`, `of`, `hash`, `list`, `kxxv`, `invert`,
+  `Baggy.Numeric`.
+- [x] `AT-KEY`, `EXISTS-KEY` and `ACCEPTS` of the associatives (`collections/subscript.rs`);
+  `Capture.AT-KEY` and `EXISTS-KEY` now work (they answered "does not support associative
+  indexing").
+- [x] Capture (`collections/capture.rs`): the views, `list`, `hash`, `elems`, `Numeric`, `AT-POS`
+  (new), `EXISTS-POS` (new), and the `.Capture` coercion of every collection owner.
+- [x] Pair's views (`keys`, `values`, `kv`, `pairs`, `antipairs`, `invert`) and `Pair.Pair`;
+  `antipairs` answered through the generic positional path (`((:a(5)) => 0,)`) and is the one
+  swapped pair now.
+- [x] The laziness markers (`collections/lazy.rs`): `hyper`, `race`, `lazy` on List, Map and Range,
+  `item` on Map and Range, `Range.is-lazy`.
+- [x] Range's element methods (`elems`, `min`, `max`, `minmax`, `Numeric`, `list`, `sum`, `reverse`,
+  `contains`, `index`) and the positional subscript (`AT-POS` on Range, `EXISTS-POS` on List and
+  Range, `collections/positional.rs`). `List.AT-POS` and `Array.AT-POS` are not rows:
+  `builtin_at_pos` answers them with the subscript opcode itself (`@a.AT-POS(-1)` is an
+  `X::OutOfRange` failure, a typed array past its end is its type), before the native cascade a
+  row would restate; they are an interpreter row's to be.
+- [x] The small coercions: `Slip` (List, Array), `List` (Array, Map), `list` (Map), `hash` (Map),
+  `default` (Array, Hash).
+
+What the work taught, which the remaining families follow:
+
+- **A name whose cascade arm ends in a catch-all keeps one delegating branch.** `keys`, `values`,
+  `kv`, `pairs`, `antipairs`, `hash`, `elems` and `min`/`max` answer for every receiver in the
+  end (`_ => value_to_list`, `_ => target.clone()`), so an arm with a covered shape's branch
+  deleted answers that shape wrongly and the debug cross-check
+  (`debug_assert_matches_full_path`) fails on it, as it should. Those arms call the row's
+  handler for the covered shapes (the handler is the one implementation); arms with no
+  catch-all (`total`, `default`, `of`, `kxxv`, Range's `bounds` and friends) are deleted
+  outright. The delegating branches are what slice 5 removes with the cascades.
+- **A one-argument row cannot replace its arm.** A row admits only plain arguments, and a
+  cascade arm answers for an object key (an Instance whose `Str` is user code), so
+  `AT-KEY`/`EXISTS-KEY`/`ACCEPTS`/`AT-POS` keep a delegating arm.
+- **A row that the table answers before a gate in `try_native_method_raw` must apply that gate.**
+  `Capture` on a list holding a `Pair` with a non-`Str` key is the interpreter's
+  (`try_interpreter_capture`): the row declines through `capture_needs_str_key`, the one helper
+  both use. Roast's `S02-types/capture.t` caught it.
+- **A name `try_native_method_raw` hands to the interpreter first is not a pure row's.** The
+  table answers before that function, so a pure row for `AT-POS` on a List or Array would
+  shadow `builtin_at_pos` and answer `Nil` for `-1` where Rakudo fails
+  (`t/vm/nqp-list-index-parity.t` pins both). Before registering a row, read
+  `try_native_method_raw` and `call_method_with_values` for the name.
+- **A one-argument row keeps its arms for the recognition tests**: `native_method_row`'s
+  `*_rows_are_backed_by_the_cascade` tests ask the 1- and 2-argument cascades whether they
+  recognize each recognition row, and only the 0-argument entry consults the table, so
+  `Range.in-range` kept delegating arms.
+- **A row must be reachable by some shape** (`every_row_is_reached_and_answers`): `Map.AT-KEY`
+  has no row (no shape would reach it behind `Hash.AT-KEY`), and no `Seq` row can be registered
+  before the `Seq` shape exists.
+- **Rows that restate an ancestor's implementation can contradict an earlier slice's pin**:
+  `List.sum` is declared by Rakudo, but `aggregate_rows_resolve_to_the_rakudo_owners` pins
+  `Any.sum` for List, so the row was not added.
+
+**Deferred, with the reason (the 180 declared rows that are left).**
+
+- **`Seq`** (26 rows): the `Seq` shape is the one ADR §9.15 leaves to 3C, and it is the riskiest:
+  a method on a `Seq` decides whether it consumes the `Seq`, and the call goes through
+  `reify_or_consume_seq_target` first. It wants its own change (the shape, a consumption flag on
+  the row, and the 26 rows), not a tail on this one.
+- **The rendering and identity names** (`gist`, `raku`, `Str`, `WHICH`, `fmt`, `clone`: about 65
+  rows). They are the names every group shares: one `match` over every receiver kind implements
+  each (`dispatch_core_repr`, the `Str` arm of `dispatch_core_coerce`, the `WHICH` arm), behind a
+  prologue with a per-name condition for instances, mixins and type objects. A row per owner
+  over that one function would only register metadata, and splitting the function per shape
+  edits the lines 3B and 3D must edit as well, so it is done once, after those two slices, as a
+  split of each function into `gist_of`/`raku_of`/`str_of`/`which_of`/`fmt_of`.
+- **Sampling** (`pick`, `roll`, `pickpairs`, `grab`, `grabpairs`: 34 rows). A random answer
+  cannot be re-run by the debug cross-check, so it needs a `RowFlags::RANDOM` the cross-check
+  honours; the one-argument forms take `*`, a count or a closure and reach the interpreter's
+  `methods_pick_roll.rs`; and the quant hashes' `grab` mutates the receiver. Arity 0 alone would
+  be a half-migrated name, which §10.3 rule 6 forbids.
+- **Mutating methods** (19 declared rows flagged `MUTATES_RECEIVER`, 20 real mutators): 3F, with
+  `Handler::Mut`.
+- **Interpreter rows on `Any`** (`map`, `grep`, `first`, `reduce`, `produce`, `classify`,
+  `categorize`, `rotor`, `skip`, `squish`, `eager`, `iterator`, `match`, `splice`,
+  `categorize-list`, `classify-list`: 18 rows). Each calls a closure through the interpreter's
+  own routes (`vm_native_map`, `methods_collection.rs`); a row has to join those routes, which is
+  slice 4's resolver work.
+- **The rest, by name**: `head`/`tail` (the arity-0 forms read the raw store and have their own arm),
+  `flat` on Map and Range, `join` and `batch` on `Any`, `chrs` and `Supply` on List, `dynamic` and
+  `name` on Array and Hash (the interpreter's container methods), `Any.list`/`Any.hash`/`Any.serial`
+  and `Bool` on Junction, and `gist`/`raku` on `Nil` and `Junction` (no shape).
+- **Opening the closed shapes.** `Range`, `Pair`, `Capture` and the six quant hashes stay closed:
+  an ancestor row (`Any.head`, `Cool.uc`, ...) does not reach them. Opening one means reading every
+  ancestor row for that shape's receivers; a `Range` inherits `Cool`'s string rows, which answer
+  from the stringified receiver, and `.chars` of a `Range` is not obviously `"1..3".chars`. Each
+  shape is opened by the change that audits it.
+
+The report (`scripts/method-rows-report.py --inventory collections,"quant hashes"`) lists the 180;
+it is the checklist for whoever takes the deferred families.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

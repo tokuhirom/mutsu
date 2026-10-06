@@ -2570,7 +2570,11 @@ impl Interpreter {
             classes.insert(name, class_def);
         }
         let mut registry = Registry::default();
-        registry.classes = classes;
+        registry.classes = classes
+            .into_iter()
+            .map(|(name, def)| (name, def.into()))
+            .collect::<rustc_hash::FxHashMap<_, _>>()
+            .into();
         registry.seed_builtin_method_entries();
         // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
         // now lives in the shared Registry instead of an Interpreter field).

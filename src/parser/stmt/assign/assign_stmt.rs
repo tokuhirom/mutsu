@@ -555,7 +555,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        let stmt = Stmt::Expr(super::atomic_compound_call(name, rhs, negate));
+        let stmt = Stmt::Expr(super::atomic_compound_call(Expr::Var(name), rhs, negate));
         return parse_statement_modifier(rest, stmt);
     }
 

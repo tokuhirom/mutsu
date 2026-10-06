@@ -1,5 +1,7 @@
+use lib 't/lib';
 use Test;
 use nqp;
+use AtomicRwTarget;
 
 # The integer atomics (`⚛++`, `⚛+=`, `atomic-fetch-add`, `nqp::atomicinc_i`, ...)
 # act on a native integer container: an `int` / `atomicint` variable or
@@ -142,7 +144,6 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     sub bump-typed(atomicint $p is rw) { $p⚛++ }
     my Int $boxed = 1;
     my atomicint $native = 1;
-    # (An untyped variable passed to an `is rw` parameter is not refused yet: #12007.)
     throws-like { bump-rw($boxed) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to an Int scalar';
     is $boxed, 1, '... leaves it alone';
     is bump-rw($native), 1, 'an is rw parameter bound to an atomicint';
@@ -150,6 +151,85 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     is bump-typed($native), 2, 'an atomicint is rw parameter';
     is $native, 3, '... incremented the caller\'s variable';
     throws-like { bump-ro($native) }, X::Multi::NoMatch, message => $nomatch, 'a read-only parameter is not an atomicint container';
+}
+
+# ---- an untyped caller variable is a plain Scalar, whatever it is bound to --
+# Its cell carries no `of`-type, which is also what a native variable's cell
+# looks like when no promotion site copied the type onto it (#12007). The cell
+# a variable's own frame made says "untyped"; one only *reached* through an
+# alias says nothing and keeps running.
+
+{
+    sub bump-rw($p is rw) { $p⚛++ }
+    sub relay($q is rw) { bump-rw($q) }
+    sub relay-twice($r is rw) { relay($r) }
+
+    my $plain = 1;
+    throws-like { bump-rw($plain) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to an untyped scalar';
+    is $plain, 1, '... leaves it alone';
+    my $unset;
+    throws-like { bump-rw($unset) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to an unset scalar';
+    throws-like { relay-twice($plain) }, X::Multi::NoMatch, message => $nomatch, 'an untyped scalar relayed through two is rw parameters';
+    is $plain, 1, '... still alone';
+
+    # An alias of an untyped scalar is that scalar.
+    my $alias := $plain;
+    throws-like { bump-rw($alias) }, X::Multi::NoMatch, message => $nomatch, 'a := alias of an untyped scalar';
+    throws-like { $alias⚛++ }, X::Multi::NoMatch, message => $nomatch, '... and an atomic on the alias itself';
+    is $plain, 1, '... leaves the scalar alone';
+
+    # A native one stays native through every one of those routes.
+    my atomicint $native = 0;
+    bump-rw($native);
+    relay($native);
+    relay-twice($native);
+    is $native, 3, 'a native relayed through is rw parameters';
+    my $native-alias := $native;
+    bump-rw($native-alias);
+    $native-alias⚛++;
+    is $native, 5, 'a := alias of a native, through an is rw parameter and directly';
+
+    my int $int = 0;
+    bump-rw($int);
+    is $int, 1, 'an int scalar bound to an is rw parameter';
+}
+
+{
+    # A native that a closure captured (so its cell was made on the way) keeps
+    # running through an `is rw` parameter. (Rakudo has no native `state`.)
+    sub bump-rw($p is rw) { $p⚛++ }
+    sub counter { my atomicint $c = 0; return { bump-rw($c); $c } }
+    my &step = counter();
+    step();
+    is step(), 2, 'a native captured by a returned closure, through an is rw parameter';
+
+    my atomicint ($x, $y) = 0, 0;
+    bump-rw($x);
+    bump-rw($y);
+    is $x + $y, 2, 'natives declared together through an is rw parameter';
+
+    # A module's own variables, handed to an `is rw` parameter by its routines.
+    is bump-hits(), 1, 'a unit module\'s atomicint through an is rw parameter';
+    is bump-hits(), 2, '... and again';
+    throws-like { bump-plain() }, X::Multi::NoMatch, message => $nomatch, 'a unit module\'s untyped scalar through an is rw parameter';
+    is plain-value(), 0, '... leaves it alone';
+
+    module RwPkg {
+        my atomicint $hits = 0;
+        my int $count = 0;
+        my $plain = 0;
+        sub bump-rw($p is rw) { $p⚛++ }
+        our sub bump-hits() { bump-rw($hits); $hits }
+        our sub bump-count() { bump-rw($count); $count }
+        our sub bump-plain() { bump-rw($plain) }
+    }
+    is RwPkg::bump-hits(), 1, 'a module block\'s atomicint through an is rw parameter';
+    is RwPkg::bump-hits(), 2, '... and again';
+    is RwPkg::bump-count(), 1, 'a module block\'s int through an is rw parameter';
+    throws-like { RwPkg::bump-plain() }, X::Multi::NoMatch, message => $nomatch, 'a module block\'s untyped scalar through an is rw parameter';
+    # (No `start` here: a thread started before the element section below makes
+    # an element atomic after it a no-op, #11833; and a native bumped through an
+    # `is rw` parameter from `start` blocks alone loses its updates, #12042.)
 }
 
 # ---- an alias is the container it was bound to --------------------------

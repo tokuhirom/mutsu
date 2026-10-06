@@ -854,7 +854,7 @@ impl Interpreter {
                 };
                 self.registry_mut()
                     .classes
-                    .insert(base_role.to_string(), punned_class);
+                    .insert(base_role.to_string(), punned_class.into());
                 if !punned_composed_roles.is_empty() {
                     self.registry_mut()
                         .class_composed_roles

@@ -2,6 +2,7 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
@@ -170,7 +171,9 @@ pub(super) fn dispatch(
     // ("Cannot convert Inf to Int"). Handle this before the per-method arms,
     // which only know how to numerify scalar types.
     if target.is_range() && matches!(method, "Int" | "Numeric" | "Real" | "Num") {
-        return Some(Some(range_numeric_coercion(target, method)));
+        return Some(Some(
+            crate::builtins::method_table::range::numeric_coercion(target, method),
+        ));
     }
     // A lazy (infinite-backed) array numerifies to its element count, which it
     // cannot report: raku throws `X::Cannot::Lazy` (`Cannot .elems a lazy list`)
@@ -872,6 +875,10 @@ pub(super) fn dispatch(
                         Value::int(0)
                     } else if let Some(v) = parse_raku_int_from_str(&s) {
                         v
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // `"1+2i".Int` is `Complex.Int`: the runtime tests the
+                        // imaginary part (`Interpreter::dispatch_complex_to_real`).
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -931,6 +938,9 @@ pub(super) fn dispatch(
                 ValueView::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(&s) {
                         Some(v)
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -1070,6 +1080,10 @@ pub(super) fn dispatch(
                         // underscores, rationals, strict Inf/NaN) so `.Num` agrees
                         // with `.Numeric`/`.Int`/prefix `+`. `.Num` always yields a Num.
                         let normalized = trimmed.replace('\u{2212}', "-");
+                        if str_numifies_to_complex(&normalized).is_some() {
+                            // As `.Int`: coerced as the `Complex` it numifies to.
+                            return Some(None);
+                        }
                         if let Some(v) =
                             crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
                         {
@@ -1139,6 +1153,10 @@ pub(super) fn dispatch(
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the
                     // canonical parser so radix prefixes and underscores work and the
                     // result agrees with `.Numeric`.
+                    if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
+                    }
                     if let Some(v) =
                         crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                     {
@@ -1297,43 +1315,4 @@ pub(super) fn dispatch(
         }
         _ => None,
     }
-}
-
-/// Numerify a Range to its element count for `.Int`/`.Numeric`/`.Real`/`.Num`.
-/// Finite ranges yield the count (as `Num` for `.Num`, else `Int`); an infinite
-/// range yields `Inf` for the real-valued coercions and fails for `.Int`.
-/// `target` is assumed to be a Range (checked by the caller).
-fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, RuntimeError> {
-    if super::is_infinite_range(target) {
-        return if method == "Int" {
-            Err(RuntimeError::new("Cannot convert Inf to Int".to_string()))
-        } else {
-            Ok(Value::num(f64::INFINITY))
-        };
-    }
-    // An Int/BigInt-ended range counts from its endpoints (no expansion cap).
-    if let ValueView::GenericRange { start, end, .. } = target.view()
-        && matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
-        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_))
-    {
-        let exact = crate::value::radix_numeric::coerce_to_numeric(target.clone());
-        return Ok(if method == "Num" {
-            Value::num(exact.to_f64())
-        } else {
-            exact
-        });
-    }
-    let count = match target.view() {
-        ValueView::Range(s, e) => (e - s + 1).max(0),
-        ValueView::RangeExcl(s, e) | ValueView::RangeExclStart(s, e) => (e - s).max(0),
-        ValueView::RangeExclBoth(s, e) => (e - s - 1).max(0),
-        // GenericRange (e.g. Rat endpoints `1.5..5.5`) has no closed-form count;
-        // materialize it the same way `.elems` does.
-        _ => crate::runtime::utils::value_to_list(target).len() as i64,
-    };
-    Ok(if method == "Num" {
-        Value::num(count as f64)
-    } else {
-        Value::int(count)
-    })
 }

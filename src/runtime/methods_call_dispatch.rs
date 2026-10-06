@@ -757,6 +757,32 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
+        // An `IterationBuffer` is an `Any`: the list-shaped `Any` methods run on
+        // its elements as a List, not on the buffer as one opaque item
+        // (`$buf.head(2)`, `$buf.first(...)`), unless the class overrides them.
+        if matches!(
+            method,
+            "head" | "tail" | "first" | "skip" | "grep" | "map" | "sort" | "min" | "max"
+        ) && crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && !self.has_user_method(class_name.as_str(), method)
+        {
+            let items = match attributes
+                .as_map()
+                .get("__mutsu_iterationbuffer_items")
+                .map(Value::view)
+            {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                Some(ValueView::Seq(values)) => values.to_vec(),
+                Some(ValueView::Slip(values)) => values.to_vec(),
+                _ => Vec::new(),
+            };
+            return self.call_method_with_values(Value::array(items), method, args);
+        }
         // A `Match` answers `Any`'s list methods from its positional captures
         // (see `is_capture_list_method`), unless the grammar defines the method.
         if crate::value::match_view::is_capture_list_method(method)
@@ -4363,9 +4389,25 @@ impl Interpreter {
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
             && (args.is_empty() || (args.len() == 1 && matches!(method, "Rat" | "FatRat")))
-            && let ValueView::Complex(r, im) = target.view()
         {
-            return self.dispatch_complex_to_real(method, r, im, &target, &args);
+            if let ValueView::Complex(r, im) = target.view() {
+                return self.dispatch_complex_to_real(method, r, im, &target, &args);
+            }
+            // A string that numifies to a `Complex` (`"1+2i"`) is coerced as
+            // that `Complex` (`Str.Int` is `self.Numeric.Int`), and an error
+            // names the number, not the string it was spelled in.
+            if args.is_empty()
+                && let ValueView::Str(s) = target.view()
+                && let Some((r, im)) = crate::value::str_numeric::str_numifies_to_complex(&s)
+            {
+                return self.dispatch_complex_to_real(
+                    method,
+                    r,
+                    im,
+                    &Value::complex(r, im),
+                    &args,
+                );
+            }
         }
 
         // Zero-denominator Rat/FatRat .Str
@@ -5111,17 +5153,9 @@ impl Interpreter {
                 self.call_method_with_values(target.clone(), "Seq", vec![])
                     .and_then(|seq| self.list_to_capture(&seq)),
             ),
-            ValueView::Array(..) | ValueView::Seq(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
-            }
-            ValueView::Slip(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+                crate::builtins::methods_0arg::coercion::capture_needs_str_key(target)
+                    .then(|| self.list_to_capture(target))
             }
             // `Mu.Capture` on a user-declared object: the named arguments are
             // the object's PUBLIC attributes, and each one is read through its
