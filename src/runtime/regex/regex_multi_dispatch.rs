@@ -12,6 +12,10 @@
 use super::super::*;
 use crate::symbol::Symbol;
 
+/// A call's static candidates: pattern source, dispatch package and `:sym<>`
+/// key, as `resolve_token_patterns_static_in_pkg` returns them.
+type StaticCandidates = Vec<(String, Symbol, Option<String>)>;
+
 /// What the signature dispatch of a protoless multi call decided.
 pub(super) enum MultiVerdict {
     /// Not a protoless multi call (one candidate, a proto, `:sym<>` variants):
@@ -107,7 +111,7 @@ impl Interpreter {
         name: &str,
         pkg: Symbol,
         list: &[(String, Symbol, Option<String>)],
-    ) -> Result<Option<Vec<(String, Symbol, Option<String>)>>, RuntimeError> {
+    ) -> Result<Option<StaticCandidates>, RuntimeError> {
         if list.len() < 2 || list.iter().any(|(_, _, sym)| sym.is_some()) {
             return Ok(None);
         }
