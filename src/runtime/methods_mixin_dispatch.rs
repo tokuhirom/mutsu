@@ -395,9 +395,17 @@ impl Interpreter {
             let Some(role) = self.role_def_for_mixin_role(mixins, &role_name) else {
                 continue;
             };
-            let Some(overloads) = role.methods.get(lookup_name).cloned() else {
+            let Some(mut overloads) = role.methods.get(lookup_name).cloned() else {
                 continue;
             };
+            // A `method m {...}` stub only *requires* `m` (checked when the
+            // role was composed); it never supplies a body, so the mixed-in
+            // value's own method must answer (`$attr does R` where
+            // `R` stubs `method package`).
+            overloads.retain(|def| !Self::is_runtime_stub_method_def(def));
+            if overloads.is_empty() {
+                continue;
+            }
             role_has_method = true;
             let role_param_bindings: Vec<(String, Value)> = mixins
                 .iter()

@@ -674,6 +674,27 @@ impl Interpreter {
         }
     }
 
+    /// Methods of `Attribute` handled inline in `methods_instance_ops.rs`.
+    // Cost: O(1), a match over a fixed set of names.
+    fn is_attribute_mop_method(method: &str) -> bool {
+        matches!(
+            method,
+            "set_build"
+                | "name"
+                | "type"
+                | "has_accessor"
+                | "set_rw"
+                | "rw"
+                | "readonly"
+                | "required"
+                | "build"
+                | "get_value"
+                | "set_value"
+                | "package"
+                | "container"
+        )
+    }
+
     /// Check if a value can respond to a given method name.
     pub(crate) fn value_can_method(&mut self, value: &Value, method: &str) -> bool {
         // ADR-0019 Phase E box E11: the arity-cascade catalog
@@ -697,6 +718,24 @@ impl Interpreter {
         if let ValueView::Instance { class_name, .. } = value.view()
             && (self.class_has_method(&class_name.resolve(), method)
                 || self.has_public_accessor(&class_name.resolve(), method))
+        {
+            return true;
+        }
+        // `Attribute` objects answer their MOP methods inline (no class
+        // methods table), so `can` / a role's `method package {...}` stub
+        // check would otherwise report them absent (Injector's
+        // `$attr does Injector::Injected::Attribute`).
+        if let ValueView::Instance { class_name, .. } = value.view()
+            && class_name == "Attribute"
+            && Self::is_attribute_mop_method(method)
+        {
+            return true;
+        }
+        // The reflective `Variable` object a `trait_mod:<is>(Variable:D ...)`
+        // handler receives answers `var` / `name` inline too.
+        if let ValueView::Instance { class_name, .. } = value.view()
+            && class_name == "Variable"
+            && matches!(method, "var" | "name")
         {
             return true;
         }
