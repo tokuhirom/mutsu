@@ -260,7 +260,12 @@ pub(super) fn try_keyword_dispatch(
     }
     // my module Name { ... }
     if keyword("module", rest).is_some() {
-        return module_decl(rest).map(Some);
+        let (r, mut stmt) = module_decl(rest)?;
+        // `our module` is the default scope; `my module` is lexical.
+        if !is_our {
+            mark_package_lexical(&mut stmt);
+        }
+        return Ok(Some((r, stmt)));
     }
     // my/our package Name { ... }
     // `our package` keeps `is_my = false` so the package stays visible
@@ -342,4 +347,15 @@ pub(super) fn try_keyword_dispatch(
     }
 
     Ok(None)
+}
+
+/// Mark the package a `my module` declaration parsed to as lexical, whether it
+/// is bare or wrapped with its adverbs and export registration.
+// Cost: O(n), n = statements in the wrapper.
+fn mark_package_lexical(stmt: &mut Stmt) {
+    match stmt {
+        Stmt::Package { is_my, .. } => *is_my = true,
+        Stmt::SyntheticBlock(parts) => parts.iter_mut().for_each(mark_package_lexical),
+        _ => {}
+    }
 }

@@ -53,10 +53,21 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).
     let mut line = None;
-    for stmt in stmts {
+    for (at, stmt) in stmts.iter().enumerate() {
         if let Stmt::SetLine(n) = stmt {
             line = Some(*n);
             continue;
+        }
+        // `unit module M;` / `unit package P;`: rakudo holds the rest of the
+        // unit in the declaration's body; the parser leaves it beside it.
+        if let Some(unit) = unit_package_taking(stmt, &stmts[at + 1..]) {
+            if let Some(mut node) = convert_stmt(&unit)? {
+                if let Some(n) = line.take() {
+                    node.fields.push(origin::field(n));
+                }
+                fields.push(node_field(None, node));
+            }
+            break;
         }
         if let Some(mut node) = convert_stmt(stmt)? {
             if let Some(n) = line.take() {
@@ -71,14 +82,17 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// The leading `scope => "my"` of a lexical package declaration (`my class`),
-/// measured on rakudo 2026.09; a package's default scope is `our`, which
-/// renders no field.
-pub(super) fn lexical_scope_field(is_lexical: bool) -> Vec<RakuAstField> {
-    if is_lexical {
-        vec![leaf_field(Some("scope"), Value::str_from("my"))]
+/// The `scope` a package declaration is written with: `my` for a lexical one,
+/// `unit` for `unit class` / `unit module`; `our` is the default and renders
+/// none.
+// Cost: O(1).
+pub(super) fn package_scope(is_lexical: bool, is_unit: bool) -> Option<&'static str> {
+    if is_unit {
+        Some("unit")
+    } else if is_lexical {
+        Some("my")
     } else {
-        Vec::new()
+        None
     }
 }
 
@@ -295,6 +309,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let modified =
                 crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
             convert_stmt(&modified)
+        }
+        // A package-like declaration with `:ver<..>` adverbs or `is export`.
+        Stmt::SyntheticBlock(_) if crate::ast::package_header::unwrap(stmt).is_some() => {
+            let (declaration, header) =
+                crate::ast::package_header::unwrap(stmt).expect("just checked");
+            let statement = convert_stmt(declaration)?
+                .ok_or_else(|| unsupported("a declaration with a header"))?;
+            let expression = expression_of(&statement)
+                .ok_or_else(|| unsupported("a declaration with a header"))?;
+            Ok(Some(statement_expression(super::package_header::apply(
+                &expression,
+                &header,
+            )?)))
         }
         // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
         Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
@@ -819,22 +846,35 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     || !does_parents.is_empty()
                     || repr.is_some()
                     || has_package_traits(custom_traits)
-                    || *is_unit
                     || !*implicit_grammar_parent
                     || parents != &["Grammar".to_string()]
                 {
                     return Err(unsupported("grammar with inheritance / scope / traits"));
                 }
-                let mut fields =
-                    package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
+                let mut fields = package_header_fields(
+                    *name,
+                    package_scope(*is_lexical, *is_unit),
+                    is_colons_package(custom_traits),
+                );
                 fields.push(node_field(
                     Some("body"),
                     block_node(&crate::parser::unhoist_nested_methods(body))?,
                 ));
-                return Ok(Some(statement_expression(RakuAstNode {
+                let grammar = RakuAstNode {
                     class: RakuAstClass::Grammar,
                     fields,
-                })));
+                };
+                let grammar = match super::package_header::lexical_export_tags(custom_traits) {
+                    Some(tags) => super::package_header::apply(
+                        &grammar,
+                        &crate::ast::package_header::Header {
+                            adverbs: Vec::new(),
+                            export_tags: Some(tags),
+                        },
+                    )?,
+                    None => grammar,
+                };
+                return Ok(Some(statement_expression(grammar)));
             }
             // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
             // Inheritance and `rw` are `traits`, the repr is its own leaf field.
@@ -845,14 +885,16 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || *is_hidden
                 || !hidden_parents.is_empty()
                 || has_package_traits(custom_traits)
-                || *is_unit
             {
                 return Err(unsupported(
                     "class with inheritance / scope / repr / traits",
                 ));
             }
-            let mut fields =
-                package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
+            let mut fields = package_header_fields(
+                *name,
+                package_scope(*is_lexical, *is_unit),
+                is_colons_package(custom_traits),
+            );
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
@@ -870,10 +912,22 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     without_composed_header(body, does_parents),
                 ))?,
             ));
-            Ok(Some(statement_expression(RakuAstNode {
+            let class = RakuAstNode {
                 class: RakuAstClass::Class,
                 fields,
-            })))
+            };
+            // A lexical `my class ... is export` keeps its tags in a marker.
+            let class = match super::package_header::lexical_export_tags(custom_traits) {
+                Some(tags) => super::package_header::apply(
+                    &class,
+                    &crate::ast::package_header::Header {
+                        adverbs: Vec::new(),
+                        export_tags: Some(tags),
+                    },
+                )?,
+                None => class,
+            };
+            Ok(Some(statement_expression(class)))
         }
         // `enum NAME <A B>` / `enum NAME <<A B>>` / `enum NAME (A => 1)`
         // -> `Type::Enum(name => Name, term => ...)`. The runtime only needs
@@ -890,10 +944,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             roles,
             ..
         } => {
-            if *is_export
-                || !export_tags.is_empty()
-                || *is_my
-                || base_type.is_some()
+            if base_type.is_some()
                 || !roles.is_empty()
                 || matches!(variant_form, EnumVariantForm::Computed)
                 || variants.is_empty()
@@ -906,12 +957,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 EnumVariantForm::PairList => enum_pair_list(variants)?,
                 EnumVariantForm::Computed => unreachable!("checked above"),
             };
+            // Field order matches raku: scope, name, traits, term.
+            let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
+                .into_iter()
+                .collect();
+            fields.push(node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            ));
+            if let Some(export) = super::package_header::export_trait_value(
+                *is_export || !export_tags.is_empty(),
+                export_tags,
+            ) {
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(vec![export]),
+                });
+            }
+            fields.push(node_field(Some("term"), term));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::TypeEnum,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(Some("term"), term),
-                ],
+                fields,
             })))
         }
         // `module M { }` / `package P { }` -> `RakuAST::Module` / `RakuAST::Package`.
@@ -928,9 +994,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             is_my,
         } => {
-            if *is_unit || *is_my {
-                return Err(unsupported("unit / my package declaration"));
-            }
             let class = match kind {
                 crate::ast::PackageKind::Module => RakuAstClass::Module,
                 crate::ast::PackageKind::Package => RakuAstClass::Package,
@@ -938,16 +1001,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     return Err(unsupported("grammar declaration"));
                 }
             };
-            Ok(Some(statement_expression(RakuAstNode {
-                class,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(
-                        Some("body"),
-                        block_node(&crate::parser::unhoist_nested_methods(body))?,
-                    ),
-                ],
-            })))
+            let mut fields: Vec<RakuAstField> = package_scope(*is_my, *is_unit)
+                .map(|scope| leaf_field(Some("scope"), Value::str_from(scope)))
+                .into_iter()
+                .collect();
+            fields.push(node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            ));
+            fields.push(node_field(
+                Some("body"),
+                block_node(&crate::parser::unhoist_nested_methods(body))?,
+            ));
+            Ok(Some(statement_expression(RakuAstNode { class, fields })))
         }
         // `subset S of T where P` -> `RakuAST::Type::Subset`. The `of T` base
         // type is a `Trait::Of` in the `traits` list (raku models it exactly as
@@ -967,24 +1033,34 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_my,
             ..
         } => {
-            if *is_export || !export_tags.is_empty() || *is_my {
-                return Err(unsupported("subset with export / my scope"));
-            }
-            let mut fields = vec![node_field(
+            let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
+                .into_iter()
+                .collect();
+            fields.push(node_field(
                 Some("name"),
                 name_from_identifier(&name.resolve()),
-            )];
+            ));
             // Field order matches raku: name, where, traits.
             if let Some(pred) = predicate {
                 fields.push(node_field(Some("where"), convert_expr(pred)?));
             }
+            // `is export` comes before the `of` base type in the traits.
+            let mut traits: Vec<Value> = super::package_header::export_trait_value(
+                *is_export || !export_tags.is_empty(),
+                export_tags,
+            )
+            .into_iter()
+            .collect();
             if *base_is_explicit {
+                traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitOf,
+                    fields: vec![node_field(None, build_type_node(base)?)],
+                })));
+            }
+            if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
-                    value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
-                        class: RakuAstClass::TraitOf,
-                        fields: vec![node_field(None, build_type_node(base)?)],
-                    }))]),
+                    value: RakuAstFieldValue::List(traits),
                 });
             }
             Ok(Some(statement_expression(RakuAstNode {
@@ -1864,7 +1940,7 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
 // Cost: O(k), k = length of the name.
 pub(super) fn package_header_fields(
     name: crate::symbol::Symbol,
-    is_lexical: bool,
+    scope: Option<&'static str>,
     colons: bool,
 ) -> Vec<RakuAstField> {
     if colons {
@@ -1872,7 +1948,10 @@ pub(super) fn package_header_fields(
         fields.extend(name_parts::stash_name("").map(|n| node_field(Some("name"), n)));
         return fields;
     }
-    let mut fields = lexical_scope_field(is_lexical);
+    let mut fields: Vec<RakuAstField> = scope
+        .map(|scope| leaf_field(Some("scope"), Value::str_from(scope)))
+        .into_iter()
+        .collect();
     let name = name.resolve();
     if !crate::value::is_internal_anon_type_name(&name) {
         fields.push(node_field(Some("name"), name_from_identifier(&name)));
@@ -1881,11 +1960,27 @@ pub(super) fn package_header_fields(
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
-/// parser's empty-name marker, which the node expresses itself.
+/// parser's empty-name marker and its lexical `is export` marker, which the
+/// node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits
+    custom_traits.iter().any(|(t, _)| {
+        t != crate::parser::ANON_COLONS_TRAIT && t != crate::parser::EXPORT_TYPE_MARKER
+    })
+}
+
+/// The `expression` of a `Statement::Expression` node.
+fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
+    statement
+        .fields
         .iter()
-        .any(|(t, _)| t != crate::parser::ANON_COLONS_TRAIT)
+        .find(|f| f.name == Some("expression"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(value) => match value.view() {
+                ValueView::RakuAst(node) => Some(node.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
 }
 
 /// Whether a package declaration was written with the empty name `::`.
@@ -5261,4 +5356,44 @@ fn is_injected_named_arg(arg: &Expr) -> bool {
         },
         _ => false,
     }
+}
+
+/// `unit module M;` / `unit package P;` followed by `rest`: the same
+/// declaration with `rest` as its body (inside its header wrapper, if it has
+/// one). `None` for any other statement.
+// Cost: O(n), n = size of `rest` (it is cloned).
+fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
+    fn with_body(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
+        match stmt {
+            Stmt::Package {
+                name,
+                kind,
+                is_unit: true,
+                is_my,
+                body,
+            } if body.is_empty() => Some(Stmt::Package {
+                name: *name,
+                body: rest.to_vec(),
+                kind: *kind,
+                is_unit: true,
+                is_my: *is_my,
+            }),
+            Stmt::SyntheticBlock(parts) => {
+                let mut taken = false;
+                let parts = parts
+                    .iter()
+                    .map(|part| match with_body(part, rest) {
+                        Some(package) => {
+                            taken = true;
+                            package
+                        }
+                        None => part.clone(),
+                    })
+                    .collect();
+                taken.then_some(Stmt::SyntheticBlock(parts))
+            }
+            _ => None,
+        }
+    }
+    with_body(stmt, rest)
 }

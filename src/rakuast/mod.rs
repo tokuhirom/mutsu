@@ -29,6 +29,7 @@ mod method_assign_decl;
 mod name_parts;
 mod named_param;
 mod origin;
+mod package_header;
 mod placeholder;
 mod proto;
 mod react;

@@ -111,8 +111,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .into_iter()
             .map(|t| Value::rakuast(Box::new(t))),
     );
-    let mut fields =
-        package_header_fields(role.name, is_lexical, is_colons_package(role.custom_traits));
+    let mut fields = package_header_fields(
+        role.name,
+        is_lexical.then_some("my"),
+        is_colons_package(role.custom_traits),
+    );
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),
@@ -162,6 +165,9 @@ fn parent_clause(
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_role_name)?;
+    if head.is_unit {
+        return Err(super::lower::unsupported(node));
+    }
     let mut custom_traits = Vec::new();
     if head.is_lexical {
         custom_traits.push((MY_SCOPED.to_string(), None));
