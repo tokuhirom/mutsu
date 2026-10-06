@@ -409,6 +409,25 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
 
+    // Atomic compound assignment on an array / hash element: `@a[0] ⚛+= 5`,
+    // `%h<k> ⚛-= 2` (#12005). A variable target is parsed by the statement-level
+    // sites (`stmt/assign/`); an element target is only ever reached here, as the
+    // parsed `expr`. Like `+=` it is an item assignment, so the right-hand side
+    // stops before the comma.
+    if let Some((after_atomic, negate)) =
+        crate::parser::stmt::assign::strip_atomic_compound_assign(r)
+    {
+        let target = unwrap_grouped_lvalue(expr.clone());
+        if crate::parser::expr::is_atomic_elem_target(&target) {
+            let (r2, _) = ws(after_atomic)?;
+            let (r2, rhs) = item_expr(r2, mode)?;
+            return Ok((
+                r2,
+                crate::parser::stmt::assign::atomic_compound_call(target, rhs, negate),
+            ));
+        }
+    }
+
     // Atomic store in EXPRESSION position: `return unless $!stale ⚛== 1`
     // (Selkie). `⚛=` was recognised only by the statement-level and
     // parenthesized assignment parsers, so a bare `$x ⚛= 1` as a statement

@@ -171,9 +171,10 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
 /// The calls `lower_stmt_inner` turns into statements of their own, which a
 /// routine of the same name declared in the unit takes back.
 ///
-/// `return` / `last` / `next` / `redo` are left out: a user routine named like
-/// them does not work in the ordinary frontend either.
-const SHADOWABLE_STATEMENTS: [&str; 7] = ["say", "put", "print", "note", "die", "fail", "take"];
+const SHADOWABLE_STATEMENTS: [&str; 12] = [
+    "say", "put", "print", "note", "die", "fail", "take", "return", "last", "next", "redo",
+    "proceed",
+];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
@@ -3549,13 +3550,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 _ => return Err(unsupported(node)),
             })
         }
-        // `$:foo`: a named placeholder, spelled `:foo` by the execution AST.
+        // `$:foo` / `@:foo` / `%:foo` / `&:foo`: a named placeholder, spelled `:foo` by the execution AST.
         RakuAstClass::VarDeclarationPlaceholderNamed => {
             let (sigil, name) = super::placeholder::spelling(node)?;
-            if sigil != '$' {
-                return Err(unsupported(node));
-            }
-            Ok(Expr::Var(format!(":{name}")))
+            Ok(match sigil {
+                '$' => Expr::Var(format!(":{name}")),
+                '@' => Expr::ArrayVar(format!(":{name}")),
+                '%' => Expr::HashVar(format!(":{name}")),
+                '&' => Expr::CodeVar(format!(":{name}")),
+                _ => return Err(unsupported(node)),
+            })
         }
         // RakuAST's implicit flattened array placeholder (`@_`) lowers back
         // to the legacy array variable used by `make_anon_sub`.

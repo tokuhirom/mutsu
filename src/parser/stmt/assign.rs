@@ -80,12 +80,12 @@ pub(crate) fn strip_atomic_store_assign(rest: &str) -> Option<&str> {
     Some(after.strip_prefix('=').unwrap_or(after))
 }
 
-/// The `⚛+=` / `⚛-=` update of the variable `name` by `rhs`: a call of
-/// Rakudo's own `infix:<⚛+=>` / `infix:<⚛-=>`, so a refused target is reported
-/// under the operator the program wrote and the AST round-trips through
-/// RakuAST (#11834). The compiler lowers both onto the one atomic add; the
-/// subtract form negates its operand there.
-pub(crate) fn atomic_compound_call(name: String, rhs: Expr, negate: bool) -> Expr {
+/// The `⚛+=` / `⚛-=` update of `target` (a variable, or an array / hash element)
+/// by `rhs`: a call of Rakudo's own `infix:<⚛+=>` / `infix:<⚛-=>`, so a refused
+/// target is reported under the operator the program wrote and the AST
+/// round-trips through RakuAST (#11834). The compiler lowers both onto the one
+/// atomic add; the subtract form negates its operand there.
+pub(crate) fn atomic_compound_call(target: Expr, rhs: Expr, negate: bool) -> Expr {
     let operator = if negate {
         "infix:<⚛-=>"
     } else {
@@ -93,7 +93,7 @@ pub(crate) fn atomic_compound_call(name: String, rhs: Expr, negate: bool) -> Exp
     };
     Expr::Call {
         name: Symbol::intern(operator),
-        args: vec![Expr::Var(name), rhs],
+        args: vec![target, rhs],
     }
 }
 

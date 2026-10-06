@@ -5,7 +5,7 @@ use Test;
 # name; `@^a`, `%^h` and `&^cb` are all `Positional`, `$:foo` is `Named`. A sub
 # declared without a signature takes them as its implicit signature.
 
-plan 24;
+plan 31;
 
 sub expr($src) { $src.AST.statements.head.expression }
 sub body-expr($src) { expr($src).body.statement-list.statements.head.expression }
@@ -55,3 +55,11 @@ throws-like { run(Q[sub e { $:foo }; e(:bar(1))]) }, X::AdHoc,
 # A sub with an explicit signature keeps it.
 is run(Q[sub f($x) { $x * 2 }; f(4)]), 8, 'an explicit signature is untouched';
 is run(Q[sub g() { 11 }; g()]), 11, 'an empty signature is untouched';
+
+# --- sigiled named placeholders (`@:a`, `%:c`, `&:x`) --------------------------
+for ('%:c', '%c'), ('@:a', '@a'), ('&:x', '&x') -> ($src, $lex) {
+    my $n = body-expr("\{ $src \}");
+    isa-ok $n, RakuAST::VarDeclaration::Placeholder::Named, "$src is a named placeholder";
+    is $n.lexical-name, $lex, "$src keeps its sigil in the name";
+}
+is run(Q[{ @:a.elems + %:c.elems }.(:a([1, 2]), :c({x => 1}))]), 3, 'sigiled named placeholders bind';
