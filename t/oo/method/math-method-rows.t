@@ -5,7 +5,7 @@ use Test;
 # so one handler answers a number, a Complex and every Cool receiver (a Str, a
 # List, an Array, a Hash). The expected values are Rakudo's.
 
-plan 12;
+plan 13;
 
 sub approx-complex($got, $re, $im, $why) {
     ok $got ~~ Complex && abs($got.re - $re) < 1e-12 && abs($got.im - $im) < 1e-12,
@@ -98,13 +98,32 @@ subtest 'atan2 takes an optional x', {
 }
 
 subtest 'log and exp with a base', {
-    plan 6;
+    plan 9;
     is-approx 8.log(2), 3, 'Int.log(Int)';
     is-approx "2".log("3"), 0.6309297535714574, 'a Str base';
-    is-approx 2.exp(3), 9, 'x.exp(base) is base ** x';
+    is 2.exp(3), 9, 'Int.exp(Int) is exact';
+    isa-ok 2.exp(3), Int, 'Int.exp(Int) answers an Int';
+    is True.exp(2), 2, 'Bool.exp(Int) is base ** self';
+    isa-ok True.exp(2), Int, 'Bool.exp(Int) answers an Int';
     is-approx 1.5.exp(2), 2.8284271247461903, 'Rat.exp(Int)';
     approx-complex 1.log(1i), 0, 0, 'a Complex base';
     approx-complex <1+1i>.log(2), 0.5, 1.1330900354567985, 'a Complex receiver';
+}
+
+subtest 'inverse hyperbolic reciprocal methods fail on zero', {
+    plan 6;
+    throws-like { sink 0.asech }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'asech method';
+    throws-like { sink 0.acosech }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'acosech method';
+    throws-like { sink 0.acotanh }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'acotanh method';
+    throws-like { sink asech(0) }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'asech routine';
+    throws-like { sink acosech(0) }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'acosech routine';
+    throws-like { sink acotanh(0) }, X::Numeric::DivideByZero,
+        message => /'Attempt to divide 1 by zero using'/, 'acotanh routine';
 }
 
 subtest 'cis, unpolar, polar and roots', {

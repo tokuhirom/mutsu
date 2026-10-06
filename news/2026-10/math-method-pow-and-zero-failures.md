@@ -1,0 +1,1 @@
+Integer `exp($base)` methods now share exponentiation with `**`, preserving exact integer results. `asech`, `acosech` and `acotanh` now return Rakudo's divide-by-zero `Failure` at zero through the shared math path used by their routines too.

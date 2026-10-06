@@ -185,15 +185,36 @@ trig! {
     asinh: "asinh" => |x| x.signum() * (x.abs() + (x * x + 1.0).sqrt()).ln();
     acosh: "acosh" => |x| if x < 1.0 { f64::NAN } else { (x + (x * x - 1.0).sqrt()).ln() };
     atanh: "atanh" => crate::builtins::math_prim::atanh;
-    asech: "asech" => |x| {
-        let y = 1.0 / x;
-        (y + (y * y - 1.0).sqrt()).ln()
-    };
-    acosech: "acosech" => |x| {
-        let y = 1.0 / x;
-        (y + (y * y + 1.0).sqrt()).ln()
-    };
-    acotanh: "acotanh" => |x| (1.0 / x).atanh();
+}
+
+// Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
+fn inverse_hyperbolic_reciprocal(method: &str, target: &Value) -> Result<Value, RuntimeError> {
+    Ok(match operand(target) {
+        Operand::Real(x) => crate::builtins::math_prim::inverse_hyperbolic_reciprocal(method, x),
+        Operand::Complex(re, im) if re == 0.0 && im == 0.0 => {
+            crate::builtins::math_prim::reciprocal_divide_by_zero_failure()
+        }
+        Operand::Complex(re, im) => {
+            let (result_re, result_im) = complex_trig(method, re, im);
+            Value::complex(result_re, result_im)
+        }
+        Operand::Failure(failure) => failure,
+    })
+}
+
+// Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
+fn asech(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    inverse_hyperbolic_reciprocal("asech", target)
+}
+
+// Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
+fn acosech(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    inverse_hyperbolic_reciprocal("acosech", target)
+}
+
+// Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
+fn acotanh(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    inverse_hyperbolic_reciprocal("acotanh", target)
 }
 
 /// `ln z` of a `Complex`: the log of its magnitude and its argument.
@@ -322,25 +343,13 @@ fn log_1(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> 
 }
 
 /// `$x.exp($base)`, which is `$base ** $x`.
-// Cost: O(1) (O(n) for a Str receiver or argument, n = chars of the parse).
+// Cost: O(M(d) log k + n), d = bits in the exact result, k = integer exponent
+// magnitude, n = chars parsed from a Str receiver or argument.
 fn exp_1(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let ((exp_r, exp_i), (base_r, base_i)) = match (parts_of(target), parts_of(&args[0])) {
-        (Ok(x), Ok(b)) => (x, b),
-        (Err(failure), _) | (_, Err(failure)) => return Some(Ok(failure)),
-    };
-    // exp(exponent * ln(base))
-    let (ln_r, ln_i) = complex_ln(base_r, base_i);
-    let prod_r = exp_r * ln_r - exp_i * ln_i;
-    let prod_i = exp_r * ln_i + exp_i * ln_r;
-    let scale = prod_r.exp();
-    let (result_r, result_i) = (scale * prod_i.cos(), scale * prod_i.sin());
-    Some(Ok(
-        if result_i.abs() < 1e-15 && base_i == 0.0 && exp_i == 0.0 {
-            Value::num(result_r)
-        } else {
-            Value::complex(result_r, result_i)
-        },
-    ))
+    Some(Ok(crate::builtins::arith::arith_pow(
+        args[0].clone(),
+        target.clone(),
+    )))
 }
 
 // Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
