@@ -751,10 +751,9 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            return Ok(Value::str(itemize_wrap(format!(
-                "Map.new(({}))",
-                parts.join(",")
-            ))));
+            return Ok(Value::str(itemize_wrap(
+                crate::builtins::methods_0arg::raku_repr::raku_map_new(&parts),
+            )));
         }
         let parts: Vec<String> = sorted_keys
             .iter()
