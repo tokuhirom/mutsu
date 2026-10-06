@@ -3073,6 +3073,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
         Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
+        // `@a Z @b`, `@a X+ @b`, `@a R- @b`: `ApplyListInfix` / `ApplyInfix` over
+        // `MetaInfix::Zip` / `Cross` / `Reverse`.
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => super::meta_infix::convert(meta, op, left, right, expr),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         Expr::BracketArray(items, _) => {

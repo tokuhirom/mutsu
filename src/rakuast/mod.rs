@@ -27,6 +27,7 @@ pub(crate) mod frontend;
 mod hash_literal;
 mod keyed_hash;
 mod lower;
+mod meta_infix;
 mod method_assign_decl;
 mod name_parts;
 mod named_param;
@@ -195,6 +196,9 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    MetaInfixReverse,
+    MetaInfixCross,
+    MetaInfixZip,
     CallMethod,
     // Phase 2 slice 23: quoted method names.
     CallQuotedMethod,
@@ -506,6 +510,9 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            MetaInfixReverse => "RakuAST::MetaInfix::Reverse",
+            MetaInfixCross => "RakuAST::MetaInfix::Cross",
+            MetaInfixZip => "RakuAST::MetaInfix::Zip",
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
@@ -1235,6 +1242,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::MetaInfixReverse,
+    RakuAstClass::MetaInfixCross,
+    RakuAstClass::MetaInfixZip,
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
@@ -2850,6 +2860,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::MetaInfix::Reverse", "new") => RakuAstClass::MetaInfixReverse,
+        ("RakuAST::MetaInfix::Cross", "new") => RakuAstClass::MetaInfixCross,
+        ("RakuAST::MetaInfix::Zip", "new") => RakuAstClass::MetaInfixZip,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
@@ -3202,6 +3215,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::MetaInfixReverse
+            | RakuAstClass::MetaInfixCross
+            | RakuAstClass::MetaInfixZip
             | RakuAstClass::Block
             | RakuAstClass::PointyBlock
             | RakuAstClass::Blockoid

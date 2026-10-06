@@ -3646,6 +3646,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
     }
+    // `@a Z @b`, `@a X+ @b`, `@a R- @b`: the parser's `MetaOp` chain.
+    if let Some(meta) = super::meta_infix::lower(node) {
+        return meta;
+    }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
