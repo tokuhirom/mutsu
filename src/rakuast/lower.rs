@@ -198,6 +198,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
+        RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
         RakuAstClass::StatementIf => lower_if(node),
         // `with X { … }` / `without X { … }`. Both rebuild the conditional the
         // parser desugars them into, tagged so a round trip renders the same
@@ -722,6 +723,32 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         assigned,
         super::shadowed_terms::is_declared_term,
     ))
+}
+
+/// `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)` -> the
+/// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
+/// can write through a read-only whole-container topic.
+// Cost: O(n), n = size of the target and the arguments.
+fn lower_dotty_assign(node: &RakuAstNode, as_statement: bool) -> Result<Expr, RuntimeError> {
+    let target = lower_expr(named_child(node, "left")?)?;
+    let call = named_child(node, "right")?;
+    if call.class != RakuAstClass::CallMethod {
+        return Err(unsupported(node));
+    }
+    let name = crate::symbol::Symbol::intern(&call_name_str(call)?);
+    let args = arg_exprs(call)?;
+    let modifier = dispatch_modifier(call)?;
+    let method_call = move |invocant: Expr| Expr::MethodCall {
+        target: Box::new(invocant),
+        name,
+        args: args.clone(),
+        modifier,
+        quoted: false,
+    };
+    if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
+        return Ok(crate::parser::topic_dot_assign(method_call(target)));
+    }
+    Ok(crate::parser::wrap_dot_assign(target, method_call))
 }
 
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -3726,6 +3753,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(binary)
         }
+        // `$x .= meth(args)`: the parser's own `.=` expansion over the target.
+        RakuAstClass::ApplyDottyInfix => lower_dotty_assign(node, false),
         RakuAstClass::ApplyPrefix => {
             if let Some(chain) = super::chain::lower_chain(node)? {
                 return Ok(chain);

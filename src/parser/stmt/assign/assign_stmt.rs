@@ -445,19 +445,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             let (r_final, method_expr) =
                 crate::parser::expr::postfix_expr_continue(r_final, method_expr)?;
-            let stmt = if name == "_" {
-                Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("__mutsu_topic_dotassign"),
-                    args: vec![method_expr],
-                })
-            } else {
-                Stmt::Assign {
-                    name,
-                    expr: method_expr,
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                }
-            };
+            let stmt = dot_assign_stmt(name, method_expr);
             let (r_final, stmt) =
                 crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
                     r_final,
@@ -535,19 +523,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
         // so it can reassign a read-only whole-container topic while a plain
         // `$_ = ...` still throws X::Assignment::RO.
-        let stmt = if name == "_" {
-            Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_topic_dotassign"),
-                args: vec![expr],
-            })
-        } else {
-            Stmt::Assign {
-                name,
-                expr,
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            }
-        };
+        let stmt = dot_assign_stmt(name, expr);
         // `$x .= new: ... andthen ...` is `($x .= new(...)) andthen ...`.
         let (r, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             r,
@@ -734,4 +710,17 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     Err(PError::expected("assignment"))
+}
+
+/// The statement `NAME .= meth`: the topic form for `$_`, otherwise the same
+/// marked `.=` expansion the expression form builds, so the RakuAST conversion
+/// sees one shape whichever way the parser reached it.
+fn dot_assign_stmt(name: String, method_call: Expr) -> Stmt {
+    if name == "_" {
+        Stmt::Expr(crate::parser::stmt::simple_expr_stmt::topic_dot_assign(
+            method_call,
+        ))
+    } else {
+        Stmt::Expr(crate::parser::expr::dot_assign_to_name(name, method_call))
+    }
 }

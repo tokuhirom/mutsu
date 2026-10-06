@@ -1468,6 +1468,40 @@ fn compound_assignment_infix(
     })
 }
 
+/// `$x .= meth(args)` -> `ApplyDottyInfix(left, DottyInfix::CallAssign,
+/// Call::Method)`. The marker's `rhs` is the method call applied to the target;
+/// only its name, arguments and dispatch modifier are rendered.
+// Cost: O(n), n = size of the target and the arguments.
+fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::MethodCall {
+        name,
+        args,
+        modifier,
+        quoted,
+        ..
+    } = call
+    else {
+        return Err(unsupported("`.=` with a call that is not a method call"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyDottyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(target)?),
+            node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::DottyInfixCallAssign,
+                    fields: Vec::new(),
+                },
+            ),
+            node_field(
+                Some("right"),
+                method_call_postfix(name.as_str(), args, *modifier, *quoted)?,
+            ),
+        ],
+    })
+}
+
 /// A compound marker may be nested in the RHS of a separate assignment. Only
 /// the marker that names the statement's own target replaces `Assignment` with
 /// `MetaInfix::Assign`; nested markers stay under the outer assignment node.
@@ -2234,18 +2268,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             assignment_infix(name, expr)
         }
         Expr::CompoundAssign {
-            target,
-            op,
-            rhs,
-            expanded,
+            target, op, rhs, ..
         } => {
             if is_dotty_assign_op(op) {
-                // TODO: rakudo renders `$x .= meth` as
-                // `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`,
-                // node classes this converter does not model yet. Until it does,
-                // render the expansion -- exactly what the bare `AssignExpr`
-                // produced before `.=` carried a marker.
-                return convert_expr(expanded);
+                return dotty_assignment(target, rhs);
             }
             compound_assignment_infix(target, op, rhs)
         }
