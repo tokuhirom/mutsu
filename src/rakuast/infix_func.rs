@@ -1,9 +1,11 @@
 //! Named, user-declared and flip-flop infixes across the RakuAST boundary.
 //!
-//! An infix the parser cannot fold into a `TokenKind` operator -- a word
-//! (`minmax`, `ff`, `precedes`), a symbol a unit declares (`infix:<⊕>`), or a
-//! built-in symbol the unit overloads (`infix:<==>`) -- is an
-//! [`Expr::InfixFunc`] that calls the routine of that name at run time.
+//! An infix the parser cannot fold into a `TokenKind` operator -- a word or
+//! symbol the unit declares itself (`infix:<foo>`, `infix:<⊕>`), a flip-flop
+//! (`ff`), or a named core infix the parser chose to call (`minmax`) -- is an
+//! [`Expr::InfixFunc`] that calls the routine of that name at run time. (An
+//! operator rakudo's core declares stays an `Expr::Binary` even when the unit
+//! overloads it: the overload is a dispatch candidate of the native operator.)
 //! Measured against rakudo 2026.09 it is an ordinary application of an `Infix`:
 //!
 //! ```text
@@ -13,7 +15,7 @@
 //! ```
 //!
 //! The lowering cannot see the parser's scope, so it re-derives "the unit
-//! overloads this operator" from the declarations the unit holds (an
+//! declares this operator" from the declarations the unit holds (an
 //! `infix:<…>` sub or `&infix:<…>` variable, see `declared_routines`).
 
 use super::convert::{
@@ -157,11 +159,13 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
     if name == "," {
         return None;
     }
-    // A word the parser folds into a `Binary` over an `Ident` token (`mod`,
-    // `minmax`, `cmp`) compiles to the same named-infix call as an
-    // `InfixFunc`, so only the operators with a dispatch of their own need the
-    // node: a flip-flop, and anything the unit declares itself.
-    if !is_flip_flop(&name) && !is_declared(&name) {
+    // The parser folds an operator rakudo's core declares (`+`, `mod`, `minmax`,
+    // `cmp`, ...) into a `Binary` even when the unit overloads it -- the
+    // overload is a dispatch candidate of the native operator. Only an operator
+    // of the unit's own, and a flip-flop (syntax, not a routine), is a call.
+    let own_operator =
+        is_declared(&name) && !crate::runtime::core_infix_names::rakudo_declares_infix(&name);
+    if !is_flip_flop(&name) && !own_operator {
         return None;
     }
     Some(fold(node, name))
