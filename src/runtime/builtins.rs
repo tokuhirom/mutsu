@@ -1376,6 +1376,7 @@ impl Interpreter {
             "__mutsu_cas_var" => self.builtin_cas_var(args),
             "__mutsu_atomic_elem" => self.builtin_atomic_elem(&args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args),
+            "__mutsu_cas_attr" => self.builtin_cas_attr(args),
             "__mutsu_cas_array_elem_code" => self.builtin_cas_array_elem_code(args),
             "__mutsu_cas_array_multidim_code" => self.builtin_cas_array_multidim_code(args),
             "__mutsu_cas_array_multidim" => self.builtin_cas_array_multidim(args),

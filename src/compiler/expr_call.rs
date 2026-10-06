@@ -1704,6 +1704,31 @@ impl Compiler {
                     static_arg_types: false,
                 });
             }
+            // Accessor CAS: cas($obj.attr, $expected, $new) swaps the attribute
+            // cell atomically: __mutsu_cas_attr(obj, "attr", expected, new)
+            else if let Expr::MethodCall {
+                target,
+                name: method,
+                args: method_args,
+                modifier: None,
+                quoted: false,
+            } = &args[0]
+                && method_args.is_empty()
+            {
+                let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_attr"));
+                self.compile_expr(target);
+                let attr_idx = self.code.add_constant(Value::str(method.resolve()));
+                self.code.emit(OpCode::LoadConst(attr_idx));
+                self.compile_expr(&args[1]);
+                self.compile_expr(&args[2]);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 4,
+                    arg_sources_idx: None,
+                    literal_native_args: 0,
+                    static_arg_types: false,
+                });
+            }
             // Multi-dim array element CAS: cas(@arr[d1;d2;...], $expected, $new)
             else if let Expr::MultiDimIndex {
                 target, dimensions, ..
@@ -1769,7 +1794,7 @@ impl Compiler {
                         Stmt::If {
                             cond: Expr::Binary {
                                 left: Box::new(Expr::Var(seen_name.clone())),
-                                op: TokenKind::EqEq,
+                                op: TokenKind::EqEqEq,
                                 right: Box::new(args[1].clone()),
                             },
                             then_branch: vec![assign_stmt],
