@@ -83,30 +83,9 @@ impl Interpreter {
                 dwim_left,
                 dwim_right,
             } => {
-                let left_list = runtime::value_to_list(left);
-                let right_list = runtime::value_to_list(right);
-                let len = if dwim_left && !dwim_right {
-                    right_list.len()
-                } else if dwim_right && !dwim_left {
-                    left_list.len()
-                } else {
-                    left_list.len().max(right_list.len())
-                };
-                let mut results = Vec::with_capacity(len);
-                for i in 0..len {
-                    let l = if left_list.is_empty() {
-                        &Value::int(0.into())
-                    } else {
-                        &left_list[i % left_list.len()]
-                    };
-                    let r = if right_list.is_empty() {
-                        &Value::int(0.into())
-                    } else {
-                        &right_list[i % right_list.len()]
-                    };
-                    results.push(self.eval_infix_shape(inner, l, r)?);
-                }
-                Ok(Value::array(results))
+                // The one hyper implementation (`HyperOp`'s): hashes, Pairs,
+                // nested lists, quanthashes and the non-dwimmy length check.
+                self.hyper_op_pair(inner, left, right, dwim_left, dwim_right)
             }
         }
     }

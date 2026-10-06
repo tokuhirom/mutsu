@@ -12,6 +12,7 @@ mod attr_build_defaults;
 mod builtins;
 mod builtins_accessor_elem_in_place;
 mod builtins_atomic;
+mod builtins_atomic_attr;
 mod builtins_atomic_cas;
 mod builtins_atomic_cas_code;
 mod builtins_atomic_target;

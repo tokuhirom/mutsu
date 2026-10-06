@@ -37,6 +37,28 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Err(err);
     }
+    // `while COND -> @t`: the condition's truthiness is the value's own (a
+    // Failure is false, an empty list is false), so test it through a scalar
+    // temporary and assign the aggregate parameter from that value afterwards.
+    // Assigning the value into `@t` would make a Failure a one-element array,
+    // which is always true. The temporary is spelled like a source name (no
+    // `__` marker prefix) so the RakuAST round-trip converts the loop like any
+    // other pointy `while`.
+    let aggregate_tmp = param_binding
+        .as_deref()
+        .filter(|p| p.starts_with('@') || p.starts_with('%'))
+        .map(|_| "mutsu-while-cond".to_string());
+    if let (Some(param), Some(tmp)) = (&param_binding, &aggregate_tmp) {
+        body.insert(
+            0,
+            Stmt::Assign {
+                name: param.clone(),
+                expr: Expr::Var(tmp.clone()),
+                op: AssignOp::Assign,
+                target_is_sigilless: false,
+            },
+        );
+    }
     let (hoisted_decl, cond) = if param_binding.is_none() {
         split_loop_cond_decl(cond)
     } else {
@@ -45,9 +67,9 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     let while_stmt = Stmt::While {
         cond: if let Some(ref param) = param_binding {
             Expr::AssignExpr {
-                name: param.clone(),
+                name: aggregate_tmp.clone().unwrap_or_else(|| param.clone()),
                 expr: Box::new(cond),
-                is_bind: false,
+                is_bind: aggregate_tmp.is_some(),
             }
         } else {
             cond
@@ -63,21 +85,24 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(param) = param_binding {
         Ok((
             rest,
-            Stmt::Block(vec![
-                Stmt::VarDecl {
-                    name: param,
-                    expr: Expr::Literal(crate::value::Value::NIL),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                },
-                while_stmt,
-            ]),
+            Stmt::Block(
+                std::iter::once(param)
+                    .chain(aggregate_tmp)
+                    .map(|name| Stmt::VarDecl {
+                        name,
+                        expr: Expr::Literal(crate::value::Value::NIL),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    })
+                    .chain(std::iter::once(while_stmt))
+                    .collect(),
+            ),
         ))
     } else {
         Ok((rest, while_stmt))
