@@ -1080,34 +1080,44 @@ impl Interpreter {
             }
             return None;
         }
-        let container = if new.is_container_ref() {
-            if scalar {
-                cell.set_binding_decision(source_kind);
-            }
-            Self::innermost_container(new)
-        } else {
-            match source_kind
-                .or_else(|| Self::rebound_value_kind(&new))
-                .filter(|_| scalar)
-            {
-                Some(kind) => {
-                    cell.set_binding_decision(None);
-                    Value::container_ref(crate::gc::Gc::new(
-                        crate::value::ContainerCell::new_readonly_binding(new, kind),
-                    ))
-                }
-                None => {
-                    if scalar {
-                        cell.set_binding_decision(None);
-                    }
-                    new.into_container_ref()
-                }
-            }
-        };
+        let (container, decision) = Self::rebound_container(new, scalar, source_kind);
+        if scalar {
+            cell.set_binding_decision(decision);
+        }
         *cell
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
         Some(Value::container_ref(cell))
+    }
+
+    /// The container a rebind to `new` leaves the variable holding, and the
+    /// writability decision of that binding (`None`: writable; `Some(kind)`:
+    /// readonly), as [`Self::seat_in_binding_cell`] and
+    /// [`Self::unit_scope_lexical_rebind`] both need them. A container is
+    /// bound through to its innermost cell (its decision is the source's); a
+    /// bare value gets a fresh container, readonly for the kinds rakudo
+    /// refuses an assignment for.
+    // Cost: O(c), c = binding cells chained in front of `new`.
+    pub(super) fn rebound_container(
+        new: Value,
+        scalar: bool,
+        source_kind: Option<crate::ast::ReadonlyKind>,
+    ) -> (Value, Option<crate::ast::ReadonlyKind>) {
+        if new.is_container_ref() {
+            return (Self::innermost_container(new), source_kind);
+        }
+        match source_kind
+            .or_else(|| Self::rebound_value_kind(&new))
+            .filter(|_| scalar)
+        {
+            Some(kind) => (
+                Value::container_ref(crate::gc::Gc::new(
+                    crate::value::ContainerCell::new_readonly_binding(new, kind),
+                )),
+                None,
+            ),
+            None => (new.into_container_ref(), None),
+        }
     }
 
     /// The readonly kind a `$` variable `:=`-bound straight to the value `v`
