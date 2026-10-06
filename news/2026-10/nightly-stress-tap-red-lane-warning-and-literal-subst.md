@@ -18,8 +18,9 @@ plain debug build with no GC or JIT setting.
   `$/` through bare-span captures that carry no subject, and
   `subst_match_var` built a whole-subject `MatchTarget` for each of them, twice
   per call: O(n x matches), the #9143 / #8247 shape coming back. They now share
-  one. `("a," x 8000).subst(",", { "" }, :g)` took 8 s on a debug build; the
-  match-target counter for 1500 literal matches dropped from 3003 to a handful.
+  one. `("あ," x 8000).subst(",", { "" }, :g)` took 10.5 s on a debug build and
+  now takes 1.2 s (32000 matches: 5.1 s, linear); the match-target counter for
+  1500 literal matches dropped from 3003 to 9.
 
 Pins: `t/oo/method/method-table-lane-list-search-warning.t` (run under the
 debug lane check) and `literal_subst_slow_path_publishes_one_subject_for_every_match`
