@@ -211,11 +211,25 @@ impl Interpreter {
         if crate::vm::vm_stats::enabled() {
             self.record_method_site_lane_stats(answer.row);
         }
+        // The one way the lane runs user code: settling a warning runs a
+        // CONTROL handler inline.
+        let warned = matches!(&answer.result, Err(e) if e.is_warn());
         match self.settle_native_warning(answer.result) {
             Ok(value) => {
                 let base = self.stack.len() - answer.arity - 1;
                 self.stack.truncate(base);
                 self.stack.push(value);
+                if warned {
+                    // What the handler wrote to the caller's lexicals reaches
+                    // their slots the way the full path's post-call drains put
+                    // it there (`call_method_mut_site_around`); the entry guard
+                    // (no pending writeback) says nothing about what the
+                    // handler leaves behind. Without this, `$seen++` in
+                    // `CONTROL { when CX::Warn { $seen++; .resume } }` was lost
+                    // around a `@list.contains(...)` in release builds.
+                    self.apply_pending_rw_writeback(code);
+                    self.drain_pending_local_updates_after_call(code);
+                }
                 Ok(())
             }
             Err(e) => {

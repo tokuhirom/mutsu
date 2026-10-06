@@ -22,6 +22,16 @@ plain debug build with no GC or JIT setting.
   now takes 1.2 s (32000 matches: 5.1 s, linear); the match-target counter for
   1500 literal matches dropped from 3003 to 9.
 
+The new regression test for the first fix then failed on CI's release build and
+exposed a release-only bug in the same lane: `CONTROL { when CX::Warn { $seen++;
+.resume } }` around `@list.contains(2)` lost the `$seen++` (0, where Rakudo and
+the debug build give 1). Settling the warning runs the handler inline, and the
+lane, unlike the full path, never drained the writes it left behind. The lane now
+runs the full path's post-call drains after settling a warning. The debug
+cross-check compares returned values only, so it cannot see a divergence in side
+effects; only the release TAP run does.
+
 Pins: `t/oo/method/method-table-lane-list-search-warning.t` (run under the
-debug lane check) and `literal_subst_slow_path_publishes_one_subject_for_every_match`
-in `tests/regex_subject_materialized_once.rs`.
+debug lane check, and on release for the handler's side effect) and
+`literal_subst_slow_path_publishes_one_subject_for_every_match` in
+`tests/regex_subject_materialized_once.rs`.
