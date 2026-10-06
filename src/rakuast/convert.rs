@@ -881,11 +881,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // A `my` class leads with `scope => "my"` (`our` is the default
             // and renders none). Unit scope, `hides`, computed names and user
             // traits carry extra RakuAST shape, deferred.
-            if name_expr.is_some()
-                || *is_hidden
-                || !hidden_parents.is_empty()
-                || has_package_traits(custom_traits)
-            {
+            if name_expr.is_some() || has_package_traits(custom_traits) {
                 return Err(unsupported(
                     "class with inheritance / scope / repr / traits",
                 ));
@@ -899,7 +895,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
-            let traits = class_traits(parents, does_parents, parent_args, *class_is_rw)?;
+            let traits = class_traits(
+                parents,
+                does_parents,
+                parent_args,
+                *class_is_rw,
+                *is_hidden,
+                hidden_parents,
+            )?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -929,6 +932,29 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             };
             Ok(Some(statement_expression(class)))
         }
+        // `trusts B;` in a class body is a `Statement::Trusts` of its own, not an
+        // expression statement.
+        Stmt::TrustsDecl { name } => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementTrusts,
+            fields: vec![node_field(Some("type"), build_type_node(&name.resolve())?)],
+        })),
+        // `augment class C { ... }` is a `Class` with `scope => "augment"`.
+        Stmt::AugmentClass {
+            name,
+            body,
+            does_roles,
+            is_role: false,
+        } if does_roles.is_empty() => Ok(Some(statement_expression(RakuAstNode {
+            class: RakuAstClass::Class,
+            fields: vec![
+                leaf_field(Some("scope"), Value::str_from("augment")),
+                node_field(Some("name"), name_from_identifier(&name.resolve())),
+                node_field(
+                    Some("body"),
+                    block_node(&crate::parser::unhoist_nested_methods(body))?,
+                ),
+            ],
+        }))),
         // `enum NAME <A B>` / `enum NAME <<A B>>` / `enum NAME (A => 1)`
         // -> `Type::Enum(name => Name, term => ...)`. The runtime only needs
         // normalized variants, but Rakudo preserves the source-level quoting
@@ -3904,13 +3930,16 @@ fn class_traits(
     does_parents: &[String],
     parent_args: &[(String, Vec<Expr>)],
     is_rw: bool,
+    is_hidden: bool,
+    hidden_parents: &[String],
 ) -> Result<Vec<Value>, RuntimeError> {
     let mut traits = Vec::new();
     for parent in parents {
         // A `does R` role is recorded in BOTH lists (`parents` is the general
         // composed-type list the dispatcher reads), so skip the ones that are
-        // really role composition or they would render twice.
-        if does_parents.iter().any(|r| r == parent) {
+        // really role composition or they would render twice; a parent it
+        // `hides` is in both too, and renders as a `Trait::Hides`.
+        if does_parents.iter().any(|r| r == parent) || hidden_parents.iter().any(|h| h == parent) {
             continue;
         }
         traits.push(Value::rakuast(Box::new(RakuAstNode {
@@ -3931,6 +3960,18 @@ fn class_traits(
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
             fields: vec![node_field(Some("name"), name_from_identifier("rw"))],
+        })));
+    }
+    if is_hidden {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitIs,
+            fields: vec![node_field(Some("name"), name_from_identifier("hidden"))],
+        })));
+    }
+    for hidden in hidden_parents {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitHides,
+            fields: vec![node_field(None, parent_type_node(hidden, parent_args)?)],
         })));
     }
     Ok(traits)

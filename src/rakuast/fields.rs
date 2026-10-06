@@ -198,7 +198,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("infix", Absent::Required),
             ("dwim-right", Absent::False),
         ],
-        TraitReturns | TraitOf | TraitDoes => &[("type", Absent::Required)],
+        TraitReturns | TraitOf | TraitDoes | TraitHides => &[("type", Absent::Required)],
+        StatementTrusts => &[("type", Absent::Required)],
         TraitHandles => &[("term", Absent::Required)],
         TraitIs => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
@@ -353,7 +354,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",
-        TraitReturns | TraitOf | TraitDoes => "type",
+        TraitReturns | TraitOf | TraitDoes | TraitHides => "type",
         TraitHandles => "term",
         RegexLiteral => "text",
         RegexQuote => "quoted",

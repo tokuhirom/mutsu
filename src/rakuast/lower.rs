@@ -261,6 +261,21 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserLast
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
+        RakuAstClass::StatementTrusts => Ok(Stmt::TrustsDecl {
+            name: crate::symbol::Symbol::intern(&simple_type_name(
+                node,
+                named_child(node, "type")?,
+            )?),
+        }),
+        // `augment class C { ... }`.
+        RakuAstClass::Class if leaf_str(node, "scope").is_ok_and(|s| s == "augment") => {
+            Ok(Stmt::AugmentClass {
+                name: crate::symbol::Symbol::intern(&call_name_str(node)?),
+                body: lower_package_body(lower_block(named_child(node, "body")?)?),
+                does_roles: Vec::new(),
+                is_role: false,
+            })
+        }
         RakuAstClass::Class => super::package_header::lower_with_header(node, lower_class),
         RakuAstClass::Grammar => super::package_header::lower_with_header(node, lower_grammar),
         RakuAstClass::RegexDeclaration
@@ -648,11 +663,26 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// (which mutsu records in BOTH `parents` and `does_parents`), and
 /// `Trait::Is(name => "rw")` is the `rw` flag.
 #[allow(clippy::type_complexity)]
-fn class_traits(
-    node: &RakuAstNode,
-) -> Result<(Vec<String>, Vec<String>, Vec<(String, Vec<Expr>)>, bool), RuntimeError> {
+/// What a class declaration's `traits` say.
+struct ClassTraits {
+    parents: Vec<String>,
+    does_parents: Vec<String>,
+    parent_args: Vec<(String, Vec<Expr>)>,
+    is_rw: bool,
+    is_hidden: bool,
+    hidden_parents: Vec<String>,
+}
+
+fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
     let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), Vec::new(), Vec::new(), false));
+        return Ok(ClassTraits {
+            parents: Vec::new(),
+            does_parents: Vec::new(),
+            parent_args: Vec::new(),
+            is_rw: false,
+            is_hidden: false,
+            hidden_parents: Vec::new(),
+        });
     };
     let RakuAstFieldValue::List(items) = &f.value else {
         return Err(unsupported(node));
@@ -661,6 +691,8 @@ fn class_traits(
     let mut does_parents = Vec::new();
     let mut parent_args = Vec::new();
     let mut is_rw = false;
+    let mut is_hidden = false;
+    let mut hidden_parents = Vec::new();
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(unsupported(node));
@@ -676,11 +708,18 @@ fn class_traits(
                 } else if let Ok(name_node) = named_child(t, "name") {
                     match positional_leaf(name_node)?.view() {
                         ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
+                        ValueView::Str(s) if s.as_str() == "hidden" => is_hidden = true,
                         _ => return Err(unsupported(node)),
                     }
                 } else {
                     return Err(unsupported(node));
                 }
+            }
+            // `hides B`: B is a parent the class hides, and one it inherits.
+            RakuAstClass::TraitHides => {
+                let hidden = simple_type_name(node, named_child_or_positional(t)?)?;
+                parents.push(hidden.clone());
+                hidden_parents.push(hidden);
             }
             RakuAstClass::TraitDoes => {
                 let type_node = named_child_or_positional(t)?;
@@ -696,7 +735,14 @@ fn class_traits(
             _ => return Err(unsupported(node)),
         }
     }
-    Ok((parents, does_parents, parent_args, is_rw))
+    Ok(ClassTraits {
+        parents,
+        does_parents,
+        parent_args,
+        is_rw,
+        is_hidden,
+        hidden_parents,
+    })
 }
 
 /// `constant X = 5` -> a `Stmt::VarDecl` carrying mutsu's `__constant` marker
@@ -872,7 +918,14 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_class_name)?;
     let body = lower_package_body(lower_block(named_child(node, "body")?)?);
-    let (parents, does_parents, parent_args, class_is_rw) = class_traits(node)?;
+    let ClassTraits {
+        parents,
+        does_parents,
+        parent_args,
+        is_rw: class_is_rw,
+        is_hidden,
+        hidden_parents,
+    } = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
@@ -882,9 +935,9 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name_expr: None,
         parents,
         class_is_rw,
-        is_hidden: false,
+        is_hidden,
         is_lexical: head.is_lexical,
-        hidden_parents: Vec::new(),
+        hidden_parents,
         does_parents,
         repr,
         body,

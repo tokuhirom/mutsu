@@ -15,7 +15,7 @@ use Test;
 # round trip is the parsed program. The tree part also passes under `raku`; the
 # round trip part declares each name twice in one process, which raku refuses.
 
-plan 48;
+plan 61;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub run($src) { my $parsed = EVAL($src); my $round = EVAL($src.AST); ($parsed, $round) }
@@ -82,6 +82,25 @@ sub same($src, $expected, $desc) {
     is $c[0].scope, 'unit', '`unit class` has the `unit` scope';
 }
 
+{
+    my @h = exprs(Q[class H1 is hidden { }; class H2 { }; class H3 hides H2 { }; class H4 is H2 is hidden { }]);
+    is @h[0].traits[0].name.canonicalize, 'hidden', '`is hidden` is a Trait::Is named hidden';
+    isa-ok @h[2].traits[0], RakuAST::Trait::Hides, '`hides H2` is a Trait::Hides';
+    is @h[2].traits.elems, 1, 'and the hidden parent is not also an `is` trait';
+    isa-ok @h[3].traits[0], RakuAST::Trait::Is, '`is H2 is hidden` keeps the parent first';
+    is @h[3].traits[1].name.canonicalize, 'hidden', 'and then `hidden`';
+    my @t = exprs(Q[class T1 { }; class T2 { trusts T1; }]);
+    my $trusts = @t[1].body.body.statement-list.statements[0];
+    isa-ok $trusts, RakuAST::Statement::Trusts, '`trusts T1` is a Statement::Trusts';
+    isa-ok $trusts.type, RakuAST::Type::Simple, 'with the type';
+    my @a = Q[use MONKEY-TYPING; augment class Int { method foo { 1 } }].AST.statements;
+    isa-ok @a[1].expression, RakuAST::Class, '`augment class` is a Class';
+    is @a[1].expression.scope, 'augment', 'with the `augment` scope';
+    my @p = exprs(Q[our proto sub pf(|) {*}]);
+    is @p[0].scope, 'our', '`our proto sub` has the `our` scope';
+    is @p[0].multiness, 'proto', 'and the `proto` multiness';
+}
+
 # --- the round trip is the parsed program
 same Q[module M4:ver<1.2> { }; M4.^ver.Str], '1.2', 'a module version survives';
 same Q[class V1:ver<1.0>:auth<me> { }; V1.^ver.Str ~ "|" ~ V1.^auth], '1.0|me', 'class version and auth survive';
@@ -98,3 +117,8 @@ is EVAL(Q[unit class C6; method m { 6 }].AST).new.m, 6, 'and of a `unit class`';
 same Q[unit package P7; our $x = 7; $P7::x], 7, 'and of a `unit package`';
 same Q[my class L8 is export { method m { 8 } }; L8.new.m], 8, 'a lexical exported class';
 same Q[class W9 is rw is export { has $.a is rw }; my $w = W9.new(a => 1); $w.a = 9; $w.a], 9, 'rw and export together';
+same Q[class Hd1 is hidden { method m { 1 } }; Hd1.new.m], 1, 'a hidden class';
+same Q[class Hd2 { method who { "base" } }; class Hd3 hides Hd2 { method who { callsame } }; Hd3.new.who], 'base', 'a class that hides its parent';
+same Q[class Tr1 { trusts Tr2; has $!x = 5; method peek(Tr2 $o) { $o!Tr2::x2 } }; class Tr2 { has $!x2 = 7; }; 1], 1, 'a trusts declaration';
+same Q[use MONKEY-TYPING; augment class Int { method triple { self * 3 } }; 4.triple], 12, 'an augmented class';
+same Q[our proto sub opf($x) {*}; our multi sub opf(Int $x) { $x + 1 }; opf(2)], 3, 'an `our proto`';

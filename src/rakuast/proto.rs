@@ -47,7 +47,7 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
 pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
-    if proto.has_traits || proto.is_our || proto.return_type.is_some() {
+    if proto.has_traits || proto.return_type.is_some() {
         return Err(unsupported("proto with traits / scope / a return type"));
     }
     let class = if proto.is_method {
@@ -81,6 +81,10 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     add_flags(&mut node, false, false, &traits)?;
     node.fields
         .insert(0, leaf_field(Some("multiness"), Value::str_from("proto")));
+    if proto.is_our {
+        node.fields
+            .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
+    }
     Ok(node)
 }
 
@@ -97,6 +101,13 @@ pub(super) fn is_proto(node: &RakuAstNode) -> bool {
 /// A `proto` `Sub` / `Method` -> `Stmt::ProtoDecl`.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => false,
+        Some(_) => match super::lower::leaf_str(node, "scope")?.as_str() {
+            "our" => true,
+            _ => return Err(super::lower::unsupported(node)),
+        },
+    };
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = IsTraits::default();
@@ -124,6 +135,6 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         custom_traits: Vec::new(),
         trait_args: Vec::new(),
         is_method: node.class == RakuAstClass::Method,
-        is_our: false,
+        is_our,
     })
 }
