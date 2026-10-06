@@ -1161,6 +1161,8 @@ impl Interpreter {
         Some(Ok(value))
     }
 
+    // Cost: O(k * b), k = indexed keys (1 for a scalar key), b = bytes per key;
+    // each Stash symbol-table lookup is an expected constant-time hash probe.
     fn dispatch_at_key_method(
         &self,
         target: &Value,
@@ -1175,6 +1177,11 @@ impl Interpreter {
                 },
                 idx,
             ) if is_stash_class_name(class_name.as_str()) => {
+                let missing = if class_name.as_str() == "Stash" {
+                    Value::package(crate::symbol::wk::any())
+                } else {
+                    Value::NIL
+                };
                 if let Some(ValueView::Hash(symbols)) =
                     attributes.as_map().get("symbols").map(Value::view)
                 {
@@ -1200,7 +1207,7 @@ impl Interpreter {
                             .iter()
                             .map(|item| {
                                 let key = item.to_string_value();
-                                stash_lookup(&key).unwrap_or(Value::NIL)
+                                stash_lookup(&key).unwrap_or_else(|| missing.clone())
                             })
                             .collect::<Vec<_>>();
                         return Some(Ok(Value::array(values)));
@@ -1227,7 +1234,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Some(Ok(Value::NIL))
+                Some(Ok(missing))
             }
             (ValueView::Pair(key, value), idx) => {
                 if key == &idx.to_string_value() {
