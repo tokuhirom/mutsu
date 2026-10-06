@@ -348,12 +348,7 @@ pub(super) fn dispatch(
             }
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                let joined = leaves
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join("");
-                return Some(Some(Ok(Value::str(joined))));
+                return Some(crate::builtins::method_table::list::join_items(&leaves, "").map(Ok));
             }
             // A list's elements: the `List.join` row's implementation
             // (ADR-11276, `method_table::list`).
@@ -366,18 +361,7 @@ pub(super) fn dispatch(
                 // which renders the Range with space-separated gist semantics
                 // (`(1..5).join` must be "12345", not "1 2 3 4 5").
                 let items = crate::runtime::utils::value_to_list(target);
-                if items
-                    .iter()
-                    .any(|v| matches!(v.view(), ValueView::Instance { .. }))
-                {
-                    return Some(None);
-                }
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join("");
-                Some(Some(Ok(Value::str(joined))))
+                Some(crate::builtins::method_table::list::join_items(&items, "").map(Ok))
             } else if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
             {
                 // `.join` on a Thread is the thread-join primitive (block until the

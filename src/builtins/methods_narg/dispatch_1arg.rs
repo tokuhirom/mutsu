@@ -961,12 +961,7 @@ pub(crate) fn native_method_1arg(
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
                 let sep = arg.to_string_value();
-                let joined = leaves
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                return Some(Ok(Value::str(joined)));
+                return crate::builtins::method_table::list::join_items(&leaves, &sep).map(Ok);
             }
             // A list's elements (a hole reads as the array's `is default`
             // value): the `List.join` row's implementation (ADR-11276,
@@ -983,7 +978,7 @@ pub(crate) fn native_method_1arg(
                     let sep = arg.to_string_value();
                     let joined = positional
                         .iter()
-                        .map(|v| v.to_string_value())
+                        .map(Value::to_string_value)
                         .collect::<Vec<_>>()
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
@@ -999,7 +994,7 @@ pub(crate) fn native_method_1arg(
                         .unwrap_or_default();
                     let joined = items
                         .iter()
-                        .map(|v| v.to_str_context())
+                        .map(Value::to_str_context)
                         .collect::<Vec<_>>()
                         .join(&sep);
                     Some(Ok(Value::str(joined)))

@@ -815,6 +815,15 @@ impl Interpreter {
         } else {
             Self::value_to_list(&target)
         };
+        let (variable_name, sparse_holes) = match target.view() {
+            ValueView::Array(data, _) if !crate::runtime::utils::is_shaped_array(&target) => (
+                data.descriptor_name.as_deref().map(str::to_owned),
+                Some((0..items.len()).map(|index| data.hole_at(index)).collect::<Vec<_>>()),
+            ),
+            ValueView::Array(data, _) => (data.descriptor_name.as_deref().map(str::to_owned), None),
+            _ => (None, None),
+        };
+        let mut warned_sparse_hole = false;
         // Resolve every non-Junction element to its final Str value up front
         // (Instance/Mixin through user `.Str`, same as before); a Junction
         // element is left as-is so `thread_junctions_in_items` below can
@@ -822,7 +831,7 @@ impl Interpreter {
         // (`("a"|"b","c","d").join` => `any(acd, bcd)`) instead of
         // stringifying it in place.
         let mut resolved = Vec::with_capacity(items.len());
-        for v in &items {
+        for (index, v) in items.iter().enumerate() {
             // Decontainerize a `ContainerRef` element (grep rw alias / `:=`-bound
             // slot) so a cell-wrapped Instance still gets its user-defined `.Str`.
             let v = v.deref_container();
@@ -832,6 +841,50 @@ impl Interpreter {
             // deconts its invocant. Without this `my @h = $c` (an `is Array`
             // subclass instance) joined to the `SA()` fallback.
             let v = v.descalarize().clone();
+            if matches!(v.view(), ValueView::Nil) {
+                let resumed = match self.raise_resumable_warning(
+                    "Use of Nil in string context",
+                    Value::str(String::new()),
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                resolved.push(resumed);
+                continue;
+            }
+            if let ValueView::Package(name) = v.view() {
+                let type_name = name.resolve();
+                if type_name != "Mu" && !self.has_user_method(&type_name, "Str") {
+                    let is_sparse_hole = sparse_holes
+                        .as_ref()
+                        .and_then(|holes| holes.get(index))
+                        .copied()
+                        .unwrap_or(false);
+                    if is_sparse_hole && warned_sparse_hole {
+                        resolved.push(Value::str(String::new()));
+                        continue;
+                    }
+                    match self.warn_type_object_string_context_named(
+                        &type_name,
+                        (!is_sparse_hole)
+                            .then_some(variable_name.as_deref())
+                            .flatten(),
+                        false,
+                    ) {
+                        Ok(value) => resolved.push(value),
+                        Err(error) => return Some(Err(error)),
+                    }
+                    warned_sparse_hole |= is_sparse_hole;
+                    continue;
+                }
+                match self.call_method_with_values(v.clone(), "Str", vec![]) {
+                    Ok(value) => {
+                        resolved.push(Value::str(value.to_string_value()));
+                        continue;
+                    }
+                    Err(error) => return Some(Err(error)),
+                }
+            }
             // A `Str` subclass element already is a `Str`: rakudo's join takes
             // it as is (its payload), not through its own `.Str` (#11026).
             if let Some(payload) = crate::runtime::str_subclass_payload(&v) {

@@ -529,16 +529,6 @@ fn join(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     }
     let sep = args.first().map(Value::to_string_value).unwrap_or_default();
     let items = join_source_items(target)?;
-    if items.iter().any(|v| {
-        v.with_deref(|inner| {
-            matches!(
-                inner.descalarize().view(),
-                ValueView::Nil | ValueView::Package(_)
-            )
-        })
-    }) {
-        return None;
-    }
     join_items(&items, &sep).map(Ok)
 }
 
@@ -572,6 +562,8 @@ pub(crate) fn join_items(items: &[Value], sep: &str) -> Option<Value> {
                     | ValueView::Junction { .. }
                     | ValueView::LazyList(_)
                     | ValueView::LazyThunk(_)
+                    | ValueView::Nil
+                    | ValueView::Package(_)
             ) || matches!(inner.view(), ValueView::Seq(s) if s.awaits_vm_reify())
         }) || crate::value::gist::str_needs_dispatch(v)
     }) {
