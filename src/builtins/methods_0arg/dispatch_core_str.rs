@@ -133,55 +133,55 @@ pub(super) fn dispatch(
             // A lazy `LazyList` is re-tagged so that assigning it to an array
             // keeps it lazy; every other receiver is the `lazy` rows'
             // implementation (`method_table::lazy`).
-            if is_value_lazy(target) {
-                if let ValueView::LazyList(list) = target.view() {
-                    let mut env = list.env.clone();
-                    env.insert(
-                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                        Value::TRUE,
-                    );
-                    let cache = list.cache.lock().unwrap().clone();
-                    return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList {
-                            body: list.body.clone(),
-                            env,
-                            cache: std::sync::Mutex::new(cache),
-                            generation_state: std::sync::Mutex::new(None),
-                            compiled_code: list.compiled_code.clone(),
-                            compiled_fns: list.compiled_fns.clone(),
-                            elems_count: list.elems_count.clone(),
-                            scan_spec: list
-                                .scan_spec
-                                .as_ref()
-                                .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
-                            sequence_spec: list.sequence_spec.clone(),
-                            coroutine: list
-                                .coroutine
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            lazy_pipe: list
-                                .lazy_pipe
-                                .as_ref()
-                                .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
-                            closure_seq: list
-                                .closure_seq
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            walk_pending: list
-                                .walk_pending
-                                .as_ref()
-                                .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
-                            cat_pull: list
-                                .cat_pull
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            array_context: list.array_context,
-                            list_context: list.list_context,
-                            cached_no_sink: list.cached_no_sink,
-                            itemized: list.itemized,
-                        },
-                    )))));
-                }
+            if is_value_lazy(target)
+                && let ValueView::LazyList(list) = target.view()
+            {
+                let mut env = list.env.clone();
+                env.insert(
+                    "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                    Value::TRUE,
+                );
+                let cache = list.cache.lock().unwrap().clone();
+                return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                    crate::value::LazyList {
+                        body: list.body.clone(),
+                        env,
+                        cache: std::sync::Mutex::new(cache),
+                        generation_state: std::sync::Mutex::new(None),
+                        compiled_code: list.compiled_code.clone(),
+                        compiled_fns: list.compiled_fns.clone(),
+                        elems_count: list.elems_count.clone(),
+                        scan_spec: list
+                            .scan_spec
+                            .as_ref()
+                            .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
+                        sequence_spec: list.sequence_spec.clone(),
+                        coroutine: list
+                            .coroutine
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        lazy_pipe: list
+                            .lazy_pipe
+                            .as_ref()
+                            .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
+                        closure_seq: list
+                            .closure_seq
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        walk_pending: list
+                            .walk_pending
+                            .as_ref()
+                            .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
+                        cat_pull: list
+                            .cat_pull
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        array_context: list.array_context,
+                        list_context: list.list_context,
+                        cached_no_sink: list.cached_no_sink,
+                        itemized: list.itemized,
+                    },
+                )))));
             }
             Some(crate::builtins::method_table::lazy::lazy(target, &[]))
         }
