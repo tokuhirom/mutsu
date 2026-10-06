@@ -745,31 +745,42 @@ and belong to 3D.
    `map`, `grep`, `first`, `reduce`, `produce`, `classify`, `categorize`, `rotor`, `skip`,
    `match`, `iterator`, `eager`, `splice`, `squish`, `categorize-list`, `classify-list`.
 
-**Progress (updated as families land; the closing paragraph is written when the PR opens).**
+**What landed (354 declared rows at the start, 180 left).** Eight family commits, each with its focused
+test, each checked against Rakudo and against the roast directories of its owners:
 
 - [x] Range's own methods (`bounds`, `is-int`, `infinite`, `int-bounds`, `rand`, `in-range`): arms
   deleted (no catch-all answers a Range). `is-int` now shares `range_is_int` with `int-bounds` and
   `minmax`, which moves it toward Rakudo (`1..*`, `1..Inf`, `*..5` are not Int ranges; a big-Int
   end and a Bool end are).
 - [x] The quant hashes' views and sizes (`collections/quanthash.rs`): `keys`, `values`, `kv`,
-  `pairs`, `antipairs`, `total`, `elems`, `default`, `of`, `hash`, `kxxv`, `invert`,
+  `pairs`, `antipairs`, `total`, `elems`, `default`, `of`, `hash`, `list`, `kxxv`, `invert`,
   `Baggy.Numeric`.
 - [x] `AT-KEY`, `EXISTS-KEY` and `ACCEPTS` of the associatives (`collections/subscript.rs`);
   `Capture.AT-KEY` and `EXISTS-KEY` now work (they answered "does not support associative
   indexing").
 - [x] Capture (`collections/capture.rs`): the views, `list`, `hash`, `elems`, `Numeric`, `AT-POS`
   (new), `EXISTS-POS` (new), and the `.Capture` coercion of every collection owner.
-- [x] Pair's views (`keys`, `values`, `kv`, `pairs`, `antipairs`, `invert`).
+- [x] Pair's views (`keys`, `values`, `kv`, `pairs`, `antipairs`, `invert`) and `Pair.Pair`;
+  `antipairs` answered through the generic positional path (`((:a(5)) => 0,)`) and is the one
+  swapped pair now.
+- [x] The laziness markers (`collections/lazy.rs`): `hyper`, `race`, `lazy` on List, Map and Range,
+  `item` on Map and Range, `Range.is-lazy`.
+- [x] Range's element methods (`elems`, `min`, `max`, `minmax`, `Numeric`, `list`, `sum`, `reverse`,
+  `contains`, `index`) and the positional subscript (`AT-POS` on List, Array and Range,
+  `EXISTS-POS` on List and Range, `collections/positional.rs`).
+- [x] The small coercions: `Slip` (List, Array), `List` (Array, Map), `list` (Map), `hash` (Map),
+  `default` (Array, Hash).
 
 What the work taught, which the remaining families follow:
 
 - **A name whose cascade arm ends in a catch-all keeps one delegating branch.** `keys`, `values`,
-  `kv`, `pairs`, `antipairs`, `hash` and `elems` answer for every receiver in the end (`_ =>
-  value_to_list`), so an arm with a covered shape's branch deleted answers that shape wrongly and
-  the debug cross-check (`debug_assert_matches_full_path`) fails on it, as it should. Those arms
-  call the row's handler for the covered shapes (the handler is the one implementation); arms
-  with no catch-all (`total`, `default`, `of`, `kxxv`, Range's methods) are deleted outright.
-  The delegating branches are what slice 5 removes with the cascades.
+  `kv`, `pairs`, `antipairs`, `hash`, `elems` and `min`/`max` answer for every receiver in the
+  end (`_ => value_to_list`, `_ => target.clone()`), so an arm with a covered shape's branch
+  deleted answers that shape wrongly and the debug cross-check
+  (`debug_assert_matches_full_path`) fails on it, as it should. Those arms call the row's
+  handler for the covered shapes (the handler is the one implementation); arms with no
+  catch-all (`total`, `default`, `of`, `kxxv`, Range's `bounds` and friends) are deleted
+  outright. The delegating branches are what slice 5 removes with the cascades.
 - **A one-argument row cannot replace its arm.** A row admits only plain arguments, and a
   cascade arm answers for an object key (an Instance whose `Str` is user code), so
   `AT-KEY`/`EXISTS-KEY`/`ACCEPTS`/`AT-POS` keep a delegating arm.
@@ -780,13 +791,47 @@ What the work taught, which the remaining families follow:
 - **A row must be reachable by some shape** (`every_row_is_reached_and_answers`): `Map.AT-KEY`
   has no row (no shape would reach it behind `Hash.AT-KEY`), and no `Seq` row can be registered
   before the `Seq` shape exists.
+- **Rows that restate an ancestor's implementation can contradict an earlier slice's pin**:
+  `List.sum` is declared by Rakudo, but `aggregate_rows_resolve_to_the_rakudo_owners` pins
+  `Any.sum` for List, so the row was not added.
 
-**What the slice has to decide.** The `Seq` shape (a method decides whether it consumes the
-`Seq`) is added with the first row `Seq` owns. The ancestor rows are audited, and the shape
-opened, for `Range`, `Pair`, `Capture` and the six quant hashes one shape at a time, when the
-family that first needs it lands. `Junction`, `Nil` and `Iterable` have no shape of their own
-(autothreading and `Nil` are guards; 3D adds the `Nil` shape), so their seven rows follow the
-family of their name and are registered with their owner.
+**Deferred, with the reason (the 180 declared rows that are left).**
+
+- **`Seq`** (26 rows): the `Seq` shape is the one ADR §9.15 leaves to 3C, and it is the riskiest:
+  a method on a `Seq` decides whether it consumes the `Seq`, and the call goes through
+  `reify_or_consume_seq_target` first. It wants its own change (the shape, a consumption flag on
+  the row, and the 26 rows), not a tail on this one.
+- **The rendering and identity names** (`gist`, `raku`, `Str`, `WHICH`, `fmt`, `clone`: about 65
+  rows). They are the names every group shares: one `match` over every receiver kind implements
+  each (`dispatch_core_repr`, the `Str` arm of `dispatch_core_coerce`, the `WHICH` arm), behind a
+  prologue with a per-name condition for instances, mixins and type objects. A row per owner
+  over that one function would only register metadata, and splitting the function per shape
+  edits the lines 3B and 3D must edit as well, so it is done once, after those two slices, as a
+  split of each function into `gist_of`/`raku_of`/`str_of`/`which_of`/`fmt_of`.
+- **Sampling** (`pick`, `roll`, `pickpairs`, `grab`, `grabpairs`: 34 rows). A random answer
+  cannot be re-run by the debug cross-check, so it needs a `RowFlags::RANDOM` the cross-check
+  honours; the one-argument forms take `*`, a count or a closure and reach the interpreter's
+  `methods_pick_roll.rs`; and the quant hashes' `grab` mutates the receiver. Arity 0 alone would
+  be a half-migrated name, which §10.3 rule 6 forbids.
+- **Mutating methods** (19 declared rows flagged `MUTATES_RECEIVER`, 20 real mutators): 3F, with
+  `Handler::Mut`.
+- **Interpreter rows on `Any`** (`map`, `grep`, `first`, `reduce`, `produce`, `classify`,
+  `categorize`, `rotor`, `skip`, `squish`, `eager`, `iterator`, `match`, `splice`,
+  `categorize-list`, `classify-list`: 18 rows). Each calls a closure through the interpreter's
+  own routes (`vm_native_map`, `methods_collection.rs`); a row has to join those routes, which is
+  slice 4's resolver work.
+- **The rest, by name**: `head`/`tail` (the arity-0 forms read the raw store and have their own arm),
+  `flat` on Map and Range, `join` and `batch` on `Any`, `chrs` and `Supply` on List, `dynamic` and
+  `name` on Array and Hash (the interpreter's container methods), `Any.list`/`Any.hash`/`Any.serial`
+  and `Bool` on Junction, and `gist`/`raku` on `Nil` and `Junction` (no shape).
+- **Opening the closed shapes.** `Range`, `Pair`, `Capture` and the six quant hashes stay closed:
+  an ancestor row (`Any.head`, `Cool.uc`, ...) does not reach them. Opening one means reading every
+  ancestor row for that shape's receivers; a `Range` inherits `Cool`'s string rows, which answer
+  from the stringified receiver, and `.chars` of a `Range` is not obviously `"1..3".chars`. Each
+  shape is opened by the change that audits it.
+
+The report (`scripts/method-rows-report.py --inventory collections,"quant hashes"`) lists the 180;
+it is the checklist for whoever takes the deferred families.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
