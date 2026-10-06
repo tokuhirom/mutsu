@@ -267,6 +267,26 @@ pub(crate) fn auto_default_expr_for_type(tc: &str) -> Expr {
     }
 }
 
+/// The seed of an `is box_target` attribute declared with type `tc`.
+///
+/// MoarVM inlines the box target's body into the object, so the object is
+/// created with that body already allocated: upstream NativeCall's
+/// `has Callsite $!call is box_target` reads back as a concrete `Callsite`
+/// before anything is built. A native type keeps its zero seed; a class type
+/// is allocated by its REPR (`Type.CREATE`, no `BUILD`), once per object.
+fn box_target_default_expr(tc: &str) -> Expr {
+    match auto_default_expr_for_type(tc) {
+        Expr::BareWord(type_name) => Expr::MethodCall {
+            target: Box::new(Expr::BareWord(type_name)),
+            name: Symbol::intern("CREATE"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+        },
+        seed => seed,
+    }
+}
+
 /// Whether a `HAS`-scoped attribute of this declared type inlines nothing.
 ///
 /// `HAS` exists to store a member *by value* inside the enclosing struct, which
@@ -1190,7 +1210,14 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && sigil == b'$'
         && let Some(ref tc) = type_constraint
     {
-        default = Some(auto_default_expr_for_type(tc));
+        let is_box_target = unknown_traits
+            .iter()
+            .any(|(kind, name, _)| kind == "is" && name == "box_target");
+        default = Some(if is_box_target {
+            box_target_default_expr(tc)
+        } else {
+            auto_default_expr_for_type(tc)
+        });
         default_is_seed = true;
     }
 

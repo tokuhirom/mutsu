@@ -15,6 +15,7 @@ mod carray_ref;
 mod carray_view;
 pub(crate) use carray_view::CArrayView;
 mod carray_repr;
+mod box_target;
 mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;

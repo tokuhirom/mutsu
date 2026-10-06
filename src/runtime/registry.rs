@@ -229,6 +229,15 @@ pub(crate) struct Registry {
     /// `class void`), by full name: they report that REPR and have no
     /// instances (`.new` / `nqp::create` die).
     pub(crate) uninstantiable_classes: HashSet<String>,
+    /// Classes declared `is repr<NativeCall>` (upstream NativeCall's
+    /// `my class Callsite`), by full name: their instances are the callsite
+    /// `nqp::buildnativecall` fills in (see `runtime::box_target`).
+    pub(crate) nativecall_classes: HashSet<String>,
+    /// The attribute a class or role declared `is box_target`, keyed by the
+    /// declaring class or role (a role by its base name). MoarVM's native ops
+    /// on an object that has one apply to that attribute's value instead
+    /// (see `runtime::box_target`).
+    pub(crate) box_target_attrs: HashMap<String, String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
     pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
