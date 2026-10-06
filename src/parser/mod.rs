@@ -348,9 +348,17 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
     // A fragment is not a compilation unit: it must not replace the
     // declarator docs the enclosing unit's parse published.
     let saved_unit_docs = decl_doc::take_unit_docs();
+    // `parse_program` starts by clearing "an import could not be scanned", which
+    // would make the enclosing unit's type index look exhaustive again: a
+    // regex code block parsed in the middle of a module with an unresolved
+    // `use` then turned every later undeclared type name into a gobbled block.
+    let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     let result = parse_program(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    if type_index_was_incomplete {
+        stmt::simple::note_type_index_incomplete();
+    }
     decl_doc::set_unit_docs(saved_unit_docs);
     PARSE_WARNINGS.with(|w| *w.borrow_mut() = saved_warnings);
     VCS_CONFLICT_MARKERS.with(|m| *m.borrow_mut() = saved_markers);
