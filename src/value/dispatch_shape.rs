@@ -15,7 +15,9 @@
 //! non-lazy, non-itemized value of one built-in type. Everything the gauntlet
 //! exists for — a user `Instance`, a `Mixin`, a `Scalar`, a `Seq`, a
 //! `LazyList`, a `Proxy`, a lazy `Match`, a shaped or lazy array, an itemized
-//! hash — answers `None` and takes the ordinary path.
+//! hash — answers `None` and takes the ordinary path. (A `Match` of the built-in
+//! class has a shape since slice 3D: the guard that refuses a lazy `Match` is that
+//! no handler of its rows reads it through `view()`, which would materialize it.)
 //!
 //! # Adding a shape
 //!
@@ -101,13 +103,18 @@ pub(crate) enum DispatchShape {
     /// `Duration`, `Cool`, `Any`, `Mu`; slice 3D audited those owners' rows for
     /// it and opened the shape.
     Duration,
+    /// A regex `Match` (lazy or eager), not a grammar cursor and not a
+    /// subclass of it (closed). A method answers from the capture node when it
+    /// can, so a lazy `Match` is not materialized by a call that does not need
+    /// its structure.
+    Match,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 25] = [
+    pub(crate) const ALL: [DispatchShape; 26] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -133,6 +140,7 @@ impl DispatchShape {
         DispatchShape::DateTime,
         DispatchShape::Instant,
         DispatchShape::Duration,
+        DispatchShape::Match,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -165,6 +173,7 @@ impl DispatchShape {
             DispatchShape::DateTime => "DateTime",
             DispatchShape::Instant => "Instant",
             DispatchShape::Duration => "Duration",
+            DispatchShape::Match => "Match",
         }
     }
 
@@ -215,14 +224,15 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 4] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 4]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 5] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 5]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
             (Symbol::intern("DateTime"), DispatchShape::DateTime),
             (Symbol::intern("Instant"), DispatchShape::Instant),
             (Symbol::intern("Duration"), DispatchShape::Duration),
+            (Symbol::intern("Match"), DispatchShape::Match),
         ]
     })
 }

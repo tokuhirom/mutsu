@@ -54,6 +54,13 @@ fn sample(shape: DispatchShape) -> Value {
             "Duration",
             crate::value::make_rat(15, 2),
         ),
+        DispatchShape::Match => Value::make_match_object_full(
+            3,
+            5,
+            &[],
+            &Default::default(),
+            crate::value::regex_caps::MatchTarget::new("xxxab"),
+        ),
     }
 }
 

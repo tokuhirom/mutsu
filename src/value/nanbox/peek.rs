@@ -659,6 +659,14 @@ impl NanBox {
             Classified::Kind(Kind::BagMut) => Some(DispatchShape::BagHash),
             Classified::Kind(Kind::MixImm) => Some(DispatchShape::Mix),
             Classified::Kind(Kind::MixMut) => Some(DispatchShape::MixHash),
+            // A regex match that is not a grammar cursor (whose class is the
+            // grammar's own and may override any `Match` method). A tag probe
+            // and one field read: the match is not materialized.
+            Classified::Kind(Kind::Match) => {
+                // SAFETY: Match words carry a `Gc<MatchNode>`.
+                let node = unsafe { peek_gc::<MatchNode>(self.0.get()) };
+                node.is_plain().then_some(DispatchShape::Match)
+            }
             // A built-in class's own instance: its class name is the shape's.
             // A user subclass has another name, so it has none.
             Classified::Kind(Kind::Instance) => {

@@ -83,6 +83,13 @@ impl MatchNode {
         cursor_class_symbol(&self.target)
     }
 
+    /// Whether this is an ordinary regex match, not a grammar cursor (whose
+    /// class is the grammar's own and may override any `Match` method).
+    // Cost: O(1).
+    pub(crate) fn is_plain(&self) -> bool {
+        self.target.cursor_class().is_none()
+    }
+
     /// Force the Instance-shaped materialization (one level deep).
     pub(in crate::value) fn force_attrs(&self) -> &crate::gc::Gc<InstanceAttrs> {
         self.attrs.get_or_init(|| {
