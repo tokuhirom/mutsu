@@ -1157,6 +1157,7 @@ impl Interpreter {
             && let ValueView::Package(pkg) = target.view()
             && qualifier != pkg.as_str()
             && !self.has_class(qualifier)
+            && !self.is_role(qualifier)
             && self.class_mro(pkg.as_str()).iter().any(|c| c.as_str() == qualifier)
         {
             return Some(self.dispatch_native_new(target.clone(), args));
