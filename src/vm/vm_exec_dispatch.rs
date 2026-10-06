@@ -2992,7 +2992,11 @@ impl Interpreter {
                 // superset, see `sigilless_alias_index`), each re-checked
                 // against this frame's env overlay -- the same entries the old
                 // whole-overlay scan found, without visiting the rest.
-                {
+                //
+                // A rebind (`$name := ...`) installs a new binding and leaves
+                // every name bound to the OLD container where it was, so it
+                // propagates to none of them (#11797).
+                if !is_rebind {
                     let reverse_targets: Vec<String> = crate::sigilless_alias_index::aliases_of(
                         name_sym,
                     )
