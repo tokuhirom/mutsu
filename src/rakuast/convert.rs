@@ -4013,9 +4013,16 @@ fn declared_invocant_parameter(
                 fields: vec![node_field(None, name_from_identifier(name))],
             }
         } else {
+            // The parser names the anonymous `$:` invocant like any anonymous
+            // scalar parameter.
+            let spelled = if name == ANONYMOUS_SCALAR_PARAM {
+                "$".to_string()
+            } else {
+                format!("${name}")
+            };
             RakuAstNode {
                 class: RakuAstClass::ParameterTargetVar,
-                fields: vec![leaf_field(Some("name"), Value::str(format!("${name}")))],
+                fields: vec![leaf_field(Some("name"), Value::str(spelled))],
             }
         };
         fields.push(node_field(Some("target"), target));
