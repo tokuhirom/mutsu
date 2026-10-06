@@ -205,6 +205,8 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    RegexSequentialConjunction,
+    RegexConjunction,
     RegexBacktrackModifiedAtom,
     RegexQuantifierBlockRange,
     RegexAssertionRecurse,
@@ -537,6 +539,8 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            RegexSequentialConjunction => "RakuAST::Regex::SequentialConjunction",
+            RegexConjunction => "RakuAST::Regex::Conjunction",
             RegexBacktrackModifiedAtom => "RakuAST::Regex::BacktrackModifiedAtom",
             RegexQuantifierBlockRange => "RakuAST::Regex::Quantifier::BlockRange",
             RegexAssertionRecurse => "RakuAST::Regex::Assertion::Recurse",
@@ -857,7 +861,11 @@ impl RakuAstClass {
                 "RakuAST::Regex::Term",
                 "RakuAST::Regex",
             ],
-            RegexSequence | RegexAlternation | RegexSequentialAlternation => {
+            RegexSequence
+            | RegexAlternation
+            | RegexSequentialAlternation
+            | RegexConjunction
+            | RegexSequentialConjunction => {
                 &["RakuAST::Regex"]
             }
             RegexQuantifiedAtom | RegexBacktrackModifiedAtom => {
@@ -1126,7 +1134,9 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         ],
         "RakuAST::Regex::Sequence"
         | "RakuAST::Regex::Alternation"
-        | "RakuAST::Regex::SequentialAlternation" => {
+        | "RakuAST::Regex::SequentialAlternation"
+        | "RakuAST::Regex::Conjunction"
+        | "RakuAST::Regex::SequentialConjunction" => {
             &["RakuAST::Regex"]
         },
         "RakuAST::Regex::QuantifiedAtom" | "RakuAST::Regex::BacktrackModifiedAtom" =>
@@ -1325,6 +1335,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::RegexSequentialConjunction,
+    RakuAstClass::RegexConjunction,
     RakuAstClass::RegexBacktrackModifiedAtom,
     RakuAstClass::RegexQuantifierBlockRange,
     RakuAstClass::RegexAssertionRecurse,
@@ -2103,12 +2115,18 @@ pub fn construct(
         "RakuAST::Regex::Sequence"
             | "RakuAST::Regex::Alternation"
             | "RakuAST::Regex::SequentialAlternation"
+            | "RakuAST::Regex::Conjunction"
+            | "RakuAST::Regex::SequentialConjunction"
     ) && method == "new"
     {
         let class = if class_name.ends_with("Sequence") {
             RakuAstClass::RegexSequence
         } else if class_name.ends_with("SequentialAlternation") {
             RakuAstClass::RegexSequentialAlternation
+        } else if class_name.ends_with("SequentialConjunction") {
+            RakuAstClass::RegexSequentialConjunction
+        } else if class_name.ends_with("Conjunction") {
+            RakuAstClass::RegexConjunction
         } else {
             RakuAstClass::RegexAlternation
         };
@@ -2843,6 +2861,8 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexInterpolation
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexSequentialAlternation
+                    | RakuAstClass::RegexConjunction
+                    | RakuAstClass::RegexSequentialConjunction
                     | RakuAstClass::RegexQuantifiedAtom
                     | RakuAstClass::RegexBacktrackModifiedAtom
                     | RakuAstClass::RegexAnchorBeginningOfString
@@ -2967,6 +2987,10 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Regex::SequentialConjunction", "new") => {
+            RakuAstClass::RegexSequentialConjunction
+        }
+        ("RakuAST::Regex::Conjunction", "new") => RakuAstClass::RegexConjunction,
         ("RakuAST::Regex::BacktrackModifiedAtom", "new") => {
             RakuAstClass::RegexBacktrackModifiedAtom
         }
@@ -3179,6 +3203,8 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::RegexSequence
             | RakuAstClass::RegexAlternation
             | RakuAstClass::RegexSequentialAlternation
+            | RakuAstClass::RegexConjunction
+            | RakuAstClass::RegexSequentialConjunction
             | RakuAstClass::RegexAssertionCharClass
     ) && fields::positional_accessor(node.class) == Some(method)
     {
@@ -3349,6 +3375,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::RegexSequentialConjunction
+            | RakuAstClass::RegexConjunction
             | RakuAstClass::RegexBacktrackModifiedAtom
             | RakuAstClass::RegexQuantifierBlockRange
             | RakuAstClass::RegexAssertionRecurse

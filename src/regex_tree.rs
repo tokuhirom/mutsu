@@ -1628,12 +1628,12 @@ impl Parser {
             self.pos = before_leading;
             None
         };
-        let mut branches = vec![self.parse_sequence(stops, leading_sequential == Some(true))?];
+        let mut branches = vec![self.parse_conjunction(stops, leading_sequential == Some(true))?];
         let mut sequential_operators = Vec::new();
         while self.consume_if('|') {
             let sequential = self.consume_if('|');
             sequential_operators.push(sequential);
-            branches.push(self.parse_sequence(stops, sequential)?);
+            branches.push(self.parse_conjunction(stops, sequential)?);
         }
         if top_level && let Some(last) = branches.last_mut() {
             wrap_last_node(last);
@@ -1673,6 +1673,49 @@ impl Parser {
         }
     }
 
+    /// `a & b` and `a && b` between sequences: `&&` binds looser than `&`
+    /// (`a & b && c` is `(a & b) && c`) and both bind tighter than `|`.
+    // Cost: O(n), n = size of the operands.
+    fn parse_conjunction(
+        &mut self,
+        stops: &[char],
+        sequential_interpolation: bool,
+    ) -> Option<RegexNode> {
+        let mut operands = vec![self.parse_sequence(stops, sequential_interpolation)?];
+        let mut sequential_operators = Vec::new();
+        while self.chars.get(self.pos) == Some(&'&') {
+            self.pos += 1;
+            sequential_operators.push(self.consume_if('&'));
+            operands.push(self.parse_sequence(stops, false)?);
+        }
+        if operands.len() == 1 {
+            return operands.pop();
+        }
+        let mut operands = operands.into_iter();
+        let mut groups = Vec::new();
+        let mut current = vec![operands.next()?];
+        for (sequential, operand) in sequential_operators.into_iter().zip(operands) {
+            if sequential {
+                groups.push(std::mem::take(&mut current));
+            }
+            current.push(operand);
+        }
+        groups.push(current);
+        let group = |mut operands: Vec<RegexNode>| {
+            if operands.len() == 1 {
+                operands.pop().unwrap_or(RegexNode::Sequence(Vec::new()))
+            } else {
+                RegexNode::Extension(RegexExtension::Conjunction(operands))
+            }
+        };
+        let mut groups: Vec<RegexNode> = groups.into_iter().map(group).collect();
+        Some(if groups.len() == 1 {
+            groups.pop().unwrap_or(RegexNode::Sequence(Vec::new()))
+        } else {
+            RegexNode::Extension(RegexExtension::SequentialConjunction(groups))
+        })
+    }
+
     fn parse_sequence(
         &mut self,
         stops: &[char],
@@ -1692,7 +1735,7 @@ impl Parser {
             };
             // `)>` ends the match, even inside a capturing group.
             let match_to = ch == ')' && self.chars.get(self.pos + 1) == Some(&'>');
-            if (stops.contains(&ch) && !match_to) || ch == '|' {
+            if (stops.contains(&ch) && !match_to) || ch == '|' || ch == '&' {
                 if saw_whitespace {
                     wrap_last_with_whitespace(&mut nodes);
                 }
@@ -1869,6 +1912,9 @@ impl Parser {
             {
                 self.pos += 1;
                 Some(RegexNode::AnchorEndOfString)
+            }
+            '$' | '@' | '%' if self.chars.get(self.pos + 1) == Some(&'(') => {
+                self.parse_contextualized_interpolation(sequential_interpolation)
             }
             '$' => self.parse_interpolation(sequential_interpolation),
             '@' if self.allow_array_interpolation => {
@@ -2696,6 +2742,23 @@ impl Parser {
                     args,
                 });
             }
+            // `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is
+            // no subrule call.
+            if is_simple_subrule_name(alias)
+                && capturing
+                && target.starts_with(['$', '@', '%', '[', '-', '+', ':'])
+                && let Some(tree) =
+                    RegexTree::parse_lookaround_body(&format!("<{target}>"), self.in_unit_parse)
+                && matches!(
+                    tree.body,
+                    RegexNode::RegexValueInterpolation { .. } | RegexNode::CharClassAssertion(_)
+                )
+            {
+                return Some(RegexNode::Extension(RegexExtension::Alias {
+                    alias: alias.to_string(),
+                    assertion: Box::new(tree.body),
+                }));
+            }
             return None;
         }
         let (capturing, name) = if let Some(name) = contents.strip_prefix('.') {
@@ -2734,6 +2797,71 @@ impl Parser {
         };
         self.pos += width;
         Some(backtrack)
+    }
+
+    /// `$(EXPR)`, `@(EXPR)`, `%(EXPR)`: an interpolated expression.
+    // Cost: O(n), n = length of the expression.
+    fn parse_contextualized_interpolation(&mut self, sequential: bool) -> Option<RegexNode> {
+        let start = self.pos;
+        let sigil = self.chars[start];
+        let open = start + 1;
+        let mut depth = 0usize;
+        let mut quote = None;
+        let mut end = open;
+        while let Some(&ch) = self.chars.get(end) {
+            if let Some(closer) = quote {
+                if ch == '\\' {
+                    end += 1;
+                } else if ch == closer {
+                    quote = None;
+                }
+            } else {
+                match ch {
+                    '\\' => end += 1,
+                    '\'' | '"' => quote = Some(ch),
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => {
+                        depth = depth.checked_sub(1)?;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            end += 1;
+        }
+        if self.chars.get(end) != Some(&')') {
+            return None;
+        }
+        let code: String = self.chars[open + 1..end].iter().collect();
+        let (body, _) = if self.in_unit_parse {
+            let offset = self.unit_base.map(|base| {
+                base + self.chars[..open + 1]
+                    .iter()
+                    .map(|c| c.len_utf8())
+                    .sum::<usize>()
+            });
+            crate::parser::parse_nested_block_fragment(&code, offset).ok()?
+        } else {
+            crate::parser::parse_fragment(&code).ok()?
+        };
+        let statements = body
+            .iter()
+            .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(_)))
+            .count();
+        if statements != 1 {
+            return None;
+        }
+        self.pos = end + 1;
+        Some(RegexNode::Extension(
+            RegexExtension::ContextualizedInterpolation {
+                sigil,
+                code,
+                body,
+                sequential,
+            },
+        ))
     }
 
     /// `$<name>` that is not an alias: match what the capture matched.
@@ -3544,6 +3672,14 @@ fn wrap_last_with_whitespace(nodes: &mut [RegexNode]) {
 fn wrap_last_node(node: &mut RegexNode) {
     match node {
         RegexNode::Sequence(nodes) => wrap_last_with_whitespace(nodes),
+        // The space after `a & b` is `b`'s, as it is for `a | b`.
+        RegexNode::Extension(
+            RegexExtension::Conjunction(operands) | RegexExtension::SequentialConjunction(operands),
+        ) => {
+            if let Some(last) = operands.last_mut() {
+                wrap_last_node(last);
+            }
+        }
         other => wrap_node_with_whitespace(other),
     }
 }

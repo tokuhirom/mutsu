@@ -42,6 +42,7 @@ pub(super) fn is_source(node: &RakuAstNode, field: &RakuAstField) -> bool {
                 | RakuAstClass::RegexStatement
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexQuote
+                | RakuAstClass::RegexInterpolation
         )
 }
 

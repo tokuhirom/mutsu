@@ -22,6 +22,10 @@
 //! <~~>       Assertion::Recurse
 //! a:!        BacktrackModifiedAtom(atom => ..., backtrack => Backtrack::Greedy)
 //! "x $y z"   Regex::Quote(QuotedString(segments => (StrLiteral, Var::Lexical, StrLiteral)))
+//! a & b      Regex::Conjunction(a, b)           a && b   Regex::SequentialConjunction(a, b)
+//! $(1+1)     Regex::Interpolation(sequential => False,
+//!                                 var => Contextualizer::Item(StatementSequence(...)))
+//! <rx=$r>    Assertion::Alias(name => "rx", assertion => Assertion::InterpolatedVar(...))
 //! ```
 
 use super::{RegexBacktrack, RegexNode};
@@ -61,38 +65,64 @@ pub(crate) enum RegexExtension {
     /// `"x $y z"`: a double-quoted term that interpolates. `source` is the body
     /// as written; `expr` is what the `qq` parser makes of it.
     InterpolatedQuote { source: String, expr: Box<Expr> },
+    /// `a & b`: every operand must match the same text.
+    Conjunction(Vec<RegexNode>),
+    /// `a && b`: the operands are tried in order.
+    SequentialConjunction(Vec<RegexNode>),
+    /// `$(EXPR)`, `@(EXPR)`, `%(EXPR)`: an interpolated expression, as written
+    /// (without the sigil and the parentheses).
+    ContextualizedInterpolation {
+        sigil: char,
+        code: String,
+        body: Vec<Stmt>,
+        sequential: bool,
+    },
+    /// `<rx=$r>`, `<foo=[bao]>`: an alias over an assertion that is not a
+    /// subrule call.
+    Alias {
+        alias: String,
+        assertion: Box<RegexNode>,
+    },
 }
 
 impl RegexExtension {
     /// The regex nodes nested in this construct.
-    // Cost: O(1).
+    // Cost: O(k), k = number of nested nodes.
     pub(crate) fn children(&self) -> Vec<&RegexNode> {
         match self {
-            Self::Lookahead { assertion, .. } => vec![assertion],
+            Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
+            Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
+                operands.iter().collect()
+            }
             Self::Words(_)
             | Self::Statement { .. }
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
             | Self::Recurse
-            | Self::InterpolatedQuote { .. } => Vec::new(),
+            | Self::InterpolatedQuote { .. }
+            | Self::ContextualizedInterpolation { .. } => Vec::new(),
         }
     }
 
     /// [`Self::children`], mutably.
-    // Cost: O(1).
+    // Cost: O(k), k = number of nested nodes.
     pub(crate) fn children_mut(&mut self) -> Vec<&mut RegexNode> {
         match self {
-            Self::Lookahead { assertion, .. } => vec![assertion],
+            Self::Lookahead { assertion, .. } | Self::Alias { assertion, .. } => vec![assertion],
             Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
+            Self::Conjunction(operands) | Self::SequentialConjunction(operands) => {
+                operands.iter_mut().collect()
+            }
             Self::Words(_)
             | Self::Statement { .. }
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
             | Self::Recurse
-            | Self::InterpolatedQuote { .. } => Vec::new(),
+            | Self::InterpolatedQuote { .. }
+            | Self::ContextualizedInterpolation { .. } => Vec::new(),
         }
     }
 
@@ -118,7 +148,8 @@ impl RegexExtension {
     // Cost: O(1).
     pub(crate) fn code(&self) -> Option<(&str, &[Stmt])> {
         match self {
-            Self::Statement { code, body } => Some((code, body)),
+            Self::Statement { code, body }
+            | Self::ContextualizedInterpolation { code, body, .. } => Some((code, body)),
             _ => None,
         }
     }
@@ -127,7 +158,8 @@ impl RegexExtension {
     // Cost: O(1).
     pub(crate) fn code_mut(&mut self) -> Option<(&str, &mut Vec<Stmt>)> {
         match self {
-            Self::Statement { code, body } => Some((code, body)),
+            Self::Statement { code, body }
+            | Self::ContextualizedInterpolation { code, body, .. } => Some((code, body)),
             _ => None,
         }
     }
@@ -169,6 +201,30 @@ impl RegexExtension {
                 format!("{}:{}", atom.to_source(), backtrack.modifier_suffix())
             }
             Self::InterpolatedQuote { source, .. } => format!("\"{source}\""),
+            Self::Conjunction(operands) => join_operands(operands, "&"),
+            Self::SequentialConjunction(operands) => join_operands(operands, "&&"),
+            Self::ContextualizedInterpolation { sigil, code, .. } => format!("{sigil}({code})"),
+            Self::Alias { alias, assertion } => {
+                let inner = assertion.to_source();
+                format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))
+            }
         }
     }
+}
+
+/// `operands` joined by `operator`, with the space a `WithWhitespace` operand
+/// leaves before it (the same layout the tree gives `|`).
+// Cost: O(n), n = size of the operands.
+fn join_operands(operands: &[RegexNode], operator: &str) -> String {
+    let mut source = String::new();
+    for (index, operand) in operands.iter().enumerate() {
+        if index > 0 {
+            if matches!(operands[index - 1], RegexNode::WithWhitespace(_)) {
+                source.push(' ');
+            }
+            source.push_str(operator);
+        }
+        source.push_str(&operand.to_source());
+    }
+    source
 }

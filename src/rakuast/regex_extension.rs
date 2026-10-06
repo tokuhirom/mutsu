@@ -84,6 +84,53 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 ),
             ],
         },
+        RegexExtension::Conjunction(operands) => {
+            branches(RakuAstClass::RegexConjunction, operands)?
+        }
+        RegexExtension::SequentialConjunction(operands) => {
+            branches(RakuAstClass::RegexSequentialConjunction, operands)?
+        }
+        RegexExtension::ContextualizedInterpolation {
+            sigil,
+            code,
+            body,
+            sequential,
+        } => {
+            let class = match sigil {
+                '$' => RakuAstClass::ContextualizerItem,
+                '@' => RakuAstClass::ContextualizerList,
+                '%' => RakuAstClass::ContextualizerHash,
+                _ => return Err(unsupported("regex interpolation sigil")),
+            };
+            let sequence = RakuAstNode {
+                class: RakuAstClass::StatementSequence,
+                fields: block_statements(body)?
+                    .into_iter()
+                    .map(|statement| node_field(None, statement))
+                    .collect(),
+            };
+            RakuAstNode {
+                class: RakuAstClass::RegexInterpolation,
+                fields: vec![
+                    leaf_field(Some("sequential"), Value::truth(*sequential)),
+                    node_field(
+                        Some("var"),
+                        RakuAstNode {
+                            class,
+                            fields: vec![node_field(None, sequence)],
+                        },
+                    ),
+                    super::regex_code::source_field(code),
+                ],
+            }
+        }
+        RegexExtension::Alias { alias, assertion } => RakuAstNode {
+            class: RakuAstClass::RegexAssertionAlias,
+            fields: vec![
+                leaf_field(Some("name"), Value::str(alias.clone())),
+                node_field(Some("assertion"), regex_node(assertion)?),
+            ],
+        },
         RegexExtension::InterpolatedQuote { source, expr } => RakuAstNode {
             class: RakuAstClass::RegexQuote,
             fields: vec![
@@ -91,6 +138,18 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 super::regex_code::source_field(source),
             ],
         },
+    })
+}
+
+/// A branching node over `operands`, which are its positional children.
+// Cost: O(n), n = size of the operands.
+fn branches(class: RakuAstClass, operands: &[RegexNode]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class,
+        fields: operands
+            .iter()
+            .map(|operand| regex_node(operand).map(|node| node_field(None, node)))
+            .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
@@ -118,6 +177,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
             })
         }
         RakuAstClass::RegexAssertionRecurse => Ok(RegexExtension::Recurse),
+        RakuAstClass::RegexConjunction => lower_branches(node).map(RegexExtension::Conjunction),
+        RakuAstClass::RegexSequentialConjunction => {
+            lower_branches(node).map(RegexExtension::SequentialConjunction)
+        }
+        RakuAstClass::RegexInterpolation => return lower_contextualized(node),
+        RakuAstClass::RegexAssertionAlias => return lower_alias(node),
         RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
         _ => return None,
     };
@@ -205,6 +270,71 @@ fn lower_lookahead(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>
             }))
         }),
     )
+}
+
+/// The positional children of a branching node, lowered.
+fn lower_branches(node: &RakuAstNode) -> Result<Vec<RegexNode>, RuntimeError> {
+    node.fields
+        .iter()
+        .filter(|f| f.name.is_none())
+        .map(|field| {
+            let RakuAstFieldValue::Node(value) = &field.value else {
+                return Err(super::lower::unsupported(node));
+            };
+            let child = rakuast_node_of(value).ok_or_else(|| super::lower::unsupported(node))?;
+            lower_regex_node(child)
+        })
+        .collect()
+}
+
+/// `$(EXPR)` and its siblings: an interpolation whose `var` is a contextualizer
+/// over a statement sequence (any other interpolation is the tree's own node).
+fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let var = super::lower::named_child(node, "var").ok()?;
+    let sigil = match var.class {
+        RakuAstClass::ContextualizerItem => '$',
+        RakuAstClass::ContextualizerList => '@',
+        RakuAstClass::ContextualizerHash => '%',
+        _ => return None,
+    };
+    Some((|| {
+        let sequence = super::lower::named_child_or_positional(var)?;
+        let mut body = Vec::new();
+        for field in &sequence.fields {
+            let RakuAstFieldValue::Node(value) = &field.value else {
+                return Err(super::lower::unsupported(node));
+            };
+            let statement =
+                rakuast_node_of(value).ok_or_else(|| super::lower::unsupported(node))?;
+            body.push(lower_stmt(statement)?);
+        }
+        Ok(RegexNode::Extension(
+            RegexExtension::ContextualizedInterpolation {
+                sigil,
+                code: super::regex_code::source_of(node),
+                body,
+                sequential: super::lower::bool_field(node, "sequential")?,
+            },
+        ))
+    })())
+}
+
+/// `<rx=$r>` / `<foo=[bao]>`: an alias over an assertion that is no subrule
+/// call (those are the tree's own `SubruleAlias`).
+fn lower_alias(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let assertion = super::lower::named_child(node, "assertion").ok()?;
+    if !matches!(
+        assertion.class,
+        RakuAstClass::RegexAssertionInterpolatedVar | RakuAstClass::RegexAssertionCharClass
+    ) {
+        return None;
+    }
+    Some((|| {
+        Ok(RegexNode::Extension(RegexExtension::Alias {
+            alias: super::lower::leaf_str(node, "name")?,
+            assertion: Box::new(lower_regex_node(assertion)?),
+        }))
+    })())
 }
 
 fn lower_tilde(node: &RakuAstNode) -> Result<RegexExtension, RuntimeError> {
