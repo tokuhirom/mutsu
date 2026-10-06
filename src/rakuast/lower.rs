@@ -1665,6 +1665,9 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
             }
             _ => return Err(unsupported(owner)),
         }
+    } else if parameter.fields.iter().any(|f| f.name == Some("value")) {
+        // `sub f(1)`: a literal-value parameter, which the parser names so.
+        super::convert::LITERAL_PARAM.to_string()
     } else if invocant {
         // `Foo:D:` / `::?CLASS:U:`: the parser names a synthesized invocant
         // `self`.
@@ -1761,8 +1764,26 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 ValueView::Str(name) => name.to_string(),
                 _ => return Err(unsupported(owner)),
             };
-            if !matches!(name.as_str(), "copy" | "rw" | "raw" | "readonly") {
+            let argument = match named_child(t, "argument") {
+                Ok(argument) => Some(super::attribute::lower_paren_argument(owner, argument)?),
+                Err(_) if t.fields.len() == 1 => None,
+                Err(_) => return Err(unsupported(owner)),
+            };
+            let builtin = matches!(name.as_str(), "copy" | "rw" | "raw" | "readonly");
+            // A builtin trait takes no argument; any other plain name is a
+            // trait of the program's own, kept with its argument.
+            if builtin && argument.is_some()
+                || !builtin
+                    && (name.starts_with("__")
+                        || name.is_empty()
+                        || !name
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'))
+            {
                 return Err(unsupported(owner));
+            }
+            if let Some(argument) = argument {
+                def.trait_args.push((name.clone(), argument));
             }
             def.traits.push(name);
         }
@@ -1787,6 +1808,8 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 def.slurpy = true;
                 def.onearg = true;
             }
+            // `+@a` / `+$a` / `+%a`: the parser marks only `onearg`.
+            Some(RakuAstClass::ParameterSlurpySingleArgument) => def.onearg = true,
             Some(RakuAstClass::ParameterSlurpyCapture) if def.sigilless => def.slurpy = true,
             _ => return Err(unsupported(owner)),
         }
@@ -1839,6 +1862,18 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     {
         let sub_signature = child_node(&sub_signature.value)?;
         def.sub_signature = Some(lower_signature_parameters(sub_signature, owner)?);
+    }
+    // A literal-value parameter keeps its value, and is not required (the
+    // parser's `make_param` default).
+    if let Some(value) = parameter.fields.iter().find(|f| f.name == Some("value")) {
+        let RakuAstFieldValue::Node(value) = &value.value else {
+            return Err(unsupported(owner));
+        };
+        if matches!(value.view(), ValueView::RakuAst(_)) || has_target {
+            return Err(unsupported(owner));
+        }
+        def.literal_value = Some(value.clone());
+        def.required = false;
     }
     match names {
         Some(names) => super::named_param::wrap_aliases(def, &names, owner),

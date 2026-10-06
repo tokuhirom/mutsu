@@ -14,38 +14,50 @@
 //! The parser expands the declaration (`parser::stmt::decl::destructure::desugar`)
 //! and keeps the source form as the expansion's first statement (ADR-10723
 //! Stage 1), so both directions go through that record: `convert` reads it,
-//! and `lower` builds one and hands it to the same expansion. Elements with a
-//! type, default, constraint, trait, sigilless or literal spelling, a nested
-//! group, a named or slurpy element and a group `is default` are deferred.
+//! and `lower` builds one and hands it to the same expansion. An element can
+//! have a type (`Int $a`), a `where`, one of `is rw` / `raw` / `copy` /
+//! `readonly`, a sigilless target (`\c`, a `ParameterTarget::Term`), a name
+//! (`:$c`, `names => ("c",)`) or be slurpy (`*@r`, `slurpy => Flattened`); the
+//! declaration's own type is the signature's `returns`. Rakudo's tree drops an
+//! element's default and its `?`, a nested group's shape and a literal's
+//! meaning, so those, and a group `is default`, are deferred.
 
 use super::convert::{convert_expr, leaf_field, node_field, unsupported};
 use super::lower::{list_field, lower_expr, named_child, named_child_or_positional};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{SignatureDecl, SignatureInit, SignatureVar, Stmt};
+use crate::ast::{ParamTrait, SignatureDecl, SignatureInit, SignatureVar, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
 pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError> {
-    if decl.type_constraint.is_some()
-        || decl.group_default.is_some()
+    if decl.group_default.is_some()
         || decl.has_nested_group
-        || !decl.vars.iter().all(SignatureVar::is_plain)
+        || decl
+            .vars
+            .iter()
+            .any(|v| v.is_optional || v.default.is_some() || v.literal_value.is_some())
     {
         return Err(unsupported(
-            "signature declaration with a typed, defaulted, constrained or non-positional element",
+            "signature declaration with a defaulted, optional or literal element, or a nested group",
         ));
     }
-    let parameters = decl
-        .vars
-        .iter()
-        .map(|var| Value::rakuast(Box::new(parameter(&var.spelling()))))
-        .collect();
+    let mut parameters = Vec::with_capacity(decl.vars.len());
+    for var in &decl.vars {
+        parameters.push(Value::rakuast(Box::new(parameter(var)?)));
+    }
+    let mut signature_fields = vec![RakuAstField {
+        name: Some("parameters"),
+        value: RakuAstFieldValue::List(parameters),
+    }];
+    if let Some(type_name) = &decl.type_constraint {
+        signature_fields.push(node_field(
+            Some("returns"),
+            super::convert::build_type_node(type_name)?,
+        ));
+    }
     let signature = RakuAstNode {
         class: RakuAstClass::Signature,
-        fields: vec![RakuAstField {
-            name: Some("parameters"),
-            value: RakuAstFieldValue::List(parameters),
-        }],
+        fields: signature_fields,
     };
     let mut fields = vec![node_field(Some("signature"), signature)];
     if decl.is_our || decl.is_state {
@@ -72,27 +84,92 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     })
 }
 
-/// `Parameter(default-rw => True, target => ParameterTarget::Var(name => …),
-/// optional => False)` -- a declarator-list element, which unlike a routine
-/// parameter carries no implicit type and defaults to a writable container.
-fn parameter(spelling: &str) -> RakuAstNode {
-    let target = RakuAstNode {
-        class: RakuAstClass::ParameterTargetVar,
-        fields: vec![leaf_field(Some("name"), Value::str(spelling.to_string()))],
+/// `Parameter([type,] [names,] default-rw => True, target => …[, optional =>
+/// False][, slurpy][, where][, traits])` -- a declarator-list element, which
+/// unlike a routine parameter carries no implicit type and defaults to a
+/// writable container. A named or slurpy element has no `optional`.
+// Cost: O(e), e = size of the element's `where` expression.
+fn parameter(var: &SignatureVar) -> Result<RakuAstNode, RuntimeError> {
+    let target = if var.sigilless {
+        RakuAstNode {
+            class: RakuAstClass::ParameterTargetTerm,
+            fields: vec![node_field(
+                None,
+                super::convert::name_from_identifier(&var.name),
+            )],
+        }
+    } else {
+        RakuAstNode {
+            class: RakuAstClass::ParameterTargetVar,
+            fields: vec![leaf_field(Some("name"), Value::str(var.spelling()))],
+        }
     };
-    RakuAstNode {
+    let mut fields = Vec::new();
+    if let Some(type_name) = &var.per_var_type_constraint {
+        fields.push(node_field(
+            Some("type"),
+            super::convert::build_type_node(type_name)?,
+        ));
+    }
+    if var.is_named {
+        let name = var.name.trim_start_matches(['@', '%', '&']);
+        fields.push(RakuAstField {
+            name: Some("names"),
+            value: RakuAstFieldValue::List(vec![Value::str(name.to_string())]),
+        });
+    }
+    fields.push(leaf_field(Some("default-rw"), Value::truth(true)));
+    fields.push(node_field(Some("target"), target));
+    if !var.is_named && !var.is_slurpy {
+        fields.push(leaf_field(Some("optional"), Value::truth(false)));
+    }
+    if var.is_slurpy {
+        fields.push(leaf_field(
+            Some("slurpy"),
+            super::slurpy_marker_value(RakuAstClass::ParameterSlurpyFlattened),
+        ));
+    }
+    if let Some(constraint) = &var.where_constraint {
+        fields.push(node_field(Some("where"), convert_expr(constraint)?));
+    }
+    if let Some(param_trait) = var.param_trait {
+        fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(
+                super::routine_traits::trait_is(trait_name(param_trait), None),
+            ))]),
+        });
+    }
+    Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
-        fields: vec![
-            leaf_field(Some("default-rw"), Value::truth(true)),
-            node_field(Some("target"), target),
-            leaf_field(Some("optional"), Value::truth(false)),
-        ],
+        fields,
+    })
+}
+
+fn trait_name(param_trait: ParamTrait) -> &'static str {
+    match param_trait {
+        ParamTrait::Rw => "rw",
+        ParamTrait::Raw => "raw",
+        ParamTrait::Copy => "copy",
+        ParamTrait::Readonly => "readonly",
     }
 }
 
 /// `VarDeclaration::Signature` -> the parser's expansion of the declaration.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let signature = named_child(node, "signature")?;
+    let type_constraint = match signature.fields.iter().find(|f| f.name == Some("returns")) {
+        None => None,
+        Some(field) => match &field.value {
+            RakuAstFieldValue::Node(v) => match v.view() {
+                ValueView::RakuAst(type_node) => {
+                    Some(super::lower::simple_type_name(node, type_node)?)
+                }
+                _ => return Err(super::lower::unsupported(node)),
+            },
+            _ => return Err(super::lower::unsupported(node)),
+        },
+    };
     let vars = list_field(signature, "parameters")?
         .iter()
         .map(|param| match param.view() {
@@ -133,19 +210,22 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         vars,
         is_state,
         is_our,
-        type_constraint: None,
+        type_constraint,
         group_default: None,
         has_nested_group: false,
         init,
     }))
 }
 
-/// A plain declarator-list element: only a variable target.
+/// A declarator-list element, back from its `Parameter`.
 fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
     let unsupported = || super::lower::unsupported(param);
     if param.class != RakuAstClass::Parameter {
         return Err(unsupported());
     }
+    let mut var = SignatureVar::plain("$x");
+    let mut named = false;
+    let mut slurpy = false;
     for field in &param.fields {
         match field.name {
             Some("target") | Some("default-rw") => {}
@@ -154,16 +234,92 @@ fn lower_parameter(param: &RakuAstNode) -> Result<SignatureVar, RuntimeError> {
                     return Err(unsupported());
                 }
             }
+            Some("type") => {
+                let type_node = named_child(param, "type")?;
+                var.per_var_type_constraint =
+                    Some(super::lower::simple_type_name(param, type_node)?);
+            }
+            Some("names") => {
+                let RakuAstFieldValue::List(names) = &field.value else {
+                    return Err(unsupported());
+                };
+                let [name] = names.as_slice() else {
+                    return Err(unsupported());
+                };
+                let ValueView::Str(name) = name.view() else {
+                    return Err(unsupported());
+                };
+                named = true;
+                var.name = name.to_string();
+            }
+            Some("slurpy") => {
+                let RakuAstFieldValue::Node(marker) = &field.value else {
+                    return Err(unsupported());
+                };
+                if super::slurpy_marker_class(marker)
+                    != Some(RakuAstClass::ParameterSlurpyFlattened)
+                {
+                    return Err(unsupported());
+                }
+                slurpy = true;
+            }
+            Some("where") => {
+                var.where_constraint = Some(lower_expr(named_child(param, "where")?)?);
+            }
+            Some("traits") => {
+                let [item] = list_field(param, "traits")? else {
+                    return Err(unsupported());
+                };
+                let ValueView::RakuAst(item) = item.view() else {
+                    return Err(unsupported());
+                };
+                if item.class != RakuAstClass::TraitIs || item.fields.len() != 1 {
+                    return Err(unsupported());
+                }
+                let name = super::lower::positional_leaf(named_child(item, "name")?)?;
+                var.param_trait = Some(match name.view() {
+                    ValueView::Str(s) if s.as_str() == "rw" => ParamTrait::Rw,
+                    ValueView::Str(s) if s.as_str() == "raw" => ParamTrait::Raw,
+                    ValueView::Str(s) if s.as_str() == "copy" => ParamTrait::Copy,
+                    ValueView::Str(s) if s.as_str() == "readonly" => ParamTrait::Readonly,
+                    _ => return Err(unsupported()),
+                });
+            }
             _ => return Err(unsupported()),
         }
     }
     let target = named_child(param, "target")?;
-    if target.class != RakuAstClass::ParameterTargetVar {
-        return Err(unsupported());
+    let spelling = match target.class {
+        RakuAstClass::ParameterTargetVar => {
+            let name = super::lower::leaf_str(target, "name")?;
+            if !name.starts_with(['$', '@', '%', '&']) {
+                return Err(unsupported());
+            }
+            name
+        }
+        // `\c`: the term's name, with no sigil to strip.
+        RakuAstClass::ParameterTargetTerm => {
+            var.sigilless = true;
+            match super::name_parts::name_shape(named_child_or_positional(target)?) {
+                Some(super::name_parts::NameShape::Identifier(name)) => name,
+                _ => return Err(unsupported()),
+            }
+        }
+        _ => return Err(unsupported()),
+    };
+    if named {
+        // `:$c` names the variable it binds.
+        let bare = spelling.trim_start_matches(['$', '@', '%', '&']);
+        if var.name != bare {
+            return Err(unsupported());
+        }
+        var.is_named = true;
     }
-    let name = super::lower::leaf_str(target, "name")?;
-    if !name.starts_with(['$', '@', '%', '&']) {
-        return Err(unsupported());
+    if var.sigilless {
+        var.name = spelling;
+    } else {
+        var.name = SignatureVar::plain(&spelling).name;
     }
-    Ok(SignatureVar::plain(&name))
+    var.is_slurpy = slurpy;
+    Ok(var)
 }

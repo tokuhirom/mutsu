@@ -4315,20 +4315,27 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         .map(String::as_str)
         .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
         .collect();
-    let refusal = if pd.onearg && !pd.sigilless {
-        Some("single-argument slurpy parameter with a sigil")
-    } else if pd.literal_value.is_some() {
-        Some("literal-value parameter")
-    } else if !pd.trait_args.is_empty() || !user_traits.iter().all(|t| is_parameter_is_trait(t)) {
-        Some("parameter with a custom trait")
+    let refusal = if pd.literal_value.is_some()
+        && (pd.type_constraint.is_none()
+            || pd.named
+            || pd.slurpy
+            || pd.onearg
+            || pd.default.is_some()
+            || pd.where_constraint.is_some()
+            || !user_traits.is_empty())
+    {
+        Some("literal-value parameter with more than a value")
+    } else if user_traits
+        .iter()
+        .any(|t| !is_parameter_trait_name(t))
+    {
+        Some("parameter with a trait the converter does not render")
     } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
         || (implicit_invocant && !pd.is_invocant)
     {
         Some("invocant marker without an invocant")
     } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless) {
         Some("non-scalar invocant parameter")
-    } else if pd.optional_marker && pd.default.is_some() {
-        Some("defaulted parameter with a `?` marker")
     } else if pd.shape_constraints.is_some() {
         Some("shaped array parameter")
     } else if pd.code_signature.is_some() {
@@ -4343,6 +4350,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     if let Some(node) = anonymous_destructuring(pd, type_setting)? {
         return Ok(node);
+    }
+    if let Some(value) = &pd.literal_value {
+        return literal_parameter(pd, value);
     }
     // Capture parameters also use the internal `sub_signature` slot, but
     // RakuAST represents those with fields other than `sub-signature`. A named
@@ -4431,11 +4441,52 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         name => split_sigil(name),
     };
     let mut node = if pd.slurpy || pd.double_slurpy {
-        // A typed or where-constrained slurpy carries richer shape; defer.
-        if pd.type_constraint.is_some() || pd.where_constraint.is_some() {
+        // A typed slurpy is an error in rakudo (`Int *@a`); `where` follows the
+        // slurpy marker.
+        if pd.type_constraint.is_some() {
             return Err(unsupported("typed slurpy parameter"));
         }
-        slurpy_parameter(sigil, desigil, pd.double_slurpy)?
+        let mut node = slurpy_parameter(
+            sigil,
+            desigil,
+            if pd.double_slurpy {
+                RakuAstClass::ParameterSlurpyUnflattened
+            } else {
+                RakuAstClass::ParameterSlurpyFlattened
+            },
+        )?;
+        if let Some(w) = pd.where_constraint.as_deref() {
+            node.fields.push(node_field(Some("where"), convert_expr(w)?));
+        }
+        node
+    } else if pd.onearg {
+        // `+@a` is a target and the marker; `+$a` / `+%a` are the plain
+        // parameter with the marker after it (measured on rakudo 2026.09).
+        if pd.type_constraint.is_some() {
+            return Err(unsupported("typed single-argument slurpy parameter"));
+        }
+        let marker = RakuAstClass::ParameterSlurpySingleArgument;
+        let mut node = if sigil == "@" {
+            slurpy_parameter(sigil, desigil, marker)?
+        } else {
+            let mut node = simple_parameter(
+                sigil,
+                desigil,
+                None,
+                None,
+                type_setting,
+                pd.where_constraint.as_deref(),
+            )?;
+            node.fields
+                .push(leaf_field(Some("slurpy"), super::slurpy_marker_value(marker)));
+            node
+        };
+        if sigil == "@"
+            && let Some(w) = pd.where_constraint.as_deref()
+        {
+            node.fields.push(node_field(Some("where"), convert_expr(w)?));
+        }
+        node
     } else if pd.named {
         super::named_param::named_parameter(pd, type_setting)?
     } else {
@@ -4481,11 +4532,23 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         );
     }
     // `$x?`: rakudo's `optional => True`, where a plain positional has False.
+    // A defaulted `$x? = 3` has both, the flag first.
     if pd.optional_marker {
+        let mut found = false;
         for field in &mut node.fields {
             if field.name == Some("optional") {
                 field.value = RakuAstFieldValue::Node(Value::truth(true));
+                found = true;
             }
+        }
+        if !found && let Some(at) = node.fields.iter().position(|f| f.name == Some("default")) {
+            node.fields.insert(
+                at,
+                RakuAstField {
+                    name: Some("optional"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                },
+            );
         }
     }
     if let Some(sub_params) = super::named_param::destructuring_sub_signature(pd) {
@@ -4500,12 +4563,16 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         let traits = user_traits
             .iter()
             .map(|t| {
-                Value::rakuast(Box::new(RakuAstNode {
+                let mut fields = vec![node_field(Some("name"), name_from_identifier(t))];
+                if let Some((_, argument)) = pd.trait_args.iter().find(|(name, _)| name == t) {
+                    fields.push(node_field(Some("argument"), parameter_trait_argument(argument)?));
+                }
+                Ok(Value::rakuast(Box::new(RakuAstNode {
                     class: RakuAstClass::TraitIs,
-                    fields: vec![node_field(Some("name"), name_from_identifier(t))],
-                }))
+                    fields,
+                })))
             })
-            .collect();
+            .collect::<Result<Vec<_>, RuntimeError>>()?;
         node.fields.push(RakuAstField {
             name: Some("traits"),
             value: RakuAstFieldValue::List(traits),
@@ -4621,6 +4688,66 @@ fn is_parameter_is_trait(name: &str) -> bool {
     matches!(name, "copy" | "rw" | "raw" | "readonly")
 }
 
+/// Whether `name` is a trait the converter renders on a parameter: a builtin
+/// one, or a plain user-level name (`is marked`, `is option<!>`); the parser's
+/// internal markers (`__...`) and qualified names are not.
+fn is_parameter_trait_name(name: &str) -> bool {
+    is_parameter_is_trait(name)
+        || (!name.starts_with("__")
+            && !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-'))
+}
+
+/// The `(ARGS)` argument of a custom parameter trait, a list as one comma list.
+fn parameter_trait_argument(argument: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match argument {
+        Expr::Grouped(inner) if matches!(**inner, Expr::ArrayLiteral(_)) => {
+            super::attribute::paren_argument(inner)
+        }
+        other => super::attribute::paren_argument(other),
+    }
+}
+
+/// `sub f(1)` / `sub f("a")`: a `Parameter` with no target, the literal's type
+/// and the literal as its `value` (measured on rakudo 2026.09). The parser
+/// names it `__literal__`, gives it the literal's type unless one was written,
+/// and keeps the value.
+// Cost: O(1).
+fn literal_parameter(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, RuntimeError> {
+    if pd.name != LITERAL_PARAM
+        || !matches!(
+            value.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::Str(_)
+        )
+    {
+        return Err(unsupported("literal-value parameter of another kind"));
+    }
+    let type_name = pd
+        .type_constraint
+        .as_deref()
+        .ok_or_else(|| unsupported("literal-value parameter without a type"))?;
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields: vec![
+            node_field(Some("type"), build_type_node(type_name)?),
+            RakuAstField {
+                name: Some("optional"),
+                value: RakuAstFieldValue::Node(Value::truth(false)),
+            },
+            leaf_field(Some("value"), value.clone()),
+        ],
+    })
+}
+
+/// The parser's name for a literal-value parameter.
+pub(super) const LITERAL_PARAM: &str = "__literal__";
+
 /// A basic `::T` capture is represented by `Parameter.type-captures` rather
 /// than by the parameter's ordinary `type` node. Smiley-constrained and other
 /// richer capture spellings need more internal metadata and remain deferred.
@@ -4649,7 +4776,11 @@ pub(super) fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
 /// RakuAST::Parameter::Slurpy::{Flattened,Unflattened})`. A slurpy carries no
 /// `type`/`optional` field, and the marker is a type object rather than a node
 /// (see `slurpy_marker_value`).
-fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstNode, RuntimeError> {
+fn slurpy_parameter(
+    sigil: &str,
+    desigil: &str,
+    marker: RakuAstClass,
+) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
         class: RakuAstClass::ParameterTargetVar,
         fields: vec![leaf_field(
@@ -4659,11 +4790,7 @@ fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstN
     };
     // The marker is the `RakuAST::Parameter::Slurpy::*` TYPE OBJECT, as it is in
     // rakudo -- see `slurpy_marker_value`.
-    let slurpy = super::slurpy_marker_value(if double {
-        RakuAstClass::ParameterSlurpyUnflattened
-    } else {
-        RakuAstClass::ParameterSlurpyFlattened
-    });
+    let slurpy = super::slurpy_marker_value(marker);
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields: vec![
