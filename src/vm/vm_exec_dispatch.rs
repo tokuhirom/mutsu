@@ -1112,6 +1112,16 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            // Cost: O(p*|name|), p = packages on the bare-name search path (the
+            // `GetBareWord` resolution without its type-object memo or its
+            // `env[name]` read); independent of the registry size.
+            OpCode::GetBareWordOverScalar(name_idx) => {
+                self.sync_source_line(code, *ip);
+                self.test_pending_callsite_line = None;
+                self.exec_get_bare_word_over_scalar_op(code, *name_idx, compiled_fns)?;
+                self.apply_pending_rw_writeback(code);
+                *ip += 1;
+            }
             // Cost: O(1) -- one set probe and one env lookup; the call it falls
             // through to is costed by its own op.
             OpCode::GetExportTermOrJump { name_idx, end } => {

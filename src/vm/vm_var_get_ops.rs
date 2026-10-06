@@ -121,7 +121,30 @@ impl Interpreter {
         name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        self.push_bare_word_value_in(name_sym, compiled_fns, false)
+    }
+
+    /// [`Self::push_bare_word_value`], told whether the name also spells a
+    /// `$`-scalar of the reading scope (`over_scalar`, from
+    /// [`OpCode::GetBareWordOverScalar`]): the `env[name]` entry is then that
+    /// scalar and is no term, and a name nothing else claims is undeclared.
+    // Cost: as `push_bare_word_value`.
+    pub(crate) fn push_bare_word_value_in(
+        &mut self,
+        name_sym: Symbol,
+        compiled_fns: &CompiledFns,
+        over_scalar: bool,
+    ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
+        // A lexical `my class foo` is bound in `env` under its own name, the
+        // very key a same-named `$foo` shares, and no other table says which of
+        // several same-named lexical types is the one in scope. Where such a
+        // type exists the `env[name]` read is how the type is found, so the
+        // name keeps the ordinary resolution.
+        // TODO: give lexical type bindings a key space of their own (#12109,
+        // #9962's "decide once"); the `$foo` read there is then no longer
+        // ambiguous.
+        let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
         let name_split = crate::qualified::split_qualified(name_sym);
@@ -205,7 +228,7 @@ impl Interpreter {
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.
         if let Some(real) = self.resolve_constant_package_alias_prefix(name) {
-            return self.push_bare_word_value(Symbol::intern(&real), compiled_fns);
+            return self.push_bare_word_value_in(Symbol::intern(&real), compiled_fns, false);
         }
         // `GLOBAL::NAME` reaches a sigil-less constant of the global scope (also
         // one whose block has exited), which is stored under its term key rather
@@ -512,7 +535,7 @@ impl Interpreter {
             // (`runtime::term_names`, #9962), so the plain `env[name]` probe
             // below — which a same-named `$`-scalar answers — never sees it.
             v
-        } else if let Some(v) = self.env().get(name).cloned() {
+        } else if !over_scalar && let Some(v) = self.env().get(name).cloned() {
             if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil) {
                 // Check for poisoned enum aliases
                 if matches!(v.view(), ValueView::Enum { .. }) {
@@ -598,7 +621,12 @@ impl Interpreter {
             } else {
                 self.compile_and_call_function_def(&def, Vec::new(), compiled_fns)?
             }
-        } else if self.has_type(name) {
+        } else if over_scalar && let Some(ty) = self.resolve_bareword_type_name(name) {
+            // The env-blind type probe: `has_type` below would take the scalar's
+            // own decl-seed placeholder (`Package(Any)` under the shared key) for
+            // an import alias to `Any` and call every such name a type.
+            Value::package(Symbol::intern(&ty))
+        } else if !over_scalar && self.has_type(name) {
             // `has_type` also accepts a short name that only resolves through the
             // declaring module's own import aliases (`package_type_aliases`); such
             // a name must become the QUALIFIED type, since the short name is not
@@ -871,6 +899,14 @@ impl Interpreter {
             // The singleton sentinel, so `nqp::eqaddr($it.pull-one,
             // IterationEnd)` sees the same object `pull-one` returned (#9333).
             Value::iteration_end()
+        } else if over_scalar {
+            // The bare word only spells a `$`-scalar of this scope, and `$bar`
+            // is not the term `bar` (#11898): rakudo's "Undeclared routine".
+            return Err(Self::undeclared_routine_error(
+                name,
+                self.cur_source_line,
+                Vec::new(),
+            ));
         } else {
             Value::str(name.to_string())
         };

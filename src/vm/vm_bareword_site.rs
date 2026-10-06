@@ -74,6 +74,19 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::GetBareWordOverScalar`: the bare word resolution minus the
+    /// scalar `env` entry the name shares (see the opcode). No type-object
+    /// memo — the name has a live `env` binding, which the memo refuses anyway.
+    // Cost: O(p*|name|), p = packages on the bare-name search path.
+    pub(super) fn exec_get_bare_word_over_scalar_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, true)
+    }
+
     /// Whether `env` leaves the bareword `name` to name its own type object:
     /// nothing is bound under the name, or what is bound is that type object
     /// (a class declaration binds its own name so; so does a type capture
