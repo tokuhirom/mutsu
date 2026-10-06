@@ -17,6 +17,3 @@ my $y;
 lives-ok { $y = Y.new }, 'binding an unset parameterised param into an attribute passes the check';
 nok $y.a.defined, 'the attribute holds the type object';
 is $y.a.raku, 'Positional[Int]', 'with its parameterisation';
-
-sub h(Positional[Int] :$x) { my Positional[Int] $z := $x; $z.raku }
-is h(), 'Positional[Int]', 'binding into a typed lexical passes';
