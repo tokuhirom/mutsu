@@ -1,5 +1,6 @@
 use super::Value;
 use super::ValueView;
+use super::user_facing_type_name;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -1201,7 +1202,7 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
         }
     }
     if !type_name.is_empty() && type_name != "Any" && type_name != "Mu" {
-        parts.push(type_name);
+        parts.push(user_facing_type_name(&type_name).into_owned());
     } else if type_name == "Mu" {
         parts.push("Mu".to_string());
     }
@@ -1397,6 +1398,7 @@ fn render_signature(info: &SigInfo) -> String {
         params_str.push_str(part);
     }
     if let Some(ref ret) = info.return_type {
+        let ret = user_facing_type_name(ret);
         if params_str.is_empty() {
             // Raku keeps the ` --> ` arrow spaced even with no parameters, so an
             // empty positional list renders as `:( --> Int)` (leading space),
@@ -1435,7 +1437,7 @@ fn render_param(p: &SigParam) -> String {
     if p.is_invocant {
         capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push(p.sigil);
@@ -1452,7 +1454,7 @@ fn render_param(p: &SigParam) -> String {
         if let Some(ref tc) = p.type_constraint
             && tc != "Any"
         {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push('|');
@@ -1471,7 +1473,7 @@ fn render_param(p: &SigParam) -> String {
     if p.sigilless {
         capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push('\\');
@@ -1498,12 +1500,12 @@ fn render_param(p: &SigParam) -> String {
     capture(&mut result);
     if p.named {
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push(':');
     } else if let Some(ref tc) = p.type_constraint {
-        result.push_str(tc);
+        result.push_str(&user_facing_type_name(tc));
         result.push(' ');
     }
 

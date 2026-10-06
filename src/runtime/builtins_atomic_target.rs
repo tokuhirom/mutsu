@@ -17,7 +17,7 @@
 //! leniency this check removes.
 
 use super::*;
-use crate::native_types::is_atomic_int_target_type;
+use crate::native_types::{is_atomic_int_target_type, is_narrow_atomic_int_type};
 use crate::runtime::types::strip_type_smiley;
 use crate::value::ValueView;
 
@@ -26,11 +26,23 @@ use crate::value::ValueView;
 const NQP_NOT_NATIVE_INT: &str =
     "Can only do integer atomic operations on a container referencing a native integer";
 
+/// MoarVM's refusal of an atomic on a native integer narrower than the machine
+/// word (`int8` / `int16` / `int32`, #12008). The message depends on where the
+/// container lives, not on the operation.
+const NARROW_LEXICAL: &str =
+    "Cannot atomic load from an integer lexical not of the machine's native size";
+const NARROW_ELEMENT: &str =
+    "Can only do integer atomic operation on native integer array element of atomic size";
+const NARROW_ATTRIBUTE: &str =
+    "Can only do an atomic integer operation on an atomicint attribute";
+
 /// What a target's declaration says about it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Verdict {
-    /// A native-integer container.
+    /// A native-integer container of the machine's native size.
     Native,
+    /// A native integer narrower than that: every atomic on it is refused.
+    Narrow,
     /// Known not to be one.
     Boxed,
     /// Nothing reachable here answers.
@@ -40,11 +52,23 @@ enum Verdict {
 /// The verdict for a binding declared with the type `ty`.
 // Cost: O(|ty|).
 fn verdict_for_type(ty: &str) -> Verdict {
-    if is_atomic_int_target_type(strip_type_smiley(ty).0) {
+    let ty = strip_type_smiley(ty).0;
+    if is_atomic_int_target_type(ty) {
         Verdict::Native
+    } else if is_narrow_atomic_int_type(ty) {
+        Verdict::Narrow
     } else {
         Verdict::Boxed
     }
+}
+
+/// Whether a declared type is a native integer narrower than the machine word
+/// (#12008). The lenient atomics already read the target's declared type for
+/// their own coercion, so they ask this of it instead of a guard call of their
+/// own, which cost a `cas` loop on an attribute or element ~30%.
+// Cost: O(|ty|).
+pub(super) fn is_narrow_declared_type(ty: &str) -> bool {
+    is_narrow_atomic_int_type(strip_type_smiley(ty).0)
 }
 
 /// `array[int]` -> `int`.
@@ -77,14 +101,101 @@ impl Interpreter {
         };
         let operand = args.get(3);
         let target = target.to_string_value();
-        let verdict = match declared.view() {
-            ValueView::Str(ty) => verdict_for_type(&ty),
-            _ => self.container_target_verdict(&target),
-        };
-        if verdict == Verdict::Boxed {
-            return Err(self.int_atomic_refusal(&target, &spelling.to_string_value(), operand));
+        match self.atomic_target_verdict(&target, declared) {
+            Verdict::Narrow => return Err(Self::narrow_atomic_refusal(&target)),
+            Verdict::Boxed => {
+                return Err(self.int_atomic_refusal(
+                    &target,
+                    &spelling.to_string_value(),
+                    operand,
+                ));
+            }
+            Verdict::Native | Verdict::Unknown => {}
         }
         Ok(operand.cloned().unwrap_or(Value::NIL))
+    }
+
+    /// `__mutsu_atomic_narrow_target(target, declared)`: the guard of a *lenient*
+    /// atomic (`atomic-fetch`, `atomic-assign`, `cas`, `⚛$x`, `$x ⚛= v`). Those
+    /// take any `$target is rw`, so a plain scalar stays legal, but a native
+    /// integer narrower than the machine word is refused by MoarVM for every
+    /// operation (#12008). Only a target positively known to be narrow is
+    /// refused; `target` and `declared` are `__mutsu_atomic_int_target`'s.
+    // Cost: O(1) for a declared target; O(d * a) for an attribute (the class
+    // walk, memoized), O(1) otherwise.
+    pub(crate) fn builtin_atomic_narrow_target(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (Some(target), Some(declared)) = (args.first(), args.get(1)) else {
+            return Err(RuntimeError::new(
+                "__mutsu_atomic_narrow_target requires a target and a declared type",
+            ));
+        };
+        let target = target.to_string_value();
+        if self.atomic_target_verdict(&target, declared) == Verdict::Narrow {
+            return Err(Self::narrow_atomic_refusal(&target));
+        }
+        Ok(Value::NIL)
+    }
+
+    /// The verdict for `target`: the compiler's `declared` type when it settled
+    /// the declaration, else what the container says at run time.
+    fn atomic_target_verdict(&self, target: &str, declared: &Value) -> Verdict {
+        match declared.view() {
+            ValueView::Str(ty) => verdict_for_type(&ty),
+            _ => self.container_target_verdict(target),
+        }
+    }
+
+    /// MoarVM's error for an atomic on a native integer narrower than the
+    /// machine word, worded by where the container lives.
+    pub(super) fn narrow_atomic_refusal(target: &str) -> RuntimeError {
+        let message = if target.starts_with(['@', '%']) {
+            NARROW_ELEMENT
+        } else if target.starts_with(['!', '.']) {
+            NARROW_ATTRIBUTE
+        } else {
+            NARROW_LEXICAL
+        };
+        RuntimeError::new(message)
+    }
+
+    /// Refuse a lenient atomic (`atomic-fetch`, `atomic-assign`, `cas`, `⚛$!v`,
+    /// `$!v ⚛= x`) on an attribute declared with a native integer narrower than
+    /// the machine word (#12008). Any other name passes: a lexical's declaration
+    /// is judged by the compiler, whose answer a by-name metadata lookup could
+    /// not match under shadowing.
+    ///
+    /// The lenient builtins call this instead of the compiler emitting a guard
+    /// call per operation: a separate call cost a `cas` loop on an attribute
+    /// ~50%, and the type lookup is the memoized one (ADR-0121).
+    // Cost: O(1) (a memoized per-class lookup), O(1) for any other name.
+    pub(super) fn refuse_narrow_attribute(&self, name: &str) -> Result<(), RuntimeError> {
+        if name.starts_with(['!', '.'])
+            && self
+                .self_attr_type_constraint(name)
+                .is_some_and(|ty| is_narrow_declared_type(&ty))
+        {
+            return Err(Self::narrow_atomic_refusal(name));
+        }
+        Ok(())
+    }
+
+    /// [`Self::refuse_narrow_attribute`]'s counterpart for an array element: refuse
+    /// a lenient atomic on an element of a narrow native-int array (#12008).
+    /// Used by the ops that read no element type of their own (`fetch`) and by
+    /// the code forms of `cas`, which must refuse before their block runs.
+    // Cost: O(1) (one element-type lookup), O(1) for a non-array name.
+    pub(super) fn refuse_narrow_element(&mut self, name: &str) -> Result<(), RuntimeError> {
+        if name.starts_with('@')
+            && self
+                .atomic_elem_type_constraint(name)
+                .is_some_and(|ty| is_narrow_declared_type(&ty))
+        {
+            return Err(Self::narrow_atomic_refusal(name));
+        }
+        Ok(())
     }
 
     /// What the container named by `target` says about itself, when the

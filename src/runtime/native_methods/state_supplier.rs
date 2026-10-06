@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::value::ValueView;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use super::state::take_complete_lines_from_buffer;
@@ -2338,50 +2339,7 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
     let mut pending: Vec<u64> = vec![supplier_id];
     let mut seen: Vec<u64> = vec![supplier_id];
     while let Some(sid) = pending.pop() {
-        let mut next: Vec<u64> = Vec::new();
-        if let Ok(map) = supplier_subscriptions_map().lock()
-            && let Some(subs) = map.get(&sid)
-        {
-            for tap in &subs.taps {
-                if let Some(ref ts) = tap.transform_state {
-                    next.push(ts.downstream_supplier_id);
-                }
-                next.extend(supplier_share_output_ids(sid));
-                if let Some(ref ps) = tap.produce_state
-                    && let Some(ds) = ps.produce_downstream
-                {
-                    next.push(ds);
-                }
-                if let Some(ds) = tap.flat_downstream {
-                    next.push(ds);
-                }
-                // `head`/`unique`/`lines`/`words`/`elems` own a derived
-                // supplier like every other pipeline stage now (issue #8474),
-                // so the source's `done` must propagate to theirs too. A
-                // `head` whose limit was already reached (a separate,
-                // earlier `HeadLimitReached` action) is harmless to mark done
-                // again here.
-                if let Some(ds) = tap.head_downstream {
-                    next.push(ds);
-                }
-                if let Some(ref ts) = tap.tail_state {
-                    next.push(ts.downstream_supplier_id);
-                }
-                if let Some(ds) = tap.line_downstream {
-                    next.push(ds);
-                }
-                if let Some(ds) = tap.words_downstream {
-                    next.push(ds);
-                }
-                if let Some(ref uf) = tap.unique_filter {
-                    next.push(uf.downstream_supplier_id);
-                }
-                if let Some(ref elems) = tap.elems_trace {
-                    next.push(elems.downstream_supplier_id);
-                }
-            }
-        }
-        for ds in next {
+        for ds in get_direct_transform_output_supplier_ids(sid) {
             if seen.contains(&ds) {
                 continue;
             }
@@ -2391,6 +2349,55 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
         }
     }
     result
+}
+
+/// Get only the immediate downstream suppliers owned by transforms on `sid`.
+/// This lets terminal drivers preserve each stage's own handling outcome
+/// before deciding whether to propagate to its children.
+// Cost: O(t * s), t = taps on `sid`, s = shared output suppliers.
+pub(in crate::runtime) fn get_direct_transform_output_supplier_ids(supplier_id: u64) -> Vec<u64> {
+    let mut next = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref ts) = tap.transform_state {
+                next.push(ts.downstream_supplier_id);
+            }
+            next.extend(supplier_share_output_ids(supplier_id));
+            if let Some(ref ps) = tap.produce_state
+                && let Some(ds) = ps.produce_downstream
+            {
+                next.push(ds);
+            }
+            if let Some(ds) = tap.flat_downstream {
+                next.push(ds);
+            }
+            // `head`/`unique`/`lines`/`words`/`elems` own a derived supplier
+            // like every other pipeline stage now (issue #8474).
+            if let Some(ds) = tap.head_downstream {
+                next.push(ds);
+            }
+            if let Some(ref ts) = tap.tail_state {
+                next.push(ts.downstream_supplier_id);
+            }
+            if let Some(ds) = tap.line_downstream {
+                next.push(ds);
+            }
+            if let Some(ds) = tap.words_downstream {
+                next.push(ds);
+            }
+            if let Some(ref uf) = tap.unique_filter {
+                next.push(uf.downstream_supplier_id);
+            }
+            if let Some(ref elems) = tap.elems_trace {
+                next.push(elems.downstream_supplier_id);
+            }
+        }
+    }
+    let mut seen = HashSet::with_capacity(next.len());
+    next.retain(|id| seen.insert(*id));
+    next
 }
 
 /// Flush any remaining values in batch tap buffers when the supplier is done.

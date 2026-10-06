@@ -46,6 +46,18 @@ pub(crate) fn strip_atomic_compound_assign(rest: &str) -> Option<(&str, bool)> {
     None
 }
 
+/// The atomic store `@a[0] ⚛= rhs` / `%h<k> ⚛= rhs` is: the call
+/// `atomic-assign(@a[0], rhs)`, which the compiler lowers onto the element's own
+/// atomic cell (the one `cas(@a[0], ...)` swaps), so a refused element --
+/// one of a narrow native-int array (#12008) -- is refused like any other
+/// atomic. `None` for a target that is not an `@`/`%` element.
+pub(crate) fn atomic_elem_store_call(target: &Expr, rhs: Expr) -> Option<Expr> {
+    crate::parser::expr::is_atomic_elem_target(target).then(|| Expr::Call {
+        name: Symbol::intern("atomic-assign"),
+        args: vec![target.clone(), rhs],
+    })
+}
+
 /// Strip a leading atomic STORE operator, returning the rest of the input.
 ///
 /// Both spellings rakudo accepts are consumed: `⚛=` itself, and `⚛==`, which is

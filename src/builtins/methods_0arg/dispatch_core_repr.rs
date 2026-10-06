@@ -318,7 +318,7 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Parameter" && (method == "raku" || method == "perl") => {
+        } if class_name == "Parameter" && matches!(method, "raku" | "perl" | "gist") => {
             Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
                 &(attributes).as_map(),
             ))))

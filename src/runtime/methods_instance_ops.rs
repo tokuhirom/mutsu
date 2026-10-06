@@ -3248,6 +3248,33 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
+                // `Method.set_name`: the rename belongs to the class's method
+                // table entry, so it shows on every later `.^find_method` /
+                // `.^methods` read, as `RoutineCell::renamed` does for a sub.
+                if method == "set_name"
+                    && let [new_name] = args.as_slice()
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && self.is_method_object_class(&class_name.resolve())
+                {
+                    // The read guard must be gone before `insert` below takes
+                    // the write lock.
+                    let slot = crate::runtime::code_do_attr::method_instance_slot(&attributes.as_map());
+                    let Some((cls, meth, idx)) = slot else {
+                        return Err(RuntimeError::new(
+                            "Method.set_name: not a method table entry",
+                        ));
+                    };
+                    let new_name = new_name.to_string_value();
+                    self.registry_mut()
+                        .rename_method_candidate(&cls, &meth, idx, &new_name);
+                    attributes.insert("name", Value::str(new_name.clone()));
+                    return Ok(Value::str(new_name));
+                }
+
                 // `CALL-ME` on a Method/Submethod `Instance` (`.^lookup`/
                 // `.^find_method`/`.^methods` results -- ADR-0019 Phase F box
                 // F1's Sub-vs-Instance unification,

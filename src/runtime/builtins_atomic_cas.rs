@@ -106,6 +106,8 @@ impl Interpreter {
             Ok(current)
         } else {
             // 2-arg form: cas($var, &code)
+            // A narrow native-int attribute refuses before the block runs (#12008).
+            self.refuse_narrow_attribute(&name)?;
             let code = args[1].clone();
             // The celled lexical swaps through its cell. Taken before the
             // `atomic_add_var` fast paths below: those resolve the variable by

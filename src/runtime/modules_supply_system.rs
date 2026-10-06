@@ -5,6 +5,7 @@ mod supply_done_drive;
 mod supply_emit_drive;
 mod supply_emit_frame;
 mod supply_preserving_derive;
+mod supply_quit_drive;
 pub(crate) mod supply_tap_stream;
 pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
