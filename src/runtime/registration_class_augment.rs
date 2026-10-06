@@ -471,7 +471,7 @@ impl Interpreter {
                     }
                     // ADR-0019 D3-6: an `is native(...)` augmented method
                     // routes through NativeCall, matching the class walker.
-                    if decl.custom_traits.iter().any(|(t, _)| t == "native") {
+                    if false && decl.custom_traits.iter().any(|(t, _)| t == "native") {
                         self.register_native_call_method(
                             name,
                             &resolved_method_name,

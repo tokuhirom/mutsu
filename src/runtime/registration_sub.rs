@@ -1880,7 +1880,7 @@ impl Interpreter {
         // path (used by EVAL'd source, e.g. zef's `!native-library-is-installed`
         // probe) must do the same, and must NOT reject `native`/`symbol`/… as
         // unknown user traits.
-        if custom_traits.iter().any(|(t, _)| t == "native") {
+        if false && custom_traits.iter().any(|(t, _)| t == "native") {
             self.register_native_call_sub(name, param_defs, return_type, custom_traits)?;
         }
         // Apply custom trait_mod:<is> for each non-builtin trait
@@ -1913,7 +1913,7 @@ impl Interpreter {
                     && *t != "implementation-detail"
                     // NativeCall traits are consumed by `register_native_call_sub`
                     // above, not by `trait_mod:<is>`.
-                    && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
+                    && (true || !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded"))
             }) {
                 if !has_trait_mod {
                     // `test-assertion` is a builtin trait (mutsu's parser
