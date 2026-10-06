@@ -154,7 +154,10 @@ impl Compiler {
                 continue;
             }
             let ty = pd.type_constraint.as_deref();
-            let native = ty.is_some_and(crate::native_types::is_atomic_int_target_type);
+            let native = ty.is_some_and(|t| {
+                crate::native_types::is_atomic_int_target_type(t)
+                    || crate::native_types::is_narrow_atomic_int_type(t)
+            });
             let passes_container = pd.traits.iter().any(|t| t == "rw" || t == "raw");
             if native || !passes_container {
                 self.record_scalar_decl_type(&pd.name, ty);
@@ -305,18 +308,73 @@ impl Compiler {
         self.atomic_spelling = saved;
     }
 
-    /// The guard a lenient atomic (`atomic-fetch`, `atomic-assign`, `cas`) takes
-    /// when it stands for an `nqp::` `_i` op, which wants a native integer.
-    /// Consumes the spelling when it asks for that; a Raku-level spelling takes
-    /// none, so the plain forms stay legal on any scalar.
-    pub(super) fn emit_nqp_int_only_guard(&mut self, target: &str, is_element: bool) {
+    /// The guard of a lenient atomic (`atomic-fetch`, `atomic-assign`, `cas`,
+    /// `⚛$x`, `$x ⚛= v`), which takes any scalar but not a narrow native integer.
+    ///
+    /// - An `nqp::` `_i` spelling wants a native integer, so it gets the full
+    ///   integer-atomic guard (and consumes the spelling).
+    /// - Any other `nqp::` spelling keeps today's behaviour: MoarVM words its
+    ///   refusal of those differently (`A IntLexRef container does not know how
+    ///   to do an atomic load`), which is not modelled.
+    /// - A Raku-level spelling takes the narrow-only guard for a scalar, so the
+    ///   plain forms stay legal on any scalar (#12008). An element or an
+    ///   attribute is judged by the builtin itself (see
+    ///   [`Self::emit_narrow_atomic_guard`]).
+    pub(super) fn emit_lenient_atomic_guard(&mut self, target: &str, is_element: bool) {
         // Taken, not just read: the spelling belongs to this one call, and the
         // operands compiled after it must not inherit it.
-        let Some(spelling) = self.atomic_spelling.take() else {
-            return;
-        };
-        if spelling.int_only {
-            self.emit_int_atomic_guard(target, &spelling.display, None, is_element);
+        match self.atomic_spelling.take() {
+            Some(spelling) if spelling.int_only => {
+                self.emit_int_atomic_guard(target, &spelling.display, None, is_element);
+            }
+            Some(_) => {}
+            None => self.emit_narrow_atomic_guard(target, is_element),
         }
+    }
+
+    /// `__mutsu_atomic_narrow_target(target, declared)` as a statement, unless
+    /// the declaration proves the target is not a narrow native integer.
+    ///
+    /// Like [`Self::emit_int_atomic_guard`], a declared type settles it at
+    /// compile time: a plain or machine-size declaration costs nothing, a
+    /// narrow one always refuses, and a scalar no declaration decides (a
+    /// parameter, an outer name) asks the container at run time.
+    pub(super) fn emit_narrow_atomic_guard(&mut self, target: &str, is_element: bool) {
+        // An element or an attribute is judged by the lenient builtin itself,
+        // from the declared type it already reads for its own coercion
+        // (`check_atomic_elem_type`, `atomic_assign_coerced_value`): a guard call
+        // of its own added ~30% to a `cas` loop on one.
+        if is_element || target.starts_with(['!', '.']) {
+            return;
+        }
+        let declared_value = match self.atomic_target_decl(target) {
+            AtomicTargetDecl::Declared(ty) => {
+                let narrow = ty.as_deref().is_some_and(|t| {
+                    crate::native_types::is_narrow_atomic_int_type(
+                        crate::runtime::types::strip_type_smiley(t).0,
+                    )
+                });
+                if !narrow {
+                    return;
+                }
+                Value::str(ty.unwrap_or_default())
+            }
+            AtomicTargetDecl::Unknown => Value::NIL,
+        };
+        let target_idx = self.code.add_constant(Value::str(target.to_string()));
+        let declared_idx = self.code.add_constant(declared_value);
+        self.code.emit(OpCode::LoadConst(target_idx));
+        self.code.emit(OpCode::LoadConst(declared_idx));
+        let guard_idx = self
+            .code
+            .add_constant(Value::str_from("__mutsu_atomic_narrow_target"));
+        self.code.emit(OpCode::CallFunc {
+            name_idx: guard_idx,
+            arity: 2,
+            arg_sources_idx: None,
+            literal_native_args: 0,
+            static_arg_types: false,
+        });
+        self.code.emit(OpCode::Pop);
     }
 }

@@ -101,11 +101,64 @@ known not to be native.**
   unchanged: none relied on the leniency.
 - The check is conservative by construction. Not refused yet (all still run, as before):
   an untyped variable passed to an `is rw` parameter ([#12007](https://github.com/tokuhirom/mutsu/issues/12007)),
-  and a pointy block's parameter with no `ParamDef`. Not modelled: MoarVM's "not of the machine's
-  native size" refusal of `int8`/`int16`/`int32` ([#12008](https://github.com/tokuhirom/mutsu/issues/12008)).
+  and a pointy block's parameter with no `ParamDef`. (MoarVM's "not of the machine's native size"
+  refusal of `int8`/`int16`/`int32` was a known gap here; §5 records its closing.)
 - Found on the way: an inner-block `my atomicint $y` shadowing an outer `$y` is ignored by the
   by-name read-modify-write ([#12006](https://github.com/tokuhirom/mutsu/issues/12006));
   `@a[0] ⚛+= n` is a parse error ([#12005](https://github.com/tokuhirom/mutsu/issues/12005)).
 - When #12007 lands (the native kind on the container), the dynamic verdict for a cell becomes
   a read of that kind and the "lenient on silence" rule in §2.5 can be tightened; the lexical
   classification stays, since it is what Rakudo does and costs nothing at run time.
+
+## 5. Amendment (2026-10-06): a narrow native integer is refused by every atomic
+
+[#12008](https://github.com/tokuhirom/mutsu/issues/12008). Rakudo's `atomicint $target is rw`
+candidate takes an `int8` / `int16` / `int32` (and `bool`) container; MoarVM then refuses **every**
+atomic operation on it, the lenient ones (`atomic-fetch`, `atomic-assign`, `cas`, `⚛$x`, `$x ⚛= v`)
+included, and words the refusal by where the container lives (always `X::AdHoc`, whatever the
+operation's spelling, `nqp::` `_i` ops included):
+
+| target | message |
+| --- | --- |
+| `my int8/int16/int32 $x`, a parameter, an alias | `Cannot atomic load from an integer lexical not of the machine's native size` |
+| element of `my int8/int16/int32 @a` | `Can only do integer atomic operation on native integer array element of atomic size` |
+| `has int8/int16/int32 $!v` | `Can only do an atomic integer operation on an atomicint attribute` |
+
+- **Two predicates.** `native_types::is_atomic_int_target_type` is now the machine-size family only
+  (`int`, `atomicint`, `int64`, `long`, `longlong`, `ssize_t`); `is_narrow_atomic_int_type` is
+  `int8`/`int16`/`int32`/`bool`. §2.4's "one predicate" becomes "one pair": the dynamic verdict
+  (`Verdict::Native | Narrow | Boxed | Unknown`) is still the only place a target is judged.
+- **Strict forms need no new compiler path.** A declared narrow type is no longer "proven native", so
+  `emit_int_atomic_guard` emits the guard with the declared type and the verdict raises the narrow
+  message; an undecided target asks the container, as before.
+- **Lenient forms are judged where their target type is already read.** A separate guard call per
+  `cas` / `atomic-fetch` / `atomic-assign` cost a `cas` loop on an attribute ~50% and on an element
+  ~20% (debug A/B against `main`), so the three target kinds differ:
+  - a *scalar* the compiler sees declared narrow gets the always-refusing
+    `__mutsu_atomic_narrow_target(target, declared)` guard (`emit_narrow_atomic_guard`); a scalar no
+    declaration decides (a parameter, an outer name) gets the same guard asking the container at run
+    time; a scalar declared plain or machine-size emits nothing, so `my atomicint $n; ⚛$n` and the
+    hot `cas($x, ...)` loop compile as before;
+  - an *array element* is judged by `check_atomic_elem_type` (every store / `cas` already reads the
+    container's element type there) and, for the one op that reads none, `fetch`, by one extra
+    `atomic_elem_type_constraint`;
+  - an *attribute* is judged by `refuse_narrow_attribute` (the ADR-0121 memoized
+    `self_attr_type_constraint`, the lookup an ordinary `$!x = v` already pays), called from
+    `atomic_assign_coerced_value` (store, `cas`) and the attribute branch of the fetch.
+
+  Release A/B against `main` (one thread, 400000 `cas` iterations per path, 5 interleaved rounds,
+  medians): attribute 3.82 s -> 3.94 s, element 3.29 s -> 3.44 s, and the unchanged lexical control
+  3.03 s -> 3.17 s, i.e. within the control's own +-5% noise. (A debug build shows ~+19% on the
+  attribute path, an artifact: `self_attr_type_constraint` re-derives every memo hit under
+  `debug_assert_eq!`.) The by-name lexical metadata is deliberately *not* consulted at run time for a
+  scalar: under shadowing it could name an outer variable, which would be a false refusal.
+- **`@a[0] ⚛= v` was a plain assignment.** Both the statement and the expression parser built an
+  `IndexAssign`, so an element `⚛=` was neither atomic nor guarded. It now lowers to
+  `atomic-assign(@a[0], v)`, which the element-atomic compiler already maps onto the element's cell.
+- **The code form refuses before its block runs.** `cas($!narrow, { ... })` and `cas(@narrow[0],
+  { ... })` check once up front (`refuse_narrow_attribute` / `refuse_narrow_element`), as Rakudo
+  refuses at the first atomic load; `t/concurrency/thread-lock/atomic-narrow-int-refused.t` pins that
+  the block ran zero times.
+- **Not modelled**: the non-`_i` `nqp::` ops on a narrow container (`nqp::atomicload($int32)`) keep
+  running; MoarVM refuses them with a different message (`A IntLexRef container does not know how to
+  do an atomic load`), which also applies to a machine-size `int` and is a separate gap.

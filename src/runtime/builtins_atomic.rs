@@ -32,6 +32,7 @@ impl Interpreter {
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(args),
             "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(args),
+            "__mutsu_atomic_narrow_target" => self.builtin_atomic_narrow_target(args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(args),
             // `cas($x, * + n)`: an add that, unlike `⚛+=`, takes any scalar.
             "__mutsu_cas_add_var" => self.builtin_atomic_add_var(args),
@@ -111,6 +112,7 @@ impl Interpreter {
         mut value: Value,
     ) -> Result<Value, RuntimeError> {
         self.check_readonly_for_modify(name)?;
+        self.refuse_narrow_attribute(name)?;
         if let Some(constraint) = self.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
@@ -289,6 +291,7 @@ impl Interpreter {
         let name = self.atomic_var_name_arg(args)?;
         // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            self.refuse_narrow_attribute(&name)?;
             let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }

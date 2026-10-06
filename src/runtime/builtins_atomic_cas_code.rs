@@ -14,7 +14,7 @@ impl Interpreter {
     /// store must satisfy: the declared constraint (`my Int @a` / `my Int %h`),
     /// or the element `value_type` embedded in the container node itself (a
     /// bound alias has no declared constraint on its own name).
-    fn atomic_elem_type_constraint(&mut self, name: &str) -> Option<String> {
+    pub(super) fn atomic_elem_type_constraint(&mut self, name: &str) -> Option<String> {
         if let Some(c) = self.var_type_constraint(name) {
             return Some(c);
         }
@@ -48,6 +48,12 @@ impl Interpreter {
         let Some(constraint) = self.atomic_elem_type_constraint(name) else {
             return Ok(());
         };
+        // An element of a narrow native-int array: MoarVM refuses every atomic
+        // on it, the lenient ones included (#12008).
+        if name.starts_with('@') && super::builtins_atomic_target::is_narrow_declared_type(&constraint)
+        {
+            return Err(Self::narrow_atomic_refusal(name));
+        }
         if matches!(constraint.as_str(), "Any" | "Mu") || new_val.is_nil() {
             return Ok(());
         }
@@ -75,6 +81,8 @@ impl Interpreter {
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         code: &Value,
     ) -> Result<Value, RuntimeError> {
+        // A narrow native-int array refuses before the block ever runs (#12008).
+        self.refuse_narrow_element(name)?;
         loop {
             let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
@@ -176,6 +184,7 @@ impl Interpreter {
             }
             return r;
         }
+        self.refuse_narrow_element(&arr_name)?;
         loop {
             let current = {
                 let guard = cell.lock().unwrap_or_else(|e| e.into_inner());

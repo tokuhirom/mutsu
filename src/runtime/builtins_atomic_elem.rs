@@ -66,6 +66,9 @@ impl Interpreter {
         };
         let result = match op {
             ElemOp::Fetch => {
+                // The one lenient op that reads no element type of its own: a
+                // narrow native-int array refuses it too (#12008).
+                self.refuse_narrow_element(&name)?;
                 let guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                 guard.clone()
             }
