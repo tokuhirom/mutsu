@@ -7,6 +7,7 @@ t/collections/array/array-append-itemized-hash.t
 t/collections/array/array-append-range.t
 t/collections/array/array-assign-bound-iterable.t
 t/collections/array/array-bind-cell.t
+t/collections/array/array-bind-to-item-container.t
 t/collections/array/array-coercer-result-element-store.t
 t/collections/array/array-coercion-type.t
 t/collections/array/array-composer-iterable-instance.t
@@ -14,6 +15,7 @@ t/collections/array/array-counted-head-tail-rw.t
 t/collections/array/array-default-holes.t
 t/collections/array/array-delete-hole-reads-is-default.t
 t/collections/array/array-delete-pos-nested-index-trims-inner.t
+t/collections/array/array-elem-assign-stmt.t
 t/collections/array/array-element-scalar-splice-shares.t
 t/collections/array/array-explicit-any-element-not-hole.t
 t/collections/array/array-front-mutation-head-offset.t
@@ -34,9 +36,11 @@ t/collections/array/array-pos-methods-store-in-place.t
 t/collections/array/array-push-byref-coherence.t
 t/collections/array/array-shift-is-constant-time.t
 t/collections/array/array-sigil-scalar-deref.t
+t/collections/array/array-single-listy-raku-comma.t
 t/collections/array/array-subclass-assign-pos-direct-call.t
 t/collections/array/array-subclass-delegation-parity.t
 t/collections/array/array-subclass-element-gist-str.t
+t/collections/array/array-subclass-element-raku-trailing-comma.t
 t/collections/array/array-subclass-iterator-override.t
 t/collections/array/array-subclass-mutator-return-self.t
 t/collections/array/array-subclass-new-default-ctor.t
@@ -87,6 +91,7 @@ t/collections/exists-itemized-hash-element.t
 t/collections/for-element-source-writeback.t
 t/collections/for-loop-cell-elements.t
 t/collections/for-loop-element-alias.t
+t/collections/for-single-element-topic-writeback.t
 t/collections/for-topic-element-writeback.t
 t/collections/gist-element-cap.t
 t/collections/given-element-topic-bind-self.t
@@ -167,6 +172,7 @@ t/collections/hash/hash-term.t
 t/collections/hash/hash-values-producer-alias.t
 t/collections/hash/keys-values-pair-any.t
 t/collections/hash/kv-general.t
+t/collections/hash/nested-assoc-incdec-autoviv.t
 t/collections/hash/nested-assoc-user-assign-key.t
 t/collections/hash/nested-autoviv-any-fill.t
 t/collections/hash/object-hash-composite-key-increment.t
@@ -226,6 +232,7 @@ t/collections/lazy-seq/gather-hyper-take-lazy-pull.t
 t/collections/lazy-seq/gather-lazy-hyper.t
 t/collections/lazy-seq/gather-lazy.t
 t/collections/lazy-seq/gather-map-take-lazy-resume.t
+t/collections/lazy-seq/gather-nested-loop-pull.t
 t/collections/lazy-seq/gather-returns-seq.t
 t/collections/lazy-seq/gather-self-reference-iterator.t
 t/collections/lazy-seq/gather-seq-slip.t
@@ -353,6 +360,7 @@ t/collections/list-destructure-result.t
 t/collections/list-element-bind-runtime.t
 t/collections/list-fmt.t
 t/collections/list-functions.t
+t/collections/list-infix-chain-across-a-comma-list.t
 t/collections/list-infix-comma-precedence.t
 t/collections/list-infix-comparison-operand-precedence.t
 t/collections/list-listop-is-a-noop-on-a-seq.t
@@ -377,12 +385,14 @@ t/collections/listop-map-defers.t
 t/collections/listop-math-functions.t
 t/collections/listop-shadow-declared.t
 t/collections/listop-slip-arg-sink-context.t
+t/collections/listop-trailing-comma.t
 t/collections/listop-unicode-numeric-arg.t
 t/collections/listop-word-logical.t
 t/collections/listquote-regressions.t
 t/collections/metaop-xx-per-element-thunk.t
 t/collections/minmax-failure-and-hash.t
 t/collections/named-alias-array-seq.t
+t/collections/nested-element-store-expression-root.t
 t/collections/nested-with-loop-element-writeback.t
 t/collections/nil-element-store-decay.t
 t/collections/nqp-uni-element-access-is-linear.t
@@ -616,12 +626,14 @@ t/collections/subscript/term-keyword-subscript-adverb.t
 t/collections/subscript/ternary-subscript-v-adverb.t
 t/collections/subscript/tied-hash-value-slice.t
 t/collections/subscript/topic-angle-subscript-word-chars.t
+t/collections/subscript/topic-subscript-slice.t
 t/collections/subscript/topic-zen-slice.t
 t/collections/subscript/user-associative-subscript-adverbs.t
 t/collections/subscript/user-postcircumfix-builtin-slice-adverbs.t
 t/collections/subscript/var-on-subscript.t
 t/collections/subscript/whatever-ended-range-slice-assign.t
 t/collections/subscript/whatever-hash-subscript.t
+t/collections/subscript/whatever-index-in-subscript-chain.t
 t/collections/subscript/whatever-slice-assign.t
 t/collections/subscript/whatever-slice-on-positional-instance.t
 t/collections/subscript/zen-slice-angle-spellings.t
@@ -630,6 +642,7 @@ t/collections/temp-element-saves-only-the-element.t
 t/collections/temp-parenthesized-element.t
 t/collections/topic-nested-element-alias.t
 t/collections/transform/batch-elems-named.t
+t/collections/transform/cross-function-argument-iteration.t
 t/collections/transform/cross-itemized-call-parity.t
 t/collections/transform/cross-metaops-regressions.t
 t/collections/transform/cross-zip-seq.t
@@ -865,6 +878,7 @@ t/concurrency/supply/supply-cold-whenever-nonreact-drive.t
 t/concurrency/supply/supply-collate.t
 t/concurrency/supply/supply-combinator-chain.t
 t/concurrency/supply/supply-delayed.t
+t/concurrency/supply/supply-derived-done-chain.t
 t/concurrency/supply/supply-do-on-demand-async-emit.t
 t/concurrency/supply/supply-do-on-demand-source.t
 t/concurrency/supply/supply-done-detection-is-per-supplier.t
@@ -1574,6 +1588,7 @@ t/lang/adverbs/colon-call-argument-parsing.t
 t/lang/adverbs/colon-const-fatarrow-key.t
 t/lang/adverbs/colonpair-braced-hash-value.t
 t/lang/adverbs/colonpair-bracket-trailing-comma-composer.t
+t/lang/adverbs/colonpair-bracket-trailing-comma.t
 t/lang/adverbs/colonpair-keyword-key-hash-composer.t
 t/lang/adverbs/colonpair-twigil-autopair-hash-composer.t
 t/lang/and-not-loose-precedence.t
@@ -1682,6 +1697,7 @@ t/lang/operators/infix-word-name-listop-call.t
 t/lang/operators/infix-z-function-call.t
 t/lang/operators/meta-api.t
 t/lang/operators/meta-assign-literal-list-lvalue.t
+t/lang/operators/meta-cross-zip-assign-bare-spelling.t
 t/lang/operators/meta-cross-zip-assign.t
 t/lang/operators/meta-op-assign.t
 t/lang/operators/meta-ops.t
@@ -1749,6 +1765,7 @@ t/lang/parsing/bareword-array-not-reduction.t
 t/lang/parsing/bareword-assign-expr.t
 t/lang/parsing/bareword-core-type-objects.t
 t/lang/parsing/bom-stripping.t
+t/lang/parsing/bracket-metaop-assign-indexed.t
 t/lang/parsing/comma-list-precedence.t
 t/lang/parsing/paren-adjacent-colonpairs.t
 t/lang/parsing/paren-cross-arg-boundary.t
@@ -1780,6 +1797,7 @@ t/lang/pod-declarator-nested-declarants.t
 t/lang/pod-delimited-literal-equals.t
 t/lang/pod-eval-return.t
 t/lang/pod-implicit-code-vmargin.t
+t/lang/pod-index-entry-meta.t
 t/lang/pod-item-lists.t
 t/lang/pod-object-model.t
 t/lang/pod-table-equals-separator.t
@@ -2387,6 +2405,7 @@ t/nativecall/nativecall-carray.t
 t/nativecall/nativecall-cglobal.t
 t/nativecall/nativecall-constant-type-alias.t
 t/nativecall/nativecall-cpointer-class-in-module.t
+t/nativecall/nativecall-cstr-repr.t
 t/nativecall/nativecall-cstruct-carray-field-by-repr.t
 t/nativecall/nativecall-cstruct-field-write.t
 t/nativecall/nativecall-cstruct-fields.t
@@ -2431,6 +2450,7 @@ t/nativecall/nqp-ordat-and-native-int-coerce.t
 t/nativecall/qualified-native-ancestor-method.t
 t/nativecall/quoted-dynamic-user-native-method.t
 t/nativecall/repr-reports-declared-representation.t
+t/nativecall/repr-residues-2.t
 t/nativecall/repr-uninstantiable.t
 t/nativecall/require-in-method-cstruct-role-statics.t
 t/nativecall/shaped-native-array-survives-sub-argument.t
@@ -2895,6 +2915,7 @@ t/oo/method/method-redispatch-fingerprint.t
 t/oo/method/method-resolution-cache.t
 t/oo/method/method-result-scalar-subscript-store-refused.t
 t/oo/method/method-return-type-pseudo-class.t
+t/oo/method/method-rooted-lvalue-subscript-chain.t
 t/oo/method/method-rooted-lvalue-subscript-through-object.t
 t/oo/method/method-rw-capability-oracle.t
 t/oo/method/method-rw-param-writeback-coherence.t
@@ -3077,6 +3098,7 @@ t/oo/mop/signature-introspection-gaps.t
 t/oo/mop/unmarshal-mop-support.t
 t/oo/mop/what-subroutine.t
 t/oo/mop/when-metamodel-how-type-no-gobble.t
+t/oo/nested-instance-raku.t
 t/oo/nqp-create-mixin.t
 t/oo/orelse-andthen-mixin-defined.t
 t/oo/parameterized-mixin-lexical-state.t
@@ -3987,6 +4009,7 @@ t/routines/closure/typed-hash-assign-in-closure-keeps-type.t
 t/routines/closure/user-class-instance-element-write-through-closure.t
 t/routines/closure/user-infix-closure-arg-writeback.t
 t/routines/closure/whatever-rw-and-currying.t
+t/routines/closure/whatever-xz-currying.t
 t/routines/closure/whatevercode-call-arg-value.t
 t/routines/closure/whatevercode-gist-raku.t
 t/routines/closure/whatevercode-lvalue-assignment.t
@@ -4030,6 +4053,7 @@ t/routines/dispatch/lexical-sub-dispatch-memo.t
 t/routines/dispatch/lexical-sub-shadow-named-and-multi.t
 t/routines/dispatch/listop-imported-multi-extends-core.t
 t/routines/dispatch/listop-multi-extends-core.t
+t/routines/dispatch/listop-multi-subscript-autoviv.t
 t/routines/dispatch/map-multiarg-full-binding.t
 t/routines/dispatch/mix-immutability-and-multi-index.t
 t/routines/dispatch/multi-aggregate-rejects-nil.t
@@ -4154,6 +4178,7 @@ t/routines/dispatch/str-coercion-and-dispatch.t
 t/routines/dispatch/take-multi-args.t
 t/routines/dispatch/transitive-multi-override.t
 t/routines/dispatch/user-increment-op-candidate-ranking.t
+t/routines/dispatch/user-infix-op-candidate-ranking.t
 t/routines/dispatch/user-infix-op-core-candidate-set.t
 t/routines/dispatch/user-infix-unicode-multiply.t
 t/routines/dispatch/whatevercode-multiarg-subscript.t
@@ -4238,6 +4263,7 @@ t/routines/signature/array-dynamic-parameterization.t
 t/routines/signature/array-param-binds-itemized-range.t
 t/routines/signature/array-param-positional-bind-failover.t
 t/routines/signature/assuming-signature-gist.t
+t/routines/signature/binding-parameter-container-hint.t
 t/routines/signature/block-topic-explicit-params.t
 t/routines/signature/bool-param-binds-itemized-hash-element.t
 t/routines/signature/bound-alias-outer-var-ignores-callers-readonly-param.t
@@ -4409,6 +4435,7 @@ t/routines/signature/readonly-param-and-no-autoflatten.t
 t/routines/signature/readonly-param-mark-panic-unwind.t
 t/routines/signature/readonly-param-shadow.t
 t/routines/signature/recursion-loop-param-leak.t
+t/routines/signature/recursive-loop-param-share-isolation.t
 t/routines/signature/recursive-sub-trailing-comma-array-param.t
 t/routines/signature/reduce-block-typed-param-arg-source-leak.t
 t/routines/signature/reduce-destructuring-signature.t
@@ -4648,6 +4675,7 @@ t/types/coercion/typed-array-alias-reassign.t
 t/types/coercion/typed-array-bound-cell-writethrough.t
 t/types/coercion/typed-array-gather-init.t
 t/types/coercion/typed-array-mutate-preserves-type.t
+t/types/coercion/typed-array-nested-autoviv-type-check.t
 t/types/coercion/typed-array-nil-default.t
 t/types/coercion/typed-array-push-typecheck.t
 t/types/coercion/typed-attr-array-append-flattens.t
@@ -4657,6 +4685,7 @@ t/types/coercion/typed-constraint-scope-matrix.t
 t/types/coercion/typed-constraint-shadow-scope.t
 t/types/coercion/typed-constraint-store-matrix.t
 t/types/coercion/typed-container-decl-in-expr.t
+t/types/coercion/typed-container-rebind-and-eqv.t
 t/types/coercion/typed-container-what.t
 t/types/coercion/typed-decl-hoist-block-forms.t
 t/types/coercion/typed-defined-container-attr-default.t
@@ -4730,6 +4759,7 @@ t/types/junction-nested-raku-output.t
 t/types/junction-ops.t
 t/types/junction-regressions.t
 t/types/junction-self-referential-gather.t
+t/types/junction-threads-through-user-infix-eq.t
 t/types/junction.t
 t/types/map.t
 t/types/mu-class-not-any.t
@@ -5116,6 +5146,7 @@ t/vm/frames/callsite-file-alternating-units.t
 t/vm/frames/deferred-bind-positional-step.t
 t/vm/frames/deferred-map-callback-frame.t
 t/vm/frames/deferred-map-grep-plan-reuse.t
+t/vm/frames/deferred-map-read-paths.t
 t/vm/frames/light-call-bare-type-accepts-type-object.t
 t/vm/frames/light-call-definite-return.t
 t/vm/frames/light-call-frame-writes-dedup.t
