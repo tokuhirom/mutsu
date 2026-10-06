@@ -436,7 +436,13 @@ impl Interpreter {
             // The native constructor / qualified native method is used, not
             // `invocant.name`: a subclass overriding it by calling this object
             // (`method new(|c) { &new(self, |c) }`) would re-enter itself.
-            if !args.is_empty() && !self.has_class(&package.resolve()) {
+            // The catalog probe is O(1); `is_builtin_type_method` collects every
+            // builtin method row of the type and its ancestors, so it only runs
+            // for a package that is a core type at all.
+            if !args.is_empty()
+                && !self.has_class(&package.resolve())
+                && crate::builtin_types::catalog::builtin_type_info(&package.resolve()).is_some()
+            {
                 let pkg = package.resolve();
                 let method = name.resolve();
                 if self.is_builtin_type_method(&pkg, &method) {
