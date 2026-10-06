@@ -53,6 +53,7 @@ steps=(
     "Types: Pointer.new|use UNC::Types; print UNC::Types::Pointer.new.raku eq 'UNC::Types::Pointer.new(0)' ?? 'ok' !! UNC::Types::Pointer.new.raku"
     "Types: CArray[int32] elements|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); print \$a[1] == 2 && \$a.elems == 3 ?? 'ok' !! 'wrong'"
     "Types: CArray[int32] write|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); \$a[0] = 7; print \$a[0] == 7 ?? 'ok' !! 'wrong'"
+    "Types: untyped CArray.new|use UNC::Types; my \$a = UNC::Types::CArray.new; sub f(UNC::Types::CArray \$x) { 1 }; print \$a ~~ UNC::Types::CArray && \$a.^name eq 'UNC::Types::CArray' && f(\$a) == 1 ?? 'ok' !! 'wrong'"
     "load UNC|use UNC; print 'ok'"
     "UNC: nativesizeof|use UNC; print nativesizeof(int32) == 4 ?? 'ok' !! 'wrong'"
     "UNC: is native strlen|use UNC; sub strlen(Str --> size_t) is native {*}; print strlen('hello') == 5 ?? 'ok' !! 'wrong'"
