@@ -6,7 +6,7 @@ use Test;
 # decayed `Nil` against the HASH's default and wrote the raw value into the
 # shared cell, skipping `$y`'s type check.
 
-plan 26;
+plan 34;
 
 # --- the type check -------------------------------------------------------------
 {
@@ -101,4 +101,28 @@ plan 26;
     dies-ok { %i<i> = 5 }, 'an element bound to a literal stays read-only';
     my Int %typed; %typed<a> = 1;
     throws-like { %typed<a> = "x" }, X::TypeCheck::Assignment, 'a typed hash still checks its own elements';
+}
+
+# The declared sigil is not necessarily the variable that holds the aggregate.
+# A scalar can keep the same Array or Hash while a `:=`-bound element remains
+# the typed variable's cell.
+{
+    my Int $x = 1; my $h = {}; $h<k> := $x;
+    throws-like { $h<k> = "x" }, X::TypeCheck::Assignment,
+        'a scalar-held hash still checks a bound element cell';
+    is $x, 1, 'a rejected store through a scalar-held hash leaves the source alone';
+    my Int $y = 2; my @a = 0; @a[0] := $y; my $r = @a;
+    throws-like { $r[0] = "x" }, X::TypeCheck::Assignment,
+        'a scalar-held array still checks a bound element cell';
+    is $y, 2, 'a rejected store through a scalar-held array leaves the source alone';
+    $r[0] = Nil;
+    is $y.raku, 'Int', 'Nil through a scalar-held array resets the bound typed cell';
+    my Int $z = 3; my $g = {}; $g<k> := $z; $g<k> = 4;
+    is $z, 4, 'a legal scalar-held hash store still writes through the cell';
+}
+{
+    my Int $bound = 1; my %g; %g<k> := $bound;
+    throws-like { %g<k>[0] = "x" }, X::TypeCheck::Assignment,
+        'a chained subscript cannot replace a typed bound scalar with an Array';
+    is $bound, 1, 'a rejected chained store preserves the bound scalar';
 }
