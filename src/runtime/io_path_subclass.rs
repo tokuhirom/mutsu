@@ -33,6 +33,9 @@ impl Interpreter {
         if class_name == "IO::Path"
             || class_name.as_str().starts_with("IO::Path::")
             || !super::any_cool_method_gate::is_cool_only_method(method)
+            // `lines`, `words`, `comb`, ... are `IO::Path`'s own, not `Cool`'s.
+            || crate::builtins::builtin_type_methods::builtin_type_method_names("IO::Path")
+                .contains(&method)
         {
             return None;
         }
