@@ -13,30 +13,38 @@
 //!
 //! # How a call reaches a row
 //!
-//! [`try_dispatch`] decodes the receiver's [`DispatchShape`] — a tag probe that
-//! refuses everything the receiver-state checks in
-//! `vm_native_dispatch::try_native_method_raw` exist for (instances, type
-//! objects, mixins, containers, lazy and shaped values) — and looks
-//! `(shape, method symbol, arity)` up in a map built once per process by
-//! walking each shape's MRO (`builtin_types::catalog`) most-derived first. A
-//! row is handed only plain scalar arguments ([`plain_args`]): named arguments
-//! (which arrive as `Pair`s), Junctions, Failures, lazy Seqs and the like need
-//! probes the table skips. A miss, a call with any other argument, or a
+//! `dispatch::try_dispatch_in` (the VM's native entry and
+//! `call_method_with_values`), the call-site lane and the cascades' own prologue
+//! (`answer`) all go through one guard step. It decodes the receiver as a
+//! [`Receiver`]: an instance of a [`DispatchShape`](crate::value::DispatchShape)
+//! (a tag probe that refuses everything the receiver-state checks in
+//! `vm_native_dispatch::try_native_method_raw` exist for: user instances, mixins,
+//! containers, lazy and shaped values), or the type object of a built-in type. It
+//! looks `(receiver, method symbol, arity)` up in a map built once per process by
+//! walking each shape's MRO (`builtin_types::catalog`) most-derived first; a shape
+//! added after the first nine is closed to ancestor rows (see
+//! `value::dispatch_shape`). The call's arguments are split into positional and
+//! named ones (a string-keyed `Pair` is a named argument, ADR-0021), the row is
+//! found by the positional arity, and each argument is admitted by the row's
+//! [`RowFlags`]: a plain scalar by default, any plain argument for `ANY_ARGS`.
+//! Junctions, Failures, lazy Seqs and the like need probes the table skips. A
+//! miss, a name no row binds, an argument not admitted, or a
 //! [`Handler::Narrow`] row that does not bind the arguments returns `None`, and
-//! the call takes the cascades exactly as before; that fallback is what lets
-//! the families migrate one at a time (ADR-11276 §6).
+//! the call takes the cascades exactly as before; that fallback is what lets the
+//! families migrate one at a time (ADR-11276 §6).
 //!
 //! # Adding a row
 //!
 //! Put the handler and its row in the family module of the type Rakudo
-//! declares the method on, and make any cascade arm that answers the same
-//! method call the handler. A pair may be added only when no probe the table
-//! skips can claim it for a plain receiver of that shape — the probes are
-//! listed in `try_native_method_raw`, `native_method_0arg`'s prologue and
-//! `dispatch_core`'s prologue. In debug builds every table hit is re-answered
-//! through the full pure path and the two must agree
-//! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
-//! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
+//! declares the method on, in the directory of the slice group that owns the
+//! type (`scalars`, `collections`, `instances`, ...), and make any cascade arm that
+//! answers the same method call the handler. A pair may be added only when no
+//! probe the table skips can claim it for a plain receiver of that shape — the
+//! probes are listed in `try_native_method_raw`, `native_method_0arg`'s prologue
+//! and `dispatch_core`'s prologue. In debug builds every table hit of a pure row
+//! is re-answered through the full pure path and the two must agree
+//! (`dispatch::debug_assert_matches_full_path`); CI's `debug-tap` job runs that
+//! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
 mod collections;
 mod ctors_mop;

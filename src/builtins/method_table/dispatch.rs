@@ -177,7 +177,7 @@ pub(crate) fn try_dispatch(
     Some(result)
 }
 
-/// [`try_dispatch`] for a caller that has the interpreter, so a row that
+/// `try_dispatch` for a caller that has the interpreter, so a row that
 /// needs it answers too. `allow` is the caller's veto (an `augment` of the
 /// receiver's type that defines the method, for one), asked once the row is
 /// found and before its handler runs. Only a pure row is cross-checked in debug builds: an
@@ -200,7 +200,7 @@ pub(crate) fn try_dispatch_in(
     Some(result)
 }
 
-/// [`try_dispatch`] without the debug cross-check: what the cascades' own
+/// `try_dispatch` without the debug cross-check: what the cascades' own
 /// entry (`native_method_0arg`) asks first.
 // Cost: O(1) to find the row (a bit test, a tag probe and one hash lookup),
 // plus the handler's own cost.
