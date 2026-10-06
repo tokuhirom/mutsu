@@ -16,7 +16,7 @@
 //! left-nested [`Expr::MetaOp`], so the converter flattens the chain and the
 //! lowering folds the operands back.
 
-use super::convert::{convert_expr, node_field, plain_infix};
+use super::convert::{convert_expr, node_field, plain_infix, unsupported as unsupported_expr};
 use super::lower::{
     list_field, lower_expr, named_child, positional_leaf, rakuast_node_of, unsupported,
 };
@@ -119,16 +119,16 @@ pub(super) fn convert(
     whole: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     let Some(class) = meta_class(meta) else {
-        return Err(unsupported(whole));
+        return Err(unsupported_expr(&format!("{whole:?}")));
     };
     // A compound-assignment base (`X+=`) is its own node, deferred.
     if op.ends_with('=') && !op.is_empty() && crate::compiler::helpers_ops::op_name_to_token_kind(op).is_none() {
-        return Err(unsupported(whole));
+        return Err(unsupported_expr(&format!("{whole:?}")));
     }
     let infix = if op.is_empty() {
         // The bare `Z` / `X` operator.
         if meta == "R" {
-            return Err(unsupported(whole));
+            return Err(unsupported_expr(&format!("{whole:?}")));
         }
         plain_infix(meta)
     } else {
@@ -184,7 +184,7 @@ fn spelling(infix: &RakuAstNode) -> Result<Option<(&'static str, String)>, Runti
     if infix.class == RakuAstClass::Infix {
         let leaf = positional_leaf(infix)?;
         if let ValueView::Str(op) = leaf.view() {
-            match &*op {
+            match op.to_string().as_str() {
                 "Z" => return Ok(Some(("Z", String::new()))),
                 "X" => return Ok(Some(("X", String::new()))),
                 _ => {}
