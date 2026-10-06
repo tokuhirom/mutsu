@@ -8,6 +8,88 @@
 
 use crate::symbol::Symbol;
 
+/// Whether the text before `at` ends the way a categorical name's bracket group
+/// is introduced: `term:`, `infix:sym` -- a colon pair, optionally a named
+/// adverb -- and not a `::` package separator (`Foo::<...>`, `Foo::Bar<...>`).
+fn opens_category_group(text: &str, at: usize) -> bool {
+    let head = text[..at].trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+    head.ends_with(':') && !head.ends_with("::")
+}
+
+/// The byte offset just past the bracket group that opens at `open`, or `None`
+/// when `open` does not open a categorical's group (or it is never closed).
+fn category_group_end(text: &str, open: usize) -> Option<usize> {
+    let close = match text[open..].chars().next()? {
+        '<' => '>',
+        '\u{ab}' => '\u{bb}', // « »
+        _ => return None,
+    };
+    if !opens_category_group(text, open) {
+        return None;
+    }
+    let inner = open + text[open..].chars().next()?.len_utf8();
+    let rel = text[inner..].find(close)?;
+    Some(inner + rel + close.len_utf8())
+}
+
+/// The byte offsets of the `::` package separators of `text`, left to right.
+///
+/// A `::` inside a categorical's bracket group is part of the NAME, not a
+/// qualifier: `term:<Foo::Bar>` is the term `Foo::Bar` (one name), whereas
+/// `Pkg::term:<Foo::Bar>` is that term inside package `Pkg`. Every layer that
+/// takes a name apart at `::` must agree on this, or one layer qualifies a
+/// name another layer treats as plain.
+// Cost: O(|text|).
+pub(crate) fn separators(text: &str) -> impl Iterator<Item = usize> + '_ {
+    let bytes = text.as_bytes();
+    let mut pos = 0;
+    std::iter::from_fn(move || {
+        while pos < bytes.len() {
+            match bytes[pos] {
+                b':' if bytes.get(pos + 1) == Some(&b':') => {
+                    pos += 2;
+                    return Some(pos - 2);
+                }
+                b'<' | 0xC2 => {
+                    // `<` is ASCII; `«` is the two bytes C2 AB, so a C2 byte is
+                    // the start of that character only when AB follows.
+                    let opens = bytes[pos] == b'<' || bytes.get(pos + 1) == Some(&0xAB);
+                    if opens && let Some(end) = category_group_end(text, pos) {
+                        pos = end;
+                        continue;
+                    }
+                    pos += 1;
+                }
+                _ => pos += 1,
+            }
+        }
+        None
+    })
+}
+
+/// The byte offset of the last `::` package separator of `text`, or `None` when
+/// the name has no qualifier (see [`separators`]).
+///
+/// A name without a bracket in front of its last `::` -- nearly every name --
+/// is answered by the plain reverse search, with no forward scan.
+// Cost: O(|text|).
+pub(crate) fn last_separator(text: &str) -> Option<usize> {
+    let at = text.rfind("::")?;
+    if !text[..at].contains(['<', '\u{ab}']) {
+        return Some(at);
+    }
+    separators(text).last()
+}
+
+/// Whether `text` carries a `::` package separator (see [`separators`]).
+// Cost: O(|text|).
+pub(crate) fn has_separator(text: &str) -> bool {
+    let Some(at) = text.find("::") else {
+        return false;
+    };
+    !text[..at].contains(['<', '\u{ab}']) || separators(text).next().is_some()
+}
+
 /// `name` split at its last `::` into the package part and the last segment,
 /// or `None` when it has no qualifier: `Foo::Bar::baz` -> (`Foo::Bar`, `baz`).
 /// The split is purely textual, exactly what `rsplit_once("::")` returns; a
@@ -25,10 +107,9 @@ pub(crate) fn split_qualified(name: Symbol) -> Option<(Symbol, Symbol)> {
     if let Some(split) = SPLITS.with(|c| c.borrow().get(&name).copied()) {
         return split;
     }
-    let split = name
-        .as_str()
-        .rsplit_once("::")
-        .map(|(head, tail)| (Symbol::intern(head), Symbol::intern(tail)));
+    let text = name.as_str();
+    let split = last_separator(text)
+        .map(|at| (Symbol::intern(&text[..at]), Symbol::intern(&text[at + 2..])));
     SPLITS.with(|c| {
         c.borrow_mut().insert(name, split);
     });
@@ -79,13 +160,15 @@ pub(crate) fn segments(name: Symbol) -> &'static [Symbol] {
     }
     // Leaked like the interner's own strings: one slice per distinct
     // qualified name, kept for the life of the process.
-    let segs: &'static [Symbol] = Box::leak(
-        name.as_str()
-            .split("::")
-            .map(Symbol::intern)
-            .collect::<Vec<_>>()
-            .into_boxed_slice(),
-    );
+    let text = name.as_str();
+    let mut segs = Vec::new();
+    let mut start = 0;
+    for at in separators(text) {
+        segs.push(Symbol::intern(&text[start..at]));
+        start = at + 2;
+    }
+    segs.push(Symbol::intern(&text[start..]));
+    let segs: &'static [Symbol] = Box::leak(segs.into_boxed_slice());
     SEGMENTS.with(|c| {
         c.borrow_mut().insert(name, segs);
     });
@@ -195,6 +278,50 @@ mod tests {
         for text in ["A::B::c", "a::b", "plain", "::x", "x::"] {
             assert_eq!(split_first(s(text)), text.split_once("::"), "{text}");
         }
+    }
+
+    #[test]
+    fn a_double_colon_inside_a_category_group_is_not_a_separator() {
+        // The term `Foo::Bar` is one name; so is the same name in `«»` form.
+        for text in [
+            "term:<Foo::Bar>",
+            "term:\u{ab}Foo::Bar\u{bb}",
+            "term:<Foo::Bar>/0",
+            "infix:sym<a::b>",
+            "&term:<Foo::Bar>",
+        ] {
+            assert!(!has_separator(text), "{text}");
+            assert_eq!(last_separator(text), None, "{text}");
+            assert_eq!(split_qualified(s(text)), None, "{text}");
+            assert!(!crate::qualified::is_qualified(s(text)), "{text}");
+            assert_eq!(segments(s(text)).len(), 1, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_package_in_front_of_a_category_group_still_qualifies_it() {
+        let text = "Pkg::term:<Foo::Bar>";
+        assert!(has_separator(text));
+        assert_eq!(last_separator(text), Some(3));
+        let (head, tail) = split_qualified(s(text)).expect("qualified");
+        assert_eq!((head.as_str(), tail.as_str()), ("Pkg", "term:<Foo::Bar>"));
+        let segs: Vec<&str> = segments(s("A::B::term:<X::Y>"))
+            .iter()
+            .map(|x| x.as_str())
+            .collect();
+        assert_eq!(segs, ["A", "B", "term:<X::Y>"]);
+    }
+
+    #[test]
+    fn a_type_argument_list_is_not_a_category_group() {
+        // `Foo::Bar<...>` and `Foo::<...>` follow a package separator, not a
+        // categorical colon pair, so their `::` keep qualifying.
+        for text in ["Foo::Bar<X::Y>", "Foo::<X::Y>"] {
+            assert!(has_separator(text), "{text}");
+            assert_eq!(last_separator(text), text.rfind("::"), "{text}");
+        }
+        // An unclosed group is just text.
+        assert!(has_separator("term:<Foo::Bar"));
     }
 
     #[test]

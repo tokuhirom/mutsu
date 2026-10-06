@@ -53,8 +53,8 @@ use crate::symbol::{Symbol, wk};
 mod split;
 mod var;
 pub(crate) use split::{
-    ends_with_segments, is_inside_package, is_type_capture, last_segment, segments, split_first,
-    split_qualified, stash_stem, text_segments, type_capture_name,
+    ends_with_segments, is_inside_package, is_type_capture, last_segment, last_separator, segments,
+    split_first, split_qualified, stash_stem, text_segments, type_capture_name,
 };
 pub(crate) use var::{QualifiedVar, qualified_var, split_qualified_var};
 
@@ -131,10 +131,8 @@ pub(crate) fn package_parent(pkg: Symbol) -> Option<Symbol> {
     if let Some(parent) = PARENTS.with(|c| c.borrow().get(&pkg).copied()) {
         return parent;
     }
-    let parent = pkg
-        .as_str()
-        .rsplit_once("::")
-        .map(|(head, _)| Symbol::intern(head));
+    let text = pkg.as_str();
+    let parent = split::last_separator(text).map(|at| Symbol::intern(&text[..at]));
     PARENTS.with(|c| {
         c.borrow_mut().insert(pkg, parent);
     });
@@ -203,7 +201,7 @@ mod flags {
         }
         let text = sym.as_str();
         let mut f = CLASSIFIED;
-        if text.contains("::") {
+        if super::split::has_separator(text) {
             f |= QUALIFIED;
         }
         match text.split_at_checked(1) {
@@ -233,13 +231,14 @@ mod flags {
     /// compiler's internal spelling of one (`@__mutsu_outer::0:a`, the
     /// resolved slot of an `@OUTER::a` past a shadowing `my @a`).
     fn names_package_stash(rest: &str) -> bool {
-        let Some((head, tail)) = rest.split_once("::") else {
+        let Some(at) = super::split::separators(rest).next() else {
             return false;
         };
+        let (head, tail) = (&rest[..at], &rest[at + 2..]);
         if head.starts_with("__mutsu") {
             return false;
         }
-        tail.contains("::")
+        super::split::has_separator(tail)
             || !matches!(
                 head,
                 "SETTING"
