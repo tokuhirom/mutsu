@@ -131,14 +131,34 @@ operation's spelling, `nqp::` `_i` ops included):
 - **Strict forms need no new compiler path.** A declared narrow type is no longer "proven native", so
   `emit_int_atomic_guard` emits the guard with the declared type and the verdict raises the narrow
   message; an undecided target asks the container, as before.
-- **Lenient forms get a narrow-only guard**, `__mutsu_atomic_narrow_target(target, declared)`
-  (`emit_narrow_atomic_guard`): it refuses only a target positively known to be narrow, so a plain
-  scalar stays legal for them. A declaration that is not narrow emits nothing, so the hot
-  `my atomicint $n; ⚛$n` path is unchanged; an undecided target (attribute, element, parameter,
-  outer name) pays one guard call.
+- **Lenient forms are judged where their target type is already read.** A separate guard call per
+  `cas` / `atomic-fetch` / `atomic-assign` cost a `cas` loop on an attribute ~50% and on an element
+  ~20% (debug A/B against `main`), so the three target kinds differ:
+  - a *scalar* the compiler sees declared narrow gets the always-refusing
+    `__mutsu_atomic_narrow_target(target, declared)` guard (`emit_narrow_atomic_guard`); a scalar no
+    declaration decides (a parameter, an outer name) gets the same guard asking the container at run
+    time; a scalar declared plain or machine-size emits nothing, so `my atomicint $n; ⚛$n` and the
+    hot `cas($x, ...)` loop compile as before;
+  - an *array element* is judged by `check_atomic_elem_type` (every store / `cas` already reads the
+    container's element type there) and, for the one op that reads none, `fetch`, by one extra
+    `atomic_elem_type_constraint`;
+  - an *attribute* is judged by `refuse_narrow_attribute` (the ADR-0121 memoized
+    `self_attr_type_constraint`, the lookup an ordinary `$!x = v` already pays), called from
+    `atomic_assign_coerced_value` (store, `cas`) and the attribute branch of the fetch.
+
+  Release A/B against `main` (one thread, 400000 `cas` iterations per path, 5 interleaved rounds,
+  medians): attribute 3.82 s -> 3.94 s, element 3.29 s -> 3.44 s, and the unchanged lexical control
+  3.03 s -> 3.17 s, i.e. within the control's own +-5% noise. (A debug build shows ~+19% on the
+  attribute path, an artifact: `self_attr_type_constraint` re-derives every memo hit under
+  `debug_assert_eq!`.) The by-name lexical metadata is deliberately *not* consulted at run time for a
+  scalar: under shadowing it could name an outer variable, which would be a false refusal.
 - **`@a[0] ⚛= v` was a plain assignment.** Both the statement and the expression parser built an
   `IndexAssign`, so an element `⚛=` was neither atomic nor guarded. It now lowers to
   `atomic-assign(@a[0], v)`, which the element-atomic compiler already maps onto the element's cell.
+- **The code form refuses before its block runs.** `cas($!narrow, { ... })` and `cas(@narrow[0],
+  { ... })` check once up front (`refuse_narrow_attribute` / `refuse_narrow_element`), as Rakudo
+  refuses at the first atomic load; `t/concurrency/thread-lock/atomic-narrow-int-refused.t` pins that
+  the block ran zero times.
 - **Not modelled**: the non-`_i` `nqp::` ops on a narrow container (`nqp::atomicload($int32)`) keep
   running; MoarVM refuses them with a different message (`A IntLexRef container does not know how to
   do an atomic load`), which also applies to a machine-size `int` and is a separate gap.

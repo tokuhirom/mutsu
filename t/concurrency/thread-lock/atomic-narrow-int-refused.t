@@ -141,4 +141,23 @@ my $attribute = /'Can only do an atomic integer operation on an atomicint attrib
     is $c.wide-fetch, 2, '... and its lenient fetch';
 }
 
+# ---- the code form of cas refuses before its block runs --------------------
+
+{
+    my class Holder {
+        has int16 $!p = 1;
+        method swap($ran is rw) { cas($!p, -> $v { $ran++; $v + 1 }) }
+    }
+    my $ran = 0;
+    throws-like { Holder.new.swap($ran) }, X::AdHoc, message => $attribute,
+        'the code form of cas on a narrow attribute';
+    is $ran, 0, '... refuses before its block runs';
+
+    my int16 @a = 1, 2;
+    my $ran2 = 0;
+    throws-like { cas(@a[0], -> $v { $ran2++; $v + 1 }) }, X::AdHoc, message => $element,
+        'the code form of cas on a narrow element';
+    is $ran2, 0, '... also before its block runs';
+}
+
 done-testing;

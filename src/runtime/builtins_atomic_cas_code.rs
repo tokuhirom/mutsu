@@ -81,6 +81,8 @@ impl Interpreter {
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         code: &Value,
     ) -> Result<Value, RuntimeError> {
+        // A narrow native-int array refuses before the block ever runs (#12008).
+        self.refuse_narrow_element(name)?;
         loop {
             let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
@@ -182,6 +184,7 @@ impl Interpreter {
             }
             return r;
         }
+        self.refuse_narrow_element(&arr_name)?;
         loop {
             let current = {
                 let guard = cell.lock().unwrap_or_else(|e| e.into_inner());

@@ -182,6 +182,22 @@ impl Interpreter {
         Ok(())
     }
 
+    /// [`Self::refuse_narrow_attribute`]'s counterpart for an array element: refuse
+    /// a lenient atomic on an element of a narrow native-int array (#12008).
+    /// Used by the ops that read no element type of their own (`fetch`) and by
+    /// the code forms of `cas`, which must refuse before their block runs.
+    // Cost: O(1) (one element-type lookup), O(1) for a non-array name.
+    pub(super) fn refuse_narrow_element(&mut self, name: &str) -> Result<(), RuntimeError> {
+        if name.starts_with('@')
+            && self
+                .atomic_elem_type_constraint(name)
+                .is_some_and(|ty| is_narrow_declared_type(&ty))
+        {
+            return Err(Self::narrow_atomic_refusal(name));
+        }
+        Ok(())
+    }
+
     /// What the container named by `target` says about itself, when the
     /// declaration did not decide.
     fn container_target_verdict(&self, target: &str) -> Verdict {
