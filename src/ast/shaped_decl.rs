@@ -53,10 +53,7 @@ pub(crate) fn new_expr(dims: Vec<Expr>) -> Expr {
 /// The initializer of an initialized shaped array.
 // Cost: O(d), d = dimensions.
 pub(crate) fn new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
-    array_new(vec![
-        pair("shape", shape_value(dims)),
-        pair("data", data),
-    ])
+    array_new(vec![pair("shape", shape_value(dims)), pair("data", data)])
 }
 
 /// The dimensions (and the data, when there is one) of a shaped array's

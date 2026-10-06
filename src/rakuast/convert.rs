@@ -1182,7 +1182,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 body,
                 is_export: *is_export,
                 export_tags,
-                has_traits: !custom_traits.is_empty() || !trait_args.is_empty(),
+                has_traits: custom_traits.iter().any(|t| !is_return_spelling_marker(t))
+                    || !trait_args.is_empty(),
+                spelling: return_type_spelling(
+                    &custom_traits
+                        .iter()
+                        .map(|t| (t.clone(), None))
+                        .collect::<Vec<_>>(),
+                )?,
                 is_method: *is_method,
                 is_our: *is_our,
             },

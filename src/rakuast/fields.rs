@@ -301,7 +301,20 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         // A package declaration without a source name (`class { }`) has no
         // `name`: its accessor answers the undefined `Name`, as rakudo's.
-        Class | Role | Grammar => &[("name", NAME), ("body", Absent::Required)],
+        Class | Role | Grammar => &[
+            ("scope", Absent::Str("our")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Module | Package => &[
+            ("scope", Absent::Str("our")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
         Pragma => &[
             ("name", Absent::Required),
             ("argument", EXPRESSION),

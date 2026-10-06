@@ -4357,7 +4357,11 @@ fn take_unit_package_body(stmt: &mut Stmt) -> Vec<Stmt> {
 fn take_does_roles(node: &RakuAstNode) -> Result<(RakuAstNode, Vec<String>), RuntimeError> {
     let mut stripped = node.clone();
     let mut roles = Vec::new();
-    if let Some(field) = stripped.fields.iter_mut().find(|f| f.name == Some("traits")) {
+    if let Some(field) = stripped
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("traits"))
+    {
         let RakuAstFieldValue::List(items) = &field.value else {
             return Err(unsupported(node));
         };
