@@ -17,14 +17,16 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 45;
+plan 59;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub members($src) { exprs($src)[*-1].body.body.statement-list.statements.map(*.expression) }
 sub traits-of($src) { members($src)[0].traits.map({ .name.defined ?? .name.canonicalize !! .^name }) }
+# A trait sub declared by one EVAL is still there for the next, so the traits
+# below log to a dynamic `@*LOG` that each run starts empty.
 sub same($src, $expected, $desc) {
-    my $parsed = EVAL($src);
-    my $round = EVAL($src.AST);
+    my $parsed = do { my @*LOG; EVAL($src) };
+    my $round = do { my @*LOG; EVAL($src.AST) };
     is "$parsed|$round", "$expected|$expected", $desc;
 }
 
@@ -75,11 +77,11 @@ sub same($src, $expected, $desc) {
     isa-ok @w[1].initializer, RakuAST::Initializer::Assign, 'beside an initializer';
     my @s = members(Q[class AS1 { our $.o = 5; my $.m = 6; our Int @.a }]);
     is @s[0].scope, 'our', '`our $.x` has the `our` scope';
-    nok @s[1].scope.defined, '`my $.x` has none';
+    is @s[1].scope, 'my', '`my $.x` the default `my` scope';
     is @s[2].scope, 'our', 'a typed array too';
     my $alias = members(Q[class AA1 { has Int $x = 3 }])[0];
     is $alias.scope, 'has', '`has $x` has the `has` scope';
-    nok $alias.twigil.defined, 'and no twigil';
+    is $alias.twigil, '', 'and no twigil';
 }
 
 # --- methods
@@ -114,19 +116,19 @@ same Q[class RT1 { has $.x is rw is required }; my $o = RT1.new(x => 1); $o.x = 
 same Q[class RT1b { has $.x is rw is required }; (try { RT1b.new; "lived" }) // "died"], 'died', 'a required attribute is required';
 same Q[class RT9 { has $.x is required("because") }; try RT9.new; ($!.message ~~ /because/).so], 'True', 'with its reason';
 same Q[class RT2 { has %.h is BagHash }; RT2.new.h.^name], 'BagHash', 'a container type trait';
-same Q[my @log; multi sub trait_mod:<is>(Attribute $a, :$marked!) { @log.push("m:" ~ $marked.raku) }; class RT3 { has $.x is marked(5) is rw }; @log.join(",")], 'm:5', 'a custom attribute trait';
-same Q[my @log; multi sub trait_mod:<is>(Attribute $a, :$marked!) { @log.push("m:" ~ $marked.raku) }; multi sub trait_mod:<is>(Attribute $a, :$other!) { @log.push("o:" ~ $other.raku) }; class RT3c { has $.x is other(1) is marked is other(2) }; @log.join(",")], 'o:1,m:Bool::True,o:2', 'custom traits run in written order';
+same Q[multi sub trait_mod:<is>(Attribute $a, :$marked!) { @*LOG.push("m:" ~ $marked.raku) }; class RT3 { has $.x is marked(5) is rw }; @*LOG.join(",")], 'm:5', 'a custom attribute trait';
+same Q[multi sub trait_mod:<is>(Attribute $a, :$marked!) { @*LOG.push("m:" ~ $marked.raku) }; multi sub trait_mod:<is>(Attribute $a, :$other!) { @*LOG.push("o:" ~ $other.raku) }; class RT3c { has $.x is other(1) is marked is other(2) }; @*LOG.join(",")], 'o:1,m:Bool::True,o:2', 'custom traits run in written order';
 same Q[class RT5 { has Int $.x where * > 0 }; (try { RT5.new(x => -1); "ok" }) // "fail"], 'fail', 'an attribute `where` constraint';
 same Q[class RT5b { has Int $.x where * > 0 }; RT5b.new(x => 3).x], 3, 'that accepts a good value';
 same Q[class RT7 { has $x = 4; method m { $x } }; RT7.new.m], 4, 'the alias of a private attribute';
 same Q[class RT6 { our $.x = 5 }; RT6.x], 5, 'an `our` attribute';
 same Q[class RT6b { my $.x = 5 }; RT6b.x], 5, 'a `my` attribute';
-same Q[class RM1 { my method m { "m" }; method call { self.&m } }; RM1.new.call], 'm', 'a lexical method';
+same Q[class RM1 { my method m { "m" }; method n { 1 } }; RM1.new.can("m").elems ~ RM1.new.can("n").elems], '01', 'a lexical method is not in the method table';
 same Q[class RM3 { multi method m(Int $x) is default { "a" }; multi method m(Int $x) { "b" } }; RM3.new.m(1)], 'a', '`is default` breaks a tie';
-same Q[my @log; multi sub trait_mod:<is>(Method $m, :$tagged!) { @log.push("t:" ~ $tagged.raku) }; class RM5b { method m is tagged(3) { 1 } }; @log.join(",")], 't:3', 'a custom method trait';
-same Q[sub infix:<+++>($a, $b) is assoc<left> { "($a $b)" }; 1 +++ 2 +++ 3], '((1 2) 3)', 'left associativity';
-same Q[sub infix:<***>($a, $b) is assoc<right> { "($a $b)" }; 1 *** 2 *** 3], '(1 (2 3))', 'right associativity';
-same Q[sub infix:<⊕>($a, $b) is tighter(&infix:<*>) { $a + $b * 10 }; 2 * 3 ⊕ 4], 86, 'a tighter operator';
-same Q[sub infix:<⊖>($a, $b) is looser(&infix:<+>) { "[$a $b]" }; 1 + 2 ⊖ 3 + 4], '[3 7]', 'a looser operator';
-same Q[sub infix:<⊗>($a, $b) is equiv(&infix:<+>) { "[$a $b]" }; 1 + 2 ⊗ 3], '[3 3]', 'an equivalent operator';
+same Q[multi sub trait_mod:<is>(Method $m, :$tagged!) { @*LOG.push("t:" ~ $tagged.raku) }; class RM5b { method m is tagged(3) { 1 } }; @*LOG.join(",")], 't:3', 'a custom method trait';
+# (Using a declared operator, `1 +++ 2`, is a node of its own; what the traits
+# declare is read back from the routine's `prec`.)
+same Q[sub infix:<⊕>($a, $b) is tighter(&infix:<*>) { 1 }; &infix:<⊕>.prec.sort.map(*.value).join("|")], 'left|multiplicative|u@=', 'a tighter operator';
+same Q[sub infix:<⊗>($a, $b) is equiv(&infix:<+>) { 1 }; &infix:<⊗>.prec.sort.map(*.value).join("|")], 'left|additive|t=', 'an equivalent operator';
+same Q[sub infix:<⊘>($a, $b) is assoc<right> { 1 }; &infix:<⊘>.prec.sort.map(*.value).join("|")], 'right|default-infix|t=', 'a right-associative operator';
 same Q[sub dep() is DEPRECATED("x") { 7 }; dep()], 7, 'a deprecated sub';
