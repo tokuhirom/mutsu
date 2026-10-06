@@ -31,15 +31,34 @@ parsed program.
   and stay refused.
 - **Statement calls.** `foo |@a` (a slipped argument) and `foo $obj: 1` (an
   invocant: the method call `$obj.foo(1)`).
+- **Meta-assignment.** `@a X+= @b` and `@a Z+= @b` are an `ApplyInfix` over
+  `MetaInfix::Assign(MetaInfix::Cross|Zip(Infix("+")))`; `$x [+]= 3` and a
+  scalar `$x Z+= 3` now carry the same compound-assignment marker as `$x += 3`
+  (they used to expand without it, so the converter saw a bare `Binary`).
+- **Curried `X` / `Z`.** `(* Z+ *)(1, 2)` curries on a priming `*` operand, not
+  on the `*` that extends a list operand (`<a b c> Z (1 xx *)`).
+- **Array composers.** `[$x,]` keeps its trailing comma (a one-operand comma
+  list) through the round trip, so `[[$f],]` is not flattened into `[$f]`.
+- **Scoped overloads.** An operator the unit declares (`infix:<foo>`, `&infix:<foo>`)
+  is visible to the rest of its statement list and what is nested in it, as in
+  the parser, so an overload in an inner block no longer turns every use of the
+  operator in the unit into a call. The parser keeps a `Binary` for an
+  overloaded arithmetic operator (a dispatch candidate of the native one) and
+  rewrites any other overloaded core operator (`~`, `eq`, `==`, ...) into a call;
+  `infix_func.rs` mirrors that split.
+- **No silent drops.** A declaration whose initializer the parser leaves
+  unmarked (`my @a <== 1, 2`, `my &a := { ... }`) is refused rather than
+  rendered without its initializer.
 
 Found on the way, filed separately: the feed operators bind tighter than the
 comma in mutsu (`1, 2 ==> f()` feeds only `2`), #12160.
 
 Left for later in the plan (not S6): an adverb on an operator (`3 foo 4 :x(1)`,
-`colonpairs`), `X+=` (`MetaInfix::Assign` over `MetaInfix::Cross`), `Z[+]` /
-`Z[&f]` (the parser drops the brackets, rakudo has `BracketedInfix` /
-`FunctionInfix`), a negated metaoperator (`!Z+`), `Call::Name::WithoutParentheses`
-for a user routine — S9/S10.
+`colonpairs`), `Z[+]` / `Z[&f]` (the parser drops the brackets, rakudo has
+`BracketedInfix` / `FunctionInfix`), the bracketed `[+]=` text, a negated
+metaoperator (`!Z+`), a feed into a declaration or variable (`my @a <== ...`,
+`... ==> my @o`: the parser rewrites it into an assignment), `my &a := { ... }`,
+`Call::Name::WithoutParentheses` for a user routine — S2/S9/S10.
 
-New test: `t/rakuast/rakuast-operators.t` (72 tests), whose tree part also runs
+New test: `t/rakuast/rakuast-operators.t` (79 tests), whose tree part also runs
 under `raku`. Slice S6 of #7564.
