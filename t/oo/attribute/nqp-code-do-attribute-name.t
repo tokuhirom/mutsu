@@ -6,7 +6,7 @@ use nqp;
 # the body in its `$!do` share one name. Renaming the body renames the
 # routine, and rebinding `$!do` makes the routine answer the new body's name.
 
-plan 9;
+plan 17;
 
 {
     my $s := sub foo { 42 };
@@ -40,4 +40,36 @@ plan 9;
     nqp::bindattr($r, Code, '$!do', $do);
     nqp::setcodename($do, 'native-thing');
     is $r.name, 'native-thing', 'setcodename on the bound body restores the routine name';
+}
+
+# #11844: a named sub is reached as `&foo`, and every `&foo` read answered a
+# fresh code object built from the routine's registry entry, so a rename
+# written into one of them was gone on the next read. The rename now belongs to
+# the routine, as it does in rakudo.
+{
+    sub renamed-by-method { 42 }
+    my $before = &renamed-by-method;
+    &renamed-by-method.set_name('x');
+    is &renamed-by-method.name, 'x', 'set_name on &foo sticks for the next &foo';
+    is $before.name, 'x', '... and for an alias taken before the rename';
+    ok &renamed-by-method === &renamed-by-method, '... without changing its identity';
+    is renamed-by-method(), 42, '... and the routine still runs by its declared name';
+    &renamed-by-method.set_name('y');
+    is &renamed-by-method.name, 'y', 'a second rename replaces the first';
+}
+
+{
+    sub renamed-by-nqp { }
+    sub untouched { }
+    nqp::setcodename(nqp::getattr(&renamed-by-nqp, Code, '$!do'), 'baz');
+    is &renamed-by-nqp.name, 'baz', 'setcodename on the $!do of a named sub sticks for the next &foo';
+    is &untouched.name, 'untouched', 'another routine keeps its own name';
+}
+
+{
+    # `.clone` of a routine is a routine of its own.
+    sub cloned-original { }
+    my $copy = &cloned-original.clone;
+    $copy.set_name('copy');
+    is &cloned-original.name, 'cloned-original', 'renaming a clone leaves the original alone';
 }
