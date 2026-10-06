@@ -1575,7 +1575,7 @@ impl Interpreter {
                             mro: sym_mro(&[&class_name]),
                             wildcard_handles: vec![],
                             class_level_attrs: ValueMap::default(),
-                        },
+                        }.into(),
                     );
                 }
                 let mut defs = multi_family.unwrap_or_else(|| vec![def]);

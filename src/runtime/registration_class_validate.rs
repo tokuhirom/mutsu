@@ -29,7 +29,7 @@ impl ClassRegSnapshot {
     pub(super) fn capture(interp: &Interpreter, name: &str) -> Self {
         let reg = interp.registry();
         Self {
-            prev_class: reg.classes.get(name).cloned(),
+            prev_class: reg.classes.get(name).cloned().map(crate::runtime::registry_cow_table::CowTable::into_value),
             prev_hidden: reg.hidden_classes.contains(name),
             prev_lexical: reg.lexical_classes.contains(name),
             prev_hidden_defer: reg.hidden_defer_parents.get(name).cloned(),
@@ -52,7 +52,7 @@ impl ClassRegSnapshot {
     pub(crate) fn restore(&self, this: &mut Interpreter, name: &str) {
         let mut reg = this.registry_mut();
         if let Some(class_def) = self.prev_class.clone() {
-            reg.classes.insert(name.to_string(), class_def);
+            reg.classes.insert(name.to_string(), class_def.into());
         } else {
             reg.classes.remove(name);
         }
@@ -250,12 +250,12 @@ impl Interpreter {
         // `register_class_decl`'s pre-composition clear).
         self.registry_mut()
             .classes
-            .insert(name.to_string(), class_def.clone());
+            .insert(name.to_string(), class_def.clone().into());
         if is_stub_body {
             self.registry_mut().class_stubs.insert(name.to_string());
             self.registry_mut()
                 .classes
-                .insert(name.to_string(), class_def.clone());
+                .insert(name.to_string(), class_def.clone().into());
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(true);

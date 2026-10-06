@@ -29,6 +29,7 @@
 // attacker-controlled data, so HashDoS hardening buys nothing here). The
 // `HashMap`/`HashSet` names are aliased so the ~40 field declarations below
 // stay textually unchanged.
+use super::registry_cow_table::CowTable;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 
@@ -97,7 +98,7 @@ pub(crate) struct Registry {
     pub(crate) monkey_eval_units: std::collections::HashSet<crate::symbol::Symbol>,
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
-    pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
+    pub(crate) method_entries: CowTable<HashMap<MethodEntryKey, MethodEntry>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -205,7 +206,7 @@ pub(crate) struct Registry {
     /// short-lived `registry()` guards and clone the minimal projection they need
     /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
     /// `ClassDef`.
-    pub(crate) classes: HashMap<String, ClassDef>,
+    pub(crate) classes: CowTable<HashMap<String, CowTable<ClassDef>>>,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
@@ -342,7 +343,7 @@ pub(crate) struct Registry {
     /// `trusts` relationships: class -> trusted classes, in declaration
     /// order (`Metamodel::Trusting`'s `.^trusts` answers an ordered `List`,
     /// so a set would lose the order the source declared).
-    pub(crate) class_trusts: HashMap<String, Vec<String>>,
+    pub(crate) class_trusts: CowTable<HashMap<String, Vec<String>>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
     /// Type name -> the NATIVE `Perl6::Metamodel::*HOW` metaclass that type
@@ -371,7 +372,7 @@ pub(crate) struct Registry {
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.
-    pub(crate) class_composed_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_composed_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
     /// closure): class -> [role names]. Qualified `self.Role::method` resolution
     /// of a parametric role uses this so a concretization reached only
@@ -379,13 +380,13 @@ pub(crate) struct Registry {
     /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
-    pub(crate) class_direct_composed_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_direct_composed_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
     /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
     /// `.^mro_unhidden`, so this set is filtered out of that introspection.
-    pub(crate) class_does_only_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_does_only_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles implicitly composed by enums: enum -> [role names].
-    pub(crate) class_enum_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
     pub(crate) class_subs: HashMap<String, HashMap<String, Value>>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
@@ -470,11 +471,11 @@ pub(crate) struct Registry {
     /// Parameterized role candidates: role name -> [candidate by arity/types].
     pub(crate) role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     /// Role inheritance: role -> [parent role specs].
-    pub(crate) role_parents: HashMap<String, Vec<String>>,
+    pub(crate) role_parents: CowTable<HashMap<String, Vec<String>>>,
     /// `also hides` relationships on roles: role -> [hidden names].
-    pub(crate) role_hides: HashMap<String, Vec<String>>,
+    pub(crate) role_hides: CowTable<HashMap<String, Vec<String>>>,
     /// Declared type parameters per parameterized role: role -> [param names].
-    pub(crate) role_type_params: HashMap<String, Vec<String>>,
+    pub(crate) role_type_params: CowTable<HashMap<String, Vec<String>>>,
     /// A role's body block, installed by `$role.^set_body_block(&block)` on a
     /// role built with `Metamodel::ParametricRoleHOW.new_type`. A declared
     /// role's body is `RoleDef::deferred_body`; a MOP-built role has only this
@@ -2059,7 +2060,7 @@ mod tests {
         };
         registry
             .classes
-            .insert("Str".to_string(), ClassDef::default());
+            .insert("Str".to_string(), ClassDef::default().into());
         registry.set_user_methods(Symbol::intern("Str"), Symbol::intern("chars"), vec![method]);
         assert!(registry.method_generation > seeded_generation);
 

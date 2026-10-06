@@ -324,7 +324,7 @@ impl Interpreter {
         // body. A failed check rolls the class back through the snapshot.
         self.registry_mut()
             .classes
-            .insert(name.to_string(), class_def);
+            .insert(name.to_string(), class_def.into());
         if let Err(err) = self.resolve_class_stub_requirements(name) {
             snapshot.restore(self, name);
             return Err(err);
