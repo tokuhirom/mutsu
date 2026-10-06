@@ -76,7 +76,10 @@ pub(crate) fn atomic_compound_call(name: String, rhs: Expr, negate: bool) -> Exp
         display,
         Expr::Call {
             name: Symbol::intern("__mutsu_atomic_add_var"),
-            args: vec![Expr::Literal(Value::str(name)), atomic_delta_expr(rhs, negate)],
+            args: vec![
+                Expr::Literal(Value::str(name)),
+                atomic_delta_expr(rhs, negate),
+            ],
         },
     )
 }

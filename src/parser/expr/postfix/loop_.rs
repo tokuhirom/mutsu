@@ -3387,7 +3387,8 @@ fn postfix_expr_loop_from(
             rest = after_atomic;
             if let Some(name) = atomic_var_name(&expr) {
                 expr = atomic_var_op("__mutsu_atomic_post_inc_var", "postfix:<⚛++>", name);
-            } else if let Some(call) = atomic_elem_op("atomic-fetch-inc", "postfix:<⚛++>", &expr) {
+            } else if let Some(call) = atomic_elem_op("atomic-fetch-inc", "postfix:<⚛++>", &expr)
+            {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {
@@ -3401,7 +3402,8 @@ fn postfix_expr_loop_from(
             rest = after_atomic;
             if let Some(name) = atomic_var_name(&expr) {
                 expr = atomic_var_op("__mutsu_atomic_post_dec_var", "postfix:<⚛-->", name);
-            } else if let Some(call) = atomic_elem_op("atomic-fetch-dec", "postfix:<⚛-->", &expr) {
+            } else if let Some(call) = atomic_elem_op("atomic-fetch-dec", "postfix:<⚛-->", &expr)
+            {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {

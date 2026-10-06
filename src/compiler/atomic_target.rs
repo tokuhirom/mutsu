@@ -71,13 +71,43 @@ const INT_ATOMIC_HELPERS: &[(&str, &str, bool)] = &[
 /// `(routine, helper, takes an operand, negates it)`. Subtraction is the add
 /// helper with the operand negated.
 const INT_ATOMIC_ROUTINES: &[(&str, &str, bool, bool)] = &[
-    ("atomic-fetch-inc", "__mutsu_atomic_post_inc_var", false, false),
-    ("atomic-inc-fetch", "__mutsu_atomic_pre_inc_var", false, false),
-    ("atomic-fetch-dec", "__mutsu_atomic_post_dec_var", false, false),
-    ("atomic-dec-fetch", "__mutsu_atomic_pre_dec_var", false, false),
-    ("atomic-fetch-add", "__mutsu_atomic_fetch_add_var", true, false),
+    (
+        "atomic-fetch-inc",
+        "__mutsu_atomic_post_inc_var",
+        false,
+        false,
+    ),
+    (
+        "atomic-inc-fetch",
+        "__mutsu_atomic_pre_inc_var",
+        false,
+        false,
+    ),
+    (
+        "atomic-fetch-dec",
+        "__mutsu_atomic_post_dec_var",
+        false,
+        false,
+    ),
+    (
+        "atomic-dec-fetch",
+        "__mutsu_atomic_pre_dec_var",
+        false,
+        false,
+    ),
+    (
+        "atomic-fetch-add",
+        "__mutsu_atomic_fetch_add_var",
+        true,
+        false,
+    ),
     ("atomic-add-fetch", "__mutsu_atomic_add_var", true, false),
-    ("atomic-fetch-sub", "__mutsu_atomic_fetch_add_var", true, true),
+    (
+        "atomic-fetch-sub",
+        "__mutsu_atomic_fetch_add_var",
+        true,
+        true,
+    ),
     ("atomic-sub-fetch", "__mutsu_atomic_add_var", true, true),
 ];
 
@@ -202,7 +232,9 @@ impl Compiler {
             match self.atomic_target_decl(target) {
                 AtomicTargetDecl::Declared(ty) => {
                     let native = ty.as_deref().is_some_and(|t| {
-                        crate::native_types::is_atomic_int_target_type(crate::runtime::types::strip_type_smiley(t).0)
+                        crate::native_types::is_atomic_int_target_type(
+                            crate::runtime::types::strip_type_smiley(t).0,
+                        )
                     });
                     if native {
                         // Proven native: no guard, and the hot path is unchanged.

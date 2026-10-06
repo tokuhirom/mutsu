@@ -1133,13 +1133,7 @@ impl Compiler {
             // Subtraction is the add primitive with the delta negated, so the
             // read-modify-write stays the one atomic implementation. The
             // target's guard (#11834) is part of the one lowering.
-            self.compile_int_atomic_var_call(
-                helper,
-                var_name,
-                name.as_str(),
-                args.get(1),
-                negate,
-            );
+            self.compile_int_atomic_var_call(helper, var_name, name.as_str(), args.get(1), negate);
             return;
         }
         // Rewrite cas($var, ...) -> __mutsu_cas_var($var_name_str, ...)
@@ -1718,6 +1712,8 @@ impl Compiler {
             } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
+                // `cas` takes any element; `nqp::cas_i` wants a native integer.
+                self.emit_nqp_int_only_guard(&arr_name, true);
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_elem"));

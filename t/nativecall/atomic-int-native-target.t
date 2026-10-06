@@ -142,6 +142,7 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     sub bump-typed(atomicint $p is rw) { $p⚛++ }
     my Int $boxed = 1;
     my atomicint $native = 1;
+    # (An untyped variable passed to an `is rw` parameter is not refused yet: #12007.)
     throws-like { bump-rw($boxed) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to an Int scalar';
     is $boxed, 1, '... leaves it alone';
     is bump-rw($native), 1, 'an is rw parameter bound to an atomicint';
@@ -223,6 +224,12 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     throws-like { nqp::atomicstore_i($x, 3) }, X::AdHoc, message => $nqp-msg, 'nqp::atomicstore_i';
     throws-like { nqp::cas_i($x, 1, 3) }, X::AdHoc, message => $nqp-msg, 'nqp::cas_i';
     throws-like { nqp::atomicinc_i(@plain[0]) }, X::AdHoc, message => $nqp-msg, 'nqp::atomicinc_i on a plain element';
+    throws-like { nqp::atomicload_i(@plain[0]) }, X::AdHoc, message => $nqp-msg, 'nqp::atomicload_i on a plain element';
+    throws-like { nqp::atomicstore_i(@plain[0], 3) }, X::AdHoc, message => $nqp-msg, 'nqp::atomicstore_i on a plain element';
+    throws-like { nqp::cas_i(@plain[0], 0, 3) }, X::AdHoc, message => $nqp-msg, 'nqp::cas_i on a plain element';
+    is-deeply @plain, [0], 'a refused nqp op leaves the element alone';
+    is nqp::atomicload(@plain[0]), 0, 'nqp::atomicload on a plain element stays legal';
+    is nqp::cas(@plain[0], 0, 4), 0, 'nqp::cas on a plain element stays legal';
     is $x, 1, 'a refused nqp op leaves the variable alone';
 
     my int $i = 1;
