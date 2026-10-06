@@ -1009,6 +1009,23 @@ pub(super) fn dispatch(
             _ => None,
         },
         "Num" => {
+            // `.Num` on a concrete-only Cool type's type object dies with
+            // X::Parameter::InvalidConcreteness; `Num.Num` is identity (below)
+            // and the other type objects inherit Mu/Cool's warn-and-0.
+            if let ValueView::Package(name) = target.view() {
+                let n = name.resolve();
+                let expected = match n.as_str() {
+                    "Int" | "Str" | "Complex" => Some(n.as_str()),
+                    "UInt" => Some("Int"),
+                    "Rat" | "FatRat" => Some("Rational"),
+                    _ => None,
+                };
+                if let Some(expected) = expected {
+                    return Some(Some(Err(RuntimeError::parameter_invalid_concreteness(
+                        expected, &n, "Num", "self", true, true,
+                    ))));
+                }
+            }
             // A real number: the numeric types' `Num` rows' implementation
             // (ADR-11276, `method_table::coerce`).
             if let Some(result) = crate::builtins::method_table::coerce::num_of(target) {

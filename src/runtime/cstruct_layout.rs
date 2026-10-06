@@ -917,6 +917,8 @@ impl crate::runtime::Interpreter {
             Some("Uninstantiable")
         } else if reg.nativecall_classes.contains(name) {
             Some("NativeCall")
+        } else if reg.cstr_classes.contains(name) {
+            Some("CStr")
         } else {
             drop(reg);
             self.is_carray_repr_class(name).then_some("CArray")

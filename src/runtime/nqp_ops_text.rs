@@ -146,9 +146,17 @@ impl Interpreter {
             }),
             // nqp::box_s($str, $type) -> a boxed string. mutsu's Str is not a
             // separate representation, so the type operand only has to be
-            // honoured for a subclass, which `box_s` is never asked for here.
+            // honoured for a class that boxes into storage of its own: an
+            // `is box_target` attribute, or a `CStr` REPR's C string
+            // (`runtime::box_native`). Any other type is the plain Str.
             // Cost: O(n), n = chars of $str (copied). MoarVM: O(1) -- see #9134.
-            "box_s" => Ok(Value::str(sarg(args, 0))),
+            "box_s" => {
+                let boxed = Value::str(sarg(args, 0));
+                match self.box_native_into_class(args.get(1), boxed.clone()) {
+                    Some(result) => result,
+                    None => Ok(boxed),
+                }
+            }
             // The VM-level null. mutsu has one absent value, so `null_s` and
             // `null` are both Nil.
             // Cost: O(1).

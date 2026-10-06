@@ -4362,10 +4362,10 @@ impl Interpreter {
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
-            && args.is_empty()
+            && (args.is_empty() || (args.len() == 1 && matches!(method, "Rat" | "FatRat")))
             && let ValueView::Complex(r, im) = target.view()
         {
-            return self.dispatch_complex_to_real(method, r, im, &target);
+            return self.dispatch_complex_to_real(method, r, im, &target, &args);
         }
 
         // Zero-denominator Rat/FatRat .Str

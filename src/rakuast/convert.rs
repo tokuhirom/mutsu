@@ -212,6 +212,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             arg.as_ref(),
             tags,
         )?)),
+        // `need Module;` / `import Module :tag;`.
+        Stmt::Need { module } => Ok(Some(super::use_stmt::convert_need(module))),
+        Stmt::Import { module, tags } => Ok(Some(super::use_stmt::convert_import(module, tags))),
         Stmt::No { module, arg: None } if super::use_stmt::is_pragma_name(module) => {
             Ok(Some(super::use_stmt::convert_no(module)))
         }
@@ -4701,6 +4704,16 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         // `2i` / `3.5i`: the parser folds the imaginary literal to the
         // Complex value; rakudo keeps the number under a `Postfix("i")`.
         ValueView::Complex(re, im) if re == 0.0 && !re.is_sign_negative() => imaginary_literal(im),
+        // `<1+2i>`: a complex number written whole.
+        ValueView::Complex(..) => Ok(RakuAstNode {
+            class: RakuAstClass::ComplexLiteral,
+            fields: vec![leaf_field(None, v.clone())],
+        }),
+        // `v6.d`, `v1.2.3+`.
+        ValueView::Version { .. } => Ok(RakuAstNode {
+            class: RakuAstClass::VersionLiteral,
+            fields: vec![leaf_field(None, v.clone())],
+        }),
         ValueView::Mixin(..) => match allomorph_word(v) {
             Some(word) => Ok(word_quote(word)),
             None => Err(unsupported("mixin literal")),

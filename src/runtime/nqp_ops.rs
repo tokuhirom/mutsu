@@ -522,11 +522,21 @@ impl Interpreter {
             // `Net::Netmask::Fast`'s constructors unbox their `Str:D`
             // parameters before parsing them.
             // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #9134.
-            "unbox_s" => Ok(Value::str(
-                args.first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default(),
-            )),
+            // An object that boxes a str of its own (an `is box_target`
+            // attribute, a `CStr` REPR's C string) unboxes that
+            // (`runtime::box_native`); a NULL `CStr` is the null str, `Nil`.
+            "unbox_s" => {
+                let inner = args.first().and_then(|v| self.unbox_native_through(v));
+                Ok(match inner {
+                    Some(inner) if inner.is_nil() => inner,
+                    Some(inner) => Value::str(inner.to_string_value()),
+                    None => Value::str(
+                        args.first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default(),
+                    ),
+                })
+            }
             // nqp::coerce_is($i): a native int coerced to its decimal string,
             // as `nqp::coerce_in`/`nqp::coerce_ni`/... are for num<->int.
             // `Net::Netmask::Fast` stringifies netmask bit counts this way.

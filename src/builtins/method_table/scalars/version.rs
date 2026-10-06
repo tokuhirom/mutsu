@@ -23,8 +23,9 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("whatever", whatever),
 ];
 
-/// `Version.parts`: the version's parts as a `List` of `Int`, `Str` and
-/// `Whatever` (zef's `DependencySpecification` matching reads it).
+/// `Version.parts`: the version's parts as a `List` of `Int` and `Str`; a `*`
+/// part is the `Str` `"*"`, as in Rakudo, not a `Whatever` (zef's
+/// `DependencySpecification` matching reads it, and joins the parts back).
 // Cost: O(p), p = parts of the version.
 pub(crate) fn parts(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Version { parts, .. } = target.view() else {
@@ -35,7 +36,7 @@ pub(crate) fn parts(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
         .map(|part| match part {
             VersionPart::Num(n) => Value::int(*n),
             VersionPart::Str(s) => Value::str_from(s.as_str()),
-            VersionPart::Whatever => Value::WHATEVER,
+            VersionPart::Whatever => Value::str_from("*"),
         })
         .collect();
     Some(Ok(Value::array_with_kind(

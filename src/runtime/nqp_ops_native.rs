@@ -60,6 +60,8 @@ impl Interpreter {
             // Cost: O(1).
             "unbox_n" => {
                 let v = operand(args, 0);
+                // An object that boxes a num in an `is box_target` attribute.
+                let v = self.unbox_native_through(&v).unwrap_or(v);
                 match v.view() {
                     ValueView::Num(n) => Ok(Value::num(n)),
                     _ => Err(RuntimeError::new(format!(
@@ -70,7 +72,12 @@ impl Interpreter {
             }
             // nqp::unbox_u($int): the native `uint64` inside a boxed Int.
             // Cost: O(1) for a machine-word Int; O(d), d = digits of a BigInt.
-            "unbox_u" => Ok(uint64_value(&operand(args, 0))),
+            "unbox_u" => {
+                let v = operand(args, 0);
+                // An object that boxes a uint in an `is box_target` attribute.
+                let v = self.unbox_native_through(&v).unwrap_or(v);
+                Ok(uint64_value(&v))
+            }
             // nqp::atpos_u($list, $i): element `$i` read as a native `uint64`;
             // 0 past the end, as for `atpos_i`.
             // Cost: O(1) on an array and on a Buf (one element decoded at its own width).
