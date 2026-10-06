@@ -251,6 +251,18 @@ pub(crate) struct LexicalState {
     /// When target is read, the value of source is returned instead.
     /// Set up by $CALLER::target := $source binding.
     pub(crate) var_bindings: HashMap<String, String>,
+    /// Monotonic flag: set once any `atomicint` variable / atomic storage has been
+    /// registered in this interpreter (or inherited from a parent thread). The
+    /// per-`GetGlobal`/`GetLocal` atomic-variable check is expensive (a `format!`
+    /// plus two `var_type_constraint` lookups, each itself a `format!`), yet
+    /// atomics are exotic; when this flag is clear the entire check is skipped,
+    /// which removes that cost from the hot variable-read path. Never cleared, so
+    /// a program that stops using an atomic still resolves correctly. See also the
+    /// process-global `atomic_var_seen_anywhere`, which the reset path needs
+    /// because a worker thread's `cas` marks only the WORKER's copy of this field.
+    /// pub(crate) so `vm_jit_layout` can `offset_of!` it: the Tier B inline
+    /// GetLocal fast path reads this flag from native code.
+    pub(crate) atomic_var_seen: bool,
     /// Monotonic flag: set once any sigilless-parameter alias
     /// (`__mutsu_sigilless_alias::name` env key, created when binding a `\target`
     /// raw/sigilless parameter or a `:=`-style alias) has been registered. The hot
@@ -376,6 +388,7 @@ impl LexicalState {
             closure_captured_state: HashMap::new(),
             var_dynamic_flags: HashMap::new(),
             var_bindings: HashMap::new(),
+            atomic_var_seen: false,
             sigilless_alias_seen: false,
             readonly_vars: Box::new(std::cell::RefCell::new(
                 crate::runtime::ReadonlySet::default(),
@@ -438,8 +451,12 @@ impl LexicalState {
             closure_captured_state: HashMap::new(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             var_bindings: HashMap::new(),
+            // Inherit monotonically: if the parent ever registered an atomic var,
+            // the child (which shares the atomic storage via shared_vars) must keep
+            // running the atomic-variable read check.
             // Inherit monotonically: the parent's sigilless-alias env keys are
             // copied into the child env, so the child must keep walking the chain.
+            atomic_var_seen: self.atomic_var_seen,
             sigilless_alias_seen: self.sigilless_alias_seen,
             readonly_vars: Box::new(std::cell::RefCell::new(
                 crate::runtime::ReadonlySet::default(),

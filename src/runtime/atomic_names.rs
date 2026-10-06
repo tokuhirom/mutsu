@@ -61,14 +61,23 @@ fn atomic_name_slot(name: &str) -> (usize, u64) {
 
 impl Interpreter {
     /// Record that atomic storage may exist under `name`: a typed `atomicint`
-    /// declaration, or a legacy-lane mapping. Also latches the process-wide
-    /// "any atomic" flag and the JIT's inline-read spoiler, as before.
+    /// declaration, or a legacy-lane mapping. Latches this interpreter's own
+    /// flag (the half of the read gates that a thread cloned earlier does not
+    /// share), the process-wide "any atomic" flag, the name's bit and the JIT's
+    /// inline-read spoiler.
+    // Cost: O(m), m = name bytes; O(1) after the first call for a name.
+    pub(crate) fn mark_atomic_var_seen(&mut self, name: &str) {
+        self.lexicals.atomic_var_seen = true;
+        Self::mark_atomic_name_process_wide(name);
+    }
+
+    /// The process-wide half of [`Self::mark_atomic_var_seen`].
     ///
     /// A name already recorded returns at once: the 4 threads of a `cas` loop
     /// all land here per call, and a write to the shared words each time would
     /// bounce their cache line for nothing.
     // Cost: O(m), m = name bytes; O(1) after the first call for a name.
-    pub(crate) fn mark_atomic_var_seen(name: &str) {
+    fn mark_atomic_name_process_wide(name: &str) {
         if Self::atomic_name_possible(name) {
             return;
         }
@@ -82,6 +91,11 @@ impl Interpreter {
     /// `atomicint` constraint and no legacy-lane mapping exists under it, so
     /// the read and reset paths skip the name-keyed cascade for it; `true`
     /// means "maybe", and the caller does what it did before this gate existed.
+    ///
+    /// A READ gate also asks [`Self::atomic_var_seen`], which a thread cloned
+    /// before the atomic was registered does not have; this set is
+    /// process-wide, and on its own would make that thread read its own
+    /// same-spelled variable from the atomic's lane.
     ///
     /// The process-wide flag goes first: a program with no atomic at all pays
     /// one relaxed load, as it did.
@@ -106,7 +120,9 @@ mod tests {
     /// atomics.
     #[test]
     fn a_name_is_possible_only_once_it_is_registered() {
-        Interpreter::mark_atomic_var_seen("atomic-names-test-marked");
+        let mut interp = Interpreter::new();
+        interp.mark_atomic_var_seen("atomic-names-test-marked");
+        assert!(interp.atomic_var_seen());
         assert!(Interpreter::atomic_var_seen_anywhere());
         assert!(Interpreter::atomic_name_possible(
             "atomic-names-test-marked"

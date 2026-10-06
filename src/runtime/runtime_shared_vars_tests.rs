@@ -263,7 +263,7 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
 }
 
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
-    Interpreter::mark_atomic_var_seen(name);
+    interp.mark_atomic_var_seen(name);
     let name_key = MetaNs::AtomicName.owned_key_for_str(name);
     interp
         .threads

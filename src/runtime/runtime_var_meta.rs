@@ -290,7 +290,7 @@ impl Interpreter {
         if value_type == "atomicint"
             || constraint.len() >= "atomicint".len() && constraint.contains("atomicint")
         {
-            Self::mark_atomic_var_seen(name);
+            self.mark_atomic_var_seen(name);
         }
         self.env.insert_sym_noting_unless_same(type_key, meta);
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
@@ -337,7 +337,7 @@ impl Interpreter {
             let meta_key = Self::type_meta_key_for_sym(name_sym);
             let info = Self::container_constraint_parts(name, constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
-                Self::mark_atomic_var_seen(name);
+                self.mark_atomic_var_seen(name);
             }
             self.env.insert_sym(
                 meta_key,
@@ -475,7 +475,7 @@ impl Interpreter {
             Some(c) => {
                 let info = Self::container_constraint_parts(name, c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {
-                    Self::mark_atomic_var_seen(name);
+                    self.mark_atomic_var_seen(name);
                 }
                 self.env.insert_sym(
                     meta_key,
@@ -613,6 +613,22 @@ impl Interpreter {
             None => return None,
         };
         self.var_type_constraint_value_sym(sym)
+    }
+
+    /// Whether any `atomicint`/atomic-storage variable has ever been registered
+    /// *on this interpreter, or was inherited from the parent it was cloned
+    /// from* (monotonic). One half of every READ gate, with
+    /// [`Self::atomic_name_possible`] as the other: a thread cloned before an
+    /// atomic was registered keeps reading its own same-spelled variables
+    /// directly. The lane is keyed by bare name, so it cannot tell an unrelated
+    /// `my $x` in such a worker from the atomic `$x` it shares a spelling with
+    /// (ADR-0062), and `t/concurrency/thread-lock/atomic-lane-retired-mid-cas.t`
+    /// pins that the worker's own `$x` is not answered from the lane. Deliberately
+    /// a plain field, not the atomic below: this is read on the hottest op in the
+    /// VM, and an opaque atomic load there is not free.
+    #[inline(always)]
+    pub(crate) fn atomic_var_seen(&self) -> bool {
+        self.lexicals.atomic_var_seen
     }
 
     /// Whether any atomic variable has ever been registered *anywhere in the

@@ -280,8 +280,10 @@ impl Interpreter {
         // Atomic-variable read: skip entirely (a `format!` plus two
         // `var_type_constraint` lookups) when no atomic storage has ever been
         // registered under this name — the common case on this hot local-read
-        // path, whatever other variables of the program are atomic.
-        if Self::atomic_name_possible(name) {
+        // path, whatever other variables of the program are atomic. The
+        // interpreter's own flag stays the first half: a thread cloned before the
+        // atomic was registered reads its own same-spelled variable directly.
+        if self.atomic_var_seen() && Self::atomic_name_possible(name) {
             let atomic_name = name.strip_prefix('$').unwrap_or(name);
             let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
             // Only use the scalar atomic fast path for scalar ($) variables.
