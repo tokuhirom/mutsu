@@ -1258,18 +1258,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             default_is_seed,
             default_is_trait,
             handles_terms,
+            trait_order,
             ..
         } => {
             // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
             // `scope => "has"` and a `twigil` (`.` public accessor / `!`
-            // private). An explicit `= EXPR` default is both the implicit
-            // `Trait::WillBuild` and the `initializer`; a typed attribute
-            // (`has Int $.z`) carries an *implicit* `BareWord(<TypeName>)`
-            // default that is no default at all. `is rw` / `is readonly` /
-            // `is required`, `is default(…)` and `is built` are `Trait::Is`
-            // (`rakuast::attribute`); a `:D` / `:U` smiley is the type's
-            // `Type::Definedness`. Other traits, `where`, aliases and
-            // `my`/`our` attributes are deferred.
+            // private; none for the alias `has $x`). `our $.x` has the `our`
+            // scope, `my $.x` none (the default). An explicit `= EXPR` default
+            // is both the implicit `Trait::WillBuild` and the `initializer`; a
+            // typed attribute (`has Int $.z`) carries an *implicit*
+            // `BareWord(<TypeName>)` default that is no default at all. The
+            // written traits come in written order (`rakuast::attribute`); a
+            // `:D` / `:U` smiley is the type's `Type::Definedness`; a `where`
+            // is the last field.
             let explicit_default = default
                 .as_ref()
                 .filter(|_| !*default_is_seed && !*default_is_trait);
@@ -1278,33 +1279,22 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
                 _ => return Err(unsupported("attribute with a `:_` smiley")),
             };
-            let deferred = [
-                (
-                    !handles.is_empty() && handles_terms.is_empty(),
+            if !handles.is_empty() && handles_terms.is_empty() {
+                return Err(unsupported(
                     "attribute with a `handles` spelling not kept as a term",
-                ),
-                (
-                    matches!(is_required, Some(Some(_))),
-                    "attribute with an `is required` reason",
-                ),
-                (
-                    where_constraint.is_some(),
-                    "attribute with a `where` constraint",
-                ),
-                (*is_alias, "attribute alias"),
-                (*is_our || *is_my, "`my` / `our` attribute"),
-                (is_type.is_some(), "attribute with an `is TYPE` trait"),
-                (
-                    deprecated_message.is_some(),
-                    "attribute with `is DEPRECATED`",
-                ),
-                (!unknown_traits.is_empty(), "attribute with a custom trait"),
-            ];
-            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
-                return Err(unsupported(what));
+                ));
             }
             let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
-            let twigil = if *is_public { "." } else { "!" };
+            let twigil = match (*is_alias, *is_public) {
+                (true, _) => None,
+                (false, true) => Some("."),
+                (false, false) => Some("!"),
+            };
+            let scope = match (*is_our, *is_my) {
+                (true, _) => Some("our"),
+                (false, true) => None,
+                (false, false) => Some("has"),
+            };
             let full_name = if *sigil == '$' {
                 name.resolve()
             } else {
@@ -1313,23 +1303,31 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let mut decl = var_declaration(
                 &full_name,
                 explicit_default.map(Initializer::Assign),
-                Some("has"),
+                scope,
                 type_name,
-                Some(twigil),
+                twigil,
                 explicit_default,
             )?;
             attribute::add_traits(
                 &mut decl,
-                attribute::AttributeTraits {
+                &attribute::AttributeTraits {
+                    order: trait_order.clone(),
                     is_rw: *is_rw,
                     is_readonly: *is_readonly,
-                    is_required: is_required.is_some(),
+                    is_required: is_required.clone(),
                     is_default: is_default.clone(),
                     is_built: *is_built,
+                    deprecated_message: deprecated_message.clone(),
+                    is_type: is_type.clone(),
+                    unknown_traits: unknown_traits.clone(),
                     handles_terms: handles_terms.clone(),
                     handles: handles.clone(),
                 },
             )?;
+            if let Some(constraint) = where_constraint {
+                decl.fields
+                    .push(node_field(Some("where"), convert_expr(constraint)?));
+            }
             Ok(Some(statement_expression(decl)))
         }
         // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the

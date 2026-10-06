@@ -1524,7 +1524,7 @@ pub(super) fn routine_return_type(
 
 /// The parser's type-constraint spelling of a type node (`Int`, `Str:D`,
 /// `Int()`, `Array[Int]`) -- see `type_lower`.
-fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
     super::type_lower::type_constraint(node, type_node)
 }
 
@@ -2243,7 +2243,11 @@ fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
     // the only scope that lowers (the converter renders no other).
-    if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
+    // `our $.x` / `my $.x` (a public or private class-level attribute) is one
+    // too, by its twigil.
+    if matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
+        || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"))
+    {
         return lower_attribute(node);
     }
     // The remaining scopes the converter renders are `our` and `state`; `my` is
@@ -2394,7 +2398,8 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The converter renders
 /// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
-/// `twigil` (`.` public / `!` private); its `Trait::Is` flags are read by
+/// `twigil` (`.` public / `!` private, none for the alias `has $x`); `our $.x`
+/// has the `our` scope and `my $.x` none. Its traits are read by
 /// `rakuast::attribute`, and an `Initializer::Assign` is the default (the
 /// implicit `WillBuild` beside it carries the same expression).
 fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -2409,15 +2414,34 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             Some(lower_expr(named_child_or_positional(init)?)?)
         }
     };
+    let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
+        None => None,
+        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+    };
     let sigil = leaf_str(node, "sigil")?;
     let mut chars = sigil.chars();
     let (Some(sigil_char), None) = (chars.next(), chars.next()) else {
         return Err(unsupported(node));
     };
-    let is_public = match leaf_str(node, "twigil")?.as_str() {
-        "." => true,
-        "!" => false,
-        _ => return Err(unsupported(node)),
+    // The scope: `has` is the per-instance attribute; `our` and the default
+    // `my` are class-level ones (the parser makes those `is rw`).
+    let (is_our, is_my, is_has) = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, true, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "has" => (false, false, true),
+            "our" => (true, false, false),
+            _ => return Err(unsupported(node)),
+        },
+    };
+    let (is_public, is_alias) = match node.fields.iter().find(|f| f.name == Some("twigil")) {
+        // `has $x`, the alias of a private attribute.
+        None if is_has => (false, true),
+        None => return Err(unsupported(node)),
+        Some(_) => match leaf_str(node, "twigil")?.as_str() {
+            "." => (true, false),
+            "!" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
     };
     let desigil = match positional_leaf(named_child(node, "desigilname")?)?.view() {
         ValueView::Str(s) => s.to_string(),
@@ -2460,27 +2484,28 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 .as_deref()
                 .map(crate::parser::auto_default_expr_for_type)
         }),
-        handles: traits.handles.clone(),
-        handles_terms: traits.handles_terms.clone(),
-        is_rw: traits.is_rw,
+        handles: traits.handles,
+        handles_terms: traits.handles_terms,
+        is_rw: traits.is_rw || !is_has,
         is_readonly: traits.is_readonly,
         type_constraint,
         type_smiley,
-        is_required: traits.is_required.then_some(None),
+        is_required: traits.is_required,
         sigil: sigil_char,
-        where_constraint: None,
-        is_alias: false,
+        where_constraint,
+        is_alias,
         is_embedded: false,
-        is_our: false,
-        is_my: false,
+        is_our,
+        is_my,
         is_default: traits.is_default,
-        is_type: None,
-        deprecated_message: None,
+        is_type: traits.is_type,
+        deprecated_message: traits.deprecated_message,
         is_built: traits.is_built,
-        unknown_traits: Vec::new(),
+        unknown_traits: traits.unknown_traits,
         // RakuAST models an attribute's initializer as an assignment; rakudo
         // has no `:=` attribute-declaration node to lower from.
         default_is_bind: false,
+        trait_order: traits.order,
     })
 }
 

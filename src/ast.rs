@@ -2428,6 +2428,10 @@ pub(crate) enum Stmt {
         /// wrote no `= EXPR`.
         #[serde(default)]
         default_is_trait: bool,
+        /// The traits in the order they were written (`ast::attr_trait`); the
+        /// other trait fields keep what each says, not where it stood.
+        #[serde(default)]
+        trait_order: Vec<attr_trait::AttrTrait>,
     },
     MethodDecl {
         name: Symbol,
@@ -2678,6 +2682,7 @@ pub(crate) enum AssignOp {
 
 pub(crate) mod anon_state;
 pub(crate) mod atomic_op;
+pub(crate) mod attr_trait;
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
