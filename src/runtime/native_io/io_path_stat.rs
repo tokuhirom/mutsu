@@ -229,7 +229,7 @@ impl Interpreter {
     /// `r`/`w`/`x`/`rw`/`rwx`/`z` file tests and the `mode`/`inode`/`dev`/
     /// `devtype`/`s`/`created`/`modified`/`accessed`/`changed` readers, named by
     /// `kind` (the method's own name; the `-e $path` file-test operators share
-    /// [`io_file_test`](super::helpers::io_file_test)). The receiver's path is
+    /// [`io_file_test`]). The receiver's path is
     /// resolved against the cwd and the filesystem is read via `stat` only: no
     /// `io_handles` allocation, no output, no content read. A missing path is a
     /// `Failure`, as in Rakudo.
