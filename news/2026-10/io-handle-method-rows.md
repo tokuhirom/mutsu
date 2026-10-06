@@ -1,7 +1,7 @@
-# IO::Handle: 51 more built-in methods are table rows, and the VM's handle fast paths are gone
+# IO::Handle: 50 more built-in methods are table rows, and the VM's handle fast paths are gone
 
 Slice 3E (part 2) of [ADR-11276](../../docs/adr/11276-built-in-methods-are-handler-rows.md) moved
-the methods of `IO::Handle` into the built-in method table: 994 rows are registered now, up from 943.
+the methods of `IO::Handle` into the built-in method table: 993 rows are registered now, up from 943.
 The state methods (`path`, `Str`, `gist`, `nl-out`, `chomp`, `encoding`, `tell`, `eof`, `seek`,
 `close`, `flush`, `lock`, ...), the reads (`get`, `getc`, `readchars`, `lines`, `words`, `read`,
 `slurp`, `split`, `comb`, `Supply`), the writes (`print`, `put`, `say`, `printf`, `print-nl`, `write`,

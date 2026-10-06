@@ -1240,10 +1240,10 @@ the path ([#12149](https://github.com/tokuhirom/mutsu/issues/12149); `starts-wit
 
 ### 9.20 Slice 3E, part 2: `IO::Handle` (2026-10-06)
 
-Branch `refactor/11276-3e-io-handle`. Owner: `IO::Handle`, the first of the slice's remainder (§9.19). 51 rows
-registered (943 -> 994): the state methods (`path`, `IO`, `Str`, `gist`, `raku`, `nl-in`, `nl-out`,
+Branch `refactor/11276-3e-io-handle`. Owner: `IO::Handle`, the first of the slice's remainder (§9.19). 50 rows
+registered (943 -> 993): the state methods (`path`, `IO`, `Str`, `gist`, `raku`, `nl-in`, `nl-out`,
 `chomp`, `out-buffer`, `encoding`, `opened`, `t`, `tell`, `eof`, `seek`, `lock`, `unlock`, `flush`,
-`close`, `native-descriptor`, `DESTROY`), the reads (`get`, `getc`, `readchars`, `lines`, `words`,
+`close`, `native-descriptor`, ), the reads (`get`, `getc`, `readchars`, `lines`, `words`,
 `read`, `slurp`, `slurp-rest`, `split`, `comb`, `Supply`), the writes (`print`, `put`, `say`, `printf`,
 `print-nl`, `write`, `spurt`) and `open`. Of the 39 declared rows the inventory listed, 37 are
 registered; `READ` and `WRITE` are Rakudo's stubs for a subclass to override and no cascade ever had an
