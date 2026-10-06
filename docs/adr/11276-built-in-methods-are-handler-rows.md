@@ -909,6 +909,97 @@ snapshot extension (the last family below).
 The audit of the ancestor rows for `Bool`, `Uni`, `Version` and `Blob`/`Buf` (a closed shape is
 opened by the slice that owns it, §9.15) is part of each shape's family.
 
+**What landed (354 declared rows at the start, 102 left).** 284 rows are registered (392 -> 676:
+252 of the declared recognition rows, the rest being argument forms of a name and rows the
+recognition table lacked, such as `Cool.acosec`). Five commits after the inventory, each
+with its focused test (`t/oo/method/*-method-rows.t`), each checked against Rakudo, the roast
+directories of its owners and the unit suite (`cargo test --lib method_table native_method_row`):
+
+- [x] *Transcendental math* (`scalars/math.rs`, 159 rows): one handler per method for `Int`,
+  `Num`, `Rat`, `Complex` and `Cool`; `numify` (`scalars/numify.rs`) is the `Cool` coercion all
+  the `Cool` numeric rows share. `complex_math.rs` moved next to the rows.
+- [x] *Integer and real numerics* (`scalars/real_misc.rs`, 43 rows): `is-prime`, `narrow`,
+  `conj`, `Bridge`, `lsb`, `msb`, `chr`, `rand` and the native integer coercions.
+  `RowFlags::RANDOM` (the debug cross-checks skip a row whose answer is random) is the one new
+  mechanism; 3C's sampling family needs it too.
+- [x] *`Cool`'s `abs`/`sign`/`floor`/`ceiling`/`truncate`/`round`* and `round($scale)`, and
+  `Bool.succ`/`pred` (`scalars/cool_real.rs`, 9 rows). The `Cool` numeric wrapper of the
+  0-argument cascade, the 1-argument one and `cool_aggregate.rs` are gone.
+- [x] *Unicode* (`scalars/unicode.rs`, 32 rows): the `uni*` methods, `parse-names` and the
+  normalization forms; the rows the recognition table flags `TYPE_OBJECT_OK` answer a built-in
+  type object as the cascade did.
+- [x] *`Uni`* (`scalars/uni.rs`, 10 rows): `elems`, `codes`, `Int`, `Numeric`, `Str`, `list`,
+  `gist`, `raku`, `AT-POS`, `EXISTS-POS`.
+
+The `Bool` shape is **open** (`DispatchShape::inherits`): its MRO is `Bool`, `Int`, `Cool`, `Any`,
+`Mu`, so every registered `Int`, `Cool` and `Any` row now answers a `Bool`. The audit ran each of
+those rows against `True` and `False` through a probe script (`tmp/` only: 290 method calls,
+mutsu against Rakudo, before and after) and fixed what broke: the numeric handlers
+(`real::abs_of`, `coerce::int_of`, `Rounding::of`, `cool_real::round_to`, ...) read a `Bool` as the
+`Int` enum it is (`True.abs` is 1, `True.floor` is `True`), and `Any.min`/`max` take it as a
+scalar. 83 answers moved to Rakudo's and none regressed.
+
+What the work taught, which the remaining families follow:
+
+- **A row reaches more receivers than its owner names.** A `Cool` row is reached by `Str`,
+  `List`, `Array`, `Hash` and `FatRat` (its shape has no row of its own), so a handler for
+  `Cool.sin` has to answer all of them; `every_row_is_reached_and_answers` fails on the first
+  shape it cannot. `numify` is the one place that knows how a `Cool` becomes a number.
+- **A `Cool` row's shapeless receivers keep a delegating arm.** `Match`, `Range`, `Seq` and
+  instances of `Cool` subclasses have no shape yet, so the table never sees them; the arms for the
+  Unicode names, `sqrt` (`Seq`), `Bridge`/`rand`/`narrow`/`abs` (`Instant`, `Duration`) and
+  `round($scale)` (allomorphs) stay, calling the rows' handlers. Slice 3D, which adds the shapes,
+  deletes them. Deleting such an arm outright regresses `$match.uniname` and `(1..3).uniname`.
+- **The debug cross-check wants the cascade to agree, not only to exist.** A cascade arm that
+  answers a shaped receiver differently from its row (`Uni.elems` fell to the scalar catch-all and
+  said 1) is a failure; either the cascade declines or its arm calls the row's handler.
+- **Rows with arguments no longer need cascade arms for the recognition tests.**
+  `native_method_arities`, the probe behind the `*_rows_are_backed_by_the_cascade` tests, now
+  asks the table for arities 1 and 2 (3C kept delegating arms for them: its lesson 4).
+- **A row exists only where Rakudo declares the method.** `expmod` is `Int`'s alone (three
+  recognition rows for `Num`, `Rat` and `Complex` were wrong and are gone), and `narrow`, `Bridge`,
+  `lsb` and `msb` are not `Cool`'s, so a `Str` has no such method (`"5".lsb` is "No such method").
+- **The type-object concreteness list stays a list of names.** `check_numeric_type_object_method`
+  answers `Int.roots`, `Int.expmod`, `Int.is-prime` and `Int.chr` for the recognition tests'
+  type-object probe; a `TYPE_OBJECT_OK` row cannot replace it, because type objects of `Cool`,
+  `Any` and user classes are not shapes.
+- **`Uni` stays closed.** Rakudo's `Uni` is `Any` and `Mu`, not `Cool`, and the `Any` rows assert
+  `scalar_like`; opening it means teaching those handlers a codepoint array, which is the
+  collections' business (3C's deferred "opening the closed shapes"), so it reaches only the rows
+  it owns.
+
+**Deferred, with the reason (the 102 declared rows that are left).**
+
+- **Coercions** (45 rows: `Numeric`, `Real`, `Int`, `Num`, `UInt`, `Rat`, `FatRat`, `Complex`,
+  `Str`, `Stringy`, `Version`, `Capture`). Each cascade arm mixes the shaped branches with a
+  type-object warning, `Instant`/`Duration`, `Range`, `Buf` and `StrDistance` instances, and the
+  `Complex` branches that read `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`). The `Complex`
+  receiver needs `Handler::Interp` rows (`Complex.Int`, `Num`, `Rat`, `FatRat`, `Real`, and
+  `Cool.UInt`), and without them `every_row_is_reached_and_answers` cannot pass for the `Cool` rows.
+  Registering the rows over the existing arms would add metadata and delete nothing; it is one
+  commit of its own with the interpreter rows.
+- **The rendering and identity names** (`gist`, `raku`, `WHICH`: 22 rows): §9.16's deferral stands;
+  the shared `match` is split once, after 3D.
+- **Text methods with arguments** (`indent`, `samecase`, `samemark`, `split`, `substr-eq`,
+  `parse-base`, `naive-word-wrapper`, `fmt`, `ACCEPTS` on `Version`, `Str.Date`, `Str.DateTime`:
+  about 15 rows). Their arms already call one shared function and gate `IO::Path`, `Supply` and
+  `IO::Spec` receivers by hand; a row would delete none of them.
+- **Interpreter rows** (`match`, `subst`, `trans`, `sprintf`, `printf`, `indices`, `IO`, `encode`:
+  about 13 rows) and `base`, `base-repeating`, `polymod` (7): `base` carries the `:`-option
+  machinery of `native_base_with_options`, `polymod` is an interpreter method. `subst-mutate` and
+  `substr-rw` are 3F's.
+- **`Bool`'s own rows** (`Int`, `Numeric`, `Real`, `Str`, `gist`, `raku`, `ACCEPTS`, `pick`, `roll`):
+  the first six ride with the coercions and rendering families; `pick`/`roll` are Rakudo's
+  `Bool:U` methods and ride with the sampling family (3C's remainder), which can use `RANDOM` now.
+- **`Blob` and `Buf`**: the two shapes (instances of the built-in classes, like `Date`), the
+  oracle snapshot extension (`rakudo_method_tables.txt` has neither owner) and the `read-*`,
+  `subbuf`, `bytes`, `decode` rows, with the `Buf`/`Blob`/`utf8` folding decision (§8.3).
+  Its own change: a new shape and snapshot owners are a different risk from the pure handlers here.
+- **`Version`'s rows** (7): `Str`, `gist`, `raku`, `WHICH` are the rendering names, `ACCEPTS`
+  and `Version` coerce through the interpreter's smartmatch; the shape stays closed.
+
+Findings filed: see the PR body.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
