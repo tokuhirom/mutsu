@@ -1,8 +1,9 @@
 use Test;
 
-# ADR-11276 slice 3C: AT-POS and EXISTS-POS of the list-likes are handler
-# rows (List, Array and Range own AT-POS; List and Range own EXISTS-POS).
-# Every answer below was checked against Rakudo.
+# ADR-11276 slice 3C: EXISTS-POS of the list-likes is a handler row (List and
+# Range own it, Range owns AT-POS too). `List.AT-POS` and `Array.AT-POS` stay
+# the subscript opcode's (`builtin_at_pos`) and are pinned here as such. Every
+# answer below was checked against Rakudo.
 
 plan 4;
 

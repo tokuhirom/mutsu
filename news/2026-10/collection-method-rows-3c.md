@@ -11,8 +11,8 @@ What moved: `Range`'s own methods and element reads (`bounds`, `is-int`, `infini
 hashes' views and sizes (`keys`, `values`, `kv`, `pairs`, `antipairs`, `total`, `elems`,
 `default`, `of`, `hash`, `list`, `kxxv`, `invert`, `Baggy.Numeric`); `AT-KEY`, `EXISTS-KEY` and
 `ACCEPTS` of the associatives; `Capture`'s views, positional subscript and the `.Capture` of every
-collection; `Pair`'s views; `hyper`, `race`, `lazy` and `item`; the positional `AT-POS` and
-`EXISTS-POS`; and the small coercions (`Slip`, `List`, `list`, `hash`, `default`).
+collection; `Pair`'s views; `hyper`, `race`, `lazy` and `item`; `Range`'s `AT-POS` and
+`List`'s and `Range`'s `EXISTS-POS`; and the small coercions (`Slip`, `List`, `list`, `hash`, `default`).
 
 Moving the arm bodies fixed a few answers on the way. `Capture.AT-KEY`, `EXISTS-KEY`, `AT-POS` and
 `EXISTS-POS` work (they died or answered "does not support associative indexing"),

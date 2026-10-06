@@ -31,22 +31,10 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
     // The positional subscript protocol of the list-likes.
-    MethodRow {
-        owner: "List",
-        name: "AT-POS",
-        arity: 1,
-        handler: Handler::Narrow(at_pos),
-        flags: RowFlags::NONE,
-        named: &[],
-    },
-    MethodRow {
-        owner: "Array",
-        name: "AT-POS",
-        arity: 1,
-        handler: Handler::Narrow(at_pos),
-        flags: RowFlags::NONE,
-        named: &[],
-    },
+    // `List.AT-POS` and `Array.AT-POS` have no row: `builtin_at_pos` answers them
+    // with the subscript opcode itself (`@a.AT-POS(-1)` is an `X::OutOfRange`
+    // failure, a typed array past its end is its type), before the native
+    // cascade this handler restates. They are an interpreter row's to be.
     MethodRow {
         owner: "Range",
         name: "AT-POS",

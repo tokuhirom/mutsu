@@ -766,8 +766,11 @@ test, each checked against Rakudo and against the roast directories of its owner
 - [x] The laziness markers (`collections/lazy.rs`): `hyper`, `race`, `lazy` on List, Map and Range,
   `item` on Map and Range, `Range.is-lazy`.
 - [x] Range's element methods (`elems`, `min`, `max`, `minmax`, `Numeric`, `list`, `sum`, `reverse`,
-  `contains`, `index`) and the positional subscript (`AT-POS` on List, Array and Range,
-  `EXISTS-POS` on List and Range, `collections/positional.rs`).
+  `contains`, `index`) and the positional subscript (`AT-POS` on Range, `EXISTS-POS` on List and
+  Range, `collections/positional.rs`). `List.AT-POS` and `Array.AT-POS` are not rows:
+  `builtin_at_pos` answers them with the subscript opcode itself (`@a.AT-POS(-1)` is an
+  `X::OutOfRange` failure, a typed array past its end is its type), before the native cascade a
+  row would restate; they are an interpreter row's to be.
 - [x] The small coercions: `Slip` (List, Array), `List` (Array, Map), `list` (Map), `hash` (Map),
   `default` (Array, Hash).
 
@@ -788,6 +791,15 @@ What the work taught, which the remaining families follow:
   `Capture` on a list holding a `Pair` with a non-`Str` key is the interpreter's
   (`try_interpreter_capture`): the row declines through `capture_needs_str_key`, the one helper
   both use. Roast's `S02-types/capture.t` caught it.
+- **A name `try_native_method_raw` hands to the interpreter first is not a pure row's.** The
+  table answers before that function, so a pure row for `AT-POS` on a List or Array would
+  shadow `builtin_at_pos` and answer `Nil` for `-1` where Rakudo fails
+  (`t/vm/nqp-list-index-parity.t` pins both). Before registering a row, read
+  `try_native_method_raw` and `call_method_with_values` for the name.
+- **A one-argument row keeps its arms for the recognition tests**: `native_method_row`'s
+  `*_rows_are_backed_by_the_cascade` tests ask the 1- and 2-argument cascades whether they
+  recognize each recognition row, and only the 0-argument entry consults the table, so
+  `Range.in-range` kept delegating arms.
 - **A row must be reachable by some shape** (`every_row_is_reached_and_answers`): `Map.AT-KEY`
   has no row (no shape would reach it behind `Hash.AT-KEY`), and no `Seq` row can be registered
   before the `Seq` shape exists.

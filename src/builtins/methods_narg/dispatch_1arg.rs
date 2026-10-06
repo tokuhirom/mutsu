@@ -740,6 +740,11 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
+        // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
+        // The `Range.in-range` row's implementation (`method_table::range`).
+        "in-range" => {
+            crate::builtins::method_table::range::in_range_value(target, std::slice::from_ref(arg))
+        }
         // Cost: see `native_split_method`.
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
