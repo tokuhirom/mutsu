@@ -533,6 +533,8 @@ impl Interpreter {
                 .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
                 .unwrap_or_default(),
         };
+        // A `role R is Hash` pun reaches here as a Mixin around its instance.
+        let invocant = Self::hash_pun_inner(&invocant).unwrap_or(invocant);
         let ValueView::Instance {
             class_name,
             attributes,
@@ -546,6 +548,10 @@ impl Interpreter {
                 .mro_readonly(&class_name.resolve())
                 .iter()
                 .any(|n| Self::is_associative_base(n))
+                && self
+                    .registry()
+                    .role_associative_base(&class_name.resolve())
+                    .is_none()
         {
             return None;
         }

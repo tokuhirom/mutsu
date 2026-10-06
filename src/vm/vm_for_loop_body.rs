@@ -814,8 +814,13 @@ impl Interpreter {
             }
             // A Proxy element FETCHes on iteration in value context (raku:
             // `for $proxy-list.list { }` yields the values). An rw loop
-            // (`<->`) keeps the Proxy so writes go through STORE.
-            let item = if !spec.is_rw && matches!(item.view(), ValueView::Proxy { .. }) {
+            // (`<->`) keeps the Proxy so writes go through STORE, and so does
+            // the implicit topic: `$_` is an rw alias of the element
+            // (`$_ = "x" for @proxies` calls each STORE).
+            let item = if !spec.is_rw
+                && !binds_implicit_topic
+                && matches!(item.view(), ValueView::Proxy { .. })
+            {
                 loan_env!(self, auto_fetch_proxy(&item))?
             } else {
                 item
@@ -1089,7 +1094,13 @@ impl Interpreter {
             // `ReadonlyKind::ImmutableDeep` rather than a second, independent
             // marker, so the two facts can never drift out of sync (see
             // `restore_topic_readonly`, which now restores this mark in full).
-            if topic_readonly || (binds_implicit_topic && bare_buffer_item) {
+            // A `Proxy` item is a container of its own (it mediates its STORE), so
+            // it is never a bare value whatever the source's static shape says
+            // (`for %tied.keys` over a tie whose `keys` yields Proxies).
+            let topic_is_proxy_item = matches!(item.view(), ValueView::Proxy { .. });
+            if (topic_readonly || (binds_implicit_topic && bare_buffer_item))
+                && !topic_is_proxy_item
+            {
                 // The topic aliases an immutable item directly, with no
                 // container of its own: rakudo throws X::AdHoc "Cannot assign
                 // to an immutable value" (not the readonly-*variable* wording

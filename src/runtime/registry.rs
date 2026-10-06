@@ -1814,6 +1814,29 @@ impl Registry {
         }
     }
 
+    /// The builtin associative base (`Hash` preferred over `Map`) the named
+    /// role composes anywhere along its role parents (`role R is Hash`). A
+    /// punned instance of such a role keeps the role's name as its class, and
+    /// the pun's MRO has to reach the base for the instance to get storage.
+    // Cost: O(r) role-parent lookups, r = roles reachable from `role_name`.
+    pub(crate) fn role_associative_base(&self, role_name: &str) -> Option<&'static str> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut work = self.role_parents_of(role_name);
+        let mut found = None;
+        while let Some(p) = work.pop() {
+            match p.as_str() {
+                "Hash" => return Some("Hash"),
+                "Map" => found = Some("Map"),
+                _ => {}
+            }
+            if !seen.contains(&p) {
+                work.extend(self.role_parents_of(&p));
+                seen.push(p);
+            }
+        }
+        found
+    }
+
     /// Every role the named role composes, declared or built-in.
     pub(crate) fn role_parents_of(&self, role_name: &str) -> Vec<String> {
         let base_role_name = role_name

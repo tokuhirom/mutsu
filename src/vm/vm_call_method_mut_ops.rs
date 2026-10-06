@@ -1539,6 +1539,17 @@ impl Interpreter {
                 skip_native = true;
             }
         }
+        // A `role R is Hash` pun (a Mixin around its storage instance) whose
+        // role declares `method keys`/`elems`/...: the role's method wins over
+        // the native Hash one.
+        if !skip_native
+            && let inner = Self::hash_pun_inner(&target).unwrap_or_else(|| target.clone())
+            && let ValueView::Instance { class_name, .. } = inner.view()
+            && self.registry().role_associative_base(&class_name.resolve()).is_some()
+            && self.has_user_method_including_role(&class_name.resolve(), method)
+        {
+            skip_native = true;
+        }
         if !skip_native
             && matches!(method, "AT-KEY" | "keys" | "values")
             && matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))

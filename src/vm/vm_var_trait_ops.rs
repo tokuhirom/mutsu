@@ -116,6 +116,25 @@ impl Interpreter {
         // trait name (`default`, `rw`, ...) or a non-lexical class: `env` has
         // no Package binding for those under this literal name.
         let trait_name = self.lexical_env_remap_name(&trait_name);
+        // `my %h is R["append"]`: the trait names a parameterised role as source
+        // text. Evaluate it to the role application and use its pun class, the
+        // same class `R["append"].new` builds.
+        let trait_name = if trait_name.ends_with(']')
+            && (name.starts_with('%') || name.starts_with('@'))
+            && let Some((base, _)) = trait_name.split_once('[')
+            && self.registry().roles.contains_key(base)
+            && let Ok(applied) = self.call_function("EVAL", vec![Value::str(trait_name.clone())])
+            && let ValueView::ParametricRole {
+                base_name,
+                type_args,
+            } = applied.view()
+            && let Ok(Some(punned)) =
+                self.ensure_parametric_role_pun_class(&base_name.resolve(), &type_args)
+        {
+            punned
+        } else {
+            trait_name
+        };
         // `my @a is Alias` / `my %h is Alias` where `Alias` is a `constant`
         // bound to a type object (`my constant Rounded = Array::Rounded;` — the
         // standard "give a verbosely-named class a short name" packaging idiom,
@@ -790,18 +809,22 @@ impl Interpreter {
                 .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
-            let has_store = self
-                .class_mro(&trait_name)
-                .iter()
-                .any(|n| n == "Hash" || n == "Map")
+            let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
+            // Computed after `new`: a bare role (`role R is Hash`) is punned by
+            // `new`, and only the punned class's MRO reaches `Hash`.
+            let role_is_hash = self.registry().role_associative_base(&trait_name).is_some();
+            let has_store = role_is_hash
+                || self
+                    .class_mro(&trait_name)
+                    .iter()
+                    .any(|n| n == "Hash" || n == "Map")
                 // A QuantHash subclass (`my %b is AccountableBagHash = ...`)
                 // is populated through the same `STORE(list, :INITIALIZE)`
                 // protocol, delegated to its `__baggy_data__` backing store —
                 // see `vm_baggy_subclass_delegate.rs`.
                 || self.quanthash_base_kind(&trait_name).is_some()
                 || self.has_user_method_including_role(&trait_name, "STORE");
-            let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
-            let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Bind the instance to the variable first, then STORE the initializer
             // through the bound variable so the mutating dispatch resolves `self`
             // to the same instance the variable now holds.

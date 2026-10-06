@@ -1277,7 +1277,13 @@ impl Interpreter {
             attribute_built,
             embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
-            mro: super::sym_mro(&[role_name, "Any", "Mu"]),
+            mro: match self.registry().role_associative_base(role_name) {
+                // `role R is Hash`: the pun reaches Hash/Map so its instances get
+                // the associative backing store and delegation.
+                Some("Hash") => super::sym_mro(&[role_name, "Hash", "Map", "Cool", "Any", "Mu"]),
+                Some(_) => super::sym_mro(&[role_name, "Map", "Cool", "Any", "Mu"]),
+                None => super::sym_mro(&[role_name, "Any", "Mu"]),
+            },
             wildcard_handles: all_wildcard_handles,
             alias_attributes: HashSet::new(),
             class_level_attrs: ValueMap::default(),
