@@ -4662,6 +4662,15 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
+                        Stmt::Package { .. } => {
+                            // A unit that ends in a `package` / `module` block is
+                            // that package's type object, as a trailing `class`
+                            // is: register it, then push the type object (the
+                            // expression-position `do package ...` shape).
+                            self.compile_expr_do_stmt(stmt);
+                            self.emit_unit_tail_result();
+                            continue;
+                        }
                         _ => {}
                     }
                 }
