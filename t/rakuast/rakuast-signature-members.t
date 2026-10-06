@@ -21,7 +21,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 52;
+plan 66;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub params($src) { exprs($src)[0].signature.parameters }

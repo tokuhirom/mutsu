@@ -3727,6 +3727,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         && param.type_constraint.is_none()
                         && param.type_capture.is_none()
                         && param.default.is_none()
+                        && param.literal_value.is_none()
                         && !param.optional_marker
                         && param.traits.is_empty()
                         && param.sub_signature.is_none()
