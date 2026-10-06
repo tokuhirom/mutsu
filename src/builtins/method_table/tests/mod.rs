@@ -386,3 +386,35 @@ fn an_interpreter_row_needs_an_interpreter() {
         .expect("Any.collate resolves for a List");
     assert!(!super::row(row).handler.is_pure());
 }
+
+/// Not a check: prints every registered row as a tab-separated line
+/// (`ROW owner name arity handler flags named`) for
+/// `scripts/method-rows-report.py`, which runs it with `--ignored --nocapture`.
+#[test]
+#[ignore = "prints the registered rows for scripts/method-rows-report.py"]
+fn dump_rows() {
+    for row in rows() {
+        let kind = match row.handler {
+            Handler::Pure(_) => "Pure",
+            Handler::Narrow(_) => "Narrow",
+            Handler::Named(_) => "Named",
+            Handler::Interp(_) => "Interp",
+        };
+        let mut flags = Vec::new();
+        if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
+            flags.push("TYPE_OBJECT_OK");
+        }
+        if row.flags.contains(RowFlags::ANY_ARGS) {
+            flags.push("ANY_ARGS");
+        }
+        println!(
+            "ROW\t{}\t{}\t{}\t{}\t{}\t{}",
+            row.owner,
+            row.name,
+            row.arity,
+            kind,
+            flags.join(","),
+            row.named.join(",")
+        );
+    }
+}

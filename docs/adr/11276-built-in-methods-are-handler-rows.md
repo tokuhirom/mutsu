@@ -195,7 +195,9 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
 - `ReceiverPlace`'s exact shape: a slot, an env name, or an attribute cell. ADR-0097's binding
   descriptor is the likely answer.
 - Whether a row's `shape` carries a full signature (for Rakudo-style bind errors on built-ins) or
-  only an arity mask, with the handler raising the error.
+  only an arity mask, with the handler raising the error. Slice 3A settled named arguments
+  (§9.15: a row declares the names it binds); positional binding stays an arity plus the
+  handler's own declines.
 - Where folded owners (`Buf`/`Blob`/`utf8` to `Blob`, `Sub`/`Method`/`Block` to `Code`) belong
   once owners are real `TypeId`s, versus Rakudo's MRO, where `Buf.^mro` does not contain `Blob`.
 
@@ -596,6 +598,85 @@ Hash results, eager identity, empty and fallback behavior. The method-table
 unit suite verifies owner declarations and that every row answers its resolved
 plain shape.
 
+### 9.15 Slice 3A: the guard step (2026-10-06)
+
+Branch `refactor/11276-3a-guard-step`. What landed, and where it differs from §10.5.
+
+- **Groups.** `method_table/` has one directory per slice group (`scalars`, `collections`,
+  `instances`, `io_concurrency`, `mutating`, `ctors_mop`), each with its own `FAMILIES` list that
+  `table.rs` concatenates, so a slice adds its rows in its own directory and never edits a shared
+  list. `tests/` has one module per group beside the generic invariants. The row types
+  (`row.rs`) and the guard step with its entries (`dispatch.rs`) are files of their own.
+- **Row flags and named arguments.** `MethodRow` gained `flags` (`TYPE_OBJECT_OK`, `ANY_ARGS`)
+  and `named`, the names the row binds. This answers §8's question for named arguments: the
+  shape stays an arity, and the guard step splits string-keyed `Pair`s (the named flavour,
+  ADR-0021) from the positionals, finds the row by its positional arity, refuses a name no row
+  binds (the cascades then apply the implicit `*%_`), and gives the handler a `Named` view.
+  Row-declared names replace `accepted_nameds` as rows migrate; slice 5 deletes that table.
+- **Argument admission.** A row is handed plain scalars by default, as before. `ANY_ARGS` opts
+  in to any plain argument: the allowlist `Value::is_plain_argument` (a tag probe) refuses a
+  `Junction` (which must autothread), a `Seq`, `LazyList`, `Slip` or thunk (which must be
+  reified), a `Proxy`, container or variable reference, a `Mixin` or `Instance` (their `Str` may
+  be user code), a shaped or lazy array, an itemized hash and a lazy `Match`. Those calls take
+  the cascades exactly as before.
+- **Handler kinds.** `Handler::Named` reads named arguments; `Handler::Interp` needs the
+  interpreter. `Interpreter::try_native_method`, the VM's call-site lane and
+  `call_method_with_values` reach interpreter rows; the pure entries (the cascades' own
+  prologue) decline them. The caller's veto (an `augment` of the receiver's type) runs before an
+  interpreter handler, which has effects, so the debug cross-check never re-runs it: it is
+  answered once, by the lane or by `try_dispatch_in`.
+- **Shapes.** `DispatchShape` moved to `value/dispatch_shape.rs` and gained `Bool`, `Range`,
+  `Pair`, `Capture`, `Version`, `Uni`, `Set`, `SetHash`, `Bag`, `BagHash`, `Mix`, `MixHash`,
+  `Date` and `DateTime`. Value kinds decode by tag probe; `Date` and `DateTime` by the class
+  name of a built-in `Instance`, so a user subclass has no shape. A shape added after the
+  first nine is **closed**: only rows its own type owns reach it, because an ancestor's row
+  (`Any.elems`) was written for the shapes that existed and would answer a `Range` wrongly. The
+  slice that owns a shape audits the ancestor rows and opens it (`DispatchShape::inherits`).
+  `Receiver` (a shape plus a type-object bit) is the lookup key, the call-site memo byte and the
+  guard step's input; the per-name shape masks are 64 bits wide.
+- **Type objects.** The type object of a built-in type (`Package("Int")`) is a receiver, and
+  answers only a row flagged `TYPE_OBJECT_OK`: the numeric `Bool` rows, so `Int.Bool` is
+  `False` through the table.
+- **Proof rows** (each a real migration; the cascade arm calls the handler): `flat(:hammer)`
+  on `Any`/`List`/`Array` (`Named`), `List.combinations($of)` with an `Int` or a `Range`
+  (`ANY_ARGS`), `Any.collate`, which reads `$*COLLATION` (`Interp`), `Bool.key/value/Bool`,
+  `Uni.Bool`, `Version.parts/plus/whatever`, `Pair.key/value/antipair`,
+  `Range.excludes-min/excludes-max`, `Bool` on `Range`, `Capture` and the six quant-hash owners,
+  `Date.year/month/day` and `DateTime.year/month/day/hour/minute`. The `isNaN` arm no longer
+  takes "has a shape" to mean "is numeric".
+- **`scripts/method-rows-report.py`** prints the arms left per cascade layer and file, the
+  registered rows per group and handler kind, and the recognition rows with no registered row.
+  The row dump is the ignored unit test `method_table::tests::dump_rows`. On this tree: 1,260
+  quoted-name arms (747 distinct names), 219 registered rows, 1,451 of 1,649 recognition rows
+  left. It is a report, not a gate.
+
+Where it differs from §10.5:
+
+- **Shapes are added where a row needs them.** `Seq` (a method decides whether it consumes),
+  `Match` (whether it forces), `Failure` (which must explode for every method it does not
+  declare), `Nil` and `Junction` (autothreading is the guard) have a method-dependent guard, so
+  the slice whose first rows decide it adds the shape (3C for `Seq`, 3D for `Match`, `Failure`
+  and `Nil`). `Instant`, `Duration`, `IO::Path`, `IO::Handle`, `Blob`, `Buf` and `Code` are one
+  variant and one class-table entry each, added with their first row in 3B, 3D and 3E; a shape
+  with no row would be dead data.
+- **The cascade functions were not split per owner group.** `dispatch_core` is already a
+  sequence of receiver-kind blocks that fall through in order, so a pure move would have to
+  keep that order across files, and nothing in 3A needs it. Two slices that delete arms in the
+  same block rebase over a hunk; if that proves costly, the split is a pure-move PR of its own.
+- **The report is a Python script, and no diff-based "no new arm" check was added.** That check
+  would be a new gate on every PR; AGENTS.md's slow-path rule stays a review rule.
+- **The lane declines a site that passes a named argument or a `|` spread.** Such a call
+  reaches its row through the native entry instead. An interpreter row reached through the lane
+  gets copies of the receiver and the arguments, because it may call back into the VM.
+- **Perf** is not measured (§9.7). The hot-path change is `Receiver::of` replacing
+  `dispatch_shape()` in the lane after the name bit test, which adds one tag probe for a
+  `Package` receiver; Bench's deterministic series on `main` is the watch.
+
+Findings filed: [#11989](https://github.com/tokuhirom/mutsu/issues/11989) (`Duration.new(0).Bool`
+is `True`), [#11990](https://github.com/tokuhirom/mutsu/issues/11990) (`Version.parts` answers
+`Whatever` for `*`) and [#11992](https://github.com/tokuhirom/mutsu/issues/11992) (`Int.Num` on a
+type object).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
@@ -724,6 +805,8 @@ for a dispatch regression, as in §9.7.
 
 ### 10.5 3A in detail
 
+The list is the plan; §9.15 records what was built and where it differs.
+
 3A is the one slice that changes how a call reaches a row, so it is the one that may regress
 dispatch for every method. Its deliverables:
 
@@ -750,7 +833,7 @@ dispatch for every method. Its deliverables:
    group, so a group slice deletes whole files instead of editing lines its neighbours also
    edit. `native_method_row_table.rs` is not a conflict point (a migrated pair already has its
    recognition row) and is left alone until slice 5.
-6. **`scripts/method-rows-report.sh`**: arms left per cascade layer, file and owner group, rows
+6. **`scripts/method-rows-report.py`**: arms left per cascade layer, file and owner group, rows
    per owner and kind. It is a report, not a gate (§9: a shared counter coupled every parallel
    PR and was dropped). If it can be made diff-based, comparing a PR's added lines against its
    merge base so that it couples nothing, a check that a PR adds no new quoted-name cascade arm
@@ -763,7 +846,7 @@ dispatch for every method. Its deliverables:
 - `ReceiverPlace`'s shape (§8.1): the first commit of 3F, after surveying the four paths the
   2026-10-04 investigation found (named array, scalar-held array, VM direct mutation, `is Array`
   storage). ADR-0097's binding descriptor is the first candidate.
-- How a row declares named arguments (§8.2): the first commit of 3A.
+- How a row declares named arguments (§8.2): settled in slice 3A (§9.15).
 - Owners the oracle snapshot (`rakudo_method_tables.txt`, generated by
   `scripts/gen-rakudo-method-tables.raku`) lacks: 3E and 3G extend the snapshot before they add
   rows for those classes.
