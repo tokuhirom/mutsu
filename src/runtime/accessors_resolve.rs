@@ -674,7 +674,7 @@ impl Interpreter {
             });
         if def.is_none() && core_visible {
             match lookup_name {
-                "sleep" | "sleep-timer" | "sleep-till" | "now" | "time" => {
+                "sleep" | "sleep-timer" | "now" | "time" => {
                     return self.native_callable_sub(lookup_name, lookup_name);
                 }
                 "term:<now>" => {
