@@ -919,8 +919,7 @@ impl Compiler {
     }
 
     /// Compile `stmt` as one whose value nobody reads -- a statement of a
-    /// `package` / `module` body, a `react` body or an `INIT` / `ENTER` phaser
-    /// body. A statement that nets a stack value (see
+    /// `package` / `module` body or of an `INIT` / `ENTER` phaser body. A statement that nets a stack value (see
     /// [`Self::stmt_nets_a_stack_value`]) is popped, or it parks at the frame's
     /// stack base and wins over the real tail value of the enclosing unit
     /// (`EVAL 'package P { enum E <A B> }; 42'` answered the enum's `Map`).

@@ -3824,7 +3824,7 @@ impl Compiler {
             Stmt::React { body, .. } => {
                 let idx = self.code.emit(OpCode::ReactScope { body_end: 0 });
                 for s in body {
-                    self.compile_stmt_discarding_value(s);
+                    self.compile_stmt(s);
                 }
                 self.code.patch_body_end(idx);
             }
