@@ -805,7 +805,12 @@ impl Interpreter {
                     .class_mro(class_key)
                     .iter()
                     .any(|name| name == "DateTime");
-            if is_datetime_subclass && !is_normalized_datetime_subclass_ctor_args(&args) {
+            // A user-declared `new` receives the raw arguments (Rakudo's `now`
+            // calls `self.new(now, :$timezone, :&formatter)`), like the Date branch below.
+            if is_datetime_subclass
+                && !is_normalized_datetime_subclass_ctor_args(&args)
+                && !self.has_user_method(class_key, "new")
+            {
                 let positional_args: Vec<Value> = args
                     .iter()
                     .filter(|arg| !matches!(arg.view(), ValueView::Pair(_, _)))

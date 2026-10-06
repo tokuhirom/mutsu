@@ -70,11 +70,16 @@ fn rebless_datetime_result(
             merged.insert(key.to_string(), value.clone());
         }
     }
+    let mut merged_map = (merged).to_map();
+    // The result decides the formatter: `.clone(:formatter(Callable))` resets it.
+    if !attributes.as_map().contains_key("formatter") {
+        merged_map.remove("formatter");
+    }
     Value::instance_parts(
         target_class_name,
         crate::gc::Gc::new(crate::value::InstanceAttrs::new(
             target_class_name,
-            (merged).to_map(),
+            merged_map,
             id,
             true,
         )),
@@ -412,29 +417,22 @@ fn datetime_later_earlier(
                 mi = nmi;
                 s = ns;
             }
-            "minute" | "minutes" => {
-                let amount = value.to_f64() * 60.0 * sign_f;
-                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
-                let (ny, nm, nd, nh, nmi, ns) =
-                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
+            // Minutes and hours move the wall clock (a leap second in between
+            // is not counted, as in Rakudo); only `seconds` is Instant-based.
+            "minute" | "minutes" | "hour" | "hours" => {
+                let unit_secs = if key_str.starts_with("hour") { 3_600 } else { 60 };
+                let amount = value.to_f64() as i64 * unit_secs * sign;
+                let total = h * 3_600 + mi * 60 + amount;
+                let day_shift = total.div_euclid(86_400);
+                let in_day = total.rem_euclid(86_400);
+                let (ny, nm, nd) =
+                    temporal::epoch_days_to_civil(temporal::civil_to_epoch_days(y, m, d) + day_shift);
                 y = ny;
                 m = nm;
                 d = nd;
-                h = nh;
-                mi = nmi;
-                s = ns;
-            }
-            "hour" | "hours" => {
-                let amount = value.to_f64() * 3_600.0 * sign_f;
-                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
-                let (ny, nm, nd, nh, nmi, ns) =
-                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
-                y = ny;
-                m = nm;
-                d = nd;
-                h = nh;
-                mi = nmi;
-                s = ns;
+                h = in_day / 3_600;
+                mi = (in_day % 3_600) / 60;
+                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
             }
             "day" | "days" => {
                 let amount = value.to_f64() as i64 * sign;
@@ -516,7 +514,12 @@ fn date_clone(
                 "year" => year = value.to_f64() as i64,
                 "month" => month = value.to_f64() as i64,
                 "day" => day = value.to_f64() as i64,
-                "formatter" => formatter = Some(value.clone()),
+                // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
+                // resets to the default formatter.
+                "formatter" => {
+                    formatter = (!matches!(value.view(), ValueView::Package(_)))
+                        .then(|| value.clone());
+                }
                 _ => {}
             }
         }
@@ -551,7 +554,12 @@ fn datetime_clone(
                 "minute" => minute = value.to_f64() as i64,
                 "second" => second = value.to_f64(),
                 "timezone" => timezone = value.to_f64() as i64,
-                "formatter" => formatter = Some(value.clone()),
+                // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
+                // resets to the default formatter.
+                "formatter" => {
+                    formatter = (!matches!(value.view(), ValueView::Package(_)))
+                        .then(|| value.clone());
+                }
                 _ => {}
             }
         }

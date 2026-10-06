@@ -346,7 +346,10 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or(Value::int(0));
                     let (tai_int, tai_frac) = match val.view() {
-                        ValueView::Rat(n, d) if d != 0 => (n / d, (n % d) as f64 / d as f64),
+                        // Floor, not truncate: a pre-1970 Instant is a negative Rat.
+                        ValueView::Rat(n, d) if d > 0 => {
+                            (n.div_euclid(d), n.rem_euclid(d) as f64 / d as f64)
+                        }
                         _ => {
                             let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
                             (f.floor() as i64, f - f.floor())
