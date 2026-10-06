@@ -6,10 +6,12 @@
 //! positionally; an `Enumeration` holds `negated` and an `elements` list of
 //! `Character`s (positional string), `Range`s (`from` / `to` codepoints) and
 //! `CharClass::*` nodes; a `Rule` holds `negated` and `name`; a `Property`
-//! holds `negated`, `inverted` (its `!`) and `property`.
+//! holds `negated`, `inverted` (its `!`), `property` and, for `<:Script<Latin>>`
+//! a `predicate` of words (a `QuotedString`) or, for `<:Nv(1)>`, of a
+//! parenthesised expression.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::regex_tree::{CharClassElement, EnumerationElement};
+use crate::regex_tree::{CharClassElement, EnumerationElement, PropertyPredicate};
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn named(name: &'static str, value: Value) -> RakuAstField {
@@ -32,18 +34,18 @@ fn node(class: RakuAstClass, fields: Vec<RakuAstField>) -> Value {
 
 /// The `Assertion::CharClass` node for a tree assertion.
 // Cost: O(n), n = total number of entries.
-pub(super) fn convert(elements: &[CharClassElement]) -> RakuAstNode {
-    RakuAstNode {
+pub(super) fn convert(elements: &[CharClassElement]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
         class: RakuAstClass::RegexAssertionCharClass,
         fields: elements
             .iter()
-            .map(|element| positional(convert_element(element)))
-            .collect(),
-    }
+            .map(|element| convert_element(element).map(positional))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
 }
 
-fn convert_element(element: &CharClassElement) -> Value {
-    match element {
+fn convert_element(element: &CharClassElement) -> Result<Value, RuntimeError> {
+    Ok(match element {
         CharClassElement::Enumeration { negated, elements } => {
             let mut fields = Vec::new();
             if *negated {
@@ -67,6 +69,7 @@ fn convert_element(element: &CharClassElement) -> Value {
             name,
             negated,
             inverted,
+            predicate,
         } => {
             let mut fields = Vec::new();
             if *negated {
@@ -76,8 +79,75 @@ fn convert_element(element: &CharClassElement) -> Value {
                 fields.push(named("inverted", Value::truth(true)));
             }
             fields.push(named("property", Value::str(name.clone())));
+            if let Some(predicate) = predicate {
+                fields.push(named("predicate", convert_predicate(predicate)?));
+            }
             node(RakuAstClass::RegexCharClassElementProperty, fields)
         }
+    })
+}
+
+/// `<Latin>` as a words `QuotedString`, `(1)` as a parenthesised expression.
+// Cost: O(|predicate|).
+fn convert_predicate(predicate: &PropertyPredicate) -> Result<Value, RuntimeError> {
+    match predicate {
+        PropertyPredicate::Words(text) => Ok(Value::rakuast(Box::new(super::convert::word_quote(
+            text.trim(),
+        )))),
+        PropertyPredicate::Args(text) => {
+            let expr = crate::parser::parse_adverb_argument(text)
+                .ok_or_else(|| super::convert::unsupported("property predicate"))?;
+            let value = super::convert::convert_expr(&expr)?;
+            // What cannot be spelled again cannot be lowered: refuse it here.
+            if predicate_text(&value).is_none() {
+                return Err(super::convert::unsupported("property predicate"));
+            }
+            let semilist = RakuAstNode {
+                class: RakuAstClass::SemiList,
+                fields: vec![positional(Value::rakuast(Box::new(
+                    super::convert::statement_expression(value),
+                )))],
+            };
+            Ok(node(
+                RakuAstClass::CircumfixParentheses,
+                vec![positional(Value::rakuast(Box::new(semilist)))],
+            ))
+        }
+    }
+}
+
+/// The text of a predicate argument that is a number or a plain string; `None`
+/// for any other expression.
+// Cost: O(|text|).
+fn predicate_text(value: &RakuAstNode) -> Option<String> {
+    match value.class {
+        RakuAstClass::IntLiteral => {
+            Some(super::lower::positional_leaf(value).ok()?.to_string_value())
+        }
+        RakuAstClass::QuotedString => {
+            let segments = value.fields.iter().find(|f| f.name == Some("segments"))?;
+            let RakuAstFieldValue::List(items) = &segments.value else {
+                return None;
+            };
+            let [only] = items.as_slice() else {
+                return None;
+            };
+            let ValueView::RakuAst(segment) = only.view() else {
+                return None;
+            };
+            let text = super::lower::positional_leaf(segment)
+                .ok()?
+                .to_string_value();
+            let escaped: String = text
+                .chars()
+                .flat_map(|ch| match ch {
+                    '\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}' => vec!['\\', ch],
+                    _ => vec![ch],
+                })
+                .collect();
+            Some(format!("\"{escaped}\""))
+        }
+        _ => None,
     }
 }
 
@@ -161,25 +231,24 @@ fn lower_element(node: &RakuAstNode) -> Option<CharClassElement> {
         }
         RakuAstClass::RegexCharClassElementRule => {
             let name = field(node, Some("name"))?.to_string_value();
-            let identifier =
-                !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+            let identifier = crate::regex_tree::is_class_name(&name);
             identifier.then(|| CharClassElement::Rule {
                 name,
                 negated: negated(node),
             })
         }
         RakuAstClass::RegexCharClassElementProperty => {
-            // A predicate (`<:Nv(1)>`) has no tree form.
-            if field(node, Some("predicate")).is_some() {
-                return None;
-            }
             let name = field(node, Some("property"))?.to_string_value();
-            let identifier =
-                !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+            let predicate = match field(node, Some("predicate")) {
+                None => None,
+                Some(value) => Some(lower_predicate(value)?),
+            };
+            let identifier = crate::regex_tree::is_class_name(&name);
             identifier.then(|| CharClassElement::Property {
                 name,
                 negated: negated(node),
                 inverted: field(node, Some("inverted")).is_some_and(Value::truthy),
+                predicate,
             })
         }
         _ => None,
@@ -326,4 +395,48 @@ pub(super) fn construct(
         }
     }
     Some(Ok(node(class, fields)))
+}
+
+/// A property's `predicate` node as the text written after its name.
+// Cost: O(|predicate|).
+fn lower_predicate(value: &Value) -> Option<PropertyPredicate> {
+    let ValueView::RakuAst(node) = value.view() else {
+        return None;
+    };
+    match node.class {
+        RakuAstClass::QuotedString => {
+            let segments = node.fields.iter().find(|f| f.name == Some("segments"))?;
+            let RakuAstFieldValue::List(items) = &segments.value else {
+                return None;
+            };
+            let [only] = items.as_slice() else {
+                return None;
+            };
+            let ValueView::RakuAst(segment) = only.view() else {
+                return None;
+            };
+            Some(PropertyPredicate::Words(
+                super::lower::positional_leaf(segment)
+                    .ok()?
+                    .to_string_value(),
+            ))
+        }
+        RakuAstClass::CircumfixParentheses => {
+            let ValueView::RakuAst(semilist) = field(node, None)?.view() else {
+                return None;
+            };
+            let [statement] = semilist.fields.as_slice() else {
+                return None;
+            };
+            let RakuAstFieldValue::Node(statement) = &statement.value else {
+                return None;
+            };
+            let ValueView::RakuAst(statement) = statement.view() else {
+                return None;
+            };
+            let expression = super::lower::named_child(statement, "expression").ok()?;
+            Some(PropertyPredicate::Args(predicate_text(expression)?))
+        }
+        _ => None,
+    }
 }

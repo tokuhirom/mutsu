@@ -65,11 +65,14 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.
     let fields = rendered_fields(node);
-    // Rakudo renders a char-class `Character` and a `Var::Dynamic` on their
-    // own lines all the same.
+    // Rakudo renders a char-class `Character`, a `Var::Dynamic` and a regex
+    // back-reference on their own lines all the same.
     if !matches!(
         node.class,
-        RakuAstClass::RegexCharClassEnumerationElementCharacter | RakuAstClass::VarDynamic
+        RakuAstClass::RegexCharClassEnumerationElementCharacter
+            | RakuAstClass::VarDynamic
+            | RakuAstClass::RegexBackReferenceNamed
+            | RakuAstClass::RegexBackReferencePositional
     ) && fields
         .iter()
         .all(|f| f.name.is_none() && is_inline_field(f))
@@ -215,6 +218,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
         .filter(|field| {
             !(super::origin::is_origin(field)
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
+                || super::regex_code::is_source(node, field)
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
                     && field.name == Some("capturing"))
         })
@@ -280,6 +284,10 @@ fn render_processors(fv: &RakuAstFieldValue, indent: usize) -> String {
             _ => render_leaf(item),
         })
         .collect::<Vec<_>>();
+    // A single processor is a one-element `List`, which `.raku` parenthesizes.
+    if let [only] = values.as_slice() {
+        return format!("(\"{only}\",)");
+    }
     format!("<{}>", values.join(" "))
 }
 

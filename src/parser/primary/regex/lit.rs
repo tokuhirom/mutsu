@@ -36,7 +36,8 @@ use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_
 use super::subst::{
     build_topic_subst_compound_expr, parse_subst_replacement_expr, try_strip_subst_compound_assign,
 };
-use super::trans::{parse_trans_adverbs, process_trans_escapes};
+use super::subst_source::subst_expr;
+use super::trans::{TransHead, parse_trans_adverbs, process_trans_escapes};
 
 /// Parse the optional message argument of a stub listop (`...`, `!!!`, `???`).
 /// These sit at "list prefix precedence" (`operators.rakudoc`'s `listop C«...»` /
@@ -446,22 +447,19 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
                     if let Some((replacement, rest)) = replacement_scan {
+                        let pattern_raw = pattern;
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
                             rest,
-                            Expr::Subst {
+                            subst_expr(
+                                true,
+                                pattern_raw,
                                 pattern,
-                                replacement: replacement.to_string(),
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                replacement_thunk: None,
-                            },
+                                replacement.to_string(),
+                                &adverbs,
+                                None,
+                            ),
                         ));
                     }
                     // Bracketing `ss[pattern] = replacement` assignment form.
@@ -470,22 +468,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         if let Some(after_eq) = after_pat_ws.strip_prefix('=')
                             && let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq)
                         {
+                            let pattern_raw = pattern;
                             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             validate_regex_pattern_or_perror(&pattern)?;
                             return Ok((
                                 rest,
-                                Expr::Subst {
-                                    pattern,
-                                    replacement,
-                                    samecase: adverbs.samecase,
-                                    sigspace: adverbs.sigspace,
-                                    samemark: adverbs.samemark,
-                                    samespace: adverbs.samespace,
-                                    global: adverbs.global,
-                                    nth: adverbs.nth.clone(),
-                                    x: adverbs.repeat,
-                                    replacement_thunk: None,
-                                },
+                                subst_expr(true, pattern_raw, pattern, replacement, &adverbs, None),
                             ));
                         }
                     }
@@ -567,22 +555,19 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // Reject obsolete Perl 5 trailing flags on substitution
                         // (`s/a/b/i` -> use `s:i/a/b/`), mirroring `m//`.
                         reject_trailing_p5_modifiers(rest)?;
+                        let pattern_raw = pattern;
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
                             rest,
-                            Expr::Subst {
+                            subst_expr(
+                                true,
+                                pattern_raw,
                                 pattern,
-                                replacement: replacement.to_string(),
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                replacement_thunk: None,
-                            },
+                                replacement.to_string(),
+                                &adverbs,
+                                None,
+                            ),
                         ));
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
@@ -616,22 +601,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             {
                                 return Err(PError::expected("substitution"));
                             }
+                            let pattern_raw = pattern;
                             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             validate_regex_pattern_or_perror(&pattern)?;
                             return Ok((
                                 rest,
-                                Expr::Subst {
-                                    pattern,
-                                    replacement,
-                                    samecase: adverbs.samecase,
-                                    sigspace: adverbs.sigspace,
-                                    samemark: adverbs.samemark,
-                                    samespace: adverbs.samespace,
-                                    global: adverbs.global,
-                                    nth: adverbs.nth.clone(),
-                                    x: adverbs.repeat,
-                                    replacement_thunk: None,
-                                },
+                                subst_expr(true, pattern_raw, pattern, replacement, &adverbs, None),
                             ));
                         }
                         let (after_eq_ws, _) = ws(after_eq)?;
@@ -643,6 +618,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // value the proper Match / List-of-Match result (so e.g.
                         // `+(s:g[(\w)] = $0 x 2)` yields the match count) and sets
                         // `$/` to a List under `:g`.
+                        let pattern_raw = pattern;
                         let p = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&p)?;
                         let pattern = p;
@@ -651,18 +627,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // bound to that match (see `Expr::Subst::replacement_thunk`).
                         return Ok((
                             rest,
-                            Expr::Subst {
+                            subst_expr(
+                                true,
+                                pattern_raw,
                                 pattern,
-                                replacement: String::new(),
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                replacement_thunk: Some(Box::new(replacement_expr)),
-                            },
+                                String::new(),
+                                &adverbs,
+                                Some(Box::new(replacement_expr)),
+                            ),
                         ));
                     }
                 }
@@ -731,21 +703,18 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         {
                             return Err(PError::expected("substitution"));
                         }
+                        let pattern_raw = pattern;
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         return Ok((
                             rest,
-                            Expr::NonDestructiveSubst {
+                            subst_expr(
+                                false,
+                                pattern_raw,
                                 pattern,
-                                replacement: replacement.to_string(),
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                replacement_thunk: None,
-                            },
+                                replacement.to_string(),
+                                &adverbs,
+                                None,
+                            ),
                         ));
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
@@ -759,21 +728,18 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             {
                                 return Err(PError::expected("substitution"));
                             }
+                            let pattern_raw = pattern;
                             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             return Ok((
                                 rest,
-                                Expr::NonDestructiveSubst {
+                                subst_expr(
+                                    false,
+                                    pattern_raw,
                                     pattern,
                                     replacement,
-                                    samecase: adverbs.samecase,
-                                    sigspace: adverbs.sigspace,
-                                    samemark: adverbs.samemark,
-                                    samespace: adverbs.samespace,
-                                    global: adverbs.global,
-                                    nth: adverbs.nth.clone(),
-                                    x: adverbs.repeat,
-                                    replacement_thunk: None,
-                                },
+                                    &adverbs,
+                                    None,
+                                ),
                             ));
                         }
                         // Expression-based replacement (e.g. S[(o)] = $0.uc).
@@ -787,22 +753,19 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         // placeholder parameters (`$^a`) -- both of which the
                         // AnonSub `.subst` lowering would incorrectly do. Mirrors
                         // the destructive `s[pattern] = expr` path above.
+                        let pattern_raw = pattern;
                         let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                         validate_regex_pattern_or_perror(&pattern)?;
                         return Ok((
                             rest,
-                            Expr::NonDestructiveSubst {
+                            subst_expr(
+                                false,
+                                pattern_raw,
                                 pattern,
-                                replacement: String::new(),
-                                samecase: adverbs.samecase,
-                                sigspace: adverbs.sigspace,
-                                samemark: adverbs.samemark,
-                                samespace: adverbs.samespace,
-                                global: adverbs.global,
-                                nth: adverbs.nth.clone(),
-                                x: adverbs.repeat,
-                                replacement_thunk: Some(Box::new(replacement_expr)),
-                            },
+                                String::new(),
+                                &adverbs,
+                                Some(Box::new(replacement_expr)),
+                            ),
                         ));
                     }
                 }
@@ -846,18 +809,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             };
             return Ok((
                 rest,
-                Expr::NonDestructiveSubst {
-                    pattern: pattern.to_string(),
-                    replacement: replacement.to_string(),
-                    samecase: false,
-                    sigspace: false,
-                    samemark: false,
-                    samespace: false,
-                    global: false,
-                    nth: None,
-                    x: None,
-                    replacement_thunk: None,
-                },
+                subst_expr(
+                    false,
+                    pattern,
+                    pattern.to_string(),
+                    replacement.to_string(),
+                    &MatchAdverbs::default(),
+                    None,
+                ),
             ));
         }
     }
@@ -870,7 +829,16 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         .or_else(|| input.strip_prefix("TR"))
         .and_then(parse_trans_adverbs)
     {
-        let (r, _open_ch, close_ch, is_paired, delete, complement, squash) = r;
+        let TransHead {
+            rest: r,
+            open: _open_ch,
+            close: close_ch,
+            is_paired,
+            delete,
+            complement,
+            squash,
+            adverbs,
+        } = r;
         let close_byte = close_ch as u8;
         let mut end = 0;
         let bytes = r.as_bytes();
@@ -925,6 +893,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     complement,
                     squash,
                     non_destructive: is_tr_upper,
+                    adverbs,
                 },
             ));
         }
