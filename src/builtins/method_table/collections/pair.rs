@@ -31,6 +31,7 @@ pub(super) static ROWS: &[MethodRow] = rows![
     "pairs" => pairs,
     "antipairs" => antipairs,
     "invert" => invert,
+    "Pair" => pair,
 ];
 
 /// `Pair.key`.
@@ -121,4 +122,13 @@ pub(crate) fn antipairs(target: &Value, args: &[Value]) -> Option<Result<Value, 
 // Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
 pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     super::list::invert(target, args)
+}
+
+/// `Pair.Pair`: the pair itself.
+// Cost: O(1).
+pub(crate) fn pair(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Pair(..) | ValueView::ValuePair(..) => Some(Ok(target.clone())),
+        _ => None,
+    }
 }

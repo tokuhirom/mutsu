@@ -206,40 +206,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 items.mark_cache_requested();
                 Some(Ok(Value::slip(items.to_vec())))
             }
-            ValueView::Array(items, kind) => {
-                // `.Slip` materializes array holes with the container's
-                // `is default(...)` value (Rakudo semantics: the .List keeps
-                // holes as Nil, while .Slip uses the default). The default is
-                // embedded in `ArrayData`, so this pure coercion can read it.
-                let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(i, v)| {
-                            if items.hole_at(i) {
-                                def.clone()
-                            } else {
-                                v.clone()
-                            }
-                        })
-                        .collect()
-                } else {
-                    // No custom default: holes read as `Any`. A deleted slot
-                    // stores literal `Nil`, which must still surface as `Any`.
-                    // An immutable List has no containers to default, so its
-                    // `Nil` elements survive (`(Nil,).Slip` is `slip(Nil,)`).
-                    items
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Nil if kind.is_real_array() => {
-                                Value::package(crate::symbol::wk::any())
-                            }
-                            _ => v.clone(),
-                        })
-                        .collect()
-                };
-                Some(Ok(Value::slip_arc(std::sync::Arc::new(vec))))
-            }
+            // The `Slip` rows' implementation (`method_table::positional`).
+            ValueView::Array(..) => crate::builtins::method_table::positional::slip(target, &[]),
             // `.Slip` on a Slip is the identity, but it hands out the VALUE
             // rather than the container: `my $x = slip(5, 6); $x.Slip.raku` is
             // `slip(5, 6)`, so the `$` itemization is dropped.
@@ -453,14 +421,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // list holding the whole Hash — which is how `Cro::HTTP::Client`'s
             // `self!set-headers($request, $value.List)` saw a Hash where a Pair
             // was required and rejected every `headers => %h`.
-            ValueView::Hash(map) => Some(Ok(Value::array(
-                map.iter()
-                    .map(|(k, v)| map.typed_pair(k, v.clone()))
-                    .collect::<Vec<_>>(),
-            ))),
-            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(Ok(Value::array(
-                crate::runtime::utils::value_to_list(target),
-            ))),
+            ValueView::Hash(_) => crate::builtins::method_table::map::list(target, &[]),
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                crate::builtins::method_table::quanthash::list(target, &[])
+            }
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
         // `.Seq` on an explicitly `.lazy`-marked list likewise keeps it lazy
@@ -693,13 +657,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                 }
                 ValueView::Channel(_) => None, // fall through to runtime for drain
-                ValueView::Hash(map) => {
-                    let pairs: Vec<Value> = map
-                        .iter()
-                        .map(|(k, v)| map.typed_pair(k, v.clone()))
-                        .collect();
-                    Some(Ok(wrap(pairs)))
-                }
+                ValueView::Hash(map) => Some(Ok(wrap(
+                    crate::builtins::method_table::map::list_pairs(&map),
+                ))),
                 ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => {
                     Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
                 }

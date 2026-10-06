@@ -93,6 +93,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("BagHash", "of", of),
     row!("Mix", "of", of),
     row!("MixHash", "of", of),
+    row!("Set", "list", list),
+    row!("SetHash", "list", list),
+    row!("Bag", "list", list),
+    row!("BagHash", "list", list),
+    row!("Mix", "list", list),
+    row!("MixHash", "list", list),
     row!("Set", "hash", hash),
     row!("SetHash", "hash", hash),
     row!("Bag", "hash", hash),
@@ -289,6 +295,17 @@ pub(crate) fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
             crate::builtins::map_hash_coerce::to_hash(target.clone(), false),
         ),
+        _ => None,
+    }
+}
+
+/// `.list` and `.List`: the pairs, as `value_to_list` reads them.
+// Cost: O(e), e = elements.
+pub(crate) fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(Ok(Value::array(
+            crate::runtime::utils::value_to_list(target),
+        ))),
         _ => None,
     }
 }

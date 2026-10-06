@@ -168,22 +168,13 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
-        "default" => {
-            let result = match target.view() {
-                // A value-carried `is default(...)` (embedded in HashData/
-                // ArrayData) takes priority over the type default, so it survives
-                // raw-parameter binding and list construction.
-                ValueView::Array(a, _) if a.default.is_some() => {
-                    a.default.as_deref().cloned().unwrap()
-                }
-                ValueView::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
-                ValueView::Array(..) | ValueView::Hash(..) => {
-                    Value::package(crate::symbol::wk::any())
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
+        // `Array.default` and `Hash.default`: the rows' implementations
+        // (`method_table::list`, `method_table::map`).
+        "default" => Some(match target.view() {
+            ValueView::Array(..) => crate::builtins::method_table::list::default(target, &[]),
+            ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
+            _ => None,
+        }),
         // Numeric receivers: the numeric types' rows' implementation
         // (ADR-11276, `method_table::real`).
         // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.

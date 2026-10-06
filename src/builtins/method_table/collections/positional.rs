@@ -4,6 +4,32 @@ use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `.Slip`: the elements as a Slip.
+    MethodRow {
+        owner: "List",
+        name: "Slip",
+        arity: 0,
+        handler: Handler::Narrow(slip),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Array",
+        name: "Slip",
+        arity: 0,
+        handler: Handler::Narrow(slip),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    // `Array` declares its own `List`.
+    MethodRow {
+        owner: "Array",
+        name: "List",
+        arity: 0,
+        handler: Handler::Narrow(list_type),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     // The positional subscript protocol of the list-likes.
     MethodRow {
         owner: "List",
@@ -282,4 +308,39 @@ fn range_elem_count(range: &Value) -> Option<usize> {
         return None;
     }
     Some(crate::runtime::value_to_list(range).len())
+}
+
+/// `.Slip` of a plain positional value: its elements as a Slip. An array
+/// hole reads as the container's `is default(...)` value (Rakudo: `.List`
+/// keeps holes as `Nil`, `.Slip` uses the default); with no custom default a
+/// hole, or a deleted slot's literal `Nil`, surfaces as `Any` in a real
+/// array, while an immutable List keeps its `Nil` elements
+/// (`(Nil,).Slip` is `slip(Nil,)`).
+// Cost: O(e), e = elements.
+pub(crate) fn slip(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Array(items, kind) = target.view() else {
+        return None;
+    };
+    let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
+        items
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                if items.hole_at(i) {
+                    def.clone()
+                } else {
+                    v.clone()
+                }
+            })
+            .collect()
+    } else {
+        items
+            .iter()
+            .map(|v| match v.view() {
+                ValueView::Nil if kind.is_real_array() => Value::package(crate::symbol::wk::any()),
+                _ => v.clone(),
+            })
+            .collect()
+    };
+    Some(Ok(Value::slip_arc(std::sync::Arc::new(vec))))
 }
