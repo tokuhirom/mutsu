@@ -884,6 +884,20 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         if bind_name.is_empty() {
             continue;
         }
+        // An `@` leaf binds a Seq through `.cache` exactly like a plain `:@x`
+        // (`check_and_coerce_param_type`): the wrapper `ParamDef` carries the
+        // caller-facing key, so its sigil never triggers that coercion.
+        let seq_view;
+        let value = if bind_name.starts_with('@')
+            && let ValueView::Seq(body) = value.view()
+        {
+            let body = std::sync::Arc::clone(&body);
+            body.mark_cache_requested();
+            seq_view = Value::seq_list_view(&body);
+            &seq_view
+        } else {
+            value
+        };
         // `:value((:key($k), :value($v)))` is an alias whose value is wrapped
         // in an anonymous positional sub-signature. The wrapper itself is not
         // a rename target; unpack it with the ordinary destructuring binder.
