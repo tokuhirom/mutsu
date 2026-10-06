@@ -129,7 +129,7 @@ impl Interpreter {
                 type_args,
             } = applied.view()
             && let Ok(Some(punned)) =
-                self.ensure_parametric_role_pun_class(&base_name.resolve(), &type_args)
+                self.ensure_parametric_role_pun_class(&base_name.resolve(), type_args)
         {
             punned
         } else {
