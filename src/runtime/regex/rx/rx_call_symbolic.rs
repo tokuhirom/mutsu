@@ -64,13 +64,29 @@ impl Interpreter {
             .collect()
     }
 
+    /// The rule name a symbolic call (`<::("alpha")>`) spells out, when its
+    /// argument is a single plain string literal; `None` for anything that has
+    /// to be evaluated to be known. A static answer, for the analyses that run
+    /// before a match (which names a quantifier turns into lists).
+    // Cost: O(n), n = the length of the argument text.
+    pub(in crate::runtime) fn symbolic_call_written_name(
+        spec: &crate::runtime::regex::regex_helpers::NamedRegexLookupSpec,
+    ) -> Option<String> {
+        let arg = spec.arg_exprs.first()?.trim();
+        let quote = arg.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+        let body = arg.strip_prefix(quote)?.strip_suffix(quote)?;
+        let plain = !body.is_empty()
+            && !body.contains(['"', '\'', '\\', '$', '@', '%', '&', '{', '}', '\n']);
+        plain.then(|| body.to_string())
+    }
+
     /// Whether the name expression of a symbolic call is known where the regex
     /// is written: a string literal, or a `~` of them (rakudo folds those, so
     /// `<::("a" ~ "b")>` names `ab` outright). Anything that has to run to find
     /// the name — a variable, an interpolated string, a method call — is not.
     // Cost: O(1) for a bare `$var` (no parse); otherwise one memoized parse of the
     // argument text, then O(e), e = the nodes of the name expression.
-    fn symbolic_name_is_constant(&self, expr_src: &str) -> bool {
+    pub(in crate::runtime) fn symbolic_name_is_constant(&self, expr_src: &str) -> bool {
         let trimmed = expr_src.trim();
         if trimmed.starts_with('$') {
             return false;

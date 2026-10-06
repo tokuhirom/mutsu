@@ -12,6 +12,18 @@ impl Interpreter {
         match atom {
             RegexAtom::Named(name) => {
                 let spec = name.spec();
+                // `<::(EXPR)>`'s lookup name is the `::` placeholder, not a rule
+                // name: the call is filed under the name `EXPR` spells out, when
+                // it does, and under an alias. Quantify those, never `::`.
+                if spec.lookup_name == "::" {
+                    if let Some(alias) = spec.capture_name.as_ref().filter(|a| !a.is_empty()) {
+                        out.insert(alias.clone());
+                    }
+                    if let Some(written) = Self::symbolic_call_written_name(spec) {
+                        out.insert(written);
+                    }
+                    return;
+                }
                 if !spec.silent {
                     // A non-suppressing alias captures under BOTH names, so both are
                     // quantified here — `[ <tags=tag-directive> ]+` must leave
