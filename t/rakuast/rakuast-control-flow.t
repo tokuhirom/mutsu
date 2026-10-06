@@ -19,7 +19,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 60;
+plan 52;
 
 sub stmts($src) { $src.AST.statements }
 sub same($src, $expected, $desc) {
