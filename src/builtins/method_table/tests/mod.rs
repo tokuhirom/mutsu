@@ -1,5 +1,12 @@
 use super::*;
 
+mod collections;
+mod ctors_mop;
+mod instances;
+mod io_concurrency;
+mod mutating;
+mod scalars;
+
 fn sample(shape: DispatchShape) -> Value {
     match shape {
         DispatchShape::List => Value::array(vec![Value::int(1), Value::int(2)]),
@@ -24,7 +31,7 @@ fn sample(shape: DispatchShape) -> Value {
 }
 
 fn rows() -> impl Iterator<Item = &'static MethodRow> {
-    FAMILIES.iter().flat_map(|rows| rows.iter())
+    all_rows()
 }
 
 #[test]
@@ -107,38 +114,6 @@ fn lookup_walks_the_mro() {
 }
 
 #[test]
-fn counted_head_tail_rows_resolve_for_every_plain_shape() {
-    for name in ["head", "tail"] {
-        for shape in SHAPES {
-            assert_eq!(
-                lookup(shape, Symbol::intern(name), 1).unwrap().owner,
-                "Any",
-                "Any.{name} should resolve for {shape:?}"
-            );
-        }
-    }
-}
-
-/// A big-component rational has the shape of the type its flag names.
-#[test]
-fn big_rationals_take_their_type_s_shape() {
-    let big = num_bigint::BigInt::from(u64::MAX) * num_bigint::BigInt::from(3);
-    let three = num_bigint::BigInt::from(3);
-    assert_eq!(
-        Value::bigrat(big.clone(), three.clone() + 1).dispatch_shape(),
-        Some(DispatchShape::Rat)
-    );
-    assert_eq!(
-        Value::bigfatrat(big.clone(), three + 1).dispatch_shape(),
-        Some(DispatchShape::FatRat)
-    );
-    assert_eq!(
-        Value::bigint(big).dispatch_shape(),
-        Some(DispatchShape::Int)
-    );
-}
-
-#[test]
 fn a_call_with_another_arity_takes_the_cascades() {
     let target = sample(DispatchShape::List);
     assert!(try_dispatch(&target, Symbol::intern("elems"), &[Value::int(1)]).is_none());
@@ -209,52 +184,4 @@ fn the_shape_test_knows_the_receiver() {
     assert!(!shape_has_row(DispatchShape::Str, int));
     // An inherited row sets the bit of the shape that reaches it.
     assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
-}
-
-/// `List`'s count rows reach `Array` through its MRO, and `Map`'s reach
-/// `Hash`.
-#[test]
-fn count_rows_reach_their_subtypes() {
-    for name in ["keys", "Numeric", "Int"] {
-        let sym = Symbol::intern(name);
-        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::Hash, sym, 0).unwrap().owner, "Map");
-    }
-}
-
-#[test]
-fn aggregate_rows_resolve_to_the_rakudo_owners() {
-    for name in ["minmax", "sum"] {
-        let sym = Symbol::intern(name);
-        assert_eq!(
-            lookup(DispatchShape::List, sym, 0).unwrap().owner,
-            "Any",
-            "Any.{name} should resolve for List"
-        );
-        assert_eq!(
-            lookup(DispatchShape::Array, sym, 0).unwrap().owner,
-            "Any",
-            "Any.{name} should resolve for Array"
-        );
-        assert!(
-            lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
-            "Any.{name} should resolve for Hash"
-        );
-    }
-    for name in ["permutations", "combinations"] {
-        let sym = Symbol::intern(name);
-        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
-        assert!(lookup(DispatchShape::Hash, sym, 0).is_none());
-    }
-}
-
-#[test]
-fn hash_sum_rejects_its_pair_list() {
-    let result = try_dispatch(&sample(DispatchShape::Hash), Symbol::intern("sum"), &[]);
-    assert!(
-        matches!(result, Some(Err(_))),
-        "Hash.sum should reject Pairs"
-    );
 }

@@ -38,23 +38,19 @@
 //! ([`debug_assert_matches_full_path`]); CI's `debug-tap` job runs that over
 //! the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
-pub(crate) mod any_collection;
-pub(crate) mod coerce;
-pub(crate) mod complex;
-mod int;
-pub(crate) mod list;
-pub(crate) mod list_aggregate;
-pub(crate) mod list_transform;
-pub(crate) mod map;
-mod num;
-pub(crate) mod positional;
-mod rational;
-pub(crate) mod real;
-pub(crate) mod str;
-pub(crate) mod str_iter;
-pub(crate) mod str_search;
-mod stringify;
-pub(crate) mod succ_pred;
+mod collections;
+mod ctors_mop;
+mod instances;
+mod io_concurrency;
+mod mutating;
+mod scalars;
+
+// The family modules keep their historical paths
+// (`method_table::str::tclc`), whichever group directory holds them.
+pub(crate) use collections::{
+    any_collection, list, list_aggregate, list_transform, map, positional,
+};
+pub(crate) use scalars::{coerce, complex, real, str, str_iter, str_search, succ_pred};
 
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -91,49 +87,26 @@ pub(crate) struct MethodRow {
     pub(crate) handler: Handler,
 }
 
-/// Every family's rows. A family module owns the rows of one declaring type.
-static FAMILIES: &[&[MethodRow]] = &[
-    any_collection::ROWS,
-    list::ROWS,
-    list_aggregate::ANY_ROWS,
-    list_aggregate::LIST_ROWS,
-    list_transform::ANY_ROWS,
-    list_transform::LIST_ROWS,
-    list_transform::ARRAY_ROWS,
-    map::ROWS,
-    positional::ROWS,
-    str::ROWS,
-    str::STR_TEXT_ROWS,
-    str::COOL_TEXT_ROWS,
-    str_iter::STR_ROWS,
-    str_iter::COOL_ROWS,
-    str_search::STR_ROWS,
-    str_search::COOL_ROWS,
-    str_search::STR_SUBSTR_2,
-    str_search::COOL_SUBSTR_2,
-    stringify::ROWS,
-    int::ROWS,
-    num::ROWS,
-    rational::RAT_ROWS,
-    rational::FAT_RAT_ROWS,
-    complex::ROWS,
-    real::INT_ROWS,
-    real::NUM_ROWS,
-    real::RAT_ROWS,
-    real::FAT_RAT_ROWS,
-    real::COMPLEX_ROWS,
-    coerce::INT_ROWS,
-    coerce::NUM_ROWS,
-    coerce::RAT_ROWS,
-    coerce::FAT_RAT_ROWS,
-    coerce::COMPLEX_ROWS,
-    succ_pred::STR_ROWS,
-    succ_pred::INT_ROWS,
-    succ_pred::NUM_ROWS,
-    succ_pred::RAT_ROWS,
-    succ_pred::FAT_RAT_ROWS,
-    succ_pred::COMPLEX_ROWS,
+/// Every group's families. A group is one slice of ADR-11276 §10 and owns a
+/// directory of its own, so a slice adds its rows to its group's
+/// `FAMILIES` and never edits this list: the groups are listed here once, in
+/// slice 3A.
+static GROUPS: &[&[&[MethodRow]]] = &[
+    scalars::FAMILIES,
+    collections::FAMILIES,
+    instances::FAMILIES,
+    io_concurrency::FAMILIES,
+    mutating::FAMILIES,
+    ctors_mop::FAMILIES,
 ];
+
+/// Every row of every group, in registration order.
+fn all_rows() -> impl Iterator<Item = &'static MethodRow> {
+    GROUPS
+        .iter()
+        .flat_map(|families| families.iter())
+        .flat_map(|rows| rows.iter())
+}
 
 /// The built-in type whose MRO a receiver of `shape` is dispatched along.
 fn shape_type(shape: DispatchShape) -> &'static str {
@@ -225,7 +198,7 @@ impl RowId {
 fn table() -> &'static Table {
     static TABLE: OnceLock<Table> = OnceLock::new();
     TABLE.get_or_init(|| {
-        let all: Vec<&'static MethodRow> = FAMILIES.iter().flat_map(|rows| rows.iter()).collect();
+        let all: Vec<&'static MethodRow> = all_rows().collect();
         let mut rows = FxHashMap::default();
         let mut arities = Vec::new();
         let mut shapes = Vec::new();
@@ -440,5 +413,4 @@ fn debug_assert_matches_full_path(
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
