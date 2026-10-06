@@ -906,10 +906,12 @@ fn dispatch_capture(
             }
             Some(Ok(Value::str(format!("\\({})", parts.join(", ")))))
         }
-        "gist" | "Str" => {
-            let target = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::str(target.to_string_value())))
-        }
+        "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
+            positional, named,
+        )))),
+        "Str" => Some(Ok(Value::str(crate::value::capture_text::capture_str(
+            positional, named,
+        )))),
         "Bool" => Some(Ok(Value::truth(
             !positional.is_empty() || !named.is_empty(),
         ))),

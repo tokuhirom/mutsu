@@ -548,6 +548,7 @@ mod attr_map;
 mod attr_site;
 mod bareword_site;
 pub(crate) mod buf_class_names;
+pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
 mod dispatch_shape;

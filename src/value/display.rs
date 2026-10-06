@@ -278,32 +278,6 @@ pub(crate) fn note_user_declared_type_name(name: &str) {
     }
 }
 
-/// Format a value for display inside a Capture gist.
-fn capture_value_gist(v: &Value) -> String {
-    match v.view() {
-        ValueView::Str(s) => format!("\"{}\"", *s),
-        ValueView::Mixin(inner, mixins) => {
-            if let Some(str_val) = mixins.get("Str") {
-                let str_s = str_val.to_string_value();
-                let type_name = match inner.view() {
-                    ValueView::Int(_) | ValueView::BigInt(_) => "IntStr",
-                    ValueView::Num(_) => "NumStr",
-                    _ => "Allomorph",
-                };
-                format!(
-                    "{}.new({}, \"{}\")",
-                    type_name,
-                    inner.to_string_value(),
-                    str_s
-                )
-            } else {
-                v.to_string_value()
-            }
-        }
-        _ => v.to_string_value(),
-    }
-}
-
 /// Format a Num in scientific notation matching Raku's output (e.g. `1e+40`, `-1e-05`).
 fn format_num_scientific(f: f64) -> String {
     // Use Rust's {:e} format and ensure the exponent has an explicit sign
@@ -1336,26 +1310,10 @@ impl Value {
             ValueView::Nil => String::new(),
             ValueView::Whatever => "*".to_string(),
             ValueView::HyperWhatever => "**".to_string(),
+            // Stringification is `Capture.Str`; the call-shape form is `.gist`
+            // (`gist_value`).
             ValueView::Capture { positional, named } => {
-                let mut parts = Vec::new();
-                for v in positional.iter() {
-                    match v.view() {
-                        ValueView::Str(s) => parts.push(format!("\"{}\"", *s)),
-                        _ => parts.push(v.to_string_value()),
-                    }
-                }
-                let mut named_entries: Vec<_> = named.iter().collect();
-                named_entries.sort_by_key(|(k, _)| (*k).clone());
-                for (k, v) in named_entries {
-                    if let ValueView::Bool(true) = v.view() {
-                        parts.push(format!(":{}(Bool::True)", k));
-                    } else if let ValueView::Bool(false) = v.view() {
-                        parts.push(format!(":{}(Bool::False)", k));
-                    } else {
-                        parts.push(format!(":{}({})", k, capture_value_gist(v)));
-                    }
-                }
-                format!("\\({})", parts.join(", "))
+                super::capture_text::capture_str(positional, named)
             }
             ValueView::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {

@@ -47,6 +47,11 @@ fn leaf_gist(v: &Value) -> String {
         // bare string value drops.
         return format!("v{}", v.to_string_value());
     }
+    if let ValueView::Capture { positional, named } = v.view() {
+        // A Capture element keeps its call shape; its bare string value is
+        // the joined `.Str` form.
+        return crate::value::capture_text::capture_gist(positional, named);
+    }
     v.to_string_value()
 }
 
