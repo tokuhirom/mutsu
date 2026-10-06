@@ -359,8 +359,15 @@ impl Interpreter {
         // Why a subset rejected the value, if its `where` failed by throwing.
         let mut why = None;
         if runtime::is_known_type_constraint(base_constraint) {
+            // A `:=` source is a VarRef/container wrapper; the constraint
+            // applies to the value it carries (`my Positional[Int] $z := $x`).
+            let probe = if bind_mode && value.is_varref() {
+                value.unwrap_varref().deref_container()
+            } else {
+                value.clone()
+            };
             let matched =
-                !value.is_nil() && self.type_matches_value_why(constraint, &value, &mut why);
+                !value.is_nil() && self.type_matches_value_why(constraint, &probe, &mut why);
             known_matched = Some(matched);
             if matched {
                 self.decl_typechecked_context().set(true);
