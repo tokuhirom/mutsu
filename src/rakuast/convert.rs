@@ -1725,6 +1725,7 @@ fn var_decl_statement(
             // The parser's own mark of a declaration whose initializer reads
             // the new binding; the lowering marks it again.
             || n == "__init_sees_self"
+            || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
     };
@@ -1754,8 +1755,21 @@ fn var_decl_statement(
     } else {
         None
     };
+    // A shaped array (`my @a[2;3] = ...`): the parser's `Array.new(shape =>
+    // ..., data => ...)` initializer is the node's `shape` and its initializer.
+    let shaped = if name.starts_with('@') && !is_binding {
+        crate::ast::shaped_decl::split(expr)
+    } else {
+        None
+    };
+    let expr = match &shaped {
+        Some((_, Some(data))) => data,
+        _ => expr,
+    };
     let init = if is_binding {
         Some(Initializer::Bind(expr))
+    } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
+        None
     } else {
         custom_traits
             .iter()
@@ -1776,6 +1790,9 @@ fn var_decl_statement(
     let mut decl = var_declaration(name, init, scope, type_name, twigil, None)?;
     if let Some((_, key)) = keyed {
         super::keyed_hash::insert_shape(&mut decl, key)?;
+    }
+    if let Some((dims, _)) = &shaped {
+        super::keyed_hash::insert_dimensions(&mut decl, dims)?;
     }
     let mut traits = decl_traits::convert(custom_traits)?;
     if is_dynamic && !twigil_dynamic {

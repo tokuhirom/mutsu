@@ -2277,6 +2277,19 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             false,
         ),
     };
+    // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
+    let shape_dims = super::keyed_hash::lower_dimensions(node, &sigil)?;
+    if shape_dims.is_some() && (is_binding || call_assign.is_some()) {
+        return Err(unsupported(node));
+    }
+    let expr = match shape_dims {
+        Some(dims) if has_initializer => {
+            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
+            crate::ast::shaped_decl::new_with_data_expr(dims, expr)
+        }
+        Some(dims) => crate::ast::shaped_decl::new_expr(dims),
+        None => expr,
+    };
     if has_initializer {
         custom_traits.push(("__has_initializer".to_string(), None));
     }

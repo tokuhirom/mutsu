@@ -550,7 +550,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             custom_traits.push(("__has_initializer".to_string(), None));
         }
         if s.shape_dims.is_some() {
-            custom_traits.push(("__shaped_decl".to_string(), None));
+            custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
         }
         let mut feed = expr;
         {
@@ -599,7 +599,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     // SetLocal does not strip the shape the way a value-copy (`my @u = @shaped`)
     // does.
     if is_shaped_decl {
-        custom_traits.push(("__shaped_decl".to_string(), None));
+        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
     }
     let base_stmt = Stmt::VarDecl {
         name: s.name.clone(),
@@ -642,7 +642,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
     if is_shaped_decl {
-        custom_traits.push(("__shaped_decl".to_string(), None));
+        custom_traits.push((crate::ast::shaped_decl::SHAPED_DECL.to_string(), None));
     }
     let stmt = Stmt::VarDecl {
         name: s.name.clone(),
