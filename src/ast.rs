@@ -382,7 +382,16 @@ impl ParamDef {
     /// anonymous invocant is excluded: it is named `self` only because that is the
     /// invocant's env key, and it declares no lexical (ADR-0061).
     pub(crate) fn declares_self_lexical(&self) -> bool {
-        self.name == "self" && !self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+        self.name == "self" && !self.is_implicit_invocant()
+    }
+
+    /// True for an invocant the parser *synthesized* (`method (Foo:D:)`,
+    /// `method (::?CLASS:)`): the source never named it, so it is anonymous
+    /// to introspection (`Parameter.name` is empty, `.raku` renders `$:`)
+    /// even though it is stored under the env key `self`.
+    // Cost: O(t), t = the parameter's trait count.
+    pub(crate) fn is_implicit_invocant(&self) -> bool {
+        self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
     }
 
     /// The name a `::T` type capture on this parameter binds, if any.
