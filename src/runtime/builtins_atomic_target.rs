@@ -62,6 +62,15 @@ fn verdict_for_type(ty: &str) -> Verdict {
     }
 }
 
+/// Whether a declared type is a native integer narrower than the machine word
+/// (#12008). The lenient atomics already read the target's declared type for
+/// their own coercion, so they ask this of it instead of a guard call of their
+/// own, which cost a `cas` loop on an attribute or element ~30%.
+// Cost: O(|ty|).
+pub(super) fn is_narrow_declared_type(ty: &str) -> bool {
+    is_narrow_atomic_int_type(strip_type_smiley(ty).0)
+}
+
 /// `array[int]` -> `int`.
 fn native_array_inner(declared: &str) -> Option<&str> {
     declared.strip_prefix("array[")?.strip_suffix(']')
@@ -141,7 +150,7 @@ impl Interpreter {
 
     /// MoarVM's error for an atomic on a native integer narrower than the
     /// machine word, worded by where the container lives.
-    fn narrow_atomic_refusal(target: &str) -> RuntimeError {
+    pub(super) fn narrow_atomic_refusal(target: &str) -> RuntimeError {
         let message = if target.starts_with(['@', '%']) {
             NARROW_ELEMENT
         } else if target.starts_with(['!', '.']) {

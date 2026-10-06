@@ -66,6 +66,15 @@ impl Interpreter {
         };
         let result = match op {
             ElemOp::Fetch => {
+                // The one lenient op that reads no element type of its own: a
+                // narrow native-int array refuses it too (#12008).
+                if name.starts_with('@')
+                    && self
+                        .atomic_elem_type_constraint(&name)
+                        .is_some_and(|ty| super::builtins_atomic_target::is_narrow_declared_type(&ty))
+                {
+                    return Err(Self::narrow_atomic_refusal(&name));
+                }
                 let guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                 guard.clone()
             }

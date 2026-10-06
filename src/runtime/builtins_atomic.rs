@@ -116,6 +116,15 @@ impl Interpreter {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
+            // An attribute of a narrow native-int type: MoarVM refuses every
+            // atomic on it (#12008). A lexical's declaration is judged by the
+            // compiler, whose answer a by-name metadata lookup could not match
+            // under shadowing, so only an attribute is judged here.
+            if name.starts_with(['!', '.'])
+                && super::builtins_atomic_target::is_narrow_declared_type(&constraint)
+            {
+                return Err(Self::narrow_atomic_refusal(name));
+            }
             if value.is_nil() {
                 value = Value::package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
@@ -290,6 +299,12 @@ impl Interpreter {
         let name = self.atomic_var_name_arg(args)?;
         // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+            if self
+                .var_type_constraint(&name)
+                .is_some_and(|ty| super::builtins_atomic_target::is_narrow_declared_type(&ty))
+            {
+                return Err(Self::narrow_atomic_refusal(&name));
+            }
             let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }

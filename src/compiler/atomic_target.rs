@@ -316,8 +316,10 @@ impl Compiler {
     /// - Any other `nqp::` spelling keeps today's behaviour: MoarVM words its
     ///   refusal of those differently (`A IntLexRef container does not know how
     ///   to do an atomic load`), which is not modelled.
-    /// - A Raku-level spelling takes the narrow-only guard, so the plain forms
-    ///   stay legal on any scalar (#12008).
+    /// - A Raku-level spelling takes the narrow-only guard for a scalar, so the
+    ///   plain forms stay legal on any scalar (#12008). An element or an
+    ///   attribute is judged by the builtin itself (see
+    ///   [`Self::emit_narrow_atomic_guard`]).
     pub(super) fn emit_lenient_atomic_guard(&mut self, target: &str, is_element: bool) {
         // Taken, not just read: the spelling belongs to this one call, and the
         // operands compiled after it must not inherit it.
@@ -335,27 +337,29 @@ impl Compiler {
     ///
     /// Like [`Self::emit_int_atomic_guard`], a declared type settles it at
     /// compile time: a plain or machine-size declaration costs nothing, a
-    /// narrow one always refuses, and a target no declaration decides (a
-    /// parameter, an attribute, an element, an outer name) asks the container at
-    /// run time.
+    /// narrow one always refuses, and a scalar no declaration decides (a
+    /// parameter, an outer name) asks the container at run time.
     pub(super) fn emit_narrow_atomic_guard(&mut self, target: &str, is_element: bool) {
-        let declared_value = if is_element {
-            Value::NIL
-        } else {
-            match self.atomic_target_decl(target) {
-                AtomicTargetDecl::Declared(ty) => {
-                    let narrow = ty.as_deref().is_some_and(|t| {
-                        crate::native_types::is_narrow_atomic_int_type(
-                            crate::runtime::types::strip_type_smiley(t).0,
-                        )
-                    });
-                    if !narrow {
-                        return;
-                    }
-                    Value::str(ty.unwrap_or_default())
+        // An element or an attribute is judged by the lenient builtin itself,
+        // from the declared type it already reads for its own coercion
+        // (`check_atomic_elem_type`, `atomic_assign_coerced_value`): a guard call
+        // of its own added ~30% to a `cas` loop on one.
+        if is_element || target.starts_with(['!', '.']) {
+            return;
+        }
+        let declared_value = match self.atomic_target_decl(target) {
+            AtomicTargetDecl::Declared(ty) => {
+                let narrow = ty.as_deref().is_some_and(|t| {
+                    crate::native_types::is_narrow_atomic_int_type(
+                        crate::runtime::types::strip_type_smiley(t).0,
+                    )
+                });
+                if !narrow {
+                    return;
                 }
-                AtomicTargetDecl::Unknown => Value::NIL,
+                Value::str(ty.unwrap_or_default())
             }
+            AtomicTargetDecl::Unknown => Value::NIL,
         };
         let target_idx = self.code.add_constant(Value::str(target.to_string()));
         let declared_idx = self.code.add_constant(declared_value);
