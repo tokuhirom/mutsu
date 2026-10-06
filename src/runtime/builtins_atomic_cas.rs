@@ -19,8 +19,7 @@ impl Interpreter {
                 "cas requires 2 or 3 arguments: cas($var, $expected, $new) or cas($var, &code)",
             ));
         }
-        let raw_name = args[0].to_string_value();
-        let name = self.canonical_atomic_var_name(&raw_name, args.first());
+        let (name, slot) = self.atomic_target_arg(&args[0]);
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: an instance attribute target operates directly on
         // the receiver's shared attribute cell — its write lock is the atomic
@@ -36,7 +35,7 @@ impl Interpreter {
         // the swap. Reached by a role/class method that `cas`es an outer lexical
         // (roast S12-construction/roles-6e.t).
         let scalar_cell = if attr_cell.is_none() {
-            self.atomic_scalar_cell(&name)
+            self.atomic_scalar_cell(&name, slot)
         } else {
             None
         };

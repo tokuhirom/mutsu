@@ -496,26 +496,47 @@ impl Compiler {
         // by their dedicated branches below). The builtin resolves its target by
         // NAME from env, so record the target local for the gated
         // `needs_env_sync` fold. Recording only; compilation proceeds normally.
-        name.with_str(|n| {
+        let atomic_helper_target = name.with_str(|n| {
             if ((n.starts_with("__mutsu_atomic_") && n.ends_with("_var"))
                 || n == "__mutsu_cas_var"
                 || n == "__mutsu_cas_add_var")
                 && let Some(Expr::Literal(lit)) = args.first()
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
-                let vn = String::clone(&vn);
-                self.note_atomic_env_sync_target(&vn, true);
+                return Some(String::clone(&vn));
             }
+            None
         });
+        if let Some(vn) = &atomic_helper_target {
+            self.note_atomic_env_sync_target(vn, true);
+        }
         // `⚛$x` and `$x ⚛= v` are the lenient atomics: any scalar, but not a
         // narrow native integer (#12008). Their `atomic-fetch($x)` /
         // `atomic-assign($x, v)` spellings are guarded by their own branches below.
         if (name == "__mutsu_atomic_fetch_var" || name == "__mutsu_atomic_store_var")
-            && let Some(Expr::Literal(lit)) = args.first()
-            && let crate::value::ValueView::Str(vn) = lit.view()
+            && let Some(vn) = &atomic_helper_target
         {
-            let vn = String::clone(&vn);
-            self.emit_lenient_atomic_guard(&vn, false);
+            self.emit_lenient_atomic_guard(vn, false);
+        }
+        // The target literal names a variable; tag it with the slot of the
+        // binding this call site reaches, so a same-named shadow cannot answer
+        // for it (#12006). The remaining operands are plain values.
+        if let Some(vn) = &atomic_helper_target
+            && self.atomic_target_slot(vn).is_some()
+        {
+            self.emit_atomic_target(vn);
+            for arg in &args[1..] {
+                self.compile_expr(arg);
+            }
+            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            self.code.emit(OpCode::CallFunc {
+                name_idx,
+                arity: args.len() as u32,
+                arg_sources_idx: None,
+                literal_native_args: 0,
+                static_arg_types: false,
+            });
+            return;
         }
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
@@ -1080,8 +1101,7 @@ impl Compiler {
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
             self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.emit_atomic_target(var_name);
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,
                 arity: 1,
@@ -1099,8 +1119,7 @@ impl Compiler {
                 .add_constant(Value::str_from("__mutsu_atomic_store_var"));
             self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.emit_atomic_target(var_name);
             self.compile_expr(&args[1]);
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,
@@ -1147,8 +1166,7 @@ impl Compiler {
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_add_var"));
                 self.note_atomic_env_sync_target(&var_name, true);
-                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                self.code.emit(OpCode::LoadConst(name_idx));
+                self.emit_atomic_target(&var_name);
                 self.compile_expr(&delta);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
@@ -1191,8 +1209,7 @@ impl Compiler {
                         // must not diverge between them (see
                         // todo/tickets/cas-delta-lambda-rewrite-is-dead-code.md).
                         self.note_atomic_env_sync_target(&var_name, true);
-                        let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                        self.code.emit(OpCode::LoadConst(name_idx));
+                        self.emit_atomic_target(&var_name);
                         self.compile_expr(&delta);
                         self.code.emit(OpCode::CallFunc {
                             name_idx: call_name_idx,
@@ -1225,8 +1242,7 @@ impl Compiler {
             // protected is now guarded by `legacy_atomic_lane_owns`, which
             // makes the capture side decline while that lane is live.
             self.note_atomic_env_sync_target(&var_name, true);
-            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(name_idx));
+            self.emit_atomic_target(&var_name);
             for arg in &args[1..] {
                 self.compile_expr(arg);
             }

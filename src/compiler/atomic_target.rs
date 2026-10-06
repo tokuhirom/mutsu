@@ -187,6 +187,42 @@ impl Compiler {
         AtomicTargetDecl::Unknown
     }
 
+    /// The slot of the frame-local binding the scalar `name` reaches at this
+    /// point, when this very chunk declares it (#12006).
+    ///
+    /// Two same-named lexicals have two slots (`code.locals == ["y", "y"]`), and
+    /// `local_map` always points at the innermost declaration still in scope, so
+    /// the compiler knows which one a `$y⚛++` means. A name no active scope of
+    /// this chunk declares -- a captured outer lexical, a global, an attribute --
+    /// has no slot to name: `local_map` keeps the slots of popped sibling blocks,
+    /// and one of those would be a different variable.
+    // Cost: O(d), d = the depth of this chunk's lexical scope chain.
+    pub(super) fn atomic_target_slot(&self, name: &str) -> Option<u32> {
+        if !Self::is_plain_lexical_name(name)
+            || !self.local_scopes.iter().any(|f| f.contains_key(name))
+        {
+            return None;
+        }
+        self.local_map.get(name).copied()
+    }
+
+    /// Push the target of an atomic scalar helper (`__mutsu_atomic_*_var`,
+    /// `__mutsu_cas_*var`): the variable's name, tagged with the slot of the
+    /// binding the call site reaches when [`Self::atomic_target_slot`] knows it.
+    ///
+    /// The helpers find their binding by name, and a name cannot tell an inner
+    /// `my atomicint $y` from the outer `$y` it shadows. The tag is the
+    /// declaring scope's own binding, resolved here once (ADR-0097); an untagged
+    /// name keeps the by-name lookup, which is right for a name this chunk does
+    /// not declare.
+    pub(super) fn emit_atomic_target(&mut self, name: &str) {
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        self.code.emit(OpCode::LoadConst(name_idx));
+        if let Some(slot) = self.atomic_target_slot(name) {
+            self.code.emit(OpCode::WrapVarRef { name_idx, slot });
+        }
+    }
+
     /// The spelling the enclosing call site was written with, consumed by the
     /// lowering it wraps; `default` names the routine when there was none.
     fn take_atomic_spelling(&mut self, default: &str) -> AtomicSpelling {
@@ -279,9 +315,8 @@ impl Compiler {
     ) {
         let spelling = self.take_atomic_spelling(default_display);
         self.note_atomic_env_sync_target(var_name, true);
-        let name_idx = self.code.add_constant(Value::str(var_name.to_string()));
         let call_name_idx = self.code.add_constant(Value::str_from(helper));
-        self.code.emit(OpCode::LoadConst(name_idx));
+        self.emit_atomic_target(var_name);
         self.emit_int_atomic_guard(var_name, &spelling.display, operand, false);
         if operand.is_some() && negate {
             self.code.emit(OpCode::Negate);

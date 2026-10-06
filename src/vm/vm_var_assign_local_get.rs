@@ -278,10 +278,9 @@ impl Interpreter {
                         == Some("atomicint")
                     || self.get_shared_var(&atomic_name_key).is_some());
             if is_atomic_int {
-                let fetched = loan_env!(
-                    self,
-                    builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])
-                )?;
+                // The read is of THIS slot: a same-named shadow elsewhere in the
+                // frame is another variable (#12006).
+                let fetched = loan_env!(self, atomic_fetch_local(atomic_name, idx as u32))?;
                 self.locals[idx] = fetched.clone();
                 self.stack.push(fetched);
                 return Ok(());
