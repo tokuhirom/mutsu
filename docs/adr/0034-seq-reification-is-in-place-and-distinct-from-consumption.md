@@ -569,3 +569,41 @@ was, as risk §5 predicted, incomplete):
 *This ADR is `Accepted` and implemented — see §7.1 for the outcome, including where implementation
 diverged from the design (open question 3). If the mechanism judgment changes again, supersede this
 ADR rather than rewriting it.*
+
+## Amendment (2026-10-06): a failed non-consuming read (#12048)
+
+Two things were wrong when a Seq's first non-consuming read (`.raku`, `.gist`, `.elems`,
+`.Array`, ...) dies, say a `.map` block that `die`s:
+
+1. **`.raku` swallowed the exception** and rendered the `Seq.new()` placeholder
+   (`reify_or_consume_seq_target_inner`'s `"raku"` arm used `let _ = reify_seq_body(..)` so that an
+   already-consumed Seq would render the placeholder, but it dropped every other error too). Fixed:
+   only `X::Seq::Consumed` is the placeholder; any other exception is the caller's, as for `.gist`.
+2. **The Seq is left consumed.** `SeqBody::pull_and_store` moves the source out before pulling and
+   a failed pull is not retried ("leaving the body `Taken`"), so every later read says "already in
+   use/consumed". **Not fixed** — measured against `raku`, the right behaviour is not "rethrow the
+   exception" (the issue's first reading) but *resume*:
+
+   ```raku
+   my $s = (1, 2, 3).map({ die "second" if $_ == 2; $_ });
+   try $s.elems;      # dies "second"
+   say $s.elems;      # 2     -- the failing element is skipped, the rest is read
+   say $s.List;       # (1 3) -- the list reified so far is kept
+   my $r = (1, 2).map({ die "boom" });
+   try $r.elems;  try $r.elems;   # dies "boom" twice (one element each)
+   say $r.elems;      # 0     -- the source is exhausted; no error
+   ```
+
+   `.cache` (every first-row method in §1.4) keeps both the iterator and the partially reified
+   `$!list`, so a read that dies has consumed the failing element and nothing else. It does not
+   matter *how* the pull was aborted: an exception a `CATCH { return ... }` turns into a `return`
+   signal at the throw point (ADR-0072) leaves the Seq just as resumable, so a remembered
+   `X::...` object cannot model it, which is why recording the exception and rethrowing it was
+   tried and dropped.
+
+   Resuming needs the pull to hand back its progress when it fails: for `SeqSource::Iterator`
+   the prefix pulled so far (`pull_iterator_prefix_to_vec`; the iterator keeps its own position),
+   for `SeqSource::MapGrep` the elements produced and the source position past the failing element
+   (the `Map`/`MapRw`/`Grep`/`GrepArray` modes and the chain, each with its own loop, plan and
+   phaser handling), stored as a generation and the source put back instead of `Taken`. That is
+   a change to the map/grep engine, not to this bookkeeping, and is tracked in #12048.

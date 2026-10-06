@@ -583,8 +583,13 @@ impl Interpreter {
             // elements); an already-`Taken` source must NOT throw here — the
             // renderer shows the `Seq.new()` placeholder instead (verified
             // against raku: `.raku` on an already-consumed Seq does not
-            // throw, unlike `.Str`/`.gist`).
-            let _ = self.reify_seq_body(&body);
+            // throw, unlike `.Str`/`.gist`). Only that `Consumed` is
+            // swallowed: an exception the pull itself dies with is the
+            // caller's, as it is for `.gist` (#12048).
+            match self.reify_seq_body(&body) {
+                Err(err) if !crate::value::is_seq_consumed_error(&err) => return Err(err),
+                _ => {}
+            }
             return Ok(target);
         }
         if method == "list" {

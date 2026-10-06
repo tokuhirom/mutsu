@@ -83,6 +83,15 @@ pub(crate) fn seq_consumed_error() -> RuntimeError {
     seq_consumed_error_for("Seq")
 }
 
+/// Whether `err` is an `X::Seq::Consumed`, as [`seq_consumed_error_for`] builds.
+// Cost: O(1).
+pub(crate) fn is_seq_consumed_error(err: &RuntimeError) -> bool {
+    matches!(
+        err.exception.as_deref().map(Value::view),
+        Some(ValueView::Instance { class_name, .. }) if class_name == "X::Seq::Consumed"
+    )
+}
+
 /// Build a structured X::Seq::Consumed error naming the consumed type
 /// (e.g. "Seq", "HyperSeq", "RaceSeq").
 pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
