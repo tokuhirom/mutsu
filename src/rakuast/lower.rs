@@ -3549,13 +3549,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 _ => return Err(unsupported(node)),
             })
         }
-        // `$:foo`: a named placeholder, spelled `:foo` by the execution AST.
+        // `$:foo` / `@:foo` / `%:foo` / `&:foo`: a named placeholder, spelled `:foo` by the execution AST.
         RakuAstClass::VarDeclarationPlaceholderNamed => {
             let (sigil, name) = super::placeholder::spelling(node)?;
-            if sigil != '$' {
-                return Err(unsupported(node));
-            }
-            Ok(Expr::Var(format!(":{name}")))
+            Ok(match sigil {
+                '$' => Expr::Var(format!(":{name}")),
+                '@' => Expr::ArrayVar(format!(":{name}")),
+                '%' => Expr::HashVar(format!(":{name}")),
+                '&' => Expr::CodeVar(format!(":{name}")),
+                _ => return Err(unsupported(node)),
+            })
         }
         // RakuAST's implicit flattened array placeholder (`@_`) lowers back
         // to the legacy array variable used by `make_anon_sub`.

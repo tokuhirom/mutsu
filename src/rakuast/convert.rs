@@ -2192,6 +2192,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     name,
                 ));
             }
+            if let Some(name) = name.strip_prefix(':')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderNamed,
+                    "@",
+                    name,
+                ));
+            }
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
@@ -2213,6 +2222,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     name,
                 ));
             }
+            if let Some(name) = name.strip_prefix(':')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderNamed,
+                    "%",
+                    name,
+                ));
+            }
             Ok(var_lexical("%", name))
         }
         Expr::CodeVar(name) => {
@@ -2221,6 +2239,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             {
                 return Ok(placeholder_node(
                     RakuAstClass::VarDeclarationPlaceholderPositional,
+                    "&",
+                    name,
+                ));
+            }
+            if let Some(name) = name.strip_prefix(':')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderNamed,
                     "&",
                     name,
                 ));
