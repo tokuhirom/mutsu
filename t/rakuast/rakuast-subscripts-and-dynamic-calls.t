@@ -17,7 +17,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 53;
+plan 56;
 
 sub exprs($src) { ('my ($o, $n, $c); my @a; my %h; sub f(|) { }; ' ~ $src).AST.statements.skip(4).map(*.expression) }
 sub same($src, $expected, $desc) {
@@ -106,3 +106,6 @@ same Q[my @a = [[1, 2], [3, 4]]; (@a[0;1]:exists, @a[5;5]:exists).join(",")], 'T
 same Q[my @z = 1, 2, 3; @z[].elems], 3, 'a zen slice of an array';
 same Q[my %hz = a => 1; %hz{}.elems], 1, 'a zen slice of a hash';
 same Q[my $h = {:x}; $h<x>.Str], 'True', 'a hash literal with a value-less colonpair';
+same Q[my @a = [[1, 2], [3, 4]]; (@a[0;1]:kv).raku], '((0, 1), 2)', 'a multi-dimensional `:kv`';
+same Q[my @a = [[1, 2], [3, 4]]; (@a[1;0]:p).raku], '(1, 0) => 3', 'a multi-dimensional `:p`';
+same Q[my @a = [[1, 2], [3, 4]]; (@a[1;1]:v).raku], '4', 'a multi-dimensional `:v`';

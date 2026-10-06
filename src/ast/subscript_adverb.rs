@@ -512,18 +512,7 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
                 [_] => true,
                 _ => return None,
             };
-            let (key, value) = VALUE_ADVERBS.iter().find_map(|&(name, negated, zero)| {
-                let mode = mode.as_str();
-                if mode == name {
-                    Some((name, cond.clone().unwrap_or_else(|| truth(true))))
-                } else if mode == negated {
-                    Some((name, truth(false)))
-                } else if mode == zero {
-                    Some((name, Expr::Literal(Value::int(0))))
-                } else {
-                    None
-                }
-            })?;
+            let (key, value) = decode_mode(mode.as_str(), cond.as_ref())?;
             let mut adverbs = vec![(key.to_string(), value)];
             if delete {
                 adverbs.push(("delete".to_string(), truth(true)));
@@ -535,6 +524,38 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
             };
             Some((subscript, adverbs))
         }
+        // `@a[0;1]:kv`: the by-name builtin over the target, the mode and the
+        // dimensions (`subscript_adverb_expr_with_cond`).
+        Expr::Call { name, args }
+            if *name == Symbol::intern("__mutsu_multidim_subscript_adverb") =>
+        {
+            let [target, Expr::Literal(mode), rest @ ..] = args.as_slice() else {
+                return None;
+            };
+            let ValueView::Str(mode) = mode.view() else {
+                return None;
+            };
+            let cut = rest.iter().position(|e| {
+                matches!(e, Expr::Literal(m)
+                    if matches!(m.view(), ValueView::Str(s) if s.as_str() == ADVERB_COND_MARKER))
+            });
+            let (dimensions, cond) = match cut {
+                Some(at) => (&rest[..at], Some(rest.get(at + 1)?)),
+                None => (rest, None),
+            };
+            if dimensions.is_empty() {
+                return None;
+            }
+            let (key, value) = decode_mode(mode.as_str(), cond)?;
+            let subscript = Expr::MultiDimIndex {
+                target: Box::new(target.clone()),
+                dimensions: dimensions.to_vec(),
+                // The call keeps neither bracket; a hash target is the
+                // associative form.
+                is_positional: !matches!(target, Expr::HashVar(_)),
+            };
+            Some((subscript, vec![(key.to_string(), value)]))
+        }
         Expr::MethodCall {
             target, name, args, ..
         } if *name == DELETE_KEY && args.is_empty() && matches!(**target, Expr::Index { .. }) => {
@@ -545,6 +566,23 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
         }
         _ => None,
     }
+}
+
+/// The adverb a [`SUBSCRIPT_ADVERB_FN`]-style mode string spells, with its
+/// value: the inverse of [`value_adverb_mode`].
+fn decode_mode(mode: &str, cond: Option<&Expr>) -> Option<(&'static str, Expr)> {
+    VALUE_ADVERBS.iter().find_map(|&(name, negated, zero)| {
+        let truth = |on: bool| Expr::Literal(Value::truth(on));
+        if mode == name {
+            Some((name, cond.cloned().unwrap_or_else(|| truth(true))))
+        } else if mode == negated {
+            Some((name, truth(false)))
+        } else if mode == zero {
+            Some((name, Expr::Literal(Value::int(0))))
+        } else {
+            None
+        }
+    })
 }
 
 /// A structural identity of `expr` through the derived `Hash` impls.
