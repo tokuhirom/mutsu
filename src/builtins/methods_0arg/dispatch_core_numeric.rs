@@ -41,6 +41,8 @@ fn check_numeric_type_object_method(
                 | "msb"
                 | "base"
                 | "polymod"
+                | "roots"
+                | "expmod"
         );
         if !is_d_method {
             return None;

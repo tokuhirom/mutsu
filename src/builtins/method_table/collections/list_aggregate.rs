@@ -46,7 +46,8 @@ pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[MethodRow {
 fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
     let items = match target.view() {
         ValueView::Array(items, _) => items.to_vec(),
-        ValueView::Str(_)
+        ValueView::Bool(_)
+        | ValueView::Str(_)
         | ValueView::Int(_)
         | ValueView::BigInt(_)
         | ValueView::Num(_)

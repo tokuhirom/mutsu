@@ -155,7 +155,6 @@ pub(crate) fn native_method_2arg(
     }
 
     match method {
-        "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
         "unimatch" => {
             // target.unimatch(prop_value, prop_name)
             let prop_value = arg1.to_string_value();

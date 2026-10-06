@@ -112,6 +112,8 @@ fn zero_denominator(method: &str) -> Option<Result<Value, RuntimeError>> {
 pub(crate) fn abs_of(target: &Value) -> Option<Result<Value, RuntimeError>> {
     Some(Ok(match target.view() {
         ValueView::Int(i) => crate::builtins::int_abs(i),
+        // `Bool` is an `Int` enum: `True.abs` is the `Int` 1.
+        ValueView::Bool(b) => Value::int(i64::from(b)),
         ValueView::BigInt(n) => Value::bigint(n.as_ref().abs()),
         ValueView::Num(f) => Value::num(f.abs()),
         // `arith_negate` promotes an i64::MIN numerator instead of overflowing.
@@ -136,6 +138,7 @@ pub(crate) fn sign_of(target: &Value) -> Option<Result<Value, RuntimeError>> {
     let of = |s: i64| Some(Ok(Value::int(s)));
     match target.view() {
         ValueView::Int(i) => of(i.signum()),
+        ValueView::Bool(b) => of(i64::from(b)),
         ValueView::BigInt(n) => of(bigint_sign(n.as_ref())),
         ValueView::Num(f) if f.is_nan() => Some(Ok(Value::num(f64::NAN))),
         ValueView::Num(f) => of(f64_sign(f)),
@@ -258,7 +261,8 @@ impl Rounding {
     // rational's division), b = size in bits.
     fn of(self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         Some(Ok(match target.view() {
-            ValueView::Int(_) | ValueView::BigInt(_) => target.clone(),
+            // An `Int` or a `Bool` (an `Int` enum, whose rounding is itself).
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_) => target.clone(),
             ValueView::Num(f) if !f.is_finite() => Value::num(f),
             ValueView::Num(f) => integral_num_to_int(self.apply_f64(f)),
             ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {

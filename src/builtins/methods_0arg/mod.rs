@@ -10,7 +10,6 @@ pub(crate) mod coercion;
 pub(crate) mod collection;
 pub(crate) mod cool_aggregate;
 use cool_aggregate::cool_aggregate_elems;
-pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
@@ -114,7 +113,7 @@ fn normalize_unicode_digits(s: &str) -> Option<String> {
     if has_unicode { Some(result) } else { None }
 }
 
-fn parse_raku_int_from_str(s: &str) -> Option<Value> {
+pub(crate) fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;
@@ -853,26 +852,16 @@ pub(crate) fn native_method_0arg_cascade(
     }
     // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
     // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
+    // The transcendental methods (`sin`, `log`, `sqrt`, ...) are `Cool` rows of
+    // `builtins::method_table` (ADR-11276), which numify through
+    // `method_table::numify`; this list is what is left.
     if let ValueView::Str(s) = target.view() {
         match method {
-            "abs" | "sign" | "exp" | "log" | "log2" | "log10" | "sqrt" | "ceiling" | "floor"
-            | "truncate" | "round" | "conj" | "cis" | "rand" | "sin" | "cos" | "tan" | "asin"
-            | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
-            | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
-            | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
-            | "msb" | "is-int" => {
-                let coerced = if let Ok(i) = s.parse::<i64>() {
-                    Value::int(i)
-                } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                    // A Str numifies the way `.Numeric` does before the numeric
-                    // method runs: a decimal is a Rat (`"-5.9".abs` is the Rat
-                    // 5.9, not the Num 5.9000000000000004 an `f64` parse gave),
-                    // and a Complex/Rat string (`"6+8i"`, `"1/2"`) coerces
-                    // fully, so `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
-                    v
-                } else {
-                    parse_raku_int_from_str(&s)?
-                };
+            "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "conj" | "rand"
+            | "narrow" | "polymod" | "base" | "chr" | "lsb" | "msb" | "is-int" => {
+                // A Str numifies the way `.Numeric` does before the numeric
+                // method runs (`method_table::numify::numify_str`).
+                let coerced = crate::builtins::method_table::numify::numify_str(&s)?;
                 return native_method_0arg(&coerced, method_sym);
             }
             _ => {}
@@ -885,20 +874,7 @@ pub(crate) fn native_method_0arg_cascade(
     // inner Hash as a number.
     if matches!(
         method,
-        "abs"
-            | "sign"
-            | "exp"
-            | "log"
-            | "log2"
-            | "log10"
-            | "sqrt"
-            | "ceiling"
-            | "floor"
-            | "truncate"
-            | "round"
-            | "narrow"
-            | "is-int"
-            | "conj"
+        "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "narrow" | "is-int" | "conj"
     ) && let Some(count) = cool_aggregate_elems(target)
     {
         return native_method_0arg(&Value::int(count), method_sym);
@@ -1213,7 +1189,7 @@ use crate::builtins::backtrace_methods::{
 pub use raku_repr::raku_value;
 
 /// Re-export complex_trig for external use.
-pub(crate) use complex_math::complex_trig;
+pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
 /// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
 pub(crate) use dispatch_core_coerce::str_numeric_failure;

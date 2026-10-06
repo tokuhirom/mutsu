@@ -13,8 +13,7 @@ use super::fmt_contains::{
 };
 use super::indent::str_indent;
 use super::numeric::{
-    compute_roots, int_to_subscript, int_to_superscript, sample_weighted_bag_key,
-    sample_weighted_mix_key,
+    int_to_subscript, int_to_superscript, sample_weighted_bag_key, sample_weighted_mix_key,
 };
 use crate::runtime;
 use crate::symbol::Symbol;
@@ -236,9 +235,9 @@ pub(crate) fn native_method_1arg(
     // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
     // Also coerce the arg if it's a Str for numeric methods.
     {
-        let numeric_1arg_methods: &[&str] = &[
-            "exp", "log", "round", "roots", "unpolar", "base", "polymod", "expmod", "atan2",
-        ];
+        // The transcendental methods (`log`, `exp`, `atan2`, `roots`, `unpolar`) are
+        // `Cool` rows of `builtins::method_table` (ADR-11276).
+        let numeric_1arg_methods: &[&str] = &["round", "base", "polymod"];
         if numeric_1arg_methods.contains(&method) {
             let coerced_target = if let ValueView::Str(s) = target.view() {
                 if let Ok(i) = s.parse::<i64>() {
@@ -248,7 +247,7 @@ pub(crate) fn native_method_1arg(
                 } else {
                     return None;
                 }
-            } else if matches!(method, "round" | "log" | "exp") {
+            } else if method == "round" {
                 // A Cool aggregate numifies to its element count
                 // (`{a => 1}.round(0.5)`); see `cool_aggregate_elems`.
                 crate::builtins::methods_0arg::cool_aggregate::cool_aggregate_elems(target)
@@ -1960,121 +1959,6 @@ pub(crate) fn native_method_1arg(
                         .collect()
                 },
             ))))
-        }
-        "log" => {
-            let base_complex = match arg.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            let target_complex = match target.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            match (target_complex, base_complex) {
-                (Some((xr, xi)), Some((br, bi))) => {
-                    if bi == 0.0 && xi == 0.0 {
-                        if br.is_finite() && br > 0.0 && br != 1.0 && xr > 0.0 {
-                            return Some(Ok(Value::num(xr.ln() / br.ln())));
-                        }
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let ln_x_mag = (xr * xr + xi * xi).sqrt().ln();
-                    let ln_x_arg = xi.atan2(xr);
-                    let ln_b_mag = (br * br + bi * bi).sqrt().ln();
-                    let ln_b_arg = bi.atan2(br);
-                    let denom = ln_b_mag * ln_b_mag + ln_b_arg * ln_b_arg;
-                    if denom == 0.0 {
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let re = (ln_x_mag * ln_b_mag + ln_x_arg * ln_b_arg) / denom;
-                    let im = (ln_x_arg * ln_b_mag - ln_x_mag * ln_b_arg) / denom;
-                    Some(Ok(Value::complex(re, im)))
-                }
-                _ => None,
-            }
-        }
-        "exp" => {
-            // $x.exp($base) = $base ** $x
-            // Get base as real or complex
-            let (base_r, base_i) = match arg.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Get exponent as real or complex
-            let (exp_r, exp_i) = match target.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Compute base^exp via exp(exp * ln(base))
-            // ln(base) for complex: ln(|base|) + i*arg(base)
-            let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
-            let ln_i = base_i.atan2(base_r);
-            // exp * ln(base): (exp_r + exp_i*i) * (ln_r + ln_i*i)
-            let prod_r = exp_r * ln_r - exp_i * ln_i;
-            let prod_i = exp_r * ln_i + exp_i * ln_r;
-            // exp(prod_r + prod_i*i)
-            let ea = prod_r.exp();
-            let result_r = ea * prod_i.cos();
-            let result_i = ea * prod_i.sin();
-            if result_i.abs() < 1e-15 && base_i == 0.0 && exp_i == 0.0 {
-                Some(Ok(Value::num(result_r)))
-            } else {
-                Some(Ok(Value::complex(result_r, result_i)))
-            }
-        }
-        "unpolar" => {
-            // $magnitude.unpolar($angle) = $magnitude * cis($angle)
-            let mag = match target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            let angle = match arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            Some(Ok(Value::complex(mag * angle.cos(), mag * angle.sin())))
-        }
-        "roots" => {
-            // Instance types need runtime coercion via .Numeric
-            if matches!(target.view(), ValueView::Instance { .. }) {
-                return None;
-            }
-            Some(Ok(compute_roots(target, arg)))
-        }
-        "atan2" => {
-            // User-defined types need runtime coercion via .Numeric/.Bridge
-            if matches!(target.view(), ValueView::Instance { .. })
-                || matches!(arg.view(), ValueView::Instance { .. })
-            {
-                return None;
-            }
-            let y = runtime::to_float_value(target).unwrap_or(0.0);
-            let x = runtime::to_float_value(arg).unwrap_or(0.0);
-            Some(Ok(Value::num(y.atan2(x))))
         }
         // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
         "read-num32" | "read-num64" => {

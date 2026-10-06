@@ -63,42 +63,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
-        "polar" => match target.view() {
-            ValueView::Complex(r, i) => {
-                let mag = (r * r + i * i).sqrt();
-                let angle = i.atan2(r);
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            ValueView::Int(i) => {
-                let f = i as f64;
-                let mag = f.abs();
-                let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            ValueView::Num(f) => {
-                let mag = f.abs();
-                let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            _ => None,
-        },
-        "cis" => match target.view() {
-            ValueView::Int(i) => {
-                let x = i as f64;
-                Some(Ok(Value::complex(x.cos(), x.sin())))
-            }
-            ValueView::Num(f) => Some(Ok(Value::complex(f.cos(), f.sin()))),
-            ValueView::Rat(n, d) if d != 0 => {
-                let x = crate::value::rat_to_f64(n, d);
-                Some(Ok(Value::complex(x.cos(), x.sin())))
-            }
-            ValueView::Complex(re, im) => {
-                // cis(a+bi) = e^(i*(a+bi)) = e^(-b) * (cos(a) + i*sin(a))
-                let scale = (-im).exp();
-                Some(Ok(Value::complex(scale * re.cos(), scale * re.sin())))
-            }
-            _ => None,
-        },
         "Complex" => match target.view() {
             ValueView::Instance { .. }
                 if target.does_check("Real") || target.does_check("Numeric") =>

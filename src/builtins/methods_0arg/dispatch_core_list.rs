@@ -160,15 +160,13 @@ pub(super) fn dispatch(
             }
             _ => Some(Ok(target.clone())),
         }),
-        // Cost: O(n) for list-like inputs, n = elements; O(1) for fixed-width
-        // numeric inputs; O(d) for BigRat, d = numerator and denominator limbs.
-        "sqrt" => {
-            // List-like values numify to their element count before applying
-            // the numeric square-root method (`(0, 1, 2, 3).sqrt == 2`).
-            if let Some(items) = target.as_list_items() {
-                return Some(Some(Ok(Value::num((items.len() as f64).sqrt()))));
-            }
-            Some(crate::builtins::arith::sqrt_numeric(target).map(Ok))
+        // `Seq.sqrt` and the other list-likes with no table shape: `Cool`'s
+        // numeric method on the element count, through the `Cool.sqrt` row's
+        // handler (`method_table::math`). A `List` or `Array` is answered by the
+        // row itself.
+        // Cost: O(1).
+        "sqrt" if target.as_list_items().is_some() => {
+            Some(Some(crate::builtins::method_table::math::sqrt(target, &[])))
         }
         _ => None,
     }
