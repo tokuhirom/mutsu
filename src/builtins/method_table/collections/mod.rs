@@ -10,6 +10,7 @@ use super::{Handler, MethodRow, RowFlags};
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod capture;
+pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
@@ -26,6 +27,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
     capture::ROWS,
     any_interp::ROWS,
+    lazy::ROWS,
     list::ROWS,
     list_aggregate::ANY_ROWS,
     list_aggregate::LIST_ROWS,
