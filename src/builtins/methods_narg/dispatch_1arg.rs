@@ -22,6 +22,31 @@ use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
+/// The epsilon `.Rat(eps)` / `.FatRat(eps)` was given: a `Num`, a `Rat` or an
+/// `Int`, else the default `1e-6`.
+// Cost: O(1).
+fn rat_epsilon_arg(arg: &Value) -> f64 {
+    match arg.view() {
+        ValueView::Num(f) => f,
+        ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+        ValueView::Int(i) => i as f64,
+        _ => 1e-6,
+    }
+}
+
+/// `f.Rat(epsilon)`: the simplest rational within `epsilon` of `f` (a continued
+/// fraction), with `NaN` as `0/0` and the infinities as `±1/0`.
+// Cost: O(log(1/epsilon)) continued-fraction steps.
+fn num_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
+    if f.is_nan() {
+        Value::rat_raw(0, 0)
+    } else if f.is_infinite() {
+        Value::rat_raw(if f.is_sign_positive() { 1 } else { -1 }, 0)
+    } else {
+        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
+    }
+}
+
 pub(crate) fn native_method_1arg(
     target: &Value,
     method_sym: Symbol,
@@ -573,29 +598,16 @@ pub(crate) fn native_method_1arg(
         }
         "Rat" => {
             // .Rat(epsilon) — use continued fraction algorithm with given epsilon
-            let epsilon = match arg.view() {
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::Int(i) => i as f64,
-                _ => 1e-6,
-            };
+            let epsilon = rat_epsilon_arg(arg);
             let result = match target.view() {
                 ValueView::Rat(_, _) => target.clone(),
                 ValueView::Int(i) => Value::rat_raw(i, 1),
-                ValueView::Num(f) => {
-                    if f.is_nan() {
-                        Value::rat_raw(0, 0)
-                    } else if f.is_infinite() {
-                        if f.is_sign_positive() {
-                            Value::rat_raw(1, 0)
-                        } else {
-                            Value::rat_raw(-1, 0)
-                        }
-                    } else {
-                        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
-                    }
-                }
+                ValueView::Num(f) => num_rat_with_epsilon(f, epsilon),
                 ValueView::FatRat(n, d) => Value::rat_raw(n, d),
+                // Whether the imaginary part is negligible is judged against
+                // `$*TOLERANCE`, which only the interpreter can read
+                // (`Interpreter::dispatch_complex_to_real`).
+                ValueView::Complex(..) => return None,
                 ValueView::Str(s) => {
                     if let Ok(f) = s.parse::<f64>() {
                         crate::builtins::num_to_rat_with_epsilon(f, epsilon)
@@ -608,16 +620,18 @@ pub(crate) fn native_method_1arg(
             Some(Ok(result))
         }
         "FatRat" => {
-            // .FatRat or .FatRat(epsilon) — convert to FatRat
+            // .FatRat(epsilon) — a `Num` is rationalized with the epsilon as
+            // `.Rat(epsilon)` does (`3.14159e0.FatRat(0.01)` is `22/7`).
             let result = match target.view() {
                 ValueView::FatRat(_, _) => target.clone(),
                 ValueView::Int(i) => Value::fat_rat_raw(i, 1),
                 ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
-                ValueView::Num(f) => {
-                    let denom = 1_000_000i64;
-                    let numer = (f * denom as f64).round() as i64;
-                    Value::fat_rat_raw(numer, denom)
-                }
+                ValueView::Num(f) => match num_rat_with_epsilon(f, rat_epsilon_arg(arg)).view() {
+                    ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
+                    _ => Value::fat_rat_raw(0, 1),
+                },
+                // As for `Rat` above: the interpreter judges the imaginary part.
+                ValueView::Complex(..) => return None,
                 _ => Value::fat_rat_raw(0, 1),
             };
             Some(Ok(result))
