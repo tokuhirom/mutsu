@@ -307,7 +307,14 @@ impl Interpreter {
             let Some(defs) = registry.user_method_overloads(parent.as_str(), method_name) else {
                 continue;
             };
-            if defs.iter().any(|def| !Self::is_stub_method_def(def)) {
+            // A stub the parent class itself declares (`method m {...}`, not one
+            // composed in from a role) also satisfies the requirement by name:
+            // rakudo composes `class C is P does R` when `P` stubs `R`'s method
+            // (W3C::DOM's t/basic.t).
+            if defs
+                .iter()
+                .any(|def| !Self::is_stub_method_def(def) || def.role_origin.is_none())
+            {
                 return true;
             }
         }
