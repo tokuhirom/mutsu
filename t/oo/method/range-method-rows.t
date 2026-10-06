@@ -73,7 +73,7 @@ subtest 'in-range', {
 }
 
 subtest 'rand', {
-    plan 11;
+    plan 25;
     my @closed = (1..3).rand xx 200;
     ok @closed.all ~~ Num, 'a Num';
     ok @closed.all >= 1 && @closed.all <= 3, 'inside the range';
@@ -93,6 +93,16 @@ subtest 'rand', {
     is (1..3).rand.WHAT.^name, 'Num', 'the type name';
     my @many = (0..1000).rand xx 50;
     ok @many.all <= 1000, 'a wide range';
+    for (3..1), (1..^1), (1^..1), (1..1), (2.5..1.5), (1.5..^1.5) -> $r {
+        my $f = $r.rand;
+        is $f.WHAT.^name, 'Failure', "{$r.raku} is a Failure";
+        is $f.exception.^name, 'X::Range::Rand::InvalidEndpoints', "{$r.raku} class";
+        $f.so;
+    }
+    my $inv = (3..1).rand;
+    is $inv.exception.^name, 'X::Range::Rand::InvalidEndpoints', 'the exception class';
+    is ($inv.exception.min, $inv.exception.max), (3, 1), 'min and max';
+    $inv.so;
 }
 
 subtest 'minmax shares the is-int rule', {

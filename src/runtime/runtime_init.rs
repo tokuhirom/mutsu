@@ -2569,6 +2569,31 @@ impl Interpreter {
         for (name, class_def) in Self::io_notification_class_defs() {
             classes.insert(name, class_def);
         }
+        // `X::Range::Rand::InvalidEndpoints` exposes its `min` / `max` as
+        // accessors; without declared attributes `.min` / `.max` would resolve
+        // to the generic `Any.min` / `Any.max`.
+        if let Some(cls) = classes.get_mut("X::Range::Rand::InvalidEndpoints") {
+            for name in ["min", "max"] {
+                cls.attributes.push(ClassAttributeDef {
+                    name: name.to_string(),
+                    is_public: true,
+                    default: None,
+                    captured_env: None,
+                    captured_unit: None,
+                    declaring_package: None,
+                    is_rw: false,
+                    is_required: None,
+                    sigil: '$',
+                    type_constraint: None,
+                    where_constraint: None,
+                    declared_shape: None,
+                    source_line: None,
+                    source_file: None,
+                    default_is_seed: false,
+                });
+            }
+        }
+
         let mut registry = Registry::default();
         registry.classes = classes
             .into_iter()
