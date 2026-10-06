@@ -255,3 +255,14 @@ The steps:
   - `use Test` load: **43.6M → 35.1M** Ir (AST read, `order_unit`, scans and
     `stable_hash` gone from a hit).
   - The verify sweeps over `t/` (6626 files) and the roast whitelist pass.
+- **Step 4, item 3** (§2.3). This is not a layered builtin registry but its
+  cheaper equivalent:
+  - `runtime::registry_cow_table::CowTable` shares the large registry tables
+    copy-on-write (classes, method entries, role/class relations), and each
+    class definition as well;
+  - a role declaration no longer removes names it never registered, which
+    would copy the table.
+
+  `use Test` load: **−1.2M** Ir. The price is +0.3M at startup, because the
+  367 builtin class definitions are each allocated behind a reference count
+  once per process.
