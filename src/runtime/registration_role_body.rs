@@ -160,6 +160,9 @@ impl Interpreter {
                 .attribute_built
                 .insert(attr_name_str.clone(), built);
         }
+        if Self::declares_box_target(&decl) {
+            self.register_box_target(cx.name, &attr_name_str);
+        }
         let attr_var_name = if decl.is_public {
             format!(".{}", attr_name_str)
         } else {

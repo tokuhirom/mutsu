@@ -76,6 +76,7 @@ impl Absent {
 
 const EXPRESSION: Absent = Absent::TypeObject("RakuAST::Expression");
 const BLOCK: Absent = Absent::TypeObject("RakuAST::Block");
+const NAME: Absent = Absent::TypeObject("RakuAST::Name");
 const BACKTRACK: Absent = Absent::TypeObject("RakuAST::Regex::Backtrack");
 
 /// The fields a RakuAST class declares, in rakudo's own declaration order
@@ -291,7 +292,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("signature", Absent::EmptyNode(Signature)),
             ("body", Absent::Required),
         ],
-        Grammar => &[("name", Absent::Required), ("body", Absent::Required)],
+        // A package declaration without a source name (`class { }`) has no
+        // `name`: its accessor answers the undefined `Name`, as rakudo's.
+        Class | Role | Grammar => &[("name", NAME), ("body", Absent::Required)],
         Pragma => &[
             ("name", Absent::Required),
             ("argument", EXPRESSION),

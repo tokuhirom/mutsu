@@ -308,6 +308,14 @@ impl RuntimeError {
     pub fn return_target_callable_id(&self) -> Option<u64> {
         self.cold.as_ref().and_then(|c| c.return_target_callable_id)
     }
+    /// Whether this is a `return` signal stamped with the routine it leaves
+    /// ([`Self::return_target_callable_id`]). Every routine boundary that is
+    /// not that target declines it: it is no part of that routine's result,
+    /// so it must not meet the routine's return-type check on the way out.
+    // Cost: O(1).
+    pub fn is_targeted_return(&self) -> bool {
+        self.return_value.is_some() && self.return_target_callable_id().is_some()
+    }
     pub fn from_method_return(&self) -> bool {
         self.cold.as_ref().is_some_and(|c| c.from_method_return)
     }

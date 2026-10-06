@@ -278,7 +278,8 @@ impl Interpreter {
     /// `Code.name` of a `Sub`: the name of its [name holder](Self::code_name_holder).
     // Cost: as `code_name_holder`.
     pub(crate) fn code_name(&self, data: &Gc<SubData>) -> Symbol {
-        self.code_name_holder(data).name
+        let holder = self.code_name_holder(data);
+        holder.routine_cell.renamed().unwrap_or(holder.name)
     }
 
     /// `Code.set_name` / `nqp::setcodename`: rename code object `target`

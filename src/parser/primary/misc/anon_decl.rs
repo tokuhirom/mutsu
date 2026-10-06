@@ -7,6 +7,13 @@ use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
 use std::sync::atomic::AtomicU64;
 
+/// The `custom_traits` marker of a declaration written with the empty name
+/// (`class :: { }`, `role :: { }`, `grammar :: { }`). The declaration is
+/// anonymous either way; the marker only lets the RakuAST conversion tell the
+/// two spellings apart, since rakudo renders the `::` one with an `anon` scope
+/// over an empty name. Internal (`__`-prefixed), so never dispatched as a trait.
+pub(crate) const ANON_COLONS_TRAIT: &str = "__anon_colons";
+
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -18,6 +25,21 @@ static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub(crate) fn next_anon_role_name() -> String {
     let id = crate::anon_names::next_id(crate::anon_names::AnonKind::Role, &ANON_ROLE_COUNTER);
     format!("__ANON_ROLE_{id}__")
+}
+
+/// Mint the internal registry name for a fresh anonymous class. Shared with
+/// the RakuAST lowering, which names a `RakuAST::Class` that has no `name` the
+/// way the parser names `class { }`.
+pub(crate) fn next_anon_class_name() -> String {
+    let id = crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
+    format!("__ANON_CLASS_{id}__")
+}
+
+/// Mint the internal registry name for a fresh anonymous grammar; it draws
+/// from the class counter, as `grammar { }` does.
+pub(crate) fn next_anon_grammar_name() -> String {
+    let id = crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
+    format!("__ANON_GRAMMAR_{id}__")
 }
 
 fn parse_qualified_ident_with_hyphens(input: &str) -> PResult<'_, String> {
@@ -47,22 +69,16 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
 
     // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
     // or `class Name ...` (named class in expression context)
+    let mut colons = false;
     let (rest, name, clauses) = if let Some(r) = rest.strip_prefix("::") {
+        colons = true;
         // Skip `::` (anonymous name placeholder)
         let (r, _) = ws(r)?;
         // Parse `is Parent` / `does Role` clauses
         let (r, clauses) = parse_anon_class_clauses(r)?;
-        let id =
-            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
-        (r, format!("__ANON_CLASS_{id}__"), clauses)
+        (r, next_anon_class_name(), clauses)
     } else if rest.starts_with('{') {
-        let id =
-            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
-        (
-            rest,
-            format!("__ANON_CLASS_{id}__"),
-            AnonClassClauses::default(),
-        )
+        (rest, next_anon_class_name(), AnonClassClauses::default())
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Named class in expression context: `class Foo { ... }`. The name may
         // be QUALIFIED — `class X::Foo is Exception {}.new.throw` is the shape
@@ -111,19 +127,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             true
         }
     });
-    // Insert DoesDecl statements at the beginning of the body for `does` clauses
-    // (a parameterized one composes through `parent_args`, as a named class's does)
-    for role_name in does_roles.iter().rev().filter(|r| !r.contains('[')) {
-        body.insert(
-            0,
-            Stmt::DoesDecl {
-                name: Symbol::intern(role_name),
-                args: None,
-                from_is: false,
-                also: false,
-            },
-        );
-    }
+    prepend_does_header(&mut body, &does_roles);
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
@@ -138,7 +142,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: Vec::new(),
+            custom_traits: colons_marker(colons),
             is_unit: false,
             implicit_grammar_parent: false,
             is_grammar: false,
@@ -196,11 +200,10 @@ fn parse_anon_class_clauses(mut r: &str) -> PResult<'_, AnonClassClauses> {
 pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("grammar", input).ok_or_else(|| PError::expected("anonymous grammar"))?;
     let (rest, _) = ws(rest)?;
+    let colons = rest.starts_with("::");
     let rest = rest.strip_prefix("::").map_or(rest, |r| r.trim_start());
     let (rest, name) = if rest.starts_with('{') {
-        let id =
-            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
-        (rest, format!("__ANON_GRAMMAR_{id}__"))
+        (rest, next_anon_grammar_name())
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Same identifier-start class as the class/role expression paths: a
         // grammar name may begin with any Unicode identifier character, so an
@@ -249,7 +252,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
             repr: None,
             body,
             language_version: crate::parser::current_language_version(),
-            custom_traits: Vec::new(),
+            custom_traits: colons_marker(colons),
             is_unit: false,
             implicit_grammar_parent,
             is_grammar: true,
@@ -268,6 +271,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let rest = keyword("role", input).ok_or_else(|| PError::expected("anonymous role"))?;
     let (rest, _) = ws(rest)?;
     // Accept optional `::` (null name) before the block
+    let colons = rest.starts_with("::");
     let rest = if let Some(r) = rest.strip_prefix("::") {
         let (r, _) = ws(r)?;
         r
@@ -307,10 +311,39 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
             body,
             is_rw: false,
             language_version: crate::parser::current_language_version(),
-            custom_traits: Vec::new(),
+            custom_traits: colons_marker(colons),
             decl_id: crate::ast::next_class_decl_id(),
         })),
     ))
+}
+
+/// Insert `DoesDecl` statements at the beginning of a class expression's body
+/// for its `does` clauses (a parameterized one composes through `parent_args`,
+/// as a named class's does). Shared with the RakuAST lowering, which builds the
+/// same class expression from a `RakuAST::Class` term.
+// Cost: O(r * b), r = number of `does` clauses, b = length of the body.
+pub(crate) fn prepend_does_header(body: &mut Vec<Stmt>, does_roles: &[String]) {
+    for role_name in does_roles.iter().rev().filter(|r| !r.contains('[')) {
+        body.insert(
+            0,
+            Stmt::DoesDecl {
+                name: Symbol::intern(role_name),
+                args: None,
+                from_is: false,
+                also: false,
+            },
+        );
+    }
+}
+
+/// The `custom_traits` of a declaration spelled with (`colons`) or without the
+/// empty name `::`.
+fn colons_marker(colons: bool) -> Vec<(String, Option<Expr>)> {
+    if colons {
+        vec![(ANON_COLONS_TRAIT.to_string(), None)]
+    } else {
+        Vec::new()
+    }
 }
 
 /// After parsing `anon class`/`anon role`/`anon grammar` via the

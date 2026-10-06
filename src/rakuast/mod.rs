@@ -12,6 +12,7 @@
 
 mod attribute;
 mod bareword;
+mod chain;
 mod contextualizer;
 mod convert;
 mod core_term_names;

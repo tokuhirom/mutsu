@@ -600,7 +600,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 
     let name = if is_implicit_topic {
         "_".to_string()
-    } else if is_anonymous_param_name(&p.name) {
+    } else if is_anonymous_param_name(&p.name) || p.is_implicit_invocant() {
+        // A parser-synthesized invocant (`Foo:D:`) is stored as `self` for the
+        // binder, but the source never named it: it introspects as `$`.
         String::new()
     } else if p.name.starts_with('@') || p.name.starts_with('%') || p.name.starts_with('&') {
         p.name[1..].to_string()
@@ -1224,6 +1226,17 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
         param_str.push(':');
     }
     param_str.push_str(&name);
+    // An anonymous parameter still shows the sigil it was declared with: `Int $`,
+    // `@`, and the invocant's `K:D $:`. Captures (`|`) and sigilless parameters
+    // carry their own spelling in `name`, so they are left alone.
+    let is_capture = attrs.get("capture").map(Value::truthy).unwrap_or(false);
+    if name.is_empty() && !is_capture && !sigil.is_empty() {
+        param_str.push_str(&sigil);
+    }
+    // An invocant is followed by the marker that makes it one: `$self:`.
+    if attrs.get("invocant").map(Value::truthy).unwrap_or(false) {
+        param_str.push(':');
+    }
 
     // Optional/required suffix
     let suffix = attrs

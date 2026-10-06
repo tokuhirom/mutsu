@@ -1893,9 +1893,9 @@ impl Compiler {
                     // a bind to another already-non-itemized bound scalar stays
                     // non-itemized. Classify the RHS to distinguish these.
                     let rhs_is_itemized_scalar = match expr {
-                        Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                        Expr::Var(rhs) => self.scalar_var_is_bound_item(rhs),
                         Expr::Grouped(inner) => match inner.as_ref() {
-                            Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                            Expr::Var(rhs) => self.scalar_var_is_bound_item(rhs),
                             _ => false,
                         },
                         _ => false,

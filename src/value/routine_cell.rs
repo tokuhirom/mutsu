@@ -16,6 +16,7 @@ use std::sync::{Arc, RwLock};
 
 use super::MixinOverrides;
 use crate::gc::Gc;
+use crate::symbol::Symbol;
 
 #[derive(Default)]
 struct Inner {
@@ -33,6 +34,13 @@ struct Inner {
     /// from elsewhere -- upstream NativeCall's `$routine.returns` -- answers
     /// the same type.
     return_type: RwLock<Option<super::Value>>,
+    /// The name `Code.set_name` / `nqp::setcodename` gave the routine. Every
+    /// `&foo` read of a named routine builds a fresh `SubData` from its
+    /// registry entry, so a rename written into one of those would be lost on
+    /// the next read; the cell is what they all share (#11844).
+    renamed: RwLock<Option<Symbol>>,
+    /// Set once a rename is stored; never cleared.
+    has_renamed: AtomicBool,
 }
 
 /// See the module docs. Cloning shares the cell: a clone of the handle is the
@@ -95,11 +103,32 @@ impl RoutineCell {
         }
     }
 
+    /// The name the routine was last renamed to, if it ever was.
+    // Cost: O(1); one atomic load for a routine that was never renamed.
+    pub(crate) fn renamed(&self) -> Option<Symbol> {
+        if !self.0.has_renamed.load(Ordering::Acquire) {
+            return None;
+        }
+        self.0.renamed.read().ok().and_then(|g| *g)
+    }
+
+    /// Record `name` as the routine's name, for every value of the routine.
+    // Cost: O(1).
+    pub(crate) fn rename(&self, name: Symbol) {
+        if let Ok(mut slot) = self.0.renamed.write() {
+            *slot = Some(name);
+        }
+        self.0.has_renamed.store(true, Ordering::Release);
+    }
+
     /// A new, unshared cell starting from this one's composition: what a
     /// Raku-level `.clone` of the routine gets (ADR-11827 §2.3).
     // Cost: O(1).
     pub(crate) fn forked(&self) -> Self {
         let fresh = Self::default();
+        if let Some(name) = self.renamed() {
+            fresh.rename(name);
+        }
         if let Some(overrides) = self.get() {
             fresh.set(overrides);
         }

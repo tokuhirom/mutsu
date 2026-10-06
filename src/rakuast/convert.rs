@@ -804,18 +804,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     || !hidden_parents.is_empty()
                     || !does_parents.is_empty()
                     || repr.is_some()
-                    || !custom_traits.is_empty()
+                    || has_package_traits(custom_traits)
                     || *is_unit
                     || !*implicit_grammar_parent
                     || parents != &["Grammar".to_string()]
                 {
                     return Err(unsupported("grammar with inheritance / scope / traits"));
                 }
-                let mut fields = lexical_scope_field(*is_lexical);
-                fields.push(node_field(
-                    Some("name"),
-                    name_from_identifier(&name.resolve()),
-                ));
+                let mut fields =
+                    package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
                 fields.push(node_field(
                     Some("body"),
                     block_node(&crate::parser::unhoist_nested_methods(body))?,
@@ -833,18 +830,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if name_expr.is_some()
                 || *is_hidden
                 || !hidden_parents.is_empty()
-                || !custom_traits.is_empty()
+                || has_package_traits(custom_traits)
                 || *is_unit
             {
                 return Err(unsupported(
                     "class with inheritance / scope / repr / traits",
                 ));
             }
-            let mut fields = lexical_scope_field(*is_lexical);
-            fields.push(node_field(
-                Some("name"),
-                name_from_identifier(&name.resolve()),
-            ));
+            let mut fields =
+                package_header_fields(*name, *is_lexical, is_colons_package(custom_traits));
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
@@ -858,7 +852,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
             fields.push(node_field(
                 Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(body))?,
+                block_node(&crate::parser::unhoist_nested_methods(
+                    without_composed_header(body, does_parents),
+                ))?,
             ));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
@@ -1752,6 +1748,48 @@ pub(super) fn statement_expression(expr: RakuAstNode) -> RakuAstNode {
     }
 }
 
+/// The leading fields of a package declaration node (`class`, `grammar`,
+/// `role`): its `scope`, then its `name`.
+///
+/// A declaration with no source name (`class { }`) is registered under an
+/// internal `__ANON_*__` name, which rakudo has no counterpart for: its node
+/// simply has no `name`. The empty name `class :: { }` is told apart by the
+/// parser's marker (`colons`); rakudo gives it an `anon` scope over the name
+/// `::`.
+// Cost: O(k), k = length of the name.
+pub(super) fn package_header_fields(
+    name: crate::symbol::Symbol,
+    is_lexical: bool,
+    colons: bool,
+) -> Vec<RakuAstField> {
+    if colons {
+        let mut fields = vec![leaf_field(Some("scope"), Value::str_from("anon"))];
+        fields.extend(name_parts::stash_name("").map(|n| node_field(Some("name"), n)));
+        return fields;
+    }
+    let mut fields = lexical_scope_field(is_lexical);
+    let name = name.resolve();
+    if !crate::value::is_internal_anon_type_name(&name) {
+        fields.push(node_field(Some("name"), name_from_identifier(&name)));
+    }
+    fields
+}
+
+/// Whether a package declaration's `custom_traits` hold anything but the
+/// parser's empty-name marker, which the node expresses itself.
+pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits
+        .iter()
+        .any(|(t, _)| t != crate::parser::ANON_COLONS_TRAIT)
+}
+
+/// Whether a package declaration was written with the empty name `::`.
+pub(super) fn is_colons_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits
+        .iter()
+        .any(|(t, _)| t == crate::parser::ANON_COLONS_TRAIT)
+}
+
 /// `TARGET[INDEX]` / `TARGET{INDEX}` as `ApplyPostfix(operand, Postcircumfix::*Index)`,
 /// with the assigned value as the postcircumfix's `assignee` when there is one.
 pub(super) fn subscript_node(
@@ -2050,6 +2088,29 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // other one stays the boundary (the catch-all arm below).
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
             Ok(bareword::convert(name).expect("just checked"))
+        }
+        // `class { }` / `role { }` / `grammar { }` in expression position: the
+        // parser wraps the declaration in a `DoStmt`, rakudo has the node itself.
+        Expr::DoStmt(stmt)
+            if matches!(
+                stmt.as_ref(),
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
+            ) =>
+        {
+            let statement =
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("package declaration"))?;
+            statement
+                .fields
+                .iter()
+                .find(|f| f.name == Some("expression"))
+                .and_then(|f| match &f.value {
+                    RakuAstFieldValue::Node(value) => match value.view() {
+                        ValueView::RakuAst(node) => Some(node.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .ok_or_else(|| unsupported("package declaration"))
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
@@ -3594,6 +3655,25 @@ fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
 /// `is Int` is `Trait::Is(type => Type::Simple)` (a NAMED `type`), `does R` is
 /// `Trait::Does(Type::Simple)` (POSITIONAL), and `is rw` is
 /// `Trait::Is(name => Name)` — a trait *name*, not a type.
+/// A class expression's body without the `does R` statements the parser puts
+/// in front of it for each `does` clause of the header (`class :: does R { }`).
+/// The clause is already in `does_parents`, where a class declaration keeps
+/// it, and renders as a `Trait::Does`; the statement is its duplicate.
+// Cost: O(d), d = number of leading statements.
+fn without_composed_header<'a>(body: &'a [Stmt], does_parents: &[String]) -> &'a [Stmt] {
+    let header = body
+        .iter()
+        .take_while(|stmt| {
+            matches!(
+                stmt,
+                Stmt::DoesDecl { name, from_is: false, also: false, args: None }
+                    if does_parents.iter().any(|r| r == name.resolve().as_str())
+            )
+        })
+        .count();
+    &body[header..]
+}
+
 fn class_traits(
     parents: &[String],
     does_parents: &[String],

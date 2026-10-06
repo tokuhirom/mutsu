@@ -416,6 +416,9 @@ impl Interpreter {
                 .embedded_attributes
                 .insert(attr_name_str.clone());
         }
+        if Self::declares_box_target(&decl) {
+            self.register_box_target(cx.name, &attr_name_str);
+        }
         if let Some(it) = &decl.is_type {
             self.registry_mut()
                 .class_attribute_is_types

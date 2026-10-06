@@ -9,6 +9,14 @@
 #   scripts/rakuast-frontend.sh check    # run the listed files in the mode; fail if any fails
 #   scripts/rakuast-frontend.sh survey   # run every t/ file in the mode; print the count
 #   scripts/rakuast-frontend.sh update   # survey, then rewrite the list (only ever adds files)
+#   scripts/rakuast-frontend.sh causes   # why the files outside the list do not pass (see below)
+#
+# `causes` runs every t/ file that is NOT in the list and records, in
+# tmp/rakuast-causes/results.tsv, `PASS`, `DIFF` (runs, but fails differently from
+# the ordinary frontend) or `REFUSE` (the first construct the conversion or the
+# lowering refuses), then prints the causes by file count
+# (scripts/rakuast-causes.py). A file is counted under its FIRST refusal only, so a
+# cause's count is an upper bound on what fixing it moves into the list.
 #
 #   MUTSU_BIN  interpreter to run (default target/release/mutsu)
 #   JOBS       parallel jobs (default: nproc)
@@ -63,8 +71,31 @@ case "${1:-check}" in
       echo "rakuast-frontend: $LIST now lists $(listed_files | wc -l) files"
     fi
     ;;
+  causes)
+    out=tmp/rakuast-causes
+    mkdir -p "$out"
+    find t -name '*.t' | LC_ALL=C sort > "$out/all.txt"
+    listed_files | LC_ALL=C sort > "$out/listed.txt"
+    LC_ALL=C comm -23 "$out/all.txt" "$out/listed.txt" > "$out/outside.txt"
+    echo "rakuast-frontend: $(wc -l < "$out/outside.txt") t/ files are outside $LIST"
+    cause_of() {
+      f="$1"
+      msg=$(timeout 30 "$MUTSU_BIN" "$f" 2>&1 >/dev/null </dev/null |
+        grep -m1 -o 'does not round-trip through RakuAST: .*' | head -c 400)
+      if [ -n "$msg" ]; then
+        printf 'REFUSE\t%s\t%s\n' "$f" "${msg#does not round-trip through RakuAST: }"
+      elif timeout 30 "$MUTSU_BIN" "$f" >/dev/null 2>&1 </dev/null; then
+        printf 'PASS\t%s\n' "$f"
+      else
+        printf 'DIFF\t%s\n' "$f"
+      fi
+    }
+    export -f cause_of
+    xargs -P "$JOBS" -I{} bash -c 'cause_of {}' < "$out/outside.txt" > "$out/results.tsv"
+    python3 -I scripts/rakuast-causes.py "$out/results.tsv"
+    ;;
   *)
-    echo "usage: $0 check|survey|update" >&2
+    echo "usage: $0 check|survey|update|causes" >&2
     exit 2
     ;;
 esac

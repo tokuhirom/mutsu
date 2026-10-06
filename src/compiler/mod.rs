@@ -1637,6 +1637,13 @@ pub(crate) struct Compiler {
     /// scalar (`my $x := $itemized`) inherits the item container and is NOT
     /// recorded. See `normalize_for_iterable`.
     noncontainer_bound_vars: std::collections::HashSet<String>,
+    /// The enclosing compilers' [`Self::noncontainer_bound_vars`], handed down by
+    /// `inherit_enclosing_scopes`: a routine or closure that reads such a
+    /// variable as a free variable (`my $l := (1, 2, 3); sub f { for $l {...} }`)
+    /// sees the same container-less binding the declaring scope does. Consulted
+    /// only for a name this compiler has NOT declared itself (`local_map`), so a
+    /// parameter or `my` of the same name in the child shadows it.
+    enclosing_noncontainer_bound_vars: std::collections::HashSet<String>,
     /// `$` parameters of the routine being compiled that bind WITHOUT a Scalar
     /// container ([`crate::vm::ScalarParamBind::Decont`], e.g. `Positional
     /// $x`), so `for $x` iterates and `my @a = $x` flattens the bound value.
@@ -1991,6 +1998,7 @@ impl Compiler {
             pending_declarator_doc: None,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
+            enclosing_noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
             readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
@@ -2571,6 +2579,18 @@ impl Compiler {
             .extend(self.enclosing_local_names.iter().cloned());
         sub.class_body_static_code_vars
             .extend(self.class_body_static_code_vars.iter().cloned());
+        // A `:=`-bound container-less scalar stays container-less inside the
+        // closures and routines that capture it (`for $l` iterates there too).
+        // Ours are inherited as they stand; an ancestor's only while this scope
+        // does not declare the same name itself (that declaration shadows it).
+        sub.enclosing_noncontainer_bound_vars
+            .extend(self.noncontainer_bound_vars.iter().cloned());
+        sub.enclosing_noncontainer_bound_vars.extend(
+            self.enclosing_noncontainer_bound_vars
+                .iter()
+                .filter(|n| !self.local_map.contains_key(n.as_str()))
+                .cloned(),
+        );
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
@@ -4290,6 +4310,23 @@ impl Compiler {
             && !self.constant_vars.contains(name)
             && !self.noncontainer_bound_vars.contains(name)
             && !self.decont_scalar_params.contains(name)
+            && !self.captured_noncontainer_bound_var(name)
+    }
+
+    /// Whether `$rhs` — the right-hand side of a scalar `:=` bind — is NOT one of
+    /// the container-less bound scalars, so the bind inherits its item container.
+    // Cost: O(1).
+    pub(super) fn scalar_var_is_bound_item(&self, rhs: &str) -> bool {
+        !self.noncontainer_bound_vars.contains(rhs) && !self.captured_noncontainer_bound_var(rhs)
+    }
+
+    /// Whether `name` is a free variable here that an enclosing scope `:=`-bound
+    /// without a Scalar container. A name this compiler declares itself (a
+    /// parameter, a `my`, a loop variable) is that declaration's, not the
+    /// enclosing one's, so `local_map` hides the inherited fact.
+    // Cost: O(1).
+    fn captured_noncontainer_bound_var(&self, name: &str) -> bool {
+        self.enclosing_noncontainer_bound_vars.contains(name) && !self.local_map.contains_key(name)
     }
 
     /// Record a signature's container-less `$` parameters in
