@@ -1,6 +1,6 @@
 //! `Int`'s rows.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value};
 
 pub(super) static ROWS: &[MethodRow] = &[MethodRow {
@@ -8,6 +8,8 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
     name: "isNaN",
     arity: 0,
     handler: Handler::Pure(is_nan),
+    flags: RowFlags::NONE,
+    named: &[],
 }];
 
 /// `Int.isNaN`: an integer is never NaN.

@@ -462,6 +462,66 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Pair))
     }
 
+    /// Whether a built-in method row may be handed this word as a positional
+    /// argument without the call first needing a probe the method table skips
+    /// (ADR-11276 §10.5) — a pure tag probe.
+    ///
+    /// An allowlist, so a kind added later is refused until someone decides.
+    /// Refused: a `Junction` (the call must autothread), a `Seq`/`LazyList`/
+    /// `Slip` or a thunk (deferred: the call must reify it), a `Proxy`, a
+    /// container or a variable reference (the call must read through it), a
+    /// `Mixin` or an `Instance` (their `Str`/`ACCEPTS` may be user code), a
+    /// shaped or lazy array, an itemized hash, a lazily materialized `Match`
+    /// and a string-keyed `Pair` (a named argument, split off before the
+    /// handler sees the arguments).
+    #[inline]
+    pub(in crate::value) fn is_plain_argument(&self) -> bool {
+        match classify(self.0.get()) {
+            Classified::Int(_) | Classified::Num(_) => true,
+            Classified::Kind(kind) => matches!(
+                kind,
+                Kind::Str
+                    | Kind::Regex
+                    | Kind::RegexWithAdverbs
+                    | Kind::RegexCaptured
+                    | Kind::BigInt
+                    | Kind::IntBoxed
+                    | Kind::Rat
+                    | Kind::FatRat
+                    | Kind::BigRat
+                    | Kind::Complex
+                    | Kind::ValuePair
+                    | Kind::Enum
+                    | Kind::Range
+                    | Kind::RangeExcl
+                    | Kind::RangeExclStart
+                    | Kind::RangeExclBoth
+                    | Kind::GenericRange
+                    | Kind::Version
+                    | Kind::Capture
+                    | Kind::Uni
+                    | Kind::Sub
+                    | Kind::Routine
+                    | Kind::ArrayList
+                    | Kind::ArrayArray
+                    | Kind::ArrayItemList
+                    | Kind::ArrayItemArray
+                    | Kind::HashPlain
+                    | Kind::SetImm
+                    | Kind::SetMut
+                    | Kind::BagImm
+                    | Kind::BagMut
+                    | Kind::MixImm
+                    | Kind::MixMut
+                    | Kind::Nil
+                    | Kind::Whatever
+                    | Kind::HyperWhatever
+                    | Kind::Bool
+                    | Kind::Package
+            ),
+        }
+    }
+
     /// Whether this word is a `Pair` OR `ValuePair` — a pure tag probe.
     #[inline]
     pub(in crate::value) fn is_any_pair(&self) -> bool {
@@ -581,6 +641,48 @@ impl NanBox {
             Classified::Kind(Kind::BigRat) if self.is_bigfatrat() => Some(DispatchShape::FatRat),
             Classified::Kind(Kind::BigRat) => Some(DispatchShape::Rat),
             Classified::Kind(Kind::Complex) => Some(DispatchShape::Complex),
+            Classified::Kind(Kind::Bool) => Some(DispatchShape::Bool),
+            Classified::Kind(
+                Kind::Range
+                | Kind::RangeExcl
+                | Kind::RangeExclStart
+                | Kind::RangeExclBoth
+                | Kind::GenericRange,
+            ) => Some(DispatchShape::Range),
+            Classified::Kind(Kind::Pair | Kind::ValuePair) => Some(DispatchShape::Pair),
+            Classified::Kind(Kind::Capture) => Some(DispatchShape::Capture),
+            Classified::Kind(Kind::Version) => Some(DispatchShape::Version),
+            Classified::Kind(Kind::Uni) => Some(DispatchShape::Uni),
+            Classified::Kind(Kind::SetImm) => Some(DispatchShape::Set),
+            Classified::Kind(Kind::SetMut) => Some(DispatchShape::SetHash),
+            Classified::Kind(Kind::BagImm) => Some(DispatchShape::Bag),
+            Classified::Kind(Kind::BagMut) => Some(DispatchShape::BagHash),
+            Classified::Kind(Kind::MixImm) => Some(DispatchShape::Mix),
+            Classified::Kind(Kind::MixMut) => Some(DispatchShape::MixHash),
+            // A built-in class's own instance: its class name is the shape's.
+            // A user subclass has another name, so it has none.
+            Classified::Kind(Kind::Instance) => {
+                let bits = self.0.get();
+                // SAFETY: Instance words carry a `Gc<InstanceAttrs>`.
+                let attrs = unsafe { peek_gc::<InstanceAttrs>(bits) };
+                DispatchShape::from_instance_class(attrs.class_name())
+            }
+            _ => None,
+        }
+    }
+
+    /// The [`crate::value::DispatchShape`] of the built-in type a type object
+    /// (`Package("Int")`) stands for, or `None` for anything else — a user
+    /// class's type object has no shape. A pure tag probe for everything but
+    /// a `Package`, whose name is looked up.
+    #[inline]
+    pub(in crate::value) fn type_object_shape(&self) -> Option<crate::value::DispatchShape> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Package) => {
+                let sym = crate::symbol::Symbol::from_id(inline_payload(bits));
+                crate::value::DispatchShape::from_type_name(sym.as_str())
+            }
             _ => None,
         }
     }

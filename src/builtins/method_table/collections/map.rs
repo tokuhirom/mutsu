@@ -1,6 +1,6 @@
 //! `Map`'s rows (`Hash` inherits them through its MRO).
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -9,72 +9,96 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "elems",
         arity: 0,
         handler: Handler::Pure(elems),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "Bool",
         arity: 0,
         handler: Handler::Pure(bool),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "keys",
         arity: 0,
         handler: Handler::Pure(keys),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "values",
         arity: 0,
         handler: Handler::Pure(values),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "kv",
         arity: 0,
         handler: Handler::Pure(kv),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "pairs",
         arity: 0,
         handler: Handler::Pure(pairs),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "antipairs",
         arity: 0,
         handler: Handler::Pure(antipairs),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "contains",
         arity: 1,
         handler: Handler::Pure(crate::builtins::method_table::str_search::contains),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "index",
         arity: 1,
         handler: Handler::Pure(crate::builtins::method_table::str_search::index),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "invert",
         arity: 0,
         handler: Handler::Narrow(invert),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "Numeric",
         arity: 0,
         handler: Handler::Pure(elems),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Map",
         name: "Int",
         arity: 0,
         handler: Handler::Pure(elems),
+        flags: RowFlags::NONE,
+        named: &[],
     },
 ];
 

@@ -1,6 +1,6 @@
 //! Zero-argument `Any` collection methods shared by the row and cascade paths.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -9,48 +9,64 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "elems",
         arity: 0,
         handler: Handler::Pure(elems),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "end",
         arity: 0,
         handler: Handler::Pure(end),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "keys",
         arity: 0,
         handler: Handler::Pure(keys),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "values",
         arity: 0,
         handler: Handler::Pure(values),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "kv",
         arity: 0,
         handler: Handler::Pure(kv),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "pairs",
         arity: 0,
         handler: Handler::Pure(pairs),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "antipairs",
         arity: 0,
         handler: Handler::Pure(antipairs),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Any",
         name: "reverse",
         arity: 0,
         handler: Handler::Narrow(reverse),
+        flags: RowFlags::NONE,
+        named: &[],
     },
 ];
 

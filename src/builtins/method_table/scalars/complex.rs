@@ -1,6 +1,6 @@
 //! `Complex`'s rows.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -9,30 +9,40 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "isNaN",
         arity: 0,
         handler: Handler::Pure(is_nan),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Complex",
         name: "re",
         arity: 0,
         handler: Handler::Pure(re),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Complex",
         name: "im",
         arity: 0,
         handler: Handler::Pure(im),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Complex",
         name: "reals",
         arity: 0,
         handler: Handler::Pure(reals),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "Complex",
         name: "conj",
         arity: 0,
         handler: Handler::Pure(conj),
+        flags: RowFlags::NONE,
+        named: &[],
     },
 ];
 

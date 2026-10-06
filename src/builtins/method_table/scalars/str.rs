@@ -11,7 +11,7 @@
 //! row. The cascade arms that still answer receivers with no shape (`Bool`,
 //! instances of `Cool` subclasses) call the same handlers.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::grapheme_index::with_str;
 use crate::value::{RuntimeError, Value};
 
@@ -23,6 +23,8 @@ macro_rules! rows {
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }

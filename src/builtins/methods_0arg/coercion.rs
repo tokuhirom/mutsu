@@ -17,11 +17,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
     match method {
         // `isNaN` on a plain `Int`, `Num`, `Rat`, `FatRat` or `Complex` is a
         // row in `builtins::method_table` (ADR-11276), answered before this
-        // cascade; a receiver with a dispatch shape never reaches this arm.
-        // Every other receiver (`Bool`, `Instant`, `Duration`, ...) is not NaN.
+        // cascade; such a receiver never reaches this arm. Every other
+        // receiver (`Bool`, `Instant`, `Duration`, ...) is not NaN.
         // TODO: rows for the remaining owners; Rakudo has no `isNaN` on `Str`
         // or a `Rat` type object, which this arm answers `False`.
-        "isNaN" if target.dispatch_shape().is_none() => Some(Ok(Value::FALSE)),
+        "isNaN"
+            if !matches!(
+                target.dispatch_shape(),
+                Some(
+                    crate::value::DispatchShape::Int
+                        | crate::value::DispatchShape::Num
+                        | crate::value::DispatchShape::Rat
+                        | crate::value::DispatchShape::FatRat
+                        | crate::value::DispatchShape::Complex
+                )
+            ) =>
+        {
+            Some(Ok(Value::FALSE))
+        }
         "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
@@ -139,9 +152,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Package(name) if name.resolve() == "Pair" => Some(Ok(target.clone())),
             _ => None,
         },
+        // `key`, `value` and `antipair` on a `Pair` are the `Pair` rows'
+        // handlers (`method_table::pair`).
         "key" => match target.view() {
-            ValueView::Pair(k, _) => Some(Ok(Value::str(k.clone()))),
-            ValueView::ValuePair(k, _) => Some(Ok(k.clone())),
+            ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                crate::builtins::method_table::pair::key(target, &[])
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
@@ -151,8 +167,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 .get("key")
                 .cloned()
                 .unwrap_or(Value::NIL))),
-            ValueView::Bool(true) => Some(Ok(Value::str_from("True"))),
-            ValueView::Bool(false) => Some(Ok(Value::str_from("False"))),
+            ValueView::Bool(_) => Some(crate::builtins::method_table::truth::bool_key(target, &[])),
             _ => None,
         },
         "value" => match target.view() {
@@ -160,7 +175,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // pair's HashEntryRef (so `$p.value` in arithmetic sees the plain
             // value and tracks in-loop `%h{$p.key} = X` writes), and is a plain
             // clone for any other pair value.
-            ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => Some(Ok(v.hash_entry_read())),
+            ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                crate::builtins::method_table::pair::value(target, &[])
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
@@ -170,15 +187,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 .get("value")
                 .cloned()
                 .unwrap_or(Value::NIL))),
-            ValueView::Bool(b) => Some(Ok(Value::int(if b { 1 } else { 0 }))),
+            ValueView::Bool(_) => Some(crate::builtins::method_table::truth::bool_value(
+                target,
+                &[],
+            )),
             _ => None,
         },
         // ADR-0021 I2: data-minted pairs default positional.
-        "antipair" => match target.view() {
-            ValueView::Pair(k, v) => Some(Ok(Value::value_pair(v.clone(), Value::str(k.clone())))),
-            ValueView::ValuePair(k, v) => Some(Ok(Value::value_pair(v.clone(), k.clone()))),
-            _ => None,
-        },
+        "antipair" => crate::builtins::method_table::pair::antipair(target, &[]),
         "Capture" => Some(value_to_capture(target)),
         // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
         "Slip" => match target.view() {

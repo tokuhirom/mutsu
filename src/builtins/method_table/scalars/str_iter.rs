@@ -7,7 +7,7 @@
 //! lazy `Seq` over the receiver's string form (`value::str_iter_seq`), and
 //! `ords` an eager `Seq` of the NFC codepoints.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, StrIterMode, Value};
 
 /// The rows one owner declares.
@@ -19,24 +19,32 @@ macro_rules! iter_rows {
                 name: "comb",
                 arity: 0,
                 handler: Handler::Pure(comb),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "words",
                 arity: 0,
                 handler: Handler::Pure(words),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "lines",
                 arity: 0,
                 handler: Handler::Pure(lines),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "ords",
                 arity: 0,
                 handler: Handler::Pure(ords),
+                flags: RowFlags::NONE,
+                named: &[],
             },
         ]
     };

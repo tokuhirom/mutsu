@@ -39,10 +39,18 @@ pub fn date_method_0arg(attributes: &AttrMap, method: &str) -> Option<Result<Val
     let (year, month, day) = date_attrs(attributes);
     let days = civil_to_epoch_days(year, month, day);
 
+    // `year`, `month` and `day` are the `Date` rows' handlers
+    // (`method_table::temporal`), for the receivers the table has no shape for.
     match method {
-        "year" => Some(Ok(Value::int(year))),
-        "month" => Some(Ok(Value::int(month))),
-        "day" | "day-of-month" => Some(Ok(Value::int(day))),
+        "year" => Some(Ok(crate::builtins::method_table::temporal::date_year(
+            attributes,
+        ))),
+        "month" => Some(Ok(crate::builtins::method_table::temporal::date_month(
+            attributes,
+        ))),
+        "day" | "day-of-month" => Some(Ok(crate::builtins::method_table::temporal::date_day(
+            attributes,
+        ))),
         "day-of-week" | "weekday" => Some(Ok(Value::int(day_of_week(days)))),
         "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
         "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
@@ -135,11 +143,21 @@ pub fn datetime_method_0arg(
     let days = civil_to_epoch_days(year, month, day);
 
     match method {
-        "year" => Some(Ok(Value::int(year))),
-        "month" => Some(Ok(Value::int(month))),
-        "day" | "day-of-month" => Some(Ok(Value::int(day))),
-        "hour" => Some(Ok(Value::int(hour))),
-        "minute" => Some(Ok(Value::int(minute))),
+        "year" => Some(Ok(crate::builtins::method_table::temporal::datetime_year(
+            attributes,
+        ))),
+        "month" => Some(Ok(crate::builtins::method_table::temporal::datetime_month(
+            attributes,
+        ))),
+        "day" | "day-of-month" => Some(Ok(crate::builtins::method_table::temporal::datetime_day(
+            attributes,
+        ))),
+        "hour" => Some(Ok(crate::builtins::method_table::temporal::datetime_hour(
+            attributes,
+        ))),
+        "minute" => Some(Ok(
+            crate::builtins::method_table::temporal::datetime_minute(attributes),
+        )),
         "second" => {
             if second == second.floor() {
                 Some(Ok(Value::int(second as i64)))

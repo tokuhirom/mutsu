@@ -9,7 +9,7 @@
 //! word-sized or big; the cascade arms that still answer receivers with no
 //! shape (`Bool`, enums, `Duration`) call them too.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::{FromPrimitive, Signed, Zero};
@@ -22,6 +22,8 @@ macro_rules! rows {
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }
