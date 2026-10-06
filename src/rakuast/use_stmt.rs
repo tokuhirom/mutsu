@@ -89,6 +89,35 @@ pub(super) fn convert_use(
     Ok(node)
 }
 
+/// `need MODULE;` -> `Statement::Need(module-names => (Name,))`.
+pub(super) fn convert_need(module: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::StatementNeed,
+        fields: vec![RakuAstField {
+            name: Some("module-names"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(name_from_identifier(
+                module,
+            )))]),
+        }],
+    }
+}
+
+/// `import MODULE [:TAG...];` -> `Statement::Import`, its tags as the `use`
+/// statement's `argument`.
+pub(super) fn convert_import(module: &str, tags: &[String]) -> RakuAstNode {
+    let mut node = RakuAstNode {
+        class: RakuAstClass::StatementImport,
+        fields: vec![node_field(
+            Some("module-name"),
+            name_from_identifier(module),
+        )],
+    };
+    if let Some(argument) = tag_argument(tags) {
+        node.fields.push(node_field(Some("argument"), argument));
+    }
+    node
+}
+
 /// `no PRAGMA` -> `Pragma(off => True, name => PRAGMA)`.
 pub(super) fn convert_no(module: &str) -> RakuAstNode {
     let mut node = pragma_node(module);
@@ -109,8 +138,20 @@ fn use_argument(arg: Option<&Expr>, tags: &[String]) -> Result<Option<RakuAstNod
     match (arg, tags) {
         (None, []) => Ok(None),
         (Some(arg), []) => Ok(Some(convert_expr(arg)?)),
-        (None, [tag]) => Ok(Some(colonpair_true(tag))),
-        (None, tags) => Ok(Some(RakuAstNode {
+        (None, tags) => Ok(tag_argument(tags)),
+        (Some(_), _) => Err(super::convert::unsupported(
+            "use with both an argument and import tags",
+        )),
+    }
+}
+
+/// Import tags as one `argument`: a `ColonPair::True` for one tag, a comma
+/// list of them for several, nothing for none.
+fn tag_argument(tags: &[String]) -> Option<RakuAstNode> {
+    match tags {
+        [] => None,
+        [tag] => Some(colonpair_true(tag)),
+        tags => Some(RakuAstNode {
             class: RakuAstClass::ApplyListInfix,
             fields: vec![
                 node_field(Some("infix"), plain_infix(",")),
@@ -123,10 +164,7 @@ fn use_argument(arg: Option<&Expr>, tags: &[String]) -> Result<Option<RakuAstNod
                     ),
                 },
             ],
-        })),
-        (Some(_), _) => Err(super::convert::unsupported(
-            "use with both an argument and import tags",
-        )),
+        }),
     }
 }
 
@@ -173,6 +211,35 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         condition: None,
         if_imports: Vec::new(),
     })
+}
+
+/// `RakuAST::Statement::Need` -> `Stmt::Need`. Only the one-module form the
+/// converter renders; several names or a version colonpair stay the boundary.
+pub(super) fn lower_need(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let names = list_field(node, "module-names")?;
+    let [only] = names else {
+        return Err(super::lower::unsupported(node));
+    };
+    let ValueView::RakuAst(name) = only.view() else {
+        return Err(super::lower::unsupported(node));
+    };
+    match name_parts::name_shape(name) {
+        Some(NameShape::Identifier(module)) => Ok(Stmt::Need { module }),
+        _ => Err(super::lower::unsupported(node)),
+    }
+}
+
+/// `RakuAST::Statement::Import` -> `Stmt::Import`.
+pub(super) fn lower_import(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let module = match name_parts::name_shape(named_child(node, "module-name")?) {
+        Some(NameShape::Identifier(name)) => name,
+        _ => return Err(super::lower::unsupported(node)),
+    };
+    let (arg, tags) = lower_argument(node)?;
+    if arg.is_some() {
+        return Err(super::lower::unsupported(node));
+    }
+    Ok(Stmt::Import { module, tags })
 }
 
 /// `RakuAST::Statement::LanguageVersion` -> the parser's `use v6` form.

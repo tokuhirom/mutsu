@@ -35,6 +35,9 @@ enum DeclaredKind {
     /// `Color::Red`), or a sigilless parameter (`\x`): all render as
     /// `Term::Name` (measured on rakudo 2026.09).
     Term,
+    /// An `our sub` of a package, reached by its qualified name (`M::foo`):
+    /// rakudo renders the bare reference as an argument-less `Call::Name`.
+    Routine,
 }
 
 thread_local! {
@@ -108,7 +111,34 @@ fn insert_declared_type(name: Symbol, out: &mut HashMap<String, DeclaredKind>) {
 /// block counts as well as one in a class, routine or bare block.
 // Cost: O(n), n = size of the AST.
 fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind>) {
-    struct Scan<'o>(&'o mut HashMap<String, DeclaredKind>);
+    /// The names collected so far, and the packages whose body is being scanned
+    /// (outermost first): a declaration nested in `class Outer { class Inner }`
+    /// is also `Outer::Inner`.
+    struct Scan<'o>(&'o mut HashMap<String, DeclaredKind>, Vec<Symbol>);
+
+    impl Scan<'_> {
+        /// Register `name` under every spelling a reference inside or outside
+        /// the enclosing packages can use: `Inner`, `Outer::Inner`, ...
+        fn insert_nested_type(&mut self, name: Symbol) {
+            for composed in self.compositions(name) {
+                insert_declared_type(composed, self.0);
+            }
+        }
+
+        /// `name`, then `name` under each suffix of the enclosing packages:
+        /// for `A`, `B` open, `n`, `B::n` and `A::B::n`.
+        fn compositions(&self, name: Symbol) -> Vec<Symbol> {
+            let mut all = vec![name];
+            for start in 0..self.1.len() {
+                let mut composed = name;
+                for outer in self.1[start..].iter().rev() {
+                    composed = qualified(*outer, composed);
+                }
+                all.push(composed);
+            }
+            all
+        }
+    }
 
     impl<'ast> Visit<'ast> for Scan<'_> {
         fn visit_stmt(&mut self, stmt: &'ast Stmt) {
@@ -116,13 +146,15 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 // An enum's values are terms of their own, bare and qualified
                 // by the enum's name (`Red`, `Color::Red`).
                 Stmt::EnumDecl { name, variants, .. } => {
-                    insert_declared_type(*name, self.0);
-                    for (variant, _) in variants {
-                        self.0.entry(variant.clone()).or_insert(DeclaredKind::Term);
-                        let qualified = qualified(*name, Symbol::intern(variant));
-                        self.0
-                            .entry(qualified.resolve())
-                            .or_insert(DeclaredKind::Term);
+                    for composed in self.compositions(*name) {
+                        insert_declared_type(composed, self.0);
+                        for (variant, _) in variants {
+                            self.0.entry(variant.clone()).or_insert(DeclaredKind::Term);
+                            let qualified = qualified(composed, Symbol::intern(variant));
+                            self.0
+                                .entry(qualified.resolve())
+                                .or_insert(DeclaredKind::Term);
+                        }
                     }
                 }
                 // A `module`/`package`/`grammar` name resolves at parse time
@@ -131,17 +163,47 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 Stmt::ClassDecl { name, .. }
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
-                | Stmt::Package { name, .. } => insert_declared_type(*name, self.0),
+                | Stmt::Package { name, .. } => self.insert_nested_type(*name),
                 Stmt::VarDecl {
                     name,
                     custom_traits,
                     ..
                 } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
                     self.0.insert(name.clone(), DeclaredKind::Term);
+                    // A `constant` is `our`-scoped: `M::c` reaches it too.
+                    for composed in self.compositions(Symbol::intern(name)).into_iter().skip(1) {
+                        self.0.insert(composed.resolve(), DeclaredKind::Term);
+                    }
+                }
+                // An `our sub` of a package is reached by its qualified name.
+                Stmt::SubDecl {
+                    name,
+                    custom_traits,
+                    ..
+                } if custom_traits
+                    .iter()
+                    .any(|(n, _)| n == super::convert::OUR_SCOPED) =>
+                {
+                    for composed in self.compositions(*name).into_iter().skip(1) {
+                        self.0.insert(composed.resolve(), DeclaredKind::Routine);
+                    }
                 }
                 _ => {}
             }
+            // The body of a package-like declaration is nested in its name.
+            let package = match stmt {
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::Package { name, .. } => Some(*name),
+                _ => None,
+            };
+            if let Some(name) = package {
+                self.1.push(name);
+            }
             walk_stmt(self, stmt);
+            if package.is_some() {
+                self.1.pop();
+            }
         }
 
         fn visit_expr(&mut self, expr: &'ast Expr) {
@@ -174,7 +236,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         }
     }
 
-    walk_stmts(&mut Scan(out), stmts);
+    walk_stmts(&mut Scan(out, Vec::new()), stmts);
 }
 
 /// The redispatch routines a body calls without arguments (`callsame`,
@@ -203,6 +265,37 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     match declared_kind(name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
+        Some(DeclaredKind::Routine) => return Some(call_name(name)),
+        None => {}
+    }
+    // `Str:D` / `Int:U` used as a term: a definite type over the type.
+    if let Some(base) = name.strip_suffix(":D").or_else(|| name.strip_suffix(":U"))
+        && convert(base).is_some_and(|node| node.class == RakuAstClass::TypeSimple)
+    {
+        return super::convert::build_type_node(name).ok();
+    }
+    // `GLOBAL` and a pseudo-package prefix on a name that resolves
+    // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
+    // qualified one.
+    if name == "GLOBAL" {
+        return Some(simple_type_node(name));
+    }
+    if let Some(rest) = name
+        .strip_prefix("GLOBAL::")
+        .or_else(|| name.strip_prefix("CORE::"))
+        && let Some(node) = convert(rest)
+    {
+        match node.class {
+            RakuAstClass::TypeSimple => return Some(simple_type_node(name)),
+            RakuAstClass::TermName => return Some(term_name(name)),
+            _ => {}
+        }
+    }
+    // A name a `use` brought in, which the unit's own declarations do not
+    // list: what the parse's scope tables resolved it to.
+    match crate::parser::declared_name_kind(name) {
+        Some(crate::parser::DeclaredNameKind::Type) => return Some(simple_type_node(name)),
+        Some(crate::parser::DeclaredNameKind::Term) => return Some(term_name(name)),
         None => {}
     }
     match core_term_names::kind(name) {
@@ -222,6 +315,14 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         });
     }
     None
+}
+
+/// An argument-less call by name (`M::foo`) -> `Call::Name`.
+fn call_name(name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::CallName,
+        fields: vec![node_field(Some("name"), name_from_identifier(name))],
+    }
 }
 
 fn term_name(name: &str) -> RakuAstNode {

@@ -148,6 +148,7 @@ pub(crate) use stmt::simple::is_user_declared_enum_value;
 /// `subset` (or class/role/grammar/enum) as a type constraint rather than a
 /// definite return value, independent of runtime sub-hoisting order (#8657).
 pub(crate) use stmt::simple::is_user_declared_type;
+pub(crate) use stmt::simple::{DeclaredNameKind, declared_name_kind};
 
 /// Snapshot parse-time type facts that affect compiling a module's cached AST.
 /// The parser normally leaves these in its thread-local scope; precompilation

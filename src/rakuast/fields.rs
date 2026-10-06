@@ -139,7 +139,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
                 Absent::TypeObject("RakuAST::StatementModifier::Loop"),
             ),
         ],
-        IntLiteral | NumLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
+            &[("value", Absent::Required)]
+        }
         VarLexical | VarDynamic => &[("name", Absent::Required)],
         VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
         Name => &[("parts", Absent::EmptyList)],
@@ -296,6 +298,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("off", Absent::Zero),
         ],
         StatementUse => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementImport => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementNeed => &[("module-names", Absent::EmptyList)],
         StatementLanguageVersion => &[("version", Absent::Required)],
         // The conditional family. `If` and `With` take the `elsif`/`orwith`
         // chain and an `else`; `Unless` and `Without` take neither (rakudo
@@ -331,7 +335,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
 pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     use RakuAstClass::*;
     Some(match class {
-        IntLiteral | NumLiteral | RatLiteral | StrLiteral => "value",
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
+            "value"
+        }
         FunctionInfix => "function",
         Infix | Prefix => "operator",
         VarLexical | VarDynamic => "name",

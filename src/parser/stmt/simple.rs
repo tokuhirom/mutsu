@@ -117,6 +117,7 @@ pub(in crate::parser) use registry::{
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
+pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
     is_user_declared_postfix_sub, is_user_declared_prefix_sub, is_user_declared_value_term,

@@ -91,6 +91,9 @@ pub enum RakuAstClass {
     IntLiteral,
     NumLiteral,
     RatLiteral,
+    // `v6.d` / `<1+2i>`: the value is the node's one positional field.
+    VersionLiteral,
+    ComplexLiteral,
     StrLiteral,
     QuotedString,
     QuotedRegex,
@@ -365,6 +368,9 @@ pub enum RakuAstClass {
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
     StatementUse,
+    // `need Module;` / `import Module :tag;`.
+    StatementNeed,
+    StatementImport,
     StatementLanguageVersion,
 }
 
@@ -390,6 +396,8 @@ impl RakuAstClass {
             IntLiteral => "RakuAST::IntLiteral",
             NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
+            VersionLiteral => "RakuAST::VersionLiteral",
+            ComplexLiteral => "RakuAST::ComplexLiteral",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
             QuotedRegex => "RakuAST::QuotedRegex",
@@ -597,6 +605,8 @@ impl RakuAstClass {
             StubWarn => "RakuAST::Stub::Warn",
             Pragma => "RakuAST::Pragma",
             StatementUse => "RakuAST::Statement::Use",
+            StatementNeed => "RakuAST::Statement::Need",
+            StatementImport => "RakuAST::Statement::Import",
             StatementLanguageVersion => "RakuAST::Statement::LanguageVersion",
         }
     }
@@ -705,6 +715,8 @@ impl RakuAstClass {
             IntLiteral
             | NumLiteral
             | RatLiteral
+            | VersionLiteral
+            | ComplexLiteral
             | StrLiteral
             | QuotedString
             | QuotedRegex
@@ -828,7 +840,13 @@ impl RakuAstClass {
                 "RakuAST::Termish",
                 "RakuAST::Expression",
             ],
-            Pragma | StatementUse | StatementLanguageVersion | StatementAlso | StatementWhenever => {
+            Pragma
+            | StatementUse
+            | StatementNeed
+            | StatementImport
+            | StatementLanguageVersion
+            | StatementAlso
+            | StatementWhenever => {
                 &["RakuAST::Statement"]
             }
             RegexQuantifierZeroOrMore
@@ -936,6 +954,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         "RakuAST::IntLiteral"
         | "RakuAST::NumLiteral"
         | "RakuAST::RatLiteral"
+        | "RakuAST::VersionLiteral"
+        | "RakuAST::ComplexLiteral"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
         | "RakuAST::Type::Enum"
@@ -1083,6 +1103,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::IntLiteral,
     RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
+    RakuAstClass::VersionLiteral,
+    RakuAstClass::ComplexLiteral,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
     RakuAstClass::QuotedRegex,
@@ -1292,6 +1314,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StubWarn,
     RakuAstClass::Pragma,
     RakuAstClass::StatementUse,
+    RakuAstClass::StatementNeed,
+    RakuAstClass::StatementImport,
     RakuAstClass::StatementLanguageVersion,
 ];
 
@@ -2768,6 +2792,8 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
         ("RakuAST::NumLiteral", "new") => RakuAstClass::NumLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
+        ("RakuAST::VersionLiteral", "new") => RakuAstClass::VersionLiteral,
+        ("RakuAST::ComplexLiteral", "new") => RakuAstClass::ComplexLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Trait::Does", "new") => RakuAstClass::TraitDoes,
@@ -3114,6 +3140,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::IntLiteral
             | RakuAstClass::NumLiteral
             | RakuAstClass::RatLiteral
+            | RakuAstClass::VersionLiteral
+            | RakuAstClass::ComplexLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix
             | RakuAstClass::Prefix

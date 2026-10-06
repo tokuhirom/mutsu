@@ -400,6 +400,52 @@ pub(crate) fn is_declared_symbol_name(name: &str) -> bool {
     })
 }
 
+/// What the parse's own scope tables say a bareword names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DeclaredNameKind {
+    /// A class / role / grammar / enum / subset the unit declares, or one a
+    /// `use`d module's scan exported.
+    Type,
+    /// A value term: an enum value, a sigilless term symbol (`constant X`,
+    /// `my \x`), or a value term a `use`d module's scan exported.
+    Term,
+}
+
+/// The kind of symbol `name` is in the parse scopes still open, or `None`. Right
+/// after a unit has parsed, those scopes hold the unit's top-level declarations
+/// and imports, which is what a bareword in that unit resolved against. The
+/// RakuAST conversion asks here for the names a `use` brought in: its own scan
+/// of the unit's declarations cannot see a module's exports.
+// Cost: O(d), d = number of open parse scopes (a few hash lookups per scope).
+pub(crate) fn declared_name_kind(name: &str) -> Option<DeclaredNameKind> {
+    if name.is_empty() {
+        return None;
+    }
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        for scope in scopes.iter().rev() {
+            if scope.user_types.contains(name) {
+                return Some(DeclaredNameKind::Type);
+            }
+            if scope.user_enum_values.contains(name)
+                || scope.imported_value_terms.contains(name)
+                // `Enum::value`: a value of an enum type the scopes know.
+                || name.rsplit_once("::").is_some_and(|(owner, value)| {
+                    scope.user_enum_types.contains(owner)
+                        && scope.user_enum_values.contains(value)
+                })
+                || scope
+                    .term_symbols
+                    .get(name)
+                    .is_some_and(|b| matches!(b, TermBinding::Value(_)))
+            {
+                return Some(DeclaredNameKind::Term);
+            }
+        }
+        None
+    })
+}
+
 pub(crate) fn register_user_callable_term_symbol(name: &str) {
     let Some(symbol) = name
         .strip_prefix("term:<")

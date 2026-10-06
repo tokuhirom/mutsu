@@ -265,6 +265,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `use` / `no` statements (see `use_stmt`).
         RakuAstClass::Pragma => super::use_stmt::lower_pragma(node),
         RakuAstClass::StatementUse => super::use_stmt::lower_use(node),
+        RakuAstClass::StatementNeed => super::use_stmt::lower_need(node),
+        RakuAstClass::StatementImport => super::use_stmt::lower_import(node),
         RakuAstClass::StatementLanguageVersion => super::use_stmt::lower_language_version(node),
         // A bare block in statement position runs once, here and now: it is
         // the parser's `Stmt::Block`, not a closure value. One that takes
@@ -3053,6 +3055,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::IntLiteral
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral
+        | RakuAstClass::VersionLiteral
+        | RakuAstClass::ComplexLiteral
         | RakuAstClass::StrLiteral => Ok(Expr::Literal(positional_leaf(node)?)),
         // `"..."` parses to a QuotedString wrapping StrLiteral segments; a single
         // plain segment lowers to its string literal.
