@@ -71,7 +71,7 @@ subtest 'reverse and sum', {
 }
 
 subtest 'positional subscript on a Range', {
-    plan 7;
+    plan 11;
     is (5..9).AT-POS(0), 5, 'AT-POS';
     is (5..9).AT-POS(4), 9, 'AT-POS of the last one';
     is (5..9).AT-POS(9).raku, 'Nil', 'AT-POS past the end is Nil';
@@ -81,4 +81,11 @@ subtest 'positional subscript on a Range', {
     my $error;
     try { (1..*).EXISTS-POS(2); CATCH { default { $error = .^name } } }
     is $error, 'X::Cannot::Lazy', 'EXISTS-POS of an open range is lazy';
+    is (1..3).AT-POS(-1).^name, 'Failure', 'AT-POS of a negative index is a Failure';
+    my $r = (5..9).AT-POS(-2);
+    is $r.exception.message, 'Index out of range. Is: -2, should be in 0..^Inf',
+        'the Failure says the index is out of range';
+    $r.so;
+    dies-ok { (1..3).EXISTS-POS("a") }, 'EXISTS-POS of a non-numeric Str dies';
+    nok (1..3).EXISTS-POS(-1), 'EXISTS-POS of a negative index is False';
 }

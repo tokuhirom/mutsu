@@ -178,15 +178,27 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
 /// (`.AT-POS("1")` reads element 1). A `Str` that is not a number is declined
 /// to the general path, which dies on it as Rakudo does; answering `Nil` here
 /// made the reply depend on which path the call took (`.AT-POS("a", :zzz)`
-/// was `Nil`, #9905). A negative index is `Nil`.
+/// was `Nil`, #9905). A negative index is an `X::OutOfRange` failure, as in
+/// Rakudo; any other argument that is no index is `Nil`.
 // Cost: O(d), d = chars of a Str index; O(1) otherwise.
 pub(crate) fn at_pos_index(arg: &Value) -> Result<usize, Option<Result<Value, RuntimeError>>> {
+    let out_of_range = |got: i64| {
+        Err(Some(Ok(RuntimeError::out_of_range_failure(
+            "Index",
+            Value::int(got),
+            "0..^Inf",
+        ))))
+    };
     match arg.view() {
         ValueView::Int(i) if i >= 0 => Ok(i as usize),
+        ValueView::Int(i) => out_of_range(i),
         ValueView::Num(f) if f >= 0.0 => Ok(f as usize),
+        ValueView::Num(f) if f < 0.0 && f.is_finite() => out_of_range(f.floor() as i64),
         ValueView::Rat(n, d) if d > 0 && n >= 0 => Ok((n / d) as usize),
+        ValueView::Rat(n, d) if d > 0 => out_of_range(n.div_euclid(d)),
         ValueView::Str(s) => match s.trim().parse::<f64>() {
             Ok(f) if f >= 0.0 => Ok(f as usize),
+            Ok(f) if f.is_finite() => out_of_range(f.floor() as i64),
             Ok(_) => Err(Some(Ok(Value::NIL))),
             Err(_) => Err(None),
         },
@@ -226,6 +238,8 @@ pub(crate) fn exists_pos(target: &Value, args: &[Value]) -> Option<Result<Value,
     let idx = match args[0].view() {
         ValueView::Int(i) => i,
         ValueView::Num(f) => f as i64,
+        // A `Str` that is no number dies in Rakudo (the cascade's coercion).
+        ValueView::Str(s) if s.trim().parse::<f64>().is_err() => return None,
         _ => return Some(Ok(Value::FALSE)),
     };
     if idx < 0 {
