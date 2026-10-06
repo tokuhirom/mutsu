@@ -6,7 +6,7 @@ use unicode_normalization::UnicodeNormalization;
 thread_local! {
     /// `pkg::name` keys of the tokens [`Interpreter::token_class_fold`] is
     /// currently folding, to cut self-referential class folds.
-    static FOLDING_TOKENS: std::cell::RefCell<std::collections::HashSet<String>> =
+    static FOLDING_TOKENS: std::cell::RefCell<std::collections::HashSet<crate::symbol::Symbol>> =
         std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
@@ -847,8 +847,8 @@ impl Interpreter {
         // A token whose own pattern names itself inside a class (`regex name
         // { <-x +name> }`) would re-enter this fold without end; decline the
         // inner attempt so the symbolic path handles it.
-        let key = format!("{pkg}::{name}");
-        let entered = FOLDING_TOKENS.with(|f| f.borrow_mut().insert(key.clone()));
+        let key = crate::qualified::qualified_text(pkg.as_str(), name);
+        let entered = FOLDING_TOKENS.with(|f| f.borrow_mut().insert(key));
         if !entered {
             return None;
         }
