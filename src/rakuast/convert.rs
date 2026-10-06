@@ -287,6 +287,20 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 std::slice::from_ref(expr),
             )?)))
         }
+        // `my $x = 5 if COND`: the parser's split of the declaration and the
+        // gated assignment is rakudo's one statement with a modifier.
+        Stmt::SyntheticBlock(_)
+            if crate::ast::decl_modifier::modified_declaration(stmt).is_some() =>
+        {
+            let modified =
+                crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
+            convert_stmt(&modified)
+        }
+        // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
+        Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
+            let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
+            Ok(Some(statement_expression(term_declaration(&decl)?)))
+        }
         // A binding declaration (`my $x := …`, `my @a := …`, `my %h := …`):
         // the statement is exactly `ast::bind_decl::expand`'s form of the
         // declaration inside it.
@@ -1141,6 +1155,33 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )?;
             Ok(Some(statement_expression(decl)))
         }
+        // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the
+        // `Term::Name`, and the assignment is a list assignment (no `:item`).
+        Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+            target_is_sigilless: true,
+        } => Ok(Some(statement_expression(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(
+                    Some("left"),
+                    RakuAstNode {
+                        class: RakuAstClass::TermName,
+                        fields: vec![node_field(None, name_from_identifier(name))],
+                    },
+                ),
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    },
+                ),
+                node_field(Some("right"), convert_expr(expr)?),
+            ],
+        }))),
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
             // assignment keeps its source-level metaop marker inside the ordinary
@@ -1426,6 +1467,39 @@ fn compound_assignment_infix(
             node_field(Some("left"), convert_expr(target)?),
             node_field(Some("infix"), meta_assign),
             node_field(Some("right"), convert_expr(rhs)?),
+        ],
+    })
+}
+
+/// `$x .= meth(args)` -> `ApplyDottyInfix(left, DottyInfix::CallAssign,
+/// Call::Method)`. The marker's `rhs` is the method call applied to the target;
+/// only its name, arguments and dispatch modifier are rendered.
+// Cost: O(n), n = size of the target and the arguments.
+fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Some(crate::ast::dotty_assign::DottyCall {
+        name,
+        args,
+        modifier,
+        quoted,
+    }) = crate::ast::dotty_assign::method_call(call)
+    else {
+        return Err(unsupported("`.=` with a call that is not a method call"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyDottyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(target)?),
+            node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::DottyInfixCallAssign,
+                    fields: Vec::new(),
+                },
+            ),
+            node_field(
+                Some("right"),
+                method_call_postfix(name, args, modifier, quoted)?,
+            ),
         ],
     })
 }
@@ -1728,6 +1802,37 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
         return Ok(simple_type_node(t));
     }
     Err(unsupported(&format!("type `{t}`")))
+}
+
+/// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
+/// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
+// Cost: O(n), n = size of the initializer.
+fn term_declaration(
+    decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
+    if decl.is_our || decl.is_state {
+        return Err(unsupported("scoped sigilless declaration"));
+    }
+    let mut fields = Vec::new();
+    if let Some(type_name) = decl.type_constraint {
+        fields.push(node_field(Some("type"), build_type_node(type_name)?));
+    }
+    fields.push(node_field(Some("name"), name_from_identifier(decl.name)));
+    fields.push(node_field(
+        Some("initializer"),
+        RakuAstNode {
+            class: if decl.assigned {
+                RakuAstClass::InitializerAssign
+            } else {
+                RakuAstClass::InitializerBind
+            },
+            fields: vec![node_field(None, convert_expr(decl.expr)?)],
+        },
+    ));
+    Ok(RakuAstNode {
+        class: RakuAstClass::VarDeclarationTerm,
+        fields,
+    })
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
@@ -2089,16 +2194,22 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
             Ok(bareword::convert(name).expect("just checked"))
         }
-        // `class { }` / `role { }` / `grammar { }` in expression position: the
-        // parser wraps the declaration in a `DoStmt`, rakudo has the node itself.
+        // A declaration in expression position (`class { }`, `role { }`,
+        // `push my @u, 1`): the parser wraps the declaration in a `DoStmt`,
+        // rakudo has the node itself.
         Expr::DoStmt(stmt)
             if matches!(
                 stmt.as_ref(),
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
-            ) =>
+                Stmt::ClassDecl { .. }
+                    | Stmt::RoleDecl { .. }
+                    | Stmt::VarDecl { .. }
+                    | Stmt::SubDecl { .. }
+                    | Stmt::MethodDecl { .. }
+                    | Stmt::EnumDecl { .. }
+            ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
+                || crate::ast::bind_decl::declaration(stmt).is_some() =>
         {
-            let statement =
-                convert_stmt(stmt)?.ok_or_else(|| unsupported("package declaration"))?;
+            let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
             statement
                 .fields
                 .iter()
@@ -2110,7 +2221,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     },
                     _ => None,
                 })
-                .ok_or_else(|| unsupported("package declaration"))
+                .ok_or_else(|| unsupported("declaration term"))
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
@@ -2158,18 +2269,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             assignment_infix(name, expr)
         }
         Expr::CompoundAssign {
-            target,
-            op,
-            rhs,
-            expanded,
+            target, op, rhs, ..
         } => {
             if is_dotty_assign_op(op) {
-                // TODO: rakudo renders `$x .= meth` as
-                // `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`,
-                // node classes this converter does not model yet. Until it does,
-                // render the expansion -- exactly what the bare `AssignExpr`
-                // produced before `.=` carried a marker.
-                return convert_expr(expanded);
+                return dotty_assignment(target, rhs);
             }
             compound_assignment_infix(target, op, rhs)
         }

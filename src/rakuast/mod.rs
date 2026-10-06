@@ -226,6 +226,9 @@ pub enum RakuAstClass {
     StatementLoopRepeatWhile,
     // Phase 2 slice 9: `:=` binding and comma lists.
     ApplyListInfix,
+    // `$x .= meth`: `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`.
+    ApplyDottyInfix,
+    DottyInfixCallAssign,
     // Phase 2 slice 10: scoped/typed variable declarations.
     TypeSimple,
     // `enum Color <Red Green>` -> `Type::Enum(name, term)`.
@@ -315,6 +318,8 @@ pub enum RakuAstClass {
     // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
     // `constant X = 5` — a declaration of its own, not a scoped `my`.
     VarDeclarationConstant,
+    // `my \x = 5` / `my \x := $s`.
+    VarDeclarationTerm,
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
@@ -519,6 +524,8 @@ impl RakuAstClass {
             TypeSetting => "RakuAST::Type::Setting",
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
             ApplyListInfix => "RakuAST::ApplyListInfix",
+            ApplyDottyInfix => "RakuAST::ApplyDottyInfix",
+            DottyInfixCallAssign => "RakuAST::DottyInfix::CallAssign",
             TypeSimple => "RakuAST::Type::Simple",
             TypeEnum => "RakuAST::Type::Enum",
             TypeDefinedness => "RakuAST::Type::Definedness",
@@ -571,6 +578,7 @@ impl RakuAstClass {
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            VarDeclarationTerm => "RakuAST::VarDeclaration::Term",
             TermName => "RakuAST::Term::Name",
             TermNamed => "RakuAST::Term::Named",
             TermTopicCall => "RakuAST::Term::TopicCall",
@@ -619,6 +627,7 @@ impl RakuAstClass {
         matches!(
             self,
             RakuAstClass::Assignment
+                | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::TermWhatever
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
@@ -751,7 +760,9 @@ impl RakuAstClass {
             | TermSelf => TERM,
             // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
             StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
-            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
+            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | ApplyDottyInfix | Ternary => {
+                EXPR
+            }
             RegexLiteral
             | RegexQuote
             | RegexGroup
@@ -981,6 +992,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::ApplyPrefix"
         | "RakuAST::ApplyPostfix"
         | "RakuAST::ApplyListInfix"
+        | "RakuAST::ApplyDottyInfix"
         | "RakuAST::Ternary" => EXPR,
         "RakuAST::Grammar" => &[
             "RakuAST::Class",
@@ -1228,6 +1240,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TypeSetting,
     RakuAstClass::StatementLoopRepeatWhile,
     RakuAstClass::ApplyListInfix,
+    RakuAstClass::ApplyDottyInfix,
+    RakuAstClass::DottyInfixCallAssign,
     RakuAstClass::TypeSimple,
     RakuAstClass::TypeEnum,
     RakuAstClass::TypeDefinedness,
@@ -1280,6 +1294,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::VarDeclarationTerm,
     RakuAstClass::TermName,
     RakuAstClass::TermNamed,
     RakuAstClass::TermTopicCall,

@@ -115,9 +115,16 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     RakuAstClass::StatementModifierUnless => true,
                     _ => return Err(unsupported(modifier)),
                 };
-                let cond = lower_expr(named_child_or_positional(modifier)?)?;
+                let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
+                // A declaration is split from its gated initializer, as the
+                // parser does.
+                if let Some(split) =
+                    crate::parser::try_split_decl_modifier(&statement, &cond, is_unless)
+                {
+                    return Ok(split);
+                }
                 return Ok(Stmt::If {
-                    cond: negate_if(cond, is_unless),
+                    cond,
                     then_branch: vec![statement],
                     else_branch: Vec::new(),
                     binding_var: None,
@@ -191,6 +198,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
+        RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
+        RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
         RakuAstClass::StatementIf => lower_if(node),
         // `with X { … }` / `without X { … }`. Both rebuild the conditional the
         // parser desugars them into, tagged so a round trip renders the same
@@ -687,6 +696,62 @@ fn class_traits(
 /// pair. The package-scoped default spelling is `is_our`; `scope => "my"` is the
 /// lexical one. Only the sigilless form round-trips, matching what the
 /// converter renders.
+/// `VarDeclaration::Term` (`my \x = 5`, `my Int \x := $s`) -> the parser's own
+/// expansion of a sigilless declaration. Only the default scope round-trips.
+// Cost: O(n), n = size of the initializer.
+fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node.fields.iter().any(|f| f.name == Some("scope")) {
+        return Err(unsupported(node));
+    }
+    let name = call_name_str(node)?;
+    let type_constraint = match named_child(node, "type") {
+        Ok(type_node) => Some(simple_type_name(node, type_node)?),
+        Err(_) => None,
+    };
+    let init = named_child(node, "initializer")?;
+    let assigned = match init.class {
+        RakuAstClass::InitializerAssign => true,
+        RakuAstClass::InitializerBind => false,
+        _ => return Err(unsupported(node)),
+    };
+    let expr = lower_expr(named_child_or_positional(init)?)?;
+    Ok(crate::parser::build_sigilless_bind_stmt(
+        name,
+        expr,
+        type_constraint,
+        false,
+        false,
+        assigned,
+        super::shadowed_terms::is_declared_term,
+    ))
+}
+
+/// `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)` -> the
+/// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
+/// can write through a read-only whole-container topic.
+// Cost: O(n), n = size of the target and the arguments.
+fn lower_dotty_assign(node: &RakuAstNode, as_statement: bool) -> Result<Expr, RuntimeError> {
+    let target = lower_expr(named_child(node, "left")?)?;
+    let call = named_child(node, "right")?;
+    if call.class != RakuAstClass::CallMethod {
+        return Err(unsupported(node));
+    }
+    let name = crate::symbol::Symbol::intern(&call_name_str(call)?);
+    let args = arg_exprs(call)?;
+    let modifier = dispatch_modifier(call)?;
+    let method_call = move |invocant: Expr| Expr::MethodCall {
+        target: Box::new(invocant),
+        name,
+        args: args.clone(),
+        modifier,
+        quoted: false,
+    };
+    if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
+        return Ok(crate::parser::topic_dot_assign(method_call(target)));
+    }
+    Ok(crate::parser::wrap_dot_assign(target, method_call))
+}
+
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let written = leaf_str(node, "name")?;
     // The parser strips a `$` sigil into `__constant_sigil` and keeps the
@@ -1883,6 +1948,20 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 }
 
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `v = …` where `v` is a sigilless term (`my \v = @a`) assigns into what
+    // the term is bound to.
+    let left = named_child(node, "left")?;
+    if left.class == RakuAstClass::TermName
+        && let Some(NameShape::Identifier(name)) =
+            name_parts::name_shape(named_child_or_positional(left)?)
+    {
+        return Ok(Stmt::Assign {
+            name,
+            expr: lower_expr(named_child(node, "right")?)?,
+            op: crate::ast::AssignOp::Assign,
+            target_is_sigilless: true,
+        });
+    }
     let (name, expr) = lower_assign_parts(node)?;
     // `$.x = v` writes through the attribute's rw accessor; the parser builds
     // it as an assignment expression, as `Stmt::Assign` has no accessor path.
@@ -3233,6 +3312,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         {
             lower_method_literal(node)
         }
+        // A declaration used as a term (`push my @u, 1`, `@a[1] := my $x`,
+        // `foo(my $e = %())`): the parser carries a statement in expression
+        // position as a `DoStmt`.
+        RakuAstClass::VarDeclarationSimple
+        | RakuAstClass::VarDeclarationTerm
+        | RakuAstClass::TypeEnum
+        | RakuAstClass::Method
+        | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
+        RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => {
+            Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?)))
+        }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
             let (return_type, custom_traits) = routine_return_type(node, None)?;
@@ -3331,6 +3421,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 && matches!(
                     declaration.class,
                     RakuAstClass::VarDeclarationSimple
+                        | RakuAstClass::VarDeclarationTerm
                         | RakuAstClass::VarDeclarationConstant
                         | RakuAstClass::VarDeclarationSignature
                 )
@@ -3666,6 +3757,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(binary)
         }
+        // `$x .= meth(args)`: the parser's own `.=` expansion over the target.
+        RakuAstClass::ApplyDottyInfix => lower_dotty_assign(node, false),
         RakuAstClass::ApplyPrefix => {
             if let Some(chain) = super::chain::lower_chain(node)? {
                 return Ok(chain);

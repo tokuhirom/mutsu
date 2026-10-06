@@ -6,6 +6,7 @@ pub(crate) mod decl;
 mod idents;
 pub(super) mod modifier;
 mod modifier_decl_split;
+pub(crate) use modifier_decl_split::try_split_decl_modifier;
 mod modifier_tail;
 mod pub_shims;
 pub(super) mod simple;

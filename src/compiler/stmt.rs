@@ -865,6 +865,10 @@ impl Compiler {
         }
         match expr {
             Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
+            // `$x .= meth` is a scalar assignment too (the parser marks its
+            // expansion as a `CompoundAssign`, see `wrap_dot_assign`): the
+            // stored Failure of `$x .= pred` stays unthrown, as for `$x = ...`.
+            Expr::CompoundAssign { op, .. } => op == ".=",
             Expr::DoStmt(inner) => match inner.as_ref() {
                 Stmt::Expr(e) => Self::stmt_value_is_assignment(e),
                 Stmt::If {

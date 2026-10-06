@@ -90,6 +90,23 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
     }
 }
 
+/// The statement `.=` on the topic (`$_ .= meth`, `.= meth`), tagged with its
+/// source-level shape. It routes through the `__mutsu_topic_dotassign` marker
+/// (compiled to `TopicDotAssign`) so it can reassign a read-only
+/// whole-container topic (`given @a { .=uc }`, writing through to `@a`) while a
+/// plain `$_ = ...` keeps throwing X::Assignment::RO.
+pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
+    let expanded = Expr::Call {
+        name: Symbol::intern("__mutsu_topic_dotassign"),
+        args: vec![method_call.clone()],
+    };
+    crate::parser::stmt::assign::dotty_assign_marker(
+        Expr::Var("_".to_string()),
+        method_call,
+        expanded,
+    )
+}
+
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -123,16 +140,14 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         // marker (compiled to `TopicDotAssign`) so it can reassign a read-only
         // whole-container topic (`given @a { .=uc }`, writing through to `@a`)
         // while a plain `$_ = ...` keeps throwing X::Assignment::RO.
-        let stmt = Stmt::Expr(Expr::Call {
-            name: Symbol::intern("__mutsu_topic_dotassign"),
-            args: vec![Expr::MethodCall {
-                target: Box::new(Expr::Var("_".to_string())),
-                name: Symbol::intern(&method_name),
-                args,
-                modifier: None,
-                quoted: false,
-            }],
-        });
+        let call = Expr::MethodCall {
+            target: Box::new(Expr::Var("_".to_string())),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+        };
+        let stmt = Stmt::Expr(topic_dot_assign(call));
         return parse_statement_modifier(rest, stmt);
     }
 
@@ -462,76 +477,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
             // (see the leading-dot case above).
             Expr::Var(name) if name == "_" => {
-                let stmt = Stmt::Expr(Expr::Call {
-                    name: Symbol::intern("__mutsu_topic_dotassign"),
-                    args: vec![make_rhs(Expr::Var("_".to_string()))],
-                });
+                let stmt = Stmt::Expr(topic_dot_assign(make_rhs(Expr::Var("_".to_string()))));
                 return parse_statement_modifier(r, stmt);
             }
-            Expr::Var(name) => {
-                let stmt = Stmt::Assign {
-                    name: name.clone(),
-                    expr: make_rhs(Expr::Var(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::ArrayVar(name) => {
-                let stmt = Stmt::Assign {
-                    name: format!("@{}", name),
-                    expr: make_rhs(Expr::ArrayVar(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::HashVar(name) => {
-                let stmt = Stmt::Assign {
-                    name: format!("%{}", name),
-                    expr: make_rhs(Expr::HashVar(name)),
-                    op: AssignOp::Assign,
-                    target_is_sigilless: false,
-                };
-                return parse_statement_modifier(r, stmt);
-            }
-            Expr::Index {
-                target,
-                index,
-                is_positional,
-                ..
-            } => {
-                let tmp_idx = format!(
-                    "__mutsu_idx_{}",
-                    TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
-                );
-                let tmp_idx_expr = Expr::Var(tmp_idx.clone());
-                let lhs_expr = Expr::Index {
-                    target: target.clone(),
-                    index: Box::new(tmp_idx_expr.clone()),
-                    is_positional,
-                };
-                let assigned_value = make_rhs(lhs_expr);
-                let stmt = Stmt::Expr(Expr::desugar_block(vec![
-                    Stmt::VarDecl {
-                        name: tmp_idx,
-                        expr: *index,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::IndexAssign {
-                        target,
-                        index: Box::new(tmp_idx_expr),
-                        value: Box::new(assigned_value),
-                        is_positional: true,
-                    }),
-                ]));
+            // A variable or an element: the same `.=` expansion (and marker) the
+            // expression form builds, so the RakuAST conversion sees one shape.
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Index { .. } => {
+                let stmt = Stmt::Expr(crate::parser::wrap_dot_assign(expr, make_rhs));
                 return parse_statement_modifier(r, stmt);
             }
             Expr::BareWord(ref name) => {
