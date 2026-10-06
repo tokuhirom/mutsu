@@ -1145,6 +1145,99 @@ them); `Date.mm-dd` and `yyyy-mm` exist; `DateTime.offset-in-minutes` is a `Rat`
 - **`RakuAST::*`** (47 rows): the oracle snapshot lists none of these owners, so they wait for the
   snapshot extension (§10.6).
 
+### 9.19 Slice 3E: I/O and concurrency (2026-10-06)
+
+Branch `refactor/11276-3e-io-concurrency`. Owners: `IO::Path` and `IO::Spec::*` (this slice), with
+`IO::Handle`, `IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
+`Supply`, the schedulers and `Lock` deferred (below). The inventory was taken with
+`scripts/method-rows-report.py --inventory IO::Path,IO::Handle,...`: 81 declared recognition rows over
+77 method names for the owners the oracle snapshot lists (44 on `IO::Path`, 37 on `IO::Handle`), and
+none for `IO::Spec::*`, `Promise`, `Channel`, `Lock` and the rest, which the snapshot did not list at
+all. The plan's "102 rows" counted `IO::Path` and `IO::Handle` together with the inherited-only
+names; most of what the cascades do for these classes is not in the builtins cascades but in
+`runtime/native_io/` and in a 560-line `IO::Spec` block of `call_method_with_values`, which the
+report's arm counts do not see.
+
+**What landed (821 -> 943 rows registered).** Two owner groups, each deleted whole:
+
+- [x] *`IO::Path`* (75 rows in `io_concurrency/io_path_*.rs`): the lexical methods (19 rows:
+  `Str`, `gist`, `IO`, `SPEC`, `basename`, `dirname`, `volume`, `cleanup`, `parts`, `parent`,
+  `sibling`, `add`, `extension`, `is-absolute`, `is-relative`, `succ`, `pred`), the cwd methods (6:
+  `absolute`, `relative`, `CWD`, `raku`), the 19 `stat` readers and file tests, the content rows (9:
+  `slurp`, `lines`, `words`, `comb`, `open`), the filesystem rows (17: `spurt`, `mkdir`, `rmdir`,
+  `unlink`, `chmod`, `chown`, `copy`, `rename`, `move`, `symlink`, `link`) and `child`, `resolve`,
+  `dir`, `watch`, `Numeric` (5). The shape `IoPath` covers `IO::Path` and its four SPEC variants
+  and is **closed**: a handler reads the receiver's class and `SPEC` attribute and hands the class
+  back, so `IO::Path::Win32.new('x').parent` is an `IO::Path::Win32`. The `try_io_path_*` name gates
+  and the six blocks that called them from `vm_call_method_compiled_{mut,interpret}.rs` are gone;
+  `native_io_path` is `invoke_owner` plus `Cool`'s `Real`/`Int`/`Rat`/`Num`/`FatRat`, which are
+  `Cool`'s rows and wait for the opening of the shape (3B remainder).
+- [x] *`IO::Spec::Unix`, `Win32`, `Cygwin`, `QNX`* (47 rows in `io_spec.rs`, the oracle snapshot now
+  lists the four owners): one handler per method reads the receiver's class (`SpecKind`), and every
+  class Rakudo says declares the method has a row for it. The bodies were the arms of the block in
+  `call_method_with_values`, moved verbatim into `runtime/native_io/io_spec_{paths,split}.rs`; the
+  block is replaced by an `invoke_owner` call for the receivers the table declined.
+
+**Mechanisms.**
+
+- **`RowFlags::SLURPY`.** A `*@parts` method has a minimum arity, and the table registers the row at
+  every arity from there to 7 (the call-site lookup's bound), so `IO::Path.add` is one row, not five.
+  A call with more arguments reaches the row through the owner lookup. `MethodRow::arities` is the
+  range.
+- **`invoke_owner(interp, owners, method, args, target)`.** A row is found by `(owner, method,
+  arity)` along a list of owners, for a receiver that has no shape: an instance of a user subclass of
+  `IO::Path` (the instance dispatch walks its MRO to `IO::Path` and `native_io_path` asks for that
+  owner), and a call the guard step declined (a named argument no row declares, an argument it does
+  not admit). The arguments are not admitted: this is the slow path, which accepted any argument
+  before the row existed. The target value is built only after the row is found.
+- **Type-object-only shapes, and `DispatchShape::reaches`.** `IoSpecUnix`, `IoSpecWin32`,
+  `IoSpecCygwin` and `IoSpecQnx` have no instances (`has_instances`): the cascades answer a name like
+  `join` for an instance by stringifying it, and nothing reads an `IO::Spec` instance. A closed shape
+  used to reach only its own type's rows; `reaches(owner)` names the ancestors it audited, which for
+  the `IO::Spec` family is `IO::Spec::Unix` (and never `Any` or `Mu`).
+- **Interpreter rows with named arguments.** An `IO::Path` row that needs the interpreter
+  (`Handler::Interp`) reads its named arguments through `Named::pairs`, because the interpreter's
+  primitives (`parse_io_flags_values`, `io_path_spurt`, ...) take one argument list with the `Pair`s
+  in it. Each primitive is now one `Interpreter` method, called by the row and by the sub form of
+  the same routine (`lines($path)`, `words($path)`).
+
+**What the work taught.**
+
+- **The cascades' by-name arms answer any receiver.** `IO::Spec::Unix.join()` with no argument is a
+  `List.join` of the type object in the cascades (`(IO::Spec::Unix)`), so a row for that arity fails
+  the debug cross-check. An `IO::Spec` row therefore takes the positionals Rakudo's signature
+  requires and any number more, and a call with fewer is no longer answered with a lenient guess.
+  A row that makes a new object on every call (`curupdir`) cannot be cross-checked either, and is an
+  interpreter row.
+- **A metadata list is a second dispatch.** `IO::Path`'s `native_methods` in `runtime_init.rs` listed
+  `starts-with`, because the lexical funnel had an arm for it; it is `Cool`'s method, and with the arm
+  gone the entry made the call fail. The entry is removed. The list goes with slice 5.
+- **`Mu.perl` is `self.raku`.** `IO::Path` had a `"raku" | "perl"` arm; `perl` is not a method
+  `IO::Path` declares, so `native_io_path` maps it to the `raku` row.
+
+Behaviour changes toward Rakudo, each pinned in a focused test (`t/io/io-path-lexical-rows.t`,
+`io-path-cwd-stat-rows.t`, `io-path-content-fs-rows.t`, `io-spec-method-rows.t`): an `IO::Spec`
+method called with fewer positionals than its signature requires fails instead of answering a guess;
+`IO::Path.starts-with` is `Cool`'s. Both are in the news entry. One regression is filed, not fixed:
+`Cool` string methods on a user *subclass* of `IO::Path` read the instance's rendering rather than
+the path ([#12149](https://github.com/tokuhirom/mutsu/issues/12149); `starts-with` joined `uc` and
+`chars` there).
+
+**Deferred, with the reason (37 declared `IO::Handle` rows, and the owners the snapshot lacks).**
+
+- **`IO::Handle`** (37 rows, `runtime/native_io/io_handle.rs` and four VM fast paths in
+  `vm_call_method_compiled_io.rs`). A handle's methods exist three times: the interpreter's
+  `native_io_handle`, the VM's per-method fast paths (File and UTF-8 only, each declining the rest to
+  the interpreter) and the user-subclass overlay that routes `print`/`say`/`get`/... through a user
+  `WRITE`/`READ`. One row per method means one implementation of those three, and the choice of
+  which to keep decides the shape of `Handler::Interp` for stateful receivers; it is a slice of its
+  own.
+- **`IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
+  `Supply`, the schedulers, `Lock`, `Semaphore`, `Thread`**: the oracle snapshot lists none of these
+  owners (it is generated from the owners the recognition table names), so each needs recognition
+  rows first; their methods live in `runtime/native_methods/*.rs`, one `match` per class, with
+  receivers that carry live OS state.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
