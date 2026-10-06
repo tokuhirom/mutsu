@@ -15,7 +15,7 @@ pub(crate) use char_class::{BackslashClass, CharClassAtom};
 pub(crate) use enumeration::{
     CharClassElement, EnumerationElement, PropertyPredicate, is_class_name,
 };
-pub(crate) use extension::RegexExtension;
+pub(crate) use extension::{RegexCode, RegexExtension};
 pub(crate) use quantifier::{QuantifierKind, RegexBacktrack, RegexQuantifier, RegexSeparator};
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -878,7 +878,7 @@ impl RegexTree {
                         QuantifierKind::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
                         QuantifierKind::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
                         QuantifierKind::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
-                        QuantifierKind::Range { .. } | QuantifierKind::Block { .. } => return None,
+                        QuantifierKind::Range { .. } | QuantifierKind::Block(_) => return None,
                     };
                     let mut tokens = lower_node(
                         atom,
@@ -2867,9 +2867,8 @@ impl Parser {
         Some(RegexNode::Extension(
             RegexExtension::ContextualizedInterpolation {
                 sigil,
-                code,
-                body,
                 sequential,
+                code: Box::new(RegexCode { code, body }),
             },
         ))
     }
@@ -2995,10 +2994,9 @@ impl Parser {
             return None;
         }
         self.pos = end + 1;
-        Some(RegexNode::Extension(RegexExtension::Statement {
-            code,
-            body,
-        }))
+        Some(RegexNode::Extension(RegexExtension::Statement(Box::new(
+            RegexCode { code, body },
+        ))))
     }
 
     /// `~ GOAL EXPR`, after the term it follows: `EXPR` must match, then

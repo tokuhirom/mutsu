@@ -125,8 +125,8 @@ impl Compiler {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: &Option<String>,
-        x: &Option<String>,
+        nth: &Option<Box<str>>,
+        x: &Option<Box<str>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -135,10 +135,10 @@ impl Compiler {
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
             .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
         let x_idx = x
             .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::Subst {
             pattern_idx,
@@ -166,8 +166,8 @@ impl Compiler {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: &Option<String>,
-        x: &Option<String>,
+        nth: &Option<Box<str>>,
+        x: &Option<Box<str>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -176,10 +176,10 @@ impl Compiler {
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let nth_idx = nth
             .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
         let x_idx = x
             .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,

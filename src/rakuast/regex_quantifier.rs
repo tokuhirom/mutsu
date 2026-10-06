@@ -77,12 +77,12 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeE
             }
             RakuAstClass::RegexQuantifierRange
         }
-        QuantifierKind::Block { code, body } => {
+        QuantifierKind::Block(code) => {
             fields.push(field(
                 "block",
-                Value::rakuast(Box::new(super::convert::block_node(body)?)),
+                Value::rakuast(Box::new(super::convert::block_node(&code.body)?)),
             ));
-            fields.push(super::regex_code::source_field(code));
+            fields.push(super::regex_code::source_field(&code.code));
             RakuAstClass::RegexQuantifierBlockRange
         }
     };
@@ -165,10 +165,10 @@ pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
                 ValueView::RakuAst(block) => block,
                 _ => return None,
             };
-            QuantifierKind::Block {
+            QuantifierKind::Block(Box::new(crate::regex_tree::RegexCode {
                 code: super::regex_code::source_of(node),
                 body: super::lower::lower_block(block).ok()?,
-            }
+            }))
         }
         _ => return None,
     };

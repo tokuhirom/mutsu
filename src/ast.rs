@@ -1155,10 +1155,11 @@ pub(crate) enum Expr {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: Option<String>,
+        nth: Option<Box<str>>,
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
-        x: Option<String>,
+        /// (Boxed strings: `Expr` stays within its size guard.)
+        x: Option<Box<str>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -1180,10 +1181,11 @@ pub(crate) enum Expr {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: Option<String>,
+        nth: Option<Box<str>>,
         /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
         /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
-        x: Option<String>,
+        /// (Boxed strings: `Expr` stays within its size guard.)
+        x: Option<Box<str>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a

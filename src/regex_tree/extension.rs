@@ -31,6 +31,15 @@
 use super::{RegexBacktrack, RegexNode};
 use crate::ast::{Expr, Stmt};
 
+/// Code a construct runs: its spelling and the statements parsed from it.
+/// Boxed in the variants that hold it so a [`RegexNode`] stays as small as the
+/// code block it was before these constructs were modelled.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RegexCode {
+    pub(crate) code: String,
+    pub(crate) body: Vec<Stmt>,
+}
+
 /// See the module documentation.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RegexExtension {
@@ -50,7 +59,7 @@ pub(crate) enum RegexExtension {
     },
     /// `:my $x = 1;`, `:temp @*x;`: a statement run during the match, as
     /// written (without the leading `:` and the closing `;`).
-    Statement { code: String, body: Vec<Stmt> },
+    Statement(Box<RegexCode>),
     /// `$<name>`: match what the capture `name` matched.
     BackReferenceNamed(String),
     /// `$0`: match what the numbered capture matched.
@@ -73,9 +82,8 @@ pub(crate) enum RegexExtension {
     /// (without the sigil and the parentheses).
     ContextualizedInterpolation {
         sigil: char,
-        code: String,
-        body: Vec<Stmt>,
         sequential: bool,
+        code: Box<RegexCode>,
     },
     /// `<rx=$r>`, `<foo=[bao]>`: an alias over an assertion that is not a
     /// subrule call.
@@ -97,7 +105,7 @@ impl RegexExtension {
                 operands.iter().collect()
             }
             Self::Words(_)
-            | Self::Statement { .. }
+            | Self::Statement(_)
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
             | Self::Recurse
@@ -117,7 +125,7 @@ impl RegexExtension {
                 operands.iter_mut().collect()
             }
             Self::Words(_)
-            | Self::Statement { .. }
+            | Self::Statement(_)
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
             | Self::Recurse
@@ -148,8 +156,9 @@ impl RegexExtension {
     // Cost: O(1).
     pub(crate) fn code(&self) -> Option<(&str, &[Stmt])> {
         match self {
-            Self::Statement { code, body }
-            | Self::ContextualizedInterpolation { code, body, .. } => Some((code, body)),
+            Self::Statement(code) | Self::ContextualizedInterpolation { code, .. } => {
+                Some((&code.code, &code.body))
+            }
             _ => None,
         }
     }
@@ -158,8 +167,9 @@ impl RegexExtension {
     // Cost: O(1).
     pub(crate) fn code_mut(&mut self) -> Option<(&str, &mut Vec<Stmt>)> {
         match self {
-            Self::Statement { code, body }
-            | Self::ContextualizedInterpolation { code, body, .. } => Some((code, body)),
+            Self::Statement(code) | Self::ContextualizedInterpolation { code, .. } => {
+                Some((&code.code, &mut code.body))
+            }
             _ => None,
         }
     }
@@ -193,7 +203,7 @@ impl RegexExtension {
                     space(expr)
                 )
             }
-            Self::Statement { code, .. } => format!(":{code};"),
+            Self::Statement(code) => format!(":{};", code.code),
             Self::BackReferenceNamed(name) => format!("$<{name}>"),
             Self::BackReferencePositional(index) => format!("${index}"),
             Self::Recurse => "<~~>".to_string(),
@@ -203,7 +213,9 @@ impl RegexExtension {
             Self::InterpolatedQuote { source, .. } => format!("\"{source}\""),
             Self::Conjunction(operands) => join_operands(operands, "&"),
             Self::SequentialConjunction(operands) => join_operands(operands, "&&"),
-            Self::ContextualizedInterpolation { sigil, code, .. } => format!("{sigil}({code})"),
+            Self::ContextualizedInterpolation { sigil, code, .. } => {
+                format!("{sigil}({})", code.code)
+            }
             Self::Alias { alias, assertion } => {
                 let inner = assertion.to_source();
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))

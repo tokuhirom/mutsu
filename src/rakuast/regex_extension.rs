@@ -10,7 +10,7 @@ use super::convert::{
 };
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::regex_tree::{RegexExtension, RegexNode};
+use crate::regex_tree::{RegexCode, RegexExtension, RegexNode};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `extension` as its RakuAST node.
@@ -49,8 +49,8 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 node_field(None, regex_node(expr)?),
             ],
         },
-        RegexExtension::Statement { code, body } => {
-            let mut statements = block_statements(body)?;
+        RegexExtension::Statement(code) => {
+            let mut statements = block_statements(&code.body)?;
             let (Some(statement), None) = (statements.pop(), statements.pop()) else {
                 return Err(unsupported("regex statement"));
             };
@@ -58,7 +58,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 class: RakuAstClass::RegexStatement,
                 fields: vec![
                     node_field(None, statement),
-                    super::regex_code::source_field(code),
+                    super::regex_code::source_field(&code.code),
                 ],
             }
         }
@@ -92,9 +92,8 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
         }
         RegexExtension::ContextualizedInterpolation {
             sigil,
-            code,
-            body,
             sequential,
+            code,
         } => {
             let class = match sigil {
                 '$' => RakuAstClass::ContextualizerItem,
@@ -104,7 +103,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             };
             let sequence = RakuAstNode {
                 class: RakuAstClass::StatementSequence,
-                fields: block_statements(body)?
+                fields: block_statements(&code.body)?
                     .into_iter()
                     .map(|statement| node_field(None, statement))
                     .collect(),
@@ -120,7 +119,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                             fields: vec![node_field(None, sequence)],
                         },
                     ),
-                    super::regex_code::source_field(code),
+                    super::regex_code::source_field(&code.code),
                 ],
             }
         }
@@ -311,9 +310,11 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
         Ok(RegexNode::Extension(
             RegexExtension::ContextualizedInterpolation {
                 sigil,
-                code: super::regex_code::source_of(node),
-                body,
                 sequential: super::lower::bool_field(node, "sequential")?,
+                code: Box::new(RegexCode {
+                    code: super::regex_code::source_of(node),
+                    body,
+                }),
             },
         ))
     })())
@@ -364,10 +365,10 @@ fn lower_statement(node: &RakuAstNode) -> Result<RegexExtension, RuntimeError> {
             _ => None,
         })
         .ok_or_else(|| super::lower::unsupported(node))?;
-    Ok(RegexExtension::Statement {
+    Ok(RegexExtension::Statement(Box::new(RegexCode {
         code: super::regex_code::source_of(node),
         body: vec![lower_stmt(statement)?],
-    })
+    })))
 }
 
 /// The accessors of `Regex::Nested`, whose two positional children are

@@ -369,9 +369,9 @@ pub(crate) fn walk_regex_node<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &'
         }
         RegexNode::Quantified { atom, quantifier } => {
             v.visit_regex_node(atom);
-            if let crate::regex_tree::QuantifierKind::Block { code, body } = &quantifier.kind {
-                v.visit_name(code, NameKind::Source);
-                walk_stmts(v, body);
+            if let crate::regex_tree::QuantifierKind::Block(code) = &quantifier.kind {
+                v.visit_name(&code.code, NameKind::Source);
+                walk_stmts(v, &code.body);
             }
             if let Some(separator) = &quantifier.separator {
                 v.visit_regex_node(&separator.node);

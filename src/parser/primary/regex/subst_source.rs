@@ -24,8 +24,8 @@ pub(crate) struct SubstFlags {
     pub(crate) samemark: bool,
     pub(crate) samespace: bool,
     pub(crate) global: bool,
-    pub(crate) nth: Option<String>,
-    pub(crate) x: Option<String>,
+    pub(crate) nth: Option<Box<str>>,
+    pub(crate) x: Option<Box<str>>,
 }
 
 /// The source tree of a substitution whose pattern was written `raw`
@@ -69,7 +69,11 @@ pub(super) fn subst_expr(
         adverbs.samemark,
         adverbs.samespace,
     );
-    let (global, nth, x) = (adverbs.global, adverbs.nth.clone(), adverbs.repeat.clone());
+    let (global, nth, x) = (
+        adverbs.global,
+        adverbs.nth.as_deref().map(Box::from),
+        adverbs.repeat.as_deref().map(Box::from),
+    );
     if destructive {
         Expr::Subst {
             pattern,
@@ -143,8 +147,8 @@ pub(crate) fn subst_pattern_source(
         samemark: parsed.samemark,
         samespace: parsed.samespace,
         global: parsed.global,
-        nth: parsed.nth.clone(),
-        x: parsed.repeat.clone(),
+        nth: parsed.nth.as_deref().map(Box::from),
+        x: parsed.repeat.as_deref().map(Box::from),
     };
     Some((apply_inline_match_adverbs(body, &parsed), flags))
 }

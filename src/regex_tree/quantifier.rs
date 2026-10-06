@@ -27,11 +27,9 @@ pub(crate) enum QuantifierKind {
         excludes_min: bool,
         excludes_max: bool,
     },
-    /// `** { EXPR }`: the count is the value of a block, as written.
-    Block {
-        code: String,
-        body: Vec<crate::ast::Stmt>,
-    },
+    /// `** { EXPR }`: the count is the value of a block, as written (boxed, so
+    /// a quantifier stays as small as a range).
+    Block(Box<super::RegexCode>),
 }
 
 /// A backtracking modifier written after a quantifier.
@@ -91,7 +89,7 @@ impl RegexQuantifier {
             QuantifierKind::ZeroOrMore => "*".to_string(),
             QuantifierKind::OneOrMore => "+".to_string(),
             QuantifierKind::ZeroOrOne => "?".to_string(),
-            QuantifierKind::Block { code, .. } => format!("**{{{code}}}"),
+            QuantifierKind::Block(code) => format!("**{{{}}}", code.code),
             QuantifierKind::Range {
                 min,
                 max,
@@ -111,7 +109,7 @@ impl RegexQuantifier {
             // A range takes its modifier right after the `**`.
             let at = if matches!(
                 self.kind,
-                QuantifierKind::Range { .. } | QuantifierKind::Block { .. }
+                QuantifierKind::Range { .. } | QuantifierKind::Block(_)
             ) {
                 2
             } else {
@@ -164,7 +162,7 @@ impl Parser {
         };
         let backtrack = if matches!(
             kind,
-            QuantifierKind::Range { .. } | QuantifierKind::Block { .. }
+            QuantifierKind::Range { .. } | QuantifierKind::Block(_)
         ) {
             range_backtrack
         } else {
@@ -208,7 +206,10 @@ impl Parser {
     fn parse_range(&mut self) -> Option<QuantifierKind> {
         if self.chars.get(self.pos) == Some(&'{') {
             let (code, body) = self.parse_code_body()?;
-            return Some(QuantifierKind::Block { code, body });
+            return Some(QuantifierKind::Block(Box::new(super::RegexCode {
+                code,
+                body,
+            })));
         }
         if self.consume_if('^') {
             let max = self.parse_count()?;

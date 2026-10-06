@@ -977,7 +977,7 @@ mod tests {
         assert_eq!(rest1, "");
         assert!(matches!(
             &expr1,
-            Expr::MatchRegex(v)
+            Expr::MatchRegexTree { value: v, .. }
                 if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
         ));
 
@@ -985,7 +985,7 @@ mod tests {
         assert_eq!(rest2, "");
         assert!(matches!(
             &expr2,
-            Expr::MatchRegex(v)
+            Expr::MatchRegexTree { value: v, .. }
                 if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
         ));
     }
@@ -1043,7 +1043,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             &expr,
-            Expr::MatchRegex(v)
+            Expr::MatchRegexTree { value: v, .. }
                 if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == " s o+ " && a.exhaustive && a.repeat.is_none())
         ));
     }
