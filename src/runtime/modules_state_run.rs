@@ -1,3 +1,4 @@
+mod atomic_names;
 pub(crate) mod control_state;
 pub(crate) mod declarator_docs;
 pub(crate) mod dispatch_state;

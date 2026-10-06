@@ -2,8 +2,10 @@ use super::*;
 use crate::meta_ns::MetaNs;
 
 /// Process-global, monotonic: set the first time any atomic variable / atomic
-/// storage is registered on ANY interpreter. See
-/// [`LexicalState::atomic_var_seen`](crate::runtime::lexical_state::LexicalState::atomic_var_seen) for why this cannot be per-interpreter.
+/// storage is registered on ANY interpreter. It cannot be per-interpreter: a
+/// worker thread's `cas` would mark only the WORKER's copy. It is the cheap
+/// first half of `Interpreter::atomic_name_possible`
+/// (`runtime::atomic_names`), which refines it per name.
 static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Process-global, monotonic: set the first time any variable type constraint
@@ -288,7 +290,7 @@ impl Interpreter {
         if value_type == "atomicint"
             || constraint.len() >= "atomicint".len() && constraint.contains("atomicint")
         {
-            self.mark_atomic_var_seen();
+            self.mark_atomic_var_seen(name);
         }
         self.env.insert_sym_noting_unless_same(type_key, meta);
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
@@ -335,7 +337,7 @@ impl Interpreter {
             let meta_key = Self::type_meta_key_for_sym(name_sym);
             let info = Self::container_constraint_parts(name, constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
-                self.mark_atomic_var_seen();
+                self.mark_atomic_var_seen(name);
             }
             self.env.insert_sym(
                 meta_key,
@@ -473,7 +475,7 @@ impl Interpreter {
             Some(c) => {
                 let info = Self::container_constraint_parts(name, c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {
-                    self.mark_atomic_var_seen();
+                    self.mark_atomic_var_seen(name);
                 }
                 self.env.insert_sym(
                     meta_key,
@@ -614,10 +616,15 @@ impl Interpreter {
     }
 
     /// Whether any `atomicint`/atomic-storage variable has ever been registered
-    /// *on this interpreter* (monotonic). When false, the hot variable-read path
-    /// skips the entire atomic-variable check (which otherwise costs `format!`s
-    /// and constraint lookups on every `GetGlobal`/`GetLocal`). Deliberately a
-    /// plain field, not the atomic below: this is read on the hottest op in the
+    /// *on this interpreter, or was inherited from the parent it was cloned
+    /// from* (monotonic). One half of every READ gate, with
+    /// [`Self::atomic_name_possible`] as the other: a thread cloned before an
+    /// atomic was registered keeps reading its own same-spelled variables
+    /// directly. The lane is keyed by bare name, so it cannot tell an unrelated
+    /// `my $x` in such a worker from the atomic `$x` it shares a spelling with
+    /// (ADR-0062), and `t/concurrency/thread-lock/atomic-lane-retired-mid-cas.t`
+    /// pins that the worker's own `$x` is not answered from the lane. Deliberately
+    /// a plain field, not the atomic below: this is read on the hottest op in the
     /// VM, and an opaque atomic load there is not free.
     #[inline(always)]
     pub(crate) fn atomic_var_seen(&self) -> bool {
@@ -625,11 +632,12 @@ impl Interpreter {
     }
 
     /// Whether any atomic variable has ever been registered *anywhere in the
-    /// process* (monotonic). Needed — and only used — by the reset path
-    /// (`reset_atomic_var_key`), because `cas $x` inside a `start` block runs on
-    /// the WORKER's interpreter: with a per-interpreter flag the parent's copy
-    /// stays false, so a later `my $x` redeclaration in the parent skipped the
-    /// reset that detaches the new variable from the worker's shared atomic cell
+    /// process* (monotonic). The cheap first half of
+    /// [`Self::atomic_name_possible`], which is what the read and reset paths
+    /// ask: it is process-global because `cas $x` inside a `start` block runs on
+    /// the WORKER's interpreter, so a per-interpreter flag stays false in the
+    /// parent, and a later `my $x` redeclaration there skipped the reset that
+    /// detaches the new variable from the worker's shared atomic cell
     /// (`t/cross-thread-shared-var-writeback-coherence.t` 4/6 — a later block's
     /// `$seen` inherited an earlier block's contents). An over-set is
     /// conservative: it only makes the (correct) reset run.
@@ -638,13 +646,10 @@ impl Interpreter {
         ATOMIC_VAR_SEEN.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Mark that an atomic variable / atomic storage has been registered, both on
-    /// this interpreter (for the read gates) and process-wide (for the reset gate
-    /// and the JIT's `LOCAL_READ_SPOILERS` latch).
-    pub(crate) fn mark_atomic_var_seen(&mut self) {
-        self.lexicals.atomic_var_seen = true;
+    /// Latch [`Self::atomic_var_seen_anywhere`]. Reached only through
+    /// [`Self::mark_atomic_var_seen`], which also records the name.
+    pub(super) fn note_atomic_var_seen_anywhere() {
         ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
-        crate::vm::vm_jit::note_local_read_spoiler();
     }
 
     /// Whether any variable type constraint has ever been registered in this

@@ -130,20 +130,45 @@ pub(crate) fn note_caller_var_binding() {
 pub(crate) static LOCAL_READ_SPOILERS: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
-/// Record one Tier B local-read spoiler (see [`LOCAL_READ_SPOILERS`]).
+/// [`LOCAL_READ_SPOILERS`] without the atomic-variable source: the spoilers
+/// that apply to EVERY variable whatever its name. An atomic variable is a
+/// per-name fact (`Interpreter::atomic_name_possible`), so the interpreter's own
+/// `GetLocal` fast path asks this counter plus the name, and only the JIT's
+/// emitted code (which cannot ask a name) reads the total.
+pub(crate) static NAME_INDEPENDENT_LOCAL_READ_SPOILERS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one Tier B local-read spoiler that applies to every variable (see
+/// [`LOCAL_READ_SPOILERS`]).
 #[inline]
 pub(crate) fn note_local_read_spoiler() {
+    LOCAL_READ_SPOILERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    NAME_INDEPENDENT_LOCAL_READ_SPOILERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Record that an atomic variable was registered: a Tier B spoiler for the
+/// emitted inline read, but not for the interpreter's per-name fast path (see
+/// [`NAME_INDEPENDENT_LOCAL_READ_SPOILERS`]).
+#[inline]
+pub(crate) fn note_atomic_local_read_spoiler() {
     LOCAL_READ_SPOILERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Whether no local-read spoiler has ever been recorded (see
-/// [`LOCAL_READ_SPOILERS`]). The dynamic half of the eligibility both the JIT's
-/// inline `GetLocal` (which tests the latch in emitted code) and the
-/// interpreter's own `GetLocal` fast path (#8332) share; the static half is
-/// [`crate::opcode::CompiledCode::local_read_plain`].
+/// [`LOCAL_READ_SPOILERS`]).
 #[inline(always)]
 pub(crate) fn local_read_unspoiled() -> bool {
     LOCAL_READ_SPOILERS.load(std::sync::atomic::Ordering::Relaxed) == 0
+}
+
+/// Whether no spoiler that applies to every variable has ever been recorded:
+/// the dynamic half of the interpreter's own `GetLocal` fast path (#8332) when
+/// an atomic variable exists somewhere and the slot's name has to be asked
+/// (`Interpreter::atomic_name_possible`). The static half is
+/// [`crate::opcode::CompiledCode::local_read_plain`].
+#[inline(always)]
+pub(crate) fn local_read_unspoiled_by_any_name() -> bool {
+    NAME_INDEPENDENT_LOCAL_READ_SPOILERS.load(std::sync::atomic::Ordering::Relaxed) == 0
 }
 
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.

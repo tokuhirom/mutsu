@@ -241,7 +241,7 @@ impl Interpreter {
     /// 2. **A new generation is anchored to the published value, not to `env`.**
     ///    See [`published_atomic_seed`](Self::published_atomic_seed).
     pub(super) fn atomic_value_key_for_name(&mut self, name: &str) -> String {
-        self.mark_atomic_var_seen();
+        self.mark_atomic_var_seen(name);
         let name_key = Self::atomic_shared_name_key(name);
         // ADR-0010: atomics are process-wide shared state -> the root lineage.
         let atomic_root = self.threads.shared_vars.root_store();

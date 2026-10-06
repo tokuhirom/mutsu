@@ -766,10 +766,11 @@ impl Interpreter {
     /// boxing have no such guarantee, so they must simply DECLINE — a refusal
     /// can only cost an optimisation, never correctness.
     ///
-    /// Cheap by construction: the process-global "any atomic ever seen" flag
-    /// short-circuits it in programs that use no atomics at all.
+    /// Cheap by construction: the per-name "registered as atomic" set
+    /// short-circuits it for every variable that never was
+    /// (`Interpreter::atomic_name_possible`).
     pub(crate) fn legacy_atomic_lane_owns(&self, bare: &str) -> bool {
-        if !Self::atomic_var_seen_anywhere() {
+        if !Self::atomic_name_possible(bare) {
             return false;
         }
         // The lane is keyed by the canonical atomic name, which may or may not
@@ -781,7 +782,7 @@ impl Interpreter {
     /// The value the legacy name-keyed atomic lane currently holds for `name`,
     /// if it has an entry at all.
     pub(super) fn legacy_atomic_value(&self, name: &str) -> Option<Value> {
-        if !Self::atomic_var_seen_anywhere() {
+        if !Self::atomic_name_possible(name) {
             return None;
         }
         let name_key = Self::atomic_shared_name_key(name);
