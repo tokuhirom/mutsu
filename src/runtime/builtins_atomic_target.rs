@@ -161,6 +161,27 @@ impl Interpreter {
         RuntimeError::new(message)
     }
 
+    /// Refuse a lenient atomic (`atomic-fetch`, `atomic-assign`, `cas`, `⚛$!v`,
+    /// `$!v ⚛= x`) on an attribute declared with a native integer narrower than
+    /// the machine word (#12008). Any other name passes: a lexical's declaration
+    /// is judged by the compiler, whose answer a by-name metadata lookup could
+    /// not match under shadowing.
+    ///
+    /// The lenient builtins call this instead of the compiler emitting a guard
+    /// call per operation: a separate call cost a `cas` loop on an attribute
+    /// ~50%, and the type lookup is the memoized one (ADR-0121).
+    // Cost: O(1) (a memoized per-class lookup), O(1) for any other name.
+    pub(super) fn refuse_narrow_attribute(&self, name: &str) -> Result<(), RuntimeError> {
+        if name.starts_with(['!', '.'])
+            && self
+                .self_attr_type_constraint(name)
+                .is_some_and(|ty| is_narrow_declared_type(&ty))
+        {
+            return Err(Self::narrow_atomic_refusal(name));
+        }
+        Ok(())
+    }
+
     /// What the container named by `target` says about itself, when the
     /// declaration did not decide.
     fn container_target_verdict(&self, target: &str) -> Verdict {
