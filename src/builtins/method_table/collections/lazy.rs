@@ -56,9 +56,10 @@ pub(crate) fn race(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
 /// lazy `Seq`, `(1..*).lazy.raku` is `(1, 2, ...).lazy.Seq`); an eager list
 /// or finite range becomes a lazy list over its elements, marked so that
 /// assigning it to an array keeps it lazy; `lazy { ... }` is a thunk that
-/// runs its block on first access. A `LazyList` is the interpreter's.
-// Cost: O(e) for an eager list or finite range (its elements are copied once),
-// e = elements; O(1) otherwise.
+/// runs its block on first access. A `Hash` or `Map` becomes a lazy `Seq` of
+/// its pairs. A `LazyList` is the interpreter's.
+// Cost: O(e) for an eager list, a finite range or a hash (its elements are
+// copied once), e = elements; O(1) otherwise.
 pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if is_value_lazy(target) {
         // An unbounded range is lazy already, but `.lazy` still makes it a
@@ -75,7 +76,8 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     }
     let items = if let Some(items) = target.as_list_items() {
         items.to_vec()
-    } else if target.is_range() {
+    } else if target.is_range() || matches!(target.view(), ValueView::Hash(_)) {
+        // A Hash (`Map`'s `list`) is its pairs.
         crate::runtime::utils::value_to_list(target)
     } else if matches!(target.view(), ValueView::Sub(..)) {
         // lazy { block } -- create a lazy thunk that evaluates the block on
