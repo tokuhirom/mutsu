@@ -991,7 +991,10 @@ impl Interpreter {
             }
             return Ok(Value::array_with_kind(items, kind));
         }
-        if matches!(target.view(), ValueView::Seq(..) | ValueView::Slip(..)) {
+        if let ValueView::Seq(items) = target.view() {
+            // `Seq.eager` reifies the Seq into a List (rakudo: `.eager.WHAT` is List).
+            Ok(Value::array(items.to_vec()))
+        } else if matches!(target.view(), ValueView::Slip(..)) {
             Ok(target)
         } else if matches!(
             target.view(),
