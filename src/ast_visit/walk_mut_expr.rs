@@ -65,6 +65,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             nth: _,
             x: _,
             replacement_thunk,
+            tree: _,
         }
         | Expr::NonDestructiveSubst {
             pattern: _,
@@ -77,6 +78,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             nth: _,
             x: _,
             replacement_thunk,
+            tree: _,
         } => {
             if let Some(e) = replacement_thunk {
                 v.visit_expr_mut(e);
@@ -89,6 +91,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             complement: _,
             squash: _,
             non_destructive: _,
+            adverbs: _,
         } => {}
         Expr::Contextualizer { kind: _, inner } => v.visit_expr_mut(inner),
         Expr::MethodCall {

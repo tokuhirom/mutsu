@@ -51,6 +51,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod subscript_adverb;
+mod substitution;
 mod symbolic_deref;
 mod temporize;
 mod type_args;
@@ -203,6 +204,10 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    VarPositionalCapture,
+    ColonPairNumber,
+    Transliteration,
+    Substitution,
     VarNamedCapture,
     CallNameAsMethod,
     CallTermAsMethod,
@@ -524,6 +529,10 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            VarPositionalCapture => "RakuAST::Var::PositionalCapture",
+            ColonPairNumber => "RakuAST::ColonPair::Number",
+            Transliteration => "RakuAST::Transliteration",
+            Substitution => "RakuAST::Substitution",
             VarNamedCapture => "RakuAST::Var::NamedCapture",
             CallNameAsMethod => "RakuAST::Call::NameAsMethod",
             CallTermAsMethod => "RakuAST::Call::TermAsMethod",
@@ -888,9 +897,15 @@ impl RakuAstClass {
                 "RakuAST::Term",
                 "RakuAST::Expression",
             ],
-            ColonPairTrue | ColonPairFalse | ColonPairValue => {
+            ColonPairTrue | ColonPairFalse | ColonPairValue | ColonPairNumber => {
                 &["RakuAST::Term", "RakuAST::Expression"]
             }
+            Substitution | Transliteration => &[
+                "RakuAST::QuotedMatchConstruct",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
             StatementPrefixReact | StatementPrefixSupply => &[
                 "RakuAST::StatementPrefix::Wheneverable",
                 "RakuAST::StatementPrefix::Blorst",
@@ -1084,9 +1099,16 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         "RakuAST::ColonPair::True"
         | "RakuAST::ColonPair::False"
         | "RakuAST::ColonPair::Variable"
-        | "RakuAST::ColonPair::Value" => {
+        | "RakuAST::ColonPair::Value"
+        | "RakuAST::ColonPair::Number" => {
             &["RakuAST::Term", "RakuAST::Expression"]
         }
+        "RakuAST::Substitution" | "RakuAST::Transliteration" => &[
+            "RakuAST::QuotedMatchConstruct",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+        ],
         "RakuAST::Pragma"
         | "RakuAST::Statement::Use"
         | "RakuAST::Statement::LanguageVersion"
@@ -1263,6 +1285,10 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::VarPositionalCapture,
+    RakuAstClass::ColonPairNumber,
+    RakuAstClass::Transliteration,
+    RakuAstClass::Substitution,
     RakuAstClass::VarNamedCapture,
     RakuAstClass::CallNameAsMethod,
     RakuAstClass::CallTermAsMethod,
@@ -2888,6 +2914,10 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Var::PositionalCapture", "new") => RakuAstClass::VarPositionalCapture,
+        ("RakuAST::ColonPair::Number", "new") => RakuAstClass::ColonPairNumber,
+        ("RakuAST::Transliteration", "new") => RakuAstClass::Transliteration,
+        ("RakuAST::Substitution", "new") => RakuAstClass::Substitution,
         ("RakuAST::Var::NamedCapture", "new") => RakuAstClass::VarNamedCapture,
         ("RakuAST::Call::NameAsMethod", "new") => RakuAstClass::CallNameAsMethod,
         ("RakuAST::Call::TermAsMethod", "new") => RakuAstClass::CallTermAsMethod,
@@ -3250,6 +3280,10 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::VarPositionalCapture
+            | RakuAstClass::ColonPairNumber
+            | RakuAstClass::Transliteration
+            | RakuAstClass::Substitution
             | RakuAstClass::VarNamedCapture
             | RakuAstClass::CallNameAsMethod
             | RakuAstClass::CallTermAsMethod

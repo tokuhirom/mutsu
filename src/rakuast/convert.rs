@@ -2436,6 +2436,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::TermNamed,
             fields: vec![leaf_field(None, Value::str("now".to_string()))],
         }),
+        Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
+            super::substitution::convert(expr)
+        }
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
         }
@@ -2460,6 +2463,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(call_name(name.as_str(), args, false)?)
         }
         Expr::Var(name) => {
+            if let Some(capture) = super::match_vars::convert_positional(name) {
+                return Ok(capture);
+            }
             if is_desugar_marker(name) && !crate::ast::anon_state::is_scalar(name) {
                 return Err(desugared(name));
             }
@@ -3503,7 +3509,10 @@ fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Stmt::Block(body) => block_node(body),
             _ => convert_expr(expr),
         },
-        other => convert_expr(other),
+        other => match super::match_vars::convert_interpolated(other) {
+            Some(capture) => Ok(capture),
+            None => convert_expr(other),
+        },
     }
 }
 
@@ -3821,7 +3830,7 @@ pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// node. The tree is deliberately separate from `RegexPattern`: the latter is
 /// an execution plan and has already lost source-level declaration and
 /// whitespace information by the time matching begins.
-fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> {
     let (class, fields) = match node {
         RegexNode::Literal(text) => (
             RakuAstClass::RegexLiteral,
@@ -5838,7 +5847,7 @@ pub(super) fn word_quote(word: &str) -> RakuAstNode {
 }
 
 /// A string literal renders as `QuotedString.new(segments => (StrLiteral,))`.
-fn quoted_string(str_value: Value) -> RakuAstNode {
+pub(super) fn quoted_string(str_value: Value) -> RakuAstNode {
     let seg = RakuAstNode {
         class: RakuAstClass::StrLiteral,
         fields: vec![leaf_field(None, str_value)],

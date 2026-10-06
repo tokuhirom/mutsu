@@ -27,11 +27,13 @@ pub(super) fn process_trans_escapes(raw: &str) -> String {
 }
 
 /// Parse tr/TR adverbs and the opening delimiter.
-/// Returns (remaining_after_open, delimiter_char, close_delimiter_char, is_paired, delete, complement, squash).
+/// Returns (remaining_after_open, delimiter_char, close_delimiter_char, is_paired,
+/// delete, complement, squash, the adverbs as written).
 pub(super) fn parse_trans_adverbs(
     input: &str,
-) -> Option<(&str, char, char, bool, bool, bool, bool)> {
+) -> Option<(&str, char, char, bool, bool, bool, bool, Vec<String>)> {
     let mut rest = input;
+    let mut written = Vec::new();
     let mut delete = false;
     let mut complement = false;
     let mut squash = false;
@@ -62,6 +64,7 @@ pub(super) fn parse_trans_adverbs(
             "s" | "squash" => squash = true,
             _ => {}
         }
+        written.push(name.to_string());
         rest = &after_colon[name_len..];
     }
 
@@ -85,6 +88,6 @@ pub(super) fn parse_trans_adverbs(
     };
     let after_open = &rest[open_ch.len_utf8()..];
     Some((
-        after_open, open_ch, close_ch, is_paired, delete, complement, squash,
+        after_open, open_ch, close_ch, is_paired, delete, complement, squash, written,
     ))
 }

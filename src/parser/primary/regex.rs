@@ -19,6 +19,7 @@ mod lit;
 mod rakuast_adverbs;
 mod scan;
 mod subst;
+mod subst_source;
 mod trans;
 
 // Items used by external callers inside crate::parser (comparison.rs, token_body.rs,
@@ -26,6 +27,7 @@ mod trans;
 pub(in crate::parser) use call_args::{parse_call_arg_list, sigilless_item_assign_arg};
 pub(in crate::parser) use lit::regex_lit;
 pub(in crate::parser) use scan::scan_to_delim;
+pub(crate) use subst_source::{SubstFlags, parse_adverb_argument, subst_pattern_source};
 
 // Items used by primary/mod.rs (sibling module).
 pub(super) use lit::{topic_method_call, version_lit};

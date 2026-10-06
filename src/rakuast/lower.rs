@@ -3256,7 +3256,7 @@ fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
     Some(format!("{{ {} }}", entries.join(", ")))
 }
 
-fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
+pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
             ValueView::Str(text) => Ok(RegexNode::Literal(text.to_string())),
@@ -3698,6 +3698,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         // `$<name>` / `@<name>`.
         RakuAstClass::VarNamedCapture => super::match_vars::lower(node),
+        RakuAstClass::VarPositionalCapture => super::match_vars::lower_positional(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
         // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
         RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
@@ -3750,6 +3751,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(Expr::StringInterpolation(parts))
         }
+        RakuAstClass::Substitution => super::substitution::lower_substitution(node),
+        RakuAstClass::Transliteration => super::substitution::lower_transliteration(node),
         RakuAstClass::QuotedRegex => {
             let body = named_child(node, "body")?;
             let match_immediately = bool_field(node, "match-immediately")?;
@@ -4692,7 +4695,7 @@ pub(super) fn prefix_token(
 
 /// An optional boolean-valued named field (an omitted field is `False`, which
 /// is exactly how raku's gist elides a false `dwim-left` / `dwim-right`).
-fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
+pub(super) fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some(name)) {
         None => Ok(false),
         Some(f) => match &f.value {

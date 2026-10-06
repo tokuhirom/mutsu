@@ -1166,6 +1166,11 @@ pub(crate) enum Expr {
         /// enclosing block, and `replacement` is empty. `None` for the quote
         /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
         replacement_thunk: Option<Box<Expr>>,
+        /// The pattern as a source tree, with the adverbs as written in
+        /// `tree.adverbs` (their spelling and order, arguments included): what
+        /// the RakuAST boundary shows. Execution reads the fields above, never
+        /// this; `None` when the pattern has no source tree.
+        tree: Option<Box<crate::regex_tree::RegexTree>>,
     },
     NonDestructiveSubst {
         pattern: String,
@@ -1186,6 +1191,8 @@ pub(crate) enum Expr {
         /// enclosing block, and `replacement` is empty. `None` for the quote
         /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
         replacement_thunk: Option<Box<Expr>>,
+        /// See [`Expr::Subst::tree`](Expr::Subst).
+        tree: Option<Box<crate::regex_tree::RegexTree>>,
     },
     Transliterate {
         from: String,
@@ -1194,6 +1201,9 @@ pub(crate) enum Expr {
         complement: bool,
         squash: bool,
         non_destructive: bool,
+        /// The adverbs as written, in order (`d`, `delete`, `c`, ...): what the
+        /// RakuAST boundary shows. Execution reads the flags above.
+        adverbs: Vec<String>,
     },
     /// `$(...)`, `@(...)`, `%(...)`: a contextualizer. It compiles exactly as
     /// the `.item` / `.list` / `.hash` call on `inner` that rakudo lowers it

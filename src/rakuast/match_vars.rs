@@ -10,7 +10,10 @@
 //!
 //! The parser keeps `$<a>` as [`Expr::CaptureVar`] and spells `@<a>` as the
 //! `.list` call on it, so only the scalar form is rendered here (`@<a>` reads
-//! back as `$<a>.list`).
+//! back as `$<a>.list`). It keeps `$0` as the variable `0` — except inside a
+//! string, where its interpolation reads `$/[0]` — so both read back as
+//! `Var::PositionalCapture`, and a `$/[0]` written out in a string does too
+//! (rakudo renders that one as an index of `$/`).
 
 use super::convert::{leaf_field, node_field, word_quote};
 use super::lower::{leaf_str, named_child_or_positional, unsupported};
@@ -70,6 +73,56 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             modifier: None,
             quoted: false,
         }),
+        _ => Err(unsupported(node)),
+    }
+}
+
+/// `$0` as `Var::PositionalCapture`.
+// Cost: O(1).
+fn positional(index: i64) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::VarPositionalCapture,
+        fields: vec![leaf_field(None, Value::int(index))],
+    }
+}
+
+/// The variable `0`, `1`, ... as `Var::PositionalCapture`, or `None` for any
+/// other name.
+// Cost: O(|name|).
+pub(super) fn convert_positional(name: &str) -> Option<RakuAstNode> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    name.parse().ok().map(positional)
+}
+
+/// A string's interpolated `$0` (`$/[0]`) as `Var::PositionalCapture`, or
+/// `None` for any other expression.
+// Cost: O(1).
+pub(super) fn convert_interpolated(expr: &Expr) -> Option<RakuAstNode> {
+    let Expr::Index {
+        target,
+        index,
+        is_positional: true,
+    } = expr
+    else {
+        return None;
+    };
+    let (Expr::Var(matched), Expr::Literal(index)) = (target.as_ref(), index.as_ref()) else {
+        return None;
+    };
+    match (matched.as_str(), index.view()) {
+        ("/", ValueView::Int(n)) if n >= 0 => Some(positional(n)),
+        _ => None,
+    }
+}
+
+/// `Var::PositionalCapture` as the variable the parser reads a capture
+/// through.
+// Cost: O(1).
+pub(super) fn lower_positional(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    match super::lower::positional_leaf(node)?.view() {
+        ValueView::Int(n) if n >= 0 => Ok(Expr::Var(n.to_string())),
         _ => Err(unsupported(node)),
     }
 }

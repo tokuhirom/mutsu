@@ -197,6 +197,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("is-array", Absent::False),
         ],
         MetaInfixAssign => &[("infix", Absent::Required)],
+        VarPositionalCapture => &[("index", Absent::Required)],
         VarNamedCapture => &[("index", Absent::Required), ("sigil", Absent::Required)],
         MetaPostfixHyper => &[("postfix", Absent::Required)],
         TermCapture => &[("source", Absent::Required)],
@@ -299,9 +300,23 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             &[("block", Absent::Required), ("sequential", Absent::False)]
         }
         RegexInterpolation => &[("sequential", Absent::False), ("var", Absent::Required)],
-        ColonPairVariable | ColonPairValue => {
+        ColonPairVariable | ColonPairValue | ColonPairNumber => {
             &[("key", Absent::Required), ("value", Absent::Required)]
         }
+        Substitution => &[
+            ("immutable", Absent::False),
+            ("samespace", Absent::False),
+            ("adverbs", Absent::EmptyList),
+            ("infix", Absent::TypeObject("RakuAST::Infixish")),
+            ("pattern", Absent::Required),
+            ("replacement", Absent::Required),
+        ],
+        Transliteration => &[
+            ("destructive", Absent::Required),
+            ("left", Absent::Required),
+            ("right", Absent::Required),
+            ("adverbs", Absent::EmptyList),
+        ],
         RegexQuantifiedAtom => &[
             ("atom", Absent::Required),
             ("quantifier", Absent::Required),
@@ -388,6 +403,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
+        VarPositionalCapture => "index",
         VarNamedCapture => "index",
         MetaPostfixHyper => "postfix",
         TermCapture => "source",

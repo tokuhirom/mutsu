@@ -17,6 +17,7 @@ impl Compiler {
                 nth,
                 x,
                 replacement_thunk,
+                tree: _,
             } => {
                 self.compile_expr_subst(
                     pattern,
@@ -42,6 +43,7 @@ impl Compiler {
                 nth,
                 x,
                 replacement_thunk,
+                tree: _,
             } => {
                 self.compile_expr_nondestructive_subst(
                     pattern,
@@ -63,6 +65,7 @@ impl Compiler {
                 complement,
                 squash,
                 non_destructive,
+                adverbs: _,
             } => {
                 self.compile_expr_transliterate(
                     from,
