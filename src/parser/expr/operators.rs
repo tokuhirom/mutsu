@@ -895,3 +895,58 @@ pub(super) fn enrich_expected_error(
         exception: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ComparisonOp::*;
+    use super::*;
+
+    /// `chain_compare::is_chain_op` is the RakuAST lowering's copy of "which
+    /// operators does the parser chain"; it must name every comparison except
+    /// the structural ones.
+    #[test]
+    fn chain_ops_are_the_non_structural_comparisons() {
+        let all = [
+            StrictEq,
+            StrictNe,
+            NumEq,
+            NotDivisibleBy,
+            NumNe,
+            SmartNotMatch,
+            SmartMatch,
+            Spaceship,
+            NumLe,
+            NumGe,
+            NumLt,
+            NumGt,
+            StrEq,
+            StrNe,
+            StrLt,
+            StrGt,
+            StrLe,
+            StrGe,
+            Leg,
+            Cmp,
+            Coll,
+            Unicmp,
+            Eqv,
+            Before,
+            After,
+            ApproxEq,
+            ContainerEq,
+            ContainerNe,
+        ];
+        for op in all {
+            assert_eq!(
+                crate::chain_compare::is_chain_op(&op.token_kind()),
+                !super::precedence::is_structural_comparison_op(op),
+                "{:?}: chain op and structural op must be complements",
+                op
+            );
+        }
+        assert!(!crate::chain_compare::is_chain_op(&TokenKind::Plus));
+        assert!(!crate::chain_compare::is_chain_op(&TokenKind::Ident(
+            "x".to_string()
+        )));
+    }
+}

@@ -9,7 +9,10 @@ pub(crate) use container::{lift_list_infix_in_arg_list, try_parse_sequence_arg_l
 pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
-pub(crate) use misc::next_anon_role_name;
+pub(crate) use misc::{
+    ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
+};
 pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;
 mod number;
