@@ -600,7 +600,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 
     let name = if is_implicit_topic {
         "_".to_string()
-    } else if is_anonymous_param_name(&p.name) {
+    } else if is_anonymous_param_name(&p.name) || p.is_implicit_invocant() {
+        // A parser-synthesized invocant (`Foo:D:`) is stored as `self` for the
+        // binder, but the source never named it: it introspects as `$`.
         String::new()
     } else if p.name.starts_with('@') || p.name.starts_with('%') || p.name.starts_with('&') {
         p.name[1..].to_string()
