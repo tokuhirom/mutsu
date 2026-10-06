@@ -112,6 +112,47 @@ const OP_PREC_TRAIT: &str = "__prec";
 /// (`my role R { }`).
 pub(super) const MY_SCOPED: &str = "__my_scoped";
 
+/// Whether `stmt` is a block-form loop or conditional the parser carries in an
+/// expression (`do for ...`) as a `DoStmt`.
+// Cost: O(1).
+fn is_do_statement(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::For {
+            is_statement_modifier,
+            ..
+        }
+        | Stmt::If {
+            is_statement_modifier,
+            ..
+        }
+        | Stmt::Given {
+            is_statement_modifier,
+            ..
+        } => !*is_statement_modifier,
+        Stmt::While { .. } | Stmt::Loop { .. } => true,
+        _ => false,
+    }
+}
+
+/// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
+/// `EXPR if COND`, `EXPR given TOPIC`), which a SemiList holds as a statement.
+// Cost: O(1).
+fn is_modifier_statement(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::For {
+            is_statement_modifier: true,
+            ..
+        } | Stmt::If {
+            is_statement_modifier: true,
+            ..
+        } | Stmt::Given {
+            is_statement_modifier: true,
+            ..
+        }
+    )
+}
+
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
 fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
@@ -288,9 +329,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Last(None) => Ok(Some(statement_expression(control_call("last", &[])?))),
         Stmt::Next(None) => Ok(Some(statement_expression(control_call("next", &[])?))),
         Stmt::Redo(None) => Ok(Some(statement_expression(control_call("redo", &[])?))),
-        Stmt::Last(Some(_)) | Stmt::Next(Some(_)) | Stmt::Redo(Some(_)) => {
-            Err(unsupported("labelled last/next/redo"))
-        }
+        // `last FOO` / `next FOO` / `redo FOO`: the label is a `Term::Name`
+        // argument of the call.
+        Stmt::Last(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "last", label,
+        )))),
+        Stmt::Next(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "next", label,
+        )))),
+        Stmt::Redo(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "redo", label,
+        )))),
         // `die`/`fail EXPR` are also modelled as bare calls.
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             "die",
@@ -392,7 +441,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unless,
             with_kind,
         } => {
-            if binding_var.is_some() {
+            // `if EXPR -> $v { }` binds the tested value; only a plain `if` chain
+            // (not `with`, `unless` or a modifier) renders its pointy block.
+            if binding_var.is_some()
+                && (with_kind.is_some() || *is_unless || *is_statement_modifier)
+            {
                 return Err(unsupported("`if EXPR -> $var` topic binding"));
             }
             // `with X { }` / `without X { }` reach here as the conditional the
@@ -455,7 +508,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
             let mut fields = vec![
                 node_field(Some("condition"), convert_expr(cond)?),
-                node_field(Some("then"), block_node(then_branch)?),
+                node_field(Some("then"), clause_block_node(then_branch, binding_var)?),
             ];
             fields.extend(conditional_chain_fields(else_branch)?);
             Ok(Some(RakuAstNode {
@@ -568,18 +621,47 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             mode,
             rw_block,
             explicit_zero_params,
-            is_statement_modifier: _,
+            is_statement_modifier,
             uses_block_magic: _,
         } => {
+            // `STMT for LIST` is the modified statement with a `loop-modifier`
+            // of `StatementModifier::For`, not a `Statement::For` around a
+            // block (measured on rakudo 2026.09). The parser's loop holds the
+            // statement as its only body statement; one that was rewritten into
+            // the loop's own signature stays the block form below.
+            if *is_statement_modifier
+                && label.is_none()
+                && (**param_def).is_none()
+                && params_def.is_empty()
+                && !*rw_block
+                && !*explicit_zero_params
+                && matches!(mode, ForMode::Normal)
+            {
+                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                if let (Some(modified), None) = (real.next(), real.next())
+                    // The loop has no signature of its own beyond a bare
+                    // block's placeholders (`parser::for_modifier_loop_params`).
+                    && (param.clone(), params.clone())
+                        == crate::parser::for_modifier_loop_params(modified)
+                {
+                    let mut statement = convert_stmt(modified)?
+                        .ok_or_else(|| unsupported("empty for modifier body"))?;
+                    statement.fields.push(node_field(
+                        Some("loop-modifier"),
+                        RakuAstNode {
+                            class: RakuAstClass::StatementModifierFor,
+                            fields: vec![node_field(None, convert_expr(iterable)?)],
+                        },
+                    ));
+                    return Ok(Some(statement));
+                }
+            }
             // Implicit-topic (`for SRC { ... $_ }`, slice 6) and explicit-signature
             // (`for @a -> $x`, slice 12) forms. Hyper/race/lazy modes, `<->` rw
             // blocks, and labels carry extra RakuAST shape, deferred.
             // The explicit param names live in `param_def` / `params_def`; the
             // sigil-stripped `param` / `params` string lists are unused here.
             let _ = (param, params);
-            if *rw_block || *explicit_zero_params || !matches!(mode, ForMode::Normal) {
-                return Err(unsupported("for loop with mode / rw"));
-            }
             // A single explicit param lives in `param_def`, multiple in
             // `params_def`. With none, the body is an implicit-topic Block; with
             // an explicit signature, it is a PointyBlock (matching raku).
@@ -588,20 +670,39 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 Some(pd) => std::slice::from_ref(pd),
                 None => params_def,
             };
-            let body_node = if explicit_defs.is_empty() {
+            let mut body_node = if explicit_defs.is_empty() && !*explicit_zero_params {
                 topic_block_node(body)?
             } else {
+                // `for @a -> { }`: a pointy block with no signature at all.
                 pointy_block(explicit_defs, body, None)?
+            };
+            // `for @a <-> $x { }`: each parameter is a writable container
+            // (`default-rw => True`, before its target).
+            if *rw_block {
+                mark_default_rw(&mut body_node)?;
+            }
+            let mode_name = match mode {
+                ForMode::Normal => "serial",
+                ForMode::Hyper => "hyper",
+                ForMode::Race => "race",
+                ForMode::Lazy => "lazy",
             };
             // Field order matches raku: labels, mode, source, body.
             let mut fields = label_fields(label);
-            fields.push(leaf_field(Some("mode"), Value::str("serial".to_string())));
+            fields.push(leaf_field(Some("mode"), Value::str(mode_name.to_string())));
             fields.push(node_field(Some("source"), convert_expr(iterable)?));
             fields.push(node_field(Some("body"), body_node));
-            Ok(Some(RakuAstNode {
+            let for_node = RakuAstNode {
                 class: RakuAstClass::StatementFor,
                 fields,
-            }))
+            };
+            // `hyper for` / `race for` / `lazy for` are expressions: a statement
+            // around the loop.
+            if matches!(mode, ForMode::Normal) {
+                Ok(Some(for_node))
+            } else {
+                Ok(Some(statement_expression(for_node)))
+            }
         }
         // `given X { ... }` -> Statement::Given(source, body => topic Block).
         Stmt::Given {
@@ -672,6 +773,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // `exception => 1`, which is what distinguishes it from one.
         Stmt::Catch(body) => Ok(Some(RakuAstNode {
             class: RakuAstClass::StatementCatch,
+            fields: vec![node_field(Some("body"), exception_block_node(body)?)],
+        })),
+        // `CONTROL { ... }` -> Statement::Control, the same exception block.
+        Stmt::Control(body) => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementControl,
             fields: vec![node_field(Some("body"), exception_block_node(body)?)],
         })),
         Stmt::SubDecl {
@@ -2492,6 +2598,21 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
             Ok(bareword::convert(name).expect("just checked"))
         }
+        // `my $x = BEGIN { 1 }`: the phaser block as an expression is the same
+        // `StatementPrefix::Phaser::*` node a phaser statement wraps.
+        Expr::PhaserExpr { kind, body } => {
+            let class =
+                phaser_class(kind).ok_or_else(|| unsupported("PRE/POST phaser expression"))?;
+            Ok(RakuAstNode {
+                class,
+                fields: vec![node_field(None, block_node(body)?)],
+            })
+        }
+        // `once { ... }` -> `StatementPrefix::Once(Block)`.
+        Expr::Once { body } => Ok(RakuAstNode {
+            class: RakuAstClass::StatementPrefixOnce,
+            fields: vec![node_field(None, block_node(body)?)],
+        }),
         // A declaration in expression position (`class { }`, `role { }`,
         // `push my @u, 1`): the parser wraps the declaration in a `DoStmt`,
         // rakudo has the node itself.
@@ -2520,6 +2641,38 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     _ => None,
                 })
                 .ok_or_else(|| unsupported("declaration term"))
+        }
+        // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
+        // conditional statement under `StatementPrefix::Do`.
+        Expr::DoStmt(stmt) if is_do_statement(stmt) => {
+            let statement =
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("empty `do` statement"))?;
+            // `hyper for` / `race for` / `lazy for` are expressions of their own:
+            // the loop, with no `do` prefix.
+            if matches!(
+                stmt.as_ref(),
+                Stmt::For {
+                    mode: ForMode::Hyper | ForMode::Race | ForMode::Lazy,
+                    ..
+                }
+            ) {
+                return statement
+                    .fields
+                    .iter()
+                    .find(|f| f.name == Some("expression"))
+                    .and_then(|f| match &f.value {
+                        RakuAstFieldValue::Node(value) => match value.view() {
+                            ValueView::RakuAst(node) => Some(node.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .ok_or_else(|| unsupported("hyper/race/lazy loop"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixDo,
+                fields: vec![node_field(None, statement)],
+            })
         }
         // `(temp $x)` / `(let $x = 1)` in expression position.
         Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {
@@ -2923,10 +3076,16 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
         Expr::BracketArray(items, _) => {
-            let inner = comma_list_node(items)?;
+            // `[EXPR for LIST]`: the parser holds the modified statement as the
+            // one element; rakudo has it as the composer's statement.
+            let statement = match items.as_slice() {
+                [Expr::DoStmt(stmt)] if is_modifier_statement(stmt) => convert_stmt(stmt)?
+                    .ok_or_else(|| unsupported("empty statement in an array composer"))?,
+                _ => statement_expression(comma_list_node(items)?),
+            };
             let semilist = RakuAstNode {
                 class: RakuAstClass::SemiList,
-                fields: vec![node_field(None, statement_expression(inner))],
+                fields: vec![node_field(None, statement)],
             };
             Ok(RakuAstNode {
                 class: RakuAstClass::CircumfixArrayComposer,
@@ -3397,12 +3556,12 @@ fn conditional_chain_fields(else_branch: &[Stmt]) -> Result<Vec<RakuAstField>, R
         ) {
             break;
         }
-        if binding_var.is_some() {
-            return Err(unsupported("`elsif EXPR -> $var` topic binding"));
+        if binding_var.is_some() && with_kind.is_some() {
+            return Err(unsupported("`orwith EXPR -> $var` topic binding"));
         }
         let node = match with_kind {
             Some(WithBlockKind::Orwith) => orwith_node(cond, then_branch)?,
-            _ => elsif_node(cond, then_branch)?,
+            _ => elsif_node(cond, then_branch, binding_var)?,
         };
         elsifs.push(Value::rakuast(Box::new(node)));
         tail = else_branch;
@@ -3426,14 +3585,46 @@ fn conditional_chain_fields(else_branch: &[Stmt]) -> Result<Vec<RakuAstField>, R
 }
 
 /// One `elsif` clause -> `Statement::Elsif(condition, then => Block)`.
-fn elsif_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+fn elsif_node(
+    cond: &Expr,
+    then_branch: &[Stmt],
+    binding_var: &Option<String>,
+) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::StatementElsif,
         fields: vec![
             node_field(Some("condition"), convert_expr(cond)?),
-            node_field(Some("then"), block_node(then_branch)?),
+            node_field(Some("then"), clause_block_node(then_branch, binding_var)?),
         ],
     })
+}
+
+/// The block of an `if` / `elsif` clause: a plain block, or the pointy block
+/// `-> $v { }` when the clause binds the tested value (the parser's
+/// `binding_var`, a bare scalar name; measured on rakudo 2026.09).
+// Cost: O(n), n = size of the block.
+fn clause_block_node(
+    then_branch: &[Stmt],
+    binding_var: &Option<String>,
+) -> Result<RakuAstNode, RuntimeError> {
+    match binding_var {
+        None => block_node(then_branch),
+        Some(name) if is_plain_scalar_name(name) => {
+            pointy_block(&[super::lower::positional_param(name)], then_branch, None)
+        }
+        Some(_) => Err(unsupported(
+            "`if EXPR -> $var` topic binding of another form",
+        )),
+    }
+}
+
+/// A bare scalar variable name: `v`, not `$v` / `@a` / an internal `__...`.
+fn is_plain_scalar_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with("__")
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.
@@ -3899,6 +4090,50 @@ fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     });
     node.fields.push(body_field);
     Ok(node)
+}
+
+/// `default-rw => True` on every parameter of a pointy block's signature, ahead
+/// of its target: what `<->` makes of them (measured on rakudo 2026.09).
+// Cost: O(p), p = parameters.
+fn mark_default_rw(block: &mut RakuAstNode) -> Result<(), RuntimeError> {
+    let Some(field) = block
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("signature"))
+    else {
+        return Ok(());
+    };
+    let RakuAstFieldValue::Node(signature) = &field.value else {
+        return Err(unsupported("pointy block signature"));
+    };
+    let ValueView::RakuAst(signature) = signature.view() else {
+        return Err(unsupported("pointy block signature"));
+    };
+    let mut signature = signature.clone();
+    if let Some(parameters) = signature
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("parameters"))
+        && let RakuAstFieldValue::List(items) = &mut parameters.value
+    {
+        for item in items.iter_mut() {
+            let ValueView::RakuAst(parameter) = item.view() else {
+                return Err(unsupported("pointy block parameter"));
+            };
+            let mut parameter = parameter.clone();
+            let at = parameter
+                .fields
+                .iter()
+                .position(|f| f.name == Some("target"))
+                .unwrap_or(parameter.fields.len());
+            parameter
+                .fields
+                .insert(at, leaf_field(Some("default-rw"), Value::truth(true)));
+            *item = Value::rakuast(Box::new(parameter));
+        }
+    }
+    *field = node_field(Some("signature"), signature);
+    Ok(())
 }
 
 /// A multi/zero-parameter pointy block (`-> $a, $b { }`, `-> { }`). An empty
@@ -5563,6 +5798,28 @@ fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtim
         class: RakuAstClass::CallNameWithoutParentheses,
         fields,
     })
+}
+
+/// `last LABEL` and friends: the bare call over the label as a `Term::Name`.
+// Cost: O(|label|).
+fn labelled_control_call(name: &'static str, label: &str) -> RakuAstNode {
+    let term = RakuAstNode {
+        class: RakuAstClass::TermName,
+        fields: vec![node_field(None, name_from_identifier(label))],
+    };
+    RakuAstNode {
+        class: RakuAstClass::CallNameWithoutParentheses,
+        fields: vec![
+            node_field(Some("name"), name_from_identifier(name)),
+            node_field(
+                Some("args"),
+                RakuAstNode {
+                    class: RakuAstClass::ArgList,
+                    fields: vec![node_field(None, term)],
+                },
+            ),
+        ],
+    }
 }
 
 /// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.

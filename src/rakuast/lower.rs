@@ -100,8 +100,29 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementAlso => super::role::lower_also(node),
         RakuAstClass::StatementWhenever => super::react::lower_whenever(node),
         RakuAstClass::StatementExpression => {
-            let statement = lower_stmt_inner(named_child(node, "expression")?)?;
-            if let Some(modifier) = node.fields.iter().find(|f| f.name == Some("loop-modifier")) {
+            let mut statement = lower_stmt_inner(named_child(node, "expression")?)?;
+            let loop_modifier = node.fields.iter().find(|f| f.name == Some("loop-modifier"));
+            // A bare block modified by a `for` is the parser's block statement
+            // (not the closure value a block with placeholders is elsewhere),
+            // and gives the loop its placeholders.
+            if let Some(modifier) = loop_modifier
+                && child_node(&modifier.value)?.class == RakuAstClass::StatementModifierFor
+            {
+                let inner = named_child(node, "expression")?;
+                if inner.class == RakuAstClass::Block {
+                    statement = Stmt::Block(lower_block(inner)?);
+                }
+            }
+            // The condition modifier binds tighter than the loop one: in
+            // `X if C for L` the loop runs `X if C`.
+            if let Some(modifier) = node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("condition-modifier"))
+            {
+                statement = lower_condition_modifier(child_node(&modifier.value)?, statement)?;
+            }
+            if let Some(modifier) = loop_modifier {
                 let modifier = child_node(&modifier.value)?;
                 if modifier.class == RakuAstClass::StatementModifierGiven {
                     return Ok(Stmt::Given {
@@ -111,61 +132,72 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         with_kind: None,
                     });
                 }
+                // `STMT for LIST`: the parser's `Stmt::For` holding the statement.
+                if modifier.class == RakuAstClass::StatementModifierFor {
+                    let (param, params) = crate::parser::for_modifier_loop_params(&statement);
+                    return Ok(Stmt::For {
+                        iterable: lower_expr(named_child_or_positional(modifier)?)?,
+                        param,
+                        param_def: Box::new(None),
+                        params,
+                        params_def: Vec::new(),
+                        body: vec![statement],
+                        label: None,
+                        mode: crate::ast::ForMode::Normal,
+                        rw_block: false,
+                        explicit_zero_params: false,
+                        is_statement_modifier: true,
+                        uses_block_magic: false,
+                    });
+                }
                 return Err(unsupported(modifier));
-            }
-            // A postfix `if`/`unless`: raku hangs the condition off the modified
-            // statement rather than wrapping it in a `Statement::If`. mutsu
-            // models it as an `If` whose `is_statement_modifier` is set (so its
-            // branch is not a block literal) — and, for `unless`, whose
-            // condition carries the parser's `!`.
-            if let Some(modifier) = node
-                .fields
-                .iter()
-                .find(|f| f.name == Some("condition-modifier"))
-            {
-                let modifier = child_node(&modifier.value)?;
-                // `with`/`without` are condition modifiers too, but they
-                // topicalize: mutsu spells them as the `given` desugar the
-                // parser builds, tagged with `with_kind` so the converter can
-                // read the keyword back out.
-                if let Some(kind) = match modifier.class {
-                    RakuAstClass::StatementModifierWith => Some(GivenWithKind::With),
-                    RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
-                    _ => None,
-                } {
-                    return Ok(lower_with_modifier(
-                        kind,
-                        lower_expr(named_child_or_positional(modifier)?)?,
-                        statement,
-                    ));
-                }
-                let is_unless = match modifier.class {
-                    RakuAstClass::StatementModifierIf => false,
-                    RakuAstClass::StatementModifierUnless => true,
-                    _ => return Err(unsupported(modifier)),
-                };
-                let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
-                // A declaration is split from its gated initializer, as the
-                // parser does.
-                if let Some(split) =
-                    crate::parser::try_split_decl_modifier(&statement, &cond, is_unless)
-                {
-                    return Ok(split);
-                }
-                return Ok(Stmt::If {
-                    cond,
-                    then_branch: vec![statement],
-                    else_branch: Vec::new(),
-                    binding_var: None,
-                    is_statement_modifier: true,
-                    is_unless,
-                    with_kind: None,
-                });
             }
             Ok(statement)
         }
         _ => lower_stmt_inner(node),
     }
+}
+
+/// A postfix `if`/`unless`/`with`/`without` over the lowered statement: raku
+/// hangs the condition off the modified statement rather than wrapping it in a
+/// `Statement::If`. mutsu models it as an `If` whose `is_statement_modifier` is
+/// set (so its branch is not a block literal) — and, for `unless`, whose
+/// condition carries the parser's `!`.
+// Cost: O(c), c = size of the condition.
+fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<Stmt, RuntimeError> {
+    // `with`/`without` are condition modifiers too, but they topicalize: mutsu
+    // spells them as the `given` desugar the parser builds, tagged with
+    // `with_kind` so the converter can read the keyword back out.
+    if let Some(kind) = match modifier.class {
+        RakuAstClass::StatementModifierWith => Some(GivenWithKind::With),
+        RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
+        _ => None,
+    } {
+        return Ok(lower_with_modifier(
+            kind,
+            lower_expr(named_child_or_positional(modifier)?)?,
+            statement,
+        ));
+    }
+    let is_unless = match modifier.class {
+        RakuAstClass::StatementModifierIf => false,
+        RakuAstClass::StatementModifierUnless => true,
+        _ => return Err(unsupported(modifier)),
+    };
+    let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
+    // A declaration is split from its gated initializer, as the parser does.
+    if let Some(split) = crate::parser::try_split_decl_modifier(&statement, &cond, is_unless) {
+        return Ok(split);
+    }
+    Ok(Stmt::If {
+        cond,
+        then_branch: vec![statement],
+        else_branch: Vec::new(),
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless,
+        with_kind: None,
+    })
 }
 
 /// Rebuild the `given TOPIC { if $_.defined { STMT } }` shape that mutsu's
@@ -272,7 +304,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 step: None,
                 body: lower_block(named_child(node, "body")?)?,
                 repeat: true,
-                label: None,
+                label: node_label(node)?,
                 is_until,
             })
         }
@@ -328,6 +360,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // implied by the statement class, so only the block's statements are
         // read back.
         RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
+        RakuAstClass::StatementControl => {
+            Ok(Stmt::Control(lower_block(named_child(node, "body")?)?))
+        }
         RakuAstClass::VarDeclarationSignature => super::signature_decl::lower(node),
         // `use` / `no` statements (see `use_stmt`).
         RakuAstClass::Pragma => super::use_stmt::lower_pragma(node),
@@ -441,9 +476,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "return" => Ok(Stmt::Return(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
-                "last" => Ok(Stmt::Last(None)),
-                "next" => Ok(Stmt::Next(None)),
-                "redo" => Ok(Stmt::Redo(None)),
+                "last" => Ok(Stmt::Last(loop_label(node, args)?)),
+                "next" => Ok(Stmt::Next(loop_label(node, args)?)),
+                "redo" => Ok(Stmt::Redo(loop_label(node, args)?)),
                 "die" => Ok(Stmt::Die(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
@@ -461,21 +496,81 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
+/// The label of a loop node: the name in its `labels => (Label(name => "…"),)`
+/// field, which the converter writes first. An unlabelled loop has none.
+// Cost: O(l), l = labels of the node (one in practice).
+fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    let Some(field) = node.fields.iter().find(|f| f.name == Some("labels")) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::List(items) = &field.value else {
+        return Err(unsupported(node));
+    };
+    match items.first().and_then(rakuast_node_of) {
+        Some(label) if label.class == RakuAstClass::Label => leaf_str(label, "name").map(Some),
+        Some(_) => Err(unsupported(node)),
+        None => Ok(None),
+    }
+}
+
+/// The label of `last LABEL` / `next LABEL` / `redo LABEL`: its one argument,
+/// a name; `None` for the unlabelled call.
+// Cost: O(1).
+fn loop_label(node: &RakuAstNode, args: Vec<Expr>) -> Result<Option<String>, RuntimeError> {
+    match args.as_slice() {
+        [] => Ok(None),
+        [Expr::BareWord(label)] => Ok(Some(label.clone())),
+        _ => Err(unsupported(node)),
+    }
+}
+
 /// Lower `if COND { … } elsif … { … } else { … }` to `Stmt::If`. Each `elsif`
 /// clause becomes a nested `Stmt::If` in the enclosing `else` branch, folded
 /// innermost-last so the source order is preserved.
 fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let cond = lower_expr(named_child(node, "condition")?)?;
-    let then_branch = lower_block(named_child(node, "then")?)?;
+    let (then_branch, binding_var) = lower_clause_block(named_child(node, "then")?)?;
     Ok(Stmt::If {
         cond,
         then_branch,
         else_branch: lower_conditional_chain(node, None)?,
-        binding_var: None,
+        binding_var,
         is_statement_modifier: false,
         is_unless: false,
         with_kind: None,
     })
+}
+
+/// The block of an `if` / `elsif` clause: a plain block, or the pointy block
+/// `-> $v { }` of a clause that binds the tested value, whose parameter the
+/// parser keeps as the clause's `binding_var`.
+// Cost: O(n), n = size of the block.
+fn lower_clause_block(block: &RakuAstNode) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    if block.class != RakuAstClass::PointyBlock {
+        return Ok((lower_block(block)?, None));
+    }
+    let (names, defs) = signature_positional_params(block)?;
+    let [name] = names.as_slice() else {
+        return Err(unsupported(block));
+    };
+    let [def] = defs.as_slice() else {
+        return Err(unsupported(block));
+    };
+    let plain = def.type_constraint.is_none()
+        && def.type_capture.is_none()
+        && def.default.is_none()
+        && def.where_constraint.is_none()
+        && def.traits.is_empty()
+        && def.sub_signature.is_none()
+        && !def.slurpy
+        && !def.named
+        && !def.sigilless
+        && !def.optional_marker
+        && !name.starts_with(['@', '%', '&', '_']);
+    if !plain {
+        return Err(unsupported(block));
+    }
+    Ok((lower_block(block)?, Some(name.clone())))
 }
 
 /// Lower `with COND { … }` / `without COND { … }` to the conditional mutsu's
@@ -538,13 +633,16 @@ fn lower_conditional_chain(
             return Err(unsupported(node));
         };
         let cond = lower_expr(named_child(clause, "condition")?)?;
-        let body = lower_block(named_child(clause, "then")?)?;
+        let (body, binding_var) = lower_clause_block(named_child(clause, "then")?)?;
+        if binding_var.is_some() && clause.class != RakuAstClass::StatementElsif {
+            return Err(unsupported(clause));
+        }
         match clause.class {
             RakuAstClass::StatementElsif => else_topic = None,
             RakuAstClass::StatementOrwith => else_topic = Some(cond.clone()),
             _ => return Err(unsupported(clause)),
         }
-        lowered.push((clause.class, cond, body));
+        lowered.push((clause.class, cond, body, binding_var));
     }
 
     let mut else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
@@ -557,7 +655,7 @@ fn lower_conditional_chain(
         }
         None => Vec::new(),
     };
-    for (class, cond, body) in lowered.into_iter().rev() {
+    for (class, cond, body, binding_var) in lowered.into_iter().rev() {
         else_branch = if class == RakuAstClass::StatementOrwith {
             vec![crate::with_desugar::orwith_conditional(
                 cond,
@@ -569,7 +667,7 @@ fn lower_conditional_chain(
                 cond,
                 then_branch: body,
                 else_branch,
-                binding_var: None,
+                binding_var,
                 is_statement_modifier: false,
                 is_unless: false,
                 with_kind: None,
@@ -585,22 +683,34 @@ fn lower_conditional_chain(
 /// (keeping its type and traits), several in `params` / `params_def`.
 fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let iterable = lower_expr(named_child(node, "source")?)?;
+    let mode = match leaf_str(node, "mode")?.as_str() {
+        "serial" => crate::ast::ForMode::Normal,
+        "hyper" => crate::ast::ForMode::Hyper,
+        "race" => crate::ast::ForMode::Race,
+        "lazy" => crate::ast::ForMode::Lazy,
+        _ => return Err(unsupported(node)),
+    };
     let block = named_child(node, "body")?;
+    let mut explicit_zero_params = false;
     let (param, param_def, params, params_def) = match block.class {
         RakuAstClass::Block => (None, None, Vec::new(), Vec::new()),
         RakuAstClass::PointyBlock => {
             let (mut names, mut defs) = signature_positional_params(block)?;
             name_for_unpack_params(&mut names, &mut defs);
             match defs.len() {
-                // `for @x -> { … }` is the parser's `explicit_zero_params`
-                // form, which the converter never renders.
-                0 => return Err(unsupported(node)),
+                // `for @x -> { … }`: a pointy block with no signature.
+                0 => {
+                    explicit_zero_params = true;
+                    (None, None, Vec::new(), Vec::new())
+                }
                 1 => (names.into_iter().next(), defs.pop(), Vec::new(), Vec::new()),
                 _ => (None, None, names, defs),
             }
         }
         _ => return Err(unsupported(node)),
     };
+    // `<->`: every parameter is a writable container.
+    let rw_block = block.class == RakuAstClass::PointyBlock && has_default_rw(block);
     // Both a Block and a PointyBlock wrap their statements in a `body` Blockoid.
     let body = lower_block(block)?;
     Ok(Stmt::For {
@@ -610,14 +720,30 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         params,
         params_def,
         body,
-        label: None,
-        mode: crate::ast::ForMode::Normal,
-        rw_block: false,
-        explicit_zero_params: false,
-        // RakuAST spells the modifier form as `StatementModifierFor`, which this
-        // lowering does not cover; a `RakuAst::Statement::For` is the block form.
+        label: node_label(node)?,
+        mode,
+        rw_block,
+        explicit_zero_params,
+        // The modifier form is `StatementModifierFor`, lowered with its
+        // statement; a `RakuAst::Statement::For` is the block form.
         is_statement_modifier: false,
         uses_block_magic: false,
+    })
+}
+
+/// Whether the signature of the pointy block `block` marks a parameter
+/// `default-rw => True` (what `<->` writes).
+// Cost: O(p), p = parameters.
+fn has_default_rw(block: &RakuAstNode) -> bool {
+    let Ok(signature) = named_child(block, "signature") else {
+        return false;
+    };
+    let Ok(parameters) = list_field(signature, "parameters") else {
+        return false;
+    };
+    parameters.iter().any(|parameter| {
+        matches!(parameter.view(), ValueView::RakuAst(p)
+            if p.fields.iter().any(|f| f.name == Some("default-rw")))
     })
 }
 
@@ -958,6 +1084,21 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// `reorder_phasers_for_eval` handles `CHECK`/`INIT`, so `BEGIN` lowers like any
 /// other kind.
 fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let kind = phaser_kind(node)?;
+    Ok(Stmt::Phaser {
+        kind,
+        body: lower_block(named_child_or_positional(node)?)?,
+        condition: None,
+        // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
+        // its ENDs install where execution reaches them rather than at a
+        // source position of the main compunit.
+        end_index: None,
+    })
+}
+
+/// The kind of the `StatementPrefix::Phaser::*` node `node`.
+// Cost: O(1).
+fn phaser_kind(node: &RakuAstNode) -> Result<crate::ast::PhaserKind, RuntimeError> {
     use crate::ast::PhaserKind;
     let kind = match node.class {
         RakuAstClass::StatementPrefixPhaserBegin => PhaserKind::Begin,
@@ -975,15 +1116,7 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementPrefixPhaserClose => PhaserKind::Close,
         _ => return Err(unsupported(node)),
     };
-    Ok(Stmt::Phaser {
-        kind,
-        body: lower_block(named_child_or_positional(node)?)?,
-        condition: None,
-        // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
-        // its ENDs install where execution reaches them rather than at a
-        // source position of the main compunit.
-        end_index: None,
-    })
+    Ok(kind)
 }
 
 /// A package body as the parser leaves it: the `method`s declared in its
@@ -1899,7 +2032,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
 pub(super) const ANONYMOUS_CAPTURE: &str = "_capture";
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
-fn positional_param(name: &str) -> ParamDef {
+pub(super) fn positional_param(name: &str) -> ParamDef {
     ParamDef {
         type_capture: None,
         name: name.to_string(),
@@ -1936,7 +2069,7 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(Stmt::While {
         cond: negate_if(cond, is_until),
         body,
-        label: None,
+        label: node_label(node)?,
         is_statement_modifier: false,
         is_until,
     })
@@ -1978,7 +2111,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         step,
         body,
         repeat: false,
-        label: None,
+        label: node_label(node)?,
         is_until: false,
     })
 }
@@ -3602,6 +3735,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 Ok(Expr::RegexLiteral { value, tree })
             }
         }
+        // A statement with a modifier in expression position (`[EXPR for LIST]`)
+        // is the statement itself, as the parser carries it (`DoStmt`).
+        RakuAstClass::StatementExpression
+            if node
+                .fields
+                .iter()
+                .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier"))) =>
+        {
+            Ok(Expr::DoStmt(Box::new(lower_stmt(node)?)))
+        }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
         // `class { }` / `role { }` / `grammar { }` as a term: the parser carries
         // a declaration in expression position as a `DoStmt`.
@@ -3864,9 +4007,53 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
         // `whatever_curry`, not here — see `lower`'s entry point.
         RakuAstClass::WhateverCodeArgument => Ok(Expr::WhateverArg),
+        // A loop or conditional statement in expression position (`(for 1, 2 { $_ })`,
+        // inside parentheses): the statement itself, which the parser carries as
+        // a `DoStmt`.
+        RakuAstClass::StatementFor
+        | RakuAstClass::StatementGiven
+        | RakuAstClass::StatementIf
+        | RakuAstClass::StatementUnless
+        | RakuAstClass::StatementLoopWhile
+        | RakuAstClass::StatementLoopUntil
+        | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        // `once { … }` -> a once expression over the lowered block body.
+        RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
+            body: lower_block(named_child_or_positional(node)?)?,
+        }),
+        // A phaser block in expression position (`my $x = BEGIN { 1 }`).
+        RakuAstClass::StatementPrefixPhaserBegin
+        | RakuAstClass::StatementPrefixPhaserCheck
+        | RakuAstClass::StatementPrefixPhaserInit
+        | RakuAstClass::StatementPrefixPhaserEnd
+        | RakuAstClass::StatementPrefixPhaserEnter
+        | RakuAstClass::StatementPrefixPhaserLeave
+        | RakuAstClass::StatementPrefixPhaserKeep
+        | RakuAstClass::StatementPrefixPhaserUndo
+        | RakuAstClass::StatementPrefixPhaserFirst
+        | RakuAstClass::StatementPrefixPhaserNext
+        | RakuAstClass::StatementPrefixPhaserLast
+        | RakuAstClass::StatementPrefixPhaserQuit
+        | RakuAstClass::StatementPrefixPhaserClose => Ok(Expr::PhaserExpr {
+            kind: phaser_kind(node)?,
+            body: lower_block(named_child_or_positional(node)?)?,
+        }),
         // `do { … }` -> a do-block expression over the lowered block body.
         RakuAstClass::StatementPrefixDo => {
             let block = named_child_or_positional(node)?;
+            // `do for ... { }` / `do if ... { }` / `do given ... { }`: the
+            // statement itself, which the parser carries as a `DoStmt`.
+            if matches!(
+                block.class,
+                RakuAstClass::StatementFor
+                    | RakuAstClass::StatementGiven
+                    | RakuAstClass::StatementIf
+                    | RakuAstClass::StatementLoopWhile
+                    | RakuAstClass::StatementLoopUntil
+                    | RakuAstClass::StatementLoop
+            ) {
+                return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
+            }
             Ok(Expr::DoBlock {
                 body: lower_block(block)?,
                 label: None,
